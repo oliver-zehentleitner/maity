@@ -1317,9 +1317,13 @@ def read_waking(
     carried: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
+    # Dormancy is per project, on the instance's attachment to this membership (§6.17).
+    a = t.instance_attachment
     dormant = credential_id is not None and (
         conn.execute(
-            select(t.credential.c.dormant_since).where(t.credential.c.id == credential_id)
+            select(a.c.dormant_since).where(
+                a.c.credential_id == credential_id, a.c.membership_id == membership.id
+            )
         ).scalar()
         is not None
     )

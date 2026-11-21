@@ -168,3 +168,19 @@ def test_harness_refused_without_a_detail_is_taken() -> None:
     """A runner that knows a refusal the hub does not yet name reports the reason with detail
     `null`; that report is valid (the cli CI job runs the runner's own guard without the hub)."""
     _check_codes(_report("failed", "harness_refused", None))
+
+
+def test_codex_host_too_old_is_taken_with_harness_refused() -> None:
+    """The Codex old-host refusal of the runner (docs/api.md §15.7, `codex_host_too_old`)."""
+    _check_codes(_report("failed", "harness_refused", "codex_host_too_old"))
+
+
+@pytest.mark.parametrize(
+    "reason",
+    # `join_failed` takes any hub error code as its detail (§15.7), so it is no other reason here.
+    sorted(r for r in REASONS if r not in ("harness_refused", "join_failed")),
+)
+def test_codex_host_too_old_goes_with_harness_refused_only(reason: str) -> None:
+    with pytest.raises(ApiError) as refused:
+        _check_codes(_report(sorted(REASONS[reason])[0], reason, "codex_host_too_old"))
+    assert refused.value.details == {"fields": {"detail": "not_with_reason"}}

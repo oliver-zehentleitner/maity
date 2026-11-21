@@ -456,7 +456,8 @@ agents outlive it.
 
 **Id:** 0a639f39-f76c-4a77-ac43-ae8ce1d42434
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4f960c44-8b9f-459e-978f-dff9237271a6
 **Evidence:** inferred
 **Source:** card tsk-bj6fs628q6pd (a placed runner agent's field report that the sandbox refuses every OS UUID v4 source); the Keep the Why skill 0.20.3 (`SKILL.md`, the `Id` rule) and `AGENTS.md` (every entry's Id is made by an OS command, never from memory)
 **Verification:** contradicted — the allowlist mechanism still reads from `adapters.py` and `docs/runners.md` as described, but the inferred live-session efficacy is contradicted: observed in a Claude Code runner placement (CLI 0.1.0a17), 2026-11-20, a plain `cat /proc/sys/kernel/random/uuid` and `uuidgen` were both refused by the harness (denied, "don't ask" mode); card tsk-1rejhywcw3qh reports the `/proc` read refused for three further placed sessions the same day
@@ -471,11 +472,13 @@ rule in `permissions.allow`, with `defaultMode: dontAsk`) and opencode
 (a `bash` rule, the catch-all being `deny`). It is the one source
 (`adapters.UUID_COMMAND`); the rule is unconditional, not from a grant.
 The allowlist mechanism and that these two harnesses refuse unlisted
-commands are **confirmed** from the code and `docs/runners.md`; that a
-live Claude Code or opencode session now makes its UUID with the
-allowed command, and that Codex and agy run it inside their own
-sandbox, is **inferred** and not yet observed in a placed session —
-the weaker grade is why this entry's Evidence is `inferred`.
+commands are **confirmed** from the code and `docs/runners.md`. That a
+live Claude Code session makes its UUID with the allowed command is
+**contradicted**: placed Claude Code sessions refused it on 2026-11-20
+(the Verification line). For opencode it was never observed either
+way, and that Codex and agy run the command inside their own sandbox
+stays **inferred**. The weakest grade decides, which is why this
+entry's Evidence is `inferred`.
 
 **Reason:** every Keep the Why entry an agent writes needs an `Id` made
 by an OS command — never composed from memory — so a session that
@@ -507,6 +510,55 @@ with free arguments.
   an unlisted `cat /proc/sys/kernel/random/uuid` already runs inside
   their own sandbox (Codex's `:workspace` profile, agy's
   `proceed-in-sandbox`).
+
+## The runner allows no UUID command; `maity uuid` makes the Ids
+
+**Id:** 4f960c44-8b9f-459e-978f-dff9237271a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-jjxxspts3t40 and the lead's go on it, 2026-11-20; probes in a placed Claude Code session (CLI 0.1.0a17), 2026-11-20; `cli/src/maity/runner/adapters.py` (`opencode_config`, `external_directory`)
+**See:** runner.md#the-allowlist-harnesses-allow-one-os-uuid-v4-source-the-kernels-generator — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-20
+**See:** commands.md#maity-uuid-makes-keep-the-why-ids-where-uuidgen-is-refused — 2b2be9a9-25d6-4396-b35d-5a2c242a4997 — as of 2026-11-20
+**Revisit when:** a harness applies an exact `Bash(...)` allow before its path check, or `maity` stops being allowed in some harness a placement runs
+
+The runner no longer allows `cat /proc/sys/kernel/random/uuid` (the
+former `adapters.UUID_COMMAND`) in Claude Code or opencode placements.
+An agent makes its Keep the Why Ids with `maity uuid`, which runs
+wherever `maity` is allowed, on every harness.
+
+**Reason:** the exact allow never took effect in a placed Claude Code
+session. Claude Code checks a read command that names a path outside
+the working directories before it applies the allow rules, so the
+exact rule does not win. The probes in one placed session showed this:
+`cat` of a file inside the clone runs with no rule for it, while
+`ls /proc/sys/kernel/random` and the allow-listed
+`cat /proc/sys/kernel/random/uuid` are both refused, and exact rules
+for commands without a path (`git status`) do match. The probes are
+**confirmed**. That the path check is the cause is **inferred**, since
+the harness's own source and the session's settings file were not read
+from inside the placement. opencode's config sets
+`external_directory: deny`, which gates the same path; never observed
+in an opencode session, so also **inferred**. A rule that cannot work
+reads as a UUID source that is not there.
+
+**Rejected alternatives:**
+- Adding a `Read(//proc/sys/kernel/random/uuid)` allow so that the path
+  check passes: not verifiable from inside a placement, since the
+  settings are fixed at launch and a test needs a restarted placement.
+  It would also be a second, harness-specific rule beside `maity uuid`,
+  which already covers every harness.
+- Keeping the rule for opencode only: unobserved there, and the same
+  `external_directory` deny likely refuses it; one source for every
+  harness is simpler to explain.
+
+Under the allowlist harnesses (Claude Code, opencode), a CLI older than
+the release that ships `maity uuid` (0.1.0a17 included) leaves a
+placement without a UUID source: the usual commands are refused there,
+as the probes above showed for Claude Code. Dropping the rule takes
+nothing away there, since it never ran. Codex and agy are not judged
+here; what they refuse depends on their own sandbox. The changelog
+names the upgrade as the prerequisite.
 
 ## The command allowlists are not a boundary until agents run as their own user
 
@@ -550,10 +602,11 @@ would read as a boundary when it is not one.
 **Status:** active
 **Evidence:** inferred
 **Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py`, `scratchop.py` and `commands.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`, the launch-write op through the `maity runner scratchop` CLI in `tests/test_commands.py`, and the too-old-host refusal in `tests/test_supervisor.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
-**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979, its detail code added by card tsk-m1mkmx0ncckr and request req-gb2rgpe7k94g
 **See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
-**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, a placement is given a home with no scratch to carry it, or the follow-up card adds a contract detail-code for the too-old-host refusal
+**See:** runner.md#a-report-the-hub-refuses-as-invalid-is-sent-once-more-without-its-detail-or-dropped — b68a2e8b-8472-4cfe-88b1-8531d7275949 — as of 2026-11-21
+**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, or a placement is given a home with no scratch to carry it
 
 Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
 (`adapters.codex_home`), under the workspaces root, rather than under the
@@ -590,13 +643,14 @@ a clear reason (the host's `maity` is too old for Codex placements) so the
 operator upgrades the host, rather than crash-looping the start or quietly
 falling back to the hidden state directory where no command would run.
 
-That refusal is reported as `harness_refused` with no detail, and the
-specific reason — the host's `maity` is too old for the codex launch-write
-op — goes to the runner's log only. `harness_refused`'s detail is a closed
-contract list (docs/api.md §15.7) with no code for this host-too-old case;
-an unknown detail makes the hub answer `invalid`, so the runner would
-re-send the rejected report every tick and the refusal would never be
-recorded. A contract detail-code for it is deferred to a follow-up card.
+That refusal is reported as `failed` / `harness_refused` with the detail
+`codex_host_too_old` (docs/api.md §15.7), and the host's own message goes
+to the runner's log. Until card tsk-m1mkmx0ncckr put that code in the
+contract, the report carried no detail (the choice of PR #1979): an unknown
+detail made the hub answer `invalid`, and the runner re-sent the rejected
+report every tick. A hub older than
+the code still refuses the detail; the runner then sends the report once
+more without it (b68a2e8b), so the refusal is recorded either way.
 `retry_at` stays unset, so the start still does not crash-loop and only a
 new generation retries.
 
@@ -1337,14 +1391,52 @@ block every opencode placement until that work lands.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-kf2kp09d6qew after the first live opencode test found a model-less placement running opencode's own free default (provider `opencode`, `hy4-flash-free`) instead of the configured `xai/grok-4.7`
+**Source:** card tsk-kf2kp09d6qew after the first live opencode test found a model-less placement running opencode's own free default (provider `opencode`, `hy4-flash-free`) instead of the configured `xai/grok-4.7`; card tsk-daa6e0gfncg0 and ops' note nte-22jpstv7c7x5 on tsk-kf2kp09d6qew (OpenCode 2.3.0 on oliver-pc01-l, 2026-11-19: the TUI has no `--model`, `opencode run` and `opencode mini` take `--model/-m`), and the lead's order for the fix (lotse, message 173278), 2026-11-20; ops' live check on a real OpenCode 2.3.0, note nte-mmnz3mk1247c on tsk-daa6e0gfncg0, 2026-11-20 (the TUI read the `OPENCODE_CONFIG` model only with `--standalone`; `opencode run` has no `--dir`)
 **See:** runner.md#opencode-grok-is-offered-its-command-rules-are-not-a-security-boundary — a94f2e01-c227-4d4f-baeb-d88c5f0d3c86 — as of 2026-11-18
-**Revisit when:** opencode routes a placement's model somewhere other than `--model`, or a provider other than the configured one becomes acceptable
+**Revisit when:** opencode stops reading the top-level `model` of the `OPENCODE_CONFIG` file, routes a placement's model somewhere else, or a provider other than the configured one becomes acceptable
 
 `_opencode` takes the effective model from the placement, or the harness
-`default_model` when the placement names none, and passes it as `--model`. A
-model that is empty or not among the harness `models` refuses the start
-(`NotYet`, surfaced as `harness_refused`) instead of launching.
+`default_model` when the placement names none. A model that is empty or not
+among the harness `models` refuses the start (`NotYet`, surfaced as
+`harness_refused`) instead of launching, before the placement's
+`opencode.json` is written. The model is that file's top-level `model` in
+both modes, and `opencode run` (supervised) gets it as `--model` as well.
+
+2026-11-20 (tsk-daa6e0gfncg0): the interactive TUI no longer gets
+`--model`. Until then both modes passed `--model`; OpenCode 2.3's TUI (no
+subcommand) has no such flag, prints its help and exits on it, so after the
+fail-closed fix made `--model` unconditional every interactive opencode
+placement crash-looped. The TUI now reads the model from the placement's own
+`opencode.json` (`OPENCODE_CONFIG`, with the project's configuration switched
+off, so nothing in the repository overrides it); the check above still runs
+first for both modes, so a missing or unknown model refuses the start as
+before. `maity runner check` reads `opencode --help` and `opencode run --help`
+for the flags each configured mode's start passes
+(`capabilities.OPENCODE_FLAGS`) and reports a missing one as an error, so the
+next such change in opencode shows before a start. Rejected: keep `--model`
+and pin an older opencode that still takes it on the root command (the
+operator would have to hold back opencode on every host, and the runner
+would break again on the first upgrade); start the TUI as `opencode mini …
+--model` (ops' other option, not tried: it changes which command the
+interactive placements start, which nobody has run as a placement, and the
+lead ordered the configuration).
+
+Ops' live check on OpenCode 2.3.0 (nte-mmnz3mk1247c, same day) changed two
+points. First, the TUI starts with `--standalone`. Without it, 2.3's TUI
+attaches to a shared per-user background service (`opencode serve
+--service`) with its own configuration, so the session's `OPENCODE_CONFIG`
+and `OPENCODE_DISABLE_PROJECT_CONFIG` never reach it: ops saw opencode's own
+hosted model despite the config's `model`, and Grok with `--standalone`.
+This is a confinement point, not only the model: every opencode placement
+of that OS user would share one service, so neither the per-placement
+permission rules nor the switch that keeps the repository's own
+`opencode.json` and `.opencode/` out would apply. Second, `opencode run`
+has no `--dir` (`Unrecognized flag: --dir`), so the supervised start drops
+it and runs in the clone as its working directory, which the session
+already starts in (the workspace `path`; opencode has no workspace folder)
+and the loop's runs inherit; `--continue` then continues that directory's
+conversation. The probe's flags follow: `--standalone` and `--prompt` for
+the TUI, `--model` and `--continue` for `run`.
 
 **Reason:** a provider-`opencode` model is opencode-hosted (the command-rules
 constraint above), so running one sends the clone's conversation — the
@@ -4622,6 +4714,50 @@ without actual.json, would otherwise hold 0 for a session that runs, and a
 saving the count at the start alone would still miss a lost actual.json.
 The refusal's report would carry the generation before's count.
 
+## A report the hub refuses as `invalid` is sent once more without its detail, or dropped
+
+**Id:** b68a2e8b-8472-4cfe-88b1-8531d7275949
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m1mkmx0ncckr (a refused placement report resent every tick); request req-gb2rgpe7k94g (the §15.7 code `codex_host_too_old` and the §15.8 rule, approved as written); docs/api.md §15.7, §15.8; the review of PR #2080 (the resend and the drop saved at once, across a restart)
+**See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-21
+**Revisit when:** the hub's `invalid` answer stops naming the failing fields in `details.fields`, or a report field other than `detail` gains a value a newer runner may send to an older hub
+
+A placement report the hub answers `400 invalid` is never sent again as it
+was (`Supervisor._send`). When `details.fields` names exactly `detail`, the
+runner sends the same report once more with `detail: null` and the same
+`seq`; any other `invalid` it logs once and drops, so the record counts as
+settled until its state changes and the next change reports afresh. Like
+the first send, the stripped report and the drop are saved at once, before
+anything else is sent, so a restart never sends the refused body again. A
+failure that refuses no body — no answer, `429`, a `5xx`, a maintenance
+window — is sent again on the next tick as before.
+
+**Reason:** `_check_codes` refuses a report before the `seq`
+compare-and-set, so a refused report stores nothing and the same body meets
+the same refusal on every tick: the hub never records the state, and the
+runner's log fills with the same line. The usual cause is a runner newer
+than its hub — a detail code the hub does not list yet
+(`codex_host_too_old`, `target_unknown` before its fix) — and there the
+state and reason are still valid and worth recording; only the detail is
+not. Because the refused report took no `seq`, reusing it is safe, and the
+stripped report is the same report minus one optional field. Leaving the
+detail out does not help any other refusal, so the runner stops there.
+
+**Rejected alternatives:**
+- Send a refused report again on every tick, as before: the loop the card
+  describes — the hub never records the state, and nothing ends it but a
+  change of state or a newer hub.
+- Drop every `invalid` report, the detail-only one included: an older hub
+  would then record nothing of a refusal the runner reports with a new
+  code, and the placement would show its last state instead of `failed` /
+  `harness_refused`. Resending once without the detail records the state
+  and reason the hub understands.
+- Leave new detail codes unsent until every hub knows them (what PR #1979
+  did for the Codex old-host refusal): the reason then never reaches the
+  hub at all, even a current one.
+
 ## A stopped agent's clone stays for its retention time, then the runner removes it
 
 **Id:** 161d5507-5b44-45d6-8bec-cacd58de58a2
@@ -5461,8 +5597,8 @@ separate item of the incident card.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on a runner host, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on a Linux x64 runner, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); `cli/src/maity/runner/skills.py`, `adapters.py`, `supervisor.py`
-**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; the agent_user layout, ssh hosts or Codex get the delivery
+**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on a runner host, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on a Linux x64 runner, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); for the agents'-side copy, card tsk-7casfxb7cn49, its design and the lead's go with its conditions (2026-11-21: the same-uid exposure stated, not solved; no allow widened; the location moved out of `~/.maity-runner` once that turned out to be denied to every sandbox); `cli/src/maity/runner/skills.py`, `skillop.py`, `adapters.py`, `supervisor.py`
+**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; Codex gets a skills directory of its own; placements get an OS user each (the agents'-side copy is then no longer shared by one uid)
 **See:** https://github.com/oliver-zehentleitner/maity — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-11-20
 
 A placed session could not get the skill: its sandbox does not write the
@@ -5508,7 +5644,10 @@ runner fetches it and hands it to the session read-only:
 verifies every object against it, the rule the runner already follows for
 tools (take only an exact release it can check). The hub stays the one
 source of the version, as it is for the resume packet's install text, and
-a per-session plugin path writes nothing into the agents' home. Starting
+a per-session plugin path writes nothing into the harness's settings or
+skills in the agents' home (in the `single` layout nothing at all; in the
+agent_user layout and on ssh hosts only the copy below, which no harness
+loads on its own). Starting
 without the skill keeps an agent online through a forge outage, and the
 report tells the owner.
 
@@ -5527,23 +5666,67 @@ report tells the owner.
 - Refusing the start when the fetch fails: an agent offline over a forge
   outage, for a skill whose install text is still in the resume packet.
 
-**Not built yet:** the agent_user layout (the agents' user may not read
-the runner's directory) and ssh hosts start without the skill, with a log
-line and the report; Codex gets only the variable; `maity runner check`
+**Where the agents cannot read the runner's copy** (the agent_user layout,
+an ssh host; tsk-7casfxb7cn49): the runner still fetches and checks its
+own copy as above, then puts the same files below the agents' user's home,
+in `~/.local/share/maity-runner/skills/keep-the-why/<key>/`, the runner's
+own default path for that user. It does so through two ops run as that
+user (`skillop put|check`: in-process, through sudo as `python -I -m
+maity.runner.skillop`, or the host's own `maity runner skillop` over
+ssh). `put` takes the runner's
+files and manifest on stdin, checks every file against the manifest and
+every path against what the runner writes before it writes anything, opens
+each directory from the agents' home down without following a link, and
+writes into a fresh staging directory that it renames into place.
+`check` runs the same check as the runner's own (`skillop.verify`)
+and returns the manifest's SHA-256. The copy is handed out only when that
+is the hash the runner recorded; a missing or different one is put again
+once, and otherwise the session starts without the skill and reports
+`keep_the_why_unavailable`, as for a failed fetch. An ssh host whose
+`maity` has no skill ops does the same: the skill is no boundary, so the
+placement is not refused.
+
+The location is not `~/.maity-runner` (the agents' files), as first
+designed: every sandbox is denied that directory (`supervisor._private`),
+so a copy there could only be read through an allow re-opened inside the
+deny. Below the home, the copy is in no deny list, and the session's
+existing rules simply name it: `Read` on it, the `Edit` deny, the
+sandbox's `denyWrite` and agy's `write_file` deny. No allow is widened.
+
+**The same-uid exposure, stated and not solved:** the agents'-side copy is
+owned by the agents' user, as everything on the agents' side is. A process
+of that uid outside any sandbox (an unsandboxed harness, a command the
+operator allows to run outside it) could rewrite it. The check at the next
+start catches that and puts the copy again; a change during a running
+session is not caught. In the `single` layout the runner's copy is owned
+by the runner's user, which is the agents' user there too, so this is the
+exposure that layout already had, now named. It ends only with an OS user
+per placement.
+
+**Rejected alternatives (the agents'-side copy):**
+- A copy owned by the runner and readable by the agents' user: the
+  runner's home is not traversable in the agent_user layout, a shared
+  system directory needs root, and an ssh host has no runner directory.
+- Each ssh host fetching for itself: it needs git and the forge from every
+  host, and trusts each host's network and git, where the bytes the runner
+  already checked are what should run.
+
+**Not built yet:** Codex gets only the variable; `maity runner check`
 names a hand-installed copy for Claude Code (a warning, never a refusal:
 it is the operator's) but not yet the delivered one, and `gc` does not
-prune old copies yet. That is the second part of the card.
+prune old copies yet. That is the second pull request of tsk-7casfxb7cn49.
 
 ## A placement without room under its scratch gets a short TMPDIR of its own in `/tmp`
 
 **Id:** 893d9dfd-6d56-4a8f-b46a-5f43c9e26737
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 3c02dc4f-3189-4926-b52a-d3a2571e16a5
 **Evidence:** inferred
-**Source:** card tsk-0zb9mgzmbwn4, 2026-11-20 (the lead's go for this shape, with a live check before the merge); the ops live check on a runner host, 2026-11-20, with Claude Code 2.1.329 and Codex 0.171.0; `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`, `_remove_stale`), `workspace.py` (`OWN_TMPDIR_HARNESSES`), `adapters.py` (`session_tmpdir`, `own_tmp_leaf`). The live results are confirmed; the shape and the rejected alternatives are the author's and the lead's
+**Source:** card tsk-0zb9mgzmbwn4, 2026-11-20 (the lead's go for this shape, with a live check before the merge); the ops live check on a runner host, 2026-11-20, with Claude Code 2.1.329 and Codex 0.171.0; card tsk-k7svzz2p4v7y, 2026-11-21 (the lead's go for Claude Code's CLAUDE_CODE_TMPDIR, no TMPDIR, no allow change); the ops live probes P1 to P3 on a runner host with Claude Code 2.1.329, 2026-11-21 (two test placements, main's own `adapters.launch`); Claude Code's documentation of CLAUDE_CODE_TMPDIR (code.claude.com/docs/en/env-vars.md); `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`, `_remove_stale`), `workspace.py` (`OWN_TMPDIR_HARNESSES`), `adapters.py` (`session_tmpdir`, `own_tmp_env`, `own_tmp_leaf`). The live results are confirmed; the shape and the rejected alternatives are the author's and the lead's
 **See:** runner.md#agys-scratch-lives-under-the-hosts-shared-temp-directory-not-beside-the-clone — 8ec06e26-42b6-47b7-9f23-2bad37da3dfa — as of 2026-11-20
 **See:** runner.md#a-placements-scratch-lives-beside-its-clone-one-per-placement-and-is-never-kept — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
-**Revisit when:** the runner pins a new Claude Code version (check again whether its sandbox lets a placement write a leaf re-opened inside a denied parent); Claude Code moves its sandbox socket out of TMPDIR; placements get an OS user each
+**Revisit when:** the runner pins a new Claude Code version (check again whether its sandbox lets a placement write a leaf re-opened inside a denied parent, where its sandbox socket goes, and what `$TMPDIR` its sandboxed commands get); Claude Code gives sandboxed commands a temp directory per session; the probe whether the parent's `denyWrite` is needed at all (tsk-k7svzz2p4v7y, P4) answers; placements get an OS user each
 
 Where a Codex placement's scratch leaves no room for a Unix socket under its
 `tmp`, as under the default `~/maity-workspaces`, the runner makes `tmp` in
@@ -5562,13 +5745,46 @@ review A1770). Where the scratch's own `tmp` fits, it stays the TMPDIR.
 Where the leaf would not fit either (macOS with a uid longer than four
 digits), and on an ssh host, the session gets no TMPDIR, as before.
 
-A Claude Code placement gets no leaf and starts without a TMPDIR, as before.
-The live check showed why. In Claude Code 2.1.329 an `allowWrite` and
-`allowRead` on the leaf beat the parent's `denyRead`, so the leaf is visible
-and its siblings stay hidden, but not the parent's `denyWrite`. The leaf is
-mounted read-only, so `echo x > "$TMPDIR/a"` and `mktemp` failed with
-"Read-only file system", and so did Claude Code's own cwd file. Codex 0.171.0
-wrote the leaf, sealed the siblings, and refused listing the parent.
+A Claude Code placement gets the same leaf, but only as its
+`CLAUDE_CODE_TMPDIR` (tsk-k7svzz2p4v7y). It gets no TMPDIR, and its settings
+open nothing for the leaf. Claude Code writes the leaf itself, from outside
+its sandbox: its own temporary files (`<leaf>/tmp/claude-<uid>/`: the project
+directory, edit diffs, plugin staging) and its sandbox socket
+(`<leaf>/tmp/cc-socks/<pid>.sock`). They no longer sit in the
+`/tmp/claude-<uid>` directory every Claude Code session of the user shares,
+and they go with the placement.
+
+What the placement's own sandbox sees of its leaf (ops, Claude Code 2.1.329,
+2026-11-21, note nte-b77aew1t6jbn on tsk-k7svzz2p4v7y):
+- Claude Code itself opens its own `claude-<uid>/` there to its sandbox, so
+  under the parent's read and write deny it is visible and readable to the
+  placement's own commands, though not writable.
+- `cc-socks/` stays hidden.
+- Another placement's leaf does not exist in the sandbox.
+
+The 0700 mode and the random name are no boundary against an unsandboxed
+process of the same OS user, which reaches the leaf as it reaches every file
+of that user (review A1855). The commands its sandbox
+runs keep the `$TMPDIR` Claude Code hands them: with no TMPDIR set, that is
+`/tmp/claude-<uid>`, still that shared directory, writable from every such
+sandbox (security's card tsk-z5c3798r1ces).
+
+The live checks showed why it is only `CLAUDE_CODE_TMPDIR`.
+- 2026-11-20: in Claude Code 2.1.329 an `allowWrite` and `allowRead` on the
+  leaf beat the parent's `denyRead`, so the leaf is visible and its siblings
+  stay hidden, but not the parent's `denyWrite`. The leaf is mounted
+  read-only, so `echo x > "$TMPDIR/a"` and `mktemp` failed with "Read-only
+  file system", and so did Claude Code's own cwd file. Codex 0.171.0 wrote
+  the leaf, sealed the siblings, and refused listing the parent. 2026-11-21
+  repeated it on the same version, with the same result.
+- 2026-11-21: with `CLAUDE_CODE_TMPDIR` set and no TMPDIR, Claude Code's own
+  files and its `cc-socks` socket went under `CLAUDE_CODE_TMPDIR`, and the
+  sandbox started and ran commands. Its HTTP and mux bridge sockets
+  (`claude-http-<16 hex>.sock`, `srt-mux-<pid>-0.sock`) go under TMPDIR,
+  else `/tmp`. Its sandboxed commands got `$TMPDIR` = `$TMPDIR/claude-<uid>`,
+  or `/tmp/claude-<uid>` with TMPDIR unset, whatever `CLAUDE_CODE_TMPDIR`
+  was. Two test placements got the same directory there and could list it
+  and write in it.
 
 **Reason:** without a TMPDIR the temporary files of the session's tools went
 to the shared `/tmp`. Every placement of the same OS user could see them,
@@ -5583,13 +5799,134 @@ reuses the make, record and removal code agy's scratch already has.
   every Claude Code placement could write the others' TMPDIR. The sandbox is
   never given a wider allow (the parent, or `/tmp`) to make a leaf work (the
   lead's call with security review A1770).
-- `CLAUDE_CODE_TMPDIR` in the scratch, independent of the socket rule: it
-  covers only Claude Code's own temporary files, and the tools a session runs
-  (test runners, package installers, compilers) still use TMPDIR. It is not
-  part of this change; it can be a card of its own.
+- `CLAUDE_CODE_TMPDIR` in the scratch, independent of the socket rule: the
+  scratch is writable from the session's own sandbox, so its sandboxed
+  commands could change Claude Code's own temporary files and its socket
+  directory. Its `cc-socks` socket also fits there only for a short enough
+  home. The leaf fits when the runner can allocate it, and the sandbox cannot
+  write it: it sees Claude Code's own `claude-<uid>/` there read-only and does
+  not see `cc-socks/`. So the leaf keeps both out of the sandbox's write reach
+  (reviews A1856, A1874).
+- TMPDIR set to the long scratch `tmp`, now that `CLAUDE_CODE_TMPDIR` takes
+  the `cc-socks` socket: Claude Code's HTTP and mux bridge sockets still go
+  under TMPDIR, about 33 bytes past a path of about 83, over the 107 a
+  socket path holds.
 - A separate per-user parent that no sandbox hides, with random leaves:
   same-user sandboxed placements could list it and reach each other's
   temporary files, which is weaker than the scratch.
+
+## A Claude Code or Codex placement without room under its scratch gets a private TMPDIR in a leaf under the read-denied `/tmp` parent
+
+**Id:** 3c02dc4f-3189-4926-b52a-d3a2571e16a5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0zb9mgzmbwn4, 2026-11-20; card tsk-k7svzz2p4v7y, 2026-11-21 (the lead's go for this step under three gates: security's agreement with the P4 reading on tsk-z5c3798r1ces, a security leg, and an ops live check on the PR's own head); the ops live probes on a runner host with Claude Code 2.1.329 and two test placements, P1 to P3 and P4, 2026-11-21; the ops live check of 2026-11-20 with Codex 0.171.0; Claude Code's documentation of CLAUDE_CODE_TMPDIR (code.claude.com/docs/en/env-vars.md); `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`, `_remove_stale`), `workspace.py` (`OWN_TMPDIR_HARNESSES`), `adapters.py` (`session_tmpdir`, `own_tmpdir_in_use`, `own_tmp_env`, `own_tmp_leaf`, `private_tmpdir_refusal`, `claude_settings`); the security assessment on tsk-z5c3798r1ces (purple team, 2026-11-21: a private TMPDIR for every Claude Code placement, fail closed, Codex and agy unchanged); the lead's call for a strict refusal on ssh targets too, 2026-11-21. The probe results are ops' and confirmed; this exact shape (only the leaf's `tmp` opened, the leaf itself as CLAUDE_CODE_TMPDIR) was checked live by ops on the PR's own head (steps 1 to 4, note nte-8md57zfz9zkq) and in ops' harness check on tsk-z5c3798r1ces (notes nte-ttq065nga34x, nte-xcdad6f8pecy); the shape is the author's and the lead's
+**See:** runner.md#a-placement-without-room-under-its-scratch-gets-a-short-tmpdir-of-its-own-in-tmp — 893d9dfd-6d56-4a8f-b46a-5f43c9e26737 — as of 2026-11-21
+**See:** runner.md#agys-scratch-lives-under-the-hosts-shared-temp-directory-not-beside-the-clone — 8ec06e26-42b6-47b7-9f23-2bad37da3dfa — as of 2026-11-21
+**Revisit when:** the runner pins a new Claude Code version (check again that its sandbox writes the re-opened `tmp`, that a sibling leaf does not exist in it, where its sockets go, what `$TMPDIR` its sandboxed commands get, and that the harness reads or runs nothing a sandboxed command planted in `claude-<uid>/`); placements get Claude Code plugins (repeat that last check with them); Claude Code changes how a read deny is mounted (an empty mount over the parent) or gives sandboxed commands a temp directory per session; placements get an OS user each
+
+Where a Codex or Claude Code placement's scratch leaves no room for a Unix
+socket under its `tmp`, as under the default `~/maity-workspaces`, the
+runner makes a fresh 0700 leaf with a random name, with a fresh `tmp` in
+it, under the per-user `/tmp/maity-scratch-<uid>` parent agy's scratch
+uses. The leaf's `tmp` is the session's TMPDIR. The leaf is recorded like
+agy's, made fresh at every start, removed when the placement closes, and
+retried at every start and at the close when a removal fails (review
+A1769). The rest is as before. If another user has made the parent first,
+no leaf is made. Where the scratch's `tmp` fits, it stays the TMPDIR. Where
+the leaf would not fit (macOS with a uid longer than four digits), and on an
+ssh host, the session gets no TMPDIR.
+
+Each sandbox re-opens the leaf for its own placement alone:
+- Codex's profile keeps the parent `none` and opens the whole leaf
+  (`write`).
+- Claude Code's settings deny the parent for reading only, and open the
+  leaf's `tmp` (`allowRead`, `allowWrite`). Claude Code then hands its
+  sandboxed commands `$TMPDIR` = `<leaf>/tmp/claude-<uid>`, private to the
+  placement.
+- Claude Code's own temporary files (`claude-<uid>/`: the project directory,
+  task outputs, working-directory files, edit diffs, plugin staging) and its
+  sandbox socket (`cc-socks/`) go in the leaf itself, as its
+  `CLAUDE_CODE_TMPDIR`, beside the re-opened `tmp`. They go with the leaf.
+  Claude Code itself opens `claude-<uid>/` to the placement's sandbox,
+  though it is in none of the runner's allows. That directory is writable,
+  `tasks/` and `plugin-tool-staging/` in it are read-only, and
+  `bash-edit-diff/` is a mount private to the sandbox. Only `cc-socks/` stays
+  hidden. That was found in the ops live check on #2084's head and ops'
+  harness check on tsk-z5c3798r1ces (Claude Code 2.1.329, 2026-11-21, note
+  nte-8md57zfz9zkq). It stays within the placement: the other placement could
+  not reach it. It is what already holds wherever the scratch's own `tmp` is
+  the TMPDIR. The lead accepted it (2026-11-21).
+- The unsandboxed harness reads or runs nothing a sandboxed command planted
+  in `claude-<uid>/`: under strace it only opened those directories with
+  `O_PATH` to mount them for the next sandbox (ops' harness check, notes
+  nte-ttq065nga34x and nte-xcdad6f8pecy; security's condition for #2084). Two limits: the check ran with no plugins configured,
+  and only on Claude Code 2.1.329. Check again once placements get plugins,
+  or when the pinned Claude Code version moves.
+- Its HTTP and mux bridge sockets go under TMPDIR, `<leaf>/tmp`, and fit.
+
+This holds for a placement started with this configuration. A session the
+runner adopts across an upgrade, and a supervised loop that keeps running,
+keeps the environment it was started with: the guard and the settings apply
+only when the supervisor starts a session (review A1869). So a Claude Code
+placement started before this change keeps the shared `/tmp/claude-<uid>`
+until the placement itself is restarted. Restarting the runner service does
+not do it, and the upgrade note and the operator guide say so.
+
+A sandboxed Claude Code placement that gets no TMPDIR of its own fails closed.
+That happens where the scratch's `tmp` does not fit and no leaf can be made:
+the parent is held by another user, the leaf would not fit, or it is an ssh
+target, where the runner makes no leaf. The runner then refuses the start
+(`harness_refused` with no detail, as `harness_refused`'s details are a
+closed contract list; the cause and the remedy, a short `workspaces` root,
+in its log; `adapters.private_tmpdir_refusal`). An unsandboxed Claude Code
+placement is not refused, since its commands already reach every file of the
+OS user. Codex still starts without a TMPDIR there, as before. On ssh targets
+this refuses what started before. No placement on the project's runners ran
+on one when it was decided (the lead, 2026-11-21), and a leaf on ssh hosts
+is a card of its own.
+
+**Reason:** without this, the commands of every Claude Code session of one OS
+user got the same `/tmp/claude-<uid>` as `$TMPDIR`, writable from each
+sandbox, so one placement's temporary files were in another's reach
+(security's card tsk-z5c3798r1ces). The probes found what separates the
+leaves:
+- P3: with the parent denied for writing as well as reading, Claude Code
+  2.1.329 mounts the re-opened `tmp` read-only ("Read-only file system").
+- P4: with the parent denied for reading only, the own `tmp` is writable
+  (`touch` and `mktemp`, seen from outside). Another placement's leaf does
+  not exist in the sandbox: touch, ls and mkdir give "No such file or
+  directory". `/tmp` itself stays read-only. A mkdir in the parent succeeds
+  but lands in the empty mount the read deny puts there, which no one
+  outside or in another placement sees, and which is gone afterwards.
+- So it is the read deny's empty mount, not the write deny, that keeps the
+  leaves apart. Dropping the write deny opens nothing to another placement.
+
+This supersedes 893d9dfd. That entry rejected dropping the parent's write
+deny on the assumption that a sibling leaf would then be writable. P4 shows
+it is not.
+
+**Rejected alternatives:**
+- The parent left in Claude Code's `denyWrite`, with only
+  `CLAUDE_CODE_TMPDIR` in the leaf (tsk-k7svzz2p4v7y's step 1): Claude Code's
+  own files leave the shared directory, but its commands keep the shared
+  `/tmp/claude-<uid>`.
+- Claude Code's whole leaf opened, as Codex's: its socket directory would be
+  writable from its sandbox too, which Claude Code itself keeps hidden.
+- A write deny on `<leaf>/claude-<uid>`, to keep Claude Code's own files from
+  its sandbox: its sandboxed commands write there by design (in P3, with that
+  area read-only, Claude Code's own cwd file failed), so it would break
+  Claude Code. Not probed further.
+- `CLAUDE_CODE_TMPDIR` or TMPDIR in the long scratch: the bridge sockets under
+  TMPDIR do not fit (about 33 bytes past a path of about 83, over 107).
+- Dropping the parent from Codex's `none` too: Codex's profile already
+  re-opens the leaf under it, so there is nothing to gain.
+- A sandboxed Claude Code placement with no TMPDIR of its own started anyway,
+  with the shared `/tmp/claude-<uid>`: security asked for a private TMPDIR for
+  every placement and no silent fall-back to the shared directory.
+- ssh targets exempt from that refusal: the lead chose strict, since no
+  current placement runs on one.
 
 ## `maity runner` is taken only as the first argument
 
@@ -5720,7 +6057,7 @@ left out until it is verified.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); not built yet
+**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); the hub's part built in card tsk-n50ez67he2pz (2026-11-21), the runner's not yet
 **Revisit when:** the hub builds §15.14's `health` (the grace becomes `hang_after_minutes`) or flapping; the hub gains an actor with a restart right that could resume a session; a recurring `unknown` cause asks for a class of its own
 
 The hub tells the runner, on each placement it reads, what it knows of the
@@ -5757,6 +6094,29 @@ The reason for the pane rule: text in a pane is the session's to write,
 so it may say anything. The causes that stop an agent for a person
 (`auth`) or pause it (`rate_limited`) therefore rest on a signal from
 outside the pane.
+
+2026-11-21, the hub's part (tsk-n50ez67he2pz): the hub computes `session`
+on each placement the runner reads, in a fixed number of statements per
+page, and takes `finding` with its closed lists and the log's bounds. The
+log lines are shown in `reported` to their three readers only; the
+`placement_reported` event keeps the finding without them, and the history
+holds no lines yet, since keeping them beside the event's row needs a
+column of its own (a migration the plan left out). The runner's side is
+still to build.
+The hub checks `finding` by hand (`placements.check_finding`), not with a
+pydantic model. The contract names the answers (`unknown`, `required`,
+`duplicate`, `too_many`, `format`, `empty`, `too_long`, `too_large`), and
+pydantic's own types (`literal_error`, `missing`, `too_long` for a list) would
+answer otherwise. An unknown key keeps pydantic's `extra_forbidden`, as for
+any body. A finding's times must have the wire form of §1.1 (`Z`, whole
+seconds) before they are parsed, because the parse alone also takes an epoch or
+an offset (review A1836 of #2079). `session` is built for the whole page from
+six reads with `IN` (`placements.runner_sessions`): a row read per placement
+would make the runner's read grow with its placements on every wake. The
+supervised exclusion is decided per credential, as §5.3 does: a supervised
+session is left out while any active placement names its credential, so a
+closed placement whose credential was carried over reads it as the active one
+does.
 
 **Reason:** only the runner sees the process, its exit code and the pane,
 and it already owns restart, backoff and the caps; its own restarts keep

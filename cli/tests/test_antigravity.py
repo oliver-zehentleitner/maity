@@ -210,6 +210,16 @@ def test_the_delivered_skill_is_never_written_by_agys_file_tools(tmp_path: Path)
     assert not [rule for rule in plain if "skills" in rule]
 
 
+def test_in_the_agent_user_layout_agy_never_writes_the_agents_copy(tmp_path: Path) -> None:
+    # tsk-7casfxb7cn49: the copy the runner puts below the agents' user's home gets the same
+    # write_file deny as the runner's own copy in the single layout.
+    skill = Path("/home/agents/.local/share/maity-runner/skills/keep-the-why") / (
+        "a" * 40 + "-" + "b" * 16) / "plugin"  # fmt: skip
+    ctx = context(tmp_path, skill=skill, as_user=AsUser("agents"))
+    deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
+    assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+
+
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
 
 

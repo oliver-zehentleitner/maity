@@ -295,21 +295,28 @@ def _known_instances(
     successor (§6.17, §8.2). A revoked instance nobody replaced is no instance here."""
     if not wanted or not memberships:
         return set()
+    from maity_hub import instances  # instances imports what this module's callers import
+
     by_row = {row_id: member_id for member_id, row_id in memberships.items()}
+    a = t.instance_attachment
     successor = aliased(t.credential)
+    successor_in = aliased(a)
     replaced = (
         select(successor.c.id)
+        .join(successor_in, successor_in.c.credential_id == successor.c.id)
         .where(
-            successor.c.membership_id == t.credential.c.membership_id,
+            successor_in.c.membership_id == a.c.membership_id,
             successor.c.replaces == t.credential.c.instance,
         )
         .exists()
     )
     rows = conn.execute(
-        select(t.credential.c.membership_id, t.credential.c.instance).where(
-            t.credential.c.membership_id.in_(list(by_row)),
+        select(a.c.membership_id, t.credential.c.instance)
+        .select_from(instances.credential_join())
+        .where(
+            a.c.membership_id.in_(list(by_row)),
             t.credential.c.instance.in_(wanted),
-            or_(t.credential.c.revoked_at.is_(None), replaced),
+            or_(instances.attached_now(), replaced),
         )
     )
     return {(by_row[r.membership_id], r.instance) for r in rows}

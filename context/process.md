@@ -1594,6 +1594,12 @@ keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 m
 (2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
 19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
 
+(2026-11-21: the revisit condition above fired for `hub-sqlite`. On #2073 at 8c9e34f9 (ci 44893089313, hosted) it took
+81.8 minutes of its 90, from 10:17:07 to 11:38:57 UTC, while the three `hub-postgresql` shards of the same run took 32.9,
+41.1 and 34.2; the card names green runs of 54 to 65 minutes and one of 82. Card tsk-v76hkc0fcse7. `hub-sqlite` keeps 90
+and now runs in three shards like `hub-postgresql`, each shard with the 90 on its own; see the note of the same day on
+f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
+
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
 **Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
@@ -1675,8 +1681,8 @@ value is the author's weighing, not measured against a real hang beyond #1255.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
-**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
-**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, or the maintainer's runner gets more than one `pg` or `sqlite` runner
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-21
 
 `hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
 keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
@@ -1713,6 +1719,18 @@ and it needs no commit.
   runners, and the self-hosted machine runs one job per type by design (the entry on one runner
   service per database job type).
 - A sharding plugin: a new dependency in the hashed locks for what one hook does.
+
+(2026-11-21: `hub-sqlite` runs in the same three shards, `MAITY_TEST_SHARD=k/3` from a matrix, each shard with the
+90-minute limit on its own; ci-ok's `needs` is unchanged. The check runs are now named `hub-sqlite (1)` to `(3)`; nothing
+in the repository requires the old name, ci-ok being the one required check. Lint and types run in shard 1 only, since
+they do not depend on the shard; `PYTEST_ADDOPTS: --durations=50` as in `hub-postgresql`. Card tsk-v76hkc0fcse7. Reason:
+the whole suite in one job took 81.8 of the 90 minutes on #2073 (ci 44893089313), while that run's three PostgreSQL
+shards took 32.9 to 41.1; the job already ran `-n auto` (4 workers on 4 hosted cpus), so xdist was not missing; the
+per-test SQLite setup copies a schema migrated once per worker, so no fixture stands out; what is left is the suite's
+length spread over its tests, the same finding as above. The SQLite job's logs were not read for this note: no
+`--durations` data of it exists yet. On the maintainer's one `sqlite` runner, a push's three shards run one after
+another, as the PostgreSQL shards do; pull requests stay hosted. Not chosen: a larger hosted runner class (costs money,
+the owner's call) and a higher timeout (the card keeps 90).)
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 

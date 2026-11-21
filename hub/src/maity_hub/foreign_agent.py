@@ -177,10 +177,10 @@ def _credential(conn: Connection, membership_id: int, instance: str | None) -> A
     if instance is None:
         return None
     return conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == membership_id,
+        instances.credential_rows().where(
+            t.instance_attachment.c.membership_id == membership_id,
             t.credential.c.instance == instance,
-            t.credential.c.revoked_at.is_(None),
+            instances.attached_now(),
         )
     ).first()
 
@@ -498,10 +498,10 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         # One instance's rest, with the owner's `go` (§6.17); an instance revoked meanwhile
         # leaves nothing to change.
         held = conn.execute(
-            select(t.credential).where(
-                t.credential.c.membership_id == target.id,
+            instances.credential_rows().where(
+                t.instance_attachment.c.membership_id == target.id,
                 t.credential.c.instance == proposal.get("instance"),
-                t.credential.c.revoked_at.is_(None),
+                instances.attached_now(),
             )
         ).first()
         if held is not None:

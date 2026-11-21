@@ -347,13 +347,13 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
                 )
             )
             name = conn.execute(select(t.runner.c.name).where(t.runner.c.id == runner_id)).scalar()
+            rows = pl.runner_reads(conn, runner_id)
+            sessions = pl.runner_sessions(conn, rows)
             packet = {
                 "server_time": clock.rfc3339(now),
                 "runner": {"id": runner_id, "name": name, "session_id": session_id},
                 "projects": _projects(conn, runner_id),
-                "placements": [
-                    pl.for_runner(conn, p, skill) for p in pl.runner_reads(conn, runner_id)
-                ],
+                "placements": [pl.for_runner(conn, p, skill, sessions) for p in rows],
                 "cursor": events.highest_for_runner(
                     conn, event_project_ids(conn, runner_id), runner_id
                 ),
@@ -507,11 +507,14 @@ class Status(Strict):
     session_hint: Text | None = None
     # With `capacity` only; a runner from before it sends none (§15.7).
     quota: Quota | None = None
+    # What the runner's watch found (§15.7), checked by `pl.check_finding` so that a refusal
+    # names the contract's codes; a runner from before it sends none.
+    finding: Any = None
 
 
 def _check_codes(body: Status) -> None:
     """The closed lists of §15.7, and which reason and detail go with which state."""
-    errors: dict[str, str] = {}
+    errors: dict[str, str] = pl.check_finding(body.finding)
     if body.reason is None:
         if body.state == "pending":
             errors["reason"] = "required_with_pending"
@@ -559,10 +562,11 @@ def _own_placement(conn: Connection, runner_id: str, placement_id: str) -> Any:
 
 
 def _runner_answer(conn: Connection, placement: Any, skill: dict[str, str]) -> dict[str, Any]:
+    """The runner gets its own finding back with its log lines (§15.7)."""
     return {
         **pl.for_runner(conn, placement, skill),
         "active": placement.active is True,
-        "reported": pl.view(conn, placement, viewer_id="", briefing=False)["reported"],
+        "reported": pl.shown_report(placement.reported, logs=True),
     }
 
 
@@ -575,16 +579,20 @@ def runner_placements(request: Request, caller: RunnerCaller, closed: bool = Fal
     skill = ktw_skill.for_runner(settings_of(request))
     with engine_of(request).begin() as conn:
         if closed:
+            rows = pl.runner_reads_closed(conn, runner_id)
+            sessions = pl.runner_sessions(conn, rows)
             items = [
                 {
-                    **pl.for_runner(conn, p, skill),
+                    **pl.for_runner(conn, p, skill, sessions),
                     "active": False,
                     "closed_reason": p.closed_reason,
                 }
-                for p in pl.runner_reads_closed(conn, runner_id)
+                for p in rows
             ]
         else:
-            items = [pl.for_runner(conn, p, skill) for p in pl.runner_reads(conn, runner_id)]
+            rows = pl.runner_reads(conn, runner_id)
+            sessions = pl.runner_sessions(conn, rows)
+            items = [pl.for_runner(conn, p, skill, sessions) for p in rows]
         return JSONResponse({"items": items, "next_cursor": None})
 
 

@@ -141,15 +141,11 @@ CLAUDE_WORKTREE_HOOK = (
 # more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
-# An OS-made UUID v4 for an agent's Keep-the-Why entries (AGENTS.md, keepthewhy.com): the skill
-# makes every entry's `Id` with an OS command, never from memory. The harnesses with a
-# deny-by-default command allowlist (Claude Code, opencode) refuse the usual sources — `uuidgen`,
-# `node`, `od` on `/dev/urandom` — so a runner agent could record no reasoning (cli/context/
-# runner.md). The kernel's generator is the one allowed: it reads a fresh lowercase v4 (no `tr` to
-# lowercase, as the skill's `uuidgen` needs on macOS), needs no package installed (`uuidgen` is
-# util-linux), and runs read-only. Codex and agy have no command allowlist, so the command already
-# runs there inside their own sandbox (docs/runners.md).
-UUID_COMMAND = "cat /proc/sys/kernel/random/uuid"
+# No OS UUID command is allowed: an agent makes its Keep-the-Why Ids with `maity uuid`, which runs
+# wherever `maity` does. An exact `cat /proc/sys/kernel/random/uuid` allow was refused in every
+# placed Claude Code session anyway: the path check on a read outside the working directories
+# decides before the rule, and opencode's `external_directory: deny` gates the same path
+# (cli/context/runner.md).
 
 READY = ("stub", "claude-code", "codex", "opencode", "antigravity")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
@@ -257,7 +253,9 @@ class Context:
     tmp_scratch_parent: Path | None = None
     # The placement's own short TMPDIR (`tmp` in a fresh leaf under that per-user `/tmp` parent),
     # made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix socket
-    # (scratch_tmpdir), and re-opened for this placement alone in its sandbox (tsk-0zb9mgzmbwn4).
+    # (scratch_tmpdir) and re-opened for this placement alone in its sandbox: Codex's whole leaf
+    # (tsk-0zb9mgzmbwn4), and Claude Code's, its `tmp` re-opened and the leaf itself its
+    # CLAUDE_CODE_TMPDIR (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
     tmpdir: Path | None = None
     # The placement's test cluster password file in the holder every sandbox is denied
     # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no
@@ -334,11 +332,53 @@ def fits_socket(tmp: Path, limit: int | None = None) -> bool:
 def session_tmpdir(ctx: Context) -> Path | None:
     """The session's TMPDIR: `tmp` in its scratch where a socket fits under it, else the short
     one of its own the supervisor made under the per-user `/tmp` parent (Context.tmpdir), else
-    none, and tools fall back to the system's (tsk-0zb9mgzmbwn4)."""
+    none, and tools fall back to the system's (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
     own = scratch_tmpdir(ctx.scratch)
     if own is not None:
         return own
     return ctx.tmpdir if ctx.tmpdir is not None and fits_socket(ctx.tmpdir) else None
+
+
+def own_tmpdir_in_use(ctx: Context) -> Path | None:
+    """The placement's own TMPDIR under the per-user `/tmp` parent (Context.tmpdir) when it is
+    the one the session gets (session_tmpdir), else None: the sandbox opens it, and the parent's
+    write deny is lifted, only then."""
+    return ctx.tmpdir if ctx.tmpdir is not None and session_tmpdir(ctx) == ctx.tmpdir else None
+
+
+def private_tmpdir_refusal(ctx: Context) -> str | None:
+    """Why a sandboxed Claude Code placement must not start, or None: it starts only with a
+    TMPDIR of its own (session_tmpdir). Without one, Claude Code hands its sandboxed commands
+    `/tmp/claude-<uid>`, one directory every Claude Code session of the OS user shares and can
+    write, so the start fails closed instead (tsk-k7svzz2p4v7y; security's tsk-z5c3798r1ces). An
+    unsandboxed placement is not refused: its commands already reach every file of the user.
+    The text is for the runner's log only, with the cause and the remedy."""
+    if ctx.harness.id != "claude-code" or not ctx.sandbox or session_tmpdir(ctx) is not None:
+        return None
+    where = "there is no scratch"
+    if ctx.scratch is not None:
+        where = f"{ctx.scratch / 'tmp'} is too long for a Unix socket"
+    return (
+        f"no private TMPDIR for this sandboxed Claude Code placement: {where}, "
+        "and no short one could be made under the per-user /tmp parent (none is made on an ssh "
+        "host). Its commands would share /tmp/claude-<uid> with every Claude Code session of "
+        "this OS user, so it is not started. Set a short `workspaces` root on this host, such "
+        "as /srv/mw"
+    )
+
+
+def own_tmp_env(ctx: Context) -> dict[str, str]:
+    """Claude Code's CLAUDE_CODE_TMPDIR in the leaf itself where the session's TMPDIR is the
+    leaf's `tmp`: Claude Code's own temp files (`claude-<uid>/`) and its sandbox socket
+    (`cc-socks/`) then sit beside the `tmp` its sandbox writes, and go with the leaf
+    (tsk-k7svzz2p4v7y). Claude Code itself opens `claude-<uid>/` to the placement's sandbox
+    for reading and writing, while `cc-socks/` stays hidden (live, Claude Code 2.1.329): both
+    stay within the placement. Empty otherwise: where the scratch's `tmp` is the TMPDIR,
+    Claude Code's own files follow it, as before."""
+    own = own_tmpdir_in_use(ctx)
+    if ctx.harness.id != "claude-code" or own is None:
+        return {}
+    return {"CLAUDE_CODE_TMPDIR": str(own.parent)}
 
 
 # The test scripts' directories inside the placement's scratch (tsk-w7qtcbzcshn9): the run slots
@@ -433,6 +473,8 @@ def launch(ctx: Context) -> Launch:
         # when the placement ends instead of piling up in the agents' home (§15.5).
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := session_tmpdir(ctx)) is not None else {}),
+        # Claude Code's own temp files and sandbox socket beside that `tmp` (own_tmp_env).
+        **own_tmp_env(ctx),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
         **run_env(ctx.scratch if beside else None),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
@@ -528,12 +570,11 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 def own_tmp_leaf(ctx: Context) -> Path | None:
     """The leaf of the placement's own TMPDIR under the per-user `/tmp` parent, to open again
     in its sandbox: only when that TMPDIR is the one the session gets (session_tmpdir), so the
-    sandbox never opens a leaf the session does not use. Only Codex's profile opens it: Claude
-    Code's sandbox mounts a leaf re-opened under a denied parent read-only, so the supervisor
-    gives a Claude Code placement none (workspace.OWN_TMPDIR_HARNESSES)."""
-    if ctx.tmpdir is None or session_tmpdir(ctx) != ctx.tmpdir:
-        return None
-    return ctx.tmpdir.parent
+    sandbox never opens a leaf the session does not use. Codex's profile opens the whole leaf;
+    Claude Code's settings open its `tmp` (claude_settings); Claude Code keeps its own files in
+    the leaf beside it (own_tmp_env)."""
+    own = own_tmpdir_in_use(ctx)
+    return None if own is None else own.parent
 
 
 def _shared_tmp(ctx: Context) -> list[str]:
@@ -550,7 +591,6 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
-    allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
@@ -593,6 +633,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             {"hooks": [{"type": "command", "command": CLAUDE_WORKTREE_HOOK}]},
         ]
     if ctx.sandbox:
+        # The placement's own TMPDIR in a leaf under the agy per-user `/tmp` parent, when it is
+        # the session's (tsk-k7svzz2p4v7y): its `tmp` is re-opened for reading and writing, and
+        # the parent is denied for reading only. A write deny on the parent mounts the re-opened
+        # `tmp` read-only (Claude Code 2.1.329), and is not what keeps a sibling leaf out: under
+        # the read deny's empty mount it does not exist in the sandbox, and a write there lands
+        # in that mount alone (the ops probe P4, 2026-11-21).
+        own = own_tmpdir_in_use(ctx)
+        writable = [str(p) for p in (ctx.scratch, own) if p is not None]
         settings["sandbox"] = {
             "enabled": True,
             "failIfUnavailable": True,  # never fall back to unsandboxed commands
@@ -608,8 +656,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            # The agy per-user `/tmp` scratch parent is hidden from read and write alike, so a
-            # placement that is not its owner cannot reach another placement's scratch there.
+            # The agy per-user `/tmp` scratch parent is hidden, so a placement that is not its
+            # owner cannot reach another placement's scratch there: from reading always, and from
+            # writing too unless the placement's own TMPDIR is re-opened under it (above).
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
                                         *_shared_tmp(ctx)],
                            # The private paths are not writable either: the runner's files
@@ -617,12 +666,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                            "denyWrite": [f"{git}/maity",
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
                                          *(str(p) for p in ctx.private),
-                                         *_shared_tmp(ctx),
+                                         *(_shared_tmp(ctx) if own is None else []),
                                          # The delivered skill (skills.py): read, never written.
                                          *([str(ctx.skill)] if ctx.skill is not None else [])],
-                           # Commands write the placement's scratch besides the clone (§15.5).
-                           **({"allowWrite": [str(ctx.scratch)]}
-                              if ctx.scratch is not None else {})},
+                           # Commands write the placement's scratch besides the clone (§15.5),
+                           # and its own TMPDIR.
+                           **({"allowWrite": writable} if writable else {}),
+                           **({"allowRead": [str(own)]} if own is not None else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -971,7 +1021,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
 def opencode_config(ctx: Context) -> dict[str, Any]:
     """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
     project's configuration switched off, `AGENTS.md` is named as an instruction."""
-    bash = {"*": "deny", "maity *": "allow", UUID_COMMAND: "allow"}
+    bash = {"*": "deny", "maity *": "allow"}
     granted = [cmd for cmd in ctx.grant.allow if config.plain_command(cmd)]
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
@@ -1005,15 +1055,12 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
 
 def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    path = _write(ctx, ctx.agent_dir / "opencode.json", opencode_config(ctx))
-    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
-    # .opencode/ directories bring agents, commands and plugins.
-    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
     # No model on the placement: fall back to the harness default (config validates it is one
     # of `models`). Fail closed when the effective model is empty or not among `models`: with
-    # no `--model`, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
+    # no model, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
     # so the clone's content would go to opencode's servers instead of the configured provider
-    # (cli/context/runner.md, the opencode model fail-closed). Both modes below share `chosen`.
+    # (cli/context/runner.md, the opencode model fail-closed). Checked before anything is
+    # written, for both modes.
     model = ctx.placement.get("model") or ctx.harness.default_model
     if not model or model not in ctx.harness.models:
         raise NotYet(
@@ -1021,13 +1068,26 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
             f"{ctx.harness.models!r}: refusing the start rather than letting opencode run its "
             f"own default, which would send the conversation to opencode's servers"
         )
-    chosen = ["--model", model]
-    if ctx.placement.get("mode") == "interactive":
-        prompt = START_PROMPT + _sandbox_prompt(ctx)
-        return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", prompt], env)
+    # The model is the configuration's top-level `model` for both modes: opencode 2.3's TUI
+    # (no subcommand) has no `--model` and exits on it (tsk-daa6e0gfncg0). `opencode run`
+    # still takes `--model`, so a supervised run carries it twice, the same value.
+    path = _write(ctx, ctx.agent_dir / "opencode.json", {**opencode_config(ctx), "model": model})
+    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
+    # .opencode/ directories bring agents, commands and plugins.
+    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
     prompt = START_PROMPT + _sandbox_prompt(ctx)
-    first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, prompt]
-    again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", prompt]
+    # The flags here are the ones `maity runner check` probes for (capabilities.OPENCODE_FLAGS).
+    if ctx.placement.get("mode") == "interactive":
+        # `--standalone`: without it 2.3's TUI attaches to the user's shared background service
+        # (`opencode serve --service`), which has its own configuration, so neither
+        # OPENCODE_CONFIG (the model, the rules) nor OPENCODE_DISABLE_PROJECT_CONFIG reaches it
+        # (ops' live check, nte-mmnz3mk1247c).
+        return Launch([ctx.binary, "--standalone", str(ctx.clone), "--prompt", prompt], env)
+    # `opencode run` has no `--dir`: it works in its working directory, the clone, where the
+    # session starts (a workspace.Workspace's `path`; opencode has no workspace folder) and the
+    # loop's runs inherit it. `--continue` is that directory's last conversation.
+    first = [ctx.binary, "run", "--model", model, prompt]
+    again = [ctx.binary, "run", "--model", model, "--continue", prompt]
     return _supervised(ctx, first, again, env)
 
 

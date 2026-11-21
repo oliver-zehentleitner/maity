@@ -755,6 +755,10 @@
     "en": "504343e7d2b4ed8c",
     "text": "224a4333bb0e3259"
   },
+  "agents.limit.held_only": {
+    "en": "bc841fef25926d80",
+    "text": "73f88b5a8bde1d9b"
+  },
   "agents.limit.instances_only": {
     "en": "772dc6887fc7ee0a",
     "text": "47b6155c7753711c"
@@ -2584,8 +2588,8 @@
     "text": "e8264c715c8feb71"
   },
   "cardpanel.notes.edit.hint": {
-    "en": "e511e3013311068b",
-    "text": "95ae7347d1e2f256"
+    "en": "af06ff84e3538e58",
+    "text": "d393c26b48b921c6"
   },
   "cardpanel.notes.edit.label_of": {
     "en": "74df97e9f8116256",
@@ -4503,6 +4507,10 @@
     "en": "d7f46955943499cc",
     "text": "6e7d6e43f98d9d7b"
   },
+  "error.claim_limit": {
+    "en": "9ea654194fcc324f",
+    "text": "2e5cebb740838184"
+  },
   "error.code_invalid": {
     "en": "60790fd26f146c39",
     "text": "b9935fe7863219c2"
@@ -4711,6 +4719,10 @@
     "en": "943caeede3b10ca8",
     "text": "6241ea80718605c6"
   },
+  "error.placement_flapping": {
+    "en": "b799d4892019bceb",
+    "text": "9973b05babcdee36"
+  },
   "error.placement_quota": {
     "en": "a94ec4e8fff51123",
     "text": "3936ba50bcc93399"
@@ -4734,6 +4746,10 @@
   "error.project_limit": {
     "en": "8860ca6b483b92dc",
     "text": "1e83f190e054fdaa"
+  },
+  "error.project_quota": {
+    "en": "dba6103fe1872d61",
+    "text": "dc87747d264f66f7"
   },
   "error.rate_limited": {
     "en": "eb225fd04f71a530",
@@ -4794,6 +4810,10 @@
   "error.release_not_ready": {
     "en": "6ddb3302ddedd6c7",
     "text": "bbaaecb419c07483"
+  },
+  "error.replace_open": {
+    "en": "526ec1f201e0289b",
+    "text": "231fc7e4fd3f7a88"
   },
   "error.repository_not_offered": {
     "en": "2846435c8e580b92",
@@ -4894,6 +4914,22 @@
   "error.webhook_signature": {
     "en": "76c012bc07d476ba",
     "text": "04d83d4bf864cdfe"
+  },
+  "event.here": {
+    "en": "18d6171c8b6ffd5e",
+    "text": "9f9e0b59312a6d5f"
+  },
+  "event.not_reached": {
+    "en": "9f17dea03a996337",
+    "text": "dd72c3bad4500eed"
+  },
+  "event.not_visible": {
+    "en": "9fe614d33668cb7c",
+    "text": "769c1f43fa402041"
+  },
+  "event.title": {
+    "en": "f0d839b3df807c74",
+    "text": "560e825104bf42d5"
   },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
@@ -5564,8 +5600,8 @@
     "text": "9fec70df30b3645f"
   },
   "handles.explain.person": {
-    "en": "590ee0516725136e",
-    "text": "8fbe10959a6c8683"
+    "en": "6fea4c51d74bd3a4",
+    "text": "1de4e9887479907c"
   },
   "handles.explain.you": {
     "en": "14bfb209642ee358",
@@ -5782,6 +5818,14 @@
   "inbox.answered_by_for": {
     "en": "6bf73e4005968ec1",
     "text": "769d3796875df6ed"
+  },
+  "inbox.answered_failed": {
+    "en": "a04e094950bb39d4",
+    "text": "95e0e0d138fd6065"
+  },
+  "inbox.answered_loading": {
+    "en": "378bb627f3e0c19f",
+    "text": "f1a4da08c0a07ec1"
   },
   "inbox.asker_for": {
     "en": "d0e7e7751a94b7ac",
@@ -10664,16 +10708,16 @@
     "text": "23451111bf44058d"
   },
   "members.expert.save": {
-    "en": "d1cb50ec8b994891",
-    "text": "f10a86c5b98e97bf"
+    "en": "504d58f1a943866e",
+    "text": "b53d2df5c9f1fa53"
   },
   "members.expert.saved": {
-    "en": "4c361a2ae08749e9",
-    "text": "ad96706bbccf26bf"
+    "en": "7226f4446cfad171",
+    "text": "d2d4550aa208e600"
   },
   "members.expert.saving": {
-    "en": "7370a6da2a0c3139",
-    "text": "e5ec65faec932fa9"
+    "en": "6118b1b248c57143",
+    "text": "be9b09b790277d0a"
   },
   "members.expert.sources.hint": {
     "en": "2eafc61c77d6ef4d",
@@ -11998,6 +12042,10 @@
   "nav.contract": {
     "en": "733e9ab34898e5d7",
     "text": "0e77163e9ce7ab9c"
+  },
+  "nav.event": {
+    "en": "426621e6a3607410",
+    "text": "31ac19e5cf03d4aa"
   },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
@@ -13903,6 +13951,10 @@
     "en": "87df56605ba0a822",
     "text": "816634f45d8450ed"
   },
+  "placements.new.members_unread": {
+    "en": "6a3ea55797a67932",
+    "text": "f40ef2cb331d9f53"
+  },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
     "text": "26afb5c712d16567"
@@ -13951,9 +14003,9 @@
     "en": "2585c200021d665e",
     "text": "f3d68c715e79b5bd"
   },
-  "placements.new.not_member": {
-    "en": "55e42ae71f048f84",
-    "text": "9fc0feb086224698"
+  "placements.new.none_member": {
+    "en": "e441cf2b43c5ef88",
+    "text": "8f417299df04fc1c"
   },
   "placements.new.not_ready": {
     "en": "43cf84b554dc3e1f",
@@ -13963,9 +14015,17 @@
     "en": "78860a7edd225009",
     "text": "147af4ecbf6b969d"
   },
+  "placements.new.own_only": {
+    "en": "06c571aea4fa2ebe",
+    "text": "dda1d753836001ad"
+  },
   "placements.new.quota": {
     "en": "f64b09af35af4b42",
     "text": "e3746afd8e0c4075"
+  },
+  "placements.new.quota_ask": {
+    "en": "978d27df409fe88a",
+    "text": "d9acaf735056e310"
   },
   "placements.new.quota_link": {
     "en": "8fa180b5970a7dc9",
@@ -18392,8 +18452,8 @@
     "text": "dc1e5f1d8addc7a6"
   },
   "settings.repo.forge_rule": {
-    "en": "aabee46734c7967a",
-    "text": "51a019cc1b98eb02"
+    "en": "8385e3bd11777f1f",
+    "text": "aff5c695432e7d4f"
   },
   "settings.repo.hint": {
     "en": "d93dadbb10ff55c5",

@@ -196,6 +196,13 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
         "stop_grace_seconds": 120,
         "workspace_retention": "24h",
         "workspace_epoch": 1,
+        # The runner's owner owns the agent; no credential yet, so no session (§15.8).
+        "session": {
+            "started_at": None,
+            "not_listening_since": None,
+            "paused": False,
+            "dormant": False,
+        },
         "seq": 0,
     }
     packet = hello(setup.client, setup.runner).json()

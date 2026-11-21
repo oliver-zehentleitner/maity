@@ -126,9 +126,14 @@ window.Maity = window.Maity || {};
     try {
       mine = new Set((await M.api.getAll("/runners")).items.filter((r) => r.owner_id === ctx.me.id).map((r) => r.id));
     } catch (err) { /* no runner of one's own known */ }
+    // The agent profile's owner. A placement that admits a profile that is not a member yet
+    // (§15.6) runs no membership to name the owner until its first pickup; only that profile's
+    // owner creates such a placement, so its creator is the owner (§15.5 `created_by`).
     const owns = (p) => {
-      const m = p.agent && p.agent.id && ctx.memberById ? ctx.memberById[p.agent.id] : null;
-      return !!m && m.owner_id === ctx.me.id;
+      const id = p.agent && p.agent.id;
+      const m = id && ctx.memberById ? ctx.memberById[id] : null;
+      if (m) return m.owner_id === ctx.me.id;
+      return !!id && !p.proposed_by && p.created_by === ctx.me.id;
     };
     const listed = (list) => (opts.own ? list.filter(owns) : list);
     // `logs_hint` reaches the runner's owner only (§15.5): the hub's own word on it.
@@ -235,7 +240,9 @@ window.Maity = window.Maity || {};
       }
       append(clear(list), items.map((p) => h("li", { class: "placement", "data-placement": p.id },
         h("div", { class: "placement-head" },
-          p.agent.id ? M.dom.memberRef(ctx, p.agent.id) : h("span", null, p.agent.display_name),
+          // The object, not the id: before its first pickup a profile is no member here and is
+          // named by the placement's display_name, not its id (review A1878 of #2085).
+          p.agent.id ? M.dom.memberRef(ctx, p.agent) : h("span", null, p.agent.display_name),
           h("span", { class: "muted" }, " ", p.target
             ? M.tn("placements.on_target", { runner: h("strong", null, p.runner.name), target: p.target })
             : M.tn("placements.on", { runner: h("strong", null, p.runner.name) })),
@@ -401,7 +408,9 @@ window.Maity = window.Maity || {};
 
   // Start on a runner instead of a join line: the section at the end of the one Join an agent
   // form (js/join.js, tsk-hdczmsq2r431; once a form of its own behind a menu). For a human with
-  // members:admin only (`startOffered`), over the runners of their own that are attached here
+  // members:admin, or a member who brings agents of their own (`startOffered`; hooks.member:
+  // then only a profile of their own that is not in the project yet, §15.6 "A profile that is
+  // not a member yet", tsk-at3gnzqd8svy), over the runners of their own that are attached here
   // with a live credential (§15.4, §15.6) and offer this project's repository (the hub's
   // `repository_not_offered`); none, and why, with the way to allow one, and the join line stays.
   // The form holds the agent and its place in the team; this part holds what the runner
@@ -423,6 +432,7 @@ window.Maity = window.Maity || {};
 
   function runnerPart(ctx, hooks) {
     if (!M.placements.startOffered(ctx)) return null;
+    const own = !!hooks.member && !ctx.canAdmin;
     const words = M.runnerWords;
     const id = (x) => "placement-new-" + x;
     const field = (key, label, control, hint) => h("div", { class: "field" },
@@ -550,13 +560,24 @@ window.Maity = window.Maity || {};
         if (mine !== round) return;
         runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
         placements = listed.items;
+        // The project's list names a runner's capabilities to members:admin only (§15.4); a
+        // member reads what their own runners advertise from their own runner views (§15.3).
+        if (runners.some((a) => !a.runner.capabilities)) {
+          const views = new Map((await M.api.getAll("/runners")).items.map((r) => [r.id, r]));
+          if (mine !== round) return;
+          runners = runners.map((a) => (views.has(a.runner.id)
+            ? Object.assign({}, a, { runner: Object.assign({}, a.runner, { capabilities: views.get(a.runner.id).capabilities }) }) : a));
+        }
       } catch (err) {
         say(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
         return;
       }
       if (!runners.length) {
-        say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-          { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })));
+        // The project's Runners tab and attaching a runner are members:admin's (app.js, §15.4):
+        // a member is told to ask an admin, with no link to a tab they cannot open.
+        say(h("p", { class: "hint placement-new-none" }, ctx.canAdmin
+          ? M.tn("placements.new.none", { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })
+          : M.t("placements.new.none_member")));
         return;
       }
       const name = repositoryName(repo);
@@ -624,7 +645,7 @@ window.Maity = window.Maity || {};
     // and never blocks what the hub would take (review A1816 of #2058, the lead's ruling).
     function carriesCredential(member, isLive) {
       if (!fields) return false;
-      const clone = fields.clone.value.trim() || cloneFor(member.handle);
+      const clone = fields.clone.value.trim() || cloneFor((member && member.handle) || chosen.handle);
       const closed = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
         && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone);
       if (!closed.length) return false;
@@ -633,11 +654,18 @@ window.Maity = window.Maity || {};
       const carries = (p) => !!p.credential_id && isLive(p) && !current.some((q) => q.active && q.credential_id === p.credential_id);
       return closed.filter((p) => at(p) === newest).some(carries);
     }
-    // §15.6: an agent by id is an active member of the project, and has room under its instance
-    // limit for one more (§15.5: one placement per instance, several per membership).
+    // §15.6: an agent by id is an active member of the project with room under its instance
+    // limit for one more (§15.5: one placement per instance, several per membership), or a
+    // profile of the caller's own that is not a member yet, which the placement admits with a
+    // first join's fields (the join form offers only the caller's own profiles, GET /agents).
+    // A member without members:admin: only that profile of their own; an agent already here, or
+    // a new profile, needs members:admin.
     function blocked() {
-      if (!chosen.id) return null;
-      if (!chosen.member) return M.t("placements.new.not_member");
+      if (own) return chosen.id && !chosen.member ? null : M.t("placements.new.own_only");
+      // A member that lists no instances (null: the join line's member by the hub's word) gives
+      // nothing to count: the hub's instance_quota answers, as the join's quota line leaves it
+      // unsaid. The hub's member view of an agent always carries the list (views.py).
+      if (!chosen.id || !chosen.member || chosen.member.instances === null) return null;
       const n = instancesOf(chosen.member);
       if (n.count + n.adding > n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
       return null;
@@ -646,7 +674,7 @@ window.Maity = window.Maity || {};
     // start that takes up a credential adds no instance, so nothing is said.
     function anotherText() {
       // Not before the placements are read: where the others run is not known until then.
-      if (!fields || !chosen.member || blocked()) return null;
+      if (!fields || !chosen.member || chosen.member.instances === null || blocked()) return null;
       const n = instancesOf(chosen.member);
       if (!n.count || n.carried) return null;
       const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
@@ -677,7 +705,7 @@ window.Maity = window.Maity || {};
       another.textContent = more || "";
       if (fields) fields.set.disabled = !offer.checked;
       // The clone the hub would give: for an agent here or a new profile's handle alike.
-      const named = member ? member.handle : chosen.handle;
+      const named = (member && member.handle) || chosen.handle;
       if (fields) fields.clone.setAttribute("placeholder", named ? cloneFor(named) : M.t("placements.new.clone_placeholder"));
     }
 
@@ -714,8 +742,11 @@ window.Maity = window.Maity || {};
       if (err.code !== "placement_quota") { status.fail(M.t("placements.new.failed"), said(err)); return; }
       const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
       status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });
-      append(status.el, " ", M.tn("placements.new.quota_raise",
-        { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) }));
+      // Settings, Members and agents is an admin's tab (app.js): a member asks an admin instead.
+      append(status.el, " ", ctx.canAdmin
+        ? M.tn("placements.new.quota_raise",
+          { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) })
+        : M.t("placements.new.quota_ask"));
     };
     return {
       el,
@@ -733,6 +764,8 @@ window.Maity = window.Maity || {};
   // The sections drawn, each with its way to read the list again (`reread(box)`).
   const sections = new WeakMap();
   const reread = (box) => (sections.has(box) ? sections.get(box)() : Promise.resolve());
-  const startOffered = (ctx) => !!ctx.canAdmin && ctx.me.kind === "human";
+  // A human with members:admin, or a member who brings agents of their own here (§3.1, §15.6;
+  // M.bringing in js/page-head.js: trust member, the policy's member_agents not off).
+  const startOffered = (ctx) => ctx.me.kind === "human" && (!!ctx.canAdmin || (!!M.bringing && M.bringing(ctx).memberAdds));
   M.placements = { section, runnerPart, startOffered, reread, fnmatch };
 })(window.Maity);
