@@ -146,6 +146,9 @@ class RepositoryGrant:
     network: tuple[str, ...] = ()
     # Agents open and read their pull requests through `maity gh` (cli/context/runner.md).
     pull_requests: bool = False
+    # A placed lead (role `manager`, read from the hub per call) also merges, edits, readies
+    # and reads CI through `maity gh`; only together with `pull_requests` (cli/context/runner.md).
+    lead: bool = False
     # `allow` entries for gh, which no session runs any more: left out of `allow`, named by
     # `maity runner check`, never a reason to stop the runner or its other placements.
     refused: tuple[str, ...] = ()
@@ -501,6 +504,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
                 allow=tuple(rule for rule in allow if rule not in gh),
                 network=tuple(table.get("network", list, [], check=_strings())),
                 pull_requests=table.get("pull_requests", bool, False),
+                lead=table.get("lead", bool, False),
                 refused=gh,
             )
             table.done()
