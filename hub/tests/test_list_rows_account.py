@@ -9,9 +9,9 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, insert, select
+from sqlalchemy import Engine, func, insert, select, update
 
-from maity_hub import avatars, clock
+from maity_hub import avatars, clock, namespace
 from maity_hub import tables as t
 from maity_hub.ids import new_id
 from tests import factory, flow
@@ -19,6 +19,7 @@ from tests.conftest import ClientFactory
 from tests.list_rows import flat_rows, same_for_3_and_30
 from tests.test_chat_access import allow, deny, profile
 from tests.test_cross_chats import create
+from tests.test_public_projects_team import pages
 
 
 @pytest.fixture
@@ -298,6 +299,96 @@ def test_the_own_reports_cost_the_same_for_3_and_for_30(
 
     same_for_3_and_30(
         migrated, "/me/reports", lambda: owner.get("/me/reports", params={"limit": 200}), grow
+    )
+
+
+@flat_rows("/me/reports")
+def test_the_own_reports_cost_the_same_for_3_and_for_30_with_public_pages(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """With public pages served, each target is looked for on the pages served now: the
+    people, the agents, the agents' projects and the pages are read once for the list."""
+    reporter = flow.human(pages(make_client), migrated)
+    flow.project(reporter)
+    project_id = _project_id(migrated)
+    with migrated.connect() as conn:
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == reporter.id)
+        ).scalar_one()
+        full = namespace.name_of(conn, project_id)
+    # An agent reported by its global name, a person, a card, the project, an agent reported
+    # from the project page, a message: the first three reach every read of the list.
+    kinds = ("agent", "person", "card", "project", "placed", "message")
+
+    def page(conn: Any, path: str, kind: str, target: str, data: Any = None) -> None:
+        at = clock.now()
+        conn.execute(
+            insert(t.public_page).values(
+                path=path, kind=kind, target_id=target, body="-", etag="-", inputs="-",
+                lastmod=at, rendered_at=at, view=kind, data=data,
+            )
+        )  # fmt: skip
+
+    listed: list[dict[str, str]] = []
+    with migrated.begin() as conn:
+        page(conn, f"/{full}", "project", project_id, {"agents": listed})
+
+    def grow(n: int) -> None:
+        with migrated.connect() as conn:
+            mine = t.abuse_report.c.account_id == reporter.id
+            done = int(conn.execute(select(func.count()).where(mine)).scalar_one())
+        for i in range(n):
+            kind = kinds[(done + i) % len(kinds)]
+            served = (done + i) // len(kinds) % 2 == 0  # every second round with pages
+            on: str | None = project_id
+            target, shown = project_id, "project"
+            if kind in ("agent", "placed"):
+                target = factory.agent(migrated, project_id, reporter.id).agent_id
+                on, shown = (None if kind == "agent" else project_id), "profile"
+                path = f"/{reporter.handle}/agents/{target}"
+                if served:
+                    with migrated.begin() as conn:
+                        page(conn, path, "agent", target)
+                        if kind == "placed":  # and named on the project's page
+                            listed.append({"page": path})
+                            conn.execute(
+                                update(t.public_page)
+                                .where(t.public_page.c.path == f"/{full}")
+                                .values(data={"agents": list(listed)})
+                            )
+            elif kind == "person":
+                handle = f"person-{new_id('human')[4:]}"
+                target, on, shown = factory.human(migrated, handle), None, "profile"
+                if served:
+                    with migrated.begin() as conn:
+                        page(conn, f"/{handle}", "person", target)
+            elif kind == "card":
+                target, shown = factory.card(migrated, project_id, member), "card"
+                if served:
+                    with migrated.begin() as conn:
+                        page(conn, f"/{full}/tasks/{target}", "card", target)
+            elif kind == "message":
+                target, shown = f"{project_id}/1", "message"
+            with migrated.begin() as conn:
+                conn.execute(
+                    insert(t.abuse_report).values(
+                        id=new_id("abuse_report"),
+                        reporter=reporter.id,
+                        account_id=reporter.id,
+                        target_type=shown,
+                        target_id=target,
+                        project_id=on,
+                        reason="spam",
+                        status="open",
+                        created_at=clock.now() - timedelta(seconds=done + i),
+                    )
+                )
+
+    same_for_3_and_30(
+        migrated,
+        "/me/reports",
+        lambda: reporter.get("/me/reports", params={"limit": 200}),
+        grow,
     )
 
 

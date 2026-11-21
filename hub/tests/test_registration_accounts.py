@@ -684,6 +684,33 @@ def test_an_undecided_account_goes_after_thirty_days(
     assert late.json()["error"]["details"]["from"] == "expired"
 
 
+def test_the_hourly_pass_deletes_a_block_that_ran_out_and_keeps_a_live_one(
+    migrated: Engine,
+) -> None:
+    """§16.4: every read of a block asks for `until > now`, so a block that ran out only keeps
+    an address; the registration's pass deletes it, a block still running stays."""
+    now = clock.now()
+    with migrated.begin() as conn:
+        registration_accounts.block(conn, "old@example.com", now - timedelta(seconds=1))
+        registration_accounts.block(conn, "live@example.com", now + timedelta(days=1))
+
+    def blocked() -> list[str]:
+        with migrated.connect() as conn:
+            return sorted(conn.execute(select(t.registration_block.c.address_normalized)).scalars())
+
+    assert blocked() == ["live@example.com", "old@example.com"]
+    worker = registration_accounts.Worker(migrated, settings_for(), interval=0.05)
+    worker.start()
+    try:
+        for _ in range(100):
+            if blocked() == ["live@example.com"]:
+                break
+            threading.Event().wait(0.05)
+    finally:
+        worker.stop()
+    assert blocked() == ["live@example.com"]
+
+
 def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
 ) -> None:

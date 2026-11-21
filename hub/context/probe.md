@@ -145,7 +145,7 @@ later. The row is the one place every reader passes through.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §6.6 "A merge closes the loop" and §6.1 `merged_closes` (contract #502, the coordinator's card tsk-hkb9qe4xn520, 2026-10-28)
+**Source:** docs/api.md §6.6 "A merge closes the loop" and §6.1 `merged_closes` (contract #502, the coordinator's card tsk-hkb9qe4xn520, 2026-10-28); the close only for the card whose pull request it is by card tsk-yfv9rnxpcwjd (2026-11-20, context/reports.md d068e91d-bf97-44e3-ba98-0f1c7e5b3674)
 **Revisit when:** the hub keeps more than one report per card, or the done authority gains values beyond those of §6.4
 
 The card remembers the report a merge was observed on (`merge_report`, a
@@ -156,7 +156,10 @@ tells it when the card is in `review`; the two ways back to `review`
 remembered one, only while that report is still the card's. Under
 `merged_closes: auto` and `done_authority` `holder` or `admin` the
 same step closes the card, unless a child, a dependency or an objection
-holds it. `task_merged` wakes by `done_authority`: the holding instance,
+holds it, or the pull request is not the card's own (`merged._not_its_own`:
+its head branch from the stored `pr` observation, the card ids its text
+names, its merge time against the report's, and the other cards' reports
+and closed `task_merged` events, read only before a close). `task_merged` wakes by `done_authority`: the holding instance,
 the reviewer or tester role, or owners and admins; nobody once closed.
 
 **Reason:** "once per report" and "caught up on the return to review"

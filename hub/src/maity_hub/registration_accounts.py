@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -309,8 +309,23 @@ def start_session(
 
 def item(conn: Connection, row: Any) -> dict[str, Any]:
     """A pending account as the instance admin decides on it."""
-    human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).first()
-    found = {
+    return items(conn, [row])[0]
+
+
+def items(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """`item` for several rows, the people read in one query: the list costs the same for
+    any number of rows."""
+    wanted = {row.human_id for row in rows}
+    people = (
+        {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(wanted)))}
+        if wanted
+        else {}
+    )
+    return [_item(row, people.get(row.human_id)) for row in rows]
+
+
+def _item(row: Any, human: Any) -> dict[str, Any]:
+    return {
         "id": row.human_id,
         "handle": human.handle if human is not None else None,
         "display_name": human.display_name if human is not None else None,
@@ -327,7 +342,6 @@ def item(conn: Connection, row: Any) -> dict[str, Any]:
             else None
         ),
     }
-    return found
 
 
 def locked(conn: Connection, human_id: str) -> Any:
@@ -459,6 +473,14 @@ def block(conn: Connection, normalized: str, until: Any) -> None:
         )
 
 
+def forget_expired_blocks(conn: Connection) -> int:
+    """Delete every block whose `until` has passed, with its address: every read of a block
+    asks for `until > now`, so an expired row only keeps an address (§16.4)."""
+    return conn.execute(
+        delete(t.registration_block).where(t.registration_block.c.until <= clock.now())
+    ).rowcount
+
+
 def expire(conn: Connection, hub: Any) -> int:
     """Delete every pending account nobody decided on within 30 days (§2.7.5)."""
     now = clock.now()
@@ -482,7 +504,8 @@ INTERVAL = 3600.0  # seconds between expiry sweeps
 
 class Worker:
     """Runs `expire` in the background: an undecided account goes after 30 days whether
-    or not an instance admin looks (§2.7.5)."""
+    or not an instance admin looks (§2.7.5). The same pass deletes the blocks that have run
+    out (`forget_expired_blocks`, §16.4)."""
 
     def __init__(self, engine: Engine, hub: Any, interval: float | None = None) -> None:
         self.engine = engine
@@ -510,6 +533,7 @@ class Worker:
                         continue
                     with self.engine.begin() as conn:
                         expire(conn, self.hub)
+                        forget_expired_blocks(conn)
                         campaigns.purge(conn)  # the origins after 30 days, the sums after 400
             except Exception:
                 log.exception("the registration expiry sweep failed")
