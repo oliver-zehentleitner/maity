@@ -358,7 +358,8 @@ def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable
         if not all(isinstance(v, str) and v for v in values):
             return "expected a list of non-empty strings"
         if pattern is not None:
-            bad = [v for v in values if not pattern.match(v)]
+            # The whole value: `match` with `$` also takes one ending in a newline (A1994).
+            bad = [v for v in values if not pattern.fullmatch(v)]
             if bad:
                 return f"not {what}: {', '.join(repr(v) for v in bad)}"
         return None

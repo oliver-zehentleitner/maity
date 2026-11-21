@@ -3920,7 +3920,9 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
         body["mode"] = args.mode
     if args.model:
         body["model"] = args.model
-    if args.effort is not None:  # an explicit empty one goes to the hub, which refuses it
+    if args.effort is not None:
+        if not args.effort:  # empty is not "the default": leave the flag out for that (A1994)
+            raise UsageError("--effort: name one of the runner's efforts, or leave it out")
         body["effort"] = args.effort
     if args.target:
         body["target"] = args.target
