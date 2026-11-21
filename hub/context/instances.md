@@ -635,8 +635,9 @@ Rejected alternatives:
   profile's memberships.
 - A unique key over a marker column that is True or NULL.
 
-**Until hub PR B, a credential authenticates in its oldest attachment that is not detached**, by
-`attached_at` and then id (`auth.caller`, `TODO(hub PR B)`).
+**Until hub PR B, a credential authenticated in its oldest attachment that is not detached**, by
+`attached_at` and then id (`auth.caller`); done in hub PR B, which authenticates it once for all its
+attachments and acts in the route's project's attachment, or in none outside a project.
 Rejected alternatives:
 - Refusing a credential with two attachments: it would break every instance as soon as hub PR D attaches
   one to a second project.
