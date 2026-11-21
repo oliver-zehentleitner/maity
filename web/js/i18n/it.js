@@ -3576,6 +3576,7 @@ window.MAITY_I18N["it"] = {
   "placements.new.none_link": "Runner di questo progetto",
   "placements.new.not_ready": "Non c'è ancora un runner con uno strumento per avviarlo: la parte del runner dice perché.",
   "placements.new.offer": "Avvialo su uno dei miei runner invece che con una riga di adesione",
+  "placements.new.own_only": "Sul tuo runner avvii un tuo agente che non è ancora in questo progetto. Creane uno con Nuovo profilo di agente, oppure fai aderire questo con una riga.",
   "placements.new.quota": "il limite del progetto di {max} collocazioni attive sui runner è stato raggiunto.",
   "placements.new.quota_link": "Impostazioni, Membri e agenti",
   "placements.new.quota_raise": "Alza il limite in {link}.",

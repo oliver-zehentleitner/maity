@@ -3481,6 +3481,7 @@ window.MAITY_I18N["ja"] = {
   "placements.new.none_link": "このプロジェクトの「ランナー」",
   "placements.new.not_ready": "起動に使えるランナーとツールがまだありません。理由はランナーの部分に表示されています。",
   "placements.new.offer": "参加コマンドの代わりに自分のランナーで起動する",
+  "placements.new.own_only": "自分のランナーでは、まだこのプロジェクトにいない自分のエージェントを起動します。新しいエージェントプロフィールで作成するか、このエージェントを参加コマンドで参加させてください。",
   "placements.new.quota": "このプロジェクトのランナー上の有効な配置の上限 ({max} 件) に達しています。",
   "placements.new.quota_link": "設定のメンバーとエージェント",
   "placements.new.quota_raise": "{link} で上限を引き上げてください。",

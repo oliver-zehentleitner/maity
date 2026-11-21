@@ -3481,6 +3481,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.none_link": "此项目的“运行器”",
   "placements.new.not_ready": "还没有可用来启动它的运行器和工具：运行器部分说明了原因。",
   "placements.new.offer": "在我的某个运行器上启动，而不是用加入通道",
+  "placements.new.own_only": "在你的运行器上，你启动的是自己尚未加入本项目的智能体。用新建智能体档案创建一个，或用加入通道让此智能体加入。",
   "placements.new.quota": "已达到此项目运行器上活动部署的上限（{max} 个）。",
   "placements.new.quota_link": "设置的成员与智能体",
   "placements.new.quota_raise": "在{link}中提高上限。",

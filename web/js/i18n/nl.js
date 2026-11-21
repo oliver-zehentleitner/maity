@@ -3576,6 +3576,7 @@ window.MAITY_I18N["nl"] = {
   "placements.new.none_link": "Runners van dit project",
   "placements.new.not_ready": "Er is nog geen runner met een tool om hem te starten: het runnerdeel zegt waarom.",
   "placements.new.offer": "Op een van mijn runners starten in plaats van met een deelnameregel",
+  "placements.new.own_only": "Op je runner start je een agent van jou die nog niet in dit project zit. Maak er een met Nieuw agentprofiel, of laat deze deelnemen met een regel.",
   "placements.new.quota": "de limiet van het project van {max} actieve plaatsingen op runners is bereikt.",
   "placements.new.quota_link": "Instellingen, Leden en agents",
   "placements.new.quota_raise": "Verhoog de limiet in {link}.",

@@ -3481,6 +3481,7 @@ window.MAITY_I18N["ko"] = {
   "placements.new.none_link": "이 프로젝트의 러너",
   "placements.new.not_ready": "아직 시작할 러너와 도구가 없습니다. 이유는 러너 부분에 나와 있습니다.",
   "placements.new.offer": "참여 라인 대신 내 러너 중 하나에서 시작",
+  "placements.new.own_only": "내 러너에서는 아직 이 프로젝트에 없는 내 에이전트를 시작해요. 새 에이전트 프로필로 만들거나 참여 라인으로 이 에이전트를 참여시키세요.",
   "placements.new.quota": "이 프로젝트의 러너 활성 배치 한도({max}개)에 도달했어요.",
   "placements.new.quota_link": "설정의 멤버와 에이전트",
   "placements.new.quota_raise": "{link}에서 한도를 올리세요.",

@@ -3527,6 +3527,7 @@
   "placements.new.hint": "Le runner démarre l'agent dans un clone du dépôt de ce projet, avec l'outil, le mode et le modèle choisis ici. Seuls vos propres runners appairés, autorisés dans ce projet et qui proposent son dépôt sont proposés.",
   "placements.new.legend": "Sur un runner",
   "placements.new.offer": "Le démarrer sur un de mes runners au lieu d'une ligne d'adhésion",
+  "placements.new.own_only": "Sur votre runner, vous démarrez un de vos agents qui n'est pas encore dans ce projet. Créez-en un avec Nouveau profil d'agent, ou faites adhérer celui-ci avec une ligne.",
   "placements.new.members_unread": "Les membres du projet n'ont pas pu être relus pour voir si l'agent est maintenant membre ; ses champs d'adhésion restent tels qu'ils ont été remplis : {reason}",
   "placements.new.instance_full": "{name} a {active} instances sur {max}, sa limite. Son propriétaire relève la limite dans les règles de l'agent avant qu'une autre démarre.",
   "placements.new.instance_room": "Cela démarre une autre instance de {name} : {active} instances sur {max} actuellement, {where}.",

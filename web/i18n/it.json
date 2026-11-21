@@ -3527,6 +3527,7 @@
   "placements.new.hint": "Il runner avvia l'agente in un clone del repository di questo progetto, con lo strumento, la modalità e il modello scelti qui. Sono offerti solo i tuoi runner abbinati, consentiti in questo progetto e che ne offrono il repository.",
   "placements.new.legend": "Su un runner",
   "placements.new.offer": "Avvialo su uno dei miei runner invece che con una riga di adesione",
+  "placements.new.own_only": "Sul tuo runner avvii un tuo agente che non è ancora in questo progetto. Creane uno con Nuovo profilo di agente, oppure fai aderire questo con una riga.",
   "placements.new.members_unread": "Impossibile rileggere i membri del progetto per vedere se ora l'agente è membro; i suoi campi di adesione restano come sono stati compilati: {reason}",
   "placements.new.instance_full": "{name} ha {active} istanze su {max}, il suo limite. Il suo proprietario alza il limite nelle regole dell'agente prima che ne parta un'altra.",
   "placements.new.instance_room": "Questo avvia un'altra istanza di {name}: ora {active} istanze su {max}, {where}.",
