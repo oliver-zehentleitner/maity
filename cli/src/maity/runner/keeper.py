@@ -59,12 +59,23 @@ def logged_in(harness_id: str, binary: str, as_user: AsUser) -> bool:
     return done.returncode == 0
 
 
+# Each probe's own answer for "not logged in": its exit code, and where the same code also
+# means an error, the line it then writes (security review A1942). `claude auth status`
+# exits 1 when not logged in, per Claude Code's CLI reference; `codex login status` exits 1
+# with the line "Not logged in", and also exits 1 on an error, with another line.
+LOGIN_NEEDED: dict[str, tuple[int, str | None]] = {
+    "claude-code": (1, None),
+    "codex": (1, "Not logged in"),
+}
+
+
 def login_state(harness_id: str, binary: str | None, as_user: AsUser) -> str:
     """The tool's own login answer as the watch's `login` signal (§15.7): `ok` on exit 0,
-    `needed` on any other exit, `unknown` where the harness has no login probe (agy,
-    opencode, …), no binary is known, or the probe could not run or did not answer in time.
-    Unlike `logged_in`, neither a missing probe nor a failed one counts as an answer, so a
-    harness the runner cannot ask is never taken for one whose login is gone."""
+    `needed` only on the probe's documented "not logged in" answer (LOGIN_NEEDED), and
+    `unknown` for anything else: another exit, a timeout, an error, a harness without a
+    probe (agy, opencode, …) or no binary. `needed` ends a placement as `failed`/`auth`
+    with no restart, so a flaky probe must never give it (security review A1942). Unlike
+    `logged_in`, neither a missing probe nor a failed one counts as an answer."""
     args = LOGIN_STATUS.get(harness_id)
     if args is None or not binary:
         return "unknown"
@@ -72,7 +83,15 @@ def login_state(harness_id: str, binary: str | None, as_user: AsUser) -> str:
         done = as_user.run([binary, *args], timeout=LOGIN_TIMEOUT)
     except Exception:  # noqa: BLE001 - a probe that cannot run says nothing about the login
         return "unknown"
-    return "ok" if done.returncode == 0 else "needed"
+    if done.returncode == 0:
+        return "ok"
+    needed = LOGIN_NEEDED.get(harness_id)
+    if needed is None or done.returncode != needed[0]:
+        return "unknown"
+    if needed[1] is None:
+        return "needed"
+    said = f"{done.stdout or ''}\n{done.stderr or ''}".splitlines()
+    return "needed" if any(line.strip() == needed[1] for line in said) else "unknown"
 
 
 @dataclass

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from test_supervisor import CONFIG, Clock, FakeTmux, Reports, placement, recorded, settle, states
 
+from maity import hub
 from maity.runner import capabilities, config, loop, supervisor, tmux, watch
 
 T0 = 1_800_000_000.0  # Clock's start: the runner starts the harness then
@@ -446,3 +447,195 @@ def test_the_trigger_is_measured_in_hub_time(world: Any) -> None:
     clock.now = QUIET_PAST_GRACE
     drain(sup)
     assert backend.terminated == [NAME]
+
+
+# --- a session adopted after the runner's own restart (the lead, seq 189230) ------------------
+
+
+def adopt(sup: supervisor.Supervisor, backend: FakeTmux, p: dict[str, Any]) -> supervisor.Record:
+    """The runner restarted (an upgrade) and finds the placement's session still running."""
+    backend.live[NAME] = tmux.Session(NAME, False, None, 4242, PID, 1)
+    sup.update([p])
+    sup.tick()
+    rec = sup.records[PID]
+    assert (rec.state, rec.reason, rec.started_at) == ("running", "adopted", None)
+    return rec
+
+
+def test_an_adopted_session_counts_the_grace_from_the_adoption(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    backend.below = tmux.WAITING
+    # Quiet for an hour already when the runner comes back: no restart wave at once.
+    rec = adopt(sup, backend, watched(
+        started_at=watch.stamp(T0 - 7200), not_listening_since=watch.stamp(T0 - 3600)
+    ))  # fmt: skip
+    assert rec.watch_since == T0
+    drain(sup)
+    assert backend.terminated == [] and sup.watching == {}
+    clock.now = T0 + GRACE - 1
+    drain(sup)
+    assert backend.terminated == [] and with_findings(reports) == []
+    clock.now = T0 + GRACE  # one grace after the adoption
+    drain(sup)
+    assert backend.terminated == [NAME]
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
+
+
+def test_an_adopted_session_never_gets_never_joined(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    adopt(sup, backend, watched(mode="supervised"))  # the hub knows no session of it
+    for hours in (1, 24):
+        clock.now = T0 + hours * 3600
+        drain(sup)
+    assert backend.terminated == [] and sup.watching == {}
+    assert with_findings(reports) == []
+
+
+def test_watch_since_is_kept_in_actual_json(world: Any) -> None:
+    sup = world[0]
+    sup.records[PID] = supervisor.Record(generation=1, state="running", watch_since=T0)
+    sup.save()
+    again = supervisor.Supervisor(
+        sup.cfg, FakeTmux(), Reports(), lambda line: None, {}  # type: ignore[arg-type]
+    )
+    again.load()
+    assert again.records[PID].watch_since == T0
+    assert supervisor.Record().watch_since is None  # a record from before reads as unknown
+
+
+def test_a_run_the_runner_started_is_watched_from_its_start(world: Any) -> None:
+    sup, _, _, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    rec = sup.records[PID]
+    assert rec.watch_since == rec.started_at == T0
+
+
+# --- Codex review A1940 ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("change", ["paused", "dormant", "cleared", "attached"])
+def test_a_verdict_whose_facts_changed_is_dropped(world: Any, change: str) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    sup.tick()  # the diagnosis starts
+    for worker in list(sup.watching.values()):
+        worker.join(5)
+    assert sup.records[PID].watch_verdict is not None
+    if change == "attached":
+        backend.attach = True
+    elif change == "cleared":  # it listens again
+        sup.update([watched(started_at=watch.stamp(T0 + 60))])
+    else:
+        sup.update([joined_then_quiet(**{change: True})])
+    sup.tick()  # acting time
+    assert backend.terminated == []
+    assert with_findings(reports) == []
+    assert sup.records[PID].watch_verdict is None
+
+
+def test_someone_attaching_during_the_end_keeps_the_session(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    assert backend.terminated == [NAME]  # TERM sent; the harness ignores it
+    backend.attach = True  # someone attaches before the kill
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert NAME not in backend.killed
+    body = last(reports)
+    assert (body["state"], body["finding"]["cause"]) == ("running", "wait_deaf")
+    assert sup.records[PID].watch_end is None
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert NAME not in backend.killed  # and nothing is ended while they stay
+
+
+def test_a_dead_harness_at_both_caps_is_a_crash_loop(tmp_path: Path) -> None:
+    sup, backend, reports, clock, _ = make(
+        tmp_path,
+        "\n[limits.restart]\nquick_exit = 7200\ncrash_cap = 1\n"
+        "\n[limits.watch]\nauto_restarts = 0\n",
+    )
+    running(sup, clock, joined_then_quiet())
+    clock.now = QUIET_PAST_GRACE
+    backend.exit(NAME, 1)
+    drain(sup)
+    body = last(reports)
+    assert (body["state"], body["reason"]) == ("failed", "crash_loop")
+    assert body["finding"]["cause"] == "harness_exited"
+
+
+def test_a_session_started_in_the_runs_second_counts_as_joined(tmp_path: Path) -> None:
+    sup, backend, _, clock, _ = make(tmp_path)
+    clock.now = T0 + 0.6
+    recorded(sup.cfg)
+    # The hub's wire form has whole seconds: the session started in the run's own second.
+    sup.update([watched(mode="supervised", started_at=watch.stamp(T0 + 0.6))])
+    settle(sup)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert sup.records[PID].started_at == T0 + 0.6
+    clock.now = T0 + 0.6 + JOIN
+    drain(sup)
+    assert backend.terminated == [] and sup.watching == {}
+
+
+def test_a_join_seen_once_keeps_never_joined_off_for_the_run(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    running(sup, clock, watched(mode="supervised", started_at=watch.stamp(T0 + 30)))
+    sup.tick()  # the watch sees this run's session
+    assert sup.records[PID].watch_joined
+    # A later read names an earlier session (an edge of a second, a lagging read): still joined.
+    sup.update([watched(mode="supervised", started_at=watch.stamp(T0 - 1))])
+    clock.now = T0 + JOIN
+    drain(sup)
+    assert backend.terminated == [] and sup.watching == {}
+
+
+@pytest.mark.parametrize(
+    ("code", "outcome"),
+    [
+        (loop.EXIT_REVOKED, ("failed", "agent_credential_revoked", None)),
+        (loop.EXIT_HOT_LOOP, ("failed", "crash_loop", "hot_loop")),
+    ],
+)
+def test_a_terminal_exit_stays_with_the_exit_handling(
+    world: Any, code: int, outcome: tuple[str, str, str | None]
+) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, watched(mode="supervised"))
+    clock.now = T0 + JOIN  # never_joined holds
+    backend.exit(NAME, code)
+    drain(sup)
+    assert states(reports)[-1] == outcome
+    assert last(reports)["finding"]["cause"] == "harness_exited"  # the finding goes with it
+    assert sup.records[PID].watch_restarts == []
+    clock.now += 3600
+    sup.tick()
+    assert len(backend.started) == 1  # no watch restart
+
+
+def test_a_finding_whose_report_failed_arrives_with_the_next_state(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    reports.fail.append(hub.HubError("no answer"))
+    sup.tick()  # exited/hung with the finding: its write fails
+    assert with_findings(reports) == []
+    clock.now += 11
+    settle(sup)  # the restart's `starting` replaces the report that was not taken
+    carried = with_findings(reports)
+    assert len(carried) == 1
+    assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("starting", "wait_deaf")
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert len(with_findings(reports)) == 1  # and once only

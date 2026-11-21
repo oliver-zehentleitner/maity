@@ -16,6 +16,7 @@ records across runner restarts; the sessions themselves are found again through 
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import re
@@ -367,6 +368,12 @@ class Record:
     watch_looked_at: float | None = None
     watch_episode: float | None = None
     watch_seen: list[Any] | None = None
+    # Since when the runner watches this session: the run's start for one it started (equal
+    # to `started_at`), the adoption for one it found after its own restart, whose start it
+    # does not know. The not_listening grace counts from it at the earliest, so an upgrade
+    # does not act on every already-quiet session at once (the lead, seq 189230).
+    watch_since: float | None = None
+    watch_joined: bool = False  # a session of this run was seen: no never_joined for it
     # The finding the next report carries (§15.7), how many were filed (in the report's key,
     # so a finding alone makes a report), and whether the hub takes one (`session` carried).
     finding: dict[str, Any] | None = None
@@ -409,6 +416,13 @@ def _state_text(rec: Record) -> str:
     words = [w for w in (rec.state, rec.reason, rec.detail) if w]
     restarts = f", restart {rec.restarts}" if rec.restarts else ""
     return f"{' '.join(words)} (generation {rec.generation}{restarts})"
+
+
+def _terminal_exit(code: int | None) -> bool:
+    """An exit code `Supervisor._exited` decides apart from the restart policy: a revoked
+    credential, the loop's hot loop or folder refusal (final), or a provider limit."""
+    final = (loop.EXIT_REVOKED, loop.EXIT_HOT_LOOP, *loop.EXIT_FOLDER.values())
+    return code in (*final, loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN)
 
 
 def _minutes(value: Any, default: int) -> float:
@@ -521,8 +535,17 @@ class Supervisor:
         if rec.hung_at is not None:  # the own check is ending it: its end, not the watch's
             return False
         pid = p["id"]
+        interactive = p.get("mode") == "interactive"
         if rec.watch_end is not None:
-            if not session.dead and now - rec.watch_end["at"] >= KILL_AFTER:
+            end = rec.watch_end
+            if not session.dead and now - end["at"] >= KILL_AFTER:
+                # Nobody attached, freshly, right before the kill too (Codex A1940): someone
+                # who attached meanwhile keeps the session; the finding is reported instead.
+                there = self._attached(backend, session, interactive)
+                if there and end.get("verdict") is not None:
+                    rec.watch_end = None
+                    self._someone_there(pid, rec, end["verdict"], "while it was being ended")
+                    return True
                 backend.kill(session.name)  # TERM was not enough
                 self._watch_ended(rec, now, None)
             return True
@@ -532,30 +555,51 @@ class Supervisor:
                 return True
             del self.watching[pid]
         verdict, rec.watch_verdict = rec.watch_verdict, None
-        if verdict is not None and verdict["generation"] == rec.generation:
-            return self._react(p, rec, session, target, now, verdict)
         facts = watch.session_facts(p)
         settings = self.cfg.limits.watch
         hub_now = now + self.hub_offset
-        interactive = p.get("mode") == "interactive"
+        run = None if rec.started_at is None else rec.started_at + self.hub_offset
+        if (
+            run is not None and facts is not None and facts.started_at is not None
+            and facts.started_at >= math.floor(run)
+        ):  # fmt: skip
+            # A session of this run was seen once: never_joined stays off for the rest of the
+            # run, whatever a later read says at the edge of a second (Codex A1940).
+            rec.watch_joined = True
         trigger_ = watch.trigger(
             facts,
             interactive=interactive,
-            run_started=None if rec.started_at is None else rec.started_at + self.hub_offset,
+            run_started=None if rec.watch_joined else run,
+            watched_since=None if rec.watch_since is None else rec.watch_since + self.hub_offset,
             hub_now=hub_now,
             grace=settings.not_listening_grace_minutes * 60.0,
             join_within=settings.join_within_minutes * 60.0,
         )
+        episode = None
+        if facts is not None:
+            episode = (
+                facts.not_listening_since if trigger_ == watch.NOT_LISTENING else rec.started_at
+            )
+        if verdict is not None and verdict["generation"] == rec.generation:
+            # The verdict is acted on only while its facts still hold at acting time (Codex
+            # A1940): not paused or dormant (no trigger then), the same trigger and quiet spell,
+            # and the same answer on attachment, read afresh. Otherwise it is dropped, and a
+            # new diagnosis follows if a trigger holds again.
+            now_attached = trigger_ is not None and self._attached(backend, session, interactive)
+            if (trigger_, episode, now_attached) == (
+                verdict["trigger"], verdict["episode"], verdict["attached"]
+            ):  # fmt: skip
+                return self._react(p, rec, session, target, now, verdict)
+            self.note(pid, "the facts changed before the watch acted: its diagnosis dropped")
         if trigger_ is None or facts is None:
             rec.watch_seen = None
             return False
         if rec.watch_looked_at is not None and now - rec.watch_looked_at < IDLE_EVERY:
             return False
         rec.watch_looked_at = now
-        episode = facts.not_listening_since if trigger_ == watch.NOT_LISTENING else rec.started_at
         alive = not session.dead
         # Attached is what tmux says; when it cannot say, someone may be there (§15.14).
-        attached = interactive and alive and backend.attached(session.name) is not False
+        attached = self._attached(backend, session, interactive)
         if rec.watch_seen == [trigger_, episode]:
             if attached:  # reported once already: looked at again once the last one left
                 return False
@@ -585,6 +629,7 @@ class Supervisor:
             target=self._diagnose,
             args=(rec, {
                 "generation": rec.generation, "trigger": trigger_, "episode": episode,
+                "interactive": interactive,
                 "seen_at": hub_now, "attached": attached, "limit_exit": limit_exit,
                 "quiet_for": quiet,
                 "tool_call_max": _minutes(
@@ -681,14 +726,36 @@ class Supervisor:
         verdict: dict[str, Any], then: str, line: str,
     ) -> bool:  # fmt: skip
         """End the session as a stop does (TERM, kill-session after KILL_AFTER); once it is
-        gone, `_watch_ended` enters what `then` says, with the finding made now."""
+        gone, `_watch_ended` enters what `then` says, with the finding made now. Nobody may
+        be attached, read afresh right before the TERM as before the kill (Codex A1940)."""
+        if self._attached(backend, session, bool(verdict.get("interactive"))):
+            return self._someone_there(pid, rec, verdict)
         self.note(pid, line)
         rec.watch_end = {
             "at": now, "then": then, "trigger": verdict["trigger"],
-            "finding": self._finding(pid, verdict),
+            "finding": self._finding(pid, verdict), "verdict": verdict,
         }  # fmt: skip
         backend.terminate(session)
         return True
+
+    @staticmethod
+    def _attached(backend: Tmux, session: Session, interactive: bool) -> bool:
+        """Whether someone may be at the pane: tmux's `session_attached` above zero, or tmux
+        cannot say (§15.14). A supervised run has no pane, a gone session nobody there."""
+        return interactive and not session.dead and backend.attached(session.name) is not False
+
+    def _someone_there(
+        self, pid: str, rec: Record, verdict: dict[str, Any], when: str = ""
+    ) -> bool:
+        """Someone is attached: the watch ends nothing and reports the finding once, on a
+        `running` report, and looks again once the last client has left (§15.14)."""
+        key = [verdict["trigger"], verdict["episode"]]
+        if rec.watch_seen == key:
+            return False
+        rec.watch_seen = key
+        said = f"someone is attached {when}".rstrip()
+        line = f"{self._watch_words(verdict)}: {said}, nothing ended"
+        return self._file(pid, rec, verdict, line)
 
     def _watch_ended(self, rec: Record, now: float, code: int | None) -> None:
         """The session the watch ended is gone: `failed`/`auth`, `failed`/`hung` at the cap,
@@ -741,11 +808,15 @@ class Supervisor:
                     said = "no line typed: the pane could not be used"
             return self._file(pid, rec, verdict, f"{what}: {said}")
         if alive and verdict["attached"]:  # wait_deaf, never_joined, unknown, login_invalid
-            key = [trigger_, verdict["episode"]]
-            if rec.watch_seen == key:
-                return False
-            rec.watch_seen = key
-            return self._file(pid, rec, verdict, f"{what}: someone is attached, nothing ended")
+            return self._someone_there(pid, rec, verdict)
+        if not alive and _terminal_exit(session.exit_status):
+            # An exit the exit handling treats as final or as a limit (a revoked credential,
+            # the loop's hot loop, a workspace refusal, a provider limit) is decided there, as
+            # without the watch; the finding goes on that report (Codex A1940). usage_limit is
+            # the loop's limit exit, so it is decided there too: `rate_limited` at the reset.
+            self._exited(rec, session, now, backend, target)
+            said = "started again at the reset" if cause == "usage_limit" else "the exit decides"
+            return self._file(pid, rec, verdict, f"{what}: {said} ({_state_text(rec)})")
         if cause == "login_invalid":
             said = f"{what}: the login needs a person; failed (auth)"
             if alive:
@@ -764,20 +835,16 @@ class Supervisor:
             rec.watch_restarts, now, window * 60.0, settings.auto_restarts
         )
         rec.watch_restarts = recent
-        if not allowed:
-            said = f"{what}: held after {len(recent)} watch restart(s) within {window} min"
-            if alive:
-                return self._end(pid, rec, session, backend, now, verdict, "held", said)
-            backend.kill(session.name)
-            rec.enter(now, "failed", "hung", detail=trigger_, exit_code=session.exit_status,
-                      retry_at=None)  # fmt: skip
-            return self._file(pid, rec, verdict, said)
-        rec.watch_restarts = [*recent, now]
+        held = f"{what}: held after {len(recent)} watch restart(s) within {window} min"
         if alive:
+            if not allowed:
+                return self._end(pid, rec, session, backend, now, verdict, "held", held)
+            rec.watch_restarts = [*recent, now]
             return self._end(pid, rec, session, backend, now, verdict, "restart",
                              f"{what}: restart, resuming")  # fmt: skip
-        # Gone already: an exit under the restart policy's crash count too (§15.14), whose
-        # cap wins (the lead's ruling): `failed`/`crash_loop`, with the finding.
+        # Gone already: an exit under the restart policy's crash count too (§15.14). Its cap
+        # is checked first and wins over the watch's (the lead's ruling, Codex A1940):
+        # `failed`/`crash_loop`, with the finding.
         backend.kill(session.name)
         policy, code = self.cfg.limits.restart, session.exit_status
         started = rec.started_at if rec.started_at is not None else now - policy.quick_exit
@@ -787,6 +854,11 @@ class Supervisor:
                       retry_at=None)  # fmt: skip
             said = f"{what}: crash loop after {len(decision.crashes)} quick exits"
             return self._file(pid, rec, verdict, said)
+        if not allowed:
+            rec.enter(now, "failed", "hung", detail=trigger_, exit_code=code,
+                      crashes=decision.crashes, retry_at=None)  # fmt: skip
+            return self._file(pid, rec, verdict, held)
+        rec.watch_restarts = [*recent, now]
         rec.calm()
         rec.resume = True
         again = now + restart.delay(policy, 0, self.rand)
@@ -1223,7 +1295,10 @@ class Supervisor:
                 # A live session of this generation was started, whether or not a save of its
                 # count reached actual.json: a later resume in it continues it, never a reset.
                 rec.sessions = max(rec.sessions, 1)
-                rec.enter(now, "running", "adopted", started_at=None)
+                # Its start is unknown (no quick exit, no never_joined); the watch counts the
+                # not_listening grace from now, the adoption.
+                rec.enter(now, "running", "adopted", started_at=None, watch_since=now,
+                          watch_joined=False)  # fmt: skip
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
                 on = rec.sandbox  # the start's own view, not the tool in use now (§15.16)
                 if on is None:
@@ -1726,7 +1801,8 @@ class Supervisor:
         rec.calm()
         rec.folder_prompt = None
         rec.watch_looked_at, rec.watch_verdict, rec.watch_seen = None, None, None  # a new run
-        rec.enter(now, "starting", retry_at=None, started_at=now)
+        rec.enter(now, "starting", retry_at=None, started_at=now, watch_since=now,
+                  watch_joined=False)  # fmt: skip
         rec.sandbox = view.sandbox
         if retrying:
             rec.restarts += 1
@@ -2544,8 +2620,12 @@ class Supervisor:
                 key = rec.key()
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
-                    rec.pending = {"key": key, "body": self._body(rec)}
-                    rec.finding = None  # in this body now: a resend sends the same one
+                    body = self._body(rec)
+                    rec.pending = {"key": key, "body": body}
+                    # The finding stays on the record until a report carrying it is taken
+                    # (Codex A1940): a body that replaces this one before then carries it on.
+                    if "finding" in body:
+                        rec.pending["finding_n"] = rec.finding_n
                     self.note(p["id"], _state_text(rec))  # the line `changed` writes
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
@@ -2559,12 +2639,21 @@ class Supervisor:
                 if exc.code in ("stale_generation", "not_found"):
                     with self.lock:  # the hub moved on: settled, until the state changes
                         rec.acked, rec.pending = pending["key"], None
+                        self._delivered(rec, pending)
                     continue
                 self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
                 continue
             with self.lock:
                 if rec.pending is pending:
                     rec.acked, rec.pending = pending["key"], None
+                self._delivered(rec, pending)
+
+    @staticmethod
+    def _delivered(rec: Record, pending: dict[str, Any]) -> None:
+        """The report `pending` is settled: the finding it carried is done with, unless a
+        newer one took its place meanwhile."""
+        if pending.get("finding_n") is not None and pending["finding_n"] == rec.finding_n:
+            rec.finding = None
 
 
 # In the agents' home: logins and keys a sandboxed command never needs. A list, so not every

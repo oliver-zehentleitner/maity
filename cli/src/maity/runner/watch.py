@@ -17,6 +17,7 @@ whole report, so the builders here refuse it first (ValueError: a bug in the cal
 
 from __future__ import annotations
 
+import math
 import re
 import threading
 from collections import deque
@@ -142,31 +143,39 @@ def trigger(
     hub_now: float,
     grace: float,
     join_within: float,
+    watched_since: float | None = None,
 ) -> str | None:
     """Which trigger holds now (§15.14, "When it looks"), or None. All times in hub time,
     `grace` and `join_within` in seconds; `run_started` is when the runner started the harness
-    for this run, None when it does not know (a session it adopted).
+    for this run, None when it does not know (a session it adopted). `watched_since` is when
+    the runner began to watch this session: the run's start, or the adoption of a session it
+    found after its own restart; None takes `run_started`.
 
     - `never_joined`: `join_within` has passed since the run started and no session of the
       placement's credential started since then. It goes first when both hold: an episode
       that began before this run belongs to an earlier session, and that no session started
       since is the truer finding.
     - `not_listening`: interactive only, the session has been not listening for `grace`. The
-      grace counts from the later of the episode's start and this run's start (the runner's
-      decision, cli/context/runner.md): right after a restart the hub may still report the
-      earlier session's episode, which would otherwise trigger again at once."""
+      grace counts from the later of the episode's start and `watched_since` (the runner's
+      decisions, cli/context/runner.md): right after a restart the hub may still report the
+      earlier session's episode, which would otherwise trigger again at once; and after the
+      runner's own restart (an upgrade) every session already quiet for longer than the grace
+      would be acted on at once. `never_joined` keeps to `run_started`, so an adopted session,
+      whose start is unknown, never gets it. The hub's times have whole seconds (§1.1), so a
+      session that started in the same second as the run counts as joined (Codex A1940)."""
     if facts is None or facts.resting:
         return None
     if (
         run_started is not None
         and hub_now - run_started >= join_within
-        and (facts.started_at is None or facts.started_at < run_started)
+        and (facts.started_at is None or facts.started_at < math.floor(run_started))
     ):
         return NEVER_JOINED
     since = facts.not_listening_since
+    earliest = run_started if watched_since is None else watched_since
     if interactive and since is not None:
-        if run_started is not None:
-            since = max(since, run_started)
+        if earliest is not None:
+            since = max(since, earliest)
         if hub_now - since >= grace:
             return NOT_LISTENING
     return None
@@ -390,8 +399,16 @@ _SECRET = re.compile(
     + r"|ya29\." + _TAIL  # Google OAuth access tokens
     + r"|(?:AKIA|ASIA)[A-Z0-9]{16}[A-Za-z0-9]*"  # AWS access key ids
     + r"|xox[abprs]-[A-Za-z0-9-]+"  # Slack tokens
+    # Underscore prefixes (security review A1942), each with a minimum length so a name such
+    # as `hf_hub_download` is no key: Stripe secret and restricted keys, Hugging Face, npm.
+    + r"|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"
+    + r"|hf_[A-Za-z0-9]{20,}"
+    + r"|npm_[A-Za-z0-9]{20,}"
     + r")"
 )  # fmt: skip
+# The userinfo of a URL, `scheme://user:pass@host` or `scheme://token@host`: it becomes
+# `<secret>`, the scheme and the host stay (security review A1942).
+_USERINFO = re.compile(r"(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*://)[^\s/@<>\"'?#]+@")
 # `Authorization: <scheme> <value>` or `authorization=<value>`: the value, with its scheme.
 _AUTHORIZATION = re.compile(
     r"(?i)(?<![A-Za-z0-9_-])(authorization\s*[:=]\s*)(?:[a-z][a-z0-9-]*\s+)?[^\s,;\"'<>]+"
@@ -411,6 +428,7 @@ def _path(found: re.Match[str]) -> str:
 def scrub(line: str) -> str:
     """`line` with forge tokens, provider keys, authorization values and paths holding a
     user's name replaced by `<secret>` and `<path>`."""
+    line = _USERINFO.sub(r"\1<secret>@", line)
     line = _SECRET.sub("<secret>", line)
     line = _AUTHORIZATION.sub(r"\1<secret>", line)
     line = _BEARER.sub(r"\1<secret>", line)

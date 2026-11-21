@@ -6022,6 +6022,52 @@ Where the contract left the choice open, it decided as follows.
   hub may still report the earlier session's quiet spell. Read literally,
   the trigger would fire again at once, and the second finding would hold
   the placement at the cap.
+- **For a session adopted after the runner's own restart, the grace counts
+  from the adoption** (the lead, seq 189230). Such a session's start is
+  unknown (`started_at` stays `None`, so its exit is no quick one and it
+  never gets `never_joined`), so the runner keeps `watch_since`: the run's
+  start for a run it started, the adoption for one it found, and counts
+  the `not_listening` grace from the later of the quiet spell's start and
+  `watch_since`. Reason: no upgrade wave. Counted from the quiet spell
+  alone, a runner upgrade would act at once on every placement already
+  quiet for longer than the grace and restart them all together. Rejected:
+  counting from the quiet spell alone, for that reason.
+- **A verdict is acted on only while its facts still hold** (Codex review
+  A1940). The worker's verdict is applied in a later tick, so that tick
+  reads the facts again: not paused or dormant, the same trigger and quiet
+  spell, and the same answer on attachment. If any changed, the verdict is
+  dropped without acting, and a new diagnosis follows if a trigger holds
+  again. Nobody may be attached right before each step that ends a session,
+  the TERM and the kill alike (unknown counts as attached); someone who
+  attached meanwhile keeps it, and the finding is reported once instead.
+  Rejected: acting on the worker's snapshot, which can be seconds old and
+  could end a session a person has just attached to.
+- **Terminal exits stay with the exit handling; the watch takes only a
+  plain exit** (A1940). A revoked credential, the loop's hot loop, a folder
+  refusal or a provider limit is decided as without the watch
+  (`agent_credential_revoked`, `crash_loop`/`hot_loop`, `workspace_in_use`,
+  `rate_limited`), with the finding on that report. Only an exit the restart
+  policy would restart becomes a watch restart. For such a dead harness the
+  crash cap is checked before the watch's cap and wins (the lead's ruling).
+- **A join is compared at whole seconds and, once seen, stays seen** (A1940).
+  The hub's times have whole seconds, so a session that started in the
+  run's own second counts as joined; and once a session of this run has
+  been seen, `never_joined` stays off for the rest of the run.
+- **A finding stays until a report carrying it is taken** (A1940). A body
+  that replaces an unsent one, after a failed write, carries the finding on;
+  a newer finding replaces it. Rejected: clearing it when the body is
+  built, which lost it whenever the state changed before the retry.
+- **Only the probe's documented "not logged in" is `needed`** (security
+  review A1942, the lead, seq 189308): `claude auth status` exiting 1, and
+  `codex login status` exiting 1 with the line `Not logged in` (it also
+  exits 1 on an error). Any other exit, a timeout or an error is `unknown`,
+  since `needed` ends the placement as `failed`/`auth` with no restart.
+- **The scrub also takes a URL's userinfo and underscore key prefixes**
+  (A1942): `scheme://user:pass@host` and `scheme://token@host` keep the
+  scheme and the host and lose the userinfo; Stripe `sk_live_`, `sk_test_`,
+  `rk_live_`, `rk_test_` (16 characters or more after the prefix), Hugging
+  Face `hf_` and npm `npm_` (20 or more) become `<secret>`, behind the same
+  left word boundary, so `tsk_…` or `hf_hub_download` stay.
 - **`never_joined` goes first when both triggers hold.** If no session
   started since this run began, a quiet spell the hub reports belongs to an
   earlier session, so "never joined" is the truer finding.

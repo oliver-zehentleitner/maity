@@ -3,12 +3,14 @@ docs/api.md §15.7 "A finding", §15.14 "The runner's watch"; card tsk-bzmd0avm4
 
 from __future__ import annotations
 
+import subprocess
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from maity.runner import config, watch
+from maity.runner import config, keeper, watch
 
 MINIMAL = """\
 [hub]
@@ -231,6 +233,88 @@ def test_a_foreign_placement_has_no_trigger() -> None:
     assert when(None, T0 + 99 * MIN) is None
 
 
+def test_the_grace_counts_from_watched_since_and_never_joined_keeps_to_the_run() -> None:
+    # Adopted after the runner's own restart at T0: its start unknown, quiet for an hour.
+    adopted = facts(quiet=T0 - 60 * MIN)
+
+    def at(now: float) -> str | None:
+        return watch.trigger(
+            adopted, interactive=True, run_started=None, hub_now=now, grace=15 * MIN,
+            join_within=10 * MIN, watched_since=T0,
+        )  # fmt: skip
+
+    assert at(T0) is None
+    assert at(T0 + 15 * MIN - 1) is None
+    assert at(T0 + 15 * MIN) == watch.NOT_LISTENING
+    # No session started at all, yet no never_joined: the run's start is unknown.
+    assert at(T0 + 99 * MIN) == watch.NOT_LISTENING
+    assert watch.trigger(
+        facts(), interactive=False, run_started=None, hub_now=T0 + 99 * MIN, grace=15 * MIN,
+        join_within=10 * MIN, watched_since=T0,
+    ) is None  # fmt: skip
+
+
+def test_a_session_started_in_the_runs_second_counts_as_joined() -> None:
+    # The hub's times have whole seconds: a session at T0 joined a run started at T0 + 0.6.
+    def joined(started: float) -> str | None:
+        return watch.trigger(
+            facts(started=started), interactive=False, run_started=T0 + 0.6,
+            hub_now=T0 + 99 * MIN, grace=15 * MIN, join_within=10 * MIN,
+        )  # fmt: skip
+
+    assert joined(T0) is None
+    assert joined(T0 - 1) == watch.NEVER_JOINED
+
+
+# --- the login probe (keeper.login_state, security review A1942) ----------------------------
+
+
+class Probe:
+    """A stand-in for AsUser.run: the probe's answer, or the exception it raises."""
+
+    def __init__(self, code: int = 0, out: str = "", err: str = "", raises: Any = None) -> None:
+        self.done = subprocess.CompletedProcess(["probe"], code, out, err)
+        self.raises = raises
+
+    def run(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if self.raises is not None:
+            raise self.raises
+        return self.done
+
+
+def login(harness: str, probe: Probe, binary: str | None = "/bin/tool") -> str:
+    return keeper.login_state(harness, binary, probe)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("harness", "probe", "answer"),
+    [
+        ("claude-code", Probe(0), "ok"),
+        ("claude-code", Probe(1), "needed"),  # its documented "not logged in"
+        ("claude-code", Probe(2), "unknown"),
+        ("claude-code", Probe(127), "unknown"),
+        ("claude-code", Probe(raises=subprocess.TimeoutExpired("claude", 30)), "unknown"),
+        ("claude-code", Probe(raises=OSError("no such binary")), "unknown"),
+        ("codex", Probe(0, out="Logged in using ChatGPT\n"), "ok"),
+        ("codex", Probe(1, err="Not logged in\n"), "needed"),  # its documented answer
+        ("codex", Probe(1, err="Error checking login status: disk full\n"), "unknown"),
+        ("codex", Probe(1), "unknown"),
+        ("codex", Probe(2, err="Not logged in\n"), "unknown"),
+        ("codex", Probe(raises=subprocess.TimeoutExpired("codex", 30)), "unknown"),
+        ("opencode", Probe(1), "unknown"),  # no probe
+        ("antigravity", Probe(1), "unknown"),
+    ],
+)
+def test_only_the_documented_answer_is_a_needed_login(
+    harness: str, probe: Probe, answer: str
+) -> None:
+    assert login(harness, probe) == answer
+
+
+def test_no_binary_is_an_unknown_login() -> None:
+    assert login("claude-code", Probe(1), binary=None) == "unknown"
+
+
 # --- signals and the diagnosis ---------------------------------------------------------------
 
 
@@ -444,11 +528,48 @@ def test_notes_keep_the_newest_lines() -> None:
         "xoxp-1-2-3-abc",
         "xoxr-abc",
         "xoxs-abc-def",
+        "sk_live_51HabcdefGHIJKLMNOP",
+        "sk_test_abcdefghijklmnop12",
+        "rk_live_abcdefghijklmnop12",
+        "rk_test_abcdefghijklmnop12",
+        "hf_abcdefghijklmnopqrstuvwxyz12",
+        "npm_abcdefghijklmnopqrstuvwxyz1234",
     ],
 )
 def test_scrub_replaces_each_kind_of_secret(secret: str) -> None:
     assert watch.scrub(f"plc-0003: token {secret} seen") == "plc-0003: token <secret> seen"
     assert watch.scrub(f"plc-0003: key={secret}") == "plc-0003: key=<secret>"
+
+
+@pytest.mark.parametrize(
+    ("line", "scrubbed"),
+    [
+        ("plc-0003: clone https://bob:hunter2@github.com/o/r failed",
+         "plc-0003: clone https://<secret>@github.com/o/r failed"),
+        ("plc-0003: clone https://x-access-token:ghs_abc@github.com/o/r",
+         "plc-0003: clone https://<secret>@github.com/o/r"),
+        ("plc-0003: push to https://abc123token@gitlab.example/o/r",
+         "plc-0003: push to https://<secret>@gitlab.example/o/r"),
+        ("plc-0003: ssh://git@github.com:22/o/r", "plc-0003: ssh://<secret>@github.com:22/o/r"),
+    ],
+)  # fmt: skip
+def test_scrub_replaces_a_urls_userinfo_and_keeps_scheme_and_host(line: str, scrubbed: str) -> None:
+    assert watch.scrub(line) == scrubbed
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "plc-0003: tsk_live_abcdefghijklmnopqrstuv",
+        "plc-0003: ask_live_abcdefghijklmnopqrstuv",
+        "plc-0003: hf_hub_download and npm_install_x",
+        "plc-0003: my_npm_abcdefghijklmnopqrstuvwxyz",
+        "plc-0003: sk_live_short",
+        "plc-0003: https://hub.example/x and mail me@example.org",
+    ],
+)
+def test_scrub_leaves_underscore_names_and_plain_urls_alone(line: str) -> None:
+    assert watch.scrub(line) == line
 
 
 def test_scrub_replaces_an_authorization_value() -> None:
