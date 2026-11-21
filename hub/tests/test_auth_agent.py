@@ -469,7 +469,7 @@ def test_the_long_poll_does_not_renew_leases(agent: factory.Agent, migrated: Eng
     with migrated.begin() as conn:
         caller = authenticate(conn, facts)
         attachment = attachment_in(conn, caller, project_id)  # the route's project
-        caller = settle_in_project(conn, caller, attachment, renew_leases=False)
+        caller = settle_in_project(conn, caller, attachment, facts, renew_leases=False)
     assert caller.session_id == agent.session_id
     with migrated.connect() as conn:
         lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()

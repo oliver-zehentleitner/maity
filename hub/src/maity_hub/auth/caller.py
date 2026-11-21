@@ -14,7 +14,10 @@ with `signing: required` (§2.2). Which membership a call acts in, the isolation
 call's presence, lease renewal (except on the events long-poll) and the move of its claims to
 the live session are settled after it, in the same transaction (`deps._resolve`):
 `settle_in_project` on a project route, in the live attachment of the route's project alone
-(`attachment_in`), and `settle_project_less` for a call outside any project.
+(`attachment_in`), and `settle_project_less` for a call outside any project. An agent's read is
+counted there too, after the isolation refusal and before those effects, so an isolated call
+leaves no trace; on a project route the instance is not attached to it is counted before the
+`not_found` (`count_agent_read`), so probing other projects stays limited.
 """
 
 from __future__ import annotations
@@ -666,10 +669,8 @@ def _agent(conn: Connection, row: Any, via: str, facts: RequestFacts) -> Caller:
             "it uses the credential you already have",
             {"cli": facts.cli_install, "then": "maity resume"},
         )
-    # After the refusals that need no count, before the last use, presence and the leases: a
-    # read past the limit renews nothing (§1.7). A bridge's call with `Maity-For` counts here,
-    # against the bridge's own credential (§2.3).
-    _count_read(conn, facts, row.id)
+    # The read is not counted here: an isolated call writes nothing, its count included, and
+    # whether it is isolated depends on the route's project (`count_agent_read`).
     return Caller(
         kind="agent",
         via=via,
@@ -722,18 +723,28 @@ def in_attachment(caller: Caller, attachment: Any) -> Caller:
     return replace(caller, membership_id=attachment.membership_id, project_id=attachment.project_id)
 
 
+def count_agent_read(conn: Connection, caller: Caller, facts: RequestFacts) -> None:
+    """An agent's read against its credential's limit (§1.7): after the refusals that need no
+    count (a required signature, an isolation), before the last use, presence and the leases,
+    so a read past the limit renews nothing. A call on the routes of a project the instance is
+    not attached to counts before its `not_found`, as it always did. A bridge's call with
+    `Maity-For` counts against the bridge's own credential (§2.3)."""
+    _count_read(conn, facts, caller.credential_id or "")
+
+
 def settle_in_project(
-    conn: Connection, caller: Caller, attachment: Any, renew_leases: bool
+    conn: Connection, caller: Caller, attachment: Any, facts: RequestFacts, renew_leases: bool
 ) -> Caller:
     """An agent's call on a project route, once the live attachment there is resolved
     (`attachment_in`; none is `not_found`, before this): `isolated` when the membership is,
-    before any side effect (§6.2; no `ISOLATED_MAY` on a project's routes); then presence
-    and, unless `renew_leases` is off (the events long-poll), the leases in that membership
-    only (§2.4), and the caller acts in it."""
+    before any side effect, the read's count included (§6.2; no `ISOLATED_MAY` on a project's
+    routes); then the read's count, presence and, unless `renew_leases` is off (the events
+    long-poll), the leases in that membership only (§2.4), and the caller acts in it."""
     if attachment.isolated_since is not None:
         from maity_hub import isolation
 
         raise isolation.refusal(attachment)
+    count_agent_read(conn, caller, facts)
     return in_attachment(_present(conn, caller, [attachment], renew_leases), attachment)
 
 
@@ -754,14 +765,16 @@ def settle_project_less(
     conn: Connection, caller: Caller, facts: RequestFacts, renew_leases: bool
 ) -> Caller:
     """An agent's call outside any project (§2.4, §6.2): refused while every attachment is
-    isolated (`refuse_isolated_everywhere`); then presence and, unless `renew_leases` is off
-    (the events long-poll), the leases in every live attachment that is not isolated (the
-    lead, Q10). An instance whose attachments are all isolated leaves no trace on the calls
-    it may make: no last use, presence, lease or session."""
+    isolated (`refuse_isolated_everywhere`), with no count of the read; then the read's count
+    and presence and, unless `renew_leases` is off (the events long-poll), the leases in every
+    live attachment that is not isolated (the lead, Q10). An instance whose attachments are all
+    isolated leaves no trace on the calls it may make but their count: no last use, presence,
+    lease or session."""
     attached = attachments(conn, caller.credential_id or "")
     if not attached:  # detached from everything since `_credential` read it
         raise unauthenticated()
     refuse_isolated_everywhere(attached, facts)
+    count_agent_read(conn, caller, facts)
     free = [row for row in attached if row.isolated_since is None]
     if free:
         caller = _present(conn, caller, free, renew_leases)

@@ -18,6 +18,7 @@ from maity_hub.auth.caller import (
     RequestFacts,
     attachment_in,
     authenticate,
+    count_agent_read,
     keep_nonces_spent,
     settle_in_project,
     settle_project_less,
@@ -95,10 +96,15 @@ async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> C
             if slug is None:
                 caller = settle_project_less(conn, caller, facts, renew_leases)
             else:
-                # The route's project: its attachment (`not_found` without one), then its
-                # isolation, then this membership's presence and leases, in that order.
-                attachment = _refuse_other_project(conn, caller, slug)
-                caller = settle_in_project(conn, caller, attachment, renew_leases)
+                # The route's project: its attachment (`not_found` without one, the read
+                # counted first, as a probe of another project always was), then its
+                # isolation (no count), then the read's count and this membership's presence
+                # and leases, in that order.
+                attachment = _route_attachment(conn, caller, slug)
+                if attachment is None:
+                    count_agent_read(conn, caller, facts)
+                    raise not_found()
+                caller = settle_in_project(conn, caller, attachment, facts, renew_leases)
         if "maity-for" in facts.headers:  # a bridge calling for an agent (§2.3)
             from maity_hub import bridges
 
@@ -193,13 +199,19 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> Any:
     call's presence and leases, so that nothing (an idempotent replay included) answers for
     another project, and an isolation is not told to a project's non-member. Never another
     attachment in its place: an error of the lookup refuses the call."""
-    project = namespace.resolve(conn, slug)
-    if project is None:
-        raise not_found()
-    attachment = attachment_in(conn, caller, project.id)
+    attachment = _route_attachment(conn, caller, slug)
     if attachment is None:
         raise not_found()
     return attachment
+
+
+def _route_attachment(conn: Connection, caller: Caller, slug: str) -> Any | None:
+    """The live attachment of the agent's credential in the project `slug` names, or None
+    when the project does not exist or the instance is not attached to it."""
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    return attachment_in(conn, caller, project.id)
 
 
 # What an account that waits for approval may call (§2.7.5): its own account and

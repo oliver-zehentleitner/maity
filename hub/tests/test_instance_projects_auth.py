@@ -10,6 +10,8 @@ authenticated once for all of them and acts, on each call, in the projects the c
 - A call on a project's routes acts in the live attachment there alone: none is `not_found`,
   an isolated one `isolated`, both before any side effect, in that order; otherwise presence
   and leases are written in that membership only.
+- A read refused as `isolated` is not counted against the read limit (§1.7); a read of a
+  project the instance is not attached to is, before its `not_found`.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, update
 
-from maity_hub import clock, instances
+from maity_hub import clock, instances, read_limits
 from maity_hub import tables as t
 from tests import factory
 from tests.conftest import ClientFactory
@@ -348,3 +350,58 @@ def test_a_single_attachment_acts_in_its_one_membership(world: World) -> None:
     me = w.call("GET", "/me")
     assert me.status_code == 200, me.text
     assert [p["id"] for p in me.json()["projects"]] == [w.alpha]
+
+
+# --- the read limit (§1.7): an isolated call leaves no count, a probe still counts ---------
+
+
+def _reads(w: World) -> int:
+    """The reads counted against the instance's credential in this process (`read_limits`)."""
+    found = read_limits.COUNTER._counts.get(w.agent.credential_id)
+    return 0 if found is None else found.current
+
+
+def test_an_isolated_read_in_a_is_not_counted(world: World) -> None:
+    """Isolated in A: a read of A's routes is `isolated` and leaves no count, as an isolated
+    read always did (§6.2 "Those two calls leave no trace")."""
+    w = world
+    w.isolate(w.in_a)
+    refused = w.call("GET", f"{A}/tasks")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "isolated"
+    assert _reads(w) == 0
+
+
+def test_isolated_everywhere_a_read_outside_a_project_is_not_counted(world: World) -> None:
+    """Every attachment isolated: a read outside a project is `isolated` with no count; the
+    calls it may still make (`GET /me`) count, as before."""
+    w = world
+    w.isolate(w.in_a)
+    w.isolate(w.in_b)
+    refused = w.call("GET", "/me/cross-chats")
+    assert refused.status_code == 403, refused.text
+    assert _reads(w) == 0
+    w.detach(w.in_b)  # TODO(hub PR B step 3): `GET /me` of an instance in two projects
+    me = w.call("GET", "/me")
+    assert me.status_code == 200, me.text
+    assert _reads(w) == 1
+
+
+def test_a_read_of_a_project_the_instance_is_not_attached_to_counts(world: World) -> None:
+    """B detached, and a project with no membership at all: each read is `not_found` and is
+    counted, so probing other projects stays limited."""
+    w = world
+    w.detach(w.in_b)
+    factory.project(w.engine, "gamma")
+    for path in (f"{B}/tasks", "/projects/maintainer/gamma/tasks", "/projects/nobody/x/tasks"):
+        found = w.call("GET", path)
+        assert found.status_code == 404, found.text
+    assert _reads(w) == 3
+
+
+def test_a_read_counts_once(world: World) -> None:
+    w = world
+    assert w.call("GET", f"{A}/tasks").status_code == 200
+    assert _reads(w) == 1
+    assert w.call("GET", "/me/cross-chats").status_code == 200
+    assert _reads(w) == 2
