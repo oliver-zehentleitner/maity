@@ -66,15 +66,14 @@ def compute(conn: Connection) -> dict[str, Any]:
     instances_online = conn.execute(
         select(func.count()).select_from(live).where(counted, awake)
     ).scalar_one()
-    pages = public_projects.served_among(
+    p = t.project.c
+    pages = public_projects.served_of(
         conn,
         conn.execute(
-            select(t.project.c.id).where(
-                t.project.c.public_page == "on", t.project.c.state != "archived"
+            select(p.id, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+                p.public_page == "on", p.state != "archived"
             )
-        )
-        .scalars()
-        .all(),
+        ).all(),
     )
     done = conn.execute(
         select(func.count()).where(t.card.c.status == "done", t.card.c.closed_at >= now - WEEK)

@@ -49,9 +49,11 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
   own and its owner's pages do not show it, because a filing is one target, not a list.
   2026-11-21 (tsk-e37ckp87r9cp): the public lists outside `/api/v1/`, which `GROWING` never
   held (`/explore`, an organisation's page, a person's and an agent's projects, the landing
-  page's count), ask whether their projects have a page once (`served_among`) and read the
-  full names once, instead of 1–3 statements per project (`/explore` 22 statements for 3
-  projects and 143 for 30 before, 11 for both after; `hub/tests/test_public_lists_cost.py`).
+  page's count), ask whether their projects have a page once for the rows they read
+  (`public_projects.served_of`) and read the full names once, instead of 1–3 statements per
+  project (`/explore` 22 statements for 3 projects and 143 for 30 before, 10 for both after;
+  `hub/tests/test_public_lists_cost.py`), in IN lists of at most 500 ids, since `/explore` and
+  the count judge every public project on the instance and no quota bounds that number.
 - **Baseline with a test account** (headless browser, median of 3 runs, cold and warm):
   the load event at 0.7–0.8 s on every page, warm no faster than cold, because all 101–103
   files come back 200 on a reload. The board and a card's panel end at 2.9–3.4 s: about 28

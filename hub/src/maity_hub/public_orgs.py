@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, moderation, namespace, public_pages, public_projects, render
+from maity_hub import clock, moderation, public_pages, public_projects, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -31,10 +31,12 @@ def render_org(conn: Connection, hub: Settings, org_id: str) -> list[public_page
         return []
     p = t.project.c
     candidates = conn.execute(
-        select(p.id, p.name).where(p.owner_org_id == org.id, p.public_page == "on")
+        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+            p.owner_org_id == org.id, p.public_page == "on"
+        )
     ).all()
-    public = public_projects.served_among(conn, [row.id for row in candidates])
-    names = namespace.full_names(conn, public)
+    public = public_projects.served_of(conn, candidates)
+    names = public_projects.full_names(conn, public)
     projects = sorted((names[row.id], row.name) for row in candidates if row.id in public)
     items = "".join(
         f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a></li>'

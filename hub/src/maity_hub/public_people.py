@@ -159,7 +159,7 @@ def agent_entry(listed: ListedAgent) -> dict[str, Any]:
 def _listed(conn: Connection, human: Any) -> list[Listed]:
     """The projects with a public page the person is a member of, by full name, only while
     their profile is on (§16.9)."""
-    from maity_hub import namespace, public_projects
+    from maity_hub import public_projects
 
     m = t.membership.c
     projects = conn.execute(
@@ -170,8 +170,8 @@ def _listed(conn: Connection, human: Any) -> list[Listed]:
     ).all()
     if not human.public_profile:
         return []
-    public = public_projects.served_among(conn, [p.id for p in projects])
-    names = namespace.full_names(conn, public)
+    public = public_projects.served_of(conn, projects)
+    names = public_projects.full_names(conn, public)
     return sorted(
         (
             Listed(names[p.id], p.name, p.member_role, p, p.membership_id)
