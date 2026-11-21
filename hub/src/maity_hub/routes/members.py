@@ -334,9 +334,32 @@ def members_outcome(
     answers its attachments that are not isolated as they are then (`load_member_set`)."""
     if single:
         [only] = membership_ids
-        return idempotency.Outcome(200, "member", str(only), load_member(conn, str(only)))
+        return idempotency.Outcome(200, "member_self", str(only), load_member(conn, str(only)))
     views = [load_member(conn, str(i)) for i in membership_ids]
     return idempotency.Outcome(200, "member_set", credential_id, {"projects": views})
+
+
+def _sees_own_attachment(conn: Connection, membership_id: str, caller: Caller) -> bool:
+    """A replayed `member_self`: the caller's own attachment in that membership, live and
+    not isolated, as the write itself needed. Another attachment that keeps the credential
+    authenticated does not let it read a project it is detached from or isolated in."""
+    if caller.kind != "agent" or caller.credential_id is None or not membership_id.isdigit():
+        return False
+    a, m = t.instance_attachment, t.membership
+    found = conn.execute(
+        select(a.c.id)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(
+            a.c.credential_id == caller.credential_id,
+            a.c.membership_id == int(membership_id),
+            a.c.detached_at.is_(None),
+            m.c.isolated_since.is_(None),
+        )
+    ).first()
+    return found is not None
+
+
+idempotency.register("member_self", idempotency.plain(load_member), _sees_own_attachment)
 
 
 def load_member_set(conn: Connection, credential_id: str) -> dict[str, Any]:

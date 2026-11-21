@@ -54,8 +54,17 @@ class World:
     card_b: str
     start: datetime
 
-    def call(self, method: str, path: str, *, sign: bool = True, body: Any = None) -> Any:
-        """The agent's call to `path` below /api/v1, signed or as Bearer."""
+    def call(
+        self,
+        method: str,
+        path: str,
+        *,
+        sign: bool = True,
+        body: Any = None,
+        key: str | None = None,
+    ) -> Any:
+        """The agent's call to `path` below /api/v1, signed or as Bearer; a write under `key`,
+        else a fresh Idempotency-Key."""
         full = f"{API}{path}"
         raw = json.dumps(body).encode() if body is not None else b""
         route, _, query = full.partition("?")
@@ -63,7 +72,7 @@ class World:
             signed(self.agent, method, route, query, raw) if sign else bearer(self.agent)
         ) | {"Content-Type": "application/json"}
         if method != "GET":
-            headers["Idempotency-Key"] = f"key-{secrets.token_hex(12)}"
+            headers["Idempotency-Key"] = key or f"key-{secrets.token_hex(12)}"
         return self.client.request(method, full, headers=headers, content=raw or None)
 
     def later(self, hours: int = 1) -> None:
@@ -519,6 +528,35 @@ def test_post_me_limit_applies_per_project(world: World) -> None:
         "project",
         "not_a_member",
     )
+
+
+@pytest.mark.parametrize("change", ["isolate", "detach"])
+@pytest.mark.parametrize(
+    "path, body",
+    [
+        ("/me", {"paused": {"reason": "a break"}, "project": "maintainer/alpha"}),
+        ("/me/limit", {"until": None, "project": "maintainer/alpha"}),
+    ],
+)
+def test_a_replayed_single_project_write_rechecks_its_attachment(
+    world: World, change: str, path: str, body: dict[str, Any]
+) -> None:
+    """The one-project answer of `PATCH /me` or `POST /me/limit` replays (§1.5) only while
+    the attachment in that project is live and not isolated: B keeps the credential
+    authenticated, but A's member view and briefing are not read through it."""
+    w = world
+    method = "PATCH" if path == "/me" else "POST"
+    key = f"key-{secrets.token_hex(12)}"
+    first = w.call(method, path, body=body, key=key)
+    assert first.status_code == 200, first.text
+    again = w.call(method, path, body=body, key=key)
+    assert again.status_code == 200, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    getattr(w, change)(w.in_a)
+    replayed = w.call(method, path, body=body, key=key)
+    assert replayed.status_code == 404, replayed.text
+    assert "briefing" not in replayed.text
+    assert w.call("GET", "/me").status_code == 200  # B still authenticates
 
 
 def test_the_keep_the_why_ack_names_its_project_among_several(world: World) -> None:
