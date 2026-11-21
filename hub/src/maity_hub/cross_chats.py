@@ -1005,13 +1005,16 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
 
 def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
     """The active membership whose instance id is the one the mention wrote: where the
-    instance is attached now, else, for a revoked or detached one, where it was."""
+    instance is attached now, else, for a revoked or detached one, where it was. None
+    when it is attached now only in isolated memberships: §9.5 makes that a mention of
+    the profile."""
     from maity_hub import instances  # instances imports what this module's imports import
 
     rows = conn.execute(
         select(
             t.membership.c.id,
             t.membership.c.project_id,
+            t.membership.c.isolated_since,
             t.credential.c.revoked_at,
             t.instance_attachment.c.detached_at,
         )
@@ -1020,15 +1023,17 @@ def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
         .where(
             t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),
-            t.membership.c.isolated_since.is_(None),
             t.credential.c.instance == instance,
         )
     ).all()
-    if not rows:
-        return None
     live = [r for r in rows if r.revoked_at is None and r.detached_at is None]
+    if live:
+        # Where it is attached now decides, isolated or not: a detached row elsewhere
+        # must not take the mention to a project the instance left.
+        return next((r for r in live if r.isolated_since is None), None)
     # Without a live one a detached row is meant on purpose: the id was the instance's there.
-    return (live or rows)[0]
+    past = [r for r in rows if r.isolated_since is None]
+    return past[0] if past else None
 
 
 def _mention_events(

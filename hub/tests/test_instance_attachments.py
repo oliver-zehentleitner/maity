@@ -410,6 +410,46 @@ def test_a_mention_finds_the_instance_where_it_is_attached_now(world: World) -> 
         assert cross_chats._instance_home(conn, w.agent.id, w.agent.instance).id == w.in_b
 
 
+def test_a_mention_of_an_instance_attached_only_where_it_is_isolated_is_a_profile_mention(
+    world: World, make_client: ClientFactory
+) -> None:
+    """§9.5: the instance is attached now only in A, whose membership is isolated, and was
+    in B, detached. The live attachment decides: no instance mention goes to B, the project
+    it left; the mention is written as a mention of the profile, in its one non-isolated
+    membership."""
+    w = world
+    flow.project(w.owner, "gamma")
+    other = flow.agent(make_client, w.owner, "gamma")  # no project shared: a cross chat
+    chat = w.owner.post(
+        "/me/cross-chats", {"title": "Across", "participants": [w.agent.id, other.id]}
+    )
+    assert chat.status_code == 201, chat.text
+    handle = next(p["handle"] for p in chat.json()["participants"] if p["member_id"] == w.agent.id)
+    w.detach(w.in_b)
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == w.in_a)
+            .values(isolated_since=clock.now(), isolated_reason="hold", isolated_by="hub")
+        )
+    with w.engine.connect() as conn:
+        assert cross_chats._instance_home(conn, w.agent.id, w.agent.instance) is None
+    posted = w.owner.post(
+        f"/me/cross-chats/{chat.json()['id']}/messages",
+        {"body": f"@{handle}#{w.agent.instance} over here"},
+    )
+    assert posted.status_code == 201, posted.text
+    with w.engine.connect() as conn:
+        places = conn.execute(
+            select(t.event.c.project_id, t.event.c.audience).where(
+                t.event.c.kind == "cross_chat_mention"
+            )
+        ).all()
+    assert [(row.project_id, list(row.audience)) for row in places] == [
+        (w.beta, [f"member:{w.agent.id}"])
+    ]
+
+
 def test_auth_resolves_the_oldest_attachment_that_is_not_detached(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
