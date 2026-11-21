@@ -40,6 +40,7 @@ from . import (
     restart,
     scratch,
     scratchop,
+    skills,
     targets,
     workspace,
 )
@@ -154,6 +155,16 @@ FOLDER_PROMPT_WITHIN = 180.0
 # The harnesses whose run without their OS sandbox is reported (`sandbox_unavailable`): those
 # whose allowlist relies on it. Codex's sandbox is its whole confinement and is checked apart.
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
+
+
+def running_detail(unconfined: bool, skill_missing: bool) -> str | None:
+    """The detail a start reports with `running` (§15.7): one code only, so a session without
+    its sandbox says that first; a missing Keep the Why skill only after (req-b3q6ttwgrp1v)."""
+    if unconfined:
+        return "sandbox_unavailable"
+    return "keep_the_why_unavailable" if skill_missing else None
+
+
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
 # The random leaf names the runner chose for each agy `/tmp` scratch (workspace layout): the
@@ -304,6 +315,9 @@ class Record:
     binary: str | None = None  # the harness binary this session started with (§15.16)
     # Its OS sandbox as the start gate decided (GateView); None for a record from before.
     sandbox: bool | None = None
+    # The placement names a Keep the Why skill and this start went without it (skills.py):
+    # reported with `running` as `keep_the_why_unavailable` (§15.7).
+    skill_missing: bool = False
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     # Fresh sessions started in this generation (§15.7 `sessions`), and whether the hub reads
     # them: one whose placement carries `fresh_session` (§15.6) takes the field in a report.
@@ -833,7 +847,7 @@ class Supervisor:
                 if on is None:
                     on = target.sandbox.get(p["harness"], False)
                 unconfined = p["harness"] in UNCONFINED_REPORTED and not on
-                rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
+                rec.enter(now, "running", detail=running_detail(unconfined, rec.skill_missing))
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             elif rec.state == "running" and p.get("mode") == "interactive":
@@ -1369,11 +1383,19 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             scratch = self._scratch(p, harness, target)
+            skill = self._skill(p, target)
+            if not self._wants(p["id"], p["generation"]):  # so may a fetch of the skill
+                with self.lock:
+                    rec.enter(self.now(), "stopped", "stopped_by_hub")
+                return
+            with self.lock:  # reported with `running` (keep_the_why_unavailable)
+                # Any value but null names a skill, a malformed one included (skills.named).
+                rec.skill_missing = skill is None and p.get("keep_the_why") is not None
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
             context = self._context(p, harness, place, target, rec.resume and not reset,
-                                    view=view, scratch=scratch)  # fmt: skip
+                                    view=view, scratch=scratch, skill=skill)  # fmt: skip
             launch = adapters.launch(context)
             if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
                     and adapters.gets_test_cluster(harness.id)
@@ -1523,6 +1545,7 @@ class Supervisor:
         resume: bool = False,
         view: GateView | None = None,
         scratch: Path | None = None,
+        skill: Path | None = None,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         view = view or GateView.of(target, harness.id)
@@ -1581,7 +1604,31 @@ class Supervisor:
             tmp_scratch_parent=tmp_parent,
             tmpdir=tmpdir,
             pg_pass=pg_pass,
+            skill=skill,
         )
+
+    def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
+        """The Keep the Why skill the placement names (§15.5), as the runner's checked copy's
+        plugin root (skills.py); None when it names none, and None with a log line when it
+        cannot be had here. Only where the agents run as the runner's own user on this host
+        (the `single` layout): elsewhere the agents' user may not read the runner's directory,
+        and an ssh host fetches for itself (the next part of tsk-172s8y208whg)."""
+        try:
+            wanted = skills.named(p)
+        except skills.Unavailable as exc:
+            self.log(f"{p['id']}: no Keep the Why skill: {exc}")
+            return None
+        if wanted is None:
+            return None
+        if not (target.as_user.direct and target.as_user.here and not target.host):
+            self.log(f"{p['id']}: no Keep the Why skill: delivered only in the single layout "
+                     "on the runner's host so far")  # fmt: skip
+            return None
+        try:
+            return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+        except (skills.Unavailable, OSError) as exc:
+            self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
+            return None
 
     def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
         """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a

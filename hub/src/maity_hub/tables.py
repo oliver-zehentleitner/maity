@@ -1439,6 +1439,10 @@ placement = Table(
     # A profile it creates: the handle (unique while active) and the join fields (§3.1).
     Column("new_handle", String(HANDLE)),
     Column("new_profile", JSON_VALUE),
+    # A profile of the creator's own that was not a member when placed (§15.6): it, and its
+    # join fields in `new_profile`, until the first pickup's exchange makes the membership.
+    # Indexed for the cascades of a membership's removal and a profile's deletion (§6.2, §6.3).
+    _ref("agent_id", "agent_profile.id", index=True),
     _ref("runner_id", "runner.id", nullable=False, index=True),
     Column("target", String(TITLE)),
     Column("harness", String(32), nullable=False),
@@ -1494,7 +1498,10 @@ placement = Table(
     UniqueConstraint("project_id", "new_handle", "active"),
     UniqueConstraint("project_id", "runner_id", "clone", "active"),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
-    CheckConstraint("membership_id IS NOT NULL OR new_handle IS NOT NULL", name="names_an_agent"),
+    CheckConstraint(
+        "membership_id IS NOT NULL OR new_handle IS NOT NULL OR agent_id IS NOT NULL",
+        name="names_an_agent",
+    ),
     **MYSQL_TABLE,
 )
 
