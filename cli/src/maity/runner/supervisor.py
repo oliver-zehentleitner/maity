@@ -1396,6 +1396,12 @@ class Supervisor:
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
             context = self._context(p, harness, place, target, rec.resume and not reset,
                                     view=view, scratch=scratch, skill=skill)  # fmt: skip
+            # A sandboxed Claude Code placement with no TMPDIR of its own fails closed: its
+            # commands would share /tmp/claude-<uid> (tsk-k7svzz2p4v7y). No detail: the list of
+            # `harness_refused` details is a closed contract list (§15.7); the cause is logged.
+            why = adapters.private_tmpdir_refusal(context)
+            if why is not None:
+                raise workspace.Refused("harness_refused", why=why)
             launch = adapters.launch(context)
             if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
                     and adapters.gets_test_cluster(harness.id)
@@ -1608,11 +1614,12 @@ class Supervisor:
         )
 
     def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
-        """The Keep the Why skill the placement names (§15.5), as the runner's checked copy's
-        plugin root (skills.py); None when it names none, and None with a log line when it
-        cannot be had here. Only where the agents run as the runner's own user on this host
-        (the `single` layout): elsewhere the agents' user may not read the runner's directory,
-        and an ssh host fetches for itself (the next part of tsk-172s8y208whg)."""
+        """The Keep the Why skill the placement names (§15.5), as the plugin root of a checked
+        copy the agents can read (skills.py); None when it names none, and None with a log line
+        when it cannot be had. Where the agents run as the runner's own user on this host (the
+        `single` layout), the runner's own copy; elsewhere (the agent_user layout, an ssh host)
+        the agents' user may not read the runner's directory, so the checked copy is put below
+        that user's home and checked there at every start (skills.deliver, tsk-7casfxb7cn49)."""
         try:
             wanted = skills.named(p)
         except skills.Unavailable as exc:
@@ -1620,15 +1627,24 @@ class Supervisor:
             return None
         if wanted is None:
             return None
-        if not (target.as_user.direct and target.as_user.here and not target.host):
-            self.log(f"{p['id']}: no Keep the Why skill: delivered only in the single layout "
-                     "on the runner's host so far")  # fmt: skip
-            return None
         try:
-            return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
-        except (skills.Unavailable, OSError) as exc:
+            if target.as_user.direct and target.as_user.here and not target.host:
+                return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+            return skills.deliver(target.as_user, self._agents_home(target),
+                                  self.cfg.skills_dir, self.cfg.state_dir, *wanted)  # fmt: skip
+        except (skills.Unavailable, OSError, ValueError, subprocess.SubprocessError) as exc:
+            # ValueError too (a decoding error, the review of #2089): the skill is never what
+            # fails a start, so it is never counted as a crash.
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None
+
+    def _agents_home(self, target: Target) -> Path:
+        """The home of the user the agents run as on `target`: the remote login's, read on
+        connecting (its agent_files lie in it), or the agents' user's here."""
+        if not target.as_user.here:
+            assert target.agent_files is not None  # noqa: S101 - connected before a start
+            return target.agent_files.parent
+        return config.home_of(target.as_user.user) if target.as_user.user else Path.home()
 
     def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
         """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a
@@ -1637,10 +1653,11 @@ class Supervisor:
         (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
         this placement alone (adapters) and removed with it (`_clear_scratch`). Called only for
         a placement that is given that parent and whose sandbox lets it write the re-opened
-        leaf (workspace.OWN_TMPDIR_HARNESSES: Codex, on this machine; Claude Code mounts it
-        read-only). None where the scratch's own `tmp` fits, where a leaf would not fit
-        either (a long uid on macOS), or where it cannot be made: the session then starts with
-        no TMPDIR, as before (tsk-0zb9mgzmbwn4)."""
+        `tmp` (workspace.OWN_TMPDIR_HARNESSES: Codex and Claude Code, on this machine). None
+        where the scratch's own `tmp` fits, where a leaf would not fit either (a long uid on
+        macOS), or where it cannot be made: a Codex session then starts with no TMPDIR, as
+        before, and a sandboxed Claude Code one is refused in `_start`
+        (adapters.private_tmpdir_refusal; tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
         if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
             return None
         try:
@@ -1650,7 +1667,7 @@ class Supervisor:
             return None
         if not adapters.fits_socket(longest):
             return None
-        leaf = self._tmp_scratch(p, target, "TMPDIR")
+        leaf = self._tmp_scratch(p, target, "temp directory")
         return None if leaf is None else leaf / "tmp"
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:

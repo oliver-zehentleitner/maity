@@ -30,6 +30,7 @@ from . import (
     scratch,
     scratchop,
     serve,
+    skillop,
     skills,
     stub,
     supervisor,
@@ -516,6 +517,7 @@ def _check_harness(
         _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "opencode":
         _check_opencode(report, harness, layout)
+        _check_opencode_flags(report, harness, found.path, agent_path, as_user)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -567,6 +569,34 @@ def _check_opencode(
         report.error(line + ", and require_sandbox = true refuses them" + cite)
     else:
         report.warn(line + cite)
+
+
+def _check_opencode_flags(
+    report: Report, harness: config.Harness, binary: str | None, agent_path: str,
+    as_user: AsUser = RUNNER, where: str = "",
+) -> None:  # fmt: skip
+    """Whether the installed opencode's commands name the flags the adapter passes, for each
+    configured mode (capabilities.OPENCODE_FLAGS): OpenCode 2.3's TUI refused `--model` and
+    every interactive start exited at once (tsk-daa6e0gfncg0). A flag its `--help` does not
+    name is an error, as that start would fail; a help that cannot be read is a warning."""
+    if binary is None:
+        return
+    found = capabilities.opencode_missing_flags(binary, agent_path, harness.modes, as_user)
+    for mode, missing in found.items():
+        command = " ".join(("opencode", *capabilities.OPENCODE_FLAGS[mode][0]))
+        if missing is None:
+            report.warn(
+                f"{where}harness opencode: `{command} --help` could not be read; whether it "
+                f"takes the flags the runner's {mode} start passes is not checked"
+            )
+        elif missing:
+            report.error(
+                f"{where}harness opencode: `{command} --help` does not name "
+                f"{', '.join(missing)}; the runner's {mode} start passes it, so opencode would "
+                "exit at once (tsk-daa6e0gfncg0)"
+            )
+        else:
+            report.ok(f"{where}harness opencode: `{command}` takes the {mode} start's flags")
 
 
 def _check_antigravity(
@@ -1104,6 +1134,9 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
             if harness.id == "opencode":
                 _check_opencode(report, harness, where=f"{name}: ")
+                _check_opencode_flags(
+                    report, harness, probe.path, target.agent_path, as_user, f"{name}: "
+                )
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -1441,6 +1474,12 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
         if a.op == "codex" else [a.op, "--under", a.under, a.path]
     ))  # fmt: skip
+    # Internal too: the delivered Keep the Why skill's copy put below the agents' home and
+    # checked there (skillop), for an ssh host, whose own `maity` runs it; the arguments go to
+    # skillop as they are, which answers a usage error (2) as an older host's `maity` does.
+    r = rsub.add_parser("skillop")
+    r.add_argument("args", nargs=argparse.REMAINDER)
+    r.set_defaults(handler=lambda a: skillop.main(a.args))
     # Internal (no `help`, so not listed): the supervisor's own git-free prune of a Claude Code
     # subagent's leftover worktree under the clone's `.claude/worktrees/` on placement start, so
     # the clone reads as plain again (worktree). The runner runs no git in an existing clone, so

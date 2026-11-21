@@ -31,7 +31,7 @@ from maity.runner import (
     tmux,
     workspace,
 )
-from maity.runner.asuser import RUNNER
+from maity.runner.asuser import RUNNER, AsUser, Ssh
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\
@@ -4206,12 +4206,12 @@ def test_a_claude_code_placement_gets_no_password_file(
     assert ctx.pg_pass.is_file()
 
 
-def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
+def test_a_codex_and_a_claude_code_placement_get_a_temp_leaf_of_their_own(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """tsk-0zb9mgzmbwn4, the live check of 2026-11-20: Codex 0.171.0 writes a leaf re-opened
-    under the hidden parent, Claude Code 2.1.329 mounts it read-only. So with no room under
-    the scratch, a Codex placement gets its own TMPDIR leaf and a Claude Code one none."""
+    """With no room under the scratch, a Codex placement (tsk-0zb9mgzmbwn4) and a Claude Code
+    one (tsk-k7svzz2p4v7y) each get their own 0700 leaf, whose `tmp` is their TMPDIR. A harness
+    that hides nothing (stub) is given no parent, so no leaf."""
     sup, *_ = world
     recorded(sup.cfg)
     target = sup.targets["local"]
@@ -4221,9 +4221,32 @@ def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
     monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)  # room under the test's root
     claude = config.Harness("claude-code", ("supervised",), "supervised")
     codex = config.Harness("codex", ("supervised",), "supervised")
-    assert sup._context(placement(), claude, place, target, scratch=deep).tmpdir is None
+    stub = config.Harness("stub", ("supervised",), "supervised")
+    ctx = sup._context(placement(), claude, place, target, scratch=deep)
+    assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
+    assert _stat_mode(ctx.tmpdir.parent) == 0o700
     ctx = sup._context(placement(n=4), codex, place, target, scratch=deep)
     assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
+    assert sup._context(placement(n=5), stub, place, target, scratch=deep).tmpdir is None
+
+
+def test_a_start_without_a_private_tmpdir_fails_closed(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-k7svzz2p4v7y: where adapters.private_tmpdir_refusal gives a reason, the start is
+    refused, not launched: `harness_refused` with no detail (a closed contract list, §15.7),
+    no crash count, and the reason in the runner's log. The rule itself is tested in
+    test_adapters; here a stub placement stands in, the rule made to refuse it."""
+    sup, backend, reports, _, logs = world
+    recorded(sup.cfg)
+    monkeypatch.setattr(adapters, "private_tmpdir_refusal", lambda ctx: "no private TMPDIR: x")
+    sup.update([placement()])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "harness_refused", None)
+    assert not rec.crashes and backend.started == []
+    assert any("no private TMPDIR: x" in line for line in logs)
+    assert all(b["detail"] is None for _, b in reports.sent)
 
 
 def _stat_mode(path: Path) -> int:
@@ -4258,6 +4281,82 @@ def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
     assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
     assert sup.records["plc-0003"].skill_missing is False
     assert not any("Keep the Why" in line for line in logs)
+
+
+def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-7casfxb7cn49: where the agents cannot read the runner's directory, the checked copy
+    is put below their own home (skills.deliver): the agents' user's home here, the remote
+    login's (read on connecting, where its agent_files lie) on an ssh host."""
+    sup, _, _, _, logs = world
+    local = sup.targets["local"]
+    asked: list[tuple[AsUser, Path]] = []
+
+    def deliver(as_user: AsUser, home: Path, skills_dir: Path, state_dir: Path, source: str,
+                commit: str) -> Path:  # fmt: skip
+        assert (skills_dir, state_dir) == (sup.cfg.skills_dir, sup.cfg.state_dir)
+        assert (source, commit) == (KTW["source"], KTW["commit"])
+        asked.append((as_user, home))
+        return home / "copy" / "plugin"
+
+    def ensure(*_: Any) -> Path:
+        raise AssertionError("the runner's own copy handed to another user")
+
+    monkeypatch.setattr(skills, "deliver", deliver)
+    monkeypatch.setattr(skills, "ensure", ensure)
+    monkeypatch.setattr(config, "home_of", lambda user: Path("/home") / user)
+    agents = replace(local, as_user=AsUser("agents"))
+    assert sup._skill(placement(keep_the_why=KTW), agents) == Path("/home/agents/copy/plugin")
+    remote = replace(local, name="build-9", as_user=Ssh(name="build-9"),
+                     agent_files=Path("/home/box/.maity-runner"))  # fmt: skip
+    assert sup._skill(placement(keep_the_why=KTW), remote) == Path("/home/box/copy/plugin")
+    assert asked == [(agents.as_user, Path("/home/agents")), (remote.as_user, Path("/home/box"))]
+    assert not any("Keep the Why" in line for line in logs)
+
+
+def test_a_host_maity_without_the_skill_ops_starts_without_the_skill(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An ssh host on an older maity answers the op with a usage error: no skill, no refusal.
+    sup, _, _, _, logs = world
+
+    def deliver(*_: Any) -> Path:
+        raise scratchop.Unsupported("host maity has no skill ops: usage: scratchop make")
+
+    monkeypatch.setattr(skills, "deliver", deliver)
+    remote = replace(sup.targets["local"], name="build-9", as_user=Ssh(name="build-9"),
+                     agent_files=Path("/home/box/.maity-runner"))  # fmt: skip
+    assert sup._skill(placement(keep_the_why=KTW), remote) is None
+    assert any("no Keep the Why skill: host maity has no skill ops" in line for line in logs)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"), ValueError("no answer")],
+)
+def test_a_skill_error_of_any_kind_starts_without_it_and_counts_no_crash(
+    world: Any, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """The review of #2089 (A1893): an error that is not an OSError (a decoding error on an ssh
+    answer) is caught too, so the session starts, no crash is counted, and the report says
+    keep_the_why_unavailable."""
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+
+    def ensure(*_: Any) -> Path:
+        raise error
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    assert len(backend.started) == 1
+    rec = sup.records["plc-0003"]
+    assert rec.crashes == [] and rec.skill_missing is True
+    assert any("no Keep the Why skill:" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
 
 
 def test_a_skill_that_cannot_be_had_starts_the_session_without_it_and_says_so(

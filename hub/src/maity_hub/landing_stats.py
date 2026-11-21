@@ -69,15 +69,15 @@ def compute(conn: Connection) -> dict[str, Any]:
     instances_online = conn.execute(
         select(one_each).select_from(live).where(counted, awake)
     ).scalar_one()
-    pages = [
-        project
-        for project in conn.execute(
-            select(t.project).where(
-                t.project.c.public_page == "on", t.project.c.state != "archived"
+    p = t.project.c
+    pages = public_projects.served_of(
+        conn,
+        conn.execute(
+            select(p.id, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+                p.public_page == "on", p.state != "archived"
             )
-        )
-        if public_projects.served(conn, project)
-    ]
+        ).all(),
+    )
     done = conn.execute(
         select(func.count()).where(t.card.c.status == "done", t.card.c.closed_at >= now - WEEK)
     ).scalar_one()
