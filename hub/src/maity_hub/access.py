@@ -7,9 +7,10 @@ the membership's trust and role decide, by scope.
 The one exception is a public project's *outsider* (§2.3, "Reading a public project from
 outside"): a signed-in human without an active membership reads the routes `OUTSIDE_READS`
 names, and only those, as an `OutsideReader`. Closed by construction (hub/context/public-pages.md
-eb7fd1c7, "Superseded for signed-in outsiders"): a route is open to an outsider only when its
-endpoint calls `reader` and carries `@outside_read`, and `ProjectRoute` answers an outsider's call
-to any other project route `not_found` before its body or query is read (`gate`). A human who
+3f9c2d71, "A signed-in outsider reads a public project through a closed list of member
+routes"): a route is open to an outsider only when its endpoint calls `reader` and carries
+`@outside_read`, and `ProjectRoute` answers an outsider's call to any other project route
+`not_found` before its body or query is read (`gate`). A human who
 owns an agent or a runner in the project passes the gate on `OWNER_CALLS` alone (§1.3), and
 reads not-done `security` cards no more than any outsider does (`public_cards.shown`).
 """
@@ -189,6 +190,23 @@ OUTSIDE_READS = frozenset(
         ("GET", f"{API_PROJECT}/tasks/{{card_id}}/notes"),
         ("GET", f"{API_PROJECT}/logo"),
         ("GET", f"{API_PROJECT}/banner"),
+        # The Why view, only while the hub last found the repository public (§11.3, §11.5).
+        ("GET", f"{API_PROJECT}/keep-the-why"),
+        ("GET", f"{API_PROJECT}/keep-the-why/export"),
+        ("GET", f"{API_PROJECT}/keep-the-why/bodies"),
+    }
+)
+
+# The outside reads open to an outsider only while the hub last found the project's repository
+# public, and only in a namespace the instance's token serves (§2.3, §11.4): `ProjectRoute` still
+# passes them through `gate`, which answers an outsider `not_found` before the query is read
+# otherwise, so no validation answer reaches an outsider the route is closed to. The endpoint
+# then asks the forge itself (`routes/keep_the_why._outside_reader`).
+PUBLIC_REPOSITORY_READS = frozenset(
+    {
+        ("GET", f"{API_PROJECT}/keep-the-why"),
+        ("GET", f"{API_PROJECT}/keep-the-why/export"),
+        ("GET", f"{API_PROJECT}/keep-the-why/bodies"),
     }
 )
 
@@ -333,14 +351,36 @@ def _session_human(conn: Connection, cookie: str) -> str | None:
     return str(row.human_id)
 
 
-def is_outsider(conn: Connection, cookie: str, slug: str, owner_call: bool = False) -> bool:
+def is_outsider(
+    conn: Connection,
+    cookie: str,
+    slug: str,
+    owner_call: bool = False,
+    public_repository_read: bool = False,
+    instance_namespaces: frozenset[str] | None = None,
+) -> bool:
     """Whether the session cookie's human is an outsider of the public project `slug` names
-    (§2.3) for this call. Cheapest refusals first: the project's own row (no page, archived),
-    then the session, then the human's membership, for one of `OWNER_CALLS` (`owner_call`) the
-    owner's reads, and only then the whole public test."""
+    (§2.3) for this call. Cheapest refusals first: the project's own row (no page, archived,
+    and for one of `PUBLIC_REPOSITORY_READS` (`public_repository_read`) a repository the hub
+    last found public in a namespace the instance's token serves (`instance_namespaces`, None
+    without a token), which opens the read to an outsider), then the session, then the
+    human's membership, for one of `OWNER_CALLS` (`owner_call`) the owner's reads, and only
+    then the whole public test."""
     project = namespace.resolve(conn, slug)
     if project is None or project.public_page != "on" or project.state == "archived":
         return False
+    if (
+        public_repository_read
+        and project.repository_public is True
+        and instance_serves_project(conn, project, instance_namespaces)
+    ):
+        return False  # the read is open to an outsider: the route answers them
+    return _outsider_of(conn, cookie, project, owner_call)
+
+
+def _outsider_of(conn: Connection, cookie: str, project: Any, owner_call: bool = False) -> bool:
+    """`is_outsider` past the project's own row: the session, the membership, for one of
+    `OWNER_CALLS` the owner's reads, and the whole public test."""
     human_id = _session_human(conn, cookie)
     if human_id is None:
         return False
@@ -358,6 +398,68 @@ def is_outsider(conn: Connection, cookie: str, slug: str, owner_call: bool = Fal
     from maity_hub import public_projects
 
     return project.id in public_projects.public_for_outsiders(conn, [project.id])
+
+
+def open_why_project(
+    conn: Connection, cookie: str, slug: str, instance_namespaces: frozenset[str]
+) -> Any | None:
+    """For one of `PUBLIC_REPOSITORY_READS` that `is_outsider` let through: the project row
+    when the caller is an outsider whom the stored checks open it to (a repository the hub
+    last found public, a namespace the instance's token serves), for `gate` to ask the forge
+    live before the query is read; None for anyone else, whom the route answers as before."""
+    project = namespace.resolve(conn, slug)
+    if project is None or project.repository_public is not True:
+        return None
+    if not instance_serves_project(conn, project, instance_namespaces):
+        return None
+    return project if _outsider_of(conn, cookie, project) else None
+
+
+def _lenient_max_age(request: Any) -> int:
+    """The query's `max_age` before FastAPI reads it, for the visibility answer's window alone:
+    parsed exactly as the route parses it (`ktw.max_age_of`, the same pydantic type), else the
+    default (absent, or refused by the route later)."""
+    from maity_hub import ktw
+
+    found = ktw.max_age_of(request.query_params.get("max_age"))
+    return ktw.DEFAULT_MAX_AGE if found is None else found
+
+
+async def _why_visible_now(request: Any, project: Any, token: str) -> None:
+    """The forge's answer on the repository before the query is read (`ktw_reads.
+    outside_visible`, one function with the endpoint's, which then reuses the kept answer):
+    `not_found` when not public or unanswered. The live ask runs in a worker thread, outside
+    any database connection. A spent budget passes: the endpoint answers `probe_unavailable`
+    with its `retry_at` after the query is read."""
+    from anyio import to_thread
+
+    from maity_hub import forge, ktw_reads
+
+    max_age = _lenient_max_age(request)
+    try:
+        visible, asked = await to_thread.run_sync(
+            ktw_reads.outside_visible, token, project.id, project.repository_url, max_age
+        )
+    except forge.ForgeUnavailableError:
+        return
+    if asked:
+        ktw_reads.asked_now(project.id, project.repository_url)
+    if not visible:
+        raise not_found()
+
+
+def instance_serves_project(
+    conn: Connection, project: Any, instance_namespaces: frozenset[str] | None
+) -> bool:
+    """Whether the instance's token serves the project's namespace (§11.4), as the public
+    view's **Why** decides it (`public_project_views.render_views`): `instance_namespaces` is
+    the operator's own namespaces while the hub holds a token, None otherwise. Reads only."""
+    if instance_namespaces is None:
+        return False
+    from maity_hub import forge_access  # it resolves projects through `namespace`, as here
+
+    owner = namespace.full_name(conn, project).split("/", 1)[0]
+    return forge_access.serves(instance_namespaces, owner)
 
 
 def _owns_a_part(conn: Connection, project_id: str, human_id: str) -> bool:
@@ -383,13 +485,21 @@ def _owns_a_part(conn: Connection, project_id: str, human_id: str) -> bool:
     return runner is not None
 
 
-async def gate(request: Any, owner_call: bool = False) -> None:
+async def gate(
+    request: Any, owner_call: bool = False, public_repository_read: bool = False
+) -> None:
     """`not_found` for an outsider's call to a project route not in `OUTSIDE_READS` (§2.3),
     before FastAPI reads its body or its query, so that no validation answer (`400 invalid`)
     tells an outsider what a route takes. `ProjectRoute` calls it for such a route, with
-    `owner_call` for one of `OWNER_CALLS`. Members, the owners `_owns_a_part` names on one of
-    `OWNER_CALLS`, strangers to a private or unknown project, agents, bridges, runners and
-    callers without a session pass unchanged: their call is answered exactly as before. A
+    `owner_call` for one of `OWNER_CALLS`, and with `public_repository_read` for one of
+    `PUBLIC_REPOSITORY_READS`, which it opens to an outsider only while the project's stored
+    `repository_public` is true and the instance's token serves its namespace (the app's
+    settings: `forge_github_token`, `forge_instance_namespaces`) and the forge, asked live when
+    its kept answer is older than the request's window (`_why_visible_now`), says the
+    repository is public (the lead, seq 186723). Members, the owners
+    `_owns_a_part` names on one of `OWNER_CALLS`, strangers to a private or unknown project,
+    agents, bridges, runners and callers without a session pass unchanged: their call is
+    answered exactly as before. A
     stranger to a private or unknown project needs no gate: the body is validated before the
     route's membership read for both alike, so `invalid` tells the one from the other no
     more than `not_found` does. It costs nothing while public pages are off, without a
@@ -413,11 +523,25 @@ async def gate(request: Any, owner_call: bool = False) -> None:
     slug = (request.scope.get("path_params") or {}).get("slug")
     if not cookie or not slug:
         return
+    instance = None  # the namespaces the instance's token serves (§11.4), from the settings
+    token = None
+    if public_repository_read:
+        hub = request.app.state.settings
+        token = hub.forge_github_token
+        if token is not None:
+            instance = hub.forge_instance_namespaces
     engine = request.app.state.async_engine
+    opened = None
     async with engine.connect() as conn:
-        outsider = await conn.run_sync(is_outsider, cookie, slug, owner_call)
+        outsider = await conn.run_sync(
+            is_outsider, cookie, slug, owner_call, public_repository_read, instance
+        )
+        if not outsider and token is not None and instance is not None:
+            opened = await conn.run_sync(open_why_project, cookie, slug, instance)
     if outsider:
         raise not_found()
+    if opened is not None and token is not None:
+        await _why_visible_now(request, opened, token)  # after the connection is closed
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

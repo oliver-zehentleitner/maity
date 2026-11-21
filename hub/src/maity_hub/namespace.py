@@ -40,7 +40,11 @@ class ProjectRoute(APIRoute):
     A route under `/api/v1/projects/{owner}/{slug}` that is not one of `access.OUTSIDE_READS`
     for the request's method first passes `access.gate`: a public project's outsider is
     answered `not_found` there, before FastAPI reads the body or the query (§2.3), an owner of
-    an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3)."""
+    an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3). One
+    of `access.PUBLIC_REPOSITORY_READS` passes the gate too, which opens it to an outsider only
+    while the project's stored `repository_public` is true, the instance's token serves the
+    project's namespace (the operator's own, §11.4), and the forge's answer on the repository,
+    asked live when the kept one is too old, says it is public, all before the query is read."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()
@@ -57,6 +61,7 @@ class ProjectRoute(APIRoute):
         project_route = path == access.API_PROJECT or below
         readable = frozenset(m for m, p in access.OUTSIDE_READS if p == path)
         owned = frozenset(m for m, p in access.OWNER_CALLS if p == path)
+        conditional = frozenset(m for m, p in access.PUBLIC_REPOSITORY_READS if p == path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}
@@ -64,7 +69,9 @@ class ProjectRoute(APIRoute):
                 params = dict(params)
                 params["slug"] = f"{params.pop('owner')}/{params['slug']}"
                 request.scope["path_params"] = params
-            if project_route and request.method not in readable:
+            if project_route and request.method in conditional:
+                await access.gate(request, public_repository_read=True)
+            elif project_route and request.method not in readable:
                 await access.gate(request, request.method in owned)
             return await inner(request)
 
