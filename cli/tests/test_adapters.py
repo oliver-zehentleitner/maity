@@ -166,7 +166,9 @@ def test_no_os_uuid_command_is_allowed_maity_uuid_makes_the_ids(tmp_path: Path) 
                 verdict = value
         return verdict
 
-    assert "Bash(maity *)" in claude_rules
+    # In each mode on its own, not only in the two lists together (A1919).
+    for ctx in (plain, sandboxed):
+        assert "Bash(maity *)" in adapters.claude_settings(ctx)["permissions"]["allow"]
     assert resolve("maity uuid") == "allow"
     assert resolve("cat /proc/sys/kernel/random/uuid") == "deny"
 

@@ -552,9 +552,13 @@ reads as a UUID source that is not there.
   `external_directory` deny likely refuses it; one source for every
   harness is simpler to explain.
 
-A CLI older than the release that ships `maity uuid` (0.1.0a17
-included) has no UUID source in a placement at all. Dropping the rule
-takes nothing away there, since it never ran.
+Under the allowlist harnesses (Claude Code, opencode), a CLI older than
+the release that ships `maity uuid` (0.1.0a17 included) leaves a
+placement without a UUID source: the usual commands are refused there,
+as the probes above showed for Claude Code. Dropping the rule takes
+nothing away there, since it never ran. Codex and agy are not judged
+here; what they refuse depends on their own sandbox. The changelog
+names the upgrade as the prerequisite.
 
 ## The command allowlists are not a boundary until agents run as their own user
 
