@@ -654,14 +654,15 @@ window.Maity = window.Maity || {};
       const carries = (p) => !!p.credential_id && isLive(p) && !current.some((q) => q.active && q.credential_id === p.credential_id);
       return closed.filter((p) => at(p) === newest).some(carries);
     }
-    // §15.6: an agent by id is an active member of the project, and has room under its instance
-    // limit for one more (§15.5: one placement per instance, several per membership).
-    // A member without members:admin: only a profile of their own that is not a member yet, which
-    // the placement admits (§15.6); an agent already here, or a new profile, needs members:admin.
+    // §15.6: an agent by id is an active member of the project with room under its instance
+    // limit for one more (§15.5: one placement per instance, several per membership), or a
+    // profile of the caller's own that is not a member yet, which the placement admits with a
+    // first join's fields (the join form offers only the caller's own profiles, GET /agents).
+    // A member without members:admin: only that profile of their own; an agent already here, or
+    // a new profile, needs members:admin.
     function blocked() {
       if (own) return chosen.id && !chosen.member ? null : M.t("placements.new.own_only");
-      if (!chosen.id) return null;
-      if (!chosen.member) return M.t("placements.new.not_member");
+      if (!chosen.id || !chosen.member) return null;
       const n = instancesOf(chosen.member);
       if (n.count + n.adding > n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
       return null;

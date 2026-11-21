@@ -2225,15 +2225,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: a closed placement of another member that still holds its clone takes that clone, a removed one does not " + iiClone);
   win.Maity.api.getAll = iiAll;
   srCancel().click(); await tick();
+  // §15.6 "A profile that is not a member yet" (tsk-rmvgtab6rae8): an admin's own profile not in the
+  // project is started by its id with an admin's join fields, no join line first. The agents offered
+  // are the admin's own profiles (GET /agents): another owner's agent, a member here the form knows,
+  // is never offered. The fixture hub admits no profile by id yet, so its answers are given here.
+  {
+    const arPost = win.Maity.api.post, arAll = win.Maity.api.getAll;
+    const arSent = [];
+    let arAnswer = null, arTheirs = false;
+    win.Maity.api.post = (p, b) => {
+      if (p !== "/projects/maintainer/maity/placements") return arPost(p, b);
+      arSent.push(b);
+      return arAnswer instanceof Error ? Promise.reject(arAnswer) : Promise.resolve(arAnswer);
+    };
+    // The members read again after a refusal: another owner's agent among them, when asked.
+    const arOther = { id: "agt-theirs", kind: "agent", handle: "their-agent", display_name: "Their Agent", owner_id: "hum-other", trust: "member",
+      role: "coder", reports_to: null, areas: [], presence: "offline", instances: [] };
+    win.Maity.api.getAll = (p, ...rest) => (p === "/projects/maintainer/maity/members" && arTheirs
+      ? arAll(p, ...rest).then((r) => Object.assign({}, r, { items: r.items.concat([arOther]) })) : arAll(p, ...rest));
+    const arAgents = () => byId("join-agent").querySelectorAll("option").map((o) => o.getAttribute("value"));
+    await srOpen();
+    byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
+    const arShown = [!byId("join-trust").parentNode.hidden, !byId("join-role").parentNode.hidden, !byId("join-reports").parentNode.hidden,
+      !byId("join-areas").parentNode.hidden, !byId("join-briefing").parentNode.hidden, srHidden(".join-instance"), srHidden(".join-subagents"), byId("join-ttl").parentNode.hidden];
+    expect(arAgents().includes("agt-s1") && arAgents().includes("agt-a") && arAgents().includes("") && srPanel().querySelector(".join-runner-why").hidden
+      && arShown.every(Boolean) && text(srCreate()) === "Start on the runner",
+      "placements: an admin's own profile not in the project is offered with an admin's join fields, nothing said against it "
+      + JSON.stringify([arAgents(), arShown]));
+    byId("join-trust").value = "member"; byId("join-trust").dispatch("change");
+    byId("join-role").value = "reviewer"; byId("join-role").dispatch("change");
+    byId("join-reports").value = "hum-maintainer"; byId("join-areas").value = "web/, docs/";
+    byId("join-briefing").value = "Mind the form.";
+    // The hub's refusal (owner_only, not_yours …) is said at the form with its code and field.
+    arAnswer = new win.Maity.api.ApiError("a placement names one of your own agents", 400, "/projects/maintainer/maity/placements", "invalid", { fields: { "agent.id": "not_yours" } });
+    await srSubmit();
+    const arRefused = srSaid();
+    expect(arSent.length === 1 && JSON.stringify(arSent[0]) === JSON.stringify({ agent: { id: "agt-s1" }, trust: "member", role: "reviewer", reports_to: "hum-maintainer",
+      areas: ["web/", "docs/"], capabilities: [], briefing: "Mind the form.", runner: "rnr-0002", target: null, harness: "claude-code", mode: "interactive", model: null })
+      && arRefused === "Not placed on the runner: a placement names one of your own agents (invalid) — agent.id: not_yours" && srForm(),
+      "placements: an admin's own profile not in the project is sent by its id with an admin's join fields; the hub's refusal stays at the form "
+      + JSON.stringify([arSent[0], arRefused]));
+    // A member by now (not_with_agent_id): the members are read again, and the next start names it
+    // by its id alone. Another owner's agent among the members read is never offered.
+    arTheirs = true;
+    arAnswer = new win.Maity.api.ApiError("a placement never changes a membership", 400, "/projects/maintainer/maity/placements", "invalid",
+      { fields: { trust: "not_with_agent_id", role: "not_with_agent_id" } });
+    await srSubmit();
+    const arReports = byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value"));
+    expect(arAgents().includes("agt-s1") && !arAgents().includes("agt-theirs") && arReports.includes("agt-theirs") && byId("join-trust").parentNode.hidden,
+      "placements: another owner's agent the form knows is not offered by id; a profile the hub says is a member now is one "
+      + JSON.stringify([arAgents(), arReports]));
+    arTheirs = false;
+    arAnswer = { id: "plc-ar1", agent: { id: "agt-s1", handle: "shop-dev", display_name: "Shop Dev", avatar_url: null }, runner: { id: "rnr-0002", name: "home-laptop" } };
+    await srSubmit();
+    expect(arSent.length === 3 && JSON.stringify(arSent[2]) === JSON.stringify({ agent: { id: "agt-s1" }, runner: "rnr-0002", target: null, harness: "claude-code", mode: "interactive", model: null })
+      && srPanel().hidden && text(srBox().querySelector(".join-slot")).includes("Shop Dev is placed on home-laptop."),
+      "placements: a member is started by its id alone; made, the panel closes and says where it runs " + JSON.stringify(arSent[2]));
+    win.Maity.api.post = arPost; win.Maity.api.getAll = arAll;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  }
   await srOpen();
-  // §15.6: by id only an active member of the project; a profile of one's own not in it yet joins by a line first.
-  byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
-  const srOutsideWhy = text(srPanel().querySelector(".join-runner-why"));
-  await srSubmit();
-  expect(srMade.length === 1 && !srPanel().querySelector(".join-runner-why").hidden
-    && srOutsideWhy === "Only an agent already in this project, or a new one, starts on a runner. Choose a new agent, or join this one with a line first."
-    && srSaid() === "Not placed on the runner: " + srOutsideWhy,
-    "placements: a profile not in the project is said so and not sent " + srOutsideWhy);
   byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   byId("join-handle").value = "agent-b"; byId("join-handle").dispatch("input"); byId("join-display").value = "Agent Bee";
   await srSubmit();

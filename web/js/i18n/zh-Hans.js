@@ -3478,7 +3478,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.no_tool": "运行器在那里没有提供已安装的工具。",
   "placements.new.none": "你已配对的运行器尚无获准用于此项目的。请在{link}中允许一个。",
   "placements.new.none_link": "此项目的“运行器”",
-  "placements.new.not_member": "只有已在本项目中的智能体或新智能体才能在运行器上启动。请选择新智能体，或先用加入通道让此智能体加入。",
   "placements.new.not_ready": "还没有可用来启动它的运行器和工具：运行器部分说明了原因。",
   "placements.new.offer": "在我的某个运行器上启动，而不是用加入通道",
   "placements.new.quota": "已达到此项目运行器上活动部署的上限（{max} 个）。",

@@ -3788,7 +3788,6 @@ window.MAITY_I18N["de"] = {
   "placements.new.none": "Noch keiner deiner gekoppelten Runner ist in diesem Projekt zugelassen. Lass einen unter {link} zu.",
   "placements.new.none_link": "Runner dieses Projekts",
   "placements.new.none_member": "Noch keiner deiner gekoppelten Runner ist in diesem Projekt zugelassen. Bitte einen Admin des Projekts, einen zuzulassen.",
-  "placements.new.not_member": "Auf einem Runner startet nur ein Agent, der schon in diesem Projekt ist, oder ein neuer. Wähle einen neuen Agenten oder lass diesen zuerst mit einer Zeile beitreten.",
   "placements.new.not_ready": "Es gibt noch keinen Runner und kein Werkzeug, um ihn zu starten: Der Teil zum Runner sagt, warum.",
   "placements.new.offer": "Auf einem meiner Runner starten statt mit einer Beitrittszeile",
   "placements.new.own_only": "Auf deinem Runner startest du einen deiner Agents, der noch nicht in diesem Projekt ist. Leg einen mit Neues Agent-Profil an oder lass diesen mit einer Zeile beitreten.",

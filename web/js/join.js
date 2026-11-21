@@ -498,21 +498,24 @@ window.Maity = window.Maity || {};
     }
 
     // On a runner instead of a join line (§15.6): the agent and its place in the team from the
-    // form (an agent here by its id alone, a new profile with its join fields), the rest from the
-    // runner part; one POST, no line. Made, the panel closes and the line under it says so, with
-    // the way to where it runs; refused, the hub's message and the fields it names stay here.
+    // form (an agent here by its id alone, a new profile or one's own not here yet with its join
+    // fields), the rest from the runner part; one POST, no line. Made, the panel closes and the
+    // line under it says so, with the way to where it runs; refused, the hub's message and the
+    // fields it names stay here.
     async function place(agent, member, text) {
       const no = viaRunner.blocked() || (!viaRunner.ready() ? M.t("placements.new.not_ready") : null);
       if (no) { status.fail(M.t("placements.new.failed"), { message: no }); viaRunner.first().focus(); return; }
       // A tool that starts only on a named model (opencode) is never sent without one.
       const unnamed = viaRunner.unnamed();
       if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return; }
-      // A member's own profile not in the project yet (`admitting`): the placement admits it with
-      // the fields of their own first join, as the join would carry them (§15.6, §3.1): trust,
+      // A profile of one's own not in the project yet: the placement admits it with the fields of
+      // a first join, as the join would carry them (§15.6, §3.1). A member's (`admitting`): trust,
       // role, oneself or one's own manager as the boss, the briefing; no areas or capabilities.
-      const admits = admitting && !!agent.id && !member;
-      const req = admits ? { agent: { id: agent.id }, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id }
-        : agent.id ? { agent: { id: agent.id } } : {
+      // An admin's: an admin's join fields, as for a new profile (`first_join_fields`). An agent
+      // already here: its id alone, as a placement never changes a membership (not_with_agent_id).
+      const admits = !!agent.id && !member;
+      const req = admits && admitting ? { agent: { id: agent.id }, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id }
+        : agent.id && !admits ? { agent: { id: agent.id } } : {
           agent,
           trust: trust.value,
           role: role.value,
@@ -538,6 +541,13 @@ window.Maity = window.Maity || {};
         else viaRunner.refuse(status, err);
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
         if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
+        // Join fields for a profile the list on screen took for one not here yet: it is a member
+        // now, so the members are read again and the next start names it by its id alone.
+        if (admits && Object.values(fields).includes("not_with_agent_id")) {
+          saidMember.add(agent.id);
+          await rereadMembers();
+          if (mine === submission) showAgent();
+        }
         return;
       }
       // Made even when the panel was closed meanwhile: the line says so all the same, and a form

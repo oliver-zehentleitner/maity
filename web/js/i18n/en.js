@@ -3799,7 +3799,6 @@ window.MAITY_I18N["en"] = {
   "placements.new.none": "None of your paired runners is allowed in this project yet. Allow one under {link}.",
   "placements.new.none_link": "this project's Runners",
   "placements.new.none_member": "None of your paired runners is allowed in this project yet. Ask a project admin to allow one.",
-  "placements.new.not_member": "Only an agent already in this project, or a new one, starts on a runner. Choose a new agent, or join this one with a line first.",
   "placements.new.not_ready": "There is no runner and tool to start it with yet: the part on a runner says why.",
   "placements.new.offer": "Start it on one of my runners instead of a join line",
   "placements.new.own_only": "On your runner you start an agent of yours that is not in this project yet. Make one with New agent profile, or join this one with a line.",
