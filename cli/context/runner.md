@@ -550,10 +550,11 @@ would read as a boundary when it is not one.
 **Status:** active
 **Evidence:** inferred
 **Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py`, `scratchop.py` and `commands.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`, the launch-write op through the `maity runner scratchop` CLI in `tests/test_commands.py`, and the too-old-host refusal in `tests/test_supervisor.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
-**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979, its detail code added by card tsk-m1mkmx0ncckr and request req-gb2rgpe7k94g
 **See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
-**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, a placement is given a home with no scratch to carry it, or the follow-up card adds a contract detail-code for the too-old-host refusal
+**See:** runner.md#a-report-the-hub-refuses-as-invalid-is-sent-once-more-without-its-detail-or-dropped — b68a2e8b-8472-4cfe-88b1-8531d7275949 — as of 2026-11-21
+**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, or a placement is given a home with no scratch to carry it
 
 Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
 (`adapters.codex_home`), under the workspaces root, rather than under the
@@ -590,13 +591,14 @@ a clear reason (the host's `maity` is too old for Codex placements) so the
 operator upgrades the host, rather than crash-looping the start or quietly
 falling back to the hidden state directory where no command would run.
 
-That refusal is reported as `harness_refused` with no detail, and the
-specific reason — the host's `maity` is too old for the codex launch-write
-op — goes to the runner's log only. `harness_refused`'s detail is a closed
-contract list (docs/api.md §15.7) with no code for this host-too-old case;
-an unknown detail makes the hub answer `invalid`, so the runner would
-re-send the rejected report every tick and the refusal would never be
-recorded. A contract detail-code for it is deferred to a follow-up card.
+That refusal is reported as `failed` / `harness_refused` with the detail
+`codex_host_too_old` (docs/api.md §15.7), and the host's own message goes
+to the runner's log. Until card tsk-m1mkmx0ncckr put that code in the
+contract, the report carried no detail (the choice of PR #1979): an unknown
+detail made the hub answer `invalid`, and the runner re-sent the rejected
+report every tick. A hub older than
+the code still refuses the detail; the runner then sends the report once
+more without it (b68a2e8b), so the refusal is recorded either way.
 `retry_at` stays unset, so the start still does not crash-loop and only a
 new generation retries.
 
@@ -4618,6 +4620,50 @@ without actual.json, would otherwise hold 0 for a session that runs, and a
 `hung` end later would start fresh a second time instead of resuming;
 saving the count at the start alone would still miss a lost actual.json.
 The refusal's report would carry the generation before's count.
+
+## A report the hub refuses as `invalid` is sent once more without its detail, or dropped
+
+**Id:** b68a2e8b-8472-4cfe-88b1-8531d7275949
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m1mkmx0ncckr (a refused placement report resent every tick); request req-gb2rgpe7k94g (the §15.7 code `codex_host_too_old` and the §15.8 rule, approved as written); docs/api.md §15.7, §15.8; the review of PR #2080 (the resend and the drop saved at once, across a restart)
+**See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-21
+**Revisit when:** the hub's `invalid` answer stops naming the failing fields in `details.fields`, or a report field other than `detail` gains a value a newer runner may send to an older hub
+
+A placement report the hub answers `400 invalid` is never sent again as it
+was (`Supervisor._send`). When `details.fields` names exactly `detail`, the
+runner sends the same report once more with `detail: null` and the same
+`seq`; any other `invalid` it logs once and drops, so the record counts as
+settled until its state changes and the next change reports afresh. Like
+the first send, the stripped report and the drop are saved at once, before
+anything else is sent, so a restart never sends the refused body again. A
+failure that refuses no body — no answer, `429`, a `5xx`, a maintenance
+window — is sent again on the next tick as before.
+
+**Reason:** `_check_codes` refuses a report before the `seq`
+compare-and-set, so a refused report stores nothing and the same body meets
+the same refusal on every tick: the hub never records the state, and the
+runner's log fills with the same line. The usual cause is a runner newer
+than its hub — a detail code the hub does not list yet
+(`codex_host_too_old`, `target_unknown` before its fix) — and there the
+state and reason are still valid and worth recording; only the detail is
+not. Because the refused report took no `seq`, reusing it is safe, and the
+stripped report is the same report minus one optional field. Leaving the
+detail out does not help any other refusal, so the runner stops there.
+
+**Rejected alternatives:**
+- Send a refused report again on every tick, as before: the loop the card
+  describes — the hub never records the state, and nothing ends it but a
+  change of state or a newer hub.
+- Drop every `invalid` report, the detail-only one included: an older hub
+  would then record nothing of a refusal the runner reports with a new
+  code, and the placement would show its last state instead of `failed` /
+  `harness_refused`. Resending once without the detail records the state
+  and reason the hub understands.
+- Leave new detail codes unsent until every hub knows them (what PR #1979
+  did for the Codex old-host refusal): the reason then never reaches the
+  hub at all, even a current one.
 
 ## A stopped agent's clone stays for its retention time, then the runner removes it
 
