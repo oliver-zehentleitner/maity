@@ -1263,3 +1263,56 @@ would put the old design back over the new one until the next pass.
   crawler and a reader without script never saw the design at all.
 - Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
   removal, that the running version did not make; taking the target off is what a missing page already means.
+
+## Whether a project has a page is one rule over rows; `served` judges the row it is given
+
+**Id:** 1def6e81-4be2-4e03-8bd7-4426d59407e5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e37ckp87r9cp (audit round 4: the rule written twice since #1986, five public lists asking it per project); the plan for it and the lead's approval, 2026-11-21; reviews A1831 (the cost of one project) and A1832 (an IN list over every public project), and the fix the review lead agreed and the lead approved, 2026-11-21; `public_projects.served_of`, `served`, `served_among`, `BATCH`; `routes.projects._refuse_outside_roles`, `agent_owners.effective`
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-21
+**Revisit when:** no caller asks `served` of a project as it will be after a write, or the rule needs a column a list's rows do not carry
+
+Whether a project has a page now (its page on, not archived, under no moderation hold, its namespace owner an
+organisation that is not deleted and under no hold, or a human who is active, not deleted and not suspended) is
+written once, in `public_projects.served_of(conn, rows)`, which judges the rows it is given in at most four
+statements for every `BATCH` (500) rows. `served(conn, project)` passes it that one row as it is;
+`served_among(conn, ids)` (the stars) reads the stored rows first (page on, not archived, in SQL) and passes those.
+The public lists (`/explore`, an organisation's page, a person's and an agent's projects, the landing page's count
+of public projects) read their candidates with the columns the rule needs and pass those rows to `served_of`, and
+read the full names once (`public_projects.full_names`), so they cost the same for 3 projects as for 30
+(`hub/tests/test_public_lists_cost.py`). One project costs what it did before: no statement with the page off or
+archived, one under a project hold, two for a human owner, three for an organisation. Every IN list these ask
+carries at most `BATCH` ids, the bound of `export.CHUNK`, mirrored as `reports.PATHS_PER_QUERY` is, because
+`export` imports this module through `reports` and `moderation`.
+
+**Reason:** a `PATCH` of a project asks `served` of the project as it will be: `_refuse_outside_roles` passes
+`agent_owners.effective` a row whose `public_page` is the one in the request, not yet written. A `PATCH` that
+turns the page on and narrows `outside_roles` in the same call must be judged under `anyone`, so the narrower
+list is refused while an outsider's agent at work holds a role it leaves out.
+
+**Rejected alternatives:**
+- `served(conn, project)` as `project.id in served_among(conn, [project.id])`, the card's first proposal: it
+  reads the stored page, so that `PATCH` would be judged by the page as it was and the narrower list would pass.
+  `test_a_patch_that_turns_the_page_on_checks_outside_roles_by_the_new_page` fails with it.
+- Keeping the rule written twice, once per row and once for a set: the two could drift apart without a test
+  noticing, which is what the card was opened for.
+- Each list passing ids to `served_among`, which reads their rows again (the first version of this change): one
+  statement more per list, so every list with exactly one public project cost one more than before (review
+  A1831; measured 2026-11-21, e.g. an organisation's page 7 -> 8, `/explore` 8 -> 9), and `/explore` and the count put the id of every public project
+  on the instance into one IN list.
+- One IN list over all the ids, unbounded: `/explore` and the landing page's count judge every project with a
+  page on the instance, which no per-namespace quota bounds, and past the driver's limit on bound parameters
+  (SQLite usually 32766, PostgreSQL 65535) the statement fails ("too many SQL variables" with 250,001 ids,
+  review A1832); the per-project calls before could not fail that way. Batches of 500 keep a normal list at one
+  statement per question.
+- The holds and owners joined in SQL instead of batches, which the agreed fix allowed as well: a join judges the
+  stored rows, so `served`, which judges a row not yet written, would need the rule a second time.
+
+**Consequence:** no list costs more than before for one project (measured 2026-11-21 against `main`, org-owned and
+human-owned: `/explore` 8 and 7 statements, an organisation's page 7, a person's projects 6 and 5, an agent's 4
+and 3, the landing page's counters 11 and 10), and from two projects on they cost less. Past 500 candidates a list
+costs one statement more for each further batch of each question, which
+`test_the_public_lists_ask_in_batches_of_a_bounded_size` counts with the batch patched to 2 under a lowered SQLite
+limit.
