@@ -58,7 +58,7 @@ MODES = ("interactive", "supervised")
 # model_reasoning_effort, agy's --effort. Claude Code and opencode take none yet.
 EFFORT_HARNESSES = ("codex", "antigravity")
 EFFORT_PATTERN = re.compile(r"^[a-z]{1,16}$")  # the hub's shape for an effort (§15.5)
-SLUG =re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
+SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # A project as the hub names it (§6.25): the namespace owner's handle and the slug.
 FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}/[a-z0-9][a-z0-9-]{1,62}$")
 # host/owner/name after normalise_repository(), or host/owner/* for a whole owner; no other glob

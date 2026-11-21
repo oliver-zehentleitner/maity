@@ -125,6 +125,7 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "harness",
         "mode",
         "model",
+        "effort",  # the reasoning effort, null: the harness's default (§15.5)
         "workspace",
         "desired",
         "generation",
@@ -186,6 +187,7 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
         "harness": "claude-code",
         "mode": "interactive",
         "model": None,
+        "effort": None,
         "target": None,
         "workspace": {"clone": body["agent"]["handle"], "branch": "main", "repository": REPOSITORY},
         "rejoin": False,
@@ -221,6 +223,8 @@ def test_the_runner_reads_the_skill_only_for_a_project_that_uses_keep_the_why(
     ("body", "code"),
     [
         ({"model": "gpt-9"}, "harness_not_offered"),
+        # A runner that advertises no efforts (one from before them) takes no named effort.
+        ({"effort": "medium"}, "harness_not_offered"),
         ({"mode": "supervised", "harness": "codex"}, "harness_not_offered"),
         ({"target": "build-1"}, "harness_not_offered"),
         ({"runner": "rnr-nope"}, "runner_not_attached"),
@@ -233,6 +237,78 @@ def test_what_the_runner_does_not_offer_is_refused(
     assert (response.status_code, error(response)) == (409, code)
     if code == "harness_not_offered":
         assert response.json()["error"]["details"]["offered"][0]["id"] == "claude-code"
+
+
+def advertise_efforts(s: Setup, efforts: list[str]) -> None:
+    claude = {**CAPABILITIES["harnesses"][0], "efforts": efforts}
+    capabilities = {**CAPABILITIES, "harnesses": [claude, *CAPABILITIES["harnesses"][1:]]}
+    assert hello(s.client, s.runner, capabilities=capabilities).status_code == 200
+
+
+def test_a_placement_names_an_effort_the_runner_offers(setup: Setup) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): `effort` is one of the harness's advertised efforts; the
+    owner, the runner and the request summary read it, and a change makes a new generation."""
+    advertise_efforts(setup, ["low", "medium"])
+    body = placed(setup, effort="medium")
+    assert body["effort"] == "medium"
+    assert runner_view(setup, body["id"])["effort"] == "medium"
+    one = f"/projects/maintainer/maity/placements/{body['id']}"
+    other = setup.owner.patch(one, {"effort": "high"})
+    assert (other.status_code, error(other)) == (409, "harness_not_offered")
+    assert other.json()["error"]["details"]["offered"][0]["efforts"] == ["low", "medium"]
+    changed = setup.owner.patch(one, {"effort": "low"}).json()
+    assert (changed["effort"], changed["generation"]) == ("low", 2)
+    # Null takes the harness's default again; a spec change like any other.
+    back = setup.owner.patch(one, {"effort": None})
+    assert back.status_code == 200, back.text
+    assert (back.json()["effort"], back.json()["generation"]) == (None, 3)
+
+
+def test_an_agents_proposed_effort_waits_for_consent(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    advertise_efforts(setup, ["medium"])
+    body = placed(setup)
+    admin = admin_agent(make_client, setup)
+    changed = admin.patch(
+        f"/projects/maintainer/maity/placements/{body['id']}",
+        {"effort": "medium", "reason": "reviews need it"},
+    ).json()
+    assert changed["approval"]["pending_change"] == {"effort": "medium"}
+    assert (changed["effort"], changed["generation"]) == (None, 1)
+    request = setup.owner.get(f"/requests/{changed['approval']['request_id']}").json()
+    assert request["placement"]["effort"] == "medium"
+    setup.owner.post(f"/requests/{changed['approval']['request_id']}/answer", {"reply_id": "go"})
+    after = get(setup, body["id"])
+    assert (after["effort"], after["generation"]) == ("medium", 2)
+
+
+@pytest.mark.parametrize("effort", ["High", "", "x" * 17, "me dium"])
+def test_an_effort_of_the_wrong_shape_is_invalid(setup: Setup, effort: str) -> None:
+    advertise_efforts(setup, ["medium"])
+    response = place(setup, effort=effort)
+    assert (response.status_code, error(response)) == (400, "invalid")
+
+
+def test_a_hello_without_efforts_is_taken_and_offers_none(setup: Setup) -> None:
+    """A runner from before `efforts` sends no key (§15.3): its hello is taken as it was."""
+    assert "efforts" not in CAPABILITIES["harnesses"][0]
+    assert hello(setup.client, setup.runner).status_code == 200
+    with setup.engine.begin() as conn:
+        stored = conn.execute(
+            select(t.runner.c.capabilities).where(t.runner.c.id == setup.runner.id)
+        ).scalar_one()
+    assert stored["harnesses"][0]["efforts"] == []
+
+
+def test_a_runner_refusing_an_effort_reports_effort_unsupported(setup: Setup) -> None:
+    advertise_efforts(setup, ["medium"])
+    body = placed(setup, effort="medium")
+    response = report(
+        setup, body, 1, state="failed", reason="harness_refused", detail="effort_unsupported"
+    )
+    assert response.status_code == 200, response.text
+    assert get(setup, body["id"])["reported"]["detail"] == "effort_unsupported"
 
 
 def test_a_runner_that_advertises_antigravity_takes_its_placements(setup: Setup) -> None:

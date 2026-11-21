@@ -710,6 +710,29 @@ def test_codex_config(tmp_path: Path) -> None:
     assert set(domains) == {"maity.team", "github.com", "pypi.org", *adapters.CODEX_PROVIDER_HOSTS}
 
 
+def test_codex_writes_the_placements_effort_into_its_own_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): `model_reasoning_effort` in the placement's config.toml, a
+    top-level key, never a `-c` flag: the resume reads the same home, so it keeps the level."""
+    effort = {**PLACEMENT, "mode": "supervised", "effort": "medium"}
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex", placement=effort)
+    found = tomllib.loads(adapters.codex_config(ctx))
+    assert found["model_reasoning_effort"] == "medium"
+    home = tmp_path / "home"
+    (home / "codex").mkdir(parents=True)
+    (home / "codex" / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(home / "codex"))
+    launch = adapters.launch(ctx)
+    written = tomllib.loads((Path(launch.env["CODEX_HOME"]) / "config.toml").read_text())
+    assert written["model_reasoning_effort"] == "medium"
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    assert not any("effort" in arg for arg in (*spec["first"], *spec["again"]))
+    # No effort: no key, so Codex runs its own default.
+    plain = context(tmp_path / "plain", harness_id="codex", binary="/usr/bin/codex")
+    assert "model_reasoning_effort" not in tomllib.loads(adapters.codex_config(plain))
+
+
 def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
     supervised = {**PLACEMENT, "mode": "supervised"}
     claude = adapters.claude_settings(context(tmp_path / "c", placement=supervised))
@@ -1077,6 +1100,20 @@ def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch
     entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
     assert entry["confinement"] == "sandbox" and entry["sandbox"] == "on"
     assert capabilities.sandbox_available(codex)
+
+
+def test_efforts_are_advertised_only_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§15.3 (tsk-0fr0xzy2ce95): a hub from before `efforts` refuses the key in a strict
+    hello, so a harness without efforts sends exactly what that hub takes."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: True)
+    probe = capabilities.Probe("/usr/bin/codex", "1.0", None)
+    plain = config.Harness("codex", ("supervised",), "supervised", binary="codex")
+    assert "efforts" not in capabilities.harness_entry(plain, probe)
+    with_efforts = dataclasses.replace(plain, efforts=("low", "medium"))
+    assert capabilities.harness_entry(with_efforts, probe)["efforts"] == ["low", "medium"]
 
 
 def test_codex_whose_sandbox_cannot_start_is_not_advertised_as_sandboxed(

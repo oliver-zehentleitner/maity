@@ -388,6 +388,8 @@ def test_a_new_generation_restarts_a_running_session(world: Any) -> None:
         ({"harness": "claude-code"}, ("harness_refused", None)),
         ({"mode": "interactive", "harness": "codex"}, ("harness_refused", "mode_unsupported")),
         ({"model": "opus"}, ("harness_refused", "model_unsupported")),
+        # An effort the harness does not offer (now): never started on its default instead.
+        ({"effort": "medium"}, ("harness_refused", "effort_unsupported")),
     ],
 )  # fmt: skip
 def test_placements_outside_the_configuration_fail(
