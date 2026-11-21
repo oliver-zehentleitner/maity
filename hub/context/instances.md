@@ -588,7 +588,7 @@ check keeps new copies out.
 
 **Id:** 8d07cc82-f612-4e24-aebe-72683131671b
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** lead ruling on the card tsk-yzj829xdmqyy (seq 185277); docs/api.md §6.17, §8.2; migration `20261121120000_inst_attach`
 **See:** instances.md#a-dormant-instance-is-a-pair-of-columns-on-its-credential-read-at-the-wake-filter-and-the-choosers — 247eae87-3590-4be8-b92c-1a48f1e18cda — as of 2026-11-21
