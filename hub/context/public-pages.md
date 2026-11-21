@@ -136,6 +136,28 @@ removal; only the render, which shows the state after the change, moves after th
 - Deleting without the per-target lock and accepting the window: on PostgreSQL a render already running when
   a removal commits wrote the removed content back until the removal's own render ended.
 
+## A test that deletes stored pages keeps the pages worker from running
+
+**Id:** 783a0bd6-0bcc-439c-8fcc-1ff3737ec4fa
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of pull request #2069, 2026-11-21 (a flaky `assert 201 == 404` in `hub/tests/test_reports_public.py`), reproduced with a late first worker pass; `public_pages.startup`, `Worker._run`, `_unrendered`
+**See:** public-pages.md#a-touched-page-is-taken-off-in-the-writers-transaction-and-rendered-after-its-commit-one-render-has-a-time-limit-and-a-start-takes-up-no-target-after-its-budget — deafb243-f385-4108-8de4-81fc8f9a7872 — as of 2026-11-21
+
+A test that deletes stored pages to model "not served" keeps the pages worker from running
+(`public_pages.Worker.start` patched to a no-op before the first app is built), and builds no
+pages app after the delete. Every app with pages on renders, at its start (`startup`), the
+pages of the targets it takes up within `public_pages_startup_seconds`, and starts
+`public_pages.Worker`, whose first pass renders every target without a stored page; either can
+bring the deleted page back, the worker's pass at a moment the test does not control.
+
+**Reason:** a first pass that runs late on a loaded runner turned a filing the test expected to
+be refused into an accepted one.
+
+**Rejected alternative:** deleting the pages again before each assertion: the worker can still
+render them between the delete and the read.
+
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
