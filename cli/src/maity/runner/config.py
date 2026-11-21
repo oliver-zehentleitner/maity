@@ -372,13 +372,13 @@ def _projects(values: Any) -> str | None:
     bare `shop` would let every owner's `shop` run here."""
     if not all(isinstance(v, str) and v for v in values):
         return "expected a list of non-empty strings"
-    slugs = [v for v in values if SLUG.match(v)]
+    slugs = [v for v in values if SLUG.fullmatch(v)]
     if slugs:
         return (
             f"a project is named <owner>/<slug> now: write {', '.join(repr(v) for v in slugs)} "
             "with its owner's handle, e.g. 'oliver/maity'"
         )
-    bad = [v for v in values if not FULL_NAME.match(v)]
+    bad = [v for v in values if not FULL_NAME.fullmatch(v)]
     return f"not a project full name: {', '.join(repr(v) for v in bad)}" if bad else None
 
 
@@ -507,7 +507,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
     if repos_in is not None:
         for name in list(repos_in.data):
             table = repos_in.table(name)
-            if not REPOSITORY.match(normalise_repository(name)) or name.endswith("*"):
+            if not REPOSITORY.fullmatch(normalise_repository(name)) or name.endswith("*"):
                 problems.append(f"repositories.{name}: expected host/owner/name")
                 continue
             if table is None:
@@ -617,7 +617,7 @@ def repository_allowed(url: str, allowed: tuple[str, ...]) -> bool:
 def _repositories(values: Any) -> str | None:
     if not all(isinstance(v, str) and v for v in values):
         return "expected a list of non-empty strings"
-    bad = [v for v in values if not REPOSITORY.match(normalise_repository(v))]
+    bad = [v for v in values if not REPOSITORY.fullmatch(normalise_repository(v))]
     if bad:
         return "expected host/owner/name or host/owner/* (no other wildcard): " + ", ".join(
             repr(v) for v in bad
@@ -711,7 +711,9 @@ def _port(value: Any) -> str | None:
 
 
 def _pattern(pattern: re.Pattern[str], what: str) -> Callable[[Any], str | None]:
-    return lambda v: None if pattern.match(v) and ".." not in v.split("/") else f"not {what}"
+    """The whole value must match: `match` with `$` also takes one ending in a newline, which
+    the hub's hello or an ssh command line then meets (tsk-3jzeck5m208a)."""
+    return lambda v: None if pattern.fullmatch(v) and ".." not in v.split("/") else f"not {what}"
 
 
 def _grace(value: Any) -> str | None:

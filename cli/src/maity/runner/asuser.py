@@ -576,7 +576,7 @@ class Ssh(AsUser):
         home = done.stdout.strip()
         # The remote account is the agents': its shell start-up files can set HOME to
         # anything, and the runner builds paths and the attach hint from it.
-        if done.returncode != 0 or not REMOTE_HOME.match(home) or ".." in home.split("/"):
+        if done.returncode != 0 or not REMOTE_HOME.fullmatch(home) or ".." in home.split("/"):
             raise OSError(
                 f"{self.name}: {self.login}'s home is not a plain absolute path "
                 f"({home[:80]!r}); the runner refuses the host"

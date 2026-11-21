@@ -1461,7 +1461,7 @@ prevents it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** contract request req-bq4vg5f0jcvd (adopted 2026-11-21) and its accepted correction of the same day, card tsk-0fr0xzy2ce95
+**Source:** contract request req-bq4vg5f0jcvd (adopted 2026-11-21) and its accepted correction of the same day, card tsk-0fr0xzy2ce95; reviews A1994, A1996 and A1997 of #2090 and card tsk-3jzeck5m208a for the whole-value checks
 **See:** runner.md#the-opencode-adapter-fails-closed-on-the-model — 7c23704d-d02f-4cbf-80ca-494119f8fa5c — as of 2026-11-21
 **Revisit when:** Codex or agy change how they take a reasoning effort, or Claude Code or opencode get one the runner maps
 
@@ -1486,7 +1486,18 @@ correction (only when configured, optional with default `[]` on the hub, the
 hub upgraded first) was accepted. A test pins the hello of a runner without
 efforts to exactly the old keys.
 
+Every runner-side check that mirrors a hub shape matches the whole value
+(`fullmatch`, or `\A…\Z`) and keeps the hub's count bounds, and an empty CLI
+option value is a usage error before any session or request. Reason: a value
+the runner's check takes but the hub refuses does not fail one placement, it
+stops the whole runner, since a hello the hub answers with 400 makes `serve`
+exit 78; a `^…$` pattern with `re.match` also takes a value ending in a
+newline. Found on this change (reviews A1994, A1996, A1997 of #2090) and
+applied to the other runner patterns in tsk-3jzeck5m208a.
+
 **Rejected alternatives:**
+- Leaving such values for the hub to refuse: the refusal comes as a whole
+  hello rejected, which stops the runner, not as a message about one field.
 - `-c model_reasoning_effort=…` on the Codex command line: works, but first
   start and resume could drift apart.
 - Starting on the harness's default when the effort is gone, with a warning:
