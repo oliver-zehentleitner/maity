@@ -271,8 +271,17 @@ def test_after_renames_only_the_current_names_resolve(
     assert report(zoe, {"type": "project", "id": "boss/maity"}).status_code == 201
 
 
+@pytest.fixture
+def no_pages_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No app runs the public-pages worker: its first pass renders every target without a
+    stored page, so a page a test deletes could come back before the test reads its absence.
+    Listed before `world`, so that no app the test builds starts one."""
+    monkeypatch.setattr(public_pages.Worker, "start", lambda self: None)
+
+
 @pytest.mark.parametrize("per_query", [reports.PATHS_PER_QUERY, 2])
 def test_an_agent_only_a_project_page_names_is_found_by_its_global_name(
+    no_pages_worker: None,
     world: World,
     make_client: ClientFactory,
     migrated: Engine,

@@ -9,7 +9,7 @@ measures kept for later.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts; the step-2 plan on that card, approved by the lead on 2026-11-18 (measure again before the later items become cards); notes nte-ksp8m8crdtkc and nte-d1jaydnt671c on tsk-ym4a7c9rvsn2 (2026-11-09, why item 2 was stopped); the prod rerun of 2026-11-20 (nte-6t6wyf3dna2d), the budget built from it (nte-qswgka9xkdf9) and the result notes of the four measure-only cards approved by the lead after it (tsk-jaw0g9fe3trz, tsk-nwq3azjf63db, tsk-rfv3a7ccbfv1, tsk-kpbwm5cae99g)
+**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts; the step-2 plan on that card, approved by the lead on 2026-11-18 (measure again before the later items become cards); notes nte-ksp8m8crdtkc and nte-d1jaydnt671c on tsk-ym4a7c9rvsn2 (2026-11-09, why item 2 was stopped); the prod rerun of 2026-11-20 (nte-6t6wyf3dna2d), the budget built from it (nte-qswgka9xkdf9) and the result notes of the four measure-only cards approved by the lead after it (tsk-jaw0g9fe3trz, tsk-nwq3azjf63db, tsk-rfv3a7ccbfv1, tsk-kpbwm5cae99g); for the report lists, pull request #2069 (tsk-sn8keg63p6k6) and its review
 **Revisit when:** a page meets the goal on a cold load, or a measure on the list turns out to cost more than it gains
 
 Every dashboard view (inbox, board, card panel, chat, members, settings, public pages)
@@ -40,6 +40,13 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
   among them `/me`, `/projects`, `/agents`, a project's placements and runners, and the org
   lists; they are listed in `GROWING` in `hub/tests/list_rows.py`, each to
   become a card. The 2026-11-08 count covered the lists the pages read most, not every route.
+  2026-11-21 (tsk-sn8keg63p6k6, #2069): `/admin/registrations`, `/admin/reports` and
+  `/me/reports` (also with public pages served) left `GROWING`. Each reads its people,
+  names, handles, agents, the agents' projects and the pages once per page. Reason: these
+  lists ran 1–2 reads per row (up to 74 statements for 30 rows, as counted in the review of
+  #2069). Alternatives to reading once per page: unknown, none was recorded. Kept on
+  purpose: filing a report (`reports._agent_shown`) reads the agent's projects only when its
+  own and its owner's pages do not show it, because a filing is one target, not a list.
 - **Baseline with a test account** (headless browser, median of 3 runs, cold and warm):
   the load event at 0.7–0.8 s on every page, warm no faster than cold, because all 101–103
   files come back 200 on a reload. The board and a card's panel end at 2.9–3.4 s: about 28
