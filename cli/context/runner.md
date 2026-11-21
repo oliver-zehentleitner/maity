@@ -5580,10 +5580,10 @@ reuses the make, record and removal code agy's scratch already has.
   scratch is writable from the session's own sandbox, so its sandboxed
   commands could change Claude Code's own temporary files and its socket
   directory. Its `cc-socks` socket also fits there only for a short enough
-  home. The leaf always fits, and the sandbox cannot write it: it sees
-  Claude Code's own `claude-<uid>/` there read-only and does not see
-  `cc-socks/`. So the leaf keeps both out of the sandbox's write reach (review
-  A1856).
+  home. The leaf fits when the runner can allocate it, and the sandbox cannot
+  write it: it sees Claude Code's own `claude-<uid>/` there read-only and does
+  not see `cc-socks/`. So the leaf keeps both out of the sandbox's write reach
+  (reviews A1856, A1874).
 - TMPDIR set to the long scratch `tmp`, now that `CLAUDE_CODE_TMPDIR` takes
   the `cc-socks` socket: Claude Code's HTTP and mux bridge sockets still go
   under TMPDIR, about 33 bytes past a path of about 83, over the 107 a
