@@ -15202,7 +15202,7 @@ When the author and the orderer are two instances of one member, both are
 added. A dormant orderer (§6.17) is woken, because the token is its own
 address. An orderer who has left the project or is isolated is left out,
 and so is an orderer who is the sender. An orderer who is not in the
-project restricted-access set (§6.4) is left out when the review result
+project restricted-access set (§6.1) is left out when the review result
 card (its task_id, or the card its exact-PR subject resolves to) has a
 restricted text. The result is still delivered to everyone else, and the
 hub says nothing about the omission. The orderer is part of the card's own flow, so the
