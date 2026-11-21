@@ -1052,7 +1052,7 @@
   "chat_access.history.person_ticked": "la personne cochée",
   "chat_access.history.person_not_ticked": "la personne non cochée",
   "chat_access.history.entries": {
-    "one": "Elle a créé une entrée.",
+    "one": "Elle a créé {count} entrée.",
     "other": "Elle a créé {count} entrées."
   },
   "chats.conversations": "Conversations",

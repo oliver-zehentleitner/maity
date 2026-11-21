@@ -986,7 +986,7 @@ window.MAITY_I18N["fr"] = {
   "chat_access.history.deny.expired": "Interdiction terminée",
   "chat_access.history.empty": "Rien n'est encore arrivé à vos entrées.",
   "chat_access.history.entries": {
-    "one": "Elle a créé une entrée.",
+    "one": "Elle a créé {count} entrée.",
     "other": "Elle a créé {count} entrées."
   },
   "chat_access.history.entry_gone": "L'entrée ne figure plus dans vos listes.",
