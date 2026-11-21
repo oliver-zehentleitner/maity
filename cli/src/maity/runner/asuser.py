@@ -166,6 +166,26 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
+    def tighten(self, path: Path) -> None:
+        """The directory `path` made 0700, also when it exists already with looser bits:
+        `mkdir -p -m 700` and `Path.mkdir(mode=0o700, parents=True)` give the mode to the last
+        directory only, and a parent made under a umask of 002 is 0775, which `maity gh`'s lead
+        commands refuse (`ghpr.owned_layout`, review A1758 of #2054). Only a real directory:
+        chmod follows a link, so a link in its place is refused first (security leg on #2054;
+        owned_layout refuses one anyway, this keeps the chmod from touching what it names)."""
+        if self.direct:
+            if not stat.S_ISDIR(os.lstat(path).st_mode):
+                raise OSError(f"cannot make {path} private for the agents: not a directory")
+            os.chmod(path, 0o700)
+            return
+        # find's -type tests the entry itself, never what a link names.
+        seen = self.run(["find", str(path), "-maxdepth", "0", "-type", "d"])
+        if seen.returncode != 0 or seen.stdout.strip() != str(path):
+            raise OSError(f"cannot make {path} private for the agents: not a directory")
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot make {path} private for the agents: {done.stderr.strip()[:200]}")
+
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
         from `under` (the clone, the agents' files, their home) without following a link on

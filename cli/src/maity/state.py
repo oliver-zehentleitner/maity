@@ -427,6 +427,85 @@ def read_credential(state_dir: Path) -> Secret:
     return Secret(value)
 
 
+PLACED_STATE_MAX = 1024 * 1024  # bytes of state.json read through a descriptor
+PLACED_CREDENTIAL_MAX = 4096
+
+
+def read_placed(top: int) -> tuple[dict[str, Any], Secret]:
+    """The state and the session credential of a runner's clone, read through `top`, the
+    clone's `.git` as `clonecheck.opened_clone` checked it (review A1738 of #2054): `maity/`
+    opened from that descriptor and each file from `maity/`'s, none through a link; each a
+    regular file of this user's with no other hard link, of a bounded size; the directory and
+    both files reachable by nobody else. No name is looked up twice, so nothing swapped in
+    after the check is read. POSIX only: StateError where descriptors cannot be walked."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if sys.platform == "win32" or not nofollow or os.open not in os.supports_dir_fd:
+        raise StateError("this system cannot read a placement's state through its descriptor")
+    try:
+        flags = os.O_RDONLY | os.O_DIRECTORY | nofollow | getattr(os, "O_CLOEXEC", 0)
+        folder = os.open("maity", flags, dir_fd=top)
+    except OSError as exc:
+        raise StateError(f"the placement's .git/maity cannot be opened ({exc})") from None
+    try:
+        _private_fd(folder, "the placement's .git/maity", directory=True)
+        state_bytes = _read_placed_file(folder, STATE_FILE, PLACED_STATE_MAX)
+        credential = _read_placed_file(folder, CREDENTIAL_FILE, PLACED_CREDENTIAL_MAX)
+    finally:
+        os.close(folder)
+    try:
+        data = json.loads(state_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise StateError(f"the placement's {STATE_FILE} is not valid JSON") from None
+    if not isinstance(data, dict):
+        raise StateError(f"the placement's {STATE_FILE} does not hold a JSON object")
+    value = credential.decode("utf-8", "replace").strip()
+    if not value:
+        raise StateError("the placement's credential is empty; run `maity join` again")
+    return data, Secret(value)
+
+
+def _read_placed_file(folder: int, name: str, limit: int) -> bytes:
+    """`name` in the directory `folder`, opened without following a link and without waiting
+    (a FIFO with no writer would block an open forever, review A1758 of #2054), read through
+    that descriptor alone after `_private_fd` passed it as a regular file."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(name, flags, dir_fd=folder)
+    except OSError as exc:
+        raise StateError(f"the placement's {name} cannot be opened ({exc})") from None
+    try:
+        size = _private_fd(fd, f"the placement's {name}", directory=False)
+        if size > limit:
+            raise StateError(f"the placement's {name} is over {limit} bytes")
+        chunks: list[bytes] = []
+        while chunk := os.read(fd, limit + 1 - sum(map(len, chunks))):
+            chunks.append(chunk)
+            if sum(map(len, chunks)) > limit:
+                raise StateError(f"the placement's {name} is over {limit} bytes")
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def _private_fd(fd: int, what: str, directory: bool) -> int:
+    """Refused unless the open `fd` is a directory (or a regular file with one link) of this
+    user's that group and others cannot reach, as check_private asks of a path; its size."""
+    if sys.platform == "win32":  # read_placed refuses there first; no POSIX owner to compare
+        raise StateError(f"{what} cannot be checked on this system")
+    st = os.fstat(fd)
+    kind = stat.S_ISDIR(st.st_mode) if directory else stat.S_ISREG(st.st_mode)
+    if not kind:
+        raise StateError(f"{what} is not a {'directory' if directory else 'regular file'}")
+    if st.st_uid != os.getuid():
+        raise StateError(f"{what} belongs to another user (uid {st.st_uid}); refusing to use it")
+    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise StateError(f"{what} is accessible by group or others")
+    if not directory and st.st_nlink != 1:
+        raise StateError(f"{what} has other hard links")
+    return st.st_size
+
+
 def load_state(state_dir: Path, name: str = STATE_FILE) -> dict[str, Any]:
     path = state_dir / name
     if not path.is_file():
