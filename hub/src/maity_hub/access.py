@@ -128,8 +128,14 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     project = namespace.resolve(conn, slug)
     if project is None or caller.kind == "runner":  # a runner is no member (§15.1)
         raise not_found()
-    # An agent credential belongs to one membership, of one project (§2.2): the
-    # profile's memberships elsewhere are not reachable through it.
+    # An agent acts in the membership its call resolved (§2.2, §6.17): on a project route the
+    # live attachment of its credential in the route's project (`deps._refuse_other_project`),
+    # through a bridge the served agent's. A project its instance is not attached to, though
+    # the profile has a membership there, is not reachable through it; nor is any project
+    # when nothing was resolved (TODO(hub PR B step 3): a project-less route of an instance
+    # attached to several projects).
+    if caller.kind == "agent" and caller.membership_id is None:
+        raise not_found()
     principal = (
         t.membership.c.id == caller.membership_id
         if caller.kind == "agent"

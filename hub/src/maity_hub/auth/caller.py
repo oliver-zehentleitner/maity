@@ -13,7 +13,8 @@ owner, and `signature_required` for a Bearer call while any live attachment is i
 with `signing: required` (§2.2). Which membership a call acts in, the isolation there and the
 call's presence, lease renewal (except on the events long-poll) and the move of its claims to
 the live session are settled after it, in the same transaction (`deps._resolve`):
-`settle_project_less` for a call outside any project.
+`settle_in_project` on a project route, in the live attachment of the route's project alone
+(`attachment_in`), and `settle_project_less` for a call outside any project.
 """
 
 from __future__ import annotations
@@ -653,7 +654,7 @@ def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) ->
 def _agent(conn: Connection, row: Any, via: str, facts: RequestFacts) -> Caller:
     """An agent credential's caller, as every project sees it: no membership yet. Its
     presence, leases and claims are written once the call's attachments are settled
-    (`settle_project_less`)."""
+    (`settle_in_project`, `settle_project_less`)."""
     if via == "bearer" and row.signing_required:
         # After the proof of possession, before any side effect: no presence, no lease, no
         # last use, and no idempotent replay of an earlier answer (§2.2). On every route, in
@@ -680,12 +681,14 @@ def _agent(conn: Connection, row: Any, via: str, facts: RequestFacts) -> Caller:
     )
 
 
-def attachments(conn: Connection, credential_id: str) -> list[Any]:
+def attachments(conn: Connection, credential_id: str, project_id: str | None = None) -> list[Any]:
     """The live attachments of an agent credential (§6.17), with what a call needs of each:
-    its membership and project, its trust, its isolation and the project's lease. Ordered by
-    `attached_at` and then id, so a list built from them never depends on the order the
-    database returns rows in; no attachment is preferred for that."""
+    its membership and project, its trust, its isolation and the project's lease; with
+    `project_id` only the one in that project, if any. Ordered by `attached_at` and then id,
+    so a list built from them never depends on the order the database returns rows in; no
+    attachment is preferred for that."""
     a, m = t.instance_attachment, t.membership
+    in_project = () if project_id is None else (m.c.project_id == project_id,)
     return list(
         conn.execute(
             select(
@@ -700,10 +703,38 @@ def attachments(conn: Connection, credential_id: str) -> list[Any]:
             .select_from(a)
             .join(m, m.c.id == a.c.membership_id)
             .join(t.project, t.project.c.id == m.c.project_id)
-            .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
+            .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None), *in_project)
             .order_by(a.c.attached_at, a.c.id)
         )
     )
+
+
+def attachment_in(conn: Connection, caller: Caller, project_id: str) -> Any | None:
+    """The live attachment of the caller's credential in one project (§6.17), or None: the
+    one a call on that project's routes acts in. One credential has at most one attachment
+    per membership and one membership per project, so there is never a choice to make."""
+    found = attachments(conn, caller.credential_id or "", project_id)
+    return found[0] if found else None
+
+
+def in_attachment(caller: Caller, attachment: Any) -> Caller:
+    """The caller acting in `attachment`'s membership and project."""
+    return replace(caller, membership_id=attachment.membership_id, project_id=attachment.project_id)
+
+
+def settle_in_project(
+    conn: Connection, caller: Caller, attachment: Any, renew_leases: bool
+) -> Caller:
+    """An agent's call on a project route, once the live attachment there is resolved
+    (`attachment_in`; none is `not_found`, before this): `isolated` when the membership is,
+    before any side effect (§6.2; no `ISOLATED_MAY` on a project's routes); then presence
+    and, unless `renew_leases` is off (the events long-poll), the leases in that membership
+    only (§2.4), and the caller acts in it."""
+    if attachment.isolated_since is not None:
+        from maity_hub import isolation
+
+        raise isolation.refusal(attachment)
+    return in_attachment(_present(conn, caller, [attachment], renew_leases), attachment)
 
 
 def refuse_isolated_everywhere(attached: Sequence[Any], facts: RequestFacts) -> None:

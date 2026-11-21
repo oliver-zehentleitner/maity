@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
@@ -16,8 +16,10 @@ from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import (
     Caller,
     RequestFacts,
+    attachment_in,
     authenticate,
     keep_nonces_spent,
+    settle_in_project,
     settle_project_less,
 )
 from maity_hub.auth.permitted import Calls
@@ -90,9 +92,13 @@ async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> C
         if caller.kind == "runner":
             _confine_runner(path)
         if caller.kind == "agent":
-            caller = settle_project_less(conn, caller, facts, renew_leases)
-            if slug is not None:
-                _refuse_other_project(conn, caller, slug)
+            if slug is None:
+                caller = settle_project_less(conn, caller, facts, renew_leases)
+            else:
+                # The route's project: its attachment (`not_found` without one), then its
+                # isolation, then this membership's presence and leases, in that order.
+                attachment = _refuse_other_project(conn, caller, slug)
+                caller = settle_in_project(conn, caller, attachment, renew_leases)
         if "maity-for" in facts.headers:  # a bridge calling for an agent (§2.3)
             from maity_hub import bridges
 
@@ -180,14 +186,20 @@ def _end_session(conn: Connection, ended: second_factor.SessionEnded) -> None:
     sessions.end_where(conn, t.human_session.c.id_hash == ended.id_hash, ended.by)
 
 
-def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
-    """An agent credential reaches its own project only (§2.2). Checked here, before
-    any route runs, so that nothing (an idempotent replay included) answers for
-    another project; raising inside the transaction also undoes the call's
-    presence and lease side effects."""
+def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> Any:
+    """The live attachment of the agent's credential in the project `slug` names (§2.2,
+    §6.17): a credential reaches the projects its instance is attached to only, every other
+    one is `not_found`. Checked here, before any route runs and before the isolation and the
+    call's presence and leases, so that nothing (an idempotent replay included) answers for
+    another project, and an isolation is not told to a project's non-member. Never another
+    attachment in its place: an error of the lookup refuses the call."""
     project = namespace.resolve(conn, slug)
-    if project is None or project.id != caller.project_id:
+    if project is None:
         raise not_found()
+    attachment = attachment_in(conn, caller, project.id)
+    if attachment is None:
+        raise not_found()
+    return attachment
 
 
 # What an account that waits for approval may call (§2.7.5): its own account and

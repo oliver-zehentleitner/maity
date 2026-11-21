@@ -232,7 +232,6 @@ def test_the_isolation_lift_in_one_project_moves_only_that_position(world: World
     assert shown["isolated"] is None
 
 
-@pytest.mark.xfail(strict=True, reason="hub PR B step 2 resolves the route's attachment")
 def test_reading_events_after_n_moves_the_position_of_that_project_only(world: World) -> None:
     """5: `GET …/events?after=N` in A acknowledges up to N on A's row; B's stays."""
     w = world

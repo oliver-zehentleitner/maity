@@ -21,9 +21,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, maintenance
+from maity_hub import clock, isolation, maintenance
 from maity_hub.auth import second_factor
-from maity_hub.auth.caller import Caller, refuse_isolated, settle_project_less
+from maity_hub.auth.caller import Caller, in_attachment, refuse_isolated, settle_project_less
 from maity_hub.deps import (  # the single routes' own refusals, per part
     _confine_pending,
     _confine_runner,
@@ -88,13 +88,20 @@ async def bootstrap(request: Request) -> JSONResponse:
             return _refusal(unauthenticated())
         try:
             with engine.begin() as conn:
-                refuse_isolated(conn, caller, "GET", path)  # authentication's own, per path
-                second_factor.gate(conn, settings, caller, "GET", path)
+                here = caller
                 if caller.kind == "agent" and project is not None and kw.get("project_route"):
-                    _refuse_other_project(conn, caller, project)
-                if caller.kind == "human":
-                    _confine_pending(conn, caller, "GET", path)
-                return _part(200, body(conn, caller))
+                    # As `deps._resolve` on the single route: the project's attachment
+                    # (`not_found`), then its isolation; the effects were the bundle's once.
+                    attachment = _refuse_other_project(conn, caller, project)
+                    if attachment.isolated_since is not None:
+                        raise isolation.refusal(attachment)
+                    here = in_attachment(caller, attachment)
+                else:
+                    refuse_isolated(conn, caller, "GET", path)  # authentication's own, per path
+                second_factor.gate(conn, settings, here, "GET", path)
+                if here.kind == "human":
+                    _confine_pending(conn, here, "GET", path)
+                return _part(200, body(conn, here))
         except ApiError as error:
             return _refusal(error)
         except second_factor.SessionEnded as ended:

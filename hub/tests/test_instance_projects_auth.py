@@ -7,11 +7,15 @@ authenticated once for all of them and acts, on each call, in the projects the c
   included (the lead, Q7); only a detached one no longer counts.
 - A call outside any project writes presence and renews leases in every live attachment that
   is not isolated (the lead, Q10).
+- A call on a project's routes acts in the live attachment there alone: none is `not_found`,
+  an isolated one `isolated`, both before any side effect, in that order; otherwise presence
+  and leases are written in that membership only.
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -29,7 +33,7 @@ from tests.test_auth_agent import bearer, signed
 API = "/api/v1"
 A = "/projects/maintainer/alpha"
 B = "/projects/maintainer/beta"
-LEASE = timedelta(minutes=5)
+NOTICE = {"kind": "message", "type": "notice", "to": "all", "body": "hello"}
 
 
 @dataclass
@@ -57,7 +61,7 @@ class World:
             signed(self.agent, method, route, query, raw) if sign else bearer(self.agent)
         ) | {"Content-Type": "application/json"}
         if method != "GET":
-            headers["Idempotency-Key"] = f"key-{clock.now().timestamp()}-{method}-{len(path)}"
+            headers["Idempotency-Key"] = f"key-{secrets.token_hex(12)}"
         return self.client.request(method, full, headers=headers, content=raw or None)
 
     def later(self, hours: int = 1) -> None:
@@ -174,6 +178,9 @@ def test_signing_required_in_a_refuses_bearer_everywhere(world: World) -> None:
     _refused(w.call("GET", "/me/cross-chats", sign=False), "signature_required")
     assert w.traces(w.in_b, w.card_b, w.beta) == before
     assert w.call("GET", "/me/cross-chats").status_code == 200
+    for project in (A, B):
+        found = w.call("GET", f"{project}/tasks")
+        assert found.status_code == 200, found.text
 
 
 def test_an_isolated_attachment_still_binds_and_a_detached_one_does_not(world: World) -> None:
@@ -184,7 +191,9 @@ def test_an_isolated_attachment_still_binds_and_a_detached_one_does_not(world: W
     w.isolate(w.in_a)
     _refused(w.call("GET", "/me/cross-chats", sign=False), "signature_required")
     _refused(w.call("GET", f"{B}/tasks", sign=False), "signature_required")
+    assert w.call("GET", f"{B}/tasks").status_code == 200
     w.detach(w.in_a)
+    assert w.call("GET", f"{B}/tasks", sign=False).status_code == 200
     assert w.call("GET", "/me/cross-chats", sign=False).status_code == 200
     assert w.call("GET", "/me", sign=False).status_code == 200  # B alone: its one membership
 
@@ -193,10 +202,77 @@ def test_a_detached_attachment_alone_makes_bearer_work_again(world: World) -> No
     w = world
     w.require_signing(w.alpha)
     _refused(w.call("GET", "/me", sign=False), "signature_required")
+    _refused(w.call("GET", f"{B}/tasks", sign=False), "signature_required")
     w.detach(w.in_a)
+    assert w.call("GET", f"{B}/tasks", sign=False).status_code == 200
     me = w.call("GET", "/me", sign=False)
     assert me.status_code == 200, me.text
     assert [p["id"] for p in me.json()["projects"]] == [w.beta]
+
+
+# --- a project's routes act in that project's attachment only (§2.2, §2.4, §6.2) -----------
+
+
+def test_a_project_the_instance_is_not_attached_to_is_not_found(world: World) -> None:
+    """Attached to A only (B detached, its membership still there): B's routes answer
+    `not_found`, a read and a write alike, and nothing is written in B: no presence, no lease,
+    no event."""
+    w = world
+    w.detach(w.in_b)
+    w.later()
+    before = w.traces(w.in_b, w.card_b, w.beta)
+    for response in (w.call("GET", f"{B}/tasks"), w.call("POST", f"{B}/events", body=NOTICE)):
+        assert response.status_code == 404, response.text
+        assert response.headers["Maity-Error"] == "not_found"
+    assert w.traces(w.in_b, w.card_b, w.beta) == before
+    assert w.call("GET", f"{A}/tasks").status_code == 200  # its own project answers
+
+
+def test_a_project_without_a_membership_is_not_found(world: World) -> None:
+    w = world
+    factory.project(w.engine, "gamma")
+    found = w.call("GET", "/projects/maintainer/gamma/tasks")
+    assert found.status_code == 404, found.text
+
+
+def test_isolated_in_a_refuses_a_before_any_side_effect_and_b_works_on(world: World) -> None:
+    """Isolated in A, attached to both: A's routes answer `isolated` and leave A as it was
+    (presence, lease, events); B's routes answer and renew presence and the lease in B
+    alone."""
+    w = world
+    w.isolate(w.in_a)
+    w.later()
+    before = w.traces(w.in_a, w.card_a, w.alpha)
+    for response in (w.call("GET", f"{A}/tasks"), w.call("POST", f"{A}/events", body=NOTICE)):
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["details"]["reason"] == "isolated"
+    assert w.traces(w.in_a, w.card_a, w.alpha) == before
+    assert w.call("GET", f"{B}/tasks").status_code == 200
+    said = w.call("POST", f"{B}/events", body=NOTICE)
+    assert said.status_code == 201, said.text
+    moment = clock.now()
+    assert w.seen(w.in_b) == moment
+    assert w.lease(w.card_b) == moment + timedelta(hours=2)
+    assert w.traces(w.in_a, w.card_a, w.alpha) == before
+
+
+def test_not_found_comes_before_isolated(world: World) -> None:
+    """Isolated in A and detached from it: A's routes answer `not_found`, so an isolation is
+    told to no one outside the project."""
+    w = world
+    w.isolate(w.in_a)
+    w.detach(w.in_a)
+    found = w.call("GET", f"{A}/tasks")
+    assert found.status_code == 404, found.text
+
+
+def test_a_project_route_renews_only_its_own_membership(world: World) -> None:
+    w = world
+    w.later()
+    assert w.call("GET", f"{B}/tasks").status_code == 200
+    moment = clock.now()
+    assert (w.seen(w.in_a), w.seen(w.in_b)) == (None, moment)
+    assert (w.lease(w.card_a), w.lease(w.card_b)) == (w.start, moment + timedelta(hours=2))
 
 
 # --- presence and leases outside a project (§2.4, Q10) --------------------------------------
