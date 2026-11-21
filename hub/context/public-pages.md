@@ -677,17 +677,31 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
   `namespace.py`, `access.py`, `auth/second_factor.py` and `auth/caller.py` for the second factor and the
   pending account, and the #2001 round notes. Evidence: unknown.
 - The Why view's three reads, `GET …/keep-the-why` (§11.3), `…/keep-the-why/export` and `…/keep-the-why/bodies`
-  (§11.5), are open to an outsider only while the hub last found the project's repository public
-  (`repository_public is True`), the condition the public view's **Why** reads (`public_project_views.why_data`);
-  otherwise `not_found` (`routes/keep_the_why._require_why`). Source: the owner's option A in req-vsfjgx3fch8k,
-  its §2.3 sentence as the owner wrote it; tsk-jk2psmarajjb. Why the condition: an outsider reads no more of the
-  Why than a visitor's page shows, and that page shows it only for a repository the hub saw public. The reads
-  come from what the repository publishes, never the database, so they carry no restricted text; a card id in an
-  entry's text is served as published and opens nothing (`GET …/tasks/{id}` stays `not_found` for a hidden
-  card). `max_age=0` keeps the per-project rate of one forge read per `ktw.FORCE_INTERVAL` (30 s): the caches
-  (`ktw.CACHE`, `ktw_reads`) are keyed by the project, not the caller, so an outsider shares the members' rate.
-  Not checked here, unlike the public page: whether the project is in the operator's own namespaces (`why_data`'s
-  `served`); §11.5's own coverage check (`require_covered`) still runs for every caller.
+  (§11.5), are open to an outsider. Source: the owner's option A in req-vsfjgx3fch8k, its §2.3 sentence as the
+  owner wrote it; tsk-jk2psmarajjb; round 2 after review A1829 (F1, F2).
+  - The source, shared with the public page's **Why** (`public_project_views.why_data`, `WHY_CACHE`): only what
+    the forge serves publicly, read without a grant, its visibility asked of the forge itself. Three checks, in
+    order. `access.gate` (`PUBLIC_REPOSITORY_READS`, before the query is read) and `_require_why` answer
+    `not_found` unless the stored `repository_public` is true, the cheap first check. Then
+    `ktw_reads.outside_reader` asks the forge live (`_visibility`, uncached) whether the repository is public, as
+    a named repository's is asked, again after `_refresh(max_age)`: at the latest every `VISIBILITY_SECONDS`, with
+    `max_age=0` every `FORCE_INTERVAL`; not public, or no answer, is `not_found`, a spent budget
+    `probe_unavailable` as for a member. The read itself goes through `named_reader` (the instance token for a
+    project the instance serves, else no token; never a grant, bound to no project) into `OUTSIDE_CACHE`, a
+    `ktw.Cache` of its own. Why: the stored flag lags the forge, since the probe updates it on its own round
+    (F1); and the members' `ktw.CACHE` may be filled through the namespace owner's grant, which reads a private
+    repository, so serving it to an outsider until the probe looked again would hand out private content (F1).
+    The gate runs for these routes too, so an outsider they are closed to gets no `400` for a bad query (F2).
+  - The scope of the answers: the full export and its bodies, more than the page's summary, under the same
+    rules as for a member. They come from what the repository publishes, never the database, so they carry no
+    restricted text; a card id in an entry's text is served as published and opens nothing (`GET …/tasks/{id}`
+    stays `not_found` for a hidden card).
+  - The rate: `max_age=0` forces at most one read per `FORCE_INTERVAL` per project in `OUTSIDE_CACHE`, a window of
+    its own beside the members' in `ktw.CACHE`. The published files (`ktw.RAW`, read over plain HTTPS without any
+    token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a visibility
+    check) stay shared: nothing in them was read with a grant.
+  - Not checked, unlike the public page: whether the project is in the operator's own namespaces (`why_data`'s
+    `served`); an outsider of another namespace's project reads without a token.
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
   notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the

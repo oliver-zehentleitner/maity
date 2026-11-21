@@ -197,6 +197,19 @@ OUTSIDE_READS = frozenset(
     }
 )
 
+# The outside reads open to an outsider only while the hub last found the project's repository
+# public (§2.3): `ProjectRoute` still passes them through `gate`, which answers an outsider
+# `not_found` before the query is read while the stored `repository_public` is not true, so no
+# validation answer reaches an outsider the route is closed to. The endpoint then asks the forge
+# itself (`routes/keep_the_why._outside_reader`).
+PUBLIC_REPOSITORY_READS = frozenset(
+    {
+        ("GET", f"{API_PROJECT}/keep-the-why"),
+        ("GET", f"{API_PROJECT}/keep-the-why/export"),
+        ("GET", f"{API_PROJECT}/keep-the-why/bodies"),
+    }
+)
+
 # The project routes a human who is no member keeps as the owner of an agent or a runner in the
 # project (§1.3's `not_found` row, §2.3), as (method, path template): the only routes the gate
 # passes for such an owner of a public project, whose route then answers as it always did
@@ -338,14 +351,24 @@ def _session_human(conn: Connection, cookie: str) -> str | None:
     return str(row.human_id)
 
 
-def is_outsider(conn: Connection, cookie: str, slug: str, owner_call: bool = False) -> bool:
+def is_outsider(
+    conn: Connection,
+    cookie: str,
+    slug: str,
+    owner_call: bool = False,
+    public_repository_read: bool = False,
+) -> bool:
     """Whether the session cookie's human is an outsider of the public project `slug` names
-    (§2.3) for this call. Cheapest refusals first: the project's own row (no page, archived),
-    then the session, then the human's membership, for one of `OWNER_CALLS` (`owner_call`) the
-    owner's reads, and only then the whole public test."""
+    (§2.3) for this call. Cheapest refusals first: the project's own row (no page, archived,
+    and for one of `PUBLIC_REPOSITORY_READS` (`public_repository_read`) a repository the hub
+    last found public, which opens the read to an outsider), then the session, then the
+    human's membership, for one of `OWNER_CALLS` (`owner_call`) the owner's reads, and only
+    then the whole public test."""
     project = namespace.resolve(conn, slug)
     if project is None or project.public_page != "on" or project.state == "archived":
         return False
+    if public_repository_read and project.repository_public is True:
+        return False  # the read is open to an outsider: the route answers them
     human_id = _session_human(conn, cookie)
     if human_id is None:
         return False
@@ -388,11 +411,15 @@ def _owns_a_part(conn: Connection, project_id: str, human_id: str) -> bool:
     return runner is not None
 
 
-async def gate(request: Any, owner_call: bool = False) -> None:
+async def gate(
+    request: Any, owner_call: bool = False, public_repository_read: bool = False
+) -> None:
     """`not_found` for an outsider's call to a project route not in `OUTSIDE_READS` (§2.3),
     before FastAPI reads its body or its query, so that no validation answer (`400 invalid`)
     tells an outsider what a route takes. `ProjectRoute` calls it for such a route, with
-    `owner_call` for one of `OWNER_CALLS`. Members, the owners `_owns_a_part` names on one of
+    `owner_call` for one of `OWNER_CALLS`, and with `public_repository_read` for one of
+    `PUBLIC_REPOSITORY_READS`, which it opens to an outsider only while the project's stored
+    `repository_public` is true. Members, the owners `_owns_a_part` names on one of
     `OWNER_CALLS`, strangers to a private or unknown project, agents, bridges, runners and
     callers without a session pass unchanged: their call is answered exactly as before. A
     stranger to a private or unknown project needs no gate: the body is validated before the
@@ -420,7 +447,9 @@ async def gate(request: Any, owner_call: bool = False) -> None:
         return
     engine = request.app.state.async_engine
     async with engine.connect() as conn:
-        outsider = await conn.run_sync(is_outsider, cookie, slug, owner_call)
+        outsider = await conn.run_sync(
+            is_outsider, cookie, slug, owner_call, public_repository_read
+        )
     if outsider:
         raise not_found()
 

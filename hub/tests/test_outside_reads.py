@@ -125,27 +125,66 @@ def _put_image(human: flow.Human, kind: str) -> None:
     assert done.status_code == 200, done.text
 
 
+class WhyForge(why_tests.Fake):
+    """§11.3's fake forge (tests/test_keep_the_why.py) with the sources of §11.4. The project's
+    own source is the namespace owner's grant, as tests/test_keep_the_why_views.py sets it up;
+    a reader `ktw_reads.named_reader` builds holds no grant and is bound to no project, as
+    `Forge.for_project` leaves such a reader. The forge answers `/repos/acme/widget` with
+    `private` and shows a private repository's files to the grant alone. Each file read
+    records its reader's `granted` (`grants`), each visibility question counts (`asked`)."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        super().__init__(monkeypatch)
+        self.private = False
+        self.grants: list[str | None] = []
+        self.asked = 0
+        unbound: list[forge.Forge] = []
+        named_reader = ktw_reads.named_reader
+        fake = self
+
+        def file(reader: forge.Forge, repository: str, path: str, cap: int) -> bytes | None:
+            fake.file_reads.append(path)
+            fake.grants.append(reader.granted)
+            if fake.private and reader.granted is None:
+                return None  # a private repository answers 404 without a grant
+            found = fake.files.get(path)
+            if isinstance(found, BaseException):
+                raise found
+            return found
+
+        def named(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
+            reader = named_reader(instance, own)
+            unbound.append(reader)
+            return reader
+
+        def for_project(reader: forge.Forge, project_id: str) -> forge.Forge:
+            if any(reader is kept for kept in unbound):
+                return reader  # no project's: no source is chosen for it
+            return forge.Forge("owner-grant", granted="owner_token", repository="acme/widget")
+
+        def send(reader: forge.Forge, path: str, query: Any = None, **kwargs: Any) -> Any:
+            if path == "/repos/acme/widget":
+                fake.asked += 1
+                return {"private": fake.private}
+            return None
+
+        def require_public(reader: forge.Forge, repository: str) -> None:
+            return None
+
+        monkeypatch.setattr(forge.Forge, "file", file)
+        monkeypatch.setattr(forge.Forge, "for_project", for_project)
+        monkeypatch.setattr(forge.Forge, "_require_public", require_public)
+        monkeypatch.setattr(forge.Forge, "_send", send)
+        monkeypatch.setattr(ktw_reads, "named_reader", named)
+
+
 @pytest.fixture
-def why(monkeypatch: pytest.MonkeyPatch) -> why_tests.Fake:
-    """The repository's Keep the Why family through a fake forge (tests/test_keep_the_why.py),
-    its root a lean export with a bodies file, and a source that covers the project, as
-    tests/test_keep_the_why_views.py sets one up (§11.4)."""
-    found = why_tests.Fake(monkeypatch)
+def why(monkeypatch: pytest.MonkeyPatch) -> WhyForge:
+    """The repository's Keep the Why family through a fake forge (`WhyForge`), its root a lean
+    export with a bodies file."""
+    found = WhyForge(monkeypatch)
     found.family()
     lean(found, f"{why_tests.BASE}/state.json", why_tests.entry(1), why_tests.entry(2, "open"))
-
-    def for_project(self: forge.Forge, project_id: str) -> forge.Forge:
-        return forge.Forge("owner-grant", granted="owner_token", repository="acme/widget")
-
-    def require_public(self: forge.Forge, repository: str) -> None:
-        return None
-
-    def visibility(reader: forge.Forge, repository: str) -> str | None:
-        return None
-
-    monkeypatch.setattr(forge.Forge, "for_project", for_project)
-    monkeypatch.setattr(forge.Forge, "_require_public", require_public)
-    monkeypatch.setattr(ktw_reads, "_visibility", visibility)
     return found
 
 
@@ -160,7 +199,7 @@ def _repository(engine: Engine, project_id: str, url: str | None, public: bool |
 
 
 @pytest.fixture
-def world(make_client: ClientFactory, migrated: Engine, why: why_tests.Fake) -> World:
+def world(make_client: ClientFactory, migrated: Engine, why: WhyForge) -> World:
     """A public project with a card, its history, a note, a redacted note and entry, a
     restricted text, an agent member, a logo and a banner, a public repository with a Keep the
     Why export (`why`), and a human who is no member."""
@@ -1165,7 +1204,7 @@ def test_the_logo_and_banner_reach_an_outsider_without_the_forge_read_through(
 
 
 def test_an_outsider_reads_the_why_while_the_repository_is_public(
-    world: World, why: why_tests.Fake
+    world: World, why: WhyForge
 ) -> None:
     """`GET …/keep-the-why` (§11.3), `…/export` and `…/bodies` (§11.5) are among the outsider's
     reads (§2.3) and answer it as a member while the hub last found the repository public."""
@@ -1220,31 +1259,110 @@ def test_the_why_is_not_found_to_an_outsider_with_public_pages_off(
         public_pages.configure(replace(settings, public_pages=True))
 
 
-def test_max_age_zero_holds_an_outsider_to_the_members_rate(
-    world: World, why: why_tests.Fake, monkeypatch: pytest.MonkeyPatch
+def test_max_age_zero_holds_an_outsider_to_one_read_per_interval(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`max_age=0` forces a read at most once per `ktw.FORCE_INTERVAL` per project, whoever
-    asks (§2.3, §11.3): the cache is the project's, so an outsider's call within it is answered
-    from the cache, member's read or not, and a member's after an outsider's likewise."""
+    """`max_age=0` forces at most one read per `ktw.FORCE_INTERVAL` per project for the
+    outsiders' cache (`ktw_reads.OUTSIDE_CACHE`), as for the members' (§2.3, §11.3): within
+    it an outsider's call is answered from that cache, no file and no visibility read again."""
     now = [1000.0]
     monkeypatch.setattr(ktw, "now", lambda: now[0])
-    ktw.CACHE.forget(world.project_id)  # the reads start on this clock
     forced = {"max_age": 0}
-    first = world.owner.get(WHY, params=forced)
+    first = world.outsider.get(WHY, params=forced)
     assert first.status_code == 200 and first.json()["fresh"] is True, first.text
-    reads = (len(why.file_reads), len(why.state_reads))
+    reads = (len(why.file_reads), len(why.state_reads), why.asked)
     held = world.outsider.get(WHY, params=forced)
     assert held.status_code == 200 and held.json()["fresh"] is False, held.text
     assert world.outsider.get(f"{WHY}/export", params=forced).status_code == 200
-    assert (len(why.file_reads), len(why.state_reads)) == reads, "a read within the interval"
+    assert (len(why.file_reads), len(why.state_reads), why.asked) == reads, "within the interval"
     now[0] += ktw.FORCE_INTERVAL + 1
     again = world.outsider.get(WHY, params=forced)
     assert again.status_code == 200 and again.json()["fresh"] is True, again.text
-    assert len(why.file_reads) > reads[0]
-    reads = (len(why.file_reads), len(why.state_reads))
-    member = world.owner.get(WHY, params=forced)
-    assert member.status_code == 200 and member.json()["fresh"] is False, member.text
-    assert (len(why.file_reads), len(why.state_reads)) == reads
+    assert len(why.file_reads) > reads[0] and why.asked > reads[2]
+
+
+def test_an_outsider_reads_the_why_without_a_grant(world: World, why: WhyForge) -> None:
+    """The outsider's reads go through a reader that holds no grant and is no project's
+    (`ktw_reads.named_reader`), never the project's own source, which here is the namespace
+    owner's grant; a member's read still uses that grant."""
+    for path in WHY_READS:
+        assert world.outsider.get(path).status_code == 200, path
+    assert why.grants and all(granted is None for granted in why.grants), why.grants
+    assert why.asked > 0  # the forge was asked whether the repository is public
+    assert world.owner.get(WHY, params={"max_age": 0}).status_code == 200
+    assert "owner_token" in why.grants
+
+
+def test_after_the_repository_turns_private_an_outsider_gets_nothing_a_grant_read(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A member's reads fill the members' cache through the namespace owner's grant; the
+    repository then turns private at the forge while the stored `repository_public` is still
+    true (the probe has not looked again). The outsider is answered `not_found` on all three
+    reads, never the members' cached family or export (F1 of A1829); the member reads on."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    for path in WHY_READS:
+        assert world.owner.get(path).status_code == 200, path
+    assert "owner_token" in why.grants
+    why.private = True
+    for path in WHY_READS:
+        refused = world.outsider.get(path)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+        assert world.owner.get(path).status_code == 200, path
+    assert None not in why.grants  # every file read was the member's, through the grant
+
+
+def test_an_outsiders_own_cache_ends_at_the_forges_next_visibility_answer(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What the outsider read while the repository was public is served from their own cache
+    only until the forge is asked again: after `ktw.FORCE_INTERVAL` with `max_age=0`, and at
+    the latest after `ktw_reads.VISIBILITY_SECONDS`, a private repository is `not_found`."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    for path in WHY_READS:
+        assert world.outsider.get(path).status_code == 200, path
+    why.private = True
+    now[0] += ktw.FORCE_INTERVAL + 1
+    for path in WHY_READS:
+        refused = world.outsider.get(path, params={"max_age": 0})
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+    why.private = False
+    now[0] += ktw_reads.VISIBILITY_SECONDS + 1
+    assert world.outsider.get(WHY).status_code == 200
+    why.private = True
+    now[0] += ktw_reads.VISIBILITY_SECONDS + 1
+    for path in WHY_READS:
+        refused = world.outsider.get(path)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+
+
+@pytest.mark.parametrize(
+    ("query", "paths"),
+    [
+        ({"max_age": "-1"}, WHY_READS),
+        ({"canonical": "x" * 2049}, WHY_READS[1:]),  # the summary takes no `canonical`
+    ],
+    ids=["max_age", "canonical"],
+)
+def test_a_bad_query_answers_an_outsider_not_found_before_validation_while_not_public(
+    world: World, migrated: Engine, query: dict[str, str], paths: tuple[str, ...]
+) -> None:
+    """`ProjectRoute` passes the Why reads through `access.gate` (`PUBLIC_REPOSITORY_READS`):
+    while the stored `repository_public` is not true an outsider is answered `not_found`
+    before the query is read, so no `400` reaches them (F2 of A1829); with it true the route
+    is open to them and the same query is the route's `invalid`, as a member's always is."""
+    _repository(migrated, world.project_id, why_tests.REPO, False)
+    for path in paths:
+        refused = world.outsider.get(path, params=query)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+        member = world.owner.get(path, params=query)
+        assert (member.status_code, member.json()["error"]["code"]) == (400, "invalid"), path
+    _repository(migrated, world.project_id, why_tests.REPO, True)
+    for path in paths:
+        opened = world.outsider.get(path, params=query)
+        assert (opened.status_code, opened.json()["error"]["code"]) == (400, "invalid"), path
 
 
 def test_a_release_names_no_hidden_card_to_an_outsider(world: World, migrated: Engine) -> None:

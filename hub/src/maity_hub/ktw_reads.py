@@ -225,6 +225,43 @@ def named_reader(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
     return forge.Forge(instance.token if own.via == "instance" else None)
 
 
+# --- an outsider's reads (§2.3) -----------------------------------------------------------------
+
+# §11.3's answers for a public project's outsiders, apart from the members' `ktw.CACHE`, which a
+# project owner's grant may fill: filled only through `outside_reader`, which holds no grant
+# (hub/context/public-pages.md 3f9c2d71). Its own FORCE_INTERVAL per project, as `ktw.CACHE`'s.
+OUTSIDE_CACHE = ktw.Cache()
+# The forge's own answer whether a project's repository is public, for its outsiders, per
+# (project, repository): asked again after `_refresh(max_age)`, so at least every
+# VISIBILITY_SECONDS and, with `max_age=0`, every FORCE_INTERVAL.
+_outside_seen: OrderedDict[tuple[str, str], tuple[float, str | None]] = OrderedDict()
+_outside_guard = threading.Lock()
+
+
+def outside_reader(
+    instance: forge.Forge, own: forge.Forge, project_id: str, repository_url: str, max_age: int
+) -> forge.Forge | None:
+    """The reader of an outsider's Why reads (§2.3): the project's own repository read as a
+    named one is (`named_reader`: never a grant, bound to no project), and only while that
+    reader's live visibility check (`_visibility`) finds it public; None otherwise, for the
+    caller to answer `not_found`, also when the forge cannot say or the repository is on no
+    forge the hub asks. A spent budget raises `forge.ForgeUnavailableError` with `retry_at`.
+    The stored `repository_public` lags the forge (the probe updates it on its own round),
+    and the members' cache may hold what a grant read: neither decides here."""
+    if forge.kind_of(repository_url) != "github":
+        return None
+    reader = named_reader(instance, own)
+    repository = forge.repository_of(repository_url).lower()
+    key = (project_id, repository)
+    with _outside_guard:
+        seen = _outside_seen.get(key)
+    if seen is None or ktw.now() - seen[0] >= _refresh(max_age):
+        seen = (ktw.now(), _visibility(reader, repository))
+        with _outside_guard:
+            bounded.put(_outside_seen, key, seen, FOREIGN_KEPT)
+    return reader if seen[1] is None else None
+
+
 @dataclass
 class _Slot:
     """One project's permits, and how many calls hold or wait for one of them."""
@@ -369,16 +406,18 @@ def _member(
     canonical: str | None,
     root: str,
     max_age: int,
+    cache: ktw.Cache,
 ) -> tuple[str, ktw.Member]:
-    """(canonical URL, member) for the request, or the `ApiError` of §11.5's list."""
+    """(canonical URL, member) for the request, or the `ApiError` of §11.5's list. `cache`
+    holds the project's family: `ktw.CACHE` for a member, `OUTSIDE_CACHE` for an outsider."""
     own = forge.repository_of(repository_url).lower()
     try:
-        entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, max_age)
+        entry, _fresh = cache.get(reader, project_id, repository_url, max_age)
         held = entry.snapshot
         passed = [held.retry_at] + [m.retry_at for m in held.members] if held is not None else []
         if any(at is not None and at <= clock.now() for at in passed):
             # the budget is back: the read that found it spent stands for nothing now
-            entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, 0)
+            entry, _fresh = cache.get(reader, project_id, repository_url, 0)
     except ktw.Busy:
         raise _unavailable("forge_unavailable") from None
     snapshot = entry.snapshot
@@ -490,10 +529,18 @@ def export(
     canonical: str | None,
     root: str,
     max_age: int,
+    cache: ktw.Cache | None = None,
 ) -> Served:
     start = ktw.now()
     canonical_url, member = _member(
-        reader, others, project_id, repository_url, canonical, root, max_age
+        reader,
+        others,
+        project_id,
+        repository_url,
+        canonical,
+        root,
+        max_age,
+        ktw.CACHE if cache is None else cache,
     )
     _spent(member.retry_at)
     if member.error is not None or not member.state_url:
@@ -526,9 +573,10 @@ def bodies(
     canonical: str | None,
     root: str,
     max_age: int,
+    cache: ktw.Cache | None = None,
 ) -> Served:
     start = ktw.now()
-    state = export(reader, others, project_id, repository_url, canonical, root, max_age)
+    state = export(reader, others, project_id, repository_url, canonical, root, max_age, cache)
     if state.raw.bodies is None:
         raise _not_found("this export carries its bodies inline", "no_bodies_file")
     url = bodies_url(state.raw.url, state.raw.bodies)

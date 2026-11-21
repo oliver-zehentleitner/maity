@@ -1,8 +1,12 @@
 """`GET /projects/{owner}/{slug}/keep-the-why` (docs/api.md §11.3) and the Keep the Why views'
 reads, `…/keep-the-why/export` and `…/keep-the-why/bodies` (§11.5). An outsider of a public
-project reads all three while the hub last found its repository public (§2.3)."""
+project reads all three while the hub last found its repository public and the forge says it is
+public now, read without a grant into a cache of their own (§2.3)."""
 
 from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -24,12 +28,41 @@ router = APIRouter(route_class=ProjectRoute)
 def _require_why(mine: access.Membership | access.OutsideReader) -> None:
     """`project:read`, and for an outsider the public view's condition (§2.3, §16.9 **Why**,
     `public_project_views.why_data`): only while the hub last found the project's repository
-    public, otherwise `not_found` as on every route closed to it. The reads answer what the
-    repository publishes, never the database, and `max_age=0` keeps its per-project rate
-    (`ktw.FORCE_INTERVAL`), whoever asks."""
+    public, otherwise `not_found` as on every route closed to it. The cheap first check:
+    `_outside_reader` asks the forge itself after it (the stored flag lags the forge)."""
     mine.require("project:read")
     if isinstance(mine, access.OutsideReader) and mine.project.repository_public is not True:
         raise not_found()
+
+
+def _spent(retry_at: datetime) -> ApiError:
+    """`probe_unavailable` while the reader's budget is spent (§11.4), as for a member."""
+    return ApiError(
+        503,
+        "probe_unavailable",
+        "the forge's rate limit is spent",
+        {"retry_at": clock.rfc3339(retry_at)},
+    )
+
+
+def _outside_reader(request: Request, project: Any, max_age: int) -> forge.Forge:
+    """An outsider's reader (`ktw_reads.outside_reader`): no grant, bound to no project, and
+    only while the forge says now that the repository is public; `not_found` otherwise, as a
+    closed route answers (§2.3), and `probe_unavailable` while the reader's budget is spent,
+    as for a member. The project's own source is read only for which token it is
+    (`named_reader`), never read with."""
+    base = reader_of(request)
+    try:
+        reader = ktw_reads.outside_reader(
+            base, base.for_project(project.id), project.id, project.repository_url, max_age
+        )
+    except forge.ForgeUnavailableError as error:  # only a spent budget is raised
+        if error.retry_at is None:
+            raise not_found() from None
+        raise _spent(error.retry_at) from None
+    if reader is None:
+        raise not_found()
+    return reader
 
 
 @router.get("/projects/{owner}/{slug}/keep-the-why")
@@ -45,10 +78,12 @@ def read_keep_the_why(
         mine = access.reader(conn, caller, slug)
     _require_why(mine)
     project = mine.project
+    outside = isinstance(mine, access.OutsideReader)
+    reader, cache = reader_of(request), ktw.CACHE
+    if outside:  # never the members' cache, which a grant may fill
+        reader, cache = _outside_reader(request, project, max_age), ktw_reads.OUTSIDE_CACHE
     try:
-        entry, fresh = ktw.CACHE.get(
-            reader_of(request), project.id, project.repository_url, max_age
-        )
+        entry, fresh = cache.get(reader, project.id, project.repository_url, max_age)
     except ktw.Busy:
         raise ktw_unavailable(
             "forge_unavailable", "the Keep the Why family is being read; try again shortly"
@@ -56,6 +91,8 @@ def read_keep_the_why(
     snapshot = entry.snapshot
     if snapshot is None:
         raise ktw_not_configured()
+    if outside and snapshot.not_covered is not None:
+        raise not_found()  # the reader without a grant was refused: not public to it
     if snapshot.error is not None:
         last = {"last": snapshot.answer(fresh=False)} if snapshot.members else {}
         raise ktw_unavailable(
@@ -87,15 +124,40 @@ def _views_read(
 ) -> Response:
     """One of §11.5's reads, for the reader its endpoint read (`access.reader`). The caller is
     authorized before `If-None-Match` is compared, so one without `project:read`, or an
-    outsider while the repository is not public, gets `not_found`, never `304`."""
+    outsider while the repository is not public, gets `not_found`, never `304`. An outsider's
+    family is read without a grant into `ktw_reads.OUTSIDE_CACHE` (`_outside_reader`)."""
     _require_why(mine)
     project = mine.project
     if not project.repository_url:
         raise ktw_not_configured()
+    outside = isinstance(mine, access.OutsideReader)
+    read = ktw_reads.export if which == "state" else ktw_reads.bodies
+    if outside:
+        reader = _outside_reader(request, project, max_age)
+        spent = reader.retry_at()
+        if spent is not None:
+            raise _spent(spent)
+        try:
+            served = read(
+                reader,
+                reader,
+                project.id,
+                project.repository_url,
+                canonical or None,
+                root or "",
+                max_age,
+                ktw_reads.OUTSIDE_CACHE,
+            )
+        except forge.NotCoveredError:
+            raise not_found() from None  # refused to the reader without a grant: not public
+        except forge.ForgeUnavailableError as error:
+            if error.retry_at is None:
+                raise ktw_unavailable("forge_unavailable") from None
+            raise _spent(error.retry_at) from None
+        return _answer(which, served, request)
     base = reader_of(request)
     fg = base.for_project(project.id)
     admin = mine.may("project:admin")
-    read = ktw_reads.export if which == "state" else ktw_reads.bodies
     try:
         if not fg.configured_for(project.repository_url):
             raise forge.NotCoveredError(forge.unread_reason(fg, project.repository_url))
@@ -123,12 +185,11 @@ def _views_read(
     except forge.ForgeUnavailableError as error:
         if error.retry_at is None:
             raise ktw_unavailable("forge_unavailable") from None
-        raise ApiError(
-            503,
-            "probe_unavailable",
-            "the forge's rate limit is spent",
-            {"retry_at": clock.rfc3339(error.retry_at)},
-        ) from None
+        raise _spent(error.retry_at) from None
+    return _answer(which, served, request)
+
+
+def _answer(which: str, served: ktw_reads.Served, request: Request) -> Response:
     headers = {"ETag": served.etag, "Cache-Control": "private, no-cache"}
     if _matches(request.headers.get("If-None-Match"), served.etag):
         return Response(status_code=304, headers=headers)
