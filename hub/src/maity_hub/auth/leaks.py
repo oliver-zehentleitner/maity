@@ -46,16 +46,21 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             t.membership.c.agent_id,
             t.agent_profile.c.owner_id,
         )
-        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .select_from(t.credential)
+        .join(t.instance_attachment, t.instance_attachment.c.credential_id == t.credential.c.id)
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(t.credential.c.id.in_(sorted(set(secrets_by_id) - set(runner_ids))))
+        .order_by(t.credential.c.id, t.instance_attachment.c.id)
     ).all()
+    # One row per project the instance is in: revoked once, told in each.
     for row in rows:
         if row.revoked_at is not None:
             continue
         if not _verifies("credential", row, secrets_by_id[row.id]):
             continue
-        revoke(conn, row.id, REASON, by=None)
+        if row.id not in revoked:
+            revoke(conn, row.id, REASON, by=None)
         payload = {"credential_id": row.id, "reason": REASON}
         subject = ("credential", row.id)
         emit(
@@ -74,7 +79,8 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             {"credential_id": row.id},
             subject=subject,
         )
-        revoked.append(row.id)
+        if row.id not in revoked:
+            revoked.append(row.id)
     return revoked
 
 

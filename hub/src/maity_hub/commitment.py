@@ -34,18 +34,25 @@ def required(project: Any) -> bool:
 
 
 def start(
-    conn: Connection, project: Any, credential_id: str, session_id: str, now: datetime
+    conn: Connection,
+    project: Any,
+    credential_id: str,
+    membership_id: int,
+    session_id: str,
+    now: datetime,
 ) -> None:
-    """The first resume of an instance under `required` fixes its deadline; a later one,
-    and an instance that confirmed, change nothing."""
+    """The first resume of an instance under `required` fixes its deadline in that project
+    (its attachment to `membership_id`); a later one, and an instance that confirmed,
+    change nothing."""
     if not required(project):
         return
+    a = t.instance_attachment
     conn.execute(
-        update(t.credential)
+        update(a)
         .where(
-            t.credential.c.id == credential_id,
-            t.credential.c.ktw_acknowledged_at.is_(None),
-            t.credential.c.ktw_acknowledge_by.is_(None),
+            instances.attachment_of(credential_id, membership_id),
+            a.c.ktw_acknowledged_at.is_(None),
+            a.c.ktw_acknowledge_by.is_(None),
         )
         .values(ktw_acknowledge_by=now + WINDOW, ktw_session_id=session_id)
     )
@@ -123,24 +130,25 @@ def confirmed(conn: Connection, credential: Any) -> None:
 
 def _outstanding(conn: Connection, project_id: str, credential_id: str | None) -> list[Any]:
     """The project's active instances that have not confirmed and have a deadline,
-    with what the hub needs to know about their member; one instance when named."""
+    with what the hub needs to know about their member; one instance when named. One row
+    per instance in this project: the commitment is per attachment (§6.17)."""
+    a = t.instance_attachment
     query = (
-        select(
-            t.credential,
+        instances.credential_rows()
+        .add_columns(
             t.membership.c.id.label("member_row"),
-            t.membership.c.agent_id.label("agent_id"),
             t.membership.c.active.label("membership_active"),
             t.membership.c.paused_since.label("member_paused"),
             t.agent_profile.c.owner_id.label("owner_id"),
             t.agent_profile.c.handle.label("handle"),
             t.agent_profile.c.deleted_at.label("profile_deleted"),
         )
-        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(
             t.membership.c.project_id == project_id,
-            t.credential.c.ktw_acknowledged_at.is_(None),
-            t.credential.c.ktw_acknowledge_by.isnot(None),
+            a.c.ktw_acknowledged_at.is_(None),
+            a.c.ktw_acknowledge_by.isnot(None),
         )
     )
     if credential_id is not None:
@@ -184,8 +192,8 @@ def reconcile(
             # would keep its project in every sweep for good.
             withdraw_hub_notice(conn, row.ktw_request_id, "the commitment no longer applies")
             conn.execute(
-                update(t.credential)
-                .where(t.credential.c.id == row.id)
+                update(t.instance_attachment)
+                .where(instances.attachment_of(row.id, row.membership_id))
                 .values(ktw_acknowledge_by=None, ktw_reminded_at=None, ktw_request_id=None)
             )
             continue
@@ -212,7 +220,9 @@ def reconcile(
             }
             emit(conn, project.id, "keep_the_why_reminder", [token], payload)
             conn.execute(
-                update(t.credential).where(t.credential.c.id == row.id).values(ktw_reminded_at=now)
+                update(t.instance_attachment)
+                .where(instances.attachment_of(row.id, row.membership_id))
+                .values(ktw_reminded_at=now)
             )
         request_id = row.ktw_request_id
         if request_id is not None:
@@ -233,8 +243,8 @@ def reconcile(
                 f"session {row.ktw_session_id}.",
             )
             conn.execute(
-                update(t.credential)
-                .where(t.credential.c.id == row.id)
+                update(t.instance_attachment)
+                .where(instances.attachment_of(row.id, row.membership_id))
                 .values(ktw_request_id=request_id)
             )
 
@@ -246,10 +256,13 @@ def sweep(engine: Engine) -> None:
         ids = list(
             conn.execute(
                 select(t.membership.c.project_id)
-                .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+                .join(
+                    t.instance_attachment,
+                    t.instance_attachment.c.membership_id == t.membership.c.id,
+                )
                 .where(
-                    t.credential.c.ktw_acknowledged_at.is_(None),
-                    t.credential.c.ktw_acknowledge_by.isnot(None),
+                    t.instance_attachment.c.ktw_acknowledged_at.is_(None),
+                    t.instance_attachment.c.ktw_acknowledge_by.isnot(None),
                 )
                 .distinct()
             ).scalars()

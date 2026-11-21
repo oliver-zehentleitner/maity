@@ -1045,10 +1045,13 @@ join_link = Table(
     # The host the link was built on: the join host or the public URL (§3.1).
     Column("via", String(16), nullable=False, server_default="public"),
     # For a member's join, which instance it adds (§6.17); `instance` is what the
-    # exchange gave.
+    # exchange gave. `attach` is the live instance of the profile the join attaches to the
+    # membership in this project instead of creating one (§3.1, "Attaching an existing
+    # instance").
     Column("new_instance", Boolean, nullable=False, server_default=false()),
     Column("replaces", String(INSTANCE)),
     Column("instance", String(INSTANCE)),
+    Column("attach", String(INSTANCE)),
     _ref("created_by", "human.id", nullable=False),
     # Created under "Bringing your own agent" (§3.1) rather than `members:admin`: the
     # exchange checks the creator and the limits again for such a join only (§3.3).
@@ -1079,24 +1082,17 @@ credential = Table(
     "credential",
     metadata,
     _id(primary_key=True),
-    _membership_ref("membership_id", nullable=False, index=True),
+    # The agent profile the instance belongs to (§6.17); its projects are the rows of
+    # `instance_attachment`. Not unique with `instance`: ids from before one instance could
+    # sit in several projects may repeat across a profile's memberships.
+    _ref("agent_id", "agent_profile.id", nullable=False),
     # sha256 over the secret's text: the HMAC key and the bearer verifier. Sealed with
     # MAITY_SECRET_KEY (`auth.verifiers`), plain hex without an instance key.
     Column("verifier", String(SEALED_VERIFIER), nullable=False),
-    # The agent instance this credential is (§6.17): unique within the membership and
-    # never reused, also after revocation.
+    # The agent instance this credential is (§6.17): unique within each membership it is
+    # attached to (`instance_attachment`) and never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
-    # Put to rest, answering only when asked by its own address (§6.17): since when and by
-    # whom (a member id); null while awake. Never moves with a `replaces` join.
-    Column("dormant_since", UtcDateTime),
-    Column("dormant_by", String(ID)),
-    # What the resume packet's `handover` needs (§5.2): the project's newest event when the
-    # exchange created this instance, and `events.after` and `events.cursor` of its first
-    # packet (set by its first resume).
-    Column("exchange_seq", Integer),
-    Column("first_after", Integer),
-    Column("first_cursor", Integer),
     _ref("join_id", "join_link.id"),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
@@ -1110,6 +1106,42 @@ credential = Table(
     # (§15.3): when, and on whose authority, until it is revoked.
     Column("revoke_due_at", UtcDateTime),
     Column("revoke_due_by", String(ID)),
+    Index("ix_credential_agent_instance", "agent_id", "instance"),
+    **MYSQL_TABLE,
+)
+
+# The projects an agent instance is in (§6.17, "One instance in several projects"): one row
+# per (credential, membership). What belongs to the instance in one project lives here, not
+# on the credential: its pause, its dormancy, its Keep the Why commitment and the handover
+# numbers. Attached now is `detached_at IS NULL`; attaching again after a detach is
+# forbidden (§6.17), so neither key is limited to live rows.
+instance_attachment = Table(
+    "instance_attachment",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("credential_id", "credential.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    # A copy of `credential.instance`, so that the key below holds the id per membership.
+    Column("instance", String(INSTANCE), nullable=False),
+    Column("attached_at", UtcDateTime, nullable=False),
+    Column("attached_by", String(ID)),
+    _ref("join_id", "join_link.id"),
+    # The end of the attachment (§6.17): when, by whom, `removed` or `detached`, and the
+    # project as it was (`{id, owner, slug, full_name}`) for the `left` answer.
+    Column("detached_at", UtcDateTime),
+    Column("detached_by", String(ID)),
+    Column("detached_reason", String(16)),
+    Column("detached_project", JSON_VALUE),
+    # Put to rest, answering only when asked by its own address (§6.17): since when and by
+    # whom (a member id); null while awake. Never moves with a `replaces` join.
+    Column("dormant_since", UtcDateTime),
+    Column("dormant_by", String(ID)),
+    # What the resume packet's `handover` needs (§5.2): the project's newest event when the
+    # exchange created this instance, and `events.after` and `events.cursor` of its first
+    # packet (set by its first resume).
+    Column("exchange_seq", Integer),
+    Column("first_after", Integer),
+    Column("first_cursor", Integer),
     # The Keep the Why commitment of the instance (§6.23): when it confirmed and in which
     # session, its deadline (fixed by the first resume under `required`), and what the hub
     # sent for an outstanding one: the reminder's time and the owner's request.
@@ -1124,7 +1156,13 @@ credential = Table(
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
     Column("paused_line", Boolean, nullable=False, server_default=false()),
-    UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
+    # The database form of `instance_id_taken` within a membership (§6.17).
+    UniqueConstraint(
+        "membership_id", "instance", name="uq_instance_attachment_membership_instance"
+    ),
+    UniqueConstraint(
+        "credential_id", "membership_id", name="uq_instance_attachment_credential_membership"
+    ),
     **MYSQL_TABLE,
 )
 
@@ -1212,7 +1250,6 @@ agent_session = Table(
     metadata,
     _id(primary_key=True),
     _ref("credential_id", "credential.id", nullable=False),
-    _membership_ref("membership_id", nullable=False, index=True),
     # Typed by the client; Text, so that no length is a contract the API must enforce.
     Column("harness", Text),
     Column("harness_version", Text),
@@ -1222,7 +1259,6 @@ agent_session = Table(
     Column("started_at", UtcDateTime, nullable=False),
     Column("last_seen_at", UtcDateTime, nullable=False),
     Column("ended_at", UtcDateTime),
-    Column("acknowledged_seq", BIG_ID, nullable=False),  # the cursor: highest `after` seen
     # True while the session is the credential's live one, NULL afterwards:
     # the unique constraint allows one live session per credential and any
     # number of ended ones, on every engine (no partial index needed).
@@ -1235,15 +1271,30 @@ agent_session = Table(
     # long-poll wakes on a narrower set, and its rules say so.
     Column("supervisor", String(80)),
     # Not listening (§5.3): the last call for events or the resume (`last_seen_at` counts
-    # every call); an episode's start, the oldest event that waited, and its notice.
+    # every call). The episode itself is per project, on `agent_session_project`.
     Column("events_at", UtcDateTime),
-    Column("not_listening_since", UtcDateTime),
-    Column("not_listening_seq", BIG_ID),
-    Column("not_listening_request_id", String(ID)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     # Each credential's latest session, read on every bell read and digest hour (§5.3).
     Index("ix_agent_session_credential_started", "credential_id", "started_at"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# A session in one project of its instance (§5.3, §6.17): one row per attachment the
+# session was started with, holding what is per project, the event position and the
+# not-listening episode.
+agent_session_project = Table(
+    "agent_session_project",
+    metadata,
+    _ref("session_id", "agent_session.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("acknowledged_seq", BIG_ID, nullable=False),  # the cursor: highest `after` seen
+    # Not listening (§5.3): an episode's start, the oldest event that waited, and its notice.
+    Column("not_listening_since", UtcDateTime),
+    Column("not_listening_seq", BIG_ID),
+    Column("not_listening_request_id", String(ID)),
+    PrimaryKeyConstraint("session_id", "membership_id"),
+    Index("ix_agent_session_project_membership_id", "membership_id"),
     **MYSQL_TABLE,
 )
 

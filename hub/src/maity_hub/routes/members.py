@@ -258,15 +258,23 @@ idempotency.register("member_team", load_member_as_read, _IN_MEMBERS_PROJECT)
 
 
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
-    row = conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
+    # TODO(hub PR B): the attachment of the route's project; the oldest until then.
+    row = conn.execute(
+        instances.credential_rows()
+        .where(t.credential.c.id == credential_id)
+        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
+        .limit(1)
+    ).one()
     return credential_view(conn, row)
 
 
 def _credential_project(conn: Connection, credential_id: str) -> str | None:
     found: str | None = conn.execute(
         select(t.membership.c.project_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == credential_id)
+        .join(t.instance_attachment, t.instance_attachment.c.membership_id == t.membership.c.id)
+        .where(t.instance_attachment.c.credential_id == credential_id)
+        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
+        .limit(1)
     ).scalar()
     return found
 
@@ -275,8 +283,10 @@ def _sees_credential(conn: Connection, mine: Membership, credential_id: str) -> 
     """The read of the credentials list (§10), for a replayed revocation."""
     target = conn.execute(
         select(t.membership)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == credential_id)
+        .join(t.instance_attachment, t.instance_attachment.c.membership_id == t.membership.c.id)
+        .where(t.instance_attachment.c.credential_id == credential_id)
+        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
+        .limit(1)
     ).one()
     return _manages_credentials(conn, mine, target)
 
@@ -1401,7 +1411,11 @@ def set_paused(
     else:
         held = instances.require_active(conn, target, instance, "instance")
         lifts_a_human_pause = reason is None and instances.human_paused(target, held)
-        conn.execute(update(t.credential).where(t.credential.c.id == held.id).values(**values))
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(held.id, target.id))
+            .values(**values)
+        )
     availability.reconcile_ids(conn, [target.id], change.actor)
     if reason is None and not lifts_a_human_pause:
         return
@@ -1462,9 +1476,9 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     now = clock.now()
     credentials = (
         conn.execute(
-            select(t.credential.c.id).where(
-                t.credential.c.membership_id == target.id, t.credential.c.revoked_at.is_(None)
-            )
+            select(t.credential.c.id)
+            .select_from(instances.credential_join())
+            .where(t.instance_attachment.c.membership_id == target.id, instances.attached_now())
         )
         .scalars()
         .all()
@@ -1697,8 +1711,8 @@ def list_credentials(
         _may_manage_credentials(conn, mine, target)
         since = clock.now() - REVOKED_LISTED
         rows = conn.execute(
-            select(t.credential).where(
-                t.credential.c.membership_id == target.id,
+            instances.credential_rows().where(
+                t.instance_attachment.c.membership_id == target.id,
                 t.credential.c.revoked_at.is_(None) | (t.credential.c.revoked_at > since),
             )
         ).all()
@@ -1715,9 +1729,13 @@ def revoke_credential(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         row = conn.execute(
-            select(t.credential, t.membership.c.project_id, t.membership.c.agent_id)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-            .where(t.credential.c.id == credential_id)
+            instances.credential_rows()
+            .add_columns(t.membership.c.project_id)
+            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
+            .where(
+                t.credential.c.id == credential_id,
+                t.membership.c.project_id == mine.project.id,
+            )
         ).first()
         if row is None or row.project_id != mine.project.id:
             raise not_found()

@@ -1189,14 +1189,25 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     conn.execute(
         insert(t.credential).values(
             id=credential_id,
-            membership_id=membership_id,
+            agent_id=agent_id,
             instance=instance,
             replaces=row.replaces,
-            exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
             verifier=verifiers.stored("credential", credential_id, verifier),
             join_id=row.id,
             client=client,
             created_at=now,
+        )
+    )
+    # Its first project (§6.17): attached at the exchange through this join.
+    conn.execute(
+        insert(t.instance_attachment).values(
+            credential_id=credential_id,
+            membership_id=membership_id,
+            instance=instance,
+            attached_at=now,
+            attached_by=row.created_by,
+            join_id=row.id,
+            exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
         )
     )
     conn.execute(update(t.join_link).where(t.join_link.c.id == row.id).values(instance=instance))
