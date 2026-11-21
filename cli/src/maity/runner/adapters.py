@@ -1056,15 +1056,12 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
 
 def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    path = _write(ctx, ctx.agent_dir / "opencode.json", opencode_config(ctx))
-    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
-    # .opencode/ directories bring agents, commands and plugins.
-    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
     # No model on the placement: fall back to the harness default (config validates it is one
     # of `models`). Fail closed when the effective model is empty or not among `models`: with
-    # no `--model`, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
+    # no model, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
     # so the clone's content would go to opencode's servers instead of the configured provider
-    # (cli/context/runner.md, the opencode model fail-closed). Both modes below share `chosen`.
+    # (cli/context/runner.md, the opencode model fail-closed). Checked before anything is
+    # written, for both modes.
     model = ctx.placement.get("model") or ctx.harness.default_model
     if not model or model not in ctx.harness.models:
         raise NotYet(
@@ -1072,13 +1069,26 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
             f"{ctx.harness.models!r}: refusing the start rather than letting opencode run its "
             f"own default, which would send the conversation to opencode's servers"
         )
-    chosen = ["--model", model]
-    if ctx.placement.get("mode") == "interactive":
-        prompt = START_PROMPT + _sandbox_prompt(ctx)
-        return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", prompt], env)
+    # The model is the configuration's top-level `model` for both modes: opencode 2.3's TUI
+    # (no subcommand) has no `--model` and exits on it (tsk-daa6e0gfncg0). `opencode run`
+    # still takes `--model`, so a supervised run carries it twice, the same value.
+    path = _write(ctx, ctx.agent_dir / "opencode.json", {**opencode_config(ctx), "model": model})
+    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
+    # .opencode/ directories bring agents, commands and plugins.
+    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
     prompt = START_PROMPT + _sandbox_prompt(ctx)
-    first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, prompt]
-    again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", prompt]
+    # The flags here are the ones `maity runner check` probes for (capabilities.OPENCODE_FLAGS).
+    if ctx.placement.get("mode") == "interactive":
+        # `--standalone`: without it 2.3's TUI attaches to the user's shared background service
+        # (`opencode serve --service`), which has its own configuration, so neither
+        # OPENCODE_CONFIG (the model, the rules) nor OPENCODE_DISABLE_PROJECT_CONFIG reaches it
+        # (ops' live check, nte-mmnz3mk1247c).
+        return Launch([ctx.binary, "--standalone", str(ctx.clone), "--prompt", prompt], env)
+    # `opencode run` has no `--dir`: it works in its working directory, the clone, where the
+    # session starts (a workspace.Workspace's `path`; opencode has no workspace folder) and the
+    # loop's runs inherit it. `--continue` is that directory's last conversation.
+    first = [ctx.binary, "run", "--model", model, prompt]
+    again = [ctx.binary, "run", "--model", model, "--continue", prompt]
     return _supervised(ctx, first, again, env)
 
 
