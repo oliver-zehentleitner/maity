@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import chat_gate, clock, events
+from maity_hub import chat_gate, clock, events, review_delivery
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -728,6 +728,51 @@ def test_an_orderer_who_left_is_isolated_or_is_the_sender_is_left_out(
         )
     got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
     assert all(lead.id not in token for token in got)
+
+
+def test_the_sender_is_the_sending_instance_not_its_whole_member(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """KtW 1d17b2d5 and review A1883, finding 3: "the sender" is the sending instance. Another
+    instance of the sender's own member that ordered the review is added like any orderer;
+    an order addressed only to that other instance does not count as addressed to the sender,
+    so its orderer is not exempt from the gate (probe P1g)."""
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    team = owner.patch(
+        f"/projects/maintainer/maity/members/{reviewer.id}", {"team": {"max_instances": 2}}
+    )
+    assert team.status_code == 200, team.text
+    twin = flow.agent(make_client, owner, agent={"id": reviewer.id}, new_instance=True)
+    for agent in (reviewer, twin):
+        assert agent.resume().status_code == 200
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    by_twin = order(twin, lead.id)
+    got = sent(migrated, post(reviewer, "#99", in_reply_to=by_twin))
+    assert f"instance:{reviewer.id}#{twin.instance}" in got
+    # Whether the orderer is exempt from the gate, judged where the gate would hold everyone.
+    to_twin = order(lead, f"{reviewer.id}#{twin.instance}")
+    to_sender = order(lead, f"{reviewer.id}#{reviewer.instance}")
+    row = membership_id(migrated, reviewer.id)
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        sender = conn.execute(select(t.membership).where(t.membership.c.id == row)).one()
+
+        def orderers(seq: int) -> list[review_delivery.Recipient]:
+            answered = conn.execute(select(t.event).where(t.event.c.seq == seq)).one()
+            return review_delivery.recipients(
+                conn,
+                project,
+                sender,
+                None,
+                review("#99"),
+                answered,
+                reviewer.instance,
+                admits=lambda _: False,
+            )
+
+        assert orderers(to_twin) == []
+        assert [r.token for r in orderers(to_sender)] == [f"instance:{lead.id}#{lead.instance}"]
 
 
 def test_a_redacted_order_can_still_be_answered(

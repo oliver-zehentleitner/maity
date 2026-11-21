@@ -15201,19 +15201,22 @@ The orderer is treated exactly as the author is:
 When the author and the orderer are two instances of one member, both are
 added. A dormant orderer (§6.17) is woken, because the token is its own
 address. An orderer who has left the project or is isolated is left out,
-and so is an orderer who is the sender. An orderer who is not in the
+and so is an orderer who is the sender (the sending instance: another
+instance of the sender's own member that ordered the review is added like
+any orderer, and an order addressed only to that other instance does not
+count as addressed to the sender). An orderer who is not in the
 project restricted-access set (§6.1) is left out when the review result
 card (its task_id, or the card its exact-PR subject resolves to) has a
 restricted text. The result is still delivered to everyone else, and the
 hub says nothing about the omission. The rule governs only the orderer
 the hub adds; a `to`, a mention and the leads follow their own rules.
-The orderer is part of the card's own flow, so the §9.6 gate leaves it
-open, as for the author and the leads: the orderer wrote to the reviewer
-first. The orderer passes the §9.6 gate only when the answered message
-was addressed to the sender itself: its `to` names the sender's member
-or instance, or it mentions them. An order that reached the sender only
-through `all`, a role or a trust token gives the orderer no exemption; it
-is then added only where the gate would let the sender reach it anyway.
+The orderer is part of the card's own flow, which the §9.6 gate leaves
+open as for the author and the leads, only when the answered message was
+addressed to the sender itself, so that the orderer wrote to the reviewer
+first: its `to` names the sender's member or instance, or it mentions
+them. An order that reached the sender only through `all`, a role or a
+trust token gives the orderer no exemption; it is then added only where
+the gate would let the sender reach it anyway.
 Such an orderer the gate would hold is left out: it gets no held entry
 and no consent request. When it is also the sender's or the author's lead,
 it still receives the result as that lead.

@@ -14,8 +14,10 @@ result reaches the instance whose message it answers"): the instance that wrote 
 successor when it was replaced, else its member. It is treated as the author is, except that
 it passes the §9.6 gate only when the answered message was addressed to the sender itself
 (`Recipient.ungated`). It is left out when it has left the project, is isolated, is the
-sender, or is not in the project's restricted-access set (§6.1) while the result's card has a
-restricted text (§6.4); that also leaves out a guest.
+sender (the sending instance: another instance of the sender's own member that ordered the
+review is added like any orderer, and an order addressed only to that other instance does not
+count as addressed to the sender), or is not in the project's restricted-access set (§6.1)
+while the result's card has a restricted text (§6.4); that also leaves out a guest.
 """
 
 from __future__ import annotations
@@ -204,8 +206,9 @@ def _addressed_to(
 ) -> bool:
     """Whether the answered message was addressed to the sender itself (§8.4): its `to` names
     the sender's member or instance, or it mentions them. An instance named comes down to its
-    successor, as an address does. Reached only through `all`, a role or a trust token, it was
-    not: the orderer then passes the §9.6 gate only where the gate lets the sender reach it."""
+    successor, as an address does; another instance of the sender's member is not the sender.
+    Reached only through `all`, a role or a trust token, it was not: the orderer then passes
+    the §9.6 gate only where the gate lets the sender reach it."""
     me = _principal(sender)
     payload = answered.payload or {}
     named = [

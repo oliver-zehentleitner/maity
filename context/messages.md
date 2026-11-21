@@ -618,7 +618,7 @@ default.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; the arbiter's ruling that an orderer the gate would hold is left out entirely, 2026-11-21; review A1882, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; the arbiter's ruling that an orderer the gate would hold is left out entirely, 2026-11-21; reviews A1882 and A1883, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
 **Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
 **See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
 **See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
@@ -630,12 +630,15 @@ that wrote it (its successor when it was replaced), else its member. The
 orderer is treated as the author is (2c02c8c4): an instance orderer
 replaces its member's `member:` token from `to`, a mention or a lead, is
 added once, and passes the §9.6 gate as part of the card's own flow when
-the answered message was addressed to the sender. It is
-left out when it has left the project, is isolated, is the sender, or
-is not in the project's restricted-access set while the result's card has
-a restricted text; the result still reaches everyone else
-and the hub says nothing of the omission. The hub never looks for the
-answered message in a body or a subject.
+the answered message was addressed to the sender. It is left out when
+it has left the project, is isolated, is the sender (the sending
+instance: another instance of the sender's own member that ordered the
+review is added like any orderer, and an order addressed only to that
+other instance does not count as addressed to the sender), or is not in
+the project's restricted-access set while the result's card has a
+restricted text; the result still reaches everyone else and the hub says
+nothing of the omission. The hub never looks for the answered message in
+a body or a subject.
 
 **Reason:** reviewers sent about 30 results to the review lead's bare
 member id. That woke whichever instance the agent's `wake` rule (§6.18)
@@ -675,19 +678,20 @@ entry and no consent request; the author and the leads still receive
 the result, a lead that is the orderer's own member included. So the
 gate is applied to the orderer before recipients are de-duplicated:
 de-duplicating first let such an orderer take the place of that lead and
-then be dropped, leaving neither (review A1882). Whether the orderer is added depends on state another writer
-changes under the project's lock (the restricted-access setting, a card's
-restriction, a member's state), so the hub takes that lock before it
-validates `in_reply_to` and resolves the orderer, and reads the project
-and the sender's row again under it, as `tasks._locked` does; decided on
-the rows read at the membership lookup, a change that commits before the
-event write would leave an audience based on the earlier state. For the
-same reason the sender's `events:post` is checked again on the row read
-under the lock: the route checks it on the row read first, and a trust or
-role change committed in between would otherwise still authorize the
-write (review A1882). The jour
-fixe's `in_reply_to`, a list of response ids on a jour fixe reply, is
-another field on another resource; §8.4 says so in one line.
+then be dropped, leaving neither (review A1882). Whether the orderer is
+added depends on state another writer changes under the project's lock
+(the restricted-access setting, a card's restriction, a member's state),
+so the hub takes that lock before it validates `in_reply_to` and
+resolves the orderer, and reads the project and the sender's row again
+under it, as `tasks._locked` does; decided on the rows read at the
+membership lookup, a change that commits before the event write would
+leave an audience based on the earlier state. For the same reason the
+sender's `events:post` is checked again on the row read under the lock:
+the route checks it on the row read first, and a trust or role change
+committed in between would otherwise still authorize the write (review
+A1882). The jour fixe's `in_reply_to`, a list of response ids on a jour
+fixe reply, is another field on another resource; §8.4 says so in one
+line.
 
 **Rejected alternatives:**
 - Matching `review.head` against earlier messages to find the order: a
