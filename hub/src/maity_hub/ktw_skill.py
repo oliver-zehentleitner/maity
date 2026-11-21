@@ -47,6 +47,12 @@ def skill(settings: Settings) -> dict[str, Any]:
     }
 
 
+def for_runner(settings: Settings) -> dict[str, str]:
+    """The `keep_the_why` of a runner's placement (§15.5): the source the resume packet names
+    and the commit a runner fetches it at, so what it delivers cannot move with a tag."""
+    return {"source": settings.ktw_skill_source, "commit": settings.ktw_skill_commit}
+
+
 def loading_block(project: Any, settings: Settings, credential: Any = None) -> dict[str, Any]:
     """The `keep_the_why` block of the resume packet (§5.2): the loading part, and with the
     caller's `credential` the commitment under `required`."""
