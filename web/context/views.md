@@ -7066,6 +7066,14 @@ and clone whose latest closed placement of that agent left a live credential tha
 placement runs takes it up, as the hub does (§15.5 "Carried-over credential"): it adds no
 instance, so it passes at the limit and the part says nothing more. Placing an agent again where
 its removed placement ran thus works as before the limit was checked (review A1815 of #2058).
+What the part says is a hint and the hub decides: it never blocks what the hub would take, and
+where it cannot be sure it sends the start and shows the hub's refusal (the lead's ruling on
+review A1816 of #2058). The list gives `closed_at` to the second while the hub orders by the
+stored time, so when closes within the newest second disagree, the start goes through. The
+limit the part counts against is the stored `max_instances`; a ceiling or the owner's account
+override can hold the one in effect lower (§6.31). The member view names only the stored value;
+`GET …/limits` names the one in effect, and reading it is left to tsk-9zssa5a9fq34 to keep this
+change small. Until then the hub's `instance_quota` answers for a lower limit.
 A new profile sends its join fields. The part reads the runners and placements each time it is
 ticked and each time the panel opens. A runner that answers after it was unticked draws nothing.
 

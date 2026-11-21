@@ -603,6 +603,9 @@ window.Maity = window.Maity || {};
       const mine = current.filter((p) => p.active && p.agent && p.agent.id === member.id);
       const waiting = mine.filter((p) => !p.credential_id || !holdsLive(p)).length;
       const live = liveIds.size;
+      // The stored maximum, a hint: a ceiling or the owner's account override can hold the limit
+      // in effect lower (§6.31). The member view does not name that one, GET …/limits does
+      // (tsk-9zssa5a9fq34 reads it); until then the hub's instance_quota says it (review A1816).
       const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
       const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
       // Its credential is live when a live instance names it, else when the instance it made is.
@@ -615,14 +618,20 @@ window.Maity = window.Maity || {};
     // placement of that (member, runner, clone) holds a credential that is live and that no
     // active placement runs. Such a start is an instance already and adds none, so it passes at
     // the limit: removing a placement and placing the agent there again (review A1815 of #2058).
+    // The hub orders by the stored closing time; the list gives closed_at to the second. Closes
+    // within the newest second cannot be told apart here, so when any of them would carry the
+    // check is unsure: the start is let through and the hub's answer decides. The form is a hint
+    // and never blocks what the hub would take (review A1816 of #2058, the lead's ruling).
     function carriesCredential(member, isLive) {
       if (!fields) return false;
       const clone = fields.clone.value.trim() || cloneFor(member.handle);
-      const latest = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
-        && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone)
-        .sort((a, b) => Date.parse(b.closed_at || 0) - Date.parse(a.closed_at || 0))[0];
-      const id = latest && latest.credential_id;
-      return !!id && isLive(latest) && !current.some((p) => p.active && p.credential_id === id);
+      const closed = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
+        && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone);
+      if (!closed.length) return false;
+      const at = (p) => Date.parse(p.closed_at || 0) || 0;
+      const newest = Math.max(...closed.map(at));
+      const carries = (p) => !!p.credential_id && isLive(p) && !current.some((q) => q.active && q.credential_id === p.credential_id);
+      return closed.filter((p) => at(p) === newest).some(carries);
     }
     // §15.6: an agent by id is an active member of the project, and has room under its instance
     // limit for one more (§15.5: one placement per instance, several per membership).

@@ -2547,6 +2547,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ccMember = { team: ccTeam, instances: [{ id: "k3pa", credential_id: "crd-c-0002", revoked_at: null, presence: "online", claims: 0 },
     { id: "c9ar", credential_id: "crd-c-carry", revoked_at: null, presence: "offline", claims: 0 }] };
   const ccByCredential = await ccLines();
+  // Review A1816 of #2058: the list gives closed_at to the second, and two closes within one
+  // second cannot be ordered as the hub orders them; any of them that carries lets the start
+  // through, and the hub's answer decides. The live one listed first, then last.
+  const ccTied = "2026-11-20T10:00:00Z";
+  ccPlacements = [ccClosed("plc-cc1", "crd-c-carry", "c9ar", ccTied), ccClosed("plc-cc2", "crd-c-gone", "gone", ccTied)];
+  const ccTiedFirst = await ccLines();
+  ccPlacements = [ccClosed("plc-cc2", "crd-c-gone", "gone", ccTied), ccClosed("plc-cc1", "crd-c-carry", "c9ar", ccTied)];
+  const ccTiedLast = await ccLines();
+  ccPlacements = [ccClosed("plc-cc0", "crd-c-gone", "gone", "2026-11-19T10:00:00Z"), ccClosed("plc-cc1", "crd-c-carry", "c9ar", "2026-11-20T10:00:00Z")];
   ccMember = { team: ccTeam, instances: [{ id: "k3pa", revoked_at: null, presence: "online", claims: 0 }, { id: "c9ar", revoked_at: null, presence: "offline", claims: 0 }] };
   const ccByInstance = await ccLines();
   win.Maity.api.getAll = ccAll;
@@ -2555,6 +2564,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ccByCredential) === ccWant && JSON.stringify(ccByInstance) === ccWant,
     "placements: a start in the clone whose closed placement left a live credential passes at the limit and says nothing more; another clone is blocked "
     + JSON.stringify([ccByCredential, ccByInstance]));
+  expect(JSON.stringify(ccTiedFirst) === ccWant && JSON.stringify(ccTiedLast) === ccWant,
+    "placements: closes within one second, one with a live credential, let the start through whichever is listed first "
+    + JSON.stringify([ccTiedFirst, ccTiedLast]));
   // Review A1815 of #2058, its P3: an active placement holds no live instance when the member has
   // none at all. Agent D has no instances and plc-0003 runs with a credential: 1 of 1, blocked.
   await srOpen();
