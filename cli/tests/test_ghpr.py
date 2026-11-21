@@ -742,6 +742,7 @@ def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     reads = tmp_path / "reads"
     reads.mkdir()
     (reads / "queue.json").write_text(json.dumps(queue_answer()))
+    (reads / "number.json").write_text(json.dumps({"number": 2045}))
     lead_gh(Path(placed["gh"]), placed["log"], reads)
     return {**placed, "lead_record": record, "runner_dir": where, "reads": reads}
 
@@ -761,15 +762,18 @@ def queue_answer(**fields: Any) -> dict[str, Any]:
 
 
 def lead_gh(gh: Path, log: Path, reads: Path, out: str = "", err: str = "") -> None:
-    """A gh that answers the merge's read (`api graphql`) from `reads/queue.json` (missing:
-    the read fails) and writes its argv to `reads/calls`, one JSON list a line; any other call
-    it writes down in `log` (argv, stdin, cwd) and prints `out` and `err`."""
+    """A gh that answers the merge's read (`api graphql`) from `reads/queue.json` and an edit's
+    branch read (`pr view --json=number`) from `reads/number.json` (missing: the read fails),
+    and writes their argv to `reads/calls`, one JSON list a line; any other call it writes
+    down in `log` (argv, stdin, cwd) and prints `out` and `err`."""
     gh.write_text(
         f"#!{sys.executable}\nimport json, os, sys\n"
         f"reads = {str(reads)!r}\n"
-        "if sys.argv[1:3] == ['api', 'graphql']:\n"
+        "read = 'queue.json' if sys.argv[1:3] == ['api', 'graphql'] else"
+        " 'number.json' if '--json=number' in sys.argv else None\n"
+        "if read:\n"
         "    open(os.path.join(reads, 'calls'), 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
-        "    answer = os.path.join(reads, 'queue.json')\n"
+        "    answer = os.path.join(reads, read)\n"
         "    if not os.path.exists(answer):\n"
         "        sys.stderr.write('HTTP 502: Bad Gateway\\n')\n"
         "        sys.exit(1)\n"
@@ -1029,18 +1033,111 @@ def test_a_lead_command_takes_only_its_shapes(
     assert ran(lead) is None
 
 
+def edit_patch(number: str) -> list[str]:
+    """The one REST call `pr edit` makes (tsk-bmknv06ps0c6), on the pinned repository."""
+    return ["api", "--hostname=github.com", "--method=PATCH",
+            f"repos/oliver-zehentleitner/maity/pulls/{number}", "--input=-"]  # fmt: skip
+
+
+NUMBER_READ = ["pr", "view", f"--repo={REPOSITORY}", "--json=number", "--"]
+
+
 @runs_gh
 def test_edit_sets_the_title_and_the_body_and_ready_marks_it(lead: dict[str, Any]) -> None:
+    """tsk-bmknv06ps0c6: the edit is one PATCH of the pull request through gh's REST call, not
+    `gh pr edit` (older gh asks the forge for `projectCards` there, which the forge refuses);
+    the title and the body go as a JSON object on stdin, nothing else in it."""
     assert cli.main(["gh", "pr", "edit", "2045", "--title", "t", "--body", "b\n"]) == 0
     call = ran(lead)
     assert call is not None
-    assert call["argv"] == ["pr", "edit", f"--repo={REPOSITORY}", "--title=t", "--body-file=-",
-                            "--", "2045"]  # fmt: skip
-    assert call["stdin"] == "b\n"
+    assert call["argv"] == edit_patch("2045")
+    assert json.loads(call["stdin"]) == {"title": "t", "body": "b\n"}
+    assert merge_reads(lead) == []  # a number needs no read
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", "only the body"]) == 0
+    call = ran(lead)
+    assert call is not None and json.loads(call["stdin"]) == {"body": "only the body"}
     assert cli.main(["gh", "pr", "ready"]) == 0
     call = ran(lead)
     assert call is not None
     assert call["argv"] == ["pr", "ready", f"--repo={REPOSITORY}", "--", BRANCH]
+
+
+@runs_gh
+@pytest.mark.parametrize("named", [None, "feature/x"])
+def test_edit_by_branch_reads_the_number_and_patches_the_pinned_repository(
+    lead: dict[str, Any], named: str | None
+) -> None:
+    """A branch (named, or the current one) is turned into its pull request's number with
+    `pr view --json=number` on the pinned repository; the PATCH takes the host, owner and name
+    only from the pinned repository, never from the read's answer (the lead's point on the
+    plan): an answer that also names another repository still edits this one's #77."""
+    (lead["reads"] / "number.json").write_text(
+        json.dumps({"number": 77, "url": "https://github.com/other/repo/pull/77"})
+    )
+    argv = ["gh", "pr", "edit", *([named] if named else []), "--body", "b"]
+    assert cli.main(argv) == 0
+    assert merge_reads(lead) == [[*NUMBER_READ, named or BRANCH]]
+    call = ran(lead)
+    assert call is not None and call["argv"] == edit_patch("77")
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["other-owner:feature", "https://github.com/other/repo/pull/3", "other/repo#3", "-x"],
+)
+def test_edit_naming_another_repository_is_refused_before_gh_runs(
+    lead: dict[str, Any], selector: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lead's point on the plan: a selector that names another repository (owner:branch,
+    a URL, owner/repo#N) is refused before any read or PATCH."""
+    refused(["gh", "pr", "edit", selector, "--body", "b"], capsys)
+    assert ran(lead) is None and merge_reads(lead) == []
+
+
+@runs_gh
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"number": "77"},
+        {"number": 0},
+        {"number": True},
+        {"number": 1.5},
+        {},
+        [77],
+        "not json",
+        None,
+    ],
+)
+def test_edit_by_branch_refuses_when_the_number_cannot_be_read(
+    lead: dict[str, Any], answer: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a whole number a pull request can have is taken; any other answer, or a failed read,
+    refuses, and nothing is patched."""
+    number = lead["reads"] / "number.json"
+    if answer is None:
+        number.unlink()
+    else:
+        number.write_text(answer if isinstance(answer, str) else json.dumps(answer))
+    err = refused(["gh", "pr", "edit", "feature/x", "--body", "b"], capsys)
+    assert "no pull request of this repository has the head" in err and ran(lead) is None
+
+
+@runs_gh
+def test_edit_says_which_pull_request_changed_in_one_cleaned_line(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """gh prints the whole pull request after the PATCH; maity prints its number and address
+    only, cleaned, with the footer lines left out of the body sent."""
+    url = "https://github.com/oliver-zehentleitner/maity/pull/2045"
+    out = json.dumps({"number": 2045, "html_url": url + "\x1b]0;x\x07", "body": "\x1b[2J long"})
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out)
+    body = "Text.\nCo-Authored-By: Someone <a@example.org>\n"
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", body]) == 0
+    seen = capsys.readouterr()
+    assert seen.out.startswith(f"edited pull request #2045 {url}") and "\x1b" not in seen.out
+    assert "long" not in seen.out and seen.out.count("\n") == 1
+    call = ran(lead)
+    assert call is not None and json.loads(call["stdin"]) == {"body": "Text.\n"}
 
 
 @runs_gh
