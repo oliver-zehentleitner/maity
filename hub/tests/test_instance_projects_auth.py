@@ -655,6 +655,37 @@ def test_an_agents_project_is_named_by_its_full_name_only(world: World) -> None:
     assert _attachment(w, w.in_b).ktw_acknowledged_at is None
 
 
+def test_the_avatar_motif_takes_no_project(world: World) -> None:
+    """The motif is the profile's (§6.10, §6.17): with `project` and no `paused` the write is
+    `invalid` (`project: not_allowed`) and the motif stays; beside `paused`, `project` names
+    the pause's project and the motif is set."""
+    from maity_hub import motifs
+
+    w = world
+    motif = motifs.current().motifs[0].name
+
+    def chosen() -> Any:
+        with w.engine.connect() as conn:
+            return conn.execute(
+                select(t.agent_profile.c.avatar_motif).where(
+                    t.agent_profile.c.id == w.agent.agent_id
+                )
+            ).scalar_one()
+
+    before = chosen()
+    refused = w.call("PATCH", "/me", body={"avatar_motif": motif, "project": "maintainer/beta"})
+    _invalid(refused, "project", "not_allowed")
+    assert chosen() == before
+    both = w.call(
+        "PATCH",
+        "/me",
+        body={"avatar_motif": motif, "paused": {"reason": "a break"}, "project": "maintainer/beta"},
+    )
+    assert both.status_code == 200, both.text
+    assert chosen() == motif
+    assert _attachment(w, w.in_b).paused_since is not None
+
+
 def test_get_projects_shows_an_isolated_attachment_reduced(world: World) -> None:
     w = world
     w.isolate(w.in_b)

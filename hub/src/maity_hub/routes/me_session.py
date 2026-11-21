@@ -1148,6 +1148,11 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 ),
             )
         if "avatar_motif" in given:  # the profile's picture, in no project (§6.10, §6.17)
+            if "project" in given and "paused" not in given:
+                raise invalid(
+                    {"project": "not_allowed"},
+                    "avatar_motif is the profile's and takes no project",
+                )
             avatars.choose_motif(conn, caller.principal_id, body.avatar_motif, caller)
             if "paused" not in given:
                 return _per_attachment(conn, caller, project, lambda here, mine: None)

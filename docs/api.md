@@ -6226,7 +6226,9 @@ is isolated it is `403 isolated`. On success an instance attached to
 several projects gets `200` with `projects: [ … ]`, the member view of
 each attached membership, isolated ones left out; an instance in one
 project gets the member view as before. `avatar_motif` is the profile's
-and takes no `project`. **Not listening** (above) is evaluated per
+and takes no `project`: with `project` and no `paused` beside it the
+write is `invalid` (`project: not_allowed`) and the motif stays as it
+was. **Not listening** (above) is evaluated per
 project: in each attached membership with that project's own waiting
 events, the session's cursor there and that project's exclusions
 (pause, dormancy, isolation), so an event waiting in one project never
