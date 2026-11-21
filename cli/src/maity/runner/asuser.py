@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import state
-from . import limitread, scratchop
+from . import limitread, scratchop, skillop
 
 TIMEOUT = 60.0
 # A read on the agents' side: a few kilobytes, or a log's next chunk.
@@ -385,6 +385,43 @@ class AsUser:
             )
         if done.returncode != 0:
             raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
+
+    def skill_check(self, home: Path, key: str, source: str, commit: str) -> dict[str, Any]:
+        """The delivered skill's copy `key` below the agents' `home` (skillop.check): `ok` with
+        its manifest's SHA-256, `missing` or `mismatch`. skillop.OnTheWay when a directory
+        below the home is a link; scratchop.Unsupported when an ssh host's `maity` has no skill
+        ops; OSError otherwise."""
+        if self.direct:
+            return dict(skillop.check(str(home), key, source, commit))
+        argv = [*self.runner_module("skillop"), "check", "--home", str(home), key, source, commit]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "check", key)
+
+    def skill_put(self, home: Path, payload: str) -> dict[str, Any]:
+        """The runner's checked copy (skillop.payload) put below the agents' `home`
+        (skillop.put): `put` with its manifest's SHA-256. The document goes on stdin, at most
+        the skill's own bound. Errors as for `skill_check`."""
+        if self.direct:
+            return dict(skillop.put(str(home), json.loads(payload)))
+        argv = [*self.runner_module("skillop"), "put", "--home", str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "put", "")
+
+    @staticmethod
+    def _skill_answer(done: subprocess.CompletedProcess[str], op: str, key: str) -> dict[str, Any]:
+        """A skill op's one JSON line (skillop.main): LINK (4) for a link below the home, 2 for
+        a host `maity` without the ops (older than this one), as with scratchop's `codex`."""
+        if done.returncode == skillop.LINK:
+            raise skillop.OnTheWay(f"skill {op} {key}: a link below the agents' home")
+        if done.returncode == 2:
+            raise scratchop.Unsupported(f"host maity has no skill ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"skill {op} {key} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"skill {op} {key}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"skill {op} {key}: no answer")
+        return answer
 
     def worktree_prune(self, repo: Path) -> dict[str, Any]:
         """Clear a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`

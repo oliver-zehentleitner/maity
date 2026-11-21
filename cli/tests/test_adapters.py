@@ -1684,6 +1684,30 @@ def test_a_claude_code_session_gets_the_skill_as_a_plugin_it_reads_and_never_wri
     assert str(SKILL) not in settings["sandbox"]["filesystem"].get("allowWrite", [])
 
 
+def test_in_the_agent_user_layout_the_agents_copy_is_read_and_never_written(
+    tmp_path: Path,
+) -> None:
+    """tsk-7casfxb7cn49: the copy the runner puts below the agents' user's home is reached by
+    the same rules, no wider: Read on it, an Edit deny and the sandbox's denyWrite, and it lies
+    under none of the paths the sandbox denies reading (not under the agents' files,
+    `~/.maity-runner`, which every sandbox is denied), so no allow has to re-open it."""
+    home = Path("/home/agents")
+    skill = home / ".local/share/maity-runner/skills/keep-the-why" / ("a" * 40 + "-" + "b" * 16)
+    skill = skill / "plugin"
+    clone = tmp_path / "ws" / "maity" / "agent-3"
+    extra = (tmp_path / "runner.toml", home / ".maity-runner")  # the config and agent_files
+    private = supervisor.private_paths(tmp_path / "st", home, clone, (), extra)
+    ctx = context(tmp_path, sandbox=True, skill=skill, as_user=AsUser("agents"), private=private)
+    settings = adapters.claude_settings(ctx)
+    allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
+    filesystem = settings["sandbox"]["filesystem"]
+    assert f"Read(/{skill}/**)" in allow and f"Edit(/{skill}/**)" in deny
+    assert str(skill) in filesystem["denyWrite"]
+    assert not [p for p in filesystem["denyRead"] if Path(p) == skill or Path(p) in skill.parents]
+    assert "allowRead" not in filesystem and str(skill) not in filesystem.get("allowWrite", [])
+    # agy's write_file deny for the same copy: test_antigravity.py.
+
+
 def test_without_a_delivered_skill_nothing_of_it_is_set(tmp_path: Path) -> None:
     ctx = context(tmp_path, sandbox=True)
     launched = adapters.launch(ctx)

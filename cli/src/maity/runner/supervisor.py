@@ -1608,11 +1608,12 @@ class Supervisor:
         )
 
     def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
-        """The Keep the Why skill the placement names (§15.5), as the runner's checked copy's
-        plugin root (skills.py); None when it names none, and None with a log line when it
-        cannot be had here. Only where the agents run as the runner's own user on this host
-        (the `single` layout): elsewhere the agents' user may not read the runner's directory,
-        and an ssh host fetches for itself (the next part of tsk-172s8y208whg)."""
+        """The Keep the Why skill the placement names (§15.5), as the plugin root of a checked
+        copy the agents can read (skills.py); None when it names none, and None with a log line
+        when it cannot be had. Where the agents run as the runner's own user on this host (the
+        `single` layout), the runner's own copy; elsewhere (the agent_user layout, an ssh host)
+        the agents' user may not read the runner's directory, so the checked copy is put below
+        that user's home and checked there at every start (skills.deliver, tsk-7casfxb7cn49)."""
         try:
             wanted = skills.named(p)
         except skills.Unavailable as exc:
@@ -1620,15 +1621,22 @@ class Supervisor:
             return None
         if wanted is None:
             return None
-        if not (target.as_user.direct and target.as_user.here and not target.host):
-            self.log(f"{p['id']}: no Keep the Why skill: delivered only in the single layout "
-                     "on the runner's host so far")  # fmt: skip
-            return None
         try:
-            return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
-        except (skills.Unavailable, OSError) as exc:
+            if target.as_user.direct and target.as_user.here and not target.host:
+                return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+            return skills.deliver(target.as_user, self._agents_home(target),
+                                  self.cfg.skills_dir, self.cfg.state_dir, *wanted)  # fmt: skip
+        except (skills.Unavailable, OSError, subprocess.SubprocessError) as exc:
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None
+
+    def _agents_home(self, target: Target) -> Path:
+        """The home of the user the agents run as on `target`: the remote login's, read on
+        connecting (its agent_files lie in it), or the agents' user's here."""
+        if not target.as_user.here:
+            assert target.agent_files is not None  # noqa: S101 - connected before a start
+            return target.agent_files.parent
+        return config.home_of(target.as_user.user) if target.as_user.user else Path.home()
 
     def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
         """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a

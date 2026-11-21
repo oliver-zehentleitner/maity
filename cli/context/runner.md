@@ -5420,8 +5420,8 @@ separate item of the incident card.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on a runner host, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on a Linux x64 runner, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); `cli/src/maity/runner/skills.py`, `adapters.py`, `supervisor.py`
-**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; the agent_user layout, ssh hosts or Codex get the delivery
+**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on a runner host, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on a Linux x64 runner, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); for the agents'-side copy, card tsk-7casfxb7cn49, its design and the lead's go with its conditions (2026-11-21: the same-uid exposure stated, not solved; no allow widened; the location moved out of `~/.maity-runner` once that turned out to be denied to every sandbox); `cli/src/maity/runner/skills.py`, `skillop.py`, `adapters.py`, `supervisor.py`
+**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; Codex gets a skills directory of its own; placements get an OS user each (the agents'-side copy is then no longer shared by one uid)
 **See:** https://github.com/oliver-zehentleitner/maity — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-11-20
 
 A placed session could not get the skill: its sandbox does not write the
@@ -5486,12 +5486,55 @@ report tells the owner.
 - Refusing the start when the fetch fails: an agent offline over a forge
   outage, for a skill whose install text is still in the resume packet.
 
-**Not built yet:** the agent_user layout (the agents' user may not read
-the runner's directory) and ssh hosts start without the skill, with a log
-line and the report; Codex gets only the variable; `maity runner check`
+**Where the agents cannot read the runner's copy** (the agent_user layout,
+an ssh host; tsk-7casfxb7cn49): the runner still fetches and checks its
+own copy as above, then puts the same files below the agents' user's home,
+in `~/.local/share/maity-runner/skills/keep-the-why/<key>/`, the runner's
+own default path for that user. It does so through two ops run as that
+user (`skillop put|check`: in-process, through sudo as `python -I -m
+maity.runner.skillop`, or the host's own `maity runner skillop` over
+ssh). `put` takes the runner's
+files and manifest on stdin, checks every file against the manifest and
+every path against what the runner writes before it writes anything, opens
+each directory from the agents' home down without following a link, and
+writes into a fresh staging directory that it renames into place.
+`check` runs the same check as the runner's own (`skillop.verify`)
+and returns the manifest's SHA-256. The copy is handed out only when that
+is the hash the runner recorded; a missing or different one is put again
+once, and otherwise the session starts without the skill and reports
+`keep_the_why_unavailable`, as for a failed fetch. An ssh host whose
+`maity` has no skill ops does the same: the skill is no boundary, so the
+placement is not refused.
+
+The location is not `~/.maity-runner` (the agents' files), as first
+designed: every sandbox is denied that directory (`supervisor._private`),
+so a copy there could only be read through an allow re-opened inside the
+deny. Below the home, the copy is in no deny list, and the session's
+existing rules simply name it: `Read` on it, the `Edit` deny, the
+sandbox's `denyWrite` and agy's `write_file` deny. No allow is widened.
+
+**The same-uid exposure, stated and not solved:** the agents'-side copy is
+owned by the agents' user, as everything on the agents' side is. A process
+of that uid outside any sandbox (an unsandboxed harness, a command the
+operator allows to run outside it) could rewrite it. The check at the next
+start catches that and puts the copy again; a change during a running
+session is not caught. In the `single` layout the runner's copy is owned
+by the runner's user, which is the agents' user there too, so this is the
+exposure that layout already had, now named. It ends only with an OS user
+per placement.
+
+**Rejected alternatives (the agents'-side copy):**
+- A copy owned by the runner and readable by the agents' user: the
+  runner's home is not traversable in the agent_user layout, a shared
+  system directory needs root, and an ssh host has no runner directory.
+- Each ssh host fetching for itself: it needs git and the forge from every
+  host, and trusts each host's network and git, where the bytes the runner
+  already checked are what should run.
+
+**Not built yet:** Codex gets only the variable; `maity runner check`
 names a hand-installed copy for Claude Code (a warning, never a refusal:
 it is the operator's) but not yet the delivered one, and `gc` does not
-prune old copies yet. That is the second part of the card.
+prune old copies yet. That is the second pull request of tsk-7casfxb7cn49.
 
 ## A placement without room under its scratch gets a short TMPDIR of its own in `/tmp`
 

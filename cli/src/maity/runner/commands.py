@@ -30,6 +30,7 @@ from . import (
     scratch,
     scratchop,
     serve,
+    skillop,
     skills,
     stub,
     supervisor,
@@ -1441,6 +1442,12 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
         if a.op == "codex" else [a.op, "--under", a.under, a.path]
     ))  # fmt: skip
+    # Internal too: the delivered Keep the Why skill's copy put below the agents' home and
+    # checked there (skillop), for an ssh host, whose own `maity` runs it; the arguments go to
+    # skillop as they are, which answers a usage error (2) as an older host's `maity` does.
+    r = rsub.add_parser("skillop")
+    r.add_argument("args", nargs=argparse.REMAINDER)
+    r.set_defaults(handler=lambda a: skillop.main(a.args))
     # Internal (no `help`, so not listed): the supervisor's own git-free prune of a Claude Code
     # subagent's leftover worktree under the clone's `.claude/worktrees/` on placement start, so
     # the clone reads as plain again (worktree). The runner runs no git in an existing clone, so
