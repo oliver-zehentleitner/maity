@@ -644,8 +644,9 @@ A signed-in human without an active membership reads a public project through th
 §2.3). The risk eb7fd1c7 names for a visitor caller in those routes (a field added later becomes public) is met
 for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
 
-- A closed allow-list of routes: `access.OUTSIDE_READS`, nine GETs (the project, its members and one member, the
-  cards and one card, a card's history and notes, the logo and the banner). Only those endpoints call
+- A closed allow-list of routes: `access.OUTSIDE_READS`, twelve GETs (the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner, and the three reads of the Why view
+  below). Only those endpoints call
   `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
   member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
   together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
@@ -675,6 +676,18 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
   tsk-jk2psmarajjb): the code and this file, `git log -S'access.gate'` (only #2001), the commit messages on
   `namespace.py`, `access.py`, `auth/second_factor.py` and `auth/caller.py` for the second factor and the
   pending account, and the #2001 round notes. Evidence: unknown.
+- The Why view's three reads, `GET …/keep-the-why` (§11.3), `…/keep-the-why/export` and `…/keep-the-why/bodies`
+  (§11.5), are open to an outsider only while the hub last found the project's repository public
+  (`repository_public is True`), the condition the public view's **Why** reads (`public_project_views.why_data`);
+  otherwise `not_found` (`routes/keep_the_why._require_why`). Source: the owner's option A in req-vsfjgx3fch8k,
+  its §2.3 sentence as the owner wrote it; tsk-jk2psmarajjb. Why the condition: an outsider reads no more of the
+  Why than a visitor's page shows, and that page shows it only for a repository the hub saw public. The reads
+  come from what the repository publishes, never the database, so they carry no restricted text; a card id in an
+  entry's text is served as published and opens nothing (`GET …/tasks/{id}` stays `not_found` for a hidden
+  card). `max_age=0` keeps the per-project rate of one forge read per `ktw.FORCE_INTERVAL` (30 s): the caches
+  (`ktw.CACHE`, `ktw_reads`) are keyed by the project, not the caller, so an outsider shares the members' rate.
+  Not checked here, unlike the public page: whether the project is in the operator's own namespaces (`why_data`'s
+  `served`); §11.5's own coverage check (`require_covered`) still runs for every caller.
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
   notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the

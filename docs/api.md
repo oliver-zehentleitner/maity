@@ -1223,8 +1223,20 @@ of 2026-11-19 (tsk-kqn8zhptf06k). Of the project's routes an outsider
 reads these, and no other: `GET /projects/{owner}/{slug}`, `GET
 …/members`, `GET …/members/{id}`, `GET …/tasks` (the list and the
 board), `GET …/tasks/{id}`, `GET …/tasks/{id}/history` (§6.15), `GET
-…/tasks/{id}/notes` (§6.16), and `GET …/logo` and `GET …/banner`
-(§11.2), the project's own images its page shows (§16.9). Every other
+…/tasks/{id}/notes` (§6.16), `GET …/logo` and `GET …/banner`
+(§11.2), the project's own images its page shows (§16.9), and the
+three reads of the Why view named next. An outsider also reads the Why
+view: `GET …/keep-the-why` (§11.3), `GET …/keep-the-why/export` and
+`GET …/keep-the-why/bodies` (§11.5), under the same rules, and only
+while the hub last found the project's repository public, as for the
+public view's **Why** (§16.9); otherwise they answer an outsider
+`not_found`. They carry no restricted text and nothing of a card,
+since the hub serves them from what the repository publishes, never
+from its database. An entry is served as the repository publishes it,
+so a card id in its text is not removed, and naming a hidden card does
+not open it: `GET …/tasks/{id}` still answers an outsider `not_found`
+for that card. `max_age=0` is held to the same one forge read per 30
+seconds per project as for a member. Every other
 route of the project, a write or a read, answers an outsider
 `not_found` before its body or its query is read, so that no
 validation answer (`invalid`) tells an outsider what a route takes;

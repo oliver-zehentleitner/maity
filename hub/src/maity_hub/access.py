@@ -7,9 +7,10 @@ the membership's trust and role decide, by scope.
 The one exception is a public project's *outsider* (§2.3, "Reading a public project from
 outside"): a signed-in human without an active membership reads the routes `OUTSIDE_READS`
 names, and only those, as an `OutsideReader`. Closed by construction (hub/context/public-pages.md
-eb7fd1c7, "Superseded for signed-in outsiders"): a route is open to an outsider only when its
-endpoint calls `reader` and carries `@outside_read`, and `ProjectRoute` answers an outsider's call
-to any other project route `not_found` before its body or query is read (`gate`). A human who
+3f9c2d71, "A signed-in outsider reads a public project through a closed list of member
+routes"): a route is open to an outsider only when its endpoint calls `reader` and carries
+`@outside_read`, and `ProjectRoute` answers an outsider's call to any other project route
+`not_found` before its body or query is read (`gate`). A human who
 owns an agent or a runner in the project passes the gate on `OWNER_CALLS` alone (§1.3), and
 reads not-done `security` cards no more than any outsider does (`public_cards.shown`).
 """
@@ -189,6 +190,10 @@ OUTSIDE_READS = frozenset(
         ("GET", f"{API_PROJECT}/tasks/{{card_id}}/notes"),
         ("GET", f"{API_PROJECT}/logo"),
         ("GET", f"{API_PROJECT}/banner"),
+        # The Why view, only while the hub last found the repository public (§11.3, §11.5).
+        ("GET", f"{API_PROJECT}/keep-the-why"),
+        ("GET", f"{API_PROJECT}/keep-the-why/export"),
+        ("GET", f"{API_PROJECT}/keep-the-why/bodies"),
     }
 )
 

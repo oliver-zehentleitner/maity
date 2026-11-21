@@ -1,6 +1,7 @@
 """docs/api.md §2.3 "Reading a public project from outside": a signed-in human without an
 active membership reads a public project's view, its members and its cards, with their history
-and notes, and its logo and banner, through a closed allow-list (`access.OUTSIDE_READS`); every
+and notes, its logo and banner, and its Why view while the repository is public, through a
+closed allow-list (`access.OUTSIDE_READS`); every
 other project route answers them `not_found`, a write before its body is read (§1.3)."""
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import access, avatars, clock, images, public_pages
+from maity_hub import access, avatars, clock, forge, images, ktw, ktw_reads, public_pages
 from maity_hub import routes as route_package
 from maity_hub import tables as t
 from maity_hub import views as card_views
@@ -33,10 +34,14 @@ from maity_hub.routes import members as member_routes
 from maity_hub.routes import projects as project_routes
 from maity_hub.routes import tasks as task_routes
 from tests import factory, flow
+from tests import test_keep_the_why as why_tests
 from tests.conftest import ClientFactory
+from tests.test_keep_the_why_views import lean
 from tests.test_tasks import task
 
 P = "/projects/maintainer/maity"
+WHY = f"{P}/keep-the-why"
+WHY_READS = (WHY, f"{WHY}/export", f"{WHY}/bodies")
 API = access.API_PROJECT
 NOT_FOUND = {"error": {"code": "not_found", "message": "no such resource", "details": {}}}
 RESTRICTED = "RESTRICTED-SENTINEL-7f3a"  # a card's restricted text (§6.4)
@@ -121,12 +126,48 @@ def _put_image(human: flow.Human, kind: str) -> None:
 
 
 @pytest.fixture
-def world(make_client: ClientFactory, migrated: Engine) -> World:
+def why(monkeypatch: pytest.MonkeyPatch) -> why_tests.Fake:
+    """The repository's Keep the Why family through a fake forge (tests/test_keep_the_why.py),
+    its root a lean export with a bodies file, and a source that covers the project, as
+    tests/test_keep_the_why_views.py sets one up (§11.4)."""
+    found = why_tests.Fake(monkeypatch)
+    found.family()
+    lean(found, f"{why_tests.BASE}/state.json", why_tests.entry(1), why_tests.entry(2, "open"))
+
+    def for_project(self: forge.Forge, project_id: str) -> forge.Forge:
+        return forge.Forge("owner-grant", granted="owner_token", repository="acme/widget")
+
+    def require_public(self: forge.Forge, repository: str) -> None:
+        return None
+
+    def visibility(reader: forge.Forge, repository: str) -> str | None:
+        return None
+
+    monkeypatch.setattr(forge.Forge, "for_project", for_project)
+    monkeypatch.setattr(forge.Forge, "_require_public", require_public)
+    monkeypatch.setattr(ktw_reads, "_visibility", visibility)
+    return found
+
+
+def _repository(engine: Engine, project_id: str, url: str | None, public: bool | None) -> None:
+    """The project's repository and the hub's last look at it (§16.9), as the probe leaves them."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id)
+            .values(repository_url=url, repository_public=public)
+        )
+
+
+@pytest.fixture
+def world(make_client: ClientFactory, migrated: Engine, why: why_tests.Fake) -> World:
     """A public project with a card, its history, a note, a redacted note and entry, a
-    restricted text, an agent member, a logo and a banner, and a human who is no member."""
+    restricted text, an agent member, a logo and a banner, a public repository with a Keep the
+    Why export (`why`), and a human who is no member."""
     owner = flow.human(make_client, migrated)
     outsider = flow.human(make_client, migrated, "reader")
     project_id = str(flow.project(owner, "maity", public_page="on")["id"])
+    _repository(migrated, project_id, why_tests.REPO, True)
     agent = flow.agent(make_client, owner)
     card = task(owner, body="what the card asks")
     renamed = owner.patch(f"{P}/tasks/{card['id']}", {"title": "Renamed"})
@@ -1118,6 +1159,92 @@ def test_the_logo_and_banner_reach_an_outsider_without_the_forge_read_through(
         member = world.owner.client.get(f"/api/v1{P}/{kind}")
         assert member.status_code == 503, (kind, member.text)
     assert read_through == list(images.KINDS)
+
+
+# --- the Why view: only while the repository is public (option A, req-vsfjgx3fch8k) -------------
+
+
+def test_an_outsider_reads_the_why_while_the_repository_is_public(
+    world: World, why: why_tests.Fake
+) -> None:
+    """`GET …/keep-the-why` (§11.3), `…/export` and `…/bodies` (§11.5) are among the outsider's
+    reads (§2.3) and answer it as a member while the hub last found the repository public."""
+    templates = {("GET", API + path.removeprefix(P)) for path in WHY_READS}
+    assert templates <= access.OUTSIDE_READS
+    for path in WHY_READS:
+        outside = world.outsider.get(path)
+        assert outside.status_code == 200, (path, outside.text)
+        assert world.owner.get(path).status_code == 200, path
+    root = f"{why_tests.BASE}/state.json"
+    assert world.outsider.get(f"{WHY}/export").json()["state"] == why.states[root]
+    summary = world.outsider.get(WHY).json()
+    assert [m["path"] for m in summary["members"]] == [
+        m["path"] for m in world.owner.get(WHY).json()["members"]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("url", "public"),
+    [(why_tests.REPO, False), (why_tests.REPO, None), (None, None)],
+    ids=["private", "unknown", "no_repository"],
+)
+def test_the_why_is_not_found_to_an_outsider_while_the_repository_is_not_public(
+    world: World, migrated: Engine, url: str | None, public: bool | None
+) -> None:
+    """Only while the hub last found the repository public (`repository_public is True`), as
+    the public view's **Why** (§16.9): otherwise each read answers an outsider the `not_found`
+    of a route closed to it, an `If-None-Match` too (never `304`); a member reads as before."""
+    etag = world.owner.get(f"{WHY}/export").headers["ETag"]
+    _repository(migrated, world.project_id, url, public)
+    for path in WHY_READS:
+        refused = world.outsider.get(path)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+        member = world.owner.get(path)
+        assert member.status_code == (200 if url else 409), (path, member.text)
+    revalidated = world.outsider.get(f"{WHY}/export", headers={"If-None-Match": etag})
+    assert (revalidated.status_code, revalidated.json()) == (404, NOT_FOUND)
+
+
+def test_the_why_is_not_found_to_an_outsider_with_public_pages_off(
+    world: World, settings: Settings
+) -> None:
+    """With public pages off no project is public (§16.9): `access.reader` refuses the outsider
+    before the repository is looked at; a member reads as before."""
+    public_pages.configure(replace(settings, public_pages=False))
+    try:
+        for path in WHY_READS:
+            refused = world.outsider.get(path)
+            assert (refused.status_code, refused.json()) == (404, NOT_FOUND), path
+            assert world.owner.get(path).status_code == 200, path
+    finally:
+        public_pages.configure(replace(settings, public_pages=True))
+
+
+def test_max_age_zero_holds_an_outsider_to_the_members_rate(
+    world: World, why: why_tests.Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`max_age=0` forces a read at most once per `ktw.FORCE_INTERVAL` per project, whoever
+    asks (§2.3, §11.3): the cache is the project's, so an outsider's call within it is answered
+    from the cache, member's read or not, and a member's after an outsider's likewise."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    ktw.CACHE.forget(world.project_id)  # the reads start on this clock
+    forced = {"max_age": 0}
+    first = world.owner.get(WHY, params=forced)
+    assert first.status_code == 200 and first.json()["fresh"] is True, first.text
+    reads = (len(why.file_reads), len(why.state_reads))
+    held = world.outsider.get(WHY, params=forced)
+    assert held.status_code == 200 and held.json()["fresh"] is False, held.text
+    assert world.outsider.get(f"{WHY}/export", params=forced).status_code == 200
+    assert (len(why.file_reads), len(why.state_reads)) == reads, "a read within the interval"
+    now[0] += ktw.FORCE_INTERVAL + 1
+    again = world.outsider.get(WHY, params=forced)
+    assert again.status_code == 200 and again.json()["fresh"] is True, again.text
+    assert len(why.file_reads) > reads[0]
+    reads = (len(why.file_reads), len(why.state_reads))
+    member = world.owner.get(WHY, params=forced)
+    assert member.status_code == 200 and member.json()["fresh"] is False, member.text
+    assert (len(why.file_reads), len(why.state_reads)) == reads
 
 
 def test_a_release_names_no_hidden_card_to_an_outsider(world: World, migrated: Engine) -> None:
