@@ -1123,8 +1123,41 @@ def test_an_admitting_placement_locks_the_profile_before_the_project(setup: Setu
     assert profile < project, statements
     if setup.engine.dialect.name != "sqlite":  # SQLite renders no lock clause
         assert "FOR UPDATE" in statements[profile] and "FOR UPDATE" in statements[project]
-    reads = [i for i, x in enumerate(statements) if "FROM agent_profile" in x]
-    assert reads[0] == profile, statements  # nothing reads the profile before its lock
+    assert "agent_profile.owner_id =" in statements[profile]  # the caller's own only
+    # Before its lock, only whose it is, which never changes.
+    reads = [x for x in statements[:profile] if "FROM agent_profile" in x]
+    assert [x.startswith("SELECT agent_profile.owner_id \nFROM") for x in reads] == [True]
+
+
+def _is_profile_lock(statement: str) -> bool:
+    """`_lock_named_profile`'s locking read; `_admits` reads the same columns, not deleted."""
+    lock = "SELECT agent_profile.id \nFROM agent_profile \nWHERE agent_profile.id ="
+    return statement.startswith(lock) and "deleted_at" not in statement
+
+
+@pytest.mark.parametrize("creator", ["admin", "member"])
+def test_a_placement_naming_another_owners_profile_takes_no_lock_on_it(
+    setup: Setup, make_client: ClientFactory, creator: str
+) -> None:
+    # §15.6: only the caller's own profile is admitted, so only it is locked; another
+    # member naming someone else's profile must not hold the lock that owner's join
+    # creation, exchange and deletion wait for (§6.3). The answer stays `not_yours`.
+    from tests.test_moderation import transactions
+
+    other = flow.human(make_client, setup.engine, "someone")
+    made = other.post("/agents", {"handle": "theirs", "display_name": "Their agent"})
+    assert made.status_code == 201, made.text
+    if creator == "member":
+        _as_member_with_member_agents(setup)
+    with transactions(setup.engine) as seen:
+        refused = place(setup, agent={"id": made.json()["id"]})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
+    statements = [x for each in seen for x in each]
+    assert any("FROM project" in x for x in statements)  # the creation's were seen
+    assert not [x for x in statements if _is_profile_lock(x)], statements
+    locks = [x for x in statements if "FROM agent_profile" in x and "FOR UPDATE" in x]
+    assert locks == [], locks  # SQLite renders no lock clause; the servers would show it
 
 
 def test_a_deletion_holding_the_profile_makes_the_placement_wait_and_find_it_gone(

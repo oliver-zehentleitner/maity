@@ -339,10 +339,11 @@ def create_placement(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        # The profile a human names by id alone first, before the project, as join creation,
-        # the exchange and the profile's deletion take it (§6.3): a placement that admits it
-        # then counts as its use, and a deletion cannot commit between the check and the
-        # placement. What the name means is decided below, under both locks.
+        # The profile of their own a human names by id alone first, before the project, as
+        # join creation, the exchange and the profile's deletion take it (§6.3): a placement
+        # that admits it then counts as its use, and a deletion cannot commit between the
+        # check and the placement. Another owner's profile is never locked. What the name
+        # means is decided below, under both locks.
         _lock_named_profile(conn, mine, body)
         project = events.lock_project(conn, mine.project.id)
         # Without `members:admin`, a human places only a profile of their own that is not a
@@ -429,13 +430,27 @@ def create_placement(
 
 
 def _lock_named_profile(conn: Connection, mine: Membership, body: PlacementCreate) -> None:
-    """Lock the agent profile a human's placement names by `{"id"}` alone, if there is one.
-    Only a human admits a profile (§15.6); whether it does, and what a deleted one answers,
-    comes after, as before, so the other kinds of placement keep their answers."""
+    """Lock the agent profile a human's placement names by `{"id"}` alone, if it is one of
+    the caller's own. Only a human admits a profile, and only their own (§15.6), so another
+    member naming it never holds the lock its owner's joins and deletion wait for; whether
+    the placement admits it, and what any other profile answers, comes after, as before.
+    Whose it is is read first, without a lock: a profile's owner never changes, and a
+    locking read alone would still lock another owner's row where InnoDB keeps the lock
+    of a row it read but did not return."""
     if mine.kind != "human" or body.agent.id is None or body.agent.handle is not None:
         return
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == body.agent.id)
+    ).scalar()
+    if owner != mine.principal_id:
+        return
     conn.execute(
-        select(t.agent_profile.c.id).where(t.agent_profile.c.id == body.agent.id).with_for_update()
+        select(t.agent_profile.c.id)
+        .where(
+            t.agent_profile.c.id == body.agent.id,
+            t.agent_profile.c.owner_id == mine.principal_id,
+        )
+        .with_for_update()
     ).first()
 
 
@@ -550,9 +565,9 @@ def _admitted(
     first join makes the membership (§15.9). The placement is the owner's consent to the
     join (req-emyp23q0fhmz)."""
     assert body.agent.id is not None
-    # Read again under the profile's lock the creation took first: not deleted, and still
-    # the caller's own (§6.3).
-    joins.live_profile(conn, body.agent.id)
+    # Whose it is, before any lock: another owner's profile is never locked here (§15.6).
+    # The caller's own is read again under the lock the creation took first: not deleted
+    # (§6.3).
     profile = conn.execute(
         select(t.agent_profile.c.owner_id, t.agent_profile.c.handle).where(
             t.agent_profile.c.id == body.agent.id
@@ -560,6 +575,7 @@ def _admitted(
     ).one()
     if profile.owner_id != mine.principal_id:
         raise invalid({"agent.id": "not_yours"}, "a placement names one of your own agents")
+    joins.live_profile(conn, body.agent.id)
     allowed_projects.refuse(conn, body.agent.id, project)  # §6.3
     fields = joins.first_join_fields(
         conn, mine, project, body, member_rule=member_rule, agent_id=body.agent.id

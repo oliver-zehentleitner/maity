@@ -846,8 +846,8 @@ placement and clone, where the owner wants the same clone and branches.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation); the lead's and the review lead's ruling on review A1826 (the stored `reports_to`, the profile lock first); `hub/tests/test_join_pickup.py`: `test_a_members_placement_reports_only_to_a_manager_still_theirs`, `test_an_admitting_placement_locks_the_profile_before_the_project`
-**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, the new-instance rule of §3.1 changes, a member's own join starts re-checking `reports_to` at its exchange, or a profile's deletion stops taking the profile's lock before any project's
+**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation); the lead's and the review lead's ruling on review A1826 (the stored `reports_to`, the profile lock first); the review lead's ruling on review A1833 (the lock only on the caller's own profiles); `hub/tests/test_join_pickup.py`: `test_a_members_placement_reports_only_to_a_manager_still_theirs`, `test_an_admitting_placement_locks_the_profile_before_the_project`, `test_a_placement_naming_another_owners_profile_takes_no_lock_on_it`
+**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, the new-instance rule of §3.1 changes, a member's own join starts re-checking `reports_to` at its exchange, a profile's deletion stops taking the profile's lock before any project's, or a profile's owner can change
 **See:** placements.md#a-new-profiles-placement-re-checks-its-creator-at-the-pickup-and-the-exchange — ac153895-7fbe-49a5-adad-6e5403d4fd6f — as of 2026-11-20
 
 A human who owns a profile with no active membership in the project
@@ -878,8 +878,12 @@ reporting line at the exchange (`_recheck_member_rule` does not read it),
 on purpose. The creation of an admitting placement locks the profile
 first, then the project (`_lock_named_profile`, then `lock_project`),
 the order join creation, the exchange and the profile's deletion take,
-and reads the profile again under that lock (`live_profile`: not deleted,
-else `not_found`; still the caller's, else `not_yours`). The admitting right under "Bringing your
+but only a profile of the caller's own: it reads the owner first without
+a lock and locks only when that is the caller, the locking read itself
+also bound to `owner_id`. Another owner's profile is never locked, and
+`_admitted` answers it `not_yours` before any lock; the caller's own is
+read again under the lock (`live_profile`: not deleted, else
+`not_found`). The admitting right under "Bringing your
 own agent" covers creating the placement only: a spec change by `PATCH`
 still needs `members:admin` and the runner, while `desired` stays the
 profile owner's. Removing or isolating the membership closes the
@@ -919,7 +923,19 @@ deleted profile (`live_profile`), yet it would hold one of the project's
 `max_placements` and one of the creator's `member_agents_max`
 (`agents_held` counts the admitting placements of every profile the
 owner owns, deleted ones included) until closed by hand. SQLite
-serialises writers, so only PostgreSQL and MariaDB showed the race. And the placement was made under the
+serialises writers, so only PostgreSQL and MariaDB showed the race. The
+lock covers only the caller's own profiles because only those are ever
+admitted (§15.6), and any human member may name any profile's id: a lock
+taken before the ownership check would let one member hold another
+person's profile for a whole transaction, stalling that owner's join
+creation, exchange and `DELETE` (confirmed: the review lead's ruling on
+review A1833; `test_a_placement_naming_another_owners_profile_takes_no_lock_on_it`).
+The owner is read before the locking read, not left to an `owner_id`
+condition on it alone, because InnoDB under repeatable read keeps the
+lock on a row it reads by its key even when the rest of the condition
+then drops it (inferred: InnoDB's documented locking, not shown by a
+test here); a profile's owner never changes, so that read cannot go
+stale. And the placement was made under the
 right to a first join, not to a further instance, so an instance needs
 the creator's right to that one (confirmed: the contract's ruling,
 docs/api.md §3.1 and §15.9, commit cd3a12da). Closing with `removed` on
@@ -937,9 +953,13 @@ checks a second time (inferred). Reusing `new_handle` with the profile's
 handle instead of a new column: its unique key per project would refuse
 the second placement of one profile, which the contract lets add an
 instance. Re-reading the profile under the project lock only: the
-deletion takes the profile's lock and no project's for a profile that is
-no member anywhere (`delete_profile` locks only the projects of its
-memberships), so the two would not serialise. Keeping the admission's
+deletion takes the profile's lock first, then the projects of the
+profile's active memberships and of its active admitting placements
+(`delete_profile`, then `placements.profile_deleted`), all chosen from
+what it reads at that moment. A placement being created in a project
+where the profile has neither, such as its first placement anywhere,
+gives the deletion no project to lock, so only the profile's lock
+serialises the two. Keeping the admission's
 recheck symmetric with a member's own join, whose exchange leaves
 `reports_to` alone: a join already handed out does not act on its
 creator's continuing authority, the placement's join does (the ruling
