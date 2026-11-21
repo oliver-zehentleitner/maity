@@ -849,3 +849,67 @@ def test_a_revocation_locks_every_project_in_order_before_any_write(
             select(t.event.c.project_id).where(t.event.c.kind == "holder_stalled")
         ).scalars()
         assert sorted(stalled) == ordered  # told in each, as before
+
+
+@pytest.mark.parametrize(
+    "path, body",
+    [
+        ("/me", {"paused": {"reason": "a break"}}),
+        ("/me/limit", {"until": "later"}),
+    ],
+)
+def test_a_write_in_every_attachment_locks_its_projects_in_order_first(
+    world: World, monkeypatch: pytest.MonkeyPatch, path: str, body: dict[str, Any]
+) -> None:
+    """`PATCH /me` and `POST /me/limit` without `project` write in each attachment, in the
+    order attached; they lock every project first, in the order of the ids, as a revocation
+    does, so the two never wait on each other in a cycle. The attachment of the higher id is
+    made the older one here, so the order attached and the order of the ids differ."""
+    from maity_hub import events
+
+    w = world
+    ordered = sorted([w.alpha, w.beta])
+    first = w.in_a if ordered[1] == w.alpha else w.in_b
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(w.agent.credential_id, first))
+            .values(attached_at=w.start - timedelta(days=1))
+        )
+    if body.get("until") == "later":
+        body = {"until": clock.rfc3339(clock.now() + timedelta(hours=1))}
+    real = events.lock_project
+    taken: list[tuple[str, bool]] = []
+
+    def written(conn: Any) -> bool:
+        """Whether the write has reached either attachment yet, read in its own transaction."""
+        if path == "/me":
+            found = conn.execute(
+                select(func.count())
+                .select_from(t.instance_attachment)
+                .where(
+                    t.instance_attachment.c.credential_id == w.agent.credential_id,
+                    t.instance_attachment.c.paused_since.is_not(None),
+                )
+            ).scalar_one()
+        else:
+            found = conn.execute(
+                select(func.count())
+                .select_from(t.membership)
+                .where(
+                    t.membership.c.id.in_([w.in_a, w.in_b]),
+                    t.membership.c.limit_until.is_not(None),
+                )
+            ).scalar_one()
+        return bool(found)
+
+    def recording(conn: Any, project_id: str) -> Any:
+        taken.append((project_id, written(conn)))
+        return real(conn, project_id)
+
+    monkeypatch.setattr(events, "lock_project", recording)
+    method = "PATCH" if path == "/me" else "POST"
+    done = w.call(method, path, body=body)
+    assert done.status_code == 200, done.text
+    assert len(done.json()["projects"]) == 2
+    assert taken[:2] == [(ordered[0], False), (ordered[1], False)]

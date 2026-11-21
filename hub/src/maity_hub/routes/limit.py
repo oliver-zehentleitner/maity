@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import attached, availability, clock, idempotency, namespace
+from maity_hub import attached, availability, clock, events, idempotency, namespace
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller, in_attachment
 from maity_hub.deps import AnyCaller, engine_of
@@ -76,6 +76,9 @@ def _agent(
     # following `PATCH /me`, §5.3 "Per project").
     targets = attached.every(conn, caller, body.project)
     single = attached.single(conn, caller, body.project)
+    # Every project up front, in id order, as a revocation takes them (§6.17): the loop below
+    # goes by attach order, and a lock inside it would invert that order.
+    events.lock_projects(conn, (a.project_id for a in targets))
     ids: list[int] = []
     for attachment in targets:
         row = conn.execute(

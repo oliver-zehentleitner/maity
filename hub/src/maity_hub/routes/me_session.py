@@ -1182,6 +1182,9 @@ def _per_attachment(
     without `project` for an instance in several projects, `projects` with one per change."""
     targets = attached.every(conn, caller, project)
     one_view = attached.single(conn, caller, project)
+    # Every project up front, in id order, as a revocation takes them (§6.17): the loop below
+    # goes by attach order, and a lock inside it would invert that order.
+    events.lock_projects(conn, (a.project_id for a in targets))
     ids: list[int] = []
     for attachment in targets:
         here = in_attachment(caller, attachment)
