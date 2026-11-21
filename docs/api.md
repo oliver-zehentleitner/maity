@@ -216,7 +216,7 @@ always encodes.
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
-| 401 | `signature_invalid` | HMAC does not verify |
+| 401 | `signature_invalid` | HMAC does not verify, or a signature header is malformed: a `Maity-On-Request` of a form the hub never issues as a request id among them (§2.2) |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
@@ -721,7 +721,10 @@ Without `Maity-On-Request` and `Maity-For` the string has seven lines,
 the body hash last; each of the two headers sent adds its line, in this
 order. The `Maity-On-Request` line is the bare request id, as before;
 the `Maity-For` line carries the prefix `for:`, so a request with one of
-the two never signs like a request with the other. A line is not there
+the two never signs like a request with the other. That holds because a
+`Maity-On-Request` value of a form the hub never issues as a request id
+(ids stay opaque to clients, §1.1) is `signature_invalid`, refused before
+the canonical string is built, so that line can never read `for:…`. A line is not there
 as an empty line when its header is absent, so a request without it signs exactly as before the
 header existed, and hub and CLI releases need not ship together. Adding
 or stripping the header changes the number of lines, and no field can
@@ -775,7 +778,7 @@ join again. Asymmetric keys remain the revisit condition
 
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
 `timestamp_skew` with `details.server_time` so the client can resync; a
-nonce is unique per credential, remembered for 600 s (on PostgreSQL at least 600 s, until a sweep deletes it), else `nonce_reused`;
+nonce is unique per credential, remembered for 600 s (on PostgreSQL at least 600 s, until a sweep deletes it), else `nonce_reused`; a verified request spends its nonce even when it is refused afterwards (isolated, `rate_limited`, another project, a bridge or runner refusal), so the same request sent again is `nonce_reused` once that refusal's condition ends, on every engine (on PostgreSQL the hub claims it again after the refusal; should that write fail, the refusal is still the answer, the hub logs a warning, and the nonce stays unspent);
 an unknown credential id is `unauthenticated` (on both paths, so the two never disagree), and so is an id of a form the hub never issues, which it refuses without looking it up; any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
