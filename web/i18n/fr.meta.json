@@ -3401,7 +3401,7 @@
   },
   "chat_access.allowed_said": {
     "en": "8093ac805fda9f05",
-    "text": "0ea801422f49ad78"
+    "text": "db118cc18f0c39d4"
   },
   "chat_access.cancel": {
     "en": "c0774c185060fc13",
@@ -3489,7 +3489,7 @@
   },
   "chat_access.hint": {
     "en": "05b397a6c4f338d6",
-    "text": "625adbf674e8df6e"
+    "text": "261958c30297197d"
   },
   "chat_access.history.allow.changed": {
     "en": "fbeadefaa8af01d0",
@@ -3629,7 +3629,7 @@
   },
   "chat_access.history.hint": {
     "en": "f309682b4c998cd3",
-    "text": "e58525026868b923"
+    "text": "511cb879d525b795"
   },
   "chat_access.history.more": {
     "en": "3d03fa58f3131679",
@@ -3657,7 +3657,7 @@
   },
   "chat_access.history.reply.allow_always": {
     "en": "08a336737cc471cb",
-    "text": "4d50e66642bda7d4"
+    "text": "eaed27c7d0fa1fd6"
   },
   "chat_access.history.reply.allow_day": {
     "en": "06f2a8e09238d1c8",
@@ -5821,11 +5821,11 @@
   },
   "inbox.answered_failed": {
     "en": "a04e094950bb39d4",
-    "text": "77e916407086c795"
+    "text": "f60f8e8a2689e724"
   },
   "inbox.answered_loading": {
     "en": "378bb627f3e0c19f",
-    "text": "75414522d9601fc9"
+    "text": "0ae7abed8712e6ec"
   },
   "inbox.asker_for": {
     "en": "d0e7e7751a94b7ac",
@@ -6121,7 +6121,7 @@
   },
   "inbox.show.all": {
     "en": "918968ddc209c23c",
-    "text": "4a58d2f323ec70c1"
+    "text": "bd05ca69ebb9ff07"
   },
   "inbox.show.open": {
     "en": "35ff74aeea25311f",
@@ -11789,7 +11789,7 @@
   },
   "mine.leave.rule": {
     "en": "60600b8ad4f71913",
-    "text": "5ca458e13324b978"
+    "text": "c91b13db9aecdb95"
   },
   "mine.leave.stays": {
     "en": "c45cf85f098c23cc",
@@ -16673,7 +16673,7 @@
   },
   "roles.error.reserved": {
     "en": "3150064a97d6995f",
-    "text": "245612c0ef42e01c"
+    "text": "d10e8f80f9cdcb42"
   },
   "roles.error.too_long": {
     "en": "adb05a05de1ac603",
@@ -16705,7 +16705,7 @@
   },
   "roles.move.approvals": {
     "en": "62c6b1c01db81b0c",
-    "text": "ca082acf6a761b28"
+    "text": "b880b2563b30e304"
   },
   "roles.move.back": {
     "en": "7ceade8f25b58fe9",
@@ -21297,7 +21297,7 @@
   },
   "zone.hint": {
     "en": "52e0639696d92e93",
-    "text": "1a9b9082f1aafe3c"
+    "text": "dd4c86f74848632b"
   },
   "zone.label": {
     "en": "91f17ca8d5393ecd",
