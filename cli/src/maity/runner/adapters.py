@@ -15,10 +15,12 @@ could widen the grant, bring hooks or plugins, and change with a `git checkout`.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -26,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import capabilities, config, scratch, skills, stub, trust
+from . import capabilities, config, scratch, skillop, skills, stub, trust
 from .asuser import AsUser
 from .workspace import TMP_SCRATCH_HARNESSES
 
@@ -272,6 +274,10 @@ class Context:
     # plugin root Claude Code loads with `--plugin-dir`, read-only to the session. None when the
     # placement names none or it could not be fetched.
     skill: Path | None = None
+    # The runner's own checked copy of that skill (skills.ensure, `<skills_dir>/keep-the-why/
+    # <key>`), on the runner's machine whatever the target: the bytes a Codex placement's own
+    # skills directory gets (codex_skill). None with `skill`.
+    skill_source: Path | None = None
 
 
 def skill_env(ctx: Context) -> dict[str, str]:
@@ -982,6 +988,35 @@ def codex_config(ctx: Context) -> str:
     )
 
 
+def codex_skill(ctx: Context, home: Path) -> bool:
+    """The delivered Keep the Why skill as `<CODEX_HOME>/skills/keep-the-why/`, which Codex
+    loads as its own skill `keep-the-why` with no setting (ops, nte-nqs227hnpqzz, Codex 0.171.0),
+    written from the runner's checked copy by skillop on the agents' side at every launch. The
+    home is read-only to the session (codex_config), so the skill is too; Codex's own `.system/`
+    beside it is left alone. Only with a scratch: without one the home lies in the runner's own
+    directory, which the sandbox hides. Whether it was written: a failure leaves the session
+    with `MAITY_KTW_SKILL_DIR` alone, which is how Codex had the skill before.
+
+    A launch that writes no skill (none named, or one that could not be written) removes a copy
+    an earlier launch left in a reused home, so Codex never loads a skill this launch did not
+    hand it (the review of #2093). That removal is best effort: if it fails too, the earlier
+    copy stays, one the runner wrote from a checked copy."""
+    if ctx.scratch is None:
+        return False
+    under = ctx.scratch.parents[2]
+    errors = (OSError, ValueError, KeyError, subprocess.SubprocessError, skillop.Mismatch)
+    if ctx.skill_source is not None:
+        try:
+            payload = skillop.payload(ctx.skill_source, ctx.skill_source.name)
+            ctx.as_user.skill_codex(under, home, payload)
+            return True
+        except errors:
+            pass
+    with contextlib.suppress(*errors):
+        ctx.as_user.skill_codex_clear(under, home)
+    return False
+
+
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     home = codex_home(ctx)
@@ -997,6 +1032,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
         # descriptor opened without following a link from the workspaces root, so a codex-home
         # swapped for a link is refused, never written through, out of the scratch.
         scratch.write_codex_home(home, config_text, auth, ctx.as_user)
+        codex_skill(ctx, home)
     else:
         # No scratch to carve: the home stays in the runner's own directory, below no
         # agent-writable parent, so the plain writes are safe there.
