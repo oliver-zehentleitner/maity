@@ -1401,6 +1401,37 @@ log). Rejected because the harm — repository content reaching opencode's
 servers — happens on the start itself, not later, so only refusing the start
 prevents it.
 
+## A fail-closed listing decides with stat, not pathlib's predicates; Python stays uncapped
+
+**Id:** 52b35dea-cf66-4fc9-9574-417dca42ef5e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0tje3vzzedtx (the tester's finding on Python 3.15.2, confirmed on 3.14) and the lead's go on the plan, 2026-11-21
+**Revisit when:** a listing that guards a deny is added to the runner, or pathlib's or `os.stat`'s error handling changes again
+
+`supervisor.other_credentials` and `other_scratches` decide on their
+direct side with `_kind` (`os.stat`/`os.lstat`). Only ENOENT, ENOTDIR
+and ELOOP count as nothing there; every other error refuses the start.
+They no longer use `is_dir()`/`is_symlink()`. CI runs the CLI on 3.11,
+3.13, 3.14 and 3.15. `requires-python` stays `>=3.11`.
+
+**Reason:** from Python 3.14 pathlib's predicates answer False for a
+path below a directory that cannot be searched instead of raising, so
+the listing silently skipped what it could not see. The sandbox then
+started without the deny for it. A listing behind a deny must not let
+the interpreter decide what an error means. The three errnos are the
+ones pathlib read as absence up to 3.13. ELOOP stays among them,
+because a test pins the direct side to an empty list for a loop of
+links.
+
+**Rejected alternatives:**
+- Capping `requires-python` below 3.14, which the card offered: runners
+  already run 3.14, and a cap only hides the next change of this kind
+  instead of making the listing correct.
+- Keeping pathlib and checking the Python version: it still leaves the
+  meaning of an error to the library, and breaks again on the next change.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
