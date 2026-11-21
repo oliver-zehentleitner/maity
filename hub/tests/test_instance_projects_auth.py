@@ -214,16 +214,24 @@ def test_an_isolated_attachment_still_binds_and_a_detached_one_does_not(world: W
     assert w.call("GET", "/me", sign=False).status_code == 200  # B alone: its one membership
 
 
-def test_a_detached_attachment_alone_makes_bearer_work_again(world: World) -> None:
+def test_signing_required_in_the_newer_attachment_binds_until_it_is_detached(
+    world: World,
+) -> None:
+    """B, the attachment made second, requires signing, A does not: a Bearer call is refused on
+    A's routes and on `GET /me` too, since the credential is one secret in both (before hub PR
+    B only the oldest attachment's policy was read, so this went through). Once B is
+    detached, A's policy alone binds it and Bearer works again."""
     w = world
-    w.require_signing(w.alpha)
+    w.require_signing(w.beta)
+    _refused(w.call("GET", f"{A}/tasks", sign=False), "signature_required")
     _refused(w.call("GET", "/me", sign=False), "signature_required")
     _refused(w.call("GET", f"{B}/tasks", sign=False), "signature_required")
-    w.detach(w.in_a)
-    assert w.call("GET", f"{B}/tasks", sign=False).status_code == 200
+    assert w.call("GET", f"{A}/tasks").status_code == 200  # signed, it goes through
+    w.detach(w.in_b)
+    assert w.call("GET", f"{A}/tasks", sign=False).status_code == 200
     me = w.call("GET", "/me", sign=False)
     assert me.status_code == 200, me.text
-    assert [p["id"] for p in me.json()["projects"]] == [w.beta]
+    assert [p["id"] for p in me.json()["projects"]] == [w.alpha]
 
 
 # --- a project's routes act in that project's attachment only (§2.2, §2.4, §6.2) -----------
