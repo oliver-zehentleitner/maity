@@ -207,6 +207,7 @@
     "one": "{n} of {count} agent of yours",
     "other": "{n} of {count} agents of yours"
   },
+  "agents.limit.held_only": "no new one; one of yours already counted still",
   "agents.limit.instances_only": "no new one; another instance or a replacement still",
   "agents.limit.no_more": "the project allows no more",
   "agents.list.actions": "Actions",
@@ -3767,6 +3768,8 @@
   "placements.new.field": "{field}: {why}",
   "placements.new.none": "None of your paired runners is allowed in this project yet. Allow one under {link}.",
   "placements.new.none_link": "this project's Runners",
+  "placements.new.none_member": "None of your paired runners is allowed in this project yet. Ask a project admin to allow one.",
+  "placements.new.quota_ask": "Ask a project admin to raise the limit.",
   "placements.new.no_repository": "A runner starts an agent in a clone of the project's repository, and this project has none.",
   "placements.new.no_runner_offers": "None of your runners allowed in this project offers its repository, {repository}. A runner offers the repositories its configuration lists.",
   "placements.new.runners_failed": "Your runners here could not be read: {reason}",

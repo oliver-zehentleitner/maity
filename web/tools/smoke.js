@@ -4610,9 +4610,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       desired: "stopped", generation: 1, rejoin: false, fresh_session: false, approval: { status: "approved", request_id: null, pending_change: null },
       credential_id: null, instance: null, reported_current: false, reported: null, session_hint: null, logs_hint: "maity runner logs plc-own1",
       active: true, closed_at: null, closed_reason: null, created_by: "hum-maintainer", proposed_by: null, foreign: false };
-    let mrListed = false;
+    let mrListed = false, mrNoRunners = false;
     win.Maity.api.getAll = (p, ...rest) => {
       if (p === "/agents" || p.startsWith("/agents?allowed_in=")) return Promise.resolve(JSON.parse(JSON.stringify(mrProfiles)));
+      if (p === "/projects/maintainer/maity/runners" && mrNoRunners) return Promise.resolve({ items: [], next_cursor: null });
       // The project's list as the hub gives it to a member: no capabilities; another owner's runner too.
       if (p === "/projects/maintainer/maity/runners") {
         return Promise.resolve({ items: [{ id: "att-m1", runner: mrRunner("rnr-m1", "my-box", "hum-maintainer"), project: "maintainer/maity" },
@@ -4674,11 +4675,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(mrNotYours === "Not placed on the runner: a placement names one of your own agents (invalid) — agent.id: not_yours"
       && mrMax === "Not placed on the runner: you hold as many agents in this project as it allows (10)" && !main.querySelector(".join-panel").hidden,
     "own agents on a runner: not_yours and member_agents_max are said at the form, which stays " + JSON.stringify([mrNotYours, mrMax]));
+    // The project's placement limit: Settings, Members and agents is an admin's tab, so a member
+    // is told to ask an admin, without its link (review A1878 of #2085).
+    mrAnswer = new win.Maity.api.ApiError("x", 409, "/projects/maintainer/maity/placements", "placement_quota", { max: 8 });
+    mrForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    const mrQuota = mrSaid();
+    expect(mrQuota === "Not placed on the runner: the project's limit of 8 active placements on runners is reached. Ask a project admin to raise the limit."
+      && !mrForm().querySelector(".send-status a"),
+    "own agents on a runner: at the project's placement limit a member is told to ask an admin, with no link to an admin's tab " + JSON.stringify(mrQuota));
     // Made: the panel closes and the line says where it runs.
     mrAnswer = mrPlacement;
     mrListed = true;
     mrForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    expect(mrSent.length === 4 && main.querySelector(".join-panel").hidden && text(main).includes("Nova is placed on my-box."),
+    expect(mrSent.length === 5 && main.querySelector(".join-panel").hidden && text(main).includes("Nova is placed on my-box."),
       "own agents on a runner: a start made closes the panel and says so " + mrSent.length);
     // Turned off again, the join line offers every profile of one's own and a new one.
     await joinAny(); for (let k = 0; k < 4; k++) await tick();
@@ -4686,13 +4695,55 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const mrBack = mrValues("join-agent");
     expect(mrBack.includes("agt-a") && mrBack.includes("") && !mrHidden(byId("join-ttl")),
       "own agents on a runner: unticked, the join line offers one's agents here and a new profile again " + JSON.stringify(mrBack));
+    // No runner of one's own allowed here: attaching one is an admin's (§15.4), so a member is told
+    // to ask an admin, without a link to the project's Runners tab (review A1878 of #2085).
+    mrNoRunners = true;
+    await mrTurn(true);
+    const mrNone = main.querySelector(".join-panel .placement-new-none");
+    expect(mrNone && text(mrNone) === "None of your paired runners is allowed in this project yet. Ask a project admin to allow one." && !mrNone.querySelector("a"),
+      "own agents on a runner: without an allowed runner a member is told to ask an admin, with no link " + (mrNone && text(mrNone)));
+    mrNoRunners = false;
+    await mrTurn(false);
     // Managed agents: the member sees the placement and, as the profile's owner and the runner's,
     // stops, starts, restarts and removes it before its first pickup makes the membership (§15.6).
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick();
     const mrRow = main.querySelector('li.placement[data-placement="plc-own1"]');
     const mrButtons = mrRow ? mrRow.querySelectorAll(".placement-actions button").map((b) => text(b)) : [];
-    expect(mrRow && mrButtons.includes("Start") && mrButtons.includes("Restart") && mrButtons.includes("Remove"),
-      "own agents on a runner: the member's waiting placement is listed with Start, Restart and Remove " + JSON.stringify(mrButtons));
+    // Named by the placement's display name, not the id: Nova is no member here yet (review A1878 of #2085).
+    const mrHead = mrRow ? text(mrRow.querySelector(".placement-head")) : "";
+    expect(mrRow && mrButtons.includes("Start") && mrButtons.includes("Restart") && mrButtons.includes("Reset") && mrButtons.includes("Remove")
+      && mrHead.startsWith("Nova") && !mrHead.includes("agt-n"),
+      "own agents on a runner: the member's waiting placement is listed by its name with Start, Restart, Reset and Remove " + JSON.stringify([mrHead, mrButtons]));
+    // At member_agents_max 1, with none of one's agents in the project and one open first join of
+    // one's own (Nova), the hub holds Nova already (agents_held, §3.1): starting it takes no new
+    // slot. Closed, Join an agent opens again and reaches the part on a runner (review A1877 of #2085).
+    {
+      const hqGet = win.Maity.api.get, hqAll = win.Maity.api.getAll;
+      const hqJoin = { id: "join-own1", agent_id: "agt-n", trust: "member", role: "coder", created_by: "hum-maintainer",
+        created_at: new Date(Date.now() - 60000).toISOString(), expires_at: new Date(Date.now() + 600000).toISOString(), used_at: null, burned: false, revoked_at: null };
+      const hqNoOwn = (r) => Object.assign({}, r, { items: r.items.filter((x) => !(x.kind === "agent" && x.owner_id === "hum-maintainer")) });
+      win.Maity.api.get = (p) => (p === "/projects/maintainer/maity"
+        ? hqGet(p).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents_max: 1 }) }))
+        : p.startsWith("/projects/maintainer/maity/members") ? hqGet(p).then(hqNoOwn) : hqGet(p));
+      win.Maity.api.getAll = (p, ...rest) => (p === "/projects/maintainer/maity/joins" ? Promise.resolve({ items: [hqJoin], next_cursor: null })
+        : p.startsWith("/projects/maintainer/maity/members") ? hqAll(p, ...rest).then(hqNoOwn) : hqAll(p, ...rest));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
+      const hqPanel = () => main.querySelector(".join-panel");
+      const hqNote = text(byoNote());
+      await joinAny(); for (let k = 0; k < 4; k++) await tick();
+      const hqFirst = !!hqPanel() && !hqPanel().hidden;
+      if (hqFirst) { hqPanel().querySelector("button.join-close").click(); for (let k = 0; k < 4; k++) await tick(); }
+      const hqClosed = !hqPanel() || hqPanel().hidden;
+      await joinAny(); for (let k = 0; k < 4; k++) await tick();
+      const hqAgain = !!hqPanel() && !hqPanel().hidden;
+      if (hqAgain && byId("placement-new-on")) await mrTurn(true);
+      const hqAgents = hqAgain && byId("join-agent") ? mrValues("join-agent") : [];
+      expect(hqNote === "1 of 1 agent of yours · no new one; one of yours already counted still" && hqFirst && hqClosed && hqAgain
+        && byId("placement-new-on") && byId("placement-new-on").checked && hqAgents.includes("agt-n"),
+      "own agents at the limit with only an open first join: Join an agent opens again after closing and reaches the part on a runner "
+        + JSON.stringify([hqNote, hqFirst, hqClosed, hqAgain, hqAgents]));
+      win.Maity.api.get = hqGet; win.Maity.api.getAll = hqAll;
+    }
     win.Maity.api.getAll = mrAll; win.Maity.api.post = mrPost;
     // With the project's member_agents off, a member is offered no start on a runner (nor a join).
     const mrCtx = (canAdmin, trust, memberAgents) => ({ canAdmin, trust, me: { kind: "human", id: "hum-maintainer" }, project: { policy: { member_agents: memberAgents } } });

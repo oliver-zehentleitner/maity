@@ -603,7 +603,8 @@ window.Maity = window.Maity || {};
         // in the project is made: that counts nothing.
         // A start on a runner is left to the hub's member_agents_max: a profile that a placement
         // admits already holds its slot there, which this count does not see (§3.1, §15.6).
-        if (!member && !(viaRunner && viaRunner.on()) && hooks.full && hooks.full()) {
+        // A profile already held (an open first join of one's own) takes no new slot either.
+        if (!member && !(viaRunner && viaRunner.on()) && hooks.full && hooks.full(agent.id)) {
           status.fail(M.t("join.failed"), { message: M.t("join.failed.full") });
           agentSelect.focus();
           return;

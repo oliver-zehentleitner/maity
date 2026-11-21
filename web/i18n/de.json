@@ -207,6 +207,7 @@
     "one": "{n} von {count} Agent von dir",
     "other": "{n} von {count} Agents von dir"
   },
+  "agents.limit.held_only": "kein neuer; einer deiner schon gezählten geht noch",
   "agents.limit.instances_only": "kein neuer; eine weitere Instanz oder ein Ersatz geht noch",
   "agents.limit.no_more": "das Projekt erlaubt keine weiteren",
   "agents.list.actions": "Aktionen",
@@ -3756,6 +3757,8 @@
   "placements.new.field": "{field}: {why}",
   "placements.new.none": "Noch keiner deiner gekoppelten Runner ist in diesem Projekt zugelassen. Lass einen unter {link} zu.",
   "placements.new.none_link": "Runner dieses Projekts",
+  "placements.new.none_member": "Noch keiner deiner gekoppelten Runner ist in diesem Projekt zugelassen. Bitte einen Admin des Projekts, einen zuzulassen.",
+  "placements.new.quota_ask": "Bitte einen Admin des Projekts, das Limit zu erhöhen.",
   "placements.new.no_repository": "Ein Runner startet einen Agenten in einem Klon des Repositorys des Projekts, und dieses Projekt hat keines.",
   "placements.new.no_runner_offers": "Keiner deiner in diesem Projekt zugelassenen Runner bietet sein Repository {repository} an. Ein Runner bietet die Repositorys an, die seine Konfiguration nennt.",
   "placements.new.runners_failed": "Deine Runner hier konnten nicht gelesen werden: {reason}",

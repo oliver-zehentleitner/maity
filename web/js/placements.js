@@ -240,7 +240,9 @@ window.Maity = window.Maity || {};
       }
       append(clear(list), items.map((p) => h("li", { class: "placement", "data-placement": p.id },
         h("div", { class: "placement-head" },
-          p.agent.id ? M.dom.memberRef(ctx, p.agent.id) : h("span", null, p.agent.display_name),
+          // The object, not the id: before its first pickup a profile is no member here and is
+          // named by the placement's display_name, not its id (review A1878 of #2085).
+          p.agent.id ? M.dom.memberRef(ctx, p.agent) : h("span", null, p.agent.display_name),
           h("span", { class: "muted" }, " ", p.target
             ? M.tn("placements.on_target", { runner: h("strong", null, p.runner.name), target: p.target })
             : M.tn("placements.on", { runner: h("strong", null, p.runner.name) })),
@@ -571,8 +573,11 @@ window.Maity = window.Maity || {};
         return;
       }
       if (!runners.length) {
-        say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-          { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })));
+        // The project's Runners tab and attaching a runner are members:admin's (app.js, §15.4):
+        // a member is told to ask an admin, with no link to a tab they cannot open.
+        say(h("p", { class: "hint placement-new-none" }, ctx.canAdmin
+          ? M.tn("placements.new.none", { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })
+          : M.t("placements.new.none_member")));
         return;
       }
       const name = repositoryName(repo);
@@ -733,8 +738,11 @@ window.Maity = window.Maity || {};
       if (err.code !== "placement_quota") { status.fail(M.t("placements.new.failed"), said(err)); return; }
       const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
       status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });
-      append(status.el, " ", M.tn("placements.new.quota_raise",
-        { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) }));
+      // Settings, Members and agents is an admin's tab (app.js): a member asks an admin instead.
+      append(status.el, " ", ctx.canAdmin
+        ? M.tn("placements.new.quota_raise",
+          { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) })
+        : M.t("placements.new.quota_ask"));
     };
     return {
       el,

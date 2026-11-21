@@ -7147,8 +7147,11 @@ first join its pickup makes. The project's runner list names a runner's capabili
 members:admin (§15.4), so for a member the part takes them from their own runner views (`GET
 /runners`). The form's count of one's agents against `member_agents_max` does not stop a start:
 a profile a placement admits already holds its slot there, which the count does not see, so the
-hub's `member_agents_max` answers. The hub's refusals of a member's own agent are said in the
-join's words (`memberRefusal` in `js/join.js`). On **Managed agents** such a placement runs no
+hub's `member_agents_max` answers. Nor does it close **Join an agent** on Agents while one
+holds any agent here, a member or an open first join of one's own: the hub takes a profile it
+already holds (`agents_held`) without a new slot, so the button stays and the limit beside it says
+so; a join line is refused before sending only for a profile not held (review A1877 of #2085).
+The hub's refusals of a member's own agent are said in the join's words (`memberRefusal` in `js/join.js`). On **Managed agents** such a placement runs no
 membership until its pickup, so its creator counts as the profile's owner for Start, Restart and
 Reset (only that owner creates one, §15.6). An admin's form still offers by id only an agent
 already in the project.
