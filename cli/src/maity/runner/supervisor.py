@@ -15,13 +15,11 @@ records across runner restarts; the sessions themselves are found again through 
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import random
 import re
 import secrets
-import stat
 import subprocess
 import threading
 import time
@@ -46,7 +44,7 @@ from . import (
     targets,
     workspace,
 )
-from .asuser import RUNNER, AsUser, Unreachable
+from .asuser import RUNNER, AsUser, Unreachable, present
 from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -2154,34 +2152,14 @@ def private_paths(
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 
-# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
-# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
-# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
-_ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
-
-
-def _kind(path: Path, *, follow: bool = True) -> int | None:
-    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
-    other OSError raises. A fail-closed listing decides with this, never with
-    `is_dir()`/`is_symlink()`: from Python 3.14 those answer False for a path below a
-    directory that cannot be searched instead of raising, and the listing would skip what it
-    cannot see (tsk-0tje3vzzedtx)."""
-    try:
-        return (os.stat if follow else os.lstat)(path).st_mode
-    except OSError as exc:
-        if exc.errno in _ABSENT:
-            return None
-        raise
-
-
+# The fail-closed listings below decide with stat, never with pathlib's predicates, which stop
+# raising from Python 3.14 (asuser.present, tsk-0tje3vzzedtx).
 def _is_dir(path: Path) -> bool:
-    mode = _kind(path)
-    return mode is not None and stat.S_ISDIR(mode)
+    return present(path, "-d")
 
 
 def _is_link(path: Path) -> bool:
-    mode = _kind(path, follow=False)
-    return mode is not None and stat.S_ISLNK(mode)
+    return present(path, "-L")
 
 
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:

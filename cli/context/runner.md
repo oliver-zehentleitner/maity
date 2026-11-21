@@ -1411,9 +1411,13 @@ prevents it.
 **Revisit when:** a listing that guards a deny is added to the runner, or pathlib's or `os.stat`'s error handling changes again
 
 `supervisor.other_credentials` and `other_scratches` decide on their
-direct side with `_kind` (`os.stat`/`os.lstat`). Only ENOENT, ENOTDIR
-and ELOOP count as nothing there; every other error refuses the start.
-They no longer use `is_dir()`/`is_symlink()`. CI runs the CLI on 3.11,
+direct side with `asuser.present` (`os.stat`/`os.lstat`), and so does
+`capabilities._present`, which finds the Claude Code settings files the
+hook and socket checks read. Only ENOENT, ENOTDIR and ELOOP count as
+nothing there; every other error refuses the start or names the file as
+one that cannot be checked. They no longer use `is_dir()`/`is_symlink()`
+or `AsUser.exists`, whose answer stays a quiet yes or no for the callers
+that want one. CI runs the CLI on 3.11,
 3.13, 3.14 and 3.15 on Linux; Windows stays on 3.11 and 3.13, since
 what changed is POSIX search permission and each Windows leg costs every
 CLI pull request about 15 minutes. `requires-python` stays `>=3.11`.

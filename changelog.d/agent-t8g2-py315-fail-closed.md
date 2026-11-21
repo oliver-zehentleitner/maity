@@ -7,6 +7,9 @@
   side the listing skipped what it could not see. The sandbox then started without the deny
   for it. The listings now decide with `os.stat`/`os.lstat`, so every error other than
   "nothing there" refuses the start, on every Python.
+- cli: the same for the check of Claude Code's managed and user settings (the hook and socket
+  checks). On Python 3.14+ a settings file below a directory the runner cannot search passed
+  for absent; it is now named as one that cannot be checked.
 
 ### Changed
 

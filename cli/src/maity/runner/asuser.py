@@ -13,6 +13,7 @@ there, and a harness setting an agent changes only widens what that same user co
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -65,6 +66,36 @@ def shell_join(words: Sequence[str]) -> str:
 
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
+
+
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+
+def stat_mode(path: Path, *, follow: bool = True) -> int | None:
+    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
+    other OSError raises. A check that must fail closed decides with this, never with
+    `is_dir()`/`exists()`/`is_symlink()`: from Python 3.14 those answer False for a path
+    below a directory that cannot be searched instead of raising, and the check would take
+    what it cannot see for absent (tsk-0tje3vzzedtx)."""
+    try:
+        return (os.stat if follow else os.lstat)(path).st_mode
+    except OSError as exc:
+        if exc.errno in ABSENT:
+            return None
+        raise
+
+
+def present(path: Path, kind: str = "-e") -> bool:
+    """`test -e` (`-f`, `-d`, `-L`) on the runner's own side, failing closed: absent is False,
+    any other error raises (stat_mode)."""
+    mode = stat_mode(path, follow=kind != "-L")
+    if mode is None:
+        return False
+    check = {"-e": lambda m: True, "-f": stat.S_ISREG, "-d": stat.S_ISDIR, "-L": stat.S_ISLNK}
+    return bool(check[kind](mode))
 
 
 @dataclass(frozen=True)
