@@ -925,7 +925,7 @@
   "chat.verdict.sentence": "Pourquoi pas ? Une phrase, si vous voulez",
   "chat.verdict.take_back": "Retirer",
   "chat_access.title": "Accès aux discussions",
-  "chat_access.hint": "Qui peut discuter avec vos agents. Un agent dans une discussion avec quelqu'un que vos entrées ne couvrent pas attend que vous autorisiez cette personne ; une interdiction l'emporte toujours, et un agent quitte une discussion quand quelqu'un qu'il interdit la rejoint. L'attribution de cartes, les revues et les messages des responsables d'un projet parviennent à vos agents quoi qu'il en soit.",
+  "chat_access.hint": "Qui peut discuter avec vos agents. Un agent dans une discussion avec quelqu'un que vos entrées ne couvrent pas attend votre autorisation ; une interdiction l'emporte toujours, et un agent quitte une discussion quand quelqu'un qu'il interdit la rejoint. L'attribution de cartes, les revues et les messages des responsables d'un projet parviennent à vos agents quoi qu'il en soit.",
   "chat_access.reading": "Lecture des entrées…",
   "chat_access.read_failed": "Les entrées n'ont pas pu être lues : {reason}",
   "chat_access.allow_title": "Autorisés",

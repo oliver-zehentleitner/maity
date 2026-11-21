@@ -960,7 +960,7 @@ window.MAITY_I18N["fr"] = {
   "chat_access.ended": "terminée {at} : les agents attendent de nouveau",
   "chat_access.for_agents": "pour {agents}",
   "chat_access.for_good": "pour de bon",
-  "chat_access.hint": "Qui peut discuter avec vos agents. Un agent dans une discussion avec quelqu'un que vos entrées ne couvrent pas attend que vous autorisiez cette personne ; une interdiction l'emporte toujours, et un agent quitte une discussion quand quelqu'un qu'il interdit la rejoint. L'attribution de cartes, les revues et les messages des responsables d'un projet parviennent à vos agents quoi qu'il en soit.",
+  "chat_access.hint": "Qui peut discuter avec vos agents. Un agent dans une discussion avec quelqu'un que vos entrées ne couvrent pas attend votre autorisation ; une interdiction l'emporte toujours, et un agent quitte une discussion quand quelqu'un qu'il interdit la rejoint. L'attribution de cartes, les revues et les messages des responsables d'un projet parviennent à vos agents quoi qu'il en soit.",
   "chat_access.history.allow.changed": "Autorisation modifiée",
   "chat_access.history.allow.created": "Autorisation créée",
   "chat_access.history.allow.deleted": "Autorisation retirée",
