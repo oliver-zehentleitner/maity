@@ -6403,6 +6403,63 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(nsCase.every(Boolean),
         "board: New subtask in a panel part the late draw kept offers a card that arrived only with the late read " + JSON.stringify(nsCase));
     }
+    // Place in a kept panel part reads its neighbours at the click (tsk-v7nshwn4vcfc, a follow-up to
+    // tsk-3b2t7hwc352s): the opened card P has a card X below it when drawn; the read again of the changed
+    // cards brings a card N that sorts between them (P's own rank and created_at, an id just after P's), so
+    // Place's arrows stay as they were and the late draw keeps the panel's part. Move down there, clicked
+    // after that, places P below N, the neighbour now, not below X, the one at the first draw.
+    {
+      const plOpen = ["proposed", "open", "in_progress", "blocked", "review"];
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
+      const plIds = (st) => { const col = clColumn(st); return col ? col.querySelectorAll("article.card").map((a) => a.attrs["data-card"]) : []; };
+      const plDown = (a) => a.querySelector(".card-order .place-down");
+      // A standing card in an open column with a card below it (Move down enabled).
+      const plFrom = plOpen.map((st) => clColumn(st)).filter(Boolean).flatMap((col) => col.querySelectorAll("article.card"))
+        .find((a) => plDown(a) && plDown(a).attrs.disabled === undefined);
+      const plId = plFrom ? plFrom.attrs["data-card"] : null;
+      const plP = plId ? await clGetReal("/projects/maintainer/maity/tasks/" + plId) : null;
+      const plSt = plP ? plP.status : "";
+      const plX = plP ? plIds(plSt)[plIds(plSt).indexOf(plId) + 1] : null;
+      const plN = plP ? Object.assign({}, plP, { id: plId + "0", title: "Arrived beside the opened card", parent: null, depends_on: [], ships_with: [], related: [],
+        children: null, closed_at: null, rank: plP.rank, created_at: plP.created_at, updated_at: new Date(Date.now() + 60000).toISOString() }) : null;
+      const plWait = [];
+      let plHold = true;
+      win.Maity.api.get = (p) => {
+        if (/[?&]order=updated/.test(p)) return Promise.resolve({ items: plN ? [plN] : [], next_cursor: null });
+        if (plHold && /^\/projects\/maintainer\/maity\/tasks\?status=(done|cancelled)&closed_after=/.test(p)) {
+          return new Promise((res) => { plWait.push(() => res({ items: [], next_cursor: null })); });
+        }
+        return clGetReal(p);
+      };
+      const plPosts = [];
+      const plPost = win.Maity.api.post;
+      win.Maity.api.post = (p, b) => { plPosts.push([p, b]); return Promise.resolve(plP); };
+      const plEditable = win.Maity.boardEdit.editable;
+      win.Maity.boardEdit.editable = () => false;
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/" + plId); for (let k = 0; k < 8; k++) await tick();
+      const plSlot = () => clPanel() && clPanel().querySelector(".card-panel-card");
+      const plPart = () => (plSlot() ? plSlot().childNodes[0] : null);
+      const plArrow = () => (plSlot() ? plSlot().querySelector(".card-order .place-down") : null);
+      const plPartBefore = plPart();
+      const plArrowBefore = plArrow();
+      const plHeld = !!plN && plWait.length === 2 && !plIds(plSt).includes(plN.id) && plIds(plSt).indexOf(plX) === plIds(plSt).indexOf(plId) + 1;
+      plHold = false;
+      plWait.splice(0).forEach((f) => f()); for (let k = 0; k < 8; k++) await tick();
+      const plAt = plIds(plSt).indexOf(plId);
+      const plBeside = !!plN && plAt >= 0 && plIds(plSt)[plAt + 1] === plN.id && plIds(plSt)[plAt + 2] === plX;
+      const plKept = !!plPartBefore && plPart() === plPartBefore && !!plArrowBefore && plArrow() === plArrowBefore && plArrowBefore.attrs.disabled === undefined;
+      if (plArrowBefore) plArrowBefore.click();
+      for (let k = 0; k < 4; k++) await tick();
+      const plSent = JSON.stringify(plPosts[0] || null);
+      const plCase = [!!plP, !!plX, plHeld, plBeside, plKept, plPosts.length === 1,
+        plSent === JSON.stringify(["/projects/maintainer/maity/tasks/" + plId + "/move", { after: plN && plN.id }])];
+      win.Maity.boardEdit.editable = plEditable;
+      win.Maity.api.post = plPost;
+      win.Maity.api.get = clGetReal;
+      expect(plCase.every(Boolean),
+        "board: Place in a panel part the late draw kept reads its neighbours at the click, a card that arrived beside it with the late read "
+          + JSON.stringify([plCase, plId, plX, plSent]));
+    }
     // M.dom.sameTree (A1760): a missing tree is the same as none, another missing one included, and nodes of
     // two kinds are never the same, whatever their text (the shim has no comment node: a stand-in with nodeType 8).
     {
@@ -6843,18 +6900,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     let made = 0;
     const counting = Object.create(Intl);
     counting.DateTimeFormat = function (...args) { made += 1; return new Intl.DateTimeFormat(...args); };
-    const page = {
-      MAITY_I18N: { en: {} }, MAITY_I18N_LANGUAGES: ["en"],
-      location: { search: "" }, navigator: { languages: ["en-US"] },
-      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
-      document: { documentElement: { lang: "" }, baseURI: "https://hub.example/", currentScript: null },
-      URLSearchParams, URL, Intl: counting, Promise, Object, console,
+    const load = async () => {
+      const page = {
+        MAITY_I18N: { en: {} }, MAITY_I18N_LANGUAGES: ["en"],
+        location: { search: "" }, navigator: { languages: ["en-US"] },
+        localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+        document: { documentElement: { lang: "" }, baseURI: "https://hub.example/", currentScript: null },
+        URLSearchParams, URL, Intl: counting, Promise, Object, console,
+      };
+      page.window = page;
+      vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
+      await page.Maity.i18n.ready;
+      return page;
     };
-    page.window = page;
-    vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
-    await page.Maity.i18n.ready;
-    const fmt = page.Maity.fmt;
     const at = "2026-11-08T20:30:00Z";
+    // A caller's own timeZone on a page afresh with no account zone (tsk-v7nshwn4vcfc): nothing has
+    // read the browser's zone yet, so only `when` skipping zone() keeps the count at the one formatter;
+    // reading it would make one more (the browser zone's DateTimeFormat).
+    {
+      const ownPage = await load();
+      made = 0;
+      const own = { timeZone: "UTC", hour: "2-digit", minute: "2-digit" };
+      for (let k = 0; k < 200; k++) ownPage.Maity.fmt.when(at, own);
+      expect(ownPage.Maity.i18n.accountZone() === null && made === 1 && ownPage.Maity.fmt.when(at, own).includes("08:30"),
+        "i18n: a caller's own timeZone wins and makes its formatter once, with no account zone and the browser's zone unread " + made);
+    }
+    const page = await load();
+    const fmt = page.Maity.fmt;
     made = 0;
     const first = fmt.dateTime(at);
     for (let k = 0; k < 200; k++) fmt.dateTime(at);
@@ -6868,11 +6940,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const tokyo = fmt.dateTime(at);
     expect(made === 1 && tokyo.includes("Nov 9, 2026") && tokyo.includes("05:30"),
       "i18n: an account zone makes its formatter once and formats in it " + made);
-    made = 0;
-    const own = { timeZone: "UTC", hour: "2-digit", minute: "2-digit" };
-    for (let k = 0; k < 200; k++) fmt.when(at, own);
-    expect(made === 1 && fmt.when(at, own).includes("08:30"),
-      "i18n: a caller's own timeZone wins and makes its formatter once " + made);
   }
   // A file a script loads later is asked for under the version the hub lists in the shell's
   // `#maity-assets` block (js/assets.js, docs/api.md §16.11, tsk-0pp41wxp6f75); without the block
