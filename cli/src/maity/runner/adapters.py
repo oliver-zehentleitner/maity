@@ -28,7 +28,7 @@ from typing import Any
 from .. import __version__, clonecheck, ghpr, proc
 from . import capabilities, config, scratch, skills, stub, trust
 from .asuser import AsUser
-from .workspace import TMP_SCRATCH_HARNESSES
+from .workspace import SCRATCH, TMP_SCRATCH_HARNESSES
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -577,6 +577,14 @@ def own_tmp_leaf(ctx: Context) -> Path | None:
     return None if own is None else own.parent
 
 
+def scratch_holder(scratch: Path | None) -> Path | None:
+    """The project's `.scratch` that holds `scratch` beside the clone (workspace.scratch_of), or
+    None for no scratch or one elsewhere (agy's under `/tmp`)."""
+    if scratch is None or scratch.parent.name != SCRATCH:
+        return None
+    return scratch.parent
+
+
 def _shared_tmp(ctx: Context) -> list[str]:
     """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, as a list
     for a deny rule; empty for an agy placement (which owns it) or where there is none."""
@@ -641,6 +649,15 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # in that mount alone (the ops probe P4, 2026-11-21).
         own = own_tmpdir_in_use(ctx)
         writable = [str(p) for p in (ctx.scratch, own) if p is not None]
+        # The own project's `.scratch` the same way (tsk-07dwr3t80rg0): denied for reading only,
+        # its own scratch opened again, so a sibling scratch made there after this session
+        # started lies under the read deny's empty mount instead of staying readable. Never in
+        # denyWrite (it would mount the re-opened scratch read-only, as for the leaf); the
+        # holder is not writable from the sandbox anyway, since writes are allowed only where
+        # allowWrite says. The other projects' `.scratch` are hidden whole (ctx.private).
+        holder = scratch_holder(ctx.scratch)
+        readable = [*([str(ctx.scratch)] if holder is not None else []),
+                    *([str(own)] if own is not None else [])]  # fmt: skip
         settings["sandbox"] = {
             "enabled": True,
             "failIfUnavailable": True,  # never fall back to unsandboxed commands
@@ -660,7 +677,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # owner cannot reach another placement's scratch there: from reading always, and from
             # writing too unless the placement's own TMPDIR is re-opened under it (above).
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
-                                        *_shared_tmp(ctx)],
+                                        *_shared_tmp(ctx),
+                                        *([str(holder)] if holder is not None else [])],
                            # The private paths are not writable either: the runner's files
                            # (~/.maity-runner on an ssh host) are what `maity runner` takes.
                            "denyWrite": [f"{git}/maity",
@@ -670,9 +688,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          # The delivered skill (skills.py): read, never written.
                                          *([str(ctx.skill)] if ctx.skill is not None else [])],
                            # Commands write the placement's scratch besides the clone (§15.5),
-                           # and its own TMPDIR.
+                           # and its own TMPDIR; both are read again under their hidden parents.
                            **({"allowWrite": writable} if writable else {}),
-                           **({"allowRead": [str(own)]} if own is not None else {})},
+                           **({"allowRead": readable} if readable else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
