@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import capabilities, config, scratch, stub, trust
+from . import capabilities, config, scratch, skills, stub, trust
 from .asuser import AsUser
 from .workspace import TMP_SCRATCH_HARNESSES
 
@@ -268,6 +268,18 @@ class Context:
     # The harness's version as the runner probed it (capabilities.probe), for settings that a
     # version needs: Claude Code's worktree hook. None: unknown, and nothing version-gated.
     version: str | None = None
+    # The Keep the Why skill the placement names, as the runner's checked copy (skills.py): the
+    # plugin root Claude Code loads with `--plugin-dir`, read-only to the session. None when the
+    # placement names none or it could not be fetched.
+    skill: Path | None = None
+
+
+def skill_env(ctx: Context) -> dict[str, str]:
+    """MAITY_KTW_SKILL_DIR: where the delivered skill's `SKILL.md` lies, for every harness; the
+    resume block names it instead of "<skills directory>" (onboarding)."""
+    if ctx.skill is None:
+        return {}
+    return {"MAITY_KTW_SKILL_DIR": str(ctx.skill / "skills" / skills.NAME)}
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -470,6 +482,7 @@ def launch(ctx: Context) -> Launch:
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
         **run_env(ctx.scratch if beside else None),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
+        **skill_env(ctx),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.
@@ -587,6 +600,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
         allow += [f"{tool}(/{ctx.scratch}/**)" for tool in ("Read", "Edit", "Write")]
+    if ctx.skill is not None:
+        # The delivered skill's references (skills.py), read only: the skill sends the agent to
+        # them, and without this rule a read outside the clone and the scratch is refused.
+        allow += [f"Read(/{ctx.skill}/**)"]
     # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
     # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
     # git could no longer fetch or commit. The credential is not readable through Read.
@@ -595,6 +612,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
+    if ctx.skill is not None:  # never written from the session, whatever another rule allows
+        deny += [f"Edit(/{ctx.skill}/**)"]
     deny += [f"Bash({rule})" for rule in
              (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
     deny += list(CLAUDE_WORKTREE_DENIED)  # every placement, with or without the sandbox
@@ -652,7 +671,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                            "denyWrite": [f"{git}/maity",
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
                                          *(str(p) for p in ctx.private),
-                                         *(_shared_tmp(ctx) if own is None else [])],
+                                         *(_shared_tmp(ctx) if own is None else []),
+                                         # The delivered skill (skills.py): read, never written.
+                                         *([str(ctx.skill)] if ctx.skill is not None else [])],
                            # Commands write the placement's scratch besides the clone (§15.5),
                            # and its own TMPDIR.
                            **({"allowWrite": writable} if writable else {}),
@@ -836,6 +857,8 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         # prompt comes next, which Claude Code would read as a second configuration file.
         "--strict-mcp-config", f"--mcp-config={mcp}",
     ]  # fmt: skip
+    if ctx.skill is not None:  # the Keep the Why skill for this session only (skills.py)
+        base += [f"--plugin-dir={ctx.skill}"]
     model = ctx.placement.get("model")
     if model:
         base += ["--model", model]
@@ -1148,6 +1171,8 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
+    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+        deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {
         "agentMode": "",

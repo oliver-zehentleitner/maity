@@ -183,6 +183,15 @@ def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None
     assert f"read_file({home / '.gemini' / adapters.AGY_LOGIN.relative_to('.gemini')})" in deny
 
 
+def test_the_delivered_skill_is_never_written_by_agys_file_tools(tmp_path: Path) -> None:
+    # The review of #2056: read through MAITY_KTW_SKILL_DIR, so its write_file is denied.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    deny = adapters.antigravity_settings(context(tmp_path, skill=skill))["permissions"]["deny"]
+    assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+    plain = adapters.antigravity_settings(context(tmp_path / "n"))["permissions"]["deny"]
+    assert not [rule for rule in plain if "skills" in rule]
+
+
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
 
 
