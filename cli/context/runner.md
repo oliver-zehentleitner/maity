@@ -5520,7 +5520,7 @@ reuses the make, record and removal code agy's scratch already has.
 **Source:** card tsk-0zb9mgzmbwn4, 2026-11-20; card tsk-k7svzz2p4v7y, 2026-11-21 (the lead's go for this step under three gates: security's agreement with the P4 reading on tsk-z5c3798r1ces, a security leg, and an ops live check on the PR's own head); the ops live probes on a runner host with Claude Code 2.1.329 and two test placements, P1 to P3 and P4, 2026-11-21; the ops live check of 2026-11-20 with Codex 0.171.0; Claude Code's documentation of CLAUDE_CODE_TMPDIR (code.claude.com/docs/en/env-vars.md); `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`, `_remove_stale`), `workspace.py` (`OWN_TMPDIR_HARNESSES`), `adapters.py` (`session_tmpdir`, `own_tmpdir_in_use`, `own_tmp_env`, `own_tmp_leaf`, `private_tmpdir_refusal`, `claude_settings`); the security assessment on tsk-z5c3798r1ces (purple team, 2026-11-21: a private TMPDIR for every Claude Code placement, fail closed, Codex and agy unchanged); the lead's call for a strict refusal on ssh targets too, 2026-11-21. The probe results are ops' and confirmed; this exact shape (only the leaf's `tmp` opened, the leaf itself as CLAUDE_CODE_TMPDIR) awaits the ops live check on the PR's own head; the shape is the author's and the lead's
 **See:** runner.md#a-placement-without-room-under-its-scratch-gets-a-short-tmpdir-of-its-own-in-tmp — 893d9dfd-6d56-4a8f-b46a-5f43c9e26737 — as of 2026-11-21
 **See:** runner.md#agys-scratch-lives-under-the-hosts-shared-temp-directory-not-beside-the-clone — 8ec06e26-42b6-47b7-9f23-2bad37da3dfa — as of 2026-11-21
-**Revisit when:** the runner pins a new Claude Code version (check again that its sandbox writes the re-opened `tmp`, that a sibling leaf does not exist in it, where its sockets go, and what `$TMPDIR` its sandboxed commands get); Claude Code changes how a read deny is mounted (an empty mount over the parent) or gives sandboxed commands a temp directory per session; placements get an OS user each
+**Revisit when:** the runner pins a new Claude Code version (check again that its sandbox writes the re-opened `tmp`, that a sibling leaf does not exist in it, where its sockets go, what `$TMPDIR` its sandboxed commands get, and that the harness reads or runs nothing a sandboxed command planted in `claude-<uid>/`); placements get Claude Code plugins (repeat that last check with them); Claude Code changes how a read deny is mounted (an empty mount over the parent) or gives sandboxed commands a temp directory per session; placements get an OS user each
 
 Where a Codex or Claude Code placement's scratch leaves no room for a Unix
 socket under its `tmp`, as under the default `~/maity-workspaces`, the
@@ -5545,13 +5545,21 @@ Each sandbox re-opens the leaf for its own placement alone:
   task outputs, working-directory files, edit diffs, plugin staging) and its
   sandbox socket (`cc-socks/`) go in the leaf itself, as its
   `CLAUDE_CODE_TMPDIR`, beside the re-opened `tmp`. They go with the leaf.
-  Claude Code itself opens `claude-<uid>/` to the placement's sandbox for
-  reading and writing, though it is in none of the runner's allows; only
-  `cc-socks/` stays hidden. That was found in the ops live check on #2084's
-  head (Claude Code 2.1.329, 2026-11-21, note nte-8md57zfz9zkq). It stays
-  within the placement: the other placement could not reach it. It is what
-  already holds wherever the scratch's own `tmp` is the TMPDIR. The lead
-  accepted it (2026-11-21).
+  Claude Code itself opens `claude-<uid>/` to the placement's sandbox,
+  though it is in none of the runner's allows. That directory is writable,
+  `tasks/` and `plugin-tool-staging/` in it are read-only, and
+  `bash-edit-diff/` is a mount private to the sandbox. Only `cc-socks/` stays
+  hidden. That was found in the ops live check on #2084's head and ops'
+  harness check on tsk-z5c3798r1ces (Claude Code 2.1.329, 2026-11-21, note
+  nte-8md57zfz9zkq). It stays within the placement: the other placement could
+  not reach it. It is what already holds wherever the scratch's own `tmp` is
+  the TMPDIR. The lead accepted it (2026-11-21).
+- The unsandboxed harness reads or runs nothing a sandboxed command planted
+  in `claude-<uid>/`: under strace it only opened those directories with
+  `O_PATH` to mount them for the next sandbox (ops' harness check, security's
+  condition for #2084). Two limits: the check ran with no plugins configured,
+  and only on Claude Code 2.1.329. Check again once placements get plugins,
+  or when the pinned Claude Code version moves.
 - Its HTTP and mux bridge sockets go under TMPDIR, `<leaf>/tmp`, and fit.
 
 This holds for a placement started with this configuration. A session the
