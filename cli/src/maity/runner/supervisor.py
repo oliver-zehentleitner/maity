@@ -1556,6 +1556,7 @@ class Supervisor:
             placement=p,
             harness=harness,
             binary=found.path if found else None,
+            version=found.version if found else None,  # the probe the sandbox gate reads too
             clone=place.repo,
             folder=place.path if place.folder else None,
             agent_dir=agent_dir,

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import config, scratch, stub, trust
+from . import capabilities, config, scratch, stub, trust
 from .asuser import AsUser
 from .workspace import TMP_SCRATCH_HARNESSES
 
@@ -84,6 +84,17 @@ GIT_DENIED = (
     "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
 )  # fmt: skip
+# No worktree from the shell either, for the harnesses with a command allowlist (Claude Code,
+# opencode): `git worktree` is not among GIT_SUBCOMMANDS, but a repository's grant could allow
+# it, and a deny wins over an allow. A registered worktree stops maity's git in the clone, and
+# one outside `.claude/worktrees/` is not cleared at the next start (worktree.py). A guard
+# against accidents like the lists above, not a boundary. Kept apart from GIT_DENIED, which is
+# about git running programs or reading configuration, and which agy's rules mirror.
+# Only the subcommand itself: a pattern with a wildcard before `worktree` (`git * worktree *`,
+# also `git -C * worktree *`) would deny ordinary commands that only mention the word
+# (`git log --grep worktree`, a commit message), so it is not used. `git -C <dir> worktree …`
+# is not matched; no allow rule matches it either (cli/context/runner.md).
+GIT_WORKTREE_DENIED = ("git worktree", "git worktree *")
 # No session runs gh: the token is the operator's and reaches every repository it may, and no
 # glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests
 # with `maity gh`, which runs outside the sandbox with the repository fixed by the runner
@@ -100,6 +111,21 @@ PULL_REQUEST_PROMPT = (
 # in-session commands (the loop, the pane's log, the hook) are started by the runner or by the
 # harness itself, never through an agent's command tool (runner_own_file is the boundary).
 MAITY_RUNNER_DENIED = ("maity runner", "maity runner *")
+
+# A placed Claude Code session makes no git worktree in its clone: while one exists maity runs
+# no git there (clonecheck, "Worktrees are"), so `maity report` and `maity gh` fail, and the
+# session cannot remove it from its sandbox; only the next start clears it (worktree.py). The
+# bare name takes EnterWorktree out of the model's context, as for AskUserQuestion; the
+# WorktreeCreate hook replaces Claude Code's own worktree creation (subagents with
+# `isolation: worktree` included) and fails it (cli/context/runner.md).
+CLAUDE_WORKTREE_DENIED = ("EnterWorktree",)
+# Shell form, like the plain-call hook; no runner module, so it cannot fail to start in a way
+# that would let a worktree through. It prints no path, and exits 2. Written only for a version
+# with the event; the bare deny goes in every file (a deny of a name a binary does not know is
+# taken as harmless).
+CLAUDE_WORKTREE_HOOK = (
+    "echo 'git worktrees are off in a placement clone; work in the clone itself' >&2; exit 2"
+)
 
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
@@ -237,6 +263,9 @@ class Context:
     # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no
     # test cluster (run_env). The session never reads it: `pgenv` does, before the session runs.
     pg_pass: Path | None = None
+    # The harness's version as the runner probed it (capabilities.probe), for settings that a
+    # version needs: Claude Code's worktree hook. None: unknown, and nothing version-gated.
+    version: str | None = None
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -521,7 +550,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]
+    deny += [f"Bash({rule})" for rule in
+             (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
+    deny += list(CLAUDE_WORKTREE_DENIED)  # every placement, with or without the sandbox
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -534,6 +565,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # whole file, grant included (cli/context/runner.md).
         "attribution": {"commit": "", "pr": "", "sessionUrl": False},
     }
+    hooks: dict[str, Any] = {}
+    # No git worktree in the clone, sandbox or not (CLAUDE_WORKTREE_HOOK): a hook that fails or
+    # gives no path fails the worktree's creation. Only for a version known to have the event
+    # (capabilities.CLAUDE_WORKTREE_HOOK_MIN); without it the two denies above stand alone.
+    if capabilities.worktree_hook_version_ok(ctx.version):
+        hooks["WorktreeCreate"] = [
+            {"hooks": [{"type": "command", "command": CLAUDE_WORKTREE_HOOK}]},
+        ]
     if ctx.sandbox:
         settings["sandbox"] = {
             "enabled": True,
@@ -574,13 +613,15 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # when the hook cannot start or fails.
         module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
         hook = f"{module} || exit 2"
-        settings["hooks"] = {
-            "PreToolUse": [
-                {"hooks": [{"type": "command", "command": hook, "timeout": 30,
-                            "onFailure": "block"}]},
-            ],
-        }  # fmt: skip
-        settings["disableAllHooks"] = False  # over a `true` in the agents' user settings
+        hooks["PreToolUse"] = [
+            {"hooks": [{"type": "command", "command": hook, "timeout": 30,
+                        "onFailure": "block"}]},
+        ]  # fmt: skip
+    if hooks:
+        settings["hooks"] = hooks
+        # Over a `true` in the agents' user settings, which would leave the hooks unrun; it also
+        # turns on that user's own hooks (cli/context/runner.md).
+        settings["disableAllHooks"] = False
     return settings
 
 
@@ -911,7 +952,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     # After the allows: the last match wins. The rules are meant to allow `maity` only as one
     # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
     # not a boundary, see cli/context/runner.md.
-    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)})
+    for rule in (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED):
+        bash.pop(rule, None)  # a grant's allow of the same pattern would keep its earlier place
+        bash[rule] = "deny"
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited

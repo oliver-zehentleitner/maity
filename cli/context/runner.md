@@ -5496,6 +5496,90 @@ spellings accept argparse's refusal, but only for words with a `--` before
   argparse's reading of global options, abbreviations and `--`, which is
   more fragile than taking argparse's own result.
 
+## A placed Claude Code session makes no git worktree in its clone
+
+**Id:** 6e3b9c41-27d8-4f5a-b0c3-9a1d47e82f65
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-d5e4d9s95ytj, 2026-11-21: two incidents on 2026-11-20, in which a Claude Code subagent in a placed session made an isolated git worktree under the clone's `.claude/worktrees/`, after which maity refused git in the clone ("Worktrees are not supported…"), `maity report` and `maity gh pr create` failed, and the session's sandbox refused to remove the worktree; Claude Code's documentation (permissions: a bare tool name in a deny rule removes the tool from the model's context; hooks, `WorktreeCreate`: the hook replaces Claude Code's own git worktree creation for `--worktree`, `EnterWorktree`, subagents with `isolation: "worktree"`, workflow agents and background sessions, and "if the hook fails or produces no path, worktree creation fails with an error"); `cli/src/maity/runner/adapters.py` (`claude_settings`). The plan is the lead's; the settings were not yet run on the hosted Claude Code version; the 2.1.50 floor for the `WorktreeCreate` event: Claude Code's v2.1.50 release notes, as cited in review A1808 (round 2 of #2075), not verified against a live binary
+**See:** runner.md — a01035af-a4c1-4ab7-83a7-91670439fa50 — as of 2026-11-21
+**Verification:** uncorroborated
+**Revisit when:** the `Agent(isolation:worktree)` parameter deny rule is verified on the hosted Claude Code version (it would take the worktree option from subagents before they try); the hook is seen working on the hosted version, or Claude Code documents from which version it has the `WorktreeCreate` event; Claude Code renames `EnterWorktree` or the `WorktreeCreate` hook, or changes what a failing hook does; the clone check starts tolerating a worktree
+
+The settings file the runner writes for every Claude Code placement,
+sandboxed or not, headless or interactive, keeps the session from making a
+git worktree in its clone:
+
+- `EnterWorktree` as a bare name in `permissions.deny`, so the model is
+  not offered the tool.
+- `git worktree` and `git worktree *` denied for the shell (for opencode
+  too), over a repository grant that allows them: a registration outside
+  `.claude/worktrees/` is one the start's prune does not clear. Not
+  `git * worktree *` (review A1807): it also denied ordinary commands that
+  only mention the word, `git log --grep worktree` or a commit message.
+  Known gap: the deny does not match a global option before the
+  subcommand (`git -C <dir> worktree …`); Claude Code still refuses such a
+  line because no allow rule matches it (`dontAsk`), and opencode because
+  its bash map's default is deny, unless a repository grant allows it. The
+  deny is a guard against accidents; the start prune and check's warning
+  cover a leftover.
+- A `WorktreeCreate` hook, a plain shell line that prints a short reason
+  to stderr, no path to stdout, and exits 2. Claude Code then fails every
+  worktree it would make, a subagent's `isolation: worktree` included.
+  Written only when the start's probed version is 2.1.50 or later.
+- `disableAllHooks: false` whenever the file carries a hook, not only
+  under the sandbox, so a `true` in the agents' user settings does not
+  switch the hook off. In an unsandboxed placement it also turns that
+  user's own hooks on.
+
+`maity runner check` reports this configuration for each Claude Code
+target, not a live test. It warns about a clone the runner recorded there
+that already holds a worktree, and tells a registration the start clears
+from one a person must remove, and both from a bare directory, which does
+not stop maity's git; it removes nothing. The clone check's refusal names
+stopping and starting the placement as the way out, which runs the
+existing prune.
+
+**Version floor (round 2 of the review):** Claude Code's documentation
+names no version for the `WorktreeCreate` event. The floor 2.1.50 rests
+on Claude Code's v2.1.50 release notes, as cited in review A1808; it was
+not verified against a live binary. For an older or
+unknown version the runner writes no hook (lotse's ruling, no fallback),
+and `check` warns that only the denies apply. The denies go in every file:
+a deny of a name the binary does not know is taken as harmless. The hook's
+effect rests on the documentation and was not confirmed on the hosted
+version. Settings that switch hooks off (a managed `disableAllHooks: true`
+or `allowManagedHooksOnly`, or the agents' user's `allowManagedHooksOnly`)
+leave only the denies, sandboxed or not; `check` warns there too. These
+are guards against an agent's mistakes, not a boundary.
+
+**Reason:** while a worktree is in the clone maity runs no git there, so a
+running session cannot report or open its pull request, and it cannot
+remove the worktree itself. The existing prune clears it only at the next
+start. Not making the worktree at all keeps the session working. The bare
+deny means the model never tries; the hook is the backstop for every other
+way Claude Code makes one, and its failure is documented to fail the
+creation.
+
+**Deferred:** an `Agent(isolation:worktree)` deny rule, which would take
+the worktree option from subagents and leave subagents themselves
+available. Nobody could check the parameter rule on the hosted Claude Code
+version, and a binary that cannot read a rule may drop the whole settings
+file, the grant included (as with `attribution` before 2.1.281). The
+failing hook already makes such a subagent's worktree fail, so the rule is
+left out until it is verified.
+
+**Rejected alternatives:**
+- A prune at session close. A placed session does not close by itself:
+  it waits for events, so the session stays blocked until then, and the
+  prune would have to judge a dirty worktree from a clean one.
+- The hook alone. The documentation does not say that the hook's message
+  reaches the model; without the bare deny the model would keep trying
+  `EnterWorktree`, while with it the tool is not offered at all.
+- The existing start prune alone. It helps only after a restart; the
+  session that made the worktree stays blocked until someone restarts it.
+
 ## A quiet placement is diagnosed by the runner, on facts the hub supplies, and the runner reacts by cause
 
 **Id:** e6a12eff-5d04-476e-8239-22970a139c7b
