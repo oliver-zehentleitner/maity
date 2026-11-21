@@ -58,10 +58,20 @@ NEVER_IN_MEMBER = {
 }  # fmt: skip
 
 
+INSTANCE_TOKEN = "instance-token"
+# The operator's own namespaces, which the instance's token serves (§11.4): the world's project
+# is the maintainer's, so an outsider reads its Why, as the public view shows it (§16.9).
+INSTANCE: dict[str, Any] = {
+    "forge_github_token": INSTANCE_TOKEN,
+    "forge_instance_namespaces": frozenset({"maintainer"}),
+}
+
+
 @pytest.fixture
 def make_client(make_client: ClientFactory) -> ClientFactory:
-    """Every hub here serves public pages: while it serves none, no project is public (§16.9)."""
-    return lambda **kw: make_client(**{"public_pages": True, **kw})
+    """Every hub here serves public pages: while it serves none, no project is public (§16.9).
+    It holds the instance's token for the maintainer's namespace (`INSTANCE`)."""
+    return lambda **kw: make_client(**{"public_pages": True, **INSTANCE, **kw})
 
 
 @dataclass
@@ -126,25 +136,37 @@ def _put_image(human: flow.Human, kind: str) -> None:
 
 
 class WhyForge(why_tests.Fake):
-    """§11.3's fake forge (tests/test_keep_the_why.py) with the sources of §11.4. The project's
-    own source is the namespace owner's grant, as tests/test_keep_the_why_views.py sets it up;
-    a reader `ktw_reads.named_reader` builds holds no grant and is bound to no project, as
-    `Forge.for_project` leaves such a reader. The forge answers `/repos/acme/widget` with
-    `private` and shows a private repository's files to the grant alone. Each file read
-    records its reader's `granted` (`grants`), each visibility question counts (`asked`)."""
+    """§11.3's fake forge (tests/test_keep_the_why.py) with the sources of §11.4. The forge
+    answers `/repos/acme/widget` with `private` and shows a private repository's files to a
+    grant alone. Each file read records its reader's `granted` (`grants`), each visibility
+    question counts (`asked`), and each `Forge.for_project` call records its project (`bound`).
+
+    `Forge.for_project` stands for the project's own source and always answers the namespace
+    owner's grant, as tests/test_keep_the_why_views.py sets it up. Only the member side reaches
+    it: that is what shows a member's read through a grant never reaching an outsider. The
+    outsider's path never calls it (`ktw_reads.OUTSIDE_CACHE` has `bind=False`, and the token
+    is chosen by the operator's namespaces), so no outsider test depends on the stub."""
+
+    def forget(self) -> None:
+        """Drop what the recorders saw so far: a test's own reads start from here."""
+        self.grants.clear()
+        self.tokens.clear()
+        self.bound.clear()
+        self.asked = 0
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         super().__init__(monkeypatch)
         self.private = False
         self.grants: list[str | None] = []
+        self.tokens: list[str | None] = []  # each file read's token
         self.asked = 0
-        unbound: list[forge.Forge] = []
-        named_reader = ktw_reads.named_reader
+        self.bound: list[str] = []
         fake = self
 
         def file(reader: forge.Forge, repository: str, path: str, cap: int) -> bytes | None:
             fake.file_reads.append(path)
             fake.grants.append(reader.granted)
+            fake.tokens.append(reader.token)
             if fake.private and reader.granted is None:
                 return None  # a private repository answers 404 without a grant
             found = fake.files.get(path)
@@ -152,14 +174,8 @@ class WhyForge(why_tests.Fake):
                 raise found
             return found
 
-        def named(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
-            reader = named_reader(instance, own)
-            unbound.append(reader)
-            return reader
-
         def for_project(reader: forge.Forge, project_id: str) -> forge.Forge:
-            if any(reader is kept for kept in unbound):
-                return reader  # no project's: no source is chosen for it
+            fake.bound.append(project_id)
             return forge.Forge("owner-grant", granted="owner_token", repository="acme/widget")
 
         def send(reader: forge.Forge, path: str, query: Any = None, **kwargs: Any) -> Any:
@@ -175,7 +191,6 @@ class WhyForge(why_tests.Fake):
         monkeypatch.setattr(forge.Forge, "for_project", for_project)
         monkeypatch.setattr(forge.Forge, "_require_public", require_public)
         monkeypatch.setattr(forge.Forge, "_send", send)
-        monkeypatch.setattr(ktw_reads, "named_reader", named)
 
 
 @pytest.fixture
@@ -1233,15 +1248,18 @@ def test_the_why_is_not_found_to_an_outsider_while_the_repository_is_not_public(
     """Only while the hub last found the repository public (`repository_public is True`), as
     the public view's **Why** (§16.9): otherwise each read answers an outsider the `not_found`
     of a route closed to it, an `If-None-Match` too (never `304`); a member reads as before."""
-    etag = world.owner.get(f"{WHY}/export").headers["ETag"]
+    etags = {
+        kind: world.owner.get(f"{WHY}/{kind}").headers["ETag"] for kind in ("export", "bodies")
+    }
     _repository(migrated, world.project_id, url, public)
     for path in WHY_READS:
         refused = world.outsider.get(path)
         assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
         member = world.owner.get(path)
         assert member.status_code == (200 if url else 409), (path, member.text)
-    revalidated = world.outsider.get(f"{WHY}/export", headers={"If-None-Match": etag})
-    assert (revalidated.status_code, revalidated.json()) == (404, NOT_FOUND)
+    for kind, etag in etags.items():
+        revalidated = world.outsider.get(f"{WHY}/{kind}", headers={"If-None-Match": etag})
+        assert (revalidated.status_code, revalidated.json()) == (404, NOT_FOUND), kind
 
 
 def test_the_why_is_not_found_to_an_outsider_with_public_pages_off(
@@ -1279,6 +1297,51 @@ def test_max_age_zero_holds_an_outsider_to_one_read_per_interval(
     again = world.outsider.get(WHY, params=forced)
     assert again.status_code == 200 and again.json()["fresh"] is True, again.text
     assert len(why.file_reads) > reads[0] and why.asked > reads[2]
+
+
+def test_max_age_zero_on_the_bodies_is_held_to_the_shared_window(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`GET …/keep-the-why/bodies?max_age=0` holds an outsider to the window it shares with the
+    members (§2.3, §11.5): within `ktw.FORCE_INTERVAL` of a member's forced read the outsider's
+    makes no family read and no file read; after it, a forced read happens again."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    bodies, forced = f"{WHY}/bodies", {"max_age": 0}
+    assert world.outsider.get(bodies, params=forced).status_code == 200  # its own entry first
+    now[0] += ktw.FORCE_INTERVAL + 1
+    assert world.owner.get(bodies, params=forced).status_code == 200  # the member's forced read
+    reads = (len(why.file_reads), len(why.state_reads))
+    held = world.outsider.get(bodies, params=forced)
+    assert held.status_code == 200, held.text
+    assert (len(why.file_reads), len(why.state_reads)) == reads, "within the member's interval"
+    now[0] += ktw.FORCE_INTERVAL + 1
+    assert world.outsider.get(bodies, params=forced).status_code == 200
+    assert len(why.file_reads) > reads[0]
+
+
+def test_an_outsiders_why_reads_never_ask_the_projects_source(
+    world: World, why: WhyForge, migrated: Engine
+) -> None:
+    """An outsider's read leaves no trace (§2.3): the token is chosen by the operator's
+    namespaces, as the public page chooses it, so `Forge.for_project`, which may write the
+    project's `probe_via` and the grants' state, is never called on the outsider's path, and
+    the project's row is the same after all three reads (A1830 P1)."""
+
+    def project_row() -> Any:
+        with migrated.connect() as conn:
+            return conn.execute(select(t.project).where(t.project.c.id == world.project_id)).one()
+
+    before = project_row()
+    why.forget()  # the world's own setup reads (a member's view, the page) are not the outsider's
+    for path in WHY_READS:
+        for query in ({}, {"max_age": 0}):
+            assert world.outsider.get(path, params=query).status_code == 200, (path, query)
+    assert why.bound == []
+    assert why.grants and None in why.grants and "owner_token" not in why.grants
+    assert project_row() == before
+    assert world.owner.get(WHY).status_code == 200  # the counter-check: a member's read asks
+    assert why.bound
 
 
 def test_the_forced_read_is_shared_by_members_and_outsiders_each_served_their_own(
@@ -1321,15 +1384,49 @@ def test_the_forced_read_is_shared_by_members_and_outsiders_each_served_their_ow
 
 
 def test_an_outsider_reads_the_why_without_a_grant(world: World, why: WhyForge) -> None:
-    """The outsider's reads go through a reader that holds no grant and is no project's
-    (`ktw_reads.named_reader`), never the project's own source, which here is the namespace
-    owner's grant; a member's read still uses that grant."""
+    """The outsider's reads go through the instance's token, holding no grant and bound to no
+    project (`ktw_reads.outside_reader`), never the project's own source, which here is the
+    namespace owner's grant; a member's read still uses that grant."""
+    why.forget()  # the world's own setup reads (a member's view, the page) are not the outsider's
     for path in WHY_READS:
         assert world.outsider.get(path).status_code == 200, path
     assert why.grants and all(granted is None for granted in why.grants), why.grants
+    assert why.tokens and set(why.tokens) == {INSTANCE_TOKEN}, why.tokens
     assert why.asked > 0  # the forge was asked whether the repository is public
     assert world.owner.get(WHY, params={"max_age": 0}).status_code == 200
     assert "owner_token" in why.grants
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"forge_instance_namespaces": frozenset({"elsewhere"})}, {"forge_github_token": None}],
+    ids=["another_namespace", "no_instance_token"],
+)
+def test_the_why_is_not_found_to_an_outsider_where_the_instance_token_does_not_serve(
+    world: World,
+    why: WhyForge,
+    make_client: ClientFactory,
+    migrated: Engine,
+    overrides: dict[str, Any],
+) -> None:
+    """An outsider reads the Why only where the instance's token serves the project's namespace,
+    as the public view shows it (§2.3, §16.9; the lead, seq 186180): elsewhere, or on a hub
+    without a token, all three reads answer `not_found`, a bad query too (`access.gate`, before
+    it is read), and nothing is asked of the forge, so no anonymous budget is spent. The
+    project itself stays public to them, and a member reads the Why as before."""
+    client = make_client(**overrides)
+    assert factory.login(client, world.outsider.id, engine=migrated).status_code == 200
+    csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
+    outsider = flow.Human(client, csrf, world.outsider.id, "reader")
+    asked, reads = why.asked, len(why.file_reads)
+    for path in WHY_READS:
+        for query in ({}, {"max_age": "-1"}, {"max_age": 0}):
+            refused = outsider.get(path, params=query)
+            assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, query)
+    assert (why.asked, len(why.file_reads)) == (asked, reads)
+    assert outsider.get(P).status_code == 200
+    for path in WHY_READS:
+        assert world.owner.get(path).status_code == 200, path
 
 
 def test_after_the_repository_turns_private_an_outsider_gets_nothing_a_grant_read(

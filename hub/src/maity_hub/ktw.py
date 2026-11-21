@@ -790,6 +790,10 @@ class Cache:
     # for FORCE_INTERVAL, so the rate is one per project across both. Its answers are never
     # served from here, nor is its own peer looked at.
     peer: Cache | None = field(default=None, repr=False, compare=False)
+    # Whether a read asks `Forge.for_project` for the project's source (§11.4). False for a
+    # cache whose reader is never a project's (`ktw_reads.OUTSIDE_CACHE`): choosing a source
+    # may write the project's and the grants' state, which an outsider's read must not.
+    bind: bool = True
 
     def link(self, other: Cache) -> None:
         """Each cache the other's `peer`."""
@@ -920,7 +924,8 @@ class Cache:
             return _Entry(None, read_at, repository_url)
         repository = forge.repository_of(repository_url)
         deadline = now() + FAMILY_DEADLINE
-        reader = reader.for_project(project_id)  # the source that covers it (§11.4)
+        if self.bind:
+            reader = reader.for_project(project_id)  # the source that covers it (§11.4)
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:

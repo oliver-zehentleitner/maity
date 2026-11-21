@@ -231,8 +231,8 @@ def named_reader(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
 # project owner's grant may fill: filled only through `outside_reader`, which holds no grant
 # (hub/context/public-pages.md 3f9c2d71). Linked to `ktw.CACHE` as its peer, both ways: a forced
 # read (`max_age=0`) happens at most once per FORCE_INTERVAL per project across the two, and
-# each serves only its own answers.
-OUTSIDE_CACHE = ktw.Cache()
+# each serves only its own answers. It never asks `Forge.for_project` (`bind=False`).
+OUTSIDE_CACHE = ktw.Cache(bind=False)
 OUTSIDE_CACHE.link(ktw.CACHE)
 # The forge's own answer whether a project's repository is public, for its outsiders, per
 # (project, repository): asked again after `_refresh(max_age)`, so at least every
@@ -242,18 +242,20 @@ _outside_guard = threading.Lock()
 
 
 def outside_reader(
-    instance: forge.Forge, own: forge.Forge, project_id: str, repository_url: str, max_age: int
+    token: str, project_id: str, repository_url: str, max_age: int
 ) -> forge.Forge | None:
-    """The reader of an outsider's Why reads (§2.3): the project's own repository read as a
-    named one is (`named_reader`: never a grant, bound to no project), and only while that
-    reader's live visibility check (`_visibility`) finds it public; None otherwise, for the
+    """The reader of an outsider's Why reads (§2.3): `forge.Forge(token)`, bound to no project
+    and never a grant, `token` the instance's, for a project in the operator's own namespaces
+    only (the caller decides it as the public page does, without asking the project's source,
+    which may write its state; never anonymous); and only while that reader's live
+    visibility check (`_visibility`) finds the repository public. None otherwise, for the
     caller to answer `not_found`, also when the forge cannot say or the repository is on no
     forge the hub asks. A spent budget raises `forge.ForgeUnavailableError` with `retry_at`.
     The stored `repository_public` lags the forge (the probe updates it on its own round),
     and the members' cache may hold what a grant read: neither decides here."""
     if forge.kind_of(repository_url) != "github":
         return None
-    reader = named_reader(instance, own)
+    reader = forge.Forge(token)
     repository = forge.repository_of(repository_url).lower()
     key = (project_id, repository)
     with _outside_guard:

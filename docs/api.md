@@ -1229,12 +1229,14 @@ three reads of the Why view named next. An outsider also reads the Why
 view: `GET …/keep-the-why` (§11.3), `GET …/keep-the-why/export` and
 `GET …/keep-the-why/bodies` (§11.5), under the same rules, and only
 while the hub last found the project's repository public, as for the
-public view's **Why** (§16.9), and the forge, asked without any grant,
-still answers it public (asked again at least every 10 minutes, and
-every 30 seconds with `max_age=0`); otherwise they answer an outsider
+public view's **Why** (§16.9), only for a project in the operator's own
+namespaces, which the instance's token serves (§11.4), and only while
+the forge, asked with that token and without any grant, still answers
+the repository public (asked again at least every 10 minutes, and every
+30 seconds with `max_age=0`); otherwise they answer an outsider
 `not_found`, before the query is read. What an outsider gets is read
-without any grant into a cache of its own, never from what a member's
-read fetched. They carry no restricted text and nothing of a card,
+with the instance's token and without any grant into a cache of its
+own, never from what a member's read fetched. They carry no restricted text and nothing of a card,
 since the hub serves them from what the repository publishes, never
 from its database. An entry is served as the repository publishes it,
 so a card id in its text is not removed, and naming a hidden card does

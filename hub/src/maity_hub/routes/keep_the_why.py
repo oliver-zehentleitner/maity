@@ -1,7 +1,8 @@
 """`GET /projects/{owner}/{slug}/keep-the-why` (docs/api.md §11.3) and the Keep the Why views'
 reads, `…/keep-the-why/export` and `…/keep-the-why/bodies` (§11.5). An outsider of a public
-project reads all three while the hub last found its repository public and the forge says it is
-public now, read without a grant into a cache of their own (§2.3)."""
+project in the operator's own namespaces reads all three while the hub last found its repository
+public and the forge says it is public now, read with the instance's token and no grant into a
+cache of their own (§2.3)."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from maity_hub import access, clock, forge, ktw, ktw_reads
-from maity_hub.deps import AnyCaller, engine_of, reader_of
+from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import (
     ApiError,
     ktw_not_configured,
@@ -45,17 +46,32 @@ def _spent(retry_at: datetime) -> ApiError:
     )
 
 
+def _outside_token(request: Request, project: Any) -> str:
+    """The token an outsider's reads use: the instance's, and only for a project in the
+    operator's own namespaces, which that token serves, exactly where the public view shows
+    its **Why** (§2.3, §16.9: `public_project_views.render_views`' `by_instance`); `not_found`
+    everywhere else, as `access.gate` answers before the query (the lead, seq 186180: no
+    anonymous read, whose hub-wide budget a loop over projects could drain). Never
+    `Forge.for_project`, which may write the project's source and the grants' state: an
+    outsider's read leaves no trace."""
+    hub = settings_of(request)
+    token = hub.forge_github_token
+    instance = hub.forge_instance_namespaces if token is not None else None
+    with engine_of(request).connect() as conn:
+        served = access.instance_serves_project(conn, project, instance)
+    if token is None or not served:
+        raise not_found()
+    return token
+
+
 def _outside_reader(request: Request, project: Any, max_age: int) -> forge.Forge:
     """An outsider's reader (`ktw_reads.outside_reader`): no grant, bound to no project, and
     only while the forge says now that the repository is public; `not_found` otherwise, as a
     closed route answers (§2.3), and `probe_unavailable` while the reader's budget is spent,
-    as for a member. The project's own source is read only for which token it is
-    (`named_reader`), never read with."""
-    base = reader_of(request)
+    as for a member. The project's own source is never asked (`_outside_token`)."""
+    token = _outside_token(request, project)
     try:
-        reader = ktw_reads.outside_reader(
-            base, base.for_project(project.id), project.id, project.repository_url, max_age
-        )
+        reader = ktw_reads.outside_reader(token, project.id, project.repository_url, max_age)
     except forge.ForgeUnavailableError as error:  # only a spent budget is raised
         if error.retry_at is None:
             raise not_found() from None

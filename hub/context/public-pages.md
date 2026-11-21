@@ -636,7 +636,7 @@ session, who still reads only `GET /public/pages/{path}`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q, "public is public", `docs/api.md` §2.3); the lead's rulings of 2026-11-19 and 2026-11-20 (tsk-kqn8zhptf06k, #2001); split out of eb7fd1c7 on the card tsk-jk2psmarajjb
+**Source:** the maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q, "public is public", `docs/api.md` §2.3); the lead's rulings of 2026-11-19 and 2026-11-20 (tsk-kqn8zhptf06k, #2001); split out of eb7fd1c7 on the card tsk-jk2psmarajjb; the owner's answer on req-adh287znbx64 (2026-11-21, o1: the stricter condition with the shared max_age window); the lead's decision, seq 186180, 2026-11-21 (the Why only where the instance's token serves the project)
 **See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-21
 **Revisit when:** an outsider needs a project read outside `access.OUTSIDE_READS`, or the public page shows a member or project field the allow-lists do not name
 
@@ -678,18 +678,28 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
   pending account, and the #2001 round notes. Evidence: unknown.
 - The Why view's three reads, `GET …/keep-the-why` (§11.3), `…/keep-the-why/export` and `…/keep-the-why/bodies`
   (§11.5), are open to an outsider. Source: the owner's option A in req-vsfjgx3fch8k, its §2.3 sentence as the
-  owner wrote it; tsk-jk2psmarajjb; round 2 after review A1829 (F1, F2).
+  owner wrote it; tsk-jk2psmarajjb; round 2 after review A1829 (F1, F2), round 3 after review A1830; the owner's
+  answer on req-adh287znbx64 (o1); the lead's decision, seq 186180, 2026-11-21 (only where the instance's token
+  serves the project).
   - The source, shared with the public page's **Why** (`public_project_views.why_data`, `WHY_CACHE`): only what
-    the forge serves publicly, read without a grant, its visibility asked of the forge itself. Three checks, in
-    order. `access.gate` (`PUBLIC_REPOSITORY_READS`, before the query is read) and `_require_why` answer
-    `not_found` unless the stored `repository_public` is true, the cheap first check. Then
+    the forge serves publicly, read with the instance's token and without a grant, its visibility asked of the
+    forge itself, and only for a project in the operator's own namespaces, which that token serves, where the
+    page shows it too (`render_views`' `by_instance`). Three checks, in order. `access.gate`
+    (`PUBLIC_REPOSITORY_READS`, before the query is read; `instance_serves_project`, from the app's settings) and
+    `_require_why` with `_outside_token` answer `not_found` unless the stored `repository_public` is true and the
+    instance's token serves the namespace, the cheap first checks. Then
     `ktw_reads.outside_reader` asks the forge live (`_visibility`, uncached) whether the repository is public, as
     a named repository's is asked, again after `_refresh(max_age)`: at the latest every `VISIBILITY_SECONDS`, with
     `max_age=0` every `FORCE_INTERVAL`; not public, or no answer, is `not_found`, a spent budget
-    `probe_unavailable` as for a member. The read itself goes through `named_reader` (the instance token for a
-    project the instance serves, else no token; never a grant, bound to no project) into `OUTSIDE_CACHE`, a
-    `ktw.Cache` of its own. Why: the stored flag lags the forge, since the probe updates it on its own round
-    (F1); and the members' `ktw.CACHE` may be filled through the namespace owner's grant, which reads a private
+    `probe_unavailable` as for a member. The read itself goes through a reader bound to no project and holding no
+    grant into `OUTSIDE_CACHE`, a `ktw.Cache` of its own that never asks `Forge.for_project` (`bind=False`). The
+    outsider path picks its token by the operator's namespaces, as the public page does
+    (`routes/keep_the_why._outside_token`: the instance token where `forge_access.serves` the project's namespace
+    owner), and never asks the project's source, so it writes nothing: choosing a source may write the project's
+    `probe_via` and the grants' state (A1830). Rejected: an anonymous read for the other projects (round 2), since
+    it spends the hub-wide anonymous forge budget, which a loop over many projects with `max_age=0` could drain
+    for every project (A1830, note 3; the lead, seq 186180). Why the rest: the stored flag lags the forge, since
+    the probe updates it on its own round (F1); and the members' `ktw.CACHE` may be filled through the namespace owner's grant, which reads a private
     repository, so serving it to an outsider until the probe looked again would hand out private content (F1).
     The gate runs for these routes too, so an outsider they are closed to gets no `400` for a bad query (F2).
   - The scope of the answers: the full export and its bodies, more than the page's summary, under the same
@@ -702,11 +712,9 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
     never the other's; a cache with no entry of its own still reads once. So the owner's "the same one forge read
     per 30 seconds per project as for a member" holds (the lead, seq 185669). Apart from it, the live visibility
     check of an outsider's own repository (at most once per `FORCE_INTERVAL` with `max_age=0`) is one small forge
-    request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS without any
-    token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a visibility
-    check) stay shared: nothing in them was read with a grant.
-  - Not checked, unlike the public page: whether the project is in the operator's own namespaces (`why_data`'s
-    `served`); an outsider of another namespace's project reads without a token.
+    request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS
+    without any token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a
+    visibility check) stay shared: nothing in them was read with a grant.
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
   notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
