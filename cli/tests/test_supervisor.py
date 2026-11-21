@@ -26,6 +26,7 @@ from maity.runner import (
     scratch,
     scratchop,
     serve,
+    skills,
     supervisor,
     tmux,
     workspace,
@@ -514,6 +515,268 @@ def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
     managed.write_text('{"allowManagedHooksOnly": true}')
     assert sup._refusal(placement(harness="claude-code"), target) == ("harness_refused", None)
     assert any("sets allowManagedHooksOnly" in line for line in logged)
+
+
+SOCKET_FILES = [
+    ('{"sandbox": {"network": {"allowAllUnixSockets": false}}}',
+     "sets sandbox.network.allowAllUnixSockets"),
+    ('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}',
+     "sets sandbox.network.allowUnixSockets"),
+    ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+    ('{"permissions": {}}', None),
+    ("{not json", "cannot be read as JSON"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("text", "why"), SOCKET_FILES)
+def test_a_sandboxed_start_is_refused_while_the_users_settings_carry_a_socket_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, why: str | None
+) -> None:
+    """The placement pins its Unix socket settings and refuses user settings that would change
+    them, read at every start; an unreadable file refuses too. Other harnesses are not
+    asked."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text(text)
+    found = sup._refusal(placement(harness="claude-code"), target)
+    if why is None:
+        assert found is None and logged == []
+    else:
+        assert found == ("harness_refused", None)
+        assert len(logged) == 1 and why in logged[0] and str(user) in logged[0]
+    assert sup._refusal(placement(harness="codex"), target) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "why", "line"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets", "pins its Unix socket settings"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig",
+      "pins its Unix socket settings"),
+     # An unreadable managed file is already refused by the hook check, read first.
+     ("{not json", "cannot be read as JSON", "the runner's hook would not run")],
+)  # fmt: skip
+def test_a_sandboxed_start_is_refused_while_the_managed_settings_carry_a_socket_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, why: str, line: str
+) -> None:
+    """The managed settings win over the placement's file: a socket key there refuses the
+    start like one in the user's settings, and an unreadable file refuses it too."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text(text)
+    assert sup._refusal(placement(harness="claude-code"), target) == ("harness_refused", None)
+    assert len(logged) == 1 and why in logged[0] and str(managed) in logged[0]
+    assert line in logged[0]
+
+
+@pytest.mark.parametrize(
+    ("record", "installed", "warned"),
+    [(None, "2.1.325", "has not passed on this target, installed 2.1.325"),
+     ({"local": "2.1.324"}, "2.1.325", "last passed with 2.1.324, installed 2.1.325"),
+     ({"local": "2.1.325"}, "2.1.325", None),
+     ({"other": "2.1.325"}, "2.1.325", "has not passed on this target")],
+)  # fmt: skip
+def test_a_start_after_a_version_change_warns_to_run_check_and_still_starts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict[str, str] | None,
+    installed: str,
+    warned: str | None,
+) -> None:
+    """The version whose `check` probe passed is read from the state directory: a different
+    one, or none, is logged at the start and refuses nothing."""
+    import sys
+
+    from maity import state
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, installed, "", True)
+    sup.log = logged.append
+    if record is not None:
+        state.save_state(sup.cfg.state_dir, record, name=capabilities.PROBE_FILE)
+    target = sup.targets["local"]
+    view = supervisor.GateView.of(target, "claude-code")
+    sup._probe_warning(target, view, "s")
+    if warned is None:
+        assert logged == []
+    else:
+        assert len(logged) == 1 and warned in logged[0], logged
+        assert logged[0].endswith("run `maity runner check`")
+    logged.clear()
+    sup._probe_warning(target, supervisor.GateView(view.found, False, False), "s")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    sup._probe_warning(target, view, "s")
+    assert logged == []  # unsandboxed, or Seatbelt: no probe to have passed
+
+
+def test_the_version_warning_is_logged_once_per_target_and_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two launches with the same installed version warn once; a new version warns again,
+    and so does the first version on another target."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    view = supervisor.GateView.of(target, "claude-code")
+    sup._probe_warning(target, view, "a")
+    sup._probe_warning(target, view, "b")
+    assert len(logged) == 1 and "installed 2.1.325" in logged[0]
+    newer = supervisor.GateView(capabilities.Probe("/usr/bin/claude", "2.1.330", None), True,
+                                False)  # fmt: skip
+    sup._probe_warning(target, newer, "c")
+    sup._probe_warning(target, newer, "d")
+    assert len(logged) == 2 and "installed 2.1.330" in logged[1]
+    other = replace(target, name="build-9", probe_warned=set())
+    sup._probe_warning(other, view, "e")
+    assert len(logged) == 3 and "build-9" in logged[2]
+
+
+SECCOMP_ANSWERS = {
+    "ok": capabilities.ClaudeSeccomp("ok", "x64"),
+    "unsupported_arch": capabilities.ClaudeSeccomp(
+        "unsupported_arch", "riscv64", "machine riscv64"
+    ),
+    "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    "inconclusive": capabilities.ClaudeSeccomp("inconclusive", detail="could not be read"),
+}
+
+
+@pytest.mark.parametrize("outcome", sorted(SECCOMP_ANSWERS))
+def test_a_sandboxed_claude_code_start_needs_the_seccomp_preflight_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """On Linux only `ok` starts a sandboxed Claude Code placement; an unsupported machine, a
+    kernel without seccomp filtering and an answer that could not be read refuse it with the
+    reason in the log. Other harnesses are not asked."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    asked: list[object] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append(as_user)
+        return SECCOMP_ANSWERS[outcome]
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+
+    def probe(*args: object) -> object:
+        raise AssertionError("the headless probe runs in `check` only, never at a start")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    found = sup._refusal(placement(harness="claude-code"), target)
+    if outcome == "ok":
+        assert found is None and logged == []
+    else:
+        assert found == ("harness_refused", None)
+        assert logged == [capabilities.claude_seccomp_line(SECCOMP_ANSWERS[outcome])]
+        assert logged[0].endswith("its placements are not started")
+    assert len(asked) == 1
+    for other in ("stub", "codex"):
+        assert sup._refusal(placement(harness=other), target) is None
+    assert len(asked) == 1  # only claude-code asks
+
+
+def test_an_ok_preflight_is_kept_and_any_other_answer_is_read_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    answers = [SECCOMP_ANSWERS["inconclusive"], SECCOMP_ANSWERS["ok"]]
+    asked: list[str] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append("asked")
+        return answers.pop(0)
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    p = placement(harness="claude-code")
+    assert sup._refusal(p, target) == ("harness_refused", None)
+    assert sup._refusal(p, target) is None  # read again, now ok
+    assert sup._refusal(p, target) is None  # kept: not read a third time
+    assert asked == ["asked", "asked"]
+
+
+def test_an_ssh_target_reads_its_preflight_again_after_it_was_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The host behind an ssh target's name may be another machine or a new kernel when it
+    comes back: its kept `ok` is forgotten while it is unreachable. A local target keeps it."""
+    from maity.runner.asuser import Ssh
+
+    answers = [SECCOMP_ANSWERS["ok"], SECCOMP_ANSWERS["no_seccomp"]]
+    asked: list[object] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append(as_user)
+        return answers.pop(0)
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = lambda line: None
+    local = sup.targets["local"]
+    local.seccomp = SECCOMP_ANSWERS["ok"]
+    sup._reachable(local, False, 1.0, "gone")
+    assert local.seccomp == SECCOMP_ANSWERS["ok"]  # the local machine does not change
+    host = replace(local, name="build-9", as_user=Ssh(name="build-9"), seccomp=None,
+                   reachable=True, unreachable_since=None)  # fmt: skip
+    assert sup._seccomp(host).outcome == "ok"
+    assert sup._seccomp(host).outcome == "ok"  # kept while it stays reachable
+    assert len(asked) == 1
+    sup._reachable(host, False, 2.0, "connection refused")
+    assert host.seccomp is None
+    sup._reachable(host, True, 3.0)
+    found = sup._seccomp(host)
+    assert found.outcome == "no_seccomp" and len(asked) == 2  # read again: now refused
+    assert host.seccomp is None  # and not kept
+
+
+@pytest.mark.parametrize(("platform", "tools"), [("darwin", True), ("linux", False)])
+def test_no_preflight_under_seatbelt_or_without_claude_codes_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, tools: bool
+) -> None:
+    """Seatbelt has no seccomp step; an unsandboxed Claude Code is reported as such already."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", platform)
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", tools)
+    assert sup._refusal(placement(harness="claude-code"), sup.targets["local"]) is None
 
 
 def test_a_missing_harness_binary(world: Any) -> None:
@@ -3643,6 +3906,95 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
     assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700  # the parent is 0700, owned
 
 
+def test_a_placement_without_room_under_its_scratch_gets_a_short_tmpdir_of_its_own(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-0zb9mgzmbwn4: a Claude Code or Codex placement whose scratch's `tmp` leaves no room
+    for a socket gets `tmp` in a fresh 0700 leaf under the per-user `/tmp` parent, recorded,
+    and removed when the placement closes; none where the scratch's own `tmp` fits, or where
+    the leaf would not fit either. (The test's root is long, so the socket limit is raised to
+    stand in for the short `/tmp`; the conftest keeps it out of the host's /tmp.)"""
+    sup, *_ = world
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"
+    assert adapters.scratch_tmpdir(deep) is None  # no room under the scratch itself
+    assert sup._tmpdir(p, deep, target) is None  # nor under this test's long root, as it is
+    # 400 bytes: room under the test's root (well below that), still none under `deep`.
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)
+    assert adapters.scratch_tmpdir(deep) is None
+    assert sup._tmpdir(p, Path("/srv/ws/maity/.scratch/plc-0003"), target) is None  # it fits
+    tmpdir = sup._tmpdir(p, deep, target)
+    assert tmpdir is not None and tmpdir.name == "tmp" and tmpdir.is_dir()
+    leaf = tmpdir.parent
+    parent = workspace.TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{target.as_user.uid()}"
+    assert leaf.parent == parent and leaf.name == sup.scratch_names["plc-0003"]
+    assert stat.S_IMODE(leaf.stat().st_mode) == 0o700
+    # A restart whose old leaf cannot be removed (once) still gets a fresh leaf, and the old one
+    # is kept on record, saved, and removed at the close (review A1769): nothing is orphaned.
+    real_remove = scratch.tmp_remove
+
+    def fails(path: Path, as_user: Any) -> int | None:
+        raise OSError("busy")
+
+    monkeypatch.setattr(scratch, "tmp_remove", fails)
+    again = sup._tmpdir(p, deep, target)
+    assert again is not None and again.parent != leaf and leaf.exists()
+    assert sup.scratch_stale["plc-0003"] == [leaf.name]
+    assert state.load_state(sup.cfg.state_dir, name=supervisor.TMP_STALE_FILE) == {
+        "plc-0003": [leaf.name]
+    }
+    monkeypatch.setattr(scratch, "tmp_remove", real_remove)
+    assert sup._remove_stale(p, target) and not leaf.exists()
+    assert "plc-0003" not in sup.scratch_stale
+    assert sup._remove_tmpdir(p, target) and not again.parent.exists()
+    # agy's leaf is its scratch, removed with it, not here.
+    agy = placement(harness="antigravity")
+    assert sup._remove_tmpdir(agy, target)
+
+
+def test_a_stop_between_the_two_record_writes_loses_no_leaf(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1769 delta: a restart that cannot remove the old leaf moves it to the stale
+    record; the stale record is written before the names record, so a stop between the two
+    writes still finds the old leaf at the next start (it is then in both records)."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)
+    first = sup._tmpdir(p, deep, target)
+    assert first is not None
+    old = first.parent
+    real_remove, real_save = scratch.tmp_remove, state.save_state
+
+    def fails(path: Path, as_user: Any) -> int | None:
+        raise OSError("busy")
+
+    class Stop(Exception):
+        pass
+
+    def stops_after_the_stale_record(state_dir: Path, data: Any, name: str) -> Any:
+        written = real_save(state_dir, data, name)
+        if name == supervisor.TMP_STALE_FILE:
+            raise Stop  # the process ends between the two writes
+        return written
+
+    monkeypatch.setattr(scratch, "tmp_remove", fails)
+    monkeypatch.setattr(state, "save_state", stops_after_the_stale_record)
+    with pytest.raises(Stop):
+        sup._tmpdir(p, deep, target)
+    monkeypatch.setattr(state, "save_state", real_save)
+    monkeypatch.setattr(scratch, "tmp_remove", real_remove)
+    sup.scratch_names, sup.scratch_stale = {}, {}
+    sup.load()  # the next start reads the records from disk
+    known = [*sup.scratch_stale.get("plc-0003", []), sup.scratch_names.get("plc-0003")]
+    assert old.name in known
+    assert sup._remove_stale(p, target) and sup._remove_tmpdir(p, target)
+    assert not old.exists()
+
+
 def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3854,8 +4206,163 @@ def test_a_claude_code_placement_gets_no_password_file(
     assert ctx.pg_pass.is_file()
 
 
+def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-0zb9mgzmbwn4, the live check of 2026-11-20: Codex 0.171.0 writes a leaf re-opened
+    under the hidden parent, Claude Code 2.1.329 mounts it read-only. So with no room under
+    the scratch, a Codex placement gets its own TMPDIR leaf and a Claude Code one none."""
+    sup, *_ = world
+    recorded(sup.cfg)
+    target = sup.targets["local"]
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"  # no room under it
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)  # room under the test's root
+    claude = config.Harness("claude-code", ("supervised",), "supervised")
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    assert sup._context(placement(), claude, place, target, scratch=deep).tmpdir is None
+    ctx = sup._context(placement(n=4), codex, place, target, scratch=deep)
+    assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
+
+
 def _stat_mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
+
+
+KTW = {
+    "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why",
+    "commit": "c" * 40,
+}
+
+
+def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-172s8y208whg: the commit the hub names, from the runner's skills directory; the
+    session is told where it lies, and nothing is reported missing."""
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    asked: list[tuple[Path, Path, str, str]] = []
+    copy: Path = sup.cfg.skills_dir / "keep-the-why" / KTW["commit"] / "plugin"
+
+    def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
+        asked.append((skills_dir, state_dir, source, commit))
+        return copy
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    assert asked == [(sup.cfg.skills_dir, sup.cfg.state_dir, KTW["source"], KTW["commit"])]
+    ((_, _, env),) = backend.started
+    assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
+    assert sup.records["plc-0003"].skill_missing is False
+    assert not any("Keep the Why" in line for line in logs)
+
+
+def test_a_skill_that_cannot_be_had_starts_the_session_without_it_and_says_so(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """req-b3q6ttwgrp1v: the session starts anyway; the log says why, and the report with
+    `running` names keep_the_why_unavailable."""
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+
+    def ensure(*_: Any) -> Path:
+        raise skills.Unavailable("git fetch exited 128: could not resolve host")
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_KTW_SKILL_DIR" not in env
+    assert sup.records["plc-0003"].skill_missing is True
+    assert any("no Keep the Why skill: git fetch exited 128" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
+def test_a_placement_without_the_skill_fetches_nothing_and_reports_nothing(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+
+    def ensure(*_: Any) -> Path:
+        raise AssertionError("fetched")
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=None)])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_KTW_SKILL_DIR" not in env and sup.records["plc-0003"].skill_missing is False
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, None)
+    assert not any("Keep the Why" in line for line in logs)
+
+
+def test_a_malformed_skill_is_reported_missing_too(world: Any) -> None:
+    # The review of #2056: `{}` names a skill the runner cannot read, not no skill.
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+    sup.update([placement(keep_the_why={})])
+    settle(sup)
+    assert sup.records["plc-0003"].skill_missing is True
+    assert any("no Keep the Why skill: keep_the_why does not name" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
+def test_a_source_that_is_no_url_starts_the_session_without_the_skill(world: Any) -> None:
+    # The review of #2056 (A1799): urlsplit's ValueError is unavailable, not a start crash.
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+    sup.update([placement(keep_the_why={**KTW, "source": "https://[::1/o/tree/v1/skills"})])
+    settle(sup)
+    assert len(backend.started) == 1
+    assert sup.records["plc-0003"].skill_missing is True
+    assert any("no Keep the Why skill: the skill's source is not a URL" in line for line in logs)
+    assert not any("start failed" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
+def test_a_stop_while_the_skill_is_fetched_does_not_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The review of #2056 (A1799): a fetch may take minutes; the stop it outlasted holds.
+    import threading
+
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)
+    gate, fetching = threading.Event(), threading.Event()
+
+    def ensure(*_: Any) -> Path:
+        fetching.set()
+        gate.wait(5)
+        return Path(sup.cfg.skills_dir) / "keep-the-why" / KTW["commit"] / "plugin"
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    sup.tick()
+    assert fetching.wait(5)
+    sup.update([placement(keep_the_why=KTW, desired="stopped")])
+    gate.set()
+    for task in list(sup.tasks.values()):
+        task.join(5)
+    sup.tick()
+    assert backend.started == []
+    assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
+
+
+def test_the_running_detail_names_a_missing_sandbox_before_a_missing_skill() -> None:
+    assert supervisor.running_detail(True, True) == "sandbox_unavailable"
+    assert supervisor.running_detail(False, True) == "keep_the_why_unavailable"
+    assert supervisor.running_detail(False, False) is None
 
 
 def test_a_closed_placements_password_file_goes_with_it(world: Any) -> None:

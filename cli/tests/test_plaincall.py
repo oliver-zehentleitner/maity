@@ -590,6 +590,9 @@ RUNNER_TRUSTED = (
     "MAITY_PG_DIR",
     "MAITY_PG_PASSWORD",
     "MAITY_RUN_NAME",
+    # Where the runner put the Keep the Why skill for this session (tsk-172s8y208whg), named by
+    # `maity resume`: an agent's own value before `maity` would point the resume elsewhere.
+    "MAITY_KTW_SKILL_DIR",
 )
 # The `MAITY_` names documented for agents in docs/agents.md and read by maity. None may stand
 # before `maity` either: `MAITY_WAIT_TIMEOUT` was allowed until the S200 re-check showed such a

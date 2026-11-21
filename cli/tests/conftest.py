@@ -12,8 +12,10 @@ import fakehub
 import pytest
 
 from maity import winacl
+from maity.runner import capabilities as _capabilities
 
 GIT = shutil.which("git")
+REAL_SOCKET_PROBE = _capabilities.claude_socket_probe
 GITHUB_URL = "https://github.com/acme/widget"
 
 # The runner does not run on Windows (context/credentials.md).
@@ -95,6 +97,11 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     managed = tmp_path / "managed-claude" / "managed-settings.json"
     monkeypatch.setattr(capabilities, "CLAUDE_MANAGED", {"linux": managed, "darwin": managed})
+    # Nor a real headless Claude Code run from `check` (a prompt on a login); its own tests
+    # take the function from `REAL_SOCKET_PROBE`.
+    monkeypatch.setattr(
+        capabilities, "claude_socket_probe", lambda *args: capabilities.SocketProbe("ok")
+    )
 
 
 @pytest.fixture
@@ -186,6 +193,18 @@ def placed(
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
     return clone
+
+
+@pytest.fixture(autouse=True)
+def _shared_tmp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test makes a per-user scratch parent, an agy scratch or a placement's TMPDIR leaf in
+    the host's real /tmp (workspace.TMP_SCRATCH_ROOT); a test that needs a short root sets its
+    own."""
+    from maity.runner import workspace
+
+    root = tmp_path / "shared-tmp-root"
+    root.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", root)
 
 
 @pytest.fixture(autouse=True)

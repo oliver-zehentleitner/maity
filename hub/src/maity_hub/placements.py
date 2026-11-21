@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -105,6 +106,8 @@ DETAILS: dict[str, tuple[str, str]] = {
     "workspace_not_bare": ("reason", "workspace_in_use"),
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
+    # Started without the Keep the Why skill the placement names (§15.5): it could not be fetched.
+    "keep_the_why_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),
     "idle": ("reason", "hung"),
     "tool": ("reason", "hung"),
@@ -193,12 +196,25 @@ def is_current(placement: Any) -> bool:
     return report is not None and report.get("observed_generation") == placement.generation
 
 
+def agent_of(conn: Connection, placement: Any) -> str | None:
+    """The profile a placement runs: its membership's, or the one it admits that was not a
+    member when placed (§15.6); None for a profile still to be created."""
+    if placement.membership_id is None:
+        admitted: str | None = placement.agent_id
+        return admitted
+    found: str = conn.execute(
+        select(t.membership.c.agent_id).where(t.membership.c.id == placement.membership_id)
+    ).scalar_one()
+    return found
+
+
 def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
-    if placement.membership_id is not None:
+    if placement.membership_id is not None or placement.agent_id is not None:
+        profile = t.agent_profile.c
         found = conn.execute(
-            select(t.agent_profile.c.id, t.agent_profile.c.handle, t.agent_profile.c.display_name)
-            .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-            .where(t.membership.c.id == placement.membership_id)
+            select(profile.id, profile.handle, profile.display_name).where(
+                profile.id == agent_of(conn, placement)
+            )
         ).one()
         return {
             "id": found.id,
@@ -237,13 +253,12 @@ def profile_owner_of(conn: Connection, values: dict[str, Any]) -> str:
 
 def profile_owner(conn: Connection, placement: Any) -> str:
     """The human who owns the agent profile; for a profile still to be made, its creator."""
-    if placement.membership_id is None:
+    agent_id = agent_of(conn, placement)
+    if agent_id is None:
         creator: str = placement.created_by
         return creator
     owner: str = conn.execute(
-        select(t.agent_profile.c.owner_id)
-        .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-        .where(t.membership.c.id == placement.membership_id)
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar_one()
     return owner
 
@@ -535,15 +550,20 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
 def for_runner(
     conn: Connection,
     placement: Any,
+    skill: dict[str, str],
     sessions: dict[str, dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """A placement as its runner reads it (§15.8): never the briefing, the approval or
-    who created it. `sessions` is `runner_sessions` of the page the placement is read in;
-    without it the placement's own is computed."""
+    who created it. `skill` is the Keep the Why skill the instance names
+    (ktw_skill.for_runner), given only for a project that uses Keep the Why. `sessions` is
+    `runner_sessions` of the page the placement is read in; without it the placement's own
+    is computed."""
     if sessions is None or placement.id not in sessions:
         sessions = runner_sessions(conn, [placement])
     project = conn.execute(
-        select(t.project.c.repository_url).where(t.project.c.id == placement.project_id)
+        select(t.project.c.repository_url, t.project.c.keep_the_why).where(
+            t.project.c.id == placement.project_id
+        )
     ).one()
     agent = _agent(conn, placement)
     found: dict[str, Any] = {
@@ -573,6 +593,8 @@ def for_runner(
         },
         "rejoin": placement.rejoin,
         "fresh_session": fresh_session(placement),
+        # The skill the runner delivers to the session, fetched at this commit (§15.5).
+        "keep_the_why": dict(skill) if project.keep_the_why else None,
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
@@ -1141,8 +1163,29 @@ def forget_boss(conn: Connection, project_id: str, membership_id: int) -> None:
             )
 
 
+def _membership_and_waiting(conn: Connection, membership_id: int) -> list[Any]:
+    """A membership's active placements, and the project's placements of its profile that
+    hold no credential yet, those made while it was not a member included (§6.2): a removal
+    or an isolation is not undone by a placement still waiting for its pickup."""
+    member = conn.execute(
+        select(t.membership.c.project_id, t.membership.c.agent_id).where(
+            t.membership.c.id == membership_id
+        )
+    ).one()
+    closing = active_rows(conn, t.placement.c.membership_id == membership_id)
+    if member.agent_id is not None:
+        closing += active_rows(
+            conn,
+            t.placement.c.project_id == member.project_id,
+            t.placement.c.agent_id == member.agent_id,
+            t.placement.c.membership_id.is_(None),
+            t.placement.c.credential_id.is_(None),
+        )
+    return closing
+
+
 def membership_removed(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
-    for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
+    for placement in _membership_and_waiting(conn, membership_id):
         withdraw_open_request(conn, placement, "the membership was removed", actor)
         close_now(conn, placement, "membership_removed", actor, by)
     # Its proposals go with it, a placement's and every other kind's (`proposals`): a go
@@ -1163,8 +1206,9 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
 
 def membership_isolated(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
     """An isolated agent's placements close at once, as for a removal; lifting the
-    isolation does not reopen them (§6.2, §15.5)."""
-    for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
+    isolation does not reopen them (§6.2, §15.5). The project's placements of its profile
+    still waiting for a credential close with them."""
+    for placement in _membership_and_waiting(conn, membership_id):
         withdraw_open_request(conn, placement, "the agent was isolated", actor)
         close_now(conn, placement, "membership_isolated", actor, by)
 
@@ -1183,6 +1227,21 @@ def creator_left(
     ):
         withdraw_open_request(conn, placement, "the proposer left the project", actor)
         close_now(conn, placement, "withdrawn", actor, by)
+
+
+def profile_deleted(
+    conn: Connection, agent_id: str, actor_in: Callable[[str], Actor], by: str
+) -> None:
+    """A deleted profile is never placed again (§6.3): the placements that admit it while
+    it is not a member yet close at once, as a removal (`removed`). The runner never ran an
+    agent for them; those of its memberships close with the memberships' removal."""
+    for placement in active_rows(
+        conn, t.placement.c.agent_id == agent_id, t.placement.c.membership_id.is_(None)
+    ):
+        events.lock_project(conn, placement.project_id)
+        actor = actor_in(placement.project_id)
+        withdraw_open_request(conn, placement, "the profile was deleted", actor)
+        close_now(conn, row(conn, placement.id), "removed", actor, by)
 
 
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:

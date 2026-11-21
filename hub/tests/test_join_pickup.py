@@ -16,7 +16,14 @@ from maity_hub.routes import agents, joins
 from tests import factory, flow
 from tests import test_runners as runners
 from tests.conftest import ClientFactory
-from tests.test_placements import REPOSITORY, Setup, events_of, placed
+from tests.test_placements import (
+    REPOSITORY,
+    Setup,
+    _as_member_with_member_agents,
+    events_of,
+    place,
+    placed,
+)
 from tests.test_runner_stream import attach, hello, send
 from tests.test_runners import error, paired
 
@@ -713,3 +720,565 @@ def test_the_hub_revoking_an_unused_pickup_names_nobody_and_tells_nobody(
         told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
     assert joins and all(j.revoked_at is not None and j.revoked_by is None for j in joins)
     assert told == []
+
+
+# --- a profile that is not a member yet (§15.6, §15.9) -------------------------------------
+
+
+def _own_profile(s: Setup, handle: str = "agent-own") -> str:
+    """A profile made on its own (`POST /agents`, §6.3): no membership anywhere."""
+    made = s.owner.post("/agents", {"handle": handle, "display_name": "Own agent"})
+    assert made.status_code == 201, made.text
+    agent_id: str = made.json()["id"]
+    return agent_id
+
+
+def _membership(s: Setup, agent_id: str) -> Any:
+    with s.engine.connect() as conn:
+        return conn.execute(
+            select(t.membership).where(
+                t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True)
+            )
+        ).first()
+
+
+def test_a_profile_not_yet_a_member_joins_at_its_first_pickup(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §15.9: the pickup is a first join, neither new_instance nor replaces, bound to the
+    # handle; its exchange makes the membership with the stored join fields.
+    agent_id = _own_profile(setup)
+    placement = placed(
+        setup,
+        agent={"id": agent_id},
+        trust="guest",
+        role="reviewer",
+        briefing="You review the runner.",
+        subagents=True,
+    )
+    assert _membership(setup, agent_id) is None
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    assert picked.json()["credential_will_bind"] == "agent-own"
+    with setup.engine.connect() as conn:
+        join = conn.execute(
+            select(t.join_link).where(t.join_link.c.placement_id == placement["id"])
+        ).one()
+    assert (join.agent_id, join.new_instance, join.replaces) == (agent_id, False, None)
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Member-Id"] == agent_id
+    member = _membership(setup, agent_id)
+    assert (member.trust, member.role, member.briefing) == ("guest", "reviewer", join.briefing)
+    assert member.briefing == "You review the runner." and member.subagents is True
+    assert member.subagents_by == setup.owner.id
+    row = placement_row(setup, placement["id"])
+    assert row.membership_id == member.id
+    assert row.credential_id == joined.headers["Maity-Credential-Id"]
+
+
+def test_a_new_profiles_placement_takes_the_subagent_instruction(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    placement = placed(setup, agent={"handle": "agent-s", "display_name": "S"}, subagents=True)
+    joined = exchange(make_client(), pick_up(setup, placement).json())
+    assert joined.status_code == 201, joined.text
+    assert _membership(setup, joined.headers["Maity-Member-Id"]).subagents is True
+
+
+def test_a_profile_its_owner_no_longer_allows_here_is_not_picked_up(setup: Setup) -> None:
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    with setup.engine.begin() as conn:  # the owner unticked every project (§6.3)
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent_id)
+            .values(allowed_projects=[])
+        )
+    refused = pick_up(setup, placement)
+    assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+    assert refused.json()["error"]["details"] == {"why": "project_not_allowed"}
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_a_profile_placed_while_not_a_member_follows_its_creators_standing(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §15.9: trust admin, placed by an owner who is only an admin by the pickup or the
+    # exchange: what the creator could no longer give in a first join.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id}, trust="admin")
+    if when == "pickup":
+        _demote_owner(setup)
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _demote_owner(setup)
+    assert exchange(make_client(), picked.json()).status_code == 404
+    assert _membership(setup, agent_id) is None
+
+
+def test_a_profile_that_joined_by_a_line_meanwhile_gets_an_instance(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §15.9: a member by the exchange: the exchange adds an instance within max_instances,
+    # instance_quota beyond it, never not_found; the stored join fields change nothing.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id}, role="reviewer")
+    picked = pick_up(setup, placement).json()
+    line = flow.exchange(make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}))
+    assert line.status_code == 201, line.text
+    over = exchange(make_client(), picked)
+    assert (over.status_code, error(over)) == (409, "instance_quota")
+    _allow_instances(setup.engine, agent_id, 2)
+    again = pick_up(setup, placement)
+    assert again.status_code == 201, again.text
+    joined = exchange(make_client(), again.json())
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Instance"] != line.headers["Maity-Instance"]
+    member = _membership(setup, agent_id)
+    assert member.role == "coder"  # the line's, not the placement's
+    assert placement_row(setup, placement["id"]).membership_id == member.id
+
+
+def test_of_two_placements_of_a_profile_the_second_adds_an_instance(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    agent_id = _own_profile(setup)
+    first = placed(setup, agent={"id": agent_id})
+    second = placed(setup, agent={"id": agent_id})
+    picked = [pick_up(setup, p).json() for p in (first, second)]
+    assert exchange(make_client(), picked[0]).status_code == 201
+    over = exchange(make_client(), picked[1])
+    assert (over.status_code, error(over)) == (409, "instance_quota")
+    _allow_instances(setup.engine, agent_id, 2)
+    joined = exchange(make_client(), pick_up(setup, second).json())
+    assert joined.status_code == 201, joined.text
+    with setup.engine.connect() as conn:
+        members = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent_id)
+        ).all()
+    assert len(members) == 1
+
+
+def _member_agents(s: Setup, value: str) -> None:
+    with s.engine.begin() as conn:
+        conn.execute(update(t.project).values(member_agents=value))
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_member_agents_turned_off_ends_a_members_placement(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.1, §15.9: a placement acts on its creator's continuing authority, read against the
+    # policy at the pickup and again at the exchange; a pickup join handed out before the
+    # switch goes with it, unlike a member's own join (test_member_agents).
+    agent_id = _own_profile(setup)
+    _as_member_with_member_agents(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    if when == "pickup":
+        _member_agents(setup, "off")
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _member_agents(setup, "off")
+    gone = exchange(make_client(), picked.json())
+    assert (gone.status_code, error(gone)) == (404, "not_found")
+    assert _membership(setup, agent_id) is None
+
+
+def test_member_agents_turned_off_leaves_an_admins_placement(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # The rule's scope: a creator with members:admin never placed under member_agents.
+    agent_id = _own_profile(setup)
+    _member_agents(setup, "on")
+    placement = placed(setup, agent={"id": agent_id})
+    _member_agents(setup, "off")
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    assert _membership(setup, agent_id) is not None
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+@pytest.mark.parametrize("raised", [False, True])
+def test_a_members_placement_adds_an_instance_only_where_the_member_may(
+    setup: Setup, make_client: ClientFactory, when: str, raised: bool
+) -> None:
+    # §3.1, §15.9: the profile joined by the member's own line after the placement. The
+    # pickup adds an instance to that membership, which needs what a new_instance join for
+    # it needs of the creator: a membership an admin raised beyond the member limits gets
+    # one only through members:admin, whatever the placement's stored fields say.
+    agent_id = _own_profile(setup)
+    _as_member_with_member_agents(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    early = pick_up(setup, placement).json() if when == "exchange" else None
+    line = flow.exchange(make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}))
+    assert line.status_code == 201, line.text
+    _allow_instances(setup.engine, agent_id, 2)
+    if raised:
+        with setup.engine.begin() as conn:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent_id)
+                .values(trust="admin")
+            )
+    if early is None:
+        picked = pick_up(setup, placement)
+        if raised:
+            assert (picked.status_code, error(picked)) == (409, "pickup_not_allowed")
+            assert picked.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+            return
+        assert picked.status_code == 201, picked.text
+        early = picked.json()
+    joined = exchange(make_client(), early)
+    if raised:
+        assert (joined.status_code, error(joined)) == (404, "not_found")
+        assert placement_row(setup, placement["id"]).membership_id is None
+        return
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Instance"] != line.headers["Maity-Instance"]
+    assert placement_row(setup, placement["id"]).membership_id == _membership(setup, agent_id).id
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_an_admins_placement_adds_an_instance_of_an_admin_only_as_an_owner(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.1, §15.9: the profile joined with trust admin after the placement; its creator,
+    # an admin by now, may still give the stored first join (trust member) but not a new
+    # instance of an admin member, which is the owner's to give.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    early = pick_up(setup, placement).json() if when == "exchange" else None
+    line = flow.exchange(
+        make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}, trust="admin")
+    )
+    assert line.status_code == 201, line.text
+    _allow_instances(setup.engine, agent_id, 2)
+    _demote_owner(setup)
+    if early is None:
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    gone = exchange(make_client(), early)
+    assert (gone.status_code, error(gone)) == (404, "not_found")
+
+
+def test_removing_the_membership_closes_the_placements_still_without_a_credential(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.2: a removal is not undone by a placement still waiting for its pickup.
+    agent_id = _own_profile(setup)
+    first = placed(setup, agent={"id": agent_id})
+    waiting = placed(setup, agent={"id": agent_id})
+    assert exchange(make_client(), pick_up(setup, first).json()).status_code == 201
+    _allow_instances(setup.engine, agent_id, 2)
+    picked = pick_up(setup, waiting).json()
+    removed = setup.owner.delete(f"/projects/maintainer/maity/members/{agent_id}")
+    assert removed.status_code == 200, removed.text
+    row = placement_row(setup, waiting["id"])
+    assert (row.active, row.closed_reason) == (None, "membership_removed")
+    assert exchange(make_client(), picked).status_code == 404
+    later = pick_up(setup, waiting)
+    assert (later.status_code, error(later)) == (409, "pickup_not_allowed")
+    assert later.json()["error"]["details"] == {"why": "not_running"}
+    assert _membership(setup, agent_id) is None
+
+
+def test_isolating_the_membership_closes_the_placements_still_without_a_credential(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.2: an isolation closes the profile's waiting placements as a removal does, those
+    # made while it was not a member included.
+    agent_id = _own_profile(setup)
+    waiting = placed(setup, agent={"id": agent_id})
+    line = flow.exchange(make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}))
+    assert line.status_code == 201, line.text
+    isolated = setup.owner.post(
+        f"/projects/maintainer/maity/members/{agent_id}/isolate", {"reason": "it did a thing"}
+    )
+    assert isolated.status_code == 200, isolated.text
+    row = placement_row(setup, waiting["id"])
+    assert (row.active, row.closed_reason) == (None, "membership_isolated")
+    later = pick_up(setup, waiting)
+    assert (later.status_code, error(later)) == (409, "pickup_not_allowed")
+    assert later.json()["error"]["details"] == {"why": "not_running"}
+
+
+def test_a_profile_a_waiting_placement_admits_is_in_use(setup: Setup) -> None:
+    # §6.3: an active placement makes the profile in use, one that admits it included; a
+    # bare DELETE is refused and changes nothing.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    refused = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert (refused.status_code, error(refused)) == (409, "profile_in_use")
+    assert refused.json()["error"]["details"] == {
+        "memberships": [],
+        "placements": [placement["id"]],
+    }
+    row = placement_row(setup, placement["id"])
+    assert (row.active, row.closed_reason) == (True, None)
+    with setup.engine.connect() as conn:
+        deleted_at = conn.execute(
+            select(t.agent_profile.c.deleted_at).where(t.agent_profile.c.id == agent_id)
+        ).scalar()
+    assert deleted_at is None
+
+
+def test_a_deleted_profiles_waiting_placement_closes(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.3: the cascade delete closes it at once (`removed`), on the owner's authority
+    # alone: a member under "Bringing your own agent", without members:admin. The event
+    # names the owner, and the unused pickup is revoked with it.
+    agent_id = _own_profile(setup)
+    _as_member_with_member_agents(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    deleted = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}?cascade=true", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert deleted.status_code == 200, deleted.text
+    row = placement_row(setup, placement["id"])
+    assert (row.active, row.closed_reason) == (None, "removed")
+    closed = events_of(setup, "placement_updated")[-1]
+    assert closed["payload"]["closed_reason"] == "removed"
+    assert (closed["actor"]["kind"], closed["actor"]["member_id"]) == ("member", setup.owner.id)
+    with setup.engine.connect() as conn:
+        join = conn.execute(
+            select(t.join_link).where(t.join_link.c.placement_id == placement["id"])
+        ).one()
+    assert join.revoked_at is not None
+    assert exchange(make_client(), picked.json()).status_code == 404
+    later = pick_up(setup, placement)
+    assert (later.status_code, error(later)) == (409, "pickup_not_allowed")
+
+
+def _placements_of(s: Setup, agent_id: str) -> list[Any]:
+    with s.engine.connect() as conn:
+        return list(
+            conn.execute(select(t.placement).where(t.placement.c.agent_id == agent_id)).all()
+        )
+
+
+def _deleted_at(s: Setup, agent_id: str) -> Any:
+    with s.engine.connect() as conn:
+        return conn.execute(
+            select(t.agent_profile.c.deleted_at).where(t.agent_profile.c.id == agent_id)
+        ).scalar()
+
+
+@pytest.mark.parametrize("creator", ["admin", "member"])
+def test_a_profile_deleted_before_the_placement_is_never_admitted(
+    setup: Setup, creator: str
+) -> None:
+    # §6.3: deleted first, the profile is never placed: an admin's placement is
+    # `not_found`, a member's has no profile to admit and so needs `members:admin`, as
+    # before; no placement either way.
+    agent_id = _own_profile(setup)
+    deleted = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert deleted.status_code == 200, deleted.text
+    if creator == "member":
+        _as_member_with_member_agents(setup)
+    refused = place(setup, agent={"id": agent_id})
+    expected = (404, "not_found") if creator == "admin" else (403, "forbidden")
+    assert (refused.status_code, error(refused)) == expected
+    assert _placements_of(setup, agent_id) == []
+
+
+def test_an_admitting_placement_locks_the_profile_before_the_project(setup: Setup) -> None:
+    # §6.3: join creation, the exchange and the deletion take the profile's lock first,
+    # then the project's; the creation of a placement that admits the profile does too.
+    from tests.test_moderation import transactions
+
+    agent_id = _own_profile(setup)
+    with transactions(setup.engine) as seen:
+        placed(setup, agent={"id": agent_id})
+    [statements] = [x for x in seen if any(y.startswith("INSERT INTO placement ") for y in x)]
+
+    def first(test: Any) -> int:
+        return next(i for i, x in enumerate(statements) if test(x))
+
+    profile = first(
+        lambda x: x.startswith(
+            "SELECT agent_profile.id \nFROM agent_profile \nWHERE agent_profile.id ="
+        )
+    )
+    project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
+    assert profile < project, statements
+    if setup.engine.dialect.name != "sqlite":  # SQLite renders no lock clause
+        assert "FOR UPDATE" in statements[profile] and "FOR UPDATE" in statements[project]
+    assert "agent_profile.owner_id =" in statements[profile]  # the caller's own only
+    # Before its lock, only whose it is, which never changes.
+    reads = [x for x in statements[:profile] if "FROM agent_profile" in x]
+    assert [x.startswith("SELECT agent_profile.owner_id \nFROM") for x in reads] == [True]
+
+
+def _is_profile_lock(statement: str) -> bool:
+    """`_lock_named_profile`'s locking read; `_admits` reads the same columns, not deleted."""
+    lock = "SELECT agent_profile.id \nFROM agent_profile \nWHERE agent_profile.id ="
+    return statement.startswith(lock) and "deleted_at" not in statement
+
+
+@pytest.mark.parametrize("creator", ["admin", "member"])
+def test_a_placement_naming_another_owners_profile_takes_no_lock_on_it(
+    setup: Setup, make_client: ClientFactory, creator: str
+) -> None:
+    # §15.6: only the caller's own profile is admitted, so only it is locked; another
+    # member naming someone else's profile must not hold the lock that owner's join
+    # creation, exchange and deletion wait for (§6.3). The answer stays `not_yours`.
+    from tests.test_moderation import transactions
+
+    other = flow.human(make_client, setup.engine, "someone")
+    made = other.post("/agents", {"handle": "theirs", "display_name": "Their agent"})
+    assert made.status_code == 201, made.text
+    if creator == "member":
+        _as_member_with_member_agents(setup)
+    with transactions(setup.engine) as seen:
+        refused = place(setup, agent={"id": made.json()["id"]})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
+    statements = [x for each in seen for x in each]
+    assert any("FROM project" in x for x in statements)  # the creation's were seen
+    assert not [x for x in statements if _is_profile_lock(x)], statements
+    locks = [x for x in statements if "FROM agent_profile" in x and "FOR UPDATE" in x]
+    assert locks == [], locks  # SQLite renders no lock clause; the servers would show it
+
+
+def test_a_deletion_holding_the_profile_makes_the_placement_wait_and_find_it_gone(
+    setup: Setup,
+) -> None:
+    # §6.3: the deletion took the profile's lock and tombstoned it; the placement waits
+    # for its commit and then answers `not_found`, with no placement (PostgreSQL, MariaDB).
+    from tests.concurrency import finished, race, waiting
+
+    agent_id = _own_profile(setup)
+    with race(setup.engine) as r:
+        deletion, other = r.first, r.second
+        agents.owned(deletion, agent_id, setup.owner.id, deleted=True, lock=True)
+        deletion.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent_id)
+            .values(deleted_at=clock.now())
+        )
+        creating = r.run(other, lambda: place(setup, agent={"id": agent_id}))
+        assert waiting(creating)  # on the profile's lock the deletion holds
+        deletion.commit()
+        refused = finished(creating)
+    assert (refused.status_code, error(refused)) == (404, "not_found")
+    assert _placements_of(setup, agent_id) == []
+
+
+def test_a_placement_holding_the_profile_makes_the_deletion_wait_and_find_it_in_use(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # §6.3: the creation took the profile's lock before the project's; a deletion waits for
+    # its commit and then finds the profile in use by the placement that admits it, which
+    # a bare DELETE refuses and a cascade closes (PostgreSQL, MariaDB).
+    from maity_hub.routes import placements as placement_routes
+    from tests.concurrency import FINISH_WITHIN, finished, race, waiting
+    from tests.test_account_deletion import paused
+
+    agent_id = _own_profile(setup)
+    reached, go = paused(monkeypatch, placement_routes, "_admitted")
+    with race(setup.engine) as r:
+        other, deletion = r.first, r.second
+        creating = r.run(other, lambda: place(setup, agent={"id": agent_id}))
+        try:
+            assert reached.wait(FINISH_WITHIN)  # both locks held, the placement not yet made
+
+            def deleting() -> list[str]:
+                agents.owned(deletion, agent_id, setup.owner.id, deleted=True, lock=True)
+                return agents._in_use(deletion, agent_id)[1]
+
+            checking = r.run(deletion, deleting)
+            assert waiting(checking)  # on the profile's lock the creation holds
+        finally:
+            go.set()
+        made = finished(creating)
+        assert made.status_code == 201, made.text
+        assert finished(checking) == [made.json()["id"]]
+    refused = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert (refused.status_code, error(refused)) == (409, "profile_in_use")
+    assert _deleted_at(setup, agent_id) is None
+
+
+def test_a_placement_made_before_the_cascade_delete_is_closed_by_it(setup: Setup) -> None:
+    # §6.3: the other order, one after the other: the cascade closes it (`removed`).
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    deleted = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}?cascade=true", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert deleted.status_code == 200, deleted.text
+    row = placement_row(setup, placement["id"])
+    assert (row.active, row.closed_reason) == (None, "removed")
+    assert _deleted_at(setup, agent_id) is not None
+
+
+def _manager(s: Setup, role: str = "manager") -> None:
+    """The owner's joined agent with the role `manager`, or moved off it."""
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == s.agent.id)
+            .values(role=role, role_base=role)
+        )
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+@pytest.mark.parametrize("change", [None, "role", "left"])
+def test_a_members_placement_reports_only_to_a_manager_still_theirs(
+    setup: Setup, make_client: ClientFactory, when: str, change: str | None
+) -> None:
+    # §3.1, §15.9: a member's placement may name their own manager as `reports_to`; it acts
+    # on the creator's continuing authority, so the stored reporting line is read again at
+    # the pickup and at the exchange: a manager moved off the role or gone since voids it
+    # (a member's own join, already handed out, keeps it: test_member_agents).
+    agent_id = _own_profile(setup)
+    _manager(setup)
+    _as_member_with_member_agents(setup)
+    placement = placed(setup, agent={"id": agent_id}, reports_to=setup.agent.id)
+    early = pick_up(setup, placement) if when == "exchange" else None
+    if early is not None:
+        assert early.status_code == 201, early.text
+    if change == "role":
+        _manager(setup, "coder")
+    elif change == "left":
+        with setup.engine.begin() as conn:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == setup.agent.id)
+                .values(active=None)
+            )
+    picked = early if early is not None else pick_up(setup, placement)
+    if change is not None and when == "pickup":
+        assert (picked.status_code, error(picked)) == (409, "pickup_not_allowed")
+        assert picked.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        assert _membership(setup, agent_id) is None
+        return
+    assert picked.status_code == 201, picked.text
+    joined = exchange(make_client(), picked.json())
+    if change is not None:
+        assert (joined.status_code, error(joined)) == (404, "not_found")
+        assert _membership(setup, agent_id) is None
+        return
+    assert joined.status_code == 201, joined.text
+    assert _membership(setup, agent_id).reports_to == _membership(setup, setup.agent.id).id

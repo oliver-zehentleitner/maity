@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -429,6 +430,66 @@ def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake
 
 
 @pytest.mark.parametrize(
+    ("hooks_off", "version"), [(False, "2.1.325"), (True, "2.1.325"), (False, "2.1.40")]
+)
+def test_check_says_the_worktree_guard_on_an_ssh_host_and_names_its_leftovers(
+    tmp_path: Path, fake_ssh: Path, hooks_off: bool, version: str
+) -> None:
+    """Per host: the guard as configured, or a warning where the host's settings switch hooks
+    off; and per clone the runner recorded on that host, a registered worktree (which stops
+    maity's git) told from a bare directory under `.claude/worktrees/` (which does not).
+    Another host's clone, an empty `.git/worktrees` (the sandbox's placeholder) and a `.claude`
+    that is a link are not named. Nothing is removed."""
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    claude = tmp_path / "remote" / "bin" / "claude"
+    claude.write_text(f"#!/bin/sh\necho '{version} (Claude Code)'\n")
+    claude.chmod(0o755)
+    if hooks_off:
+        (tmp_path / "remote" / "home" / ".claude").mkdir()
+        settings = tmp_path / "remote" / "home" / ".claude" / "settings.json"
+        settings.write_text('{"allowManagedHooksOnly": true}')
+    ws = tmp_path / "remote" / "ws" / "prj-1"
+    names = ("bare", "registered", "linked", "clean", "elsewhere")
+    clones = {name: ws / name for name in names}
+    (clones["bare"] / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    (clones["registered"] / ".git" / "worktrees" / "agent-z").mkdir(parents=True)
+    (ws / "target" / "worktrees" / "agent-w").mkdir(parents=True)
+    clones["linked"].mkdir()
+    (clones["linked"] / ".claude").symlink_to(ws / "target", target_is_directory=True)
+    (clones["clean"] / ".git" / "worktrees").mkdir(parents=True)
+    (clones["elsewhere"] / ".git" / "worktrees" / "agent-y").mkdir(parents=True)
+    for name in names:
+        host = "build-1" if name == "elsewhere" else "build-2"
+        place = workspace.Workspace(clones[name], "prj-1", name, host)
+        workspace.record(tmp_path / "st", place, "agt", f"plc-{name}")
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    guard = [(lvl, t) for lvl, t in report.lines if "WorktreeCreate" in t]
+    if hooks_off or version != "2.1.325":
+        ((level, text),) = guard
+        assert level == "warn" and text.startswith("build-2: harness claude-code: ")
+        why = "sets allowManagedHooksOnly" if hooks_off else "version 2.1.40 is older than 2.1.50"
+        assert why in text and "denies remain" in text
+    else:
+        assert guard == [("ok", f"build-2: {commands.WORKTREES_OFF}")], report.lines
+    found = {t.split()[2]: (lvl, t) for lvl, t in report.lines if t.startswith("build-2: clone ")}
+    assert set(found) == {str(clones["bare"]), str(clones["registered"])}, report.lines
+    level, text = found[str(clones["bare"])]
+    assert level == "warn" and "leftover directory under .claude/worktrees/" in text
+    assert "does not stop maity's git" in text and "placement's next start" in text
+    level, text = found[str(clones["registered"])]
+    assert level == "warn" and "git worktree registration (.git/worktrees)" in text
+    assert "maity runs no git there" in text and "leaves any other for a person" in text
+    assert (clones["bare"] / ".claude" / "worktrees" / "agent-x").is_dir()  # read-only
+    assert (clones["registered"] / ".git" / "worktrees" / "agent-z").is_dir()
+
+
+@pytest.mark.parametrize(
     ("extra", "level"),
     [("", "warn"), ("\nrequire_sandbox = true", "error")],
 )
@@ -456,6 +517,105 @@ def test_check_refuses_opencode_on_an_ssh_host_when_a_sandbox_is_required(
     ]
     assert len(found) == 1, report.lines
     assert found[0][0] == level, report.lines
+
+
+@pytest.mark.parametrize("seccomp", ["ok", "no_seccomp"])
+def test_check_names_the_host_on_its_claude_code_seccomp_and_probe_lines(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, seccomp: str
+) -> None:
+    """On an ssh host the preflight, the probe, the socket-settings and the probe-record lines
+    carry the `<host>: ` prefix; the probe runs with the host's binary and agent_path and is
+    kept under the host's name."""
+    from maity import state
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    found = {h: capabilities.Probe(None, None, None) for h in cfg.harnesses}
+    found["claude-code"] = capabilities.Probe("/r/bin/claude", "2.1.329", None)
+    monkeypatch.setattr(
+        targets, "probe_remote", lambda as_user, harnesses, path: (found, {"claude-code": True},
+                                                                    set())  # fmt: skip
+    )
+    answers = {
+        "ok": capabilities.ClaudeSeccomp("ok", "arm64"),
+        "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    }
+    monkeypatch.setattr(capabilities, "claude_seccomp", lambda as_user: answers[seccomp])
+    monkeypatch.setattr(capabilities, "claude_hooks_off", lambda as_user: None)
+    monkeypatch.setattr(capabilities, "claude_socket_settings", lambda as_user: None)
+    asked: list[tuple[str, str]] = []
+
+    def probe(binary: str, agent_path: str, as_user: object) -> capabilities.SocketProbe:
+        asked.append((binary, agent_path))
+        return capabilities.SocketProbe("ok")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    # Paths left out: the test's temporary directory is named after the test.
+    words = ("seccomp", "probe", "Unix socket")
+    mine = [(level, text) for level, text in report.lines
+            if any(word in re.sub(r"/\S*", "", text) for word in words)]  # fmt: skip
+    assert mine and all(text.startswith("build-2: harness claude-code: ") for _, text in mine)
+    if seccomp == "ok":
+        assert ("ok", "build-2: harness claude-code: seccomp for blocking Unix sockets: machine "
+                "arm64, kernel seccomp filtering present") in mine  # fmt: skip
+        probed = "build-2: harness claude-code: probe run: Unix socket blocking applied"
+        assert ("ok", probed) in mine
+        assert asked == [("/r/bin/claude", target.agent_path)]
+        kept = state.load_state(cfg.state_dir, name=capabilities.PROBE_FILE)
+        assert kept == {"build-2": "2.1.329"}
+    else:
+        assert [level for level, text in mine if "seccomp" in re.sub(r"/\S*", "", text)] == [
+            "error"
+        ]
+        assert asked == []
+        assert any(level == "error" and "probe has not passed" in text for level, text in mine)
+
+
+@pytest.mark.parametrize("unclean", ["claude_hooks_off", "claude_socket_settings"])
+def test_check_runs_no_probe_on_a_host_whose_settings_refuse_a_start(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, unclean: str
+) -> None:
+    """The hook and socket settings are read first; while either refuses every sandboxed start
+    the headless probe does not run, and no pass is kept (an older one is forgotten)."""
+    from maity import state
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    found = {h: capabilities.Probe(None, None, None) for h in cfg.harnesses}
+    found["claude-code"] = capabilities.Probe("/r/bin/claude", "2.1.329", None)
+    monkeypatch.setattr(
+        targets, "probe_remote", lambda as_user, harnesses, path: (found, {"claude-code": True},
+                                                                    set())  # fmt: skip
+    )
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    monkeypatch.setattr(capabilities, "claude_hooks_off", lambda as_user: None)
+    monkeypatch.setattr(capabilities, "claude_socket_settings", lambda as_user: None)
+    monkeypatch.setattr(capabilities, unclean, lambda as_user: "~/.claude/settings.json sets x")
+
+    def probe(*args: object) -> capabilities.SocketProbe:
+        raise AssertionError("no probe under settings that refuse a start")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    state.save_state(cfg.state_dir, {"build-2": "2.1.329"}, name=capabilities.PROBE_FILE)
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    assert state.load_state(cfg.state_dir, name=capabilities.PROBE_FILE) == {}
+    lines = [(level, re.sub(r"/\S*", "", text)) for level, text in report.lines]
+    assert ("warn", "build-2: harness claude-code: probe not run: the settings above refuse "
+            "every sandboxed start") in lines  # fmt: skip
+    assert any(level == "error" and "probe has not passed" in text for level, text in lines)
 
 
 def test_stop_all_names_a_host_it_could_not_reach(
@@ -754,6 +914,35 @@ def test_a_hosts_settings_that_switch_hooks_off_are_read_on_the_host(
     assert why is not None and "sets disableAllHooks" in why
     (tmp_path / "down-b2.lan").touch()  # a host that does not answer: unknown, so off
     assert capabilities.claude_hooks_off(target.as_user) is not None
+
+
+def test_a_hosts_unix_socket_settings_are_read_on_the_host(tmp_path: Path, fake_ssh: Path) -> None:
+    """As the hook switches: the remote user's and the managed settings, read on the host; a
+    socket key, an unreadable file or a host that does not answer refuses."""
+    cfg = load(tmp_path)
+    target = targets.ssh_hosts(cfg)[1]
+    assert capabilities.claude_socket_settings(target.as_user) is None
+    user = tmp_path / "remote" / "home" / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text('{"permissions": {}, "sandbox": {"enabled": true}}')
+    assert capabilities.claude_socket_settings(target.as_user) is None
+    user.write_text('{"sandbox": {"network": {"allowAllUnixSockets": false}}}')
+    why = capabilities.claude_socket_settings(target.as_user)
+    assert why is not None and "sets sandbox.network.allowAllUnixSockets" in why
+    assert str(user) in why
+    user.write_text("{not json")
+    why = capabilities.claude_socket_settings(target.as_user)
+    assert why is not None and "cannot be read as JSON" in why
+    user.unlink()
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text('{"sandbox": {"seccompConfig": {}}}')
+    why = capabilities.claude_socket_settings(target.as_user)
+    assert why is not None and "sets sandbox.seccompConfig" in why
+    managed.unlink()
+    assert capabilities.claude_socket_settings(target.as_user) is None
+    (tmp_path / "down-b2.lan").touch()  # a host that does not answer: unknown, so refused
+    assert capabilities.claude_socket_settings(target.as_user) is not None
 
 
 @pytest.mark.parametrize(

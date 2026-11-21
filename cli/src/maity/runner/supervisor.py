@@ -40,10 +40,12 @@ from . import (
     restart,
     scratch,
     scratchop,
+    skills,
     targets,
     workspace,
 )
 from .asuser import RUNNER, AsUser, Unreachable
+from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
 
@@ -153,6 +155,16 @@ FOLDER_PROMPT_WITHIN = 180.0
 # The harnesses whose run without their OS sandbox is reported (`sandbox_unavailable`): those
 # whose allowlist relies on it. Codex's sandbox is its whole confinement and is checked apart.
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
+
+
+def running_detail(unconfined: bool, skill_missing: bool) -> str | None:
+    """The detail a start reports with `running` (§15.7): one code only, so a session without
+    its sandbox says that first; a missing Keep the Why skill only after (req-b3q6ttwgrp1v)."""
+    if unconfined:
+        return "sandbox_unavailable"
+    return "keep_the_why_unavailable" if skill_missing else None
+
+
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
 # The random leaf names the runner chose for each agy `/tmp` scratch (workspace layout): the
@@ -160,6 +172,9 @@ ACTUAL_FILE = "actual.json"
 # scratch again for removal on close and across a runner restart. Its own file, not the clone's,
 # which the agent can write.
 TMP_NAMES_FILE = "tmp_scratch.json"
+# placement id -> leaves under the per-user `/tmp` parent an earlier start could not remove,
+# retried at every start and at the close, so a failed removal orphans nothing (review A1769).
+TMP_STALE_FILE = "tmp_scratch_stale.json"
 APPROVED_FILE = "approved.json"
 LOGS = "logs"
 # The agent-side state the runner reads after a join (its member id): far below this.
@@ -227,6 +242,19 @@ def _count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def agent_dir_for(as_user: AsUser, agent_files: Path, placement: str) -> Path:
+    """`<agent files>/agents/<placement>`, made as the agents' user: `agents/` made and kept
+    0700 by the runner itself, since a mkdir with parents gives the mode to the last directory
+    only, so under a umask of 002 it would be 0775, which `maity gh`'s lead commands refuse
+    (`ghpr.owned_layout`, review A1758 of #2054); an older runner's 0775 is tightened."""
+    agents = agent_files / "agents"
+    as_user.mkdir(agents)
+    as_user.tighten(agents)
+    agent_dir = agents / placement
+    as_user.mkdir(agent_dir)
+    return agent_dir
+
+
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
@@ -287,6 +315,9 @@ class Record:
     binary: str | None = None  # the harness binary this session started with (§15.16)
     # Its OS sandbox as the start gate decided (GateView); None for a record from before.
     sandbox: bool | None = None
+    # The placement names a Keep the Why skill and this start went without it (skills.py):
+    # reported with `running` as `keep_the_why_unavailable` (§15.7).
+    skill_missing: bool = False
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     # Fresh sessions started in this generation (§15.7 `sessions`), and whether the hub reads
     # them: one whose placement carries `fresh_session` (§15.6) takes the field in a report.
@@ -378,6 +409,8 @@ class Supervisor:
     scratch_cleared: set[str] = field(default_factory=set)
     # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
+    # placement id -> earlier leaves not yet removed (TMP_STALE_FILE).
+    scratch_stale: dict[str, list[str]] = field(default_factory=dict)
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -436,6 +469,12 @@ class Supervisor:
             pid: leaf for pid, leaf in names.items()
             if isinstance(pid, str) and isinstance(leaf, str)
         }  # fmt: skip
+        stale = state.load_state(self.cfg.state_dir, name=TMP_STALE_FILE)
+        self.scratch_stale = {
+            pid: [leaf for leaf in leaves if isinstance(leaf, str)]
+            for pid, leaves in stale.items()
+            if isinstance(pid, str) and isinstance(leaves, list)
+        }  # fmt: skip
 
     def save(self) -> None:
         with self.lock:
@@ -452,6 +491,11 @@ class Supervisor:
         with self.scratch_names_lock:
             with self.lock:
                 names = dict(self.scratch_names)
+                stale = {pid: list(leaves) for pid, leaves in self.scratch_stale.items() if leaves}
+            # The stale record first: a leaf moved there from the names record must be on disk
+            # there before the names record forgets it, so a stop between the two writes loses
+            # no leaf (review A1769); it is then in both, and its second removal finds nothing.
+            state.save_state(self.cfg.state_dir, stale, name=TMP_STALE_FILE)
             state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
 
     # --- the loop --------------------------------------------------------------------------
@@ -546,6 +590,10 @@ class Supervisor:
                 if target.name not in seen or (target.remote and target.agent_files is None):
                     done = False  # its sessions are unknown: unknown means kept
                     continue
+                if not self._remove_tmpdir(p, target):
+                    done = False
+                if target.as_user.here and not self._remove_stale(p, target):
+                    done = False  # an earlier leaf still there: tried again next time
                 try:
                     located = self._scratch_location(p, target)
                     if located is None:
@@ -578,6 +626,36 @@ class Supervisor:
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
+
+    def _remove_tmpdir(self, p: dict[str, Any], target: Target) -> bool:
+        """Remove the leaf of a closed placement's own TMPDIR (`_tmpdir`) under the per-user
+        `/tmp` parent, when it had one: a placement whose scratch is beside its clone records
+        a leaf name only for that. agy's leaf is its scratch and goes with it
+        (`_scratch_location`). False when the removal should be tried again; a link or a
+        directory another user holds is logged and left, as for a scratch."""
+        if workspace.scratch_in_tmp(p.get("harness") or ""):
+            return True
+        with self.lock:
+            leaf = self.scratch_names.get(p["id"])
+        if leaf is None or not target.as_user.here:
+            return True
+        try:
+            path = workspace.tmp_scratch_of(target.as_user.uid(), leaf)
+            removed = scratch.tmp_remove(path, target.as_user)
+        except workspace.Refused:
+            return True
+        except scratchop.OnTheWay as exc:
+            self.log(f"{p['id']}: TMPDIR left on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return True
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: TMPDIR not removed on {target.name}: {exc}")
+            return False
+        if removed is not None:
+            scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
+            self.log(f"{p['id']}: TMPDIR removed on {target.name} ({removed} bytes): "
+                     "the placement is closed")  # fmt: skip
+        return True
 
     def _remove_pg_pass(self, p: dict[str, Any], target: Target) -> bool:
         """The closed placement's test cluster password file removed from the holder on
@@ -692,6 +770,10 @@ class Supervisor:
             return
         target.reachable = up
         target.unreachable_since = None if up else (target.unreachable_since or now)
+        if not up and target.remote:
+            # The host that answers under this name when it comes back may be another machine
+            # or a new kernel: its seccomp preflight is read again (_seccomp).
+            target.seccomp = None
         if up:
             self.log(f"target {target.name}: reachable")
         else:
@@ -765,7 +847,7 @@ class Supervisor:
                 if on is None:
                     on = target.sandbox.get(p["harness"], False)
                 unconfined = p["harness"] in UNCONFINED_REPORTED and not on
-                rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
+                rec.enter(now, "running", detail=running_detail(unconfined, rec.skill_missing))
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             elif rec.state == "running" and p.get("mode") == "interactive":
@@ -1113,7 +1195,51 @@ class Supervisor:
             if why is not None:
                 self.log(capabilities.claude_hooks_line(why))
                 return ("harness_refused", None)
+            # The placement pins its Unix socket settings; the agents' user's settings are
+            # merged in, so a start waits until they carry none (capabilities.SOCKET_SETTINGS).
+            why = capabilities.claude_socket_settings(target.as_user)
+            if why is not None:
+                self.log(capabilities.claude_socket_settings_line(why))
+                return ("harness_refused", None)
+            # Every placement runs as the same OS user: the seccomp step is what keeps a
+            # sandboxed command away from the other placements' sockets, and Claude Code says
+            # nothing when it cannot run (capabilities.claude_seccomp).
+            seccomp = self._seccomp(target)
+            if seccomp.outcome != "ok":
+                self.log(capabilities.claude_seccomp_line(seccomp))
+                return ("harness_refused", None)
         return None
+
+    def _probe_warning(self, target: Target, view: GateView, name: str) -> None:
+        """A sandboxed Claude Code start on Linux whose installed version is not the one
+        whose `check` probe last passed on `target` is logged, never refused: the runner
+        installs Claude Code itself, and refusing every start after a version pin until
+        `check` runs would be an outage (cli/context/runner.md). Logged once per target and
+        installed version for the service's run."""
+        if not view.sandbox or not capabilities.claude_seccomp_applies(target.as_user):
+            return
+        installed = view.found.version if view.found is not None else None
+        if installed in target.probe_warned:
+            return
+        passed = capabilities.probe_passed(self.cfg.state_dir, target.name)
+        stale = capabilities.probe_stale_line(passed, installed)
+        if stale is not None:
+            target.probe_warned.add(installed)
+            self.log(f"{name}: {target.name}: {stale}")
+
+    def _seccomp(self, target: Target) -> ClaudeSeccomp:  # the field `capabilities` hides it
+        """The seccomp preflight for `target` (Linux only, `ok` elsewhere): an `ok` is kept for
+        the service's lifetime, on an ssh host until it turns unreachable (_reachable); any
+        other answer is read again at the next start, so a host that could not be read starts
+        once it can."""
+        if not capabilities.claude_seccomp_applies(target.as_user):
+            return ClaudeSeccomp("ok")
+        if target.seccomp is not None:
+            return target.seccomp
+        found = capabilities.claude_seccomp(target.as_user)
+        if found.outcome == "ok":
+            target.seccomp = found
+        return found
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
         if rec.waiting != why:
@@ -1131,6 +1257,8 @@ class Supervisor:
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
             return self._wait(rec, f"no adapter for {harness.id} in this version", name)
+        if harness.id == "claude-code":
+            self._probe_warning(target, view, name)
         if harness.id == "codex":  # starts without what it cannot enforce, said at each start
             repository = config.normalise_repository(p["workspace"].get("repository") or "")
             grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
@@ -1255,11 +1383,19 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             scratch = self._scratch(p, harness, target)
+            skill = self._skill(p, target)
+            if not self._wants(p["id"], p["generation"]):  # so may a fetch of the skill
+                with self.lock:
+                    rec.enter(self.now(), "stopped", "stopped_by_hub")
+                return
+            with self.lock:  # reported with `running` (keep_the_why_unavailable)
+                # Any value but null names a skill, a malformed one included (skills.named).
+                rec.skill_missing = skill is None and p.get("keep_the_why") is not None
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
             context = self._context(p, harness, place, target, rec.resume and not reset,
-                                    view=view, scratch=scratch)  # fmt: skip
+                                    view=view, scratch=scratch, skill=skill)  # fmt: skip
             launch = adapters.launch(context)
             if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
                     and adapters.gets_test_cluster(harness.id)
@@ -1409,12 +1545,12 @@ class Supervisor:
         resume: bool = False,
         view: GateView | None = None,
         scratch: Path | None = None,
+        skill: Path | None = None,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         view = view or GateView.of(target, harness.id)
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
-        agent_dir = target.agent_files / "agents" / p["id"]
-        target.as_user.mkdir(agent_dir)
+        agent_dir = agent_dir_for(target.as_user, target.agent_files, p["id"])
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
         # The password holder first, so every sandbox of this start is denied a path that exists;
@@ -1434,10 +1570,16 @@ class Supervisor:
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
             self._make_tmp_parent(tmp_parent, target)
+        tmpdir = (
+            self._tmpdir(p, scratch, target)
+            if tmp_parent is not None and harness.id in workspace.OWN_TMPDIR_HARNESSES
+            else None
+        )
         return adapters.Context(
             placement=p,
             harness=harness,
             binary=found.path if found else None,
+            version=found.version if found else None,  # the probe the sandbox gate reads too
             clone=place.repo,
             folder=place.path if place.folder else None,
             agent_dir=agent_dir,
@@ -1460,8 +1602,56 @@ class Supervisor:
             git=self.cfg.git,
             scratch=scratch,
             tmp_scratch_parent=tmp_parent,
+            tmpdir=tmpdir,
             pg_pass=pg_pass,
+            skill=skill,
         )
+
+    def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
+        """The Keep the Why skill the placement names (§15.5), as the runner's checked copy's
+        plugin root (skills.py); None when it names none, and None with a log line when it
+        cannot be had here. Only where the agents run as the runner's own user on this host
+        (the `single` layout): elsewhere the agents' user may not read the runner's directory,
+        and an ssh host fetches for itself (the next part of tsk-172s8y208whg)."""
+        try:
+            wanted = skills.named(p)
+        except skills.Unavailable as exc:
+            self.log(f"{p['id']}: no Keep the Why skill: {exc}")
+            return None
+        if wanted is None:
+            return None
+        if not (target.as_user.direct and target.as_user.here and not target.host):
+            self.log(f"{p['id']}: no Keep the Why skill: delivered only in the single layout "
+                     "on the runner's host so far")  # fmt: skip
+            return None
+        try:
+            return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+        except (skills.Unavailable, OSError) as exc:
+            self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
+            return None
+
+    def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
+        """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a
+        Unix socket (adapters.scratch_tmpdir), as under the default `~/maity-workspaces`:
+        `tmp` in a fresh leaf under the per-user `/tmp` parent this placement's sandbox hides
+        (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
+        this placement alone (adapters) and removed with it (`_clear_scratch`). Called only for
+        a placement that is given that parent and whose sandbox lets it write the re-opened
+        leaf (workspace.OWN_TMPDIR_HARNESSES: Codex, on this machine; Claude Code mounts it
+        read-only). None where the scratch's own `tmp` fits, where a leaf would not fit
+        either (a long uid on macOS), or where it cannot be made: the session then starts with
+        no TMPDIR, as before (tsk-0zb9mgzmbwn4)."""
+        if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
+            return None
+        try:
+            uid = target.as_user.uid()
+            longest = workspace.tmp_scratch_of(uid, "0" * 32) / "tmp"
+        except (OSError, workspace.Refused):
+            return None
+        if not adapters.fits_socket(longest):
+            return None
+        leaf = self._tmp_scratch(p, target, "TMPDIR")
+        return None if leaf is None else leaf / "tmp"
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
         """Create the per-user `/tmp` scratch parent (0700, owned by the agents' user) before a
@@ -1547,7 +1737,7 @@ class Supervisor:
             return None
         return leaf
 
-    def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
+    def _tmp_scratch(self, p: dict[str, Any], target: Target, what: str = "scratch") -> Path | None:
         """agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of),
         owned by the uid agy runs as: its sandbox makes the beside-clone `.scratch` read-only,
         so the scratch goes to the host-shared writable location instead. Any earlier leaf of
@@ -1560,22 +1750,31 @@ class Supervisor:
         The new name is recorded *before* the leaf is made, so a crash or an OnTheWay between
         the make and a later save can never orphan a leaf the runner cannot find again. The
         previous run's leaf is removed first, while it is still the recorded name; its name is
-        dropped from the record only once it is actually gone, and a removal failure is logged
-        rather than silently dropping the name (the new name then overwrites it, logged)."""
+        dropped from the record only once it is actually gone. A leaf that cannot be removed is
+        kept on record (`scratch_stale`) and tried again at every start and at the close, so a
+        failed removal orphans nothing (review A1769). `what` names the leaf in the log: the
+        agy scratch, or a placement's own TMPDIR (`_tmpdir`)."""
         try:
             uid = target.as_user.uid()
         except OSError as exc:
-            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            self.log(f"{p['id']}: no {what} on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
+        self._remove_stale(p, target, uid)
         with self.lock:
             old = self.scratch_names.get(p["id"])
-        if old is not None:  # a prior run's leaf: the agy scratch is made fresh each start
+        if old is not None:  # a prior run's leaf: the leaf is made fresh each start
             try:
                 scratch.tmp_remove(workspace.tmp_scratch_of(uid, old), target.as_user)
-            except (scratchop.OnTheWay, OSError, subprocess.SubprocessError,
-                    workspace.Refused) as exc:  # fmt: skip
-                self.log(f"{p['id']}: previous scratch leaf not removed on {target.name}: "
+            except (OSError, subprocess.SubprocessError) as exc:  # OnTheWay included
+                self.log(f"{p['id']}: previous {what} leaf not removed on {target.name}: "
                          f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+                if not isinstance(exc, scratchop.OnTheWay):  # a link or a foreign one: left
+                    with self.lock:  # kept on record, tried again at the next start or close
+                        kept = self.scratch_stale.setdefault(p["id"], [])
+                        if old not in kept:
+                            kept.append(old)
+            except workspace.Refused:
+                pass  # not a leaf name the runner makes: nothing to remove
             else:  # gone: drop its recorded name before the new one takes its place
                 with self.lock:
                     if self.scratch_names.get(p["id"]) == old:
@@ -1593,9 +1792,43 @@ class Supervisor:
             scratch.tmp_make(path, target.as_user)
         except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
             # The name stays recorded; the next start removes or replaces it, so it is not orphaned.
-            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            self.log(f"{p['id']}: no {what} on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
         return path
+
+    def _remove_stale(self, p: dict[str, Any], target: Target, uid: int | None = None) -> bool:
+        """Try again to remove every leaf of this placement that an earlier start could not
+        (`scratch_stale`); True when none is left. A link or a directory another user holds
+        is logged and dropped, as a scratch's would be; any other failure keeps the leaf on
+        record for the next try."""
+        with self.lock:
+            stale = list(self.scratch_stale.get(p["id"], ()))
+        if not stale:
+            return True
+        if uid is None:
+            try:
+                uid = target.as_user.uid()
+            except OSError:
+                return False
+        left: list[str] = []
+        for leaf in stale:
+            try:
+                scratch.tmp_remove(workspace.tmp_scratch_of(uid, leaf), target.as_user)
+            except workspace.Refused:
+                continue  # not a leaf name the runner makes: nothing to remove
+            except scratchop.OnTheWay as exc:
+                self.log(f"{p['id']}: earlier leaf left on {target.name}: "
+                         f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            except (OSError, subprocess.SubprocessError) as exc:
+                self.log(f"{p['id']}: earlier leaf not removed on {target.name}: {exc}")
+                left.append(leaf)
+        with self.lock:
+            if left:
+                self.scratch_stale[p["id"]] = left
+            else:
+                self.scratch_stale.pop(p["id"], None)
+        self._save_scratch_names()
+        return not left
 
     def _scratch_location(self, p: dict[str, Any], target: Target) -> tuple[Path, bool] | None:
         """Where a placement's scratch is on `target` and whether it is the `/tmp` one (agy):
