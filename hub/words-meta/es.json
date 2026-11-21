@@ -199,6 +199,14 @@
     "en": "fb2c1b804e84d045",
     "text": "639e27a4b5c5db0d"
   },
+  "mail.password_changed_body": {
+    "en": "8e4865d52bb35e96",
+    "text": "97cf6b840f5971c9"
+  },
+  "mail.password_changed_subject": {
+    "en": "5aa6b47a36ce0294",
+    "text": "c35bb9c75c4baac2"
+  },
   "mail.password_reset_body": {
     "en": "5004d5be0f096351",
     "text": "85d610fb5eeb36de"
@@ -226,6 +234,10 @@
   "mail.two_factor_body": {
     "en": "dfaef747e184ddf6",
     "text": "babb7123d8dcfdcc"
+  },
+  "mail.two_factor_unlock": {
+    "en": "995dd8064280fd52",
+    "text": "ba07071d8bd76886"
   },
   "mail.unknown_ip": {
     "en": "e56c65d7188c79cc",
@@ -310,6 +322,22 @@
   "mail_links.reset_title": {
     "en": "c5c9e3b89352c1fb",
     "text": "889042d0fecaa8f1"
+  },
+  "mail_links.unlock_button": {
+    "en": "0788b25c317236d9",
+    "text": "079308d5cf5d4fd0"
+  },
+  "mail_links.unlock_done": {
+    "en": "4a4c4be87b43a687",
+    "text": "66db4598a4f82ff8"
+  },
+  "mail_links.unlock_text": {
+    "en": "65cb2f5b13615dda",
+    "text": "68411ae0e16aed2c"
+  },
+  "mail_links.unlock_title": {
+    "en": "6d5b94747eff0c3d",
+    "text": "ff01ed6beb15a2f9"
   },
   "mail_links.unsub_button": {
     "en": "370a9b159d6a6096",
@@ -403,6 +431,10 @@
     "en": "ad5753822b4df1d6",
     "text": "4306461bd9b9379f"
   },
+  "notify.password_changed": {
+    "en": "08c9b83ce4702c09",
+    "text": "646cd81f1276078f"
+  },
   "notify.password_reset": {
     "en": "ee4080c05d6b2f77",
     "text": "50dd0336eb72dbe1"
@@ -438,6 +470,10 @@
   "notify.tf_failed": {
     "en": "bc7de30f70be93d7",
     "text": "5aafd033b43f7a7b"
+  },
+  "notify.tf_failed_daily": {
+    "en": "d20886a54077ab35",
+    "text": "5fac461904dacbb1"
   },
   "notify.tf_failed_reset": {
     "en": "d0522e314340645f",

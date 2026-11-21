@@ -15193,7 +15193,8 @@ the reviewer naming them:
    boss is not of another owner than the sender;
 3. `member:<id>` of the **author's** `reports_to`, when that boss is
    not of another owner than the author. A boss of another owner is
-   left out of both additions. A `to` or a mention can still put that
+   left out of both additions, and so is a boss whose owner, or the
+   owner of the member it leads, cannot be resolved. A `to` or a mention can still put that
    boss in the audience. `session_paused` is the one event the edge
    itself routes across owners (§6.2). A human sender's or author's
    own `reports_to` is never of another owner (§6.2, "Across owners"),
