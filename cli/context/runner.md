@@ -6175,6 +6175,17 @@ TMPDIR leaf's `tmp` where that is in use. Nothing the sandbox may not read
 sits inside the own scratch: the clone, the credentials and the password
 holder `<root>/.maity-pg` lie outside every `.scratch`.
 
+On the agents' user's side and on an ssh host the listing's records are
+told apart by their depth below the root (`<project>/.scratch` a holder,
+`<project>/.scratch/<name>` an entry), never by their last name, which the
+agents' user can pick. A record outside the root or at any other depth
+refuses the start, and the root is handed to the listing with one trailing
+separator only. Reason: a skipped record shortens the deny list without a
+trace; a root of `/` given as `//` dropped every record (review A1930).
+Rejected: skipping unknown records (a silently short deny list); matching
+the last name `.scratch` (an entry named `.scratch` was read as a holder,
+review A1924).
+
 So a sibling scratch made in the same project after this session started,
 or in another project whose `.scratch` already existed, lies under a
 read deny. Before, the list named only the scratches that existed at the
