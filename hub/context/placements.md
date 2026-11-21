@@ -846,8 +846,8 @@ placement and clone, where the owner wants the same clone and branches.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation)
-**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, or the new-instance rule of §3.1 changes
+**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation); the lead's and the review lead's ruling on review A1826 (the stored `reports_to`, the profile lock first); `hub/tests/test_join_pickup.py`: `test_a_members_placement_reports_only_to_a_manager_still_theirs`, `test_an_admitting_placement_locks_the_profile_before_the_project`
+**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, the new-instance rule of §3.1 changes, a member's own join starts re-checking `reports_to` at its exchange, or a profile's deletion stops taking the profile's lock before any project's
 **See:** placements.md#a-new-profiles-placement-re-checks-its-creator-at-the-pickup-and-the-exchange — ac153895-7fbe-49a5-adad-6e5403d4fd6f — as of 2026-11-20
 
 A human who owns a profile with no active membership in the project
@@ -869,7 +869,17 @@ exchange (`routes.joins.admission_holds`), read against the policy as it
 is then: `member_agents` turned `off` after a member's placement ends it
 (`creator_lacks_authority` at the pickup, `not_found` at the exchange),
 its pickup join already handed out included; one made with
-`members:admin` is unaffected. The admitting right under "Bringing your
+`members:admin` is unaffected. Under "Bringing your own agent" that
+recheck also reads the stored `reports_to` (a membership row id): it must
+still be the creator or an agent of the creator's with the role
+`manager` in the project (`_reports_within_limits`, the same query as at
+creation), else the same answers. A member's own join keeps its
+reporting line at the exchange (`_recheck_member_rule` does not read it),
+on purpose. The creation of an admitting placement locks the profile
+first, then the project (`_lock_named_profile`, then `lock_project`),
+the order join creation, the exchange and the profile's deletion take,
+and reads the profile again under that lock (`live_profile`: not deleted,
+else `not_found`; still the caller's, else `not_yours`). The admitting right under "Bringing your
 own agent" covers creating the placement only: a spec change by `PATCH`
 still needs `members:admin` and the runner, while `desired` stays the
 profile owner's. Removing or isolating the membership closes the
@@ -888,7 +898,23 @@ contract). One check for both ways, so a placement gives nothing a join
 could not. Unlike a member's own join, which survives `member_agents`
 turned `off`, a placement acts on its creator's continuing authority,
 while a join already handed out does not, so its pickup and exchange
-read that authority as it is then; and the placement was made under the
+read that authority as it is then. The reporting target is part of that
+authority: a member names only themselves or their own manager, so a
+manager moved off the role or gone while the placement waited voids the
+stored line, at the pickup and at the exchange alike. The asymmetry with
+a member's own join, whose exchange recheck leaves `reports_to` alone,
+is deliberate and for the same reason: that join was handed out already
+and is not re-made on the creator's authority, the placement's join is
+(confirmed: the lead's and the review lead's ruling on review A1826,
+which withdrew the earlier reading that the admission need not re-check
+`reports_to` because a join's recheck does not). The profile lock comes
+first because deletion takes it first and then counts the admitting
+placements as the profile's use: with the creation in the same order,
+either the deletion sees the new placement (a bare `DELETE` refuses, a
+cascade closes it) or the creation sees the tombstone (`not_found`),
+never an active placement for a deleted profile (confirmed: the same
+ruling; a race test on PostgreSQL and MariaDB, the statement order on
+SQLite). And the placement was made under the
 right to a first join, not to a further instance, so an instance needs
 the creator's right to that one (confirmed: the contract's ruling,
 docs/api.md §3.1 and §15.9, commit cd3a12da). Closing with `removed` on

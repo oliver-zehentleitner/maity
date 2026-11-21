@@ -339,6 +339,11 @@ def create_placement(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        # The profile a human names by id alone first, before the project, as join creation,
+        # the exchange and the profile's deletion take it (§6.3): a placement that admits it
+        # then counts as its use, and a deletion cannot commit between the check and the
+        # placement. What the name means is decided below, under both locks.
+        _lock_named_profile(conn, mine, body)
         project = events.lock_project(conn, mine.project.id)
         # Without `members:admin`, a human places only a profile of their own that is not a
         # member yet, with the right to create its join under "Bringing your own agent"
@@ -421,6 +426,17 @@ def create_placement(
         return idempotency.Outcome(201, "placement", placement.id, _view(conn, mine, placement))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _lock_named_profile(conn: Connection, mine: Membership, body: PlacementCreate) -> None:
+    """Lock the agent profile a human's placement names by `{"id"}` alone, if there is one.
+    Only a human admits a profile (§15.6); whether it does, and what a deleted one answers,
+    comes after, as before, so the other kinds of placement keep their answers."""
+    if mine.kind != "human" or body.agent.id is None or body.agent.handle is not None:
+        return
+    conn.execute(
+        select(t.agent_profile.c.id).where(t.agent_profile.c.id == body.agent.id).with_for_update()
+    ).first()
 
 
 def _admits(conn: Connection, mine: Membership, body: PlacementCreate) -> bool:
@@ -534,6 +550,9 @@ def _admitted(
     first join makes the membership (§15.9). The placement is the owner's consent to the
     join (req-emyp23q0fhmz)."""
     assert body.agent.id is not None
+    # Read again under the profile's lock the creation took first: not deleted, and still
+    # the caller's own (§6.3).
+    joins.live_profile(conn, body.agent.id)
     profile = conn.execute(
         select(t.agent_profile.c.owner_id, t.agent_profile.c.handle).where(
             t.agent_profile.c.id == body.agent.id

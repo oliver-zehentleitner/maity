@@ -490,21 +490,33 @@ def within_limits(membership_row: Any) -> bool:
     )
 
 
-def _own_manager(conn: Connection, mine: Any, member_id: str) -> bool:
-    """`member_id` is an agent of the caller with the role `manager` in this project,
-    so a member brings a manager and the team below it (§3.1)."""
+def _own_manager(conn: Connection, project_id: str, creator_id: str, member_id: str) -> bool:
+    """`member_id` is an agent of `creator_id` with the role `manager` in the project, so
+    a member brings a manager and the team below it (§3.1)."""
     found = conn.execute(
         select(t.membership.c.id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(
-            t.membership.c.project_id == mine.project.id,
+            t.membership.c.project_id == project_id,
             t.membership.c.agent_id == member_id,
             t.membership.c.active.is_(True),
             t.membership.c.role == "manager",
-            t.agent_profile.c.owner_id == mine.principal_id,
+            t.agent_profile.c.owner_id == creator_id,
         )
     ).first()
     return found is not None
+
+
+def _reports_within_limits(
+    conn: Connection, project_id: str, creator_id: str, reports_to: str | None
+) -> bool:
+    """A member's first join reports to nobody named, to its creator, or to the creator's
+    own manager (§3.1)."""
+    return (
+        reports_to is None
+        or reports_to == creator_id
+        or _own_manager(conn, project_id, creator_id, reports_to)
+    )
 
 
 def _check_member_limits(conn: Connection, body: Any, mine: Any, existing: Any) -> None:
@@ -515,11 +527,7 @@ def _check_member_limits(conn: Connection, body: Any, mine: Any, existing: Any) 
     base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
     if base is not None and base not in MEMBER_RULE_ROLES:
         raise member_join_limit("role")  # a role the project does not have is `invalid` below
-    if (
-        body.reports_to is not None
-        and body.reports_to != mine.principal_id
-        and not _own_manager(conn, mine, body.reports_to)
-    ):
+    if not _reports_within_limits(conn, mine.project.id, mine.principal_id, body.reports_to):
         raise member_join_limit("reports_to")
     if body.areas:
         raise member_join_limit("areas")
@@ -658,12 +666,13 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     `members:admin` and what an invitation's issuer needs for its trust and role (§3.4), or
     with trust `member` and the join within "Bringing your own agent", its limits and
     `member_agents_max` included. Unlike a member's join at its exchange, `member_agents`
-    turned `off` since the placement voids a member's: a placement acts on its creator's
+    turned `off` since the placement voids a member's, and so does a stored `reports_to`
+    that is no longer the creator or their own manager: a placement acts on its creator's
     continuing authority, a join already handed out does not (§3.1). A profile that is a
     member by now gets an instance instead, which the creator must be able to add to that
     membership as a `new_instance` join would (§3.1, §15.9): the stored fields then count
     for nothing. `row` is the join, or the placement's stored fields: its `project_id`,
-    `created_by`, `agent_id`, `trust`, `role`, `areas` and `capabilities`."""
+    `created_by`, `agent_id`, `trust`, `role`, `reports_to`, `areas` and `capabilities`."""
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == row.agent_id)
     ).scalar()
@@ -708,6 +717,12 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     if (
         row.trust not in MEMBER_RULE_TRUSTS
         or project_roles.base_of(project, row.role) not in MEMBER_RULE_ROLES
+        # The stored reporting line as well (a membership row id): a manager that lost the
+        # role or left while the placement waited is no longer one the creator may name
+        # (§3.1).
+        or not _reports_within_limits(
+            conn, row.project_id, row.created_by, principal_id(conn, row.reports_to)
+        )
         or row.areas
         or row.capabilities
     ):
