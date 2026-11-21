@@ -914,7 +914,12 @@ either the deletion sees the new placement (a bare `DELETE` refuses, a
 cascade closes it) or the creation sees the tombstone (`not_found`),
 never an active placement for a deleted profile (confirmed: the same
 ruling; a race test on PostgreSQL and MariaDB, the statement order on
-SQLite). And the placement was made under the
+SQLite). Such a placement could never run, as the exchange refuses a
+deleted profile (`live_profile`), yet it would hold one of the project's
+`max_placements` and one of the creator's `member_agents_max`
+(`agents_held` counts the admitting placements of every profile the
+owner owns, deleted ones included) until closed by hand. SQLite
+serialises writers, so only PostgreSQL and MariaDB showed the race. And the placement was made under the
 right to a first join, not to a further instance, so an instance needs
 the creator's right to that one (confirmed: the contract's ruling,
 docs/api.md §3.1 and §15.9, commit cd3a12da). Closing with `removed` on
@@ -931,4 +936,11 @@ why is not recorded, the hub's reading is that it would copy the join's
 checks a second time (inferred). Reusing `new_handle` with the profile's
 handle instead of a new column: its unique key per project would refuse
 the second placement of one profile, which the contract lets add an
-instance.
+instance. Re-reading the profile under the project lock only: the
+deletion takes the profile's lock and no project's for a profile that is
+no member anywhere (`delete_profile` locks only the projects of its
+memberships), so the two would not serialise. Keeping the admission's
+recheck symmetric with a member's own join, whose exchange leaves
+`reports_to` alone: a join already handed out does not act on its
+creator's continuing authority, the placement's join does (the ruling
+on review A1826 above).

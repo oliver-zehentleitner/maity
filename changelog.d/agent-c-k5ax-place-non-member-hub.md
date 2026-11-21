@@ -16,6 +16,11 @@
   admit it, and such a placement is never created for a profile being deleted.
   Migration `20261120205253_plc_agent_id` adds `placement.agent_id` (`docs/api.md` §3.1, §6.2,
   §15.6, §15.9).
+- docs: the user pages say that a member under "Bringing your own agent" places their own
+  agent on their own runner (through the API until the web form follows), that such a waiting
+  placement keeps its profile in use for a plain delete (`profile_in_use`), and that removing
+  or isolating an agent closes its waiting placements (`docs/humans.md`, `docs/runners.md`,
+  `docs/how/tools.md`, `docs/how/infrastructure.md`).
 
 ### Fixed
 
