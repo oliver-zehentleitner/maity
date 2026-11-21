@@ -645,7 +645,7 @@ window.Maity = window.Maity || {};
     // and never blocks what the hub would take (review A1816 of #2058, the lead's ruling).
     function carriesCredential(member, isLive) {
       if (!fields) return false;
-      const clone = fields.clone.value.trim() || cloneFor(member.handle);
+      const clone = fields.clone.value.trim() || cloneFor((member && member.handle) || chosen.handle);
       const closed = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
         && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone);
       if (!closed.length) return false;
@@ -654,14 +654,18 @@ window.Maity = window.Maity || {};
       const carries = (p) => !!p.credential_id && isLive(p) && !current.some((q) => q.active && q.credential_id === p.credential_id);
       return closed.filter((p) => at(p) === newest).some(carries);
     }
-    // §15.6: an agent by id is an active member of the project, and has room under its instance
-    // limit for one more (§15.5: one placement per instance, several per membership).
-    // A member without members:admin: only a profile of their own that is not a member yet, which
-    // the placement admits (§15.6); an agent already here, or a new profile, needs members:admin.
+    // §15.6: an agent by id is an active member of the project with room under its instance
+    // limit for one more (§15.5: one placement per instance, several per membership), or a
+    // profile of the caller's own that is not a member yet, which the placement admits with a
+    // first join's fields (the join form offers only the caller's own profiles, GET /agents).
+    // A member without members:admin: only that profile of their own; an agent already here, or
+    // a new profile, needs members:admin.
     function blocked() {
       if (own) return chosen.id && !chosen.member ? null : M.t("placements.new.own_only");
-      if (!chosen.id) return null;
-      if (!chosen.member) return M.t("placements.new.not_member");
+      // A member that lists no instances (null: the join line's member by the hub's word) gives
+      // nothing to count: the hub's instance_quota answers, as the join's quota line leaves it
+      // unsaid. The hub's member view of an agent always carries the list (views.py).
+      if (!chosen.id || !chosen.member || chosen.member.instances === null) return null;
       const n = instancesOf(chosen.member);
       if (n.count + n.adding > n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
       return null;
@@ -670,7 +674,7 @@ window.Maity = window.Maity || {};
     // start that takes up a credential adds no instance, so nothing is said.
     function anotherText() {
       // Not before the placements are read: where the others run is not known until then.
-      if (!fields || !chosen.member || blocked()) return null;
+      if (!fields || !chosen.member || chosen.member.instances === null || blocked()) return null;
       const n = instancesOf(chosen.member);
       if (!n.count || n.carried) return null;
       const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
@@ -701,7 +705,7 @@ window.Maity = window.Maity || {};
       another.textContent = more || "";
       if (fields) fields.set.disabled = !offer.checked;
       // The clone the hub would give: for an agent here or a new profile's handle alike.
-      const named = member ? member.handle : chosen.handle;
+      const named = (member && member.handle) || chosen.handle;
       if (fields) fields.clone.setAttribute("placeholder", named ? cloneFor(named) : M.t("placements.new.clone_placeholder"));
     }
 

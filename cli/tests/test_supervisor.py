@@ -1452,6 +1452,272 @@ def test_a_stale_generation_drops_the_report(world: Any) -> None:
     assert [b["seq"] for _, b in reports.sent] == [2]
 
 
+def _invalid(fields: dict[str, str]) -> hub.HubError:
+    """The hub's `400 invalid` for a report that does not validate (`_check_codes`)."""
+    err = hub.HubError("invalid", code="invalid", status=400)
+    err.details = {"fields": fields}
+    return err
+
+
+def _refused_start(sup: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `failed` / `harness_refused` / `codex_host_too_old` record: a report with a detail."""
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+    sup.update([placement(harness="codex")])
+    settle(sup)
+    assert sup.records["plc-0003"].detail == "codex_host_too_old"
+
+
+class Refusing(Reports):
+    """A hub that refuses every report with `detail` set as `invalid` for the detail alone, the
+    way a hub older than a detail code answers (§15.8); one with `detail: null` it takes."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.refused: list[dict[str, Any]] = []
+
+    def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if body is not None and body.get("detail") is not None and not self.fail:
+            self.refused.append(body)
+            raise _invalid({"detail": "unknown"})
+        return super().call(method, path, body, **kwargs)
+
+
+def test_a_report_refused_for_its_detail_is_sent_once_without_it(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hub that does not know the detail refuses the report as `invalid` with
+    `details.fields == {"detail": ...}`. The runner sends it once more with `detail: null` and
+    the same `seq`, never the refused body again, and not on every tick."""
+    sup, _, _, _, logs = world
+    hub_ = Refusing()
+    sup.client = hub_
+    _refused_start(sup, monkeypatch)
+    for _ in range(5):
+        sup.tick()
+    failed = [b for b in hub_.refused if b["state"] == "failed"]
+    taken = [b for _, b in hub_.sent if b["state"] == "failed"]
+    assert len(failed) == 1 and failed[0]["detail"] == "codex_host_too_old"
+    assert len(taken) == 1  # sent once more, then settled: not on every tick
+    assert taken[0] == {**failed[0], "detail": None}  # the same report, the same seq
+    assert sup.records["plc-0003"].pending is None
+    assert any("refused for its detail" in line for line in logs)
+
+
+def test_a_detail_refusal_met_by_an_outage_is_resent_without_the_detail(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The report without the detail stands in for the refused one: an outage on its way is
+    sent again on the next tick, still without the detail and with the same seq."""
+    sup, _, _, _, _ = world
+    hub_ = Refusing()
+    sup.client = hub_
+    real = hub_.call
+    down = {"once": False}
+
+    def call(method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if body is not None and body.get("state") == "failed" and body.get("detail") is None:
+            if not down["once"]:
+                down["once"] = True
+                raise hub.HubError("down", status=503)
+        return real(method, path, body, **kwargs)
+
+    hub_.call = call  # type: ignore[method-assign]
+    _refused_start(sup, monkeypatch)
+    sup.tick()
+    sup.tick()
+    failed = [b for b in hub_.refused if b["state"] == "failed"]
+    taken = [b for _, b in hub_.sent if b["state"] == "failed"]
+    assert down["once"] and len(failed) == 1
+    assert taken == [{**failed[0], "detail": None}]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"reason": "unknown"},
+        {"detail": "unknown", "retry_at": "too_far"},
+        {},
+    ],
+)
+def test_any_other_invalid_report_is_dropped_not_resent_every_tick(
+    world: Any, fields: dict[str, str]
+) -> None:
+    """A refusal that names more than the detail (or not the detail) cannot be cured by leaving
+    the detail out: the runner logs it once and drops it; the next change reports afresh."""
+    sup, _, reports, _, logs = world
+    reports.fail = [_invalid(fields)]
+    sup.update([placement(desired="stopped")])
+    for _ in range(4):
+        sup.tick()
+    assert reports.sent == []  # dropped: neither the same body nor a stripped one again
+    assert sum("refused as invalid" in line for line in logs) == 1
+    sup.update([placement(desired="stopped", generation=2)])
+    sup.tick()
+    assert [b["seq"] for _, b in reports.sent] == [2]  # the next change, afresh
+
+
+def test_a_detail_refusal_of_a_report_without_a_detail_is_dropped(world: Any) -> None:
+    """`fields == {"detail": ...}` on a body whose detail is already null has nothing left to
+    take out: dropped like any other invalid, not resent."""
+    sup, _, reports, _, _ = world
+    reports.fail = [_invalid({"detail": "unknown"})]
+    sup.update([placement(desired="stopped")])
+    for _ in range(3):
+        sup.tick()
+    assert reports.sent == []
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        hub.HubError("down", status=None),
+        hub.HubError("busy", code="rate_limited", status=429),
+        hub.HubError("broken", code="internal", status=500),
+        hub.HubError("maintenance", code="maintenance", status=503),
+    ],
+)
+def test_a_failure_that_refuses_no_body_is_still_sent_again(
+    world: Any, failure: hub.HubError
+) -> None:
+    sup, _, reports, _, _ = world
+    reports.fail = [failure, failure]
+    sup.update([placement(desired="stopped")])
+    sup.tick()
+    sup.tick()
+    assert reports.sent == []
+    sup.tick()
+    assert [b["seq"] for _, b in reports.sent] == [1]  # the same report, sent again
+
+
+class Crash(BaseException):
+    """The service exits here: nothing after it in the tick runs, the end-of-tick save
+    included."""
+
+
+def _restarted(sup: Any, backend: Any, client: Any) -> Any:
+    """A new supervisor over the old one's state directory, the way the service comes back."""
+    again = supervisor.Supervisor(
+        sup.cfg, backend, client, sup.log, sup.probes, now=sup.now, rand=lambda: 0.5
+    )
+    again.load()
+    again.targets["local"].sandbox["codex"] = sup.targets["local"].sandbox.get("codex", False)
+    return again
+
+
+def _crash_after_the_report(sup: Any, monkeypatch: pytest.MonkeyPatch, when: Any) -> None:
+    """Exit right after the tick's reports went out, before its end-of-tick save."""
+    real = sup._advertise
+
+    def advertise(*a: Any, **k: Any) -> None:
+        if when():
+            raise Crash
+        real(*a, **k)
+
+    monkeypatch.setattr(sup, "_advertise", advertise)
+
+
+def _codex_too_old(sup: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+
+
+def test_a_restart_between_a_detail_refusal_and_its_resend_never_resends_the_detail(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The report without the detail is on disk before it is sent: a service that exits after
+    the refusal, before the stripped report went out, sends the stripped one after its
+    restart, with the same seq, never the refused body again (§15.8)."""
+    sup, backend, _, _, _ = world
+    hub_ = Refusing()
+    real = hub_.call
+
+    def call(method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if body is not None and body.get("state") == "failed" and body.get("detail") is None:
+            raise Crash  # the refusal came back; the service exits before the resend lands
+        return real(method, path, body, **kwargs)
+
+    hub_.call = call  # type: ignore[method-assign]
+    sup.client = hub_
+    _codex_too_old(sup, monkeypatch)
+    sup.update([placement(harness="codex")])
+    with pytest.raises(Crash):
+        settle(sup)
+    (refused,) = [b for b in hub_.refused if b["state"] == "failed"]
+    assert refused["detail"] == "codex_host_too_old"
+
+    after = Refusing()
+    again = _restarted(sup, backend, after)
+    again.update([placement(harness="codex")])
+    for _ in range(3):
+        again.tick()
+    assert [b for b in after.refused if b["state"] == "failed"] == []  # never the detail again
+    assert [b for _, b in after.sent if b["state"] == "failed"] == [{**refused, "detail": None}]
+
+
+def test_a_restart_after_the_stripped_report_was_taken_never_resends_the_detail(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hub took the report without its detail, and the service exits before the
+    end-of-tick save: after its restart it never sends the refused body with the detail."""
+    sup, backend, _, _, _ = world
+    hub_ = Refusing()
+    sup.client = hub_
+    _codex_too_old(sup, monkeypatch)
+    _crash_after_the_report(
+        sup, monkeypatch, lambda: any(b["state"] == "failed" for _, b in hub_.sent)
+    )
+    sup.update([placement(harness="codex")])
+    with pytest.raises(Crash):
+        settle(sup)
+    (refused,) = [b for b in hub_.refused if b["state"] == "failed"]
+    assert [b for _, b in hub_.sent if b["state"] == "failed"] == [{**refused, "detail": None}]
+
+    after = Refusing()
+    again = _restarted(sup, backend, after)
+    again.update([placement(harness="codex")])
+    for _ in range(3):
+        again.tick()
+    assert [b for b in after.refused if b["state"] == "failed"] == []  # never the detail again
+    # At most the taken report once more, the same seq: what any report taken before an
+    # unsaved exit gets.
+    assert all(b == {**refused, "detail": None} for _, b in after.sent if b["state"] == "failed")
+
+
+def test_a_restart_after_an_invalid_report_was_dropped_does_not_send_it_again(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drop is on disk at once: a service that exits after it, before the end-of-tick
+    save, does not send the dropped report again after its restart."""
+    sup, backend, reports, _, logs = world
+    reports.fail = [_invalid({"reason": "unknown"})]
+    _crash_after_the_report(sup, monkeypatch, lambda: not reports.fail)
+    sup.update([placement(desired="stopped")])
+    with pytest.raises(Crash):
+        sup.tick()
+    assert sum("refused as invalid" in line for line in logs) == 1
+
+    after = Reports()
+    again = _restarted(sup, backend, after)
+    again.update([placement(desired="stopped")])
+    for _ in range(3):
+        again.tick()
+    assert after.sent == []  # dropped stays dropped
+    again.update([placement(desired="stopped", generation=2)])
+    again.tick()
+    assert [b["seq"] for _, b in after.sent] == [2]  # the next change, afresh
+
+
 def test_records_survive_a_restart(world: Any) -> None:
     sup, backend, _, _, _ = world
     recorded(sup.cfg)
@@ -2829,15 +3095,13 @@ def test_a_codex_host_too_old_for_the_launch_write_op_refuses_rather_than_crash_
     sup.update([placement(harness="codex")])
     settle(sup)
     rec = sup.records["plc-0003"]
-    # The report carries NO detail: `harness_refused`'s detail is a closed contract list
-    # (docs/api.md §15.7) with no code for this, and an unknown one would be rejected and
-    # re-sent every tick (see the refusal path in supervisor.py). The reason lives in the log.
+    # The report names the refusal with its §15.7 detail; the host's message stays in the log.
     assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
-        "failed", "harness_refused", None, None
+        "failed", "harness_refused", "codex_host_too_old", None
     )  # fmt: skip
     assert rec.reason != "crash_loop" and not rec.crashes and backend.started == []
     assert any("too old for the codex launch-write op" in line for line in logs)
-    assert all(b["detail"] is None for _, b in reports.sent)
+    assert ("failed", "harness_refused", "codex_host_too_old") in states(reports)
 
     # A genuine failure in the same place is still counted and ends in a crash loop, so the
     # refusal is not swallowing ordinary errors.
@@ -2889,7 +3153,7 @@ def test_the_older_host_refusal_report_satisfies_the_hub_detail_contract(
     make the hub answer `invalid`, and the runner would then re-send the rejected report every
     tick (the refusal never recorded) -- so this guards that path, not a copied list. Where the
     hub package is importable, the body's `detail` is run through the hub's REAL closed list;
-    where it is not, the body must still carry no detail at all."""
+    where it is not, the body must carry the §15.7 code or no detail at all."""
     sup, _, reports, _, _ = world
     recorded(sup.cfg)
     sup.targets["local"].sandbox["codex"] = True
@@ -2903,11 +3167,10 @@ def test_the_older_host_refusal_report_satisfies_the_hub_detail_contract(
     body = next(b for _, b in reports.sent if b["reason"] == "harness_refused")
 
     ok = _hub_detail_rule()
+    assert body["detail"] == "codex_host_too_old"
     if ok is not None:  # run the real body through the hub's real closed list
-        assert ok(body["reason"], body["detail"])  # the no-detail refusal is accepted
-        assert not ok(body["reason"], "codex_host_too_old")  # an out-of-list detail is rejected
-    else:  # hub not importable here: the body must still carry no detail (§15.7)
-        assert body["detail"] is None
+        assert ok(body["reason"], body["detail"])  # the hub takes the refusal with its detail
+        assert not ok("harness_missing", body["detail"])  # and only with harness_refused
 
 
 def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:

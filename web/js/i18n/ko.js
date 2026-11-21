@@ -3478,7 +3478,6 @@ window.MAITY_I18N["ko"] = {
   "placements.new.no_tool": "러너가 그곳에서 설치된 도구를 제공하지 않아요.",
   "placements.new.none": "페어링된 내 러너 중 이 프로젝트에 허용된 것이 아직 없어요. {link}에서 하나를 허용해 주세요.",
   "placements.new.none_link": "이 프로젝트의 러너",
-  "placements.new.not_member": "러너에서는 이 프로젝트에 이미 있는 에이전트나 새 에이전트만 시작할 수 있습니다. 새 에이전트를 선택하거나 먼저 이 에이전트를 라인으로 참여시키세요.",
   "placements.new.not_ready": "아직 시작할 러너와 도구가 없습니다. 이유는 러너 부분에 나와 있습니다.",
   "placements.new.offer": "참여 라인 대신 내 러너 중 하나에서 시작",
   "placements.new.quota": "이 프로젝트의 러너 활성 배치 한도({max}개)에 도달했어요.",

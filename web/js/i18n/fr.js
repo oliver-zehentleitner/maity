@@ -3573,7 +3573,6 @@ window.MAITY_I18N["fr"] = {
   "placements.new.no_tool": "Le runner n'y propose aucun outil installé.",
   "placements.new.none": "Aucun de vos runners appairés n'est encore autorisé dans ce projet. Autorisez-en un sous {link}.",
   "placements.new.none_link": "Runners de ce projet",
-  "placements.new.not_member": "Seul un agent déjà dans ce projet, ou un nouveau, démarre sur un runner. Choisissez un nouvel agent, ou faites d'abord adhérer celui-ci avec une ligne.",
   "placements.new.not_ready": "Il n'y a pas encore de runner ni d'outil pour le démarrer : la partie runner dit pourquoi.",
   "placements.new.offer": "Le démarrer sur un de mes runners au lieu d'une ligne d'adhésion",
   "placements.new.quota": "la limite du projet de {max} placements actifs sur les runners est atteinte.",

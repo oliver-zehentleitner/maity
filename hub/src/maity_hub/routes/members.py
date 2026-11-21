@@ -462,9 +462,12 @@ def members_body(
     admin = mine.may("members:admin")
     outside = isinstance(mine, access.OutsideReader)
     named: set[int] = set()
+    pictures: dict[int, str | None] = {}
     if outside:  # the members the public page names, and only those (§2.3)
-        named = outside_named(conn, mine.project.id)
+        people = outside_shown(conn, mine.project.id)
+        named = set(people)
         rows = [r for r in rows if r.id in named]
+        pictures = outside_pictures(conn, people)
     # An outsider who owns an agent here reads it as any outsider does (§2.3): no details.
     owned: set[str] = set() if outside else _owned_agents(conn, mine)
     views = member_views(
@@ -479,7 +482,10 @@ def members_body(
     for member_id, view in by_id.items():
         view["manages"] = counted[member_id]
     if outside:
-        views = [outside_member_view(v, r, named) for r, v in zip(rows, views, strict=True)]
+        views = [
+            outside_member_view(v, r, named, picture=pictures.get(r.id))
+            for r, v in zip(rows, views, strict=True)
+        ]
     views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
     return {"items": views, "next_cursor": None}
 
@@ -513,12 +519,14 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
         if isinstance(mine, access.OutsideReader):
-            named = outside_named(conn, mine.project.id)
-            if row.id not in named:  # one the public page does not name, as a hidden card
+            people = outside_shown(conn, mine.project.id)
+            if row.id not in people:  # one the public page does not name, as a hidden card
                 raise not_found()
+            named = set(people)
             view = member_view(conn, row, links=person_links.Reader(mine.principal_id))
             view["manages"] = instance_counts.for_member(conn, row, among=named)
-            return JSONResponse(outside_member_view(view, row, named))
+            picture = outside_pictures(conn, {row.id: people[row.id]})[row.id]
+            return JSONResponse(outside_member_view(view, row, named, picture=picture))
         return JSONResponse(member_as_read(conn, mine, row))
 
 
@@ -535,7 +543,7 @@ OUTSIDE_MEMBER_KEYS = (
     "handle",  # the name the public page shows
     "name",  # an agent's global name, `owner/handle` (§6.3)
     "display_name",  # as the public page shows it
-    "avatar_url",  # the picture the public page shows
+    "avatar_url",  # the picture the public page shows (`outside_pictures`), not `avatars.url_of`
     "deleted",  # a deleted account's shape (§2.9)
     "owner_id",  # an agent's owner, whom the agent's public page is under (§16.9)
     "trust",  # the member's standing, as the Organisation page shows it
@@ -556,21 +564,34 @@ OUTSIDE_MEMBER_KEYS = (
 OUTSIDE_COUNT_KEYS = ("members", "instances")  # of `manages.direct` and `manages.total`
 
 
-def outside_named(conn: Connection, project_id: str) -> set[int]:
-    """The memberships an outsider reads: those the public page names (§16.9,
+def outside_shown(conn: Connection, project_id: str) -> dict[int, Any]:
+    """The members an outsider reads, by membership id: those the public page names (§16.9,
     `public_project_views.members`), so never an isolated member nor one under a hold of
     moderation or whose account is not served."""
     from maity_hub import public_project_views  # the public pages' modules, as `access` reads
 
     people = public_project_views.members(conn, project_id)
-    return {membership_id for membership_id, person in people.items() if person.shown}
+    return {membership_id: person for membership_id, person in people.items() if person.shown}
 
 
-def outside_member_view(view: dict[str, Any], row: Any, named: set[int]) -> dict[str, Any]:
-    """A member view as an outsider reads it (§2.3): `OUTSIDE_MEMBER_KEYS` alone, `manages`
-    with `OUTSIDE_COUNT_KEYS` alone, and no edge to a member the outsider does not read
-    (`named`)."""
+def outside_pictures(conn: Connection, shown: dict[int, Any]) -> dict[int, str | None]:
+    """The picture of each member an outsider reads, by membership id: the one the public page
+    shows (`public_project_views.shown_pictures`), null while a person's `public_profile` is
+    off. One read for the page."""
+    from maity_hub import public_project_views
+
+    pictures = public_project_views.shown_pictures(conn, shown)
+    return {membership_id: pictures.get(p.principal) for membership_id, p in shown.items()}
+
+
+def outside_member_view(
+    view: dict[str, Any], row: Any, named: set[int], *, picture: str | None
+) -> dict[str, Any]:
+    """A member view as an outsider reads it (§2.3): `OUTSIDE_MEMBER_KEYS` alone, `avatar_url`
+    the picture the public page shows (`picture`), `manages` with `OUTSIDE_COUNT_KEYS` alone,
+    and no edge to a member the outsider does not read (`named`)."""
     shown: dict[str, Any] = {key: view[key] for key in OUTSIDE_MEMBER_KEYS if key in view}
+    shown["avatar_url"] = picture
     if isinstance(shown.get("manages"), dict):
         shown["manages"] = {
             part: {key: counts[key] for key in OUTSIDE_COUNT_KEYS if key in counts}

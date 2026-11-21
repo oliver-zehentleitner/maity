@@ -130,6 +130,19 @@ def cards_with_text(conn: Connection, project_id: str) -> int:
     return count
 
 
+def card_has_text(conn: Connection, task_id: str) -> bool:
+    """Whether the card has a restricted text now (§6.4): whether it is restricted. Says
+    nothing of the text itself."""
+    return (
+        conn.execute(
+            select(t.task_restricted.c.task_id).where(
+                t.task_restricted.c.task_id == task_id, t.task_restricted.c.text.is_not(None)
+            )
+        ).first()
+        is not None
+    )
+
+
 # --- who is told (§6.4 "The change event", "When the set changes without the setting") ------
 
 CARD_TOKEN = "restricted:"  # `restricted:<task id>`
