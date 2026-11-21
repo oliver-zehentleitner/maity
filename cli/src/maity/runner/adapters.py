@@ -258,8 +258,8 @@ class Context:
     # The placement's own short temp directory (`tmp` in a fresh leaf under that per-user `/tmp`
     # parent), made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix
     # socket (scratch_tmpdir): Codex's TMPDIR, re-opened for it alone in its sandbox
-    # (tsk-0zb9mgzmbwn4), or Claude Code's CLAUDE_CODE_TMPDIR, kept from its sandbox
-    # (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
+    # (tsk-0zb9mgzmbwn4), or Claude Code's CLAUDE_CODE_TMPDIR, which its settings do not
+    # open (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
     tmpdir: Path | None = None
     # The placement's test cluster password file in the holder every sandbox is denied
     # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no

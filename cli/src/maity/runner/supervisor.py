@@ -1588,7 +1588,7 @@ class Supervisor:
         Unix socket (adapters.scratch_tmpdir), as under the default `~/maity-workspaces`:
         `tmp` in a fresh leaf under the per-user `/tmp` parent this placement's sandbox hides
         (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
-        this placement alone or kept from its sandbox (adapters) and removed with it
+        this placement alone or not opened in its settings (adapters) and removed with it
         (`_clear_scratch`). Called only for a placement that is given that parent and whose
         harness takes such a leaf (workspace.OWN_TMPDIR_HARNESSES, on this machine: Codex as its
         TMPDIR, Claude Code as its CLAUDE_CODE_TMPDIR). None where the scratch's own `tmp` fits,

@@ -5444,15 +5444,24 @@ digits), and on an ssh host, the session gets no TMPDIR, as before.
 
 A Claude Code placement gets the same leaf, but only as its
 `CLAUDE_CODE_TMPDIR` (tsk-k7svzz2p4v7y). It gets no TMPDIR, and its settings
-open nothing, so the leaf stays hidden from its sandboxed commands like its
-siblings. That is all the hiding does: the leaf's 0700 mode and random name
-are no boundary against an unsandboxed process of the same OS user, which
-reaches it as it reaches every file of that user (review A1855).
-Claude Code writes the leaf itself, from outside its sandbox: its own
-temporary files (`<leaf>/claude-<uid>/`: the project directory, edit diffs,
-plugin staging) and its sandbox socket (`<leaf>/cc-socks/<pid>.sock`). They
-no longer sit in the `/tmp/claude-<uid>` directory every Claude Code session
-of the user shares, and they go with the placement. The commands its sandbox
+open nothing for the leaf. Claude Code writes the leaf itself, from outside
+its sandbox: its own temporary files (`<leaf>/tmp/claude-<uid>/`: the project
+directory, task outputs, edit diffs, plugin staging) and its sandbox socket
+(`<leaf>/tmp/cc-socks/<pid>.sock`). They no longer sit in the
+`/tmp/claude-<uid>` directory every Claude Code session of the user shares,
+and they go with the placement.
+
+What the placement's own sandbox sees of its leaf (ops, Claude Code 2.1.329,
+2026-11-21, note nte-b77aew1t6jbn on tsk-k7svzz2p4v7y):
+- Claude Code itself opens its own `claude-<uid>/` there to its sandbox, so
+  under the parent's read and write deny it is visible and readable to the
+  placement's own commands, though not writable.
+- `cc-socks/` stays hidden.
+- Another placement's leaf does not exist in the sandbox.
+
+The 0700 mode and the random name are no boundary against an unsandboxed
+process of the same OS user, which reaches the leaf as it reaches every file
+of that user (review A1855). The commands its sandbox
 runs keep the `$TMPDIR` Claude Code hands them: with no TMPDIR set, that is
 `/tmp/claude-<uid>`, still that shared directory, writable from every such
 sandbox (security's card tsk-z5c3798r1ces).

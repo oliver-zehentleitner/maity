@@ -68,9 +68,10 @@ TMP_SCRATCH_PARENT_HIDERS = ("claude-code", "codex")
 # the leaf goes into (adapters.own_tmp_env). Codex: TMPDIR, its profile re-opening the leaf
 # (tsk-0zb9mgzmbwn4; Codex 0.171.0 writes it, live 2026-11-20). Claude Code: CLAUDE_CODE_TMPDIR
 # only, for Claude Code's own temp files and its sandbox socket, which it writes outside its
-# sandbox; the leaf stays hidden from the sandbox, since Claude Code 2.1.329 mounts a leaf
-# re-opened under a denied parent read-only, and its sandboxed commands keep the `$TMPDIR` Claude
-# Code gives them (tsk-k7svzz2p4v7y, live 2026-11-21; cli/context/runner.md 893d9dfd).
+# sandbox; its settings open no leaf, since Claude Code 2.1.329 mounts a leaf re-opened under a
+# denied parent read-only (Claude Code shows its own `claude-<uid>/` there to the sandbox
+# read-only by itself), and its sandboxed commands keep the `$TMPDIR` Claude Code gives them
+# (tsk-k7svzz2p4v7y, live 2026-11-21; cli/context/runner.md 893d9dfd).
 OWN_TMPDIR_HARNESSES = {"codex": "TMPDIR", "claude-code": "CLAUDE_CODE_TMPDIR"}
 # Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`
 # carries against other host users is met in scratchop.tmp_make (a per-user parent owned 0700,
