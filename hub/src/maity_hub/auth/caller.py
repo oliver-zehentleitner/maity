@@ -538,12 +538,13 @@ def _credential(conn: Connection, credential_id: str) -> Any:
         return _runner_credential(conn, credential_id)
     attachment = t.instance_attachment
     # TODO(hub PR B): resolve the attachment of the route's project. Until then a credential
-    # attached to several projects authenticates in its oldest attachment, by attached_at and
-    # then id, so the choice never depends on the order the database returns rows in.
+    # attached to several projects authenticates in its oldest attachment that is not
+    # detached, by attached_at and then id, so the choice never depends on the order the
+    # database returns rows in.
     first = attachment.alias("first_attachment")
     oldest = (
         select(first.c.id)
-        .where(first.c.credential_id == t.credential.c.id)
+        .where(first.c.credential_id == t.credential.c.id, first.c.detached_at.is_(None))
         .order_by(first.c.attached_at, first.c.id)
         .limit(1)
         .correlate(t.credential)

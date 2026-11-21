@@ -285,8 +285,13 @@ def _instances(
     return {
         (found.id, found.membership_id): found.instance
         for found in conn.execute(
-            select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
-            .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
+            select(
+                t.agent_session.c.id,
+                t.instance_attachment.c.membership_id,
+                t.credential.c.instance,
+            )
+            .select_from(instances.credential_join())
+            .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
             .where(t.agent_session.c.id.in_(wanted))
         ).all()
     }
@@ -660,8 +665,12 @@ def _needs_in_session(
         )
     ).one()
     person = _person(_known(conn, [], [member.id]), member.id, None)
-    sessions = select(t.agent_session.c.id, t.agent_session.c.harness).where(
-        t.agent_session.c.membership_id == member.id
+    # The member's sessions: those with a row in its project (`agent_session_project`).
+    p = t.agent_session_project
+    sessions = (
+        select(t.agent_session.c.id, t.agent_session.c.harness)
+        .join(p, p.c.session_id == t.agent_session.c.id)
+        .where(p.c.membership_id == member.id)
     )
     if needs.session_id is not None:
         session = conn.execute(sessions.where(t.agent_session.c.id == needs.session_id)).first()

@@ -758,8 +758,10 @@ def instances_held(conn: Connection, membership_id: int) -> int:
     count a placement's creation meets and the limits overview shows."""
     from maity_hub import instances
 
-    live = select(t.credential.c.id).where(
-        t.credential.c.membership_id == membership_id, t.credential.c.revoked_at.is_(None)
+    live = (
+        select(t.credential.c.id)
+        .select_from(instances.credential_join())
+        .where(t.instance_attachment.c.membership_id == membership_id, instances.attached_now())
     )
     waiting = conn.execute(
         select(func.count())
@@ -1522,10 +1524,15 @@ def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
 
     if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
         return
+    # Told in the project of the instance's attachment to the placement's membership (§6.17).
+    a = t.instance_attachment
     member = conn.execute(
         select(t.membership.c.project_id, t.membership.c.agent_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == placement.credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(
+            a.c.credential_id == placement.credential_id,
+            a.c.membership_id == placement.membership_id,
+        )
     ).one()
     events.emit(
         conn,

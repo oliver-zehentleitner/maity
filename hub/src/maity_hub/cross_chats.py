@@ -902,23 +902,29 @@ def _resolve(conn: Any, chat_id: str, text: str) -> list[dict[str, Any]]:
 def _known_instances(conn: Any, agent_ids: set[str], wanted: set[str]) -> set[tuple[str, str]]:
     if not agent_ids or not wanted:
         return set()
+    from maity_hub import instances  # instances imports what this module's imports import
+
+    a = t.instance_attachment
     successor = aliased(t.credential)
+    successor_in = aliased(a)
     replaced = (
         select(successor.c.id)
+        .join(successor_in, successor_in.c.credential_id == successor.c.id)
         .where(
-            successor.c.membership_id == t.credential.c.membership_id,
+            successor_in.c.membership_id == a.c.membership_id,
             successor.c.replaces == t.credential.c.instance,
         )
         .exists()
     )
     rows = conn.execute(
         select(t.membership.c.agent_id, t.credential.c.instance)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .select_from(instances.credential_join())
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
         .where(
             t.membership.c.agent_id.in_(agent_ids),
             t.membership.c.active.is_(True),
             t.credential.c.instance.in_(wanted),
-            or_(t.credential.c.revoked_at.is_(None), replaced),
+            or_(instances.attached_now(), replaced),
         )
     )
     return {(r.agent_id, r.instance) for r in rows}
@@ -974,7 +980,9 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
             func.max(t.credential.c.resumed_at).label("resumed"),
         )
         .select_from(
-            t.membership.outerjoin(t.credential, t.credential.c.membership_id == t.membership.c.id)
+            t.membership.outerjoin(
+                t.instance_attachment, t.instance_attachment.c.membership_id == t.membership.c.id
+            ).outerjoin(t.credential, t.credential.c.id == t.instance_attachment.c.credential_id)
         )
         .where(
             t.membership.c.agent_id == agent_id,
@@ -995,9 +1003,12 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
 
 def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
     """The active membership whose instance id is the one the mention wrote."""
+    from maity_hub import instances  # instances imports what this module's imports import
+
     rows = conn.execute(
         select(t.membership.c.id, t.membership.c.project_id, t.credential.c.revoked_at)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .select_from(instances.credential_join())
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .where(
             t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),

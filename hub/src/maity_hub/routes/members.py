@@ -258,36 +258,41 @@ idempotency.register("member_team", load_member_as_read, _IN_MEMBERS_PROJECT)
 
 
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
-    # TODO(hub PR B): the attachment of the route's project; the oldest until then.
+    # TODO(hub PR B): the attachment of the route's project; the oldest not detached until
+    # then.
     row = conn.execute(
         instances.credential_rows()
-        .where(t.credential.c.id == credential_id)
+        .where(t.credential.c.id == credential_id, t.instance_attachment.c.detached_at.is_(None))
         .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
         .limit(1)
     ).one()
     return credential_view(conn, row)
 
 
+def _oldest_attachment(credential_id: str) -> Any:
+    """The membership of a credential's oldest attachment that is not detached, by
+    attached_at and then id. TODO(hub PR B): the attachment of the route's project."""
+    a = t.instance_attachment
+    return (
+        select(t.membership)
+        .select_from(t.membership)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
+        .order_by(a.c.attached_at, a.c.id)
+        .limit(1)
+    )
+
+
 def _credential_project(conn: Connection, credential_id: str) -> str | None:
     found: str | None = conn.execute(
-        select(t.membership.c.project_id)
-        .join(t.instance_attachment, t.instance_attachment.c.membership_id == t.membership.c.id)
-        .where(t.instance_attachment.c.credential_id == credential_id)
-        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
-        .limit(1)
+        _oldest_attachment(credential_id).with_only_columns(t.membership.c.project_id)
     ).scalar()
     return found
 
 
 def _sees_credential(conn: Connection, mine: Membership, credential_id: str) -> bool:
     """The read of the credentials list (§10), for a replayed revocation."""
-    target = conn.execute(
-        select(t.membership)
-        .join(t.instance_attachment, t.instance_attachment.c.membership_id == t.membership.c.id)
-        .where(t.instance_attachment.c.credential_id == credential_id)
-        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
-        .limit(1)
-    ).one()
+    target = conn.execute(_oldest_attachment(credential_id)).one()
     return _manages_credentials(conn, mine, target)
 
 

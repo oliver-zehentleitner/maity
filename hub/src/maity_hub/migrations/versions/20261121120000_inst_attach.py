@@ -256,7 +256,8 @@ def _drop_moved() -> None:
         for name in SESSION_MOVED:
             batch_op.drop_column(name)
     with op.batch_alter_table("join_link", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("attach", sa.String(length=5), nullable=True))
+        # The instance id or the credential id (`crd-…`) the join names (§3.1): String(ID).
+        batch_op.add_column(sa.Column("attach", sa.String(length=40), nullable=True))
 
 
 def downgrade() -> None:

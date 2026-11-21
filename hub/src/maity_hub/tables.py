@@ -1047,11 +1047,11 @@ join_link = Table(
     # For a member's join, which instance it adds (§6.17); `instance` is what the
     # exchange gave. `attach` is the live instance of the profile the join attaches to the
     # membership in this project instead of creating one (§3.1, "Attaching an existing
-    # instance").
+    # instance"), named by its instance id or its credential id (`crd-…`), so String(ID).
     Column("new_instance", Boolean, nullable=False, server_default=false()),
     Column("replaces", String(INSTANCE)),
     Column("instance", String(INSTANCE)),
-    Column("attach", String(INSTANCE)),
+    Column("attach", String(ID)),
     _ref("created_by", "human.id", nullable=False),
     # Created under "Bringing your own agent" (§3.1) rather than `members:admin`: the
     # exchange checks the creator and the limits again for such a join only (§3.3).

@@ -54,17 +54,20 @@ def compute(conn: Connection) -> dict[str, Any]:
     ).scalar_one()
     # Instances behind the agents and the online agents, by the one counting rule
     # (instance_counts.sql_counted / sql_online, the member views' rule over the rows).
-    live = t.credential.join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+    # One row per project an instance is in: DISTINCT credentials, so an instance in two
+    # projects counts once (hub/context/instances.md 2da029d4).
+    live = instance_counts.sql_from()
     counted = instance_counts.sql_counted()
     awake = instance_counts.sql_online(now, ONLINE)
+    one_each = func.count(func.distinct(t.credential.c.id))
     agents_online = conn.execute(
         select(func.count(func.distinct(t.membership.c.agent_id)))
         .select_from(live)
         .where(counted, awake)
     ).scalar_one()
-    instances = conn.execute(select(func.count()).select_from(live).where(counted)).scalar_one()
+    instances = conn.execute(select(one_each).select_from(live).where(counted)).scalar_one()
     instances_online = conn.execute(
-        select(func.count()).select_from(live).where(counted, awake)
+        select(one_each).select_from(live).where(counted, awake)
     ).scalar_one()
     pages = [
         project
