@@ -28,7 +28,10 @@ PROJECT_MAX = 300  # an `<owner>/<slug>`; anything longer names no project
 def project_named(conn: Connection, text: str) -> Any | None:
     """The project `text` names: its full name `<owner>/<slug>` (§5.3, "Per project"),
     current or an alias; None for anything else, a project id included, which `project`
-    does not take."""
+    does not take. The whole text must be the name: `FULL_NAME` ends in `$`, which also
+    passes a trailing newline under `match`."""
+    if namespace.FULL_NAME.fullmatch(text) is None:
+        return None
     return namespace.resolve(conn, text)
 
 

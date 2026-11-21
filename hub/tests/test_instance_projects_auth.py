@@ -643,7 +643,7 @@ def test_an_agents_project_is_named_by_its_full_name_only(world: World) -> None:
     with w.engine.begin() as conn:
         conn.execute(update(t.project).values(keep_the_why=True))
     until = clock.rfc3339(clock.now() + timedelta(hours=1))
-    for project in (w.beta, "beta", "maintainer/beta/x", "/beta", ""):
+    for project in (w.beta, "beta", "maintainer/beta/x", "/beta", "", "maintainer/beta\n"):
         for method, path, body in (
             ("PATCH", "/me", {"paused": None, "project": project}),
             ("POST", "/me/limit", {"until": until, "project": project}),
