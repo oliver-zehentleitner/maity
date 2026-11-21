@@ -55,11 +55,10 @@ def revoke_agent(
     event is written in each of `project_ids`, the projects of the placements the revocation
     is about, which the caller holds the locks of; without them (a grace that fell due, read
     at authentication), in each project the instance is attached to (§6.17), in the order of
-    their ids. Never one project chosen for the others."""
-    from maity_hub.auth.revocation import revoke
+    their ids. Never one project chosen for the others. Those and every project the
+    revocation writes in are locked first, in the order of their ids, before any write."""
+    from maity_hub.auth.revocation import projects_of, revoke
 
-    if not revoke(conn, credential_id, REASON, by):
-        return
     if project_ids is None:
         a = t.instance_attachment
         project_ids = (
@@ -71,6 +70,9 @@ def revoke_agent(
             .scalars()
             .all()
         )
+    events.lock_projects(conn, {*project_ids, *projects_of(conn, [credential_id])})
+    if not revoke(conn, credential_id, REASON, by):
+        return
     agent_id = conn.execute(
         select(t.credential.c.agent_id).where(t.credential.c.id == credential_id)
     ).scalar_one()
@@ -166,8 +168,13 @@ def _to_lock(
 ) -> list[str]:
     """The projects `apply` locks, in the order of their ids: the attached ones, and under
     the owner's stop also every project where a placement of the runner is active or kept
-    its clone. Another project gains no placement of the runner meanwhile: that needs an
-    attachment, and attaching takes the runner's row, which the caller holds."""
+    its clone, and every project the revocation of an agent credential a placement of the
+    runner names writes in (`auth.revocation.projects_of`: an instance may be attached to
+    projects the runner is not). Another project gains no placement of the runner
+    meanwhile: that needs an attachment, and attaching takes the runner's row, which the
+    caller holds."""
+    from maity_hub.auth.revocation import projects_of
+
     found = set(attached)
     if everywhere:
         found.update(
@@ -175,6 +182,13 @@ def _to_lock(
                 select(t.placement.c.project_id).where(_on_disk(runner_id)).distinct()
             ).scalars()
         )
+        named = conn.execute(
+            select(t.credential.c.id)
+            .join(t.placement, t.placement.c.credential_id == t.credential.c.id)
+            .where(t.placement.c.runner_id == runner_id, t.credential.c.revoked_at.is_(None))
+            .distinct()
+        ).scalars()
+        found.update(projects_of(conn, list(named)))
     return sorted(found)
 
 

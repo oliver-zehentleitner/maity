@@ -677,3 +677,47 @@ def test_a_replayed_credential_revocation_reads_the_attachment_it_named(world: W
     w.detach(w.in_b)
     with w.engine.connect() as conn:
         assert load_credential(conn, w.agent.credential_id)["id"] == w.agent.credential_id
+
+
+# --- a revocation locks its projects in the order of their ids, first (persistence.md) ------
+
+
+@pytest.mark.parametrize("path", ["revoke", "leak", "runner"])
+def test_a_revocation_locks_every_project_in_order_before_any_write(
+    world: World, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """Attached to A and B, each with a claim: whichever path revokes, both projects are
+    locked first, in the order of their ids, while the credential is still live; every later
+    lock (`emit`'s) is one of them again."""
+    from maity_hub import events, runner_revoke
+    from maity_hub.auth import credentials, leaks, revocation
+
+    w = world
+    real = events.lock_project
+    taken: list[tuple[str, bool]] = []
+
+    def recording(conn: Any, project_id: str) -> Any:
+        revoked = conn.execute(
+            select(t.credential.c.revoked_at).where(t.credential.c.id == w.agent.credential_id)
+        ).scalar_one()
+        taken.append((project_id, revoked is not None))
+        return real(conn, project_id)
+
+    monkeypatch.setattr(events, "lock_project", recording)
+    with events.transaction(w.engine) as conn:
+        if path == "revoke":
+            assert revocation.revoke(conn, w.agent.credential_id, "revoked", None)
+        elif path == "leak":
+            presented = credentials.parse(w.agent.value)
+            assert presented is not None
+            assert leaks.revoke_leaked(conn, [presented]) == [w.agent.credential_id]
+        else:
+            runner_revoke.revoke_agent(conn, w.agent.credential_id, None)
+    ordered = sorted([w.alpha, w.beta])
+    assert taken[:2] == [(ordered[0], False), (ordered[1], False)]
+    assert {project_id for project_id, _ in taken} == set(ordered)
+    with w.engine.connect() as conn:
+        stalled = conn.execute(
+            select(t.event.c.project_id).where(t.event.c.kind == "holder_stalled")
+        ).scalars()
+        assert sorted(stalled) == ordered  # told in each, as before

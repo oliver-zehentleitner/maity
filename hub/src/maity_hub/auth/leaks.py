@@ -16,8 +16,9 @@ from sqlalchemy import Connection, select
 from maity_hub import tables as t
 from maity_hub.auth import credentials, verifiers
 from maity_hub.auth.caller import is_runner_credential
-from maity_hub.auth.revocation import revoke, revoke_runner_credential
-from maity_hub.events import emit
+from maity_hub.auth.revocation import projects_of, revoke, revoke_runner_credential
+from maity_hub.events import emit, lock_projects
+from maity_hub.runners import attached_project_ids
 
 REASON = "leaked_in_payload"
 
@@ -36,7 +37,7 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
     if not secrets_by_id:
         return []
     runner_ids = sorted(i for i in secrets_by_id if is_runner_credential(i))
-    revoked = _revoke_leaked_runners(conn, runner_ids, secrets_by_id)
+    runners = _leaked_runners(conn, runner_ids, secrets_by_id)
     rows = conn.execute(
         select(
             t.credential.c.id,
@@ -54,13 +55,26 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
         .where(t.credential.c.id.in_(sorted(set(secrets_by_id) - set(runner_ids))))
         .order_by(t.credential.c.id, t.instance_attachment.c.id)
     ).all()
+    verified = {
+        row.id
+        for row in rows
+        if row.revoked_at is None and _verifies("credential", row, secrets_by_id[row.id])
+    }
+    # Every project any of these revocations writes in, locked in the order of their ids
+    # before the first write, so two leaks over overlapping projects cannot deadlock.
+    affected = projects_of(conn, verified)
+    for runner in runners:
+        affected.update(attached_project_ids(conn, runner.runner_id))
+    lock_projects(conn, affected)
+    revoked: list[str] = []
+    for runner in runners:
+        revoke_runner_credential(conn, runner.id, REASON, by=None)
+        revoked.append(runner.id)
     # One row per project the instance was ever attached to: revoked once whatever its
     # attachments, told in each project it is in now. A project it was detached from hears
     # nothing (§6.17).
     for row in rows:
-        if row.revoked_at is not None:
-            continue
-        if not _verifies("credential", row, secrets_by_id[row.id]):
+        if row.id not in verified:
             continue
         if row.id not in revoked:
             revoke(conn, row.id, REASON, by=None)
@@ -95,25 +109,25 @@ def _verifies(table: verifiers.Table, row: Any, secrets: set[str]) -> bool:
     )
 
 
-def _revoke_leaked_runners(
+def _leaked_runners(
     conn: Connection, ids: list[str], secrets_by_id: dict[str, set[str]]
-) -> list[str]:
-    """A runner credential is revoked like an agent's (§15.1)."""
+) -> list[Any]:
+    """The runner credentials among `ids` that are live and verify, in the order of their
+    ids: each is revoked like an agent's (§15.1)."""
     if not ids:
         return []
     rows = conn.execute(
         select(
             t.runner_credential.c.id,
+            t.runner_credential.c.runner_id,
             t.runner_credential.c.verifier,
             t.runner_credential.c.revoked_at,
-        ).where(t.runner_credential.c.id.in_(ids))
+        )
+        .where(t.runner_credential.c.id.in_(ids))
+        .order_by(t.runner_credential.c.id)
     ).all()
-    revoked = []
-    for row in rows:
-        if row.revoked_at is not None:
-            continue
-        if not _verifies("runner_credential", row, secrets_by_id[row.id]):
-            continue
-        revoke_runner_credential(conn, row.id, REASON, by=None)
-        revoked.append(row.id)
-    return revoked
+    return [
+        row
+        for row in rows
+        if row.revoked_at is None and _verifies("runner_credential", row, secrets_by_id[row.id])
+    ]
