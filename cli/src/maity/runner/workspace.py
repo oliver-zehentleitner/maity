@@ -63,6 +63,11 @@ TMP_SCRATCH_HARNESSES = ("antigravity",)
 # these placements are given the parent and have the runner pre-create it (supervisor): agy owns
 # it and makes its own, while opencode and stub open no such rule and are given nothing to hide.
 TMP_SCRATCH_PARENT_HIDERS = ("claude-code", "codex")
+# The hiders whose sandbox lets a placement write a leaf re-opened under that hidden parent, so
+# that it can have its own short TMPDIR there (supervisor._tmpdir, tsk-0zb9mgzmbwn4). Measured
+# live on 2026-11-20: Codex 0.171.0 writes it; Claude Code 2.1.329 re-opens it for reading but
+# mounts it read-only, so a Claude Code placement gets none and starts without a TMPDIR.
+OWN_TMPDIR_HARNESSES = ("codex",)
 # Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`
 # carries against other host users is met in scratchop.tmp_make (a per-user parent owned 0700,
 # owner-checked, no-follow); it is not met against other placements of the same host user, a

@@ -4168,6 +4168,95 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
     assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700  # the parent is 0700, owned
 
 
+def test_a_placement_without_room_under_its_scratch_gets_a_short_tmpdir_of_its_own(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-0zb9mgzmbwn4: a Claude Code or Codex placement whose scratch's `tmp` leaves no room
+    for a socket gets `tmp` in a fresh 0700 leaf under the per-user `/tmp` parent, recorded,
+    and removed when the placement closes; none where the scratch's own `tmp` fits, or where
+    the leaf would not fit either. (The test's root is long, so the socket limit is raised to
+    stand in for the short `/tmp`; the conftest keeps it out of the host's /tmp.)"""
+    sup, *_ = world
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"
+    assert adapters.scratch_tmpdir(deep) is None  # no room under the scratch itself
+    assert sup._tmpdir(p, deep, target) is None  # nor under this test's long root, as it is
+    # 400 bytes: room under the test's root (well below that), still none under `deep`.
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)
+    assert adapters.scratch_tmpdir(deep) is None
+    assert sup._tmpdir(p, Path("/srv/ws/maity/.scratch/plc-0003"), target) is None  # it fits
+    tmpdir = sup._tmpdir(p, deep, target)
+    assert tmpdir is not None and tmpdir.name == "tmp" and tmpdir.is_dir()
+    leaf = tmpdir.parent
+    parent = workspace.TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{target.as_user.uid()}"
+    assert leaf.parent == parent and leaf.name == sup.scratch_names["plc-0003"]
+    assert stat.S_IMODE(leaf.stat().st_mode) == 0o700
+    # A restart whose old leaf cannot be removed (once) still gets a fresh leaf, and the old one
+    # is kept on record, saved, and removed at the close (review A1769): nothing is orphaned.
+    real_remove = scratch.tmp_remove
+
+    def fails(path: Path, as_user: Any) -> int | None:
+        raise OSError("busy")
+
+    monkeypatch.setattr(scratch, "tmp_remove", fails)
+    again = sup._tmpdir(p, deep, target)
+    assert again is not None and again.parent != leaf and leaf.exists()
+    assert sup.scratch_stale["plc-0003"] == [leaf.name]
+    assert state.load_state(sup.cfg.state_dir, name=supervisor.TMP_STALE_FILE) == {
+        "plc-0003": [leaf.name]
+    }
+    monkeypatch.setattr(scratch, "tmp_remove", real_remove)
+    assert sup._remove_stale(p, target) and not leaf.exists()
+    assert "plc-0003" not in sup.scratch_stale
+    assert sup._remove_tmpdir(p, target) and not again.parent.exists()
+    # agy's leaf is its scratch, removed with it, not here.
+    agy = placement(harness="antigravity")
+    assert sup._remove_tmpdir(agy, target)
+
+
+def test_a_stop_between_the_two_record_writes_loses_no_leaf(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1769 delta: a restart that cannot remove the old leaf moves it to the stale
+    record; the stale record is written before the names record, so a stop between the two
+    writes still finds the old leaf at the next start (it is then in both records)."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)
+    first = sup._tmpdir(p, deep, target)
+    assert first is not None
+    old = first.parent
+    real_remove, real_save = scratch.tmp_remove, state.save_state
+
+    def fails(path: Path, as_user: Any) -> int | None:
+        raise OSError("busy")
+
+    class Stop(Exception):
+        pass
+
+    def stops_after_the_stale_record(state_dir: Path, data: Any, name: str) -> Any:
+        written = real_save(state_dir, data, name)
+        if name == supervisor.TMP_STALE_FILE:
+            raise Stop  # the process ends between the two writes
+        return written
+
+    monkeypatch.setattr(scratch, "tmp_remove", fails)
+    monkeypatch.setattr(state, "save_state", stops_after_the_stale_record)
+    with pytest.raises(Stop):
+        sup._tmpdir(p, deep, target)
+    monkeypatch.setattr(state, "save_state", real_save)
+    monkeypatch.setattr(scratch, "tmp_remove", real_remove)
+    sup.scratch_names, sup.scratch_stale = {}, {}
+    sup.load()  # the next start reads the records from disk
+    known = [*sup.scratch_stale.get("plc-0003", []), sup.scratch_names.get("plc-0003")]
+    assert old.name in known
+    assert sup._remove_stale(p, target) and sup._remove_tmpdir(p, target)
+    assert not old.exists()
+
+
 def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -4377,6 +4466,26 @@ def test_a_claude_code_placement_gets_no_password_file(
     ctx = sup._context(placement(n=4), codex, place, target, scratch=other)
     assert ctx.pg_pass is not None and ctx.pg_pass == holder / "plc-0004"
     assert ctx.pg_pass.is_file()
+
+
+def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-0zb9mgzmbwn4, the live check of 2026-11-20: Codex 0.171.0 writes a leaf re-opened
+    under the hidden parent, Claude Code 2.1.329 mounts it read-only. So with no room under
+    the scratch, a Codex placement gets its own TMPDIR leaf and a Claude Code one none."""
+    sup, *_ = world
+    recorded(sup.cfg)
+    target = sup.targets["local"]
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"  # no room under it
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)  # room under the test's root
+    claude = config.Harness("claude-code", ("supervised",), "supervised")
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    assert sup._context(placement(), claude, place, target, scratch=deep).tmpdir is None
+    ctx = sup._context(placement(n=4), codex, place, target, scratch=deep)
+    assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
 
 
 def _stat_mode(path: Path) -> int:

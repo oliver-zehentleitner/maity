@@ -31,6 +31,7 @@ def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -
         "placement": PLACEMENT, "harness": harness, "binary": "/usr/bin/claude",
         "clone": tmp_path / "ws" / "maity" / "agent-3", "agent_dir": agent_dir,
         "grant": config.RepositoryGrant(allow=("make test",)), "restart": config.Restart(),
+        "version": "2.1.325",  # a probed Claude Code with the WorktreeCreate event
     }  # fmt: skip
     data.update(overrides)
     return adapters.Context(**data)
@@ -196,7 +197,14 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
-    assert "sandbox" not in settings and "hooks" not in settings  # no exclusion, no hook
+    assert "sandbox" not in settings  # no exclusion
+    # Without the sandbox, the worktree hook alone: no plain-call hook.
+    assert settings["hooks"] == {
+        "WorktreeCreate": [
+            {"hooks": [{"type": "command", "command": adapters.CLAUDE_WORKTREE_HOOK}]},
+        ],
+    }  # fmt: skip
+    assert settings["disableAllHooks"] is False
     strict = adapters.claude_settings(
         context(tmp_path / "s", sandbox=True, hosts=("maity.team", "github.com"))
     )["sandbox"]
@@ -229,6 +237,7 @@ def test_claude_code_grant(tmp_path: Path) -> None:
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
     settings = adapters.claude_settings(context(tmp_path, sandbox=True))
     assert settings["disableAllHooks"] is False
+    assert set(settings["hooks"]) == {"WorktreeCreate", "PreToolUse"}
     (entry,) = settings["hooks"]["PreToolUse"]
     assert "matcher" not in entry  # every tool, not only Bash
     (hook,) = entry["hooks"]
@@ -265,6 +274,134 @@ def test_claude_codes_sandbox_needs_the_hook_failure_policy(
     from maity.runner import capabilities
 
     assert capabilities.sandbox_version_ok(harness_id, version) is ok
+
+
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_a_placed_claude_code_session_makes_no_git_worktree(
+    tmp_path: Path, mode: str, sandbox: bool
+) -> None:
+    """While a worktree is in the clone maity runs no git there, and the session cannot remove
+    it (tsk-d5e4d9s95ytj). Every placement: EnterWorktree denied by its bare name, and a
+    WorktreeCreate hook that fails, which fails a subagent's `isolation: worktree` too. No
+    `Agent(isolation:…)` parameter rule: not verified on the hosted Claude Code yet, and a rule
+    a binary cannot read could cost the whole file (cli/context/runner.md)."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": mode}, sandbox=sandbox)
+    adapters.launch(ctx)
+    written = json.loads((ctx.agent_dir / "claude-settings.json").read_text())
+    assert written == adapters.claude_settings(ctx)
+    deny = written["permissions"]["deny"]
+    assert "EnterWorktree" in deny
+    assert {"Bash(git worktree)", "Bash(git worktree *)"} <= set(deny)  # from the shell too
+    assert not any(rule.startswith("Agent(") for rule in deny)
+    assert written["disableAllHooks"] is False  # the agents' user settings cannot turn it off
+    (entry,) = written["hooks"]["WorktreeCreate"]
+    assert "matcher" not in entry
+    (hook,) = entry["hooks"]
+    assert hook == {"type": "command", "command": adapters.CLAUDE_WORKTREE_HOOK}
+    # Claude Code takes the hook's stdout as the worktree's path: it must fail and print none.
+    payload = json.dumps({"hook_event_name": "WorktreeCreate", "name": "agent-x"})
+    done = subprocess.run(["sh", "-c", hook["command"]], input=payload, capture_output=True,
+                          text=True, check=False, timeout=60)  # fmt: skip
+    assert done.returncode != 0 and done.stdout == ""
+    assert "worktree" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "version", [None, "2.1.40", "2.1.49", "2.1.50-rc.1", "dev build"]
+)  # fmt: skip
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_claude_code_without_the_worktree_event_gets_the_denies_alone(
+    tmp_path: Path, version: str | None, sandbox: bool
+) -> None:
+    """The WorktreeCreate event is there from 2.1.50 (its release notes, as cited in review
+    A1808; not verified against a live binary): an older or
+    unknown version gets no hook, only the two denies, which a binary that does not know the
+    name takes as harmless. Without the sandbox no hook is left, so `disableAllHooks` is not
+    written either, and the agents' user's own switch stands as before."""
+    settings = adapters.claude_settings(context(tmp_path, version=version, sandbox=sandbox))
+    deny = settings["permissions"]["deny"]
+    assert "EnterWorktree" in deny and "Bash(git worktree *)" in deny
+    assert "WorktreeCreate" not in settings.get("hooks", {})
+    if sandbox:
+        assert list(settings["hooks"]) == ["PreToolUse"] and settings["disableAllHooks"] is False
+    else:
+        assert "hooks" not in settings and "disableAllHooks" not in settings
+    floor = adapters.claude_settings(context(tmp_path / "f", version="2.1.50"))
+    assert "WorktreeCreate" in floor["hooks"]
+
+
+def test_no_other_harness_gets_the_worktree_rules(tmp_path: Path) -> None:
+    """The tool deny and the hook are Claude Code's alone. `git worktree` is denied for the
+    harnesses with a command allowlist, Claude Code and opencode, also over a grant that allows
+    it; codex and agy have none to add it to."""
+    codex = adapters.codex_config(context(tmp_path / "x", harness_id="codex"))
+    # A second allow after it: without moving the denies to the end, `make check`'s allows would
+    # come after the `git worktree` deny in opencode's map.
+    worktree_grant = config.RepositoryGrant(allow=("git worktree", "make check"))
+    o_ctx = context(tmp_path / "o", harness_id="opencode", grant=worktree_grant)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    a_ctx = context(tmp_path / "a", "antigravity", folder=tmp_path / "a" / "ws" / "folder")
+    agy = json.dumps(adapters.antigravity_settings(a_ctx))
+    for text in (codex, json.dumps(bash), agy):
+        assert "EnterWorktree" not in text and "WorktreeCreate" not in text
+    assert "git worktree" not in codex and "git worktree" not in agy
+    order = list(bash)
+    for rule in adapters.GIT_WORKTREE_DENIED:  # denied, after every allow: the last match wins
+        assert bash[rule] == "deny"
+        assert all(bash[key] == "deny" for key in order[order.index(rule) :])
+
+    def resolve(rules: dict[str, str], command: str) -> str:  # opencode: the last match wins
+        verdict = "deny"
+        for pattern, value in rules.items():
+            if fnmatch.fnmatchcase(command, pattern):  # `*` matches spaces too, as opencode's
+                verdict = value
+        return verdict
+
+    for command in ("git worktree add x", "git worktree"):
+        assert resolve(bash, command) == "deny", command
+    assert resolve(bash, "make check") == "allow" and resolve(bash, "git status") == "allow"
+    claude = adapters.claude_settings(context(tmp_path / "c", grant=worktree_grant))
+    assert "Bash(git worktree)" in claude["permissions"]["allow"]  # the grant, as written
+    assert "Bash(git worktree)" in claude["permissions"]["deny"]  # and the deny, which wins
+
+
+def test_the_worktree_deny_matches_only_the_subcommand(tmp_path: Path) -> None:
+    """The known gap and its cover: the deny does not match `git -C <dir> worktree …`, but with
+    no grant nothing allows that line either (opencode's default deny; no Claude Code allow rule,
+    and dontAsk refuses the rest). And a line that only mentions the word stays allowed: a
+    wildcard before `worktree` in the deny would have refused it (review A1807)."""
+
+    def patterns(rules: list[str]) -> list[str]:
+        return [rule[len("Bash(") : -1] for rule in rules if rule.startswith("Bash(")]
+
+    def resolve(rules: dict[str, str], command: str) -> str:  # opencode: the last match wins
+        verdict = "deny"
+        for pattern, value in rules.items():
+            if fnmatch.fnmatchcase(command, pattern):
+                verdict = value
+        return verdict
+
+    no_grant = config.RepositoryGrant()
+    claude = adapters.claude_settings(context(tmp_path / "c", grant=no_grant))["permissions"]
+    allow, deny = patterns(claude["allow"]), patterns(claude["deny"])
+    o_ctx = context(tmp_path / "o", harness_id="opencode", grant=no_grant)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    assert claude["defaultMode"] == "dontAsk"
+
+    gap = "git -C . worktree add x"
+    assert not any(fnmatch.fnmatchcase(gap, pattern) for pattern in deny)  # the gap
+    assert not any(fnmatch.fnmatchcase(gap, pattern) for pattern in allow)  # refused anyway
+    assert [key for key in bash if fnmatch.fnmatchcase(gap, key)] == ["*"]  # the default alone
+    assert resolve(bash, gap) == "deny"
+
+    for command, allowed_by in (
+        ("git log --grep worktree --all", "git log *"),
+        ('git commit -m "runner: no git worktree in its clone"', "git commit *"),
+    ):
+        assert not any(fnmatch.fnmatchcase(command, pattern) for pattern in deny), command
+        assert allowed_by in allow and fnmatch.fnmatchcase(command, allowed_by)
+        assert resolve(bash, command) == "allow", command
 
 
 def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:
@@ -710,6 +847,72 @@ def test_the_agy_shared_tmp_parent_is_hidden_from_a_non_agy_sandbox(tmp_path: Pa
     assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
 
 
+def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidden(
+    tmp_path: Path,
+) -> None:
+    """tsk-0zb9mgzmbwn4: a Codex placement's own TMPDIR leaf under the hidden per-user `/tmp`
+    parent is opened again for it alone (`write` within `none`), and a sibling leaf stays
+    hidden. Claude Code's sandbox never opens such a leaf: live, it mounted one re-opened under
+    a denied parent read-only (Claude Code 2.1.329), so the supervisor gives it none. Paths
+    only, nothing is made: short, as the runner's, so the leaf is the session's TMPDIR."""
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
+    own, sibling = parent / ("a" * 32), parent / ("b" * 32)
+
+    def codex_fs(base: Path, **extra: Any) -> dict[str, str]:  # a directory of its own per call
+        ctx = context(
+            base, harness_id="codex", binary="/usr/bin/codex",
+            clone=base / "ws" / "proj" / "agent-3", workspaces=base / "ws",
+            private=(base / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
+            placement={**PLACEMENT, "mode": "supervised"}, **extra,
+        )  # fmt: skip
+        fs: dict[str, str] = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"][
+            "filesystem"
+        ]
+        return fs
+
+    filesystem = codex_fs(tmp_path / "x")
+    assert filesystem[str(parent)] == "none" and filesystem[str(own)] == "write"
+    assert _effective_rule(filesystem, own / "tmp" / "pytest-1") == "write"
+    assert _effective_rule(filesystem, sibling / "tmp") == "none"
+    # Where the scratch's own `tmp` fits, that is the TMPDIR, and the leaf is not opened.
+    room = Path("/srv/ws/proj/.scratch/plc-0003")
+    assert adapters.scratch_tmpdir(room) is not None
+    assert str(own) not in codex_fs(tmp_path / "y", scratch=room)
+    # Claude Code: the parent stays denied, and no leaf is opened, even if one were given.
+    claude = adapters.claude_settings(
+        context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent, tmpdir=own / "tmp")
+    )["sandbox"]["filesystem"]
+    assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
+    assert "allowRead" not in claude and str(own) not in claude.get("allowWrite", [])
+
+
+def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_made(
+    tmp_path: Path,
+) -> None:
+    """tsk-0zb9mgzmbwn4: where the scratch's own `tmp` leaves no room for a socket, TMPDIR is
+    the placement's own short one; where the scratch's `tmp` fits, that one is kept."""
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    own = Path("/tmp/maity-scratch-1002") / ("a" * 32) / "tmp"  # noqa: S108 - a path only
+    launched = adapters.launch(context(tmp_path / "d", "stub", scratch=deep, tmpdir=own))
+    assert launched.env["TMPDIR"] == str(own) and launched.env["MAITY_SCRATCH"] == str(deep)
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    launched = adapters.launch(context(tmp_path / "r", "stub", scratch=room, tmpdir=own))
+    assert launched.env["TMPDIR"] == str(room / "tmp")
+
+
+def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
+    """The leaf the runner draws is 32 hex digits (`secrets.token_hex(16)`); with the largest
+    uid the path still leaves room for Claude Code's socket on Linux. On macOS, under the
+    resolved `/private/tmp`, a uid of up to four digits fits (macOS gives users 501 and up);
+    a longer one does not, and the runner then starts the session without one (`_tmpdir`)."""
+    linux = Path("/tmp") / f"maity-scratch-{2**32 - 1}" / ("f" * 32) / "tmp"  # noqa: S108
+    assert adapters.fits_socket(linux, adapters.socket_path_max("linux"))
+    mac = Path("/private/tmp") / "maity-scratch-9999" / ("f" * 32) / "tmp"
+    assert adapters.fits_socket(mac, adapters.socket_path_max("darwin"))
+    longer = Path("/private/tmp") / "maity-scratch-99999" / ("f" * 32) / "tmp"
+    assert not adapters.fits_socket(longer, adapters.socket_path_max("darwin"))
+
+
 def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Path) -> None:
     """No workspaces root to carve (so no scratch): CODEX_HOME keeps today's location in the
     runner's directory rather than crashing. `maity runner check` reports that case."""
@@ -819,7 +1022,8 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
-    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED, *adapters.MAITY_RUNNER_DENIED)
+    denied = (*adapters.GIT_DENIED, *adapters.GIT_WORKTREE_DENIED, *adapters.GH_DENIED,
+              *adapters.MAITY_RUNNER_DENIED)  # fmt: skip
     maity = [f"maity *{char}*" for char in adapters.MAITY_NOT_PLAIN]
     # Denies last: the last match wins. `maity` only as one plain call, as for Claude Code.
     assert list(rules["bash"])[-len(maity) - len(denied) :] == [*denied, *maity]

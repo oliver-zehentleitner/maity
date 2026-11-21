@@ -348,13 +348,7 @@ def command(
                  f"--subject={args.subject}", "--body-file=-", "--", args.selector]  # fmt: skip
         return argv, _lead_body(args, root, opened)
     if args.gh_command == "edit":
-        if args.title is not None:
-            if not args.title.strip() or not args.title.isprintable():
-                raise Refused("--title: one line of text")
-            argv.append(f"--title={args.title}")
-        argv.append("--body-file=-")
-        stdin = _lead_body(args, root, opened)
-        return [*argv, "--", _selector(args, root)], stdin
+        return _edit_command(args, root, repository, gh, opened)
     if args.gh_command == "ready":
         return [*argv, "--", _selector(args, root)], None
     if args.gh_command == "create":
@@ -381,6 +375,79 @@ def command(
         argv.append(f"--json={','.join(fields)}")
     argv += ["--", _selector(args, root)]
     return argv, None
+
+
+def _edit_command(
+    args: argparse.Namespace,
+    root: Path,
+    repository: str,
+    gh: str,
+    opened: clonecheck.Opened | None,
+) -> tuple[list[str], bytes]:
+    """`pr edit` as one REST call through gh (tsk-bmknv06ps0c6): `PATCH
+    repos/<owner>/<name>/pulls/<number>` with a JSON object on stdin that holds the body and,
+    when given, the title, and nothing else. Not `gh pr edit`: older gh versions ask the forge
+    for `projectCards` (Projects classic) there, which the forge refuses, so the edit failed and
+    set nothing. The host, owner and name come only from the pinned repository; a branch is
+    turned into its pull request's number first (`pr_number`), and only the number is used."""
+    fields: dict[str, str] = {}
+    if args.title is not None:
+        if not args.title.strip() or not args.title.isprintable():
+            raise Refused("--title: one line of text")
+        fields["title"] = args.title
+    try:
+        fields["body"] = _lead_body(args, root, opened).decode("utf-8")
+    except UnicodeDecodeError:  # _lead_body's text, so not reached; kept for the types
+        raise Refused("the body is not UTF-8 text") from None
+    selector = _selector(args, root)
+    number = selector if NUMBER.fullmatch(selector) else pr_number(gh, repository, selector)
+    host, owner, name = repository.split("/")
+    argv = [gh, "api", f"--hostname={host}", "--method=PATCH",
+            f"repos/{owner}/{name}/pulls/{number}", "--input=-"]  # fmt: skip
+    return argv, json.dumps(fields).encode("utf-8")
+
+
+def pr_number(gh: str, repository: str, branch: str) -> str:
+    """The number of the pull request of this repository whose head is `branch`, read with
+    `gh pr view --repo=<pinned> --json=number`, the read `view` already makes. Refused unless
+    gh answers with a whole number a pull request can have."""
+    argv = [gh, "pr", "view", f"--repo={repository}", "--json=number", "--", branch]
+    with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
+        done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
+            argv, cwd=empty, env=gh_env(os.environ, gh), check=False, capture_output=True
+        )
+    try:
+        answer = json.loads(done.stdout) if done.returncode == 0 else None
+    except ValueError:
+        answer = None
+    number = answer.get("number") if isinstance(answer, dict) else None
+    if type(number) is not int or not NUMBER.fullmatch(str(number)):
+        raise Refused(
+            f"no pull request of this repository has the head {branch!r} (or gh could not say)"
+        )
+    return str(number)
+
+
+def _edited(answer: bytes, number: str) -> str:
+    """One line for a PATCH gh reported as done: the pull request's number and address,
+    each inline-cleaned (`onboarding.inline`: a line break in a field shows as `\\n`), so the
+    line stays one. gh prints the whole pull request; the lead needs only which one changed.
+    An answer of another shape is never echoed (it could hold the body and the title): a
+    fixed line says the edit was sent and may have taken effect (review A1841 of #2081)."""
+    try:
+        pr = json.loads(answer)
+    except ValueError:
+        pr = None
+    # Success only for the pull request the PATCH named (review A1851 of #2081): an answer
+    # naming another number, zero or a negative one gets the fixed line for the requested one.
+    if not isinstance(pr, dict) or type(pr.get("number")) is not int or str(pr["number"]) != number:
+        return (
+            f"sent the edit of pull request #{number}; gh's answer was not the pull request, "
+            "so it may have taken effect: read it with maity gh pr view\n"
+        )
+    url = pr.get("html_url")
+    where = f" {onboarding.inline(url)}" if isinstance(url, str) else ""
+    return f"edited pull request #{pr['number']}{where}\n"
 
 
 def _selector(args: argparse.Namespace, root: Path) -> str:
@@ -553,7 +620,11 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
         )
     # Every answer of gh is printed cleaned (review A1721 of #2054): a confirmation can echo a
     # title or a branch someone else wrote, on either stream.
-    if done.stdout:
+    edit = args.gh_group == "pr" and args.gh_command == "edit" and done.returncode == 0
+    if edit:  # one line, also when gh printed nothing; its number ends the PATCH path
+        sys.stdout.write(_edited(done.stdout, argv[4].rsplit("/", 1)[-1]))
+        sys.stdout.flush()
+    elif done.stdout:
         out = _readable(done.stdout) if text else _tail(done.stdout) if log else _clean(done.stdout)
         sys.stdout.write(out)
         sys.stdout.flush()
