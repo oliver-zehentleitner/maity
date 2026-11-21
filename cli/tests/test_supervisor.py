@@ -2039,6 +2039,16 @@ def test_the_runners_own_exists_raises_where_it_cannot_look(
         locked.chmod(0o700)
 
 
+def test_the_runners_own_exists_reads_what_pathlib_read_as_absent(tmp_path: Path) -> None:
+    """Exactly pathlib's set up to 3.13 counts as absent: a name the OS cannot hold (an
+    embedded NUL, ValueError) and a file on the way (ENOTDIR) are False, not an error
+    (tsk-0tje3vzzedtx; on Windows also the invalid-name errors, asuser.ABSENT_WINERRORS)."""
+    (tmp_path / "file").write_text("x")
+    for kind in ("-e", "-f", "-d", "-L"):
+        assert AsUser().exists(tmp_path / "bad\0name", kind) is False
+        assert AsUser().exists(tmp_path / "file" / "below", kind) is False
+
+
 @pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
 def test_prepare_does_not_take_a_clone_it_cannot_look_at_for_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
