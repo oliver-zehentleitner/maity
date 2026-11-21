@@ -122,8 +122,8 @@ class Caller:
     instance: str | None = None  # an agent credential's instance id (§6.17)
     session_id: str | None = None
     # An agent's membership and project for this call: on a project route the live attachment
-    # of its credential in the route's project, once resolved; None until then, and outside a
-    # project unless the instance has a single attachment (`settle_project_less`).
+    # of its credential in the route's project, once resolved; None until then, and always
+    # outside a project, however many attachments the instance has (`maity_hub.attached`).
     membership_id: int | None = None
     project_id: str | None = None
     harness: str | None = None
@@ -632,26 +632,16 @@ ISOLATED_MAY = Calls(
 
 
 def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) -> None:
-    """The refusal an isolated agent's call on `path` gets (§6.2), for a caller authenticated
-    on another path: each part of `GET /bootstrap` (§5.4). Read as of now, in the part's
-    own transaction."""
-    # TODO(hub PR B step 3): per part, the part's project; today the caller's membership,
-    # which an instance attached to several projects has none of outside a project route.
-    if caller.kind != "agent" or caller.membership_id is None:
+    """The refusal an isolated agent's call outside any project on `path` gets (§6.2), for a
+    caller authenticated on another path: each part of `GET /bootstrap` that is no project
+    route (§5.4), as `refuse_isolated_everywhere` refuses the single route. Read as of now, in
+    the part's own transaction. A project part resolves its own attachment instead."""
+    if caller.kind != "agent":
         return
-    if ISOLATED_MAY.admits_api(method, path):
-        return
-    row = conn.execute(
-        select(
-            t.membership.c.isolated_reason,
-            t.membership.c.isolated_since,
-            t.membership.c.isolated_by,
-        ).where(t.membership.c.id == caller.membership_id)
-    ).first()
-    if row is not None and row.isolated_since is not None:
-        from maity_hub import isolation
-
-        raise isolation.refusal(row)
+    attached = attachments(conn, caller.credential_id or "")
+    if not attached:  # detached from everything since the call was authenticated
+        raise unauthenticated()
+    _refuse_isolated_everywhere(attached, method, path)
 
 
 def _agent(conn: Connection, row: Any, via: str, facts: RequestFacts) -> Caller:
@@ -752,9 +742,15 @@ def refuse_isolated_everywhere(attached: Sequence[Any], facts: RequestFacts) -> 
     """A call outside any project is `isolated` when every live attachment is isolated, but
     for `ISOLATED_MAY` (§6.2, "Isolation"): while one is not, the call goes on and skips the
     isolated ones. Before any side effect, as a required signature."""
+    _refuse_isolated_everywhere(
+        attached, facts.method, facts.raw_path.decode("latin-1")  # byte for byte
+    )
+
+
+def _refuse_isolated_everywhere(attached: Sequence[Any], method: str, path: str) -> None:
     if any(row.isolated_since is None for row in attached):
         return
-    if ISOLATED_MAY.admits_api(facts.method, facts.raw_path.decode("latin-1")):  # byte for byte
+    if ISOLATED_MAY.admits_api(method, path):
         return
     from maity_hub import isolation
 
@@ -778,14 +774,9 @@ def settle_project_less(
     free = [row for row in attached if row.isolated_since is None]
     if free:
         caller = _present(conn, caller, free, renew_leases)
-    # TODO(hub PR B step 3): the project-less routes still read `caller.membership_id` and
-    # `caller.project_id` as the instance's one membership. They get it while the instance has
-    # a single live attachment, as before; with several they get none, and answer as for no
-    # membership, until each route names its project or reads every attachment.
-    if len(attached) == 1:
-        caller = replace(
-            caller, membership_id=attached[0].membership_id, project_id=attached[0].project_id
-        )
+    # No membership is chosen, not even the one of a single attachment: a route outside a
+    # project names its project or reads every attachment (`maity_hub.attached`), and one that
+    # needs a membership without naming it refuses (`access.membership`).
     return caller
 
 

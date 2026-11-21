@@ -103,6 +103,10 @@ def test_bearer_over_tls_answers_the_agents_me(
             "trust": "member",
             "role": "coder",
             "logo": {"available": False, "etag": None},
+            # the membership's and the instance's there (§5.1, §6.17)
+            "isolated": None,
+            "paused": None,
+            "dormant": None,
         }
     ]
     assert "open_requests" not in body["projects"][0]

@@ -10,14 +10,14 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import availability, clock, idempotency, namespace
+from maity_hub import attached, availability, clock, idempotency, namespace
 from maity_hub import tables as t
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import Caller, in_attachment
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import invalid
+from maity_hub.errors import ApiError, invalid
 from maity_hub.models import Strict
 from maity_hub.routes.me import human_body
-from maity_hub.routes.members import load_member
+from maity_hub.routes.members import members_outcome
 
 router = APIRouter()
 
@@ -32,6 +32,8 @@ class LimitIn(Strict):
     harness: str | None = Field(default=None, max_length=200)
     reason: str | None = Field(default=None, max_length=availability.REASON_MAX)
     show_reason_in: list[str] | None = Field(default=None, max_length=200)
+    # An agent instance's project (§6.12); without it, every attachment that is not isolated.
+    project: str | None = Field(default=None, max_length=attached.PROJECT_MAX)
 
 
 def parse_until(text: str) -> datetime:
@@ -70,23 +72,39 @@ def _agent(
     if "show_reason_in" in given:
         # An agent's reason is shown as sent anyway (§6.12).
         raise invalid({"show_reason_in": "humans_only"})
-    row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
-    if until is None:
-        # Any `until: null` recomputes the runner's limit (§6.12): while every placement is
-        # still rate-limited, clearing leaves the agent limited by the runner.
-        availability.clear_agent_limit(conn, row, caller.actor(row.id))
-        return idempotency.Outcome(200, "member", str(row.id), load_member(conn, str(row.id)))
-    availability.set_agent_limit(
-        conn,
-        row,
-        until,
-        source="self",
-        harness=body.harness or caller.harness,
-        reason=body.reason,
-        placement_id=None,
-        actor=caller.actor(row.id),
-    )
-    return idempotency.Outcome(200, "member", str(row.id), load_member(conn, str(row.id)))
+    # The project named, else every attachment that is not isolated, all or nothing (§6.12,
+    # following `PATCH /me`, §5.3 "Per project").
+    targets = attached.every(conn, caller, body.project)
+    single = attached.single(conn, caller, body.project)
+    ids: list[int] = []
+    for attachment in targets:
+        row = conn.execute(
+            select(t.membership).where(t.membership.c.id == attachment.membership_id)
+        ).one()
+        actor = in_attachment(caller, attachment).actor(row.id)
+        try:
+            if until is None:
+                # Any `until: null` recomputes the runner's limit (§6.12): while every
+                # placement is still rate-limited, clearing leaves the agent limited by the
+                # runner.
+                availability.clear_agent_limit(conn, row, actor)
+            else:
+                availability.set_agent_limit(
+                    conn,
+                    row,
+                    until,
+                    source="self",
+                    harness=body.harness or caller.harness,
+                    reason=body.reason,
+                    placement_id=None,
+                    actor=actor,
+                )
+        except ApiError as error:
+            if single:
+                raise
+            raise attached.in_project(error, conn, attachment.project_id) from None
+        ids.append(row.id)
+    return members_outcome(conn, caller.credential_id or "", ids, single)
 
 
 def _human(
@@ -94,6 +112,8 @@ def _human(
 ) -> idempotency.Outcome:
     if "harness" in given:
         raise invalid({"harness": "agents_only"})
+    if "project" in given:  # an agent instance's projects (§6.12)
+        raise invalid({"project": "agents_only"})
     assert caller.human_id is not None
     # Full names (§6.25), each a project the caller is a member of.
     slugs = list(dict.fromkeys(body.show_reason_in or []))

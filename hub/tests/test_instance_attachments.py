@@ -3,10 +3,9 @@ project lives on its attachment there (`instance_attachment`), and a session's p
 not-listening episode on its row for that project (`agent_session_project`). Each test
 attaches one instance to two projects, A and B, acts in one and finds the other untouched.
 
-The agent's calls outside a project act in its one membership only while it has a single live
-attachment (hub PR B; TODO(hub PR B step 3): until each such route names its project), so the
-agent resumes in A before it is attached to B, and confirms Keep the Why in A while B is
-detached by hand; a human's calls act in the project of the route."""
+The agent's calls outside a project name their project (hub PR B): it resumes in A before it is
+attached to B, since the resume of an instance in several projects is not built yet, and
+confirms Keep the Why naming A; a human's calls act in the project of the route."""
 
 from __future__ import annotations
 
@@ -107,15 +106,6 @@ class World:
                 .values(detached_at=at or clock.now(), detached_reason="detached")
             )
 
-    def reattach(self, membership_id: int) -> None:
-        """Undo `detach` by hand, the row as it was: no route attaches again (§6.17)."""
-        with self.engine.begin() as conn:
-            conn.execute(
-                update(t.instance_attachment)
-                .where(instances.attachment_of(self.agent.credential_id, membership_id))
-                .values(detached_at=None, detached_reason=None)
-            )
-
     def events(self, kind: str) -> list[str]:
         """The projects of every event of `kind`, oldest first."""
         with self.engine.connect() as conn:
@@ -190,10 +180,8 @@ def test_the_keep_the_why_commitment_is_per_project(world: World) -> None:
     w = world
     assert w.attachment(w.in_a).ktw_acknowledge_by is not None  # the resume's, in A
     assert _ktw(w.attachment(w.in_b)) == (None,) * 6
-    w.detach(w.in_b)  # TODO(hub PR B step 3): the confirmation names A instead
-    acked = w.agent.post("/me/keep-the-why/ack")
+    acked = w.agent.post("/me/keep-the-why/ack", {"project": "maintainer/alpha"})
     assert acked.status_code == 200, acked.text
-    w.reattach(w.in_b)
     assert w.attachment(w.in_a).ktw_acknowledged_at is not None
     assert _ktw(w.attachment(w.in_b)) == (None,) * 6
     session = w.position(w.in_b).session_id
@@ -326,8 +314,7 @@ def test_the_commitment_of_a_detached_attachment_ends(world: World) -> None:
     """An overdue deadline on B's attachment, once detached, reminds nobody: the sweep ends
     it as it ends a revoked instance's."""
     w = world
-    w.detach(w.in_b)
-    acked = w.agent.post("/me/keep-the-why/ack")  # A owes nothing
+    acked = w.agent.post("/me/keep-the-why/ack", {"project": "maintainer/alpha"})  # A owes nothing
     assert acked.status_code == 200, acked.text
     session = w.position(w.in_b).session_id
     with w.engine.begin() as conn:
@@ -336,6 +323,7 @@ def test_the_commitment_of_a_detached_attachment_ends(world: World) -> None:
             .where(instances.attachment_of(w.agent.credential_id, w.in_b))
             .values(ktw_acknowledge_by=clock.now() - timedelta(minutes=1), ktw_session_id=session)
         )
+    w.detach(w.in_b)
     commitment.sweep(w.engine)
     assert w.events("keep_the_why_reminder") == []
     ended = w.attachment(w.in_b)

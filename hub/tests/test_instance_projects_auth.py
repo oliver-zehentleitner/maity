@@ -381,7 +381,6 @@ def test_isolated_everywhere_a_read_outside_a_project_is_not_counted(world: Worl
     refused = w.call("GET", "/me/cross-chats")
     assert refused.status_code == 403, refused.text
     assert _reads(w) == 0
-    w.detach(w.in_b)  # TODO(hub PR B step 3): `GET /me` of an instance in two projects
     me = w.call("GET", "/me")
     assert me.status_code == 200, me.text
     assert _reads(w) == 1
@@ -405,3 +404,240 @@ def test_a_read_counts_once(world: World) -> None:
     assert _reads(w) == 1
     assert w.call("GET", "/me/cross-chats").status_code == 200
     assert _reads(w) == 2
+
+
+# --- routes outside a project name their project (§5.1, §5.3, §6.12, §6.23, §6.17) ---------
+
+
+def _invalid(response: Any, field: str, reason: str) -> None:
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"][field] == reason
+
+
+def _attachment(w: World, membership_id: int) -> Any:
+    a = t.instance_attachment
+    with w.engine.connect() as conn:
+        return conn.execute(
+            select(a).where(instances.attachment_of(w.agent.credential_id, membership_id))
+        ).one()
+
+
+def _limit(w: World, membership_id: int) -> datetime | None:
+    with w.engine.connect() as conn:
+        found: datetime | None = conn.execute(
+            select(t.membership.c.limit_until).where(t.membership.c.id == membership_id)
+        ).scalar_one()
+    return found
+
+
+def test_get_me_lists_every_attachment_with_its_flags(world: World) -> None:
+    """Each live attachment one entry, in the order attached, with that membership's
+    `trust`, `role`, `isolated`, and the instance's `paused` and `dormant` there; no
+    single-project `membership` beside them."""
+    w = world
+    w.isolate(w.in_b)
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(w.agent.credential_id, w.in_a))
+            .values(dormant_since=clock.now(), dormant_by=w.agent.agent_id)
+        )
+    me = w.call("GET", "/me")
+    assert me.status_code == 200, me.text
+    body = me.json()
+    a, b = body["projects"]
+    assert (a["id"], b["id"]) == (w.alpha, w.beta)
+    assert (a["full_name"], b["full_name"]) == ("maintainer/alpha", "maintainer/beta")
+    assert {a["trust"], b["trust"]} <= {"member", "admin", "owner", "guest"}
+    assert a["isolated"] is None and b["isolated"]["reason"] == "a rewrite"
+    assert a["dormant"]["by"] == w.agent.agent_id and b["dormant"] is None
+    assert a["paused"] is None and b["paused"] is None
+    assert body["membership"] is None
+
+
+def test_get_me_of_a_single_attachment_reads_as_before(world: World) -> None:
+    """One live attachment: the entry keeps every field it had, and `membership.isolated` stays
+    beside it, so an older client reads it as before."""
+    w = world
+    w.detach(w.in_b)
+    body = w.call("GET", "/me").json()
+    [entry] = body["projects"]
+    assert {"id", "slug", "full_name", "name", "state", "trust", "role", "logo"} <= set(entry)
+    assert entry["id"] == w.alpha and entry["full_name"] == "maintainer/alpha"
+    assert body["membership"] == {"isolated": None}
+
+
+def test_patch_me_paused_applies_per_project(world: World) -> None:
+    """Without `project` every attachment that is not isolated, answered with `projects`;
+    with it that one, answered with its member view; an isolated project named is `isolated`,
+    one the instance is not attached to `invalid` (`not_a_member`)."""
+    w = world
+    paused = w.call("PATCH", "/me", body={"paused": {"reason": "a break"}, "project": w.beta})
+    assert paused.status_code == 200, paused.text
+    assert "projects" not in paused.json()
+    assert _attachment(w, w.in_b).paused_since is not None
+    assert _attachment(w, w.in_a).paused_since is None
+    everywhere = w.call("PATCH", "/me", body={"paused": None})
+    assert everywhere.status_code == 200, everywhere.text
+    assert len(everywhere.json()["projects"]) == 2
+    assert _attachment(w, w.in_b).paused_since is None
+    w.isolate(w.in_a)
+    again = w.call("PATCH", "/me", body={"paused": {"reason": "again"}})
+    assert again.status_code == 200, again.text
+    assert len(again.json()["projects"]) == 1  # A is skipped
+    assert _attachment(w, w.in_a).paused_since is None
+    assert _attachment(w, w.in_b).paused_since is not None
+    named = w.call("PATCH", "/me", body={"paused": None, "project": "maintainer/alpha"})
+    _refused(named, "forbidden")
+    assert named.json()["error"]["details"]["reason"] == "isolated"
+    factory.project(w.engine, "gamma")
+    for project in ("maintainer/gamma", "nobody/nothing", "prj-000000000000"):
+        _invalid(
+            w.call("PATCH", "/me", body={"paused": None, "project": project}),
+            "project",
+            "not_a_member",
+        )
+
+
+def test_post_me_limit_applies_per_project(world: World) -> None:
+    w = world
+    until = clock.rfc3339(clock.now() + timedelta(hours=1))
+    one = w.call("POST", "/me/limit", body={"until": until, "project": "maintainer/alpha"})
+    assert one.status_code == 200, one.text
+    assert _limit(w, w.in_a) is not None and _limit(w, w.in_b) is None
+    both = w.call("POST", "/me/limit", body={"until": until})
+    assert both.status_code == 200, both.text
+    assert len(both.json()["projects"]) == 2
+    assert _limit(w, w.in_b) is not None
+    w.isolate(w.in_b)
+    named = w.call("POST", "/me/limit", body={"until": None, "project": "maintainer/beta"})
+    assert named.json()["error"]["details"]["reason"] == "isolated"
+    _invalid(
+        w.call("POST", "/me/limit", body={"until": None, "project": "nobody/nothing"}),
+        "project",
+        "not_a_member",
+    )
+
+
+def test_the_keep_the_why_ack_names_its_project_among_several(world: World) -> None:
+    w = world
+    with w.engine.begin() as conn:
+        conn.execute(update(t.project).values(keep_the_why=True))
+    _invalid(w.call("POST", "/me/keep-the-why/ack"), "project", "required")
+    acked = w.call("POST", "/me/keep-the-why/ack", body={"project": "maintainer/beta"})
+    assert acked.status_code == 200, acked.text
+    assert _attachment(w, w.in_b).ktw_acknowledged_at is not None
+    assert _attachment(w, w.in_a).ktw_acknowledged_at is None
+    w.detach(w.in_b)  # one attachment: `project` is optional, as before
+    alone = w.call("POST", "/me/keep-the-why/ack")
+    assert alone.status_code == 200, alone.text
+    assert _attachment(w, w.in_a).ktw_acknowledged_at is not None
+
+
+def test_no_route_outside_a_project_answers_500_for_an_instance_in_two(world: World) -> None:
+    """Every route converted in hub PR B step 3, once, for an instance attached to A and B:
+    an answer or a clean refusal, never a server error."""
+    w = world
+    calls = [
+        ("GET", "/me", None),
+        ("GET", "/projects", None),
+        ("GET", "/bootstrap", None),
+        ("GET", "/bootstrap?project=maintainer/beta", None),
+        ("GET", f"/avatars/{w.agent.agent_id}", None),
+        ("PATCH", "/me", {"paused": None}),
+        ("PATCH", "/me", {"dormant": False}),
+        ("PATCH", "/me", {"avatar_motif": None}),
+        ("POST", "/me/limit", {"until": None}),
+        ("POST", "/me/keep-the-why/ack", None),
+        ("POST", "/me/resume", {"client": "test"}),
+        ("POST", "/me/soul/proposals", {"markdown": "me", "reason": "why"}),
+        ("POST", "/reports", {"target": {"type": "project", "id": "maintainer/beta"}}),
+        ("GET", "/me/cross-chats", None),
+    ]
+    for method, path, body in calls:
+        answered = w.call(method, path, body=body)
+        assert answered.status_code < 500, (method, path, answered.text)
+    resumed = w.call("POST", "/me/resume", body={"client": "test"})
+    assert resumed.status_code == 409, resumed.text
+    assert resumed.json()["error"]["details"]["reason"] == "client_too_old"
+    _invalid(
+        w.call("POST", "/me/soul/proposals", body={"markdown": "me", "reason": "why"}),
+        "project",
+        "required",
+    )
+    listed = w.call("GET", "/projects").json()["items"]
+    assert sorted(p["id"] for p in listed) == sorted([w.alpha, w.beta])
+
+
+def test_get_projects_shows_an_isolated_attachment_reduced(world: World) -> None:
+    w = world
+    w.isolate(w.in_b)
+    listed = {p["id"]: p for p in w.call("GET", "/projects").json()["items"]}
+    assert listed[w.beta] == {
+        "id": w.beta,
+        "slug": "beta",
+        "full_name": "maintainer/beta",
+        "name": "Project beta",
+        "state": "build",
+        "isolated": True,
+    }
+    assert listed[w.alpha]["isolated"] is False and "settings" in listed[w.alpha]
+
+
+# --- cross-project chats: the author's attachment in the project it posts from (§9.5, Q4) ---
+
+
+@pytest.fixture
+def chat(make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """A cross chat of the owner with an agent attached to A and B and one in C only; the
+    mention charges recorded as (membership, count)."""
+    from maity_hub import mentions
+    from tests import flow
+
+    owner = flow.human(make_client, migrated)
+    ids = {slug: flow.project(owner, slug)["id"] for slug in ("alpha", "beta", "gamma")}
+    author = flow.agent(make_client, owner, "alpha")
+    in_b = factory.attach(migrated, author, ids["beta"])
+    other = flow.agent(make_client, owner, "gamma")
+    created = owner.post("/me/cross-chats", {"title": "x", "participants": [author.id, other.id]})
+    assert created.status_code == 201, created.text
+    body = created.json()
+    handle = next(p["handle"] for p in body["participants"] if p["member_id"] == other.id)
+    charged: list[tuple[int, int]] = []
+    monkeypatch.setattr(mentions, "charge", lambda _c, m, n: charged.append((m, n)))
+    return {
+        "owner": owner,
+        "author": author,
+        "in_b": in_b,
+        "path": f"/me/cross-chats/{body['id']}/messages",
+        "mention": f"@{handle} look",
+        "charged": charged,
+        "make": make_client,
+        "engine": migrated,
+    }
+
+
+def test_a_cross_chat_post_is_charged_on_the_attachment_it_names(chat: Any) -> None:
+    author = chat["author"]
+    posted = author.post(chat["path"], {"body": chat["mention"], "project": "maintainer/beta"})
+    assert posted.status_code == 201, posted.text
+    assert chat["charged"] == [(chat["in_b"], 1)]
+    # Two attachments and a mention: no implicit choice.
+    _invalid(author.post(chat["path"], {"body": chat["mention"]}), "project", "required")
+    # No mention, nothing charged: no project needed.
+    assert author.post(chat["path"], {"body": "plain"}).status_code == 201
+    assert chat["charged"] == [(chat["in_b"], 1)]
+
+
+def test_a_cross_chat_author_not_attached_to_the_project_is_refused(chat: Any) -> None:
+    """Attached to A only: B's attachment is never used, nor A's in its place."""
+    from tests import flow
+
+    lone = flow.agent(chat["make"], chat["owner"], "alpha")
+    owner = chat["owner"]
+    chat_id = chat["path"].split("/")[3]
+    added = owner.post(f"/me/cross-chats/{chat_id}/participants", {"member_id": lone.id})
+    assert added.status_code == 200, added.text
+    refused = lone.post(chat["path"], {"body": chat["mention"], "project": "maintainer/beta"})
+    _invalid(refused, "project", "not_a_member")
+    assert chat["charged"] == []

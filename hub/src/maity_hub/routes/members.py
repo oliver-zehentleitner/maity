@@ -312,6 +312,42 @@ def _sees_member(conn: Connection, membership_id: str, caller: Caller) -> bool:
 
 
 idempotency.register("member", load_member_write, _sees_member)
+
+
+def members_outcome(
+    conn: Connection, credential_id: str, membership_ids: list[int], single: bool
+) -> idempotency.Outcome:
+    """The `200` of an agent's own write outside a project (`PATCH /me`, `POST /me/limit`,
+    §5.3 "Per project"): the member view for one project, else `projects`, the member view of
+    each membership the write changed. The latter is stored by the credential: a replay
+    answers its attachments that are not isolated as they are then (`load_member_set`)."""
+    if single:
+        [only] = membership_ids
+        return idempotency.Outcome(200, "member", str(only), load_member(conn, str(only)))
+    views = [load_member(conn, str(i)) for i in membership_ids]
+    return idempotency.Outcome(200, "member_set", credential_id, {"projects": views})
+
+
+def load_member_set(conn: Connection, credential_id: str) -> dict[str, Any]:
+    a, m = t.instance_attachment, t.membership
+    ids = conn.execute(
+        select(a.c.membership_id)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(
+            a.c.credential_id == credential_id,
+            a.c.detached_at.is_(None),
+            m.c.isolated_since.is_(None),
+        )
+        .order_by(a.c.attached_at, a.c.id)
+    ).scalars()
+    return {"projects": [load_member(conn, str(i)) for i in ids]}
+
+
+idempotency.register(
+    "member_set",
+    idempotency.plain(load_member_set),
+    lambda _conn, credential_id, caller: caller.credential_id == credential_id,
+)
 idempotency.register(
     "credential",
     idempotency.plain(load_credential),

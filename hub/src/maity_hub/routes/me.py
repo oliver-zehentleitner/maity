@@ -18,6 +18,7 @@ from maity_hub import (
     handles,
     images,
     inbox,
+    instances,
     maintenance,
     moderation,
     namespace,
@@ -33,7 +34,14 @@ from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticat
 from maity_hub.models import Strict
 from maity_hub.notifications import preferences
 from maity_hub.ratelimit import Limiter
-from maity_hub.views import agent_member, human_member, isolated, meat_proxy_member, owner_handles
+from maity_hub.views import (
+    agent_member,
+    human_member,
+    isolated,
+    meat_proxy_member,
+    owner_handles,
+    paused,
+)
 
 router = APIRouter()
 
@@ -60,6 +68,7 @@ def me_body(conn: Connection, caller: Caller) -> dict[str, Any]:
         agent = conn.execute(
             select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
         ).one()
+        projects, members = _agent_projects(conn, caller)
         body = {
             "member": {
                 **agent_member(
@@ -71,8 +80,11 @@ def me_body(conn: Connection, caller: Caller) -> dict[str, Any]:
                 **avatars.state(conn, agent.id),
                 "avatar_motif": agent.avatar_motif,
             },
-            "projects": _agent_project(conn, caller),
-            "membership": {"isolated": _isolated(conn, caller)},
+            "projects": projects,
+            # An isolated agent's way to learn why its calls are refused (§6.2): the one
+            # membership's, for an instance in one project as before; with several, no
+            # membership is the instance's, and each entry of `projects` carries its own.
+            "membership": {"isolated": isolated(members[0])} if len(members) == 1 else None,
         }
     # The hub's maintenance window, for every caller whatever its owner chose (§16.12).
     body["maintenance"] = maintenance.view(maintenance.current(conn))
@@ -230,20 +242,49 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def _isolated(conn: Connection, caller: Caller) -> dict[str, Any] | None:
-    """An isolated agent's way to learn why its calls are refused (§6.2)."""
-    row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
-    return isolated(row)
-
-
-def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
-    row = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role, t.project)
-        .join(t.project, t.project.c.id == t.membership.c.project_id)
-        .where(t.membership.c.id == caller.membership_id)
-    ).one()
-    shown = images.views(conn, [row.id])[row.id]
-    return [_project_row(row, row.id, row.trust, row.role, shown, namespace.name_of(conn, row.id))]
+def _agent_projects(conn: Connection, caller: Caller) -> tuple[list[dict[str, Any]], list[Any]]:
+    """An agent's `projects` (§5.1, §6.17): one entry per live attachment of its instance, in
+    the order the instance was attached, each with that membership's `trust`, `role`,
+    `isolated` (§6.2) and the instance's `paused` (the membership's or its own, §5.3) and
+    `dormant` there (§6.17); and the membership rows, in the same order."""
+    a, m = t.instance_attachment, t.membership
+    rows = conn.execute(
+        select(
+            m.c.id,
+            a.c.paused_reason,
+            a.c.paused_since,
+            a.c.paused_by,
+            a.c.dormant_since,
+            a.c.dormant_by,
+        )
+        .select_from(a)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(a.c.credential_id == (caller.credential_id or ""), a.c.detached_at.is_(None))
+        .order_by(a.c.attached_at, a.c.id)
+    ).all()
+    ids = [row.id for row in rows]
+    members = {r.id: r for r in conn.execute(select(m).where(m.c.id.in_(ids)))}
+    project_ids = [members[i].project_id for i in ids]
+    projects = {
+        p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))
+    }
+    shown = images.views(conn, project_ids)
+    names = namespace.full_names(conn, project_ids)
+    entries = []
+    for row in rows:
+        member = members[row.id]
+        pid = member.project_id
+        entries.append(
+            {
+                **_project_row(
+                    projects[pid], pid, member.trust, member.role, shown[pid], names[pid]
+                ),
+                "isolated": isolated(member),
+                "paused": paused(member) or instances.paused_view(row),
+                "dormant": instances.dormant_view(row),
+            }
+        )
+    return entries, [members[i] for i in ids]
 
 
 @router.get("/me/export")
