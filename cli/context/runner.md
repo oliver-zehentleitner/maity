@@ -5140,7 +5140,7 @@ spellings accept argparse's refusal, but only for words with a `--` before
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); not built yet
+**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); the hub's part built in card tsk-n50ez67he2pz (2026-11-21), the runner's not yet
 **Revisit when:** the hub builds §15.14's `health` (the grace becomes `hang_after_minutes`) or flapping; the hub gains an actor with a restart right that could resume a session; a recurring `unknown` cause asks for a class of its own
 
 The hub tells the runner, on each placement it reads, what it knows of the
@@ -5177,6 +5177,23 @@ The reason for the pane rule: text in a pane is the session's to write,
 so it may say anything. The causes that stop an agent for a person
 (`auth`) or pause it (`rate_limited`) therefore rest on a signal from
 outside the pane.
+
+2026-11-21, the hub's part (tsk-n50ez67he2pz): the hub computes `session`
+on each placement the runner reads, in a fixed number of statements per
+page, and takes `finding` with its closed lists and the log's bounds. The
+log lines are shown in `reported` to their three readers only; the
+`placement_reported` event keeps the finding without them, and the history
+holds no lines yet, since keeping them beside the event's row needs a
+column of its own (a migration the plan left out). The runner's side is
+still to build.
+The hub checks `finding` by hand (`placements.check_finding`), not with a
+pydantic model. The contract names the answers (`unknown`, `required`,
+`duplicate`, `too_many`, `format`, `empty`, `too_long`, `too_large`), and
+pydantic's own types (`literal_error`, `missing`, `too_long` for a list) would
+answer otherwise. An unknown key keeps pydantic's `extra_forbidden`, as for
+any body. `session` is built for the whole page from five reads with `IN`
+(`placements.runner_sessions`): a row read per placement would make the
+runner's read grow with its placements on every wake.
 
 **Reason:** only the runner sees the process, its exit code and the pane,
 and it already owns restart, backoff and the caps; its own restarts keep
