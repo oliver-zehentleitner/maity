@@ -59,6 +59,22 @@ def logged_in(harness_id: str, binary: str, as_user: AsUser) -> bool:
     return done.returncode == 0
 
 
+def login_state(harness_id: str, binary: str | None, as_user: AsUser) -> str:
+    """The tool's own login answer as the watch's `login` signal (§15.7): `ok` on exit 0,
+    `needed` on any other exit, `unknown` where the harness has no login probe (agy,
+    opencode, …), no binary is known, or the probe could not run or did not answer in time.
+    Unlike `logged_in`, neither a missing probe nor a failed one counts as an answer, so a
+    harness the runner cannot ask is never taken for one whose login is gone."""
+    args = LOGIN_STATUS.get(harness_id)
+    if args is None or not binary:
+        return "unknown"
+    try:
+        done = as_user.run([binary, *args], timeout=LOGIN_TIMEOUT)
+    except Exception:  # noqa: BLE001 - a probe that cannot run says nothing about the login
+        return "unknown"
+    return "ok" if done.returncode == 0 else "needed"
+
+
 @dataclass
 class Keeper:
     cfg: config.Config

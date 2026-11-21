@@ -128,6 +128,8 @@ class Service:
         cursor = packet.get("cursor")
         self.cursor = cursor if isinstance(cursor, int) else 0
         self.connected = True
+        if self.supervisor is not None and isinstance(packet, dict):  # the watch's hub time
+            self.supervisor.clock(packet.get("server_time"))
         log(f"connected as {self._name(runner)}; session {onboarding.inline(self.session_id)}")
         self._take(packet.get("placements"))
 
@@ -149,6 +151,8 @@ class Service:
         cursor = answer.get("cursor")
         if isinstance(cursor, int):
             self.cursor = cursor
+        if self.supervisor is not None:  # the watch measures in hub time (§15.8, §15.14)
+            self.supervisor.clock(answer.get("server_time"))
         items = answer.get("items")
         return bool(items)
 

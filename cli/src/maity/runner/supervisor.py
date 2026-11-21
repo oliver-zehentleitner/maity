@@ -35,6 +35,7 @@ from . import (
     adapters,
     capabilities,
     config,
+    keeper,
     limitread,
     loop,
     restart,
@@ -195,6 +196,19 @@ NUDGE_LINE = (
     "changed on this screen. Run `maity resume` if you lost track, then go back to your wait "
     "loop."
 )
+# The runner's watch (§15.14): how long work below the harness counts as work while the hub
+# says the session is not listening, until the hub carries `health.settings`.
+TOOL_CALL_MAX_MINUTES = 120
+# What the watch's line says it found, per cause: the runner's own words (§15.7).
+CAUSE_WORDS = {
+    "harness_exited": "the harness is gone",
+    "not_waiting": "nothing runs below the harness",
+    "wait_deaf": "a maity wait runs",
+    "never_joined": "no session of its credential started",
+    "usage_limit": "the harness stopped for its provider's limit",
+    "login_invalid": "the harness's login is needed",
+    "unknown": "no known cause",
+}
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
 PLACEMENT_ID = clonecheck.PLACEMENT_ID  # one pattern, beside clonecheck.placement_id
@@ -336,6 +350,21 @@ class Record:
     # `left` (a prompt the runner does not answer, until it is gone) or `none` (not seen in
     # time, or gone).
     folder_prompt: str | None = None
+    # The runner's watch (§15.14): its restarts within `retry_window_minutes`; an end it began
+    # ({at, then, trigger, finding}, `then` one of restart, held, auth); the diagnosis a worker
+    # left for the tick; when it last looked; the quiet spell (`not_listening_since`) a
+    # not_waiting nudge handled; the [trigger, episode] it reported with someone attached.
+    watch_restarts: list[float] = field(default_factory=list)
+    watch_end: dict[str, Any] | None = None
+    watch_verdict: dict[str, Any] | None = None
+    watch_looked_at: float | None = None
+    watch_episode: float | None = None
+    watch_seen: list[Any] | None = None
+    # The finding the next report carries (§15.7), how many were filed (in the report's key,
+    # so a finding alone makes a report), and whether the hub takes one (`session` carried).
+    finding: dict[str, Any] | None = None
+    finding_n: int = 0
+    reports_finding: bool = False
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
@@ -345,7 +374,9 @@ class Record:
     def key(self) -> list[Any]:
         # Not `sessions`: it moves only at a start, between `starting` and `running`, and the
         # report of `running` carries it; a key of its own would send `starting` twice.
-        return [self.state, self.reason, self.detail, self.generation, self.restarts]
+        # A finding moves it too, only once there is one: a record from before keeps its key.
+        key = [self.state, self.reason, self.detail, self.generation, self.restarts]
+        return [*key, self.finding_n] if self.finding_n else key
 
     def enter(self, now: float, state_: str, reason: str | None = None, **fields: Any) -> None:
         if (state_, reason) != (self.state, self.reason):
@@ -422,6 +453,12 @@ class Supervisor:
     # The runner's own lines about each placement, for a finding's `log` (§15.7, "The runner's
     # log lines"): in memory only, dropped when the placement is closed.
     notes: watch.Notes = field(default_factory=watch.Notes)
+    # The watch (§15.14): its diagnosis workers, one per placement at most (the login probe
+    # can take 30 s, and the tick holds the lock); the hub's clock minus this one, from
+    # `server_time` (§15.8); the login probe (keeper.login_state; replaced in tests).
+    watching: dict[str, threading.Thread] = field(default_factory=dict)
+    hub_offset: float = 0.0
+    login: Callable[[str, str | None, AsUser], str] = keeper.login_state
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -445,6 +482,287 @@ class Supervisor:
         agents' side can set."""
         with self.lock:
             return next((pid for pid, r in self.records.items() if r is rec), None)
+
+    # --- the runner's watch (§15.14, "The runner's watch") ----------------------------------
+
+    def clock(self, server_time: Any) -> None:
+        """Take the hub's `server_time` (§15.8: the `hello` packet, each `/runner/events`
+        answer): the watch measures in hub time. A value not in the wire form changes
+        nothing."""
+        offset = watch.offset_from(server_time, self.now())
+        if offset is not None:
+            with self.lock:
+                self.hub_offset = offset
+
+    @staticmethod
+    def _resting(p: dict[str, Any]) -> bool:
+        """Paused or dormant (§15.8 `session`): neither the watch nor the own check acts."""
+        facts = watch.session_facts(p)
+        return facts is not None and facts.resting
+
+    def _watch(
+        self, p: dict[str, Any], rec: Record, session: Session, target: Target, now: float
+    ) -> bool:
+        """The watch's pass over a placement whose session is `running` at this generation,
+        alive or just exited. True when the watch holds it this tick: an end it began, a
+        diagnosis under way, a reaction made; the own check and the exit handling then stay
+        out of it. The diagnosis's signals that tmux and `ps` give are read here, at the
+        trigger; the login probe runs in a worker (`_diagnose`), whose verdict a later tick
+        acts on (`_react`)."""
+        backend = target.backend
+        assert backend is not None  # noqa: S101 - a target in the snapshot is connected
+        if rec.hung_at is not None:  # the own check is ending it: its end, not the watch's
+            return False
+        pid = p["id"]
+        if rec.watch_end is not None:
+            if not session.dead and now - rec.watch_end["at"] >= KILL_AFTER:
+                backend.kill(session.name)  # TERM was not enough
+                self._watch_ended(rec, now, None)
+            return True
+        task = self.watching.get(pid)
+        if task is not None:
+            if task.is_alive():
+                return True
+            del self.watching[pid]
+        verdict, rec.watch_verdict = rec.watch_verdict, None
+        if verdict is not None and verdict["generation"] == rec.generation:
+            return self._react(p, rec, session, target, now, verdict)
+        facts = watch.session_facts(p)
+        settings = self.cfg.limits.watch
+        hub_now = now + self.hub_offset
+        interactive = p.get("mode") == "interactive"
+        trigger_ = watch.trigger(
+            facts,
+            interactive=interactive,
+            run_started=None if rec.started_at is None else rec.started_at + self.hub_offset,
+            hub_now=hub_now,
+            grace=settings.not_listening_grace_minutes * 60.0,
+            join_within=settings.join_within_minutes * 60.0,
+        )
+        if trigger_ is None or facts is None:
+            rec.watch_seen = None
+            return False
+        if rec.watch_looked_at is not None and now - rec.watch_looked_at < IDLE_EVERY:
+            return False
+        rec.watch_looked_at = now
+        episode = facts.not_listening_since if trigger_ == watch.NOT_LISTENING else rec.started_at
+        alive = not session.dead
+        # Attached is what tmux says; when it cannot say, someone may be there (§15.14).
+        attached = interactive and alive and backend.attached(session.name) is not False
+        if rec.watch_seen == [trigger_, episode]:
+            if attached:  # reported once already: looked at again once the last one left
+                return False
+            rec.watch_seen = None
+        below = (backend.activity(session) if alive else None) or "unknown"
+        harness = p["harness"]
+        probe = target.probes.get(harness)
+        version = probe.version if probe is not None else None
+        texts = watch.pane_texts(harness, version)
+        shown = backend.pane_has(session.name, texts) if interactive and alive and texts else None
+        code = None if alive else session.exit_status
+        limit_exit = (
+            not alive and not interactive
+            and code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN)
+        )  # fmt: skip
+        if limit_exit:  # the harness's own code, as the loop left it (§15.7)
+            code = self._limit_exit_code(pid, target)
+        settings_ = (p.get("health") or {}).get("settings") or {}
+        gathered = {
+            "process": "alive" if alive else "gone",
+            "exit_code": code,
+            "below": below if below in watch.BELOW else "unknown",
+            "pane_match": watch.pane_match(harness, version, shown),
+        }
+        quiet = None if facts.not_listening_since is None else hub_now - facts.not_listening_since
+        worker = threading.Thread(
+            target=self._diagnose,
+            args=(rec, {
+                "generation": rec.generation, "trigger": trigger_, "episode": episode,
+                "seen_at": hub_now, "attached": attached, "limit_exit": limit_exit,
+                "quiet_for": quiet,
+                "tool_call_max": _minutes(
+                    settings_.get("tool_call_max_minutes"), TOOL_CALL_MAX_MINUTES
+                ),
+            }, gathered, harness, rec.binary or (probe.path if probe else None),
+                target.as_user),
+            daemon=True,
+            name=f"maity-watch-{pid}",
+        )  # fmt: skip
+        self.watching[pid] = worker
+        worker.start()
+        return True
+
+    def _diagnose(
+        self,
+        rec: Record,
+        verdict: dict[str, Any],
+        gathered: dict[str, Any],
+        harness: str,
+        binary: str | None,
+        as_user: AsUser,
+    ) -> None:
+        """The worker's part: the login probe, then the first cause that fits (watch.diagnose),
+        left on the record for the tick to act on."""
+        try:
+            login = self.login(harness, binary, as_user)
+        except Exception:  # noqa: BLE001 - a probe that fails says nothing about the login
+            login = "unknown"
+        if login not in watch.LOGIN:
+            login = "unknown"
+        try:
+            found = watch.signals(**gathered, login=login, pickup_code=None)
+        except ValueError:  # an exit code outside the hub's range: none read
+            found = watch.signals(**{**gathered, "exit_code": None}, login=login, pickup_code=None)
+        cause = watch.diagnose(
+            verdict["trigger"], found, limit_exit=verdict["limit_exit"],
+            quiet_for=verdict["quiet_for"], tool_call_max=verdict["tool_call_max"],
+        )  # fmt: skip
+        with self.lock:
+            rec.watch_verdict = {**verdict, "cause": cause, "signals": found}
+
+    def _watch_words(self, verdict: dict[str, Any]) -> str:
+        """What the watch saw, in the runner's own words: the trigger, then the cause."""
+        if verdict["trigger"] == watch.NOT_LISTENING and verdict["episode"] is not None:
+            since = datetime.fromtimestamp(verdict["episode"], tz=UTC).strftime("%H:%MZ")
+            head = f"not listening since {since}"
+        else:
+            minutes = self.cfg.limits.watch.join_within_minutes
+            head = f"no session joined within {minutes} min of the start"
+        return f"{head}, {CAUSE_WORDS.get(verdict['cause'], 'no known cause')}"
+
+    def _finding(self, pid: str, verdict: dict[str, Any]) -> dict[str, Any]:
+        """The finding for a verdict, with the placement's notes up to now as its `log`."""
+        log = watch.log_entries(pid, self.notes.entries(pid), self.hub_offset)
+        return watch.finding(verdict["cause"], verdict["seen_at"], verdict["signals"], log)
+
+    @staticmethod
+    def _found(rec: Record, finding: dict[str, Any]) -> None:
+        """File a finding for the next report: the count moves the report's key."""
+        rec.finding, rec.finding_n = finding, rec.finding_n + 1
+
+    def _file(self, pid: str, rec: Record, verdict: dict[str, Any], line: str) -> bool:
+        """Note what the watch did, then file the finding with that note in its log."""
+        self.note(pid, line)
+        self._found(rec, self._finding(pid, verdict))
+        return True
+
+    def _end(
+        self, pid: str, rec: Record, session: Session, backend: Tmux, now: float,
+        verdict: dict[str, Any], then: str, line: str,
+    ) -> bool:  # fmt: skip
+        """End the session as a stop does (TERM, kill-session after KILL_AFTER); once it is
+        gone, `_watch_ended` enters what `then` says, with the finding made now."""
+        self.note(pid, line)
+        rec.watch_end = {
+            "at": now, "then": then, "trigger": verdict["trigger"],
+            "finding": self._finding(pid, verdict),
+        }  # fmt: skip
+        backend.terminate(session)
+        return True
+
+    def _watch_ended(self, rec: Record, now: float, code: int | None) -> None:
+        """The session the watch ended is gone: `failed`/`auth`, `failed`/`hung` at the cap,
+        or `exited`/`hung` and a restart after the first backoff step, resuming the session,
+        as after the own check's end (§15.14). The trigger is the `hung` detail."""
+        end, rec.watch_end = rec.watch_end, None
+        if end is None:
+            return
+        if end["then"] == "auth":
+            rec.enter(now, "failed", "auth", exit_code=code, retry_at=None)
+        elif end["then"] == "held":
+            rec.enter(now, "failed", "hung", detail=end["trigger"], exit_code=code, retry_at=None)
+        else:
+            rec.calm()
+            rec.resume = True
+            again = now + restart.delay(self.cfg.limits.restart, 0, self.rand)
+            rec.enter(now, "exited", "hung", detail=end["trigger"], exit_code=code, retry_at=again)
+        self._found(rec, end["finding"])
+
+    def _react(
+        self, p: dict[str, Any], rec: Record, session: Session, target: Target, now: float,
+        verdict: dict[str, Any],
+    ) -> bool:  # fmt: skip
+        """One reaction per cause (§15.14, the table), the cap and the person at the pane."""
+        backend = target.backend
+        assert backend is not None  # noqa: S101 - a target in the snapshot is connected
+        pid, cause, trigger_ = p["id"], verdict["cause"], verdict["trigger"]
+        if cause is None or rec.state != "running":
+            return False  # work below the harness: looked at again at the next pass
+        alive = not session.dead
+        what = self._watch_words(verdict)
+        if cause == "not_waiting":
+            if rec.watch_episode == verdict["episode"]:
+                return False  # once per quiet spell: the own check's rules go on
+            rec.watch_episode = verdict["episode"]
+            if verdict["attached"]:
+                said = "someone is attached: no line typed"
+            elif rec.nudged_at is not None:
+                said = "the nudge already typed stands"
+            elif self._prompt_shown(p, session, backend):
+                said = "a prompt shows: no line typed"
+            else:
+                digest = backend.pane_digest(session.name)
+                if digest is not None and self._nudge(p, rec, session, backend, digest, now):
+                    # The own check goes on from this nudge: its quiet spell, its reply time.
+                    rec.quiet_since = rec.quiet_since if rec.quiet_since is not None else now
+                    rec.idle_checked_at = now
+                    said = "nudged in its pane"
+                else:
+                    said = "no line typed: the pane could not be used"
+            return self._file(pid, rec, verdict, f"{what}: {said}")
+        if alive and verdict["attached"]:  # wait_deaf, never_joined, unknown, login_invalid
+            key = [trigger_, verdict["episode"]]
+            if rec.watch_seen == key:
+                return False
+            rec.watch_seen = key
+            return self._file(pid, rec, verdict, f"{what}: someone is attached, nothing ended")
+        if cause == "login_invalid":
+            said = f"{what}: the login needs a person; failed (auth)"
+            if alive:
+                return self._end(pid, rec, session, backend, now, verdict, "auth", said)
+            backend.kill(session.name)
+            rec.enter(now, "failed", "auth", exit_code=session.exit_status, retry_at=None)
+            return self._file(pid, rec, verdict, said)
+        if cause == "usage_limit":  # the harness has exited: its limit, its reset
+            backend.kill(session.name)
+            self._rate_limited(rec, now, target)
+            return self._file(pid, rec, verdict, f"{what}: started again at the reset")
+        # harness_exited, wait_deaf, never_joined, unknown: a restart, under the cap.
+        settings = self.cfg.limits.watch
+        window = settings.retry_window_minutes
+        allowed, recent = watch.may_restart(
+            rec.watch_restarts, now, window * 60.0, settings.auto_restarts
+        )
+        rec.watch_restarts = recent
+        if not allowed:
+            said = f"{what}: held after {len(recent)} watch restart(s) within {window} min"
+            if alive:
+                return self._end(pid, rec, session, backend, now, verdict, "held", said)
+            backend.kill(session.name)
+            rec.enter(now, "failed", "hung", detail=trigger_, exit_code=session.exit_status,
+                      retry_at=None)  # fmt: skip
+            return self._file(pid, rec, verdict, said)
+        rec.watch_restarts = [*recent, now]
+        if alive:
+            return self._end(pid, rec, session, backend, now, verdict, "restart",
+                             f"{what}: restart, resuming")  # fmt: skip
+        # Gone already: an exit under the restart policy's crash count too (§15.14), whose
+        # cap wins (the lead's ruling): `failed`/`crash_loop`, with the finding.
+        backend.kill(session.name)
+        policy, code = self.cfg.limits.restart, session.exit_status
+        started = rec.started_at if rec.started_at is not None else now - policy.quick_exit
+        decision = restart.on_exit(policy, rec.crashes, started, now, self.rand)
+        if decision.crash_loop:
+            rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
+                      retry_at=None)  # fmt: skip
+            said = f"{what}: crash loop after {len(decision.crashes)} quick exits"
+            return self._file(pid, rec, verdict, said)
+        rec.calm()
+        rec.resume = True
+        again = now + restart.delay(policy, 0, self.rand)
+        rec.enter(now, "exited", "hung", detail=trigger_, exit_code=code,
+                  crashes=decision.crashes, retry_at=again)  # fmt: skip
+        return self._file(pid, rec, verdict, f"{what}: restart, resuming")
 
     # --- what serve calls ------------------------------------------------------------------
 
@@ -834,6 +1152,7 @@ class Supervisor:
         rec = self.records.setdefault(pid, Record(generation=generation, since=now))
         rec.target = target.name
         rec.reports_sessions = "fresh_session" in p
+        rec.reports_finding = watch.takes_finding(p)
         if rec.generation != generation:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
             rec.hung_exits, rec.resume, rec.sessions = [], False, 0
@@ -841,8 +1160,13 @@ class Supervisor:
             rec.waiting = None
             rec.exit_code = None
             rec.limits_unknown = 0
+            # The watch counts over again, and nothing it found is the new generation's.
+            rec.watch_restarts, rec.watch_end, rec.watch_verdict = [], None, None
+            rec.watch_looked_at = rec.watch_episode = None
+            rec.watch_seen, rec.finding = None, None
 
         if p.get("desired") == "stopped":
+            rec.watch_verdict = None  # a stop wins over a reaction still to come
             if mine is not None and not mine.dead:
                 self._stop(rec, mine, p, now, backend)
             else:
@@ -878,11 +1202,21 @@ class Supervisor:
                 rec.enter(now, "running", detail=running_detail(unconfined, rec.skill_missing))
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
-            elif rec.state == "running" and p.get("mode") == "interactive":
-                if not self._prompt_shown(p, mine, backend):  # no line into a prompt
+            elif (
+                rec.state == "running" and not self._watch(p, rec, mine, target, now)
+                and p.get("mode") == "interactive"
+            ):  # fmt: skip
+                if self._resting(p) and rec.hung_at is None:
+                    rec.calm()  # paused or dormant: the own check neither nudges nor ends it
+                elif not self._prompt_shown(p, mine, backend):  # no line into a prompt
                     self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
+            if (
+                rec.state == "running" and rec.watch_end is None and rec.hung_at is None
+                and self._watch(p, rec, mine, target, now)
+            ):  # fmt: skip
+                return 0  # the watch takes the exit: a trigger held when it came
             self._exited(rec, mine, now, backend, target)
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
@@ -901,7 +1235,7 @@ class Supervisor:
         self, rec: Record, session: Session, p: dict[str, Any], now: float, backend: Tmux
     ) -> None:
         if rec.state != "stopping":
-            rec.hung_at = None
+            rec.hung_at = rec.watch_end = None  # a stop wins over a pending end
             grace = min(int(p.get("stop_grace_seconds") or 0), self.cfg.limits.stop_grace_max)
             rec.enter(now, "stopping", deadline_at=now + grace, kill_at=None)
         elif rec.kill_at is None and now >= (rec.deadline_at or now):
@@ -927,6 +1261,9 @@ class Supervisor:
             return
         if rec.hung_at is not None:  # the runner ended it for not listening
             self._hung_exit(rec, now, code)
+            return
+        if rec.watch_end is not None:  # the watch ended it (§15.14)
+            self._watch_ended(rec, now, code)
             return
         # An adopted session's start is unknown: its exit is not counted as a quick one.
         started = (
@@ -956,9 +1293,11 @@ class Supervisor:
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
                       retry_at=None)  # fmt: skip
-            self.log(f"{session.name}: crash loop after {len(decision.crashes)} quick exits")
+            said = f"crash loop after {len(decision.crashes)} quick exits"
             if pid is not None:
-                self.note(pid, f"crash loop after {len(decision.crashes)} quick exits", log=False)
+                self.note(pid, said)
+            else:
+                self.log(f"{session.name}: {said}")
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
@@ -1053,10 +1392,8 @@ class Supervisor:
                     REPLY_WITHIN_MINUTES,
                 )
                 if now - rec.nudged_at >= reply:
-                    self.log(f"{session.name}: the nudge's line did not show in "
-                             f"{reply / 60:.0f} min; ending it to resume its session")  # fmt: skip
                     self.note(p["id"], f"the nudge's line did not show in {reply / 60:.0f} min; "
-                              "ending the session to resume it", log=False)  # fmt: skip
+                              "ending it to resume its session")  # fmt: skip
                     backend.terminate(session)
                     rec.hung_at = now
                 return
@@ -1064,6 +1401,7 @@ class Supervisor:
                 backend.submit(session.name)
             except TmuxError as exc:
                 self.log(f"{session.name}: cannot send the nudge: {exc}")
+                self.note(p["id"], "cannot send the nudge: <error>", log=False)
                 return
             rec.pane, rec.nudged_at, rec.unsent = digest, now, False
             return
@@ -1079,39 +1417,46 @@ class Supervisor:
             if now - rec.quiet_since < hang:
                 return
             if rec.nudges >= NUDGE_CAP:
-                self.log(f"{session.name}: answered {rec.nudges} nudges without going back to "
-                         "its wait; ending it to resume its session")  # fmt: skip
                 self.note(p["id"], f"answered {rec.nudges} nudges without going back to its "
-                          "wait; ending the session to resume it", log=False)  # fmt: skip
+                          "wait; ending it to resume its session")  # fmt: skip
                 backend.terminate(session)
                 rec.hung_at = now
                 return
-            try:  # the baseline is the pane with the line typed, before Enter: any answer counts
-                if rec.left_typed:  # the dropped line is still there: send it, never a second
-                    shown: str | None = digest
-                else:
-                    backend.type_text(session.name, NUDGE_LINE)
-                    shown = self._typed(backend, session.name, digest)
-                if shown is not None:
-                    backend.submit(session.name)
-            except TmuxError as exc:
-                self.log(f"{session.name}: cannot nudge: {exc}")
+            if not self._nudge(p, rec, session, backend, digest, now):
                 return
-            rec.nudged_at, rec.left_typed = now, False
-            rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
-            self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
-                     "nudged in its pane")  # fmt: skip
-            self.note(p["id"], f"not listening for {(now - rec.quiet_since) / 60:.0f} min, "
-                      "nothing runs below the harness: nudged in its pane", log=False)  # fmt: skip
+            self.note(p["id"], f"not listening for {(now - rec.quiet_since) / 60:.0f} min; "
+                      "nudged in its pane")  # fmt: skip
             return
         if now - rec.nudged_at < reply:
             return
-        self.log(f"{session.name}: still not listening {reply / 60:.0f} min after the nudge; "
-                 "ending it to resume its session")  # fmt: skip
         self.note(p["id"], f"still not listening {reply / 60:.0f} min after the nudge; "
-                  "ending the session to resume it", log=False)  # fmt: skip
+                  "ending it to resume its session")  # fmt: skip
         backend.terminate(session)
         rec.hung_at = now
+
+    def _nudge(
+        self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, digest: str,
+        now: float,
+    ) -> bool:  # fmt: skip
+        """Type the nudge's line into the pane and send it, the pane measured once the line
+        shows and before Enter, so whatever the harness does with it is a change; a line that
+        does not show in time gets its Enter at a later look (`unsent`). A line a dropped
+        nudge left typed is sent, never typed twice. False when tmux refused it."""
+        try:  # the baseline is the pane with the line typed, before Enter: any answer counts
+            if rec.left_typed:  # the dropped line is still there: send it, never a second
+                shown: str | None = digest
+            else:
+                backend.type_text(session.name, NUDGE_LINE)
+                shown = self._typed(backend, session.name, digest)
+            if shown is not None:
+                backend.submit(session.name)
+        except TmuxError as exc:
+            self.log(f"{session.name}: cannot nudge: {exc}")
+            self.note(p["id"], "cannot nudge: <error>", log=False)
+            return False
+        rec.nudged_at, rec.left_typed = now, False
+        rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
+        return True
 
     def _typed(self, backend: Tmux, name: str, before: str) -> str | None:
         """The pane once the nudge's line shows, before Enter: what "unchanged" is measured
@@ -1350,6 +1695,7 @@ class Supervisor:
         retrying = rec.state in ("exited", "rate_limited")
         rec.calm()
         rec.folder_prompt = None
+        rec.watch_looked_at, rec.watch_verdict, rec.watch_seen = None, None, None  # a new run
         rec.enter(now, "starting", retry_at=None, started_at=now)
         rec.sandbox = view.sandbox
         if retrying:
@@ -2135,6 +2481,8 @@ class Supervisor:
             "target": rec.target or self._default_target(),
             "since": stamp(rec.since),
             "session_hint": rec.session_hint if rec.state in ("starting", "running") else None,
+            # What the watch found (§15.7), once, and only to a hub that takes it.
+            **({"finding": rec.finding} if rec.reports_finding and rec.finding else {}),
         }
 
     def _report(self, desired: list[dict[str, Any]]) -> None:
@@ -2148,6 +2496,7 @@ class Supervisor:
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     rec.pending = {"key": key, "body": self._body(rec)}
+                    rec.finding = None  # in this body now: a resend sends the same one
                     self.note(p["id"], _state_text(rec))  # the line `changed` writes
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
