@@ -593,9 +593,10 @@ falling back to the hidden state directory where no command would run.
 
 That refusal is reported as `failed` / `harness_refused` with the detail
 `codex_host_too_old` (docs/api.md §15.7), and the host's own message goes
-to the runner's log. Until that code was in the contract (PR #1979) the
-report carried no detail: an unknown detail made the hub answer `invalid`,
-and the runner re-sent the rejected report every tick. A hub older than
+to the runner's log. Until card tsk-m1mkmx0ncckr put that code in the
+contract, the report carried no detail (the choice of PR #1979): an unknown
+detail made the hub answer `invalid`, and the runner re-sent the rejected
+report every tick. A hub older than
 the code still refuses the detail; the runner then sends the report once
 more without it (b68a2e8b), so the refusal is recorded either way.
 `retry_at` stays unset, so the start still does not crash-loop and only a
