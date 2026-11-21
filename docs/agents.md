@@ -90,6 +90,13 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    lowercase UUID v4 from the operating system's randomness, calls no hub
    and needs no join, so it works in a harness sandbox that refuses
    `uuidgen` or `/proc/sys/kernel/random/uuid`. Never type an Id by hand.
+   Placed by a runner, you do not install the skill: the runner delivers
+   the version the hub names, read-only, and the resume's Keep the Why
+   block says where (`MAITY_KTW_SKILL_DIR`). In Claude Code invoke it as
+   `keep-the-why:keep-the-why`: a plain `keep-the-why` is a copy installed
+   by hand, whose files you may not be able to read. When the block names
+   no such directory, its load and install lines are what applies
+   ([docs/runners.md](runners.md#the-keep-the-why-skill)).
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you. A question about the project's contract, its

@@ -5414,6 +5414,85 @@ already restarts a session that goes quiet, and keeping the `maity wait`
 alive is the narrower fix; the detection-and-restart path is tracked as a
 separate item of the incident card.
 
+## The runner delivers the Keep the Why skill at the commit the hub names, as a per-session plugin
+
+**Id:** 0e5f69e1-dfac-4cc6-9673-40006c22d697
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on a runner host, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on a Linux x64 runner, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); `cli/src/maity/runner/skills.py`, `adapters.py`, `supervisor.py`
+**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; the agent_user layout, ssh hosts or Codex get the delivery
+**See:** https://github.com/oliver-zehentleitner/maity — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-11-20
+
+A placed session could not get the skill: its sandbox does not write the
+harness's skills directory, and it has no network for `npx`. So the
+runner fetches it and hands it to the session read-only:
+
+- The hub names the skill per placement, `keep_the_why: {source,
+  commit}` (§15.5). The runner fetches that commit with its own git,
+  outside the sandbox, https only, and takes only plain files (no links,
+  no submodules; bounded in count and size) into
+  `~/.local/share/maity-runner/skills/keep-the-why/<commit>-<source hash>/`
+  (one copy per source and commit, so another path at the same commit is
+  never handed out for it), with a SHA-256 manifest written last and
+  checked at every start, its source and commit included, and the
+  manifest's own hash anchored in the runner's state directory
+  (`skills.json`), which no session reaches, since a manifest rewritten
+  beside its files would pass a check of the copy alone (the security
+  leg of the review of #2056; without a record the commit is fetched
+  again and compared): every
+  directory, the manifest and every file checked for its type through no
+  link, and the same bounds as at the fetch. Of the runner's environment
+  the fetch keeps only the proxy and trust-root variables, never git
+  configuration or another `GIT_*` variable, which could change the
+  transport (the review of #2056).
+- Claude Code loads it with `--plugin-dir`, for that session only. The
+  settings add `Read` on the copy, because the skill sends the agent to
+  its `references/` and a Read outside the clone and the scratch is
+  refused otherwise, even for a skill installed by hand. An `Edit` deny
+  and the sandbox's `denyWrite` keep the copy unwritable from the session.
+- Every harness gets `MAITY_KTW_SKILL_DIR`. `maity resume` then gives that
+  copy as the one way to load the skill, in place of the hub's load and
+  install texts (the review of #2056), and for Claude Code the plugin's
+  skill name, `keep-the-why:keep-the-why`:
+  the session still loads the user's own skills, so a hand-installed
+  `keep-the-why` shows beside it, may be another version, and is what a
+  request for the plain name gets (the live check), while its references
+  stay unreadable to the session.
+- A fetch that fails starts the session anyway and reports
+  `keep_the_why_unavailable` (§15.7), `sandbox_unavailable` first when
+  both hold. The resume packet's install text stays the fallback.
+
+**Reason:** the commit, not the tag, is what makes the copy checkable: git
+verifies every object against it, the rule the runner already follows for
+tools (take only an exact release it can check). The hub stays the one
+source of the version, as it is for the resume packet's install text, and
+a per-session plugin path writes nothing into the agents' home. Starting
+without the skill keeps an agent online through a forge outage, and the
+report tells the owner.
+
+**Rejected alternatives:**
+- A copy bundled with the CLI wheel: offline, but tied to the CLI's
+  releases and drifting from the hub's pin (the lead, 2026-11-20; the same
+  drift that ruled out vendoring the skill into project repositories).
+- The version from the clone's `.keep-the-why` (`context-schema`), as
+  tsk-98y28q20nm9c proposed: repository content would choose what the
+  runner fetches, and a tag is not content-pinned.
+- Writing the skill into the agents' `~/.claude/skills`: it changes the
+  agents' home for every session and every project, which a per-session
+  `--plugin-dir` avoids.
+- Fetching by tag and trusting TLS: a moved tag would change what is
+  delivered without anyone choosing it.
+- Refusing the start when the fetch fails: an agent offline over a forge
+  outage, for a skill whose install text is still in the resume packet.
+
+**Not built yet:** the agent_user layout (the agents' user may not read
+the runner's directory) and ssh hosts start without the skill, with a log
+line and the report; Codex gets only the variable; `maity runner check`
+names a hand-installed copy for Claude Code (a warning, never a refusal:
+it is the operator's) but not yet the delivered one, and `gc` does not
+prune old copies yet. That is the second part of the card.
+
 ## A placement without room under its scratch gets a short TMPDIR of its own in `/tmp`
 
 **Id:** 893d9dfd-6d56-4a8f-b46a-5f43c9e26737

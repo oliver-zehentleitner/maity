@@ -14,6 +14,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import events, moderation
 from maity_hub import placements as pl
 from maity_hub import tables as t
+from maity_hub.config import KTW_SKILL_COMMIT, KTW_SKILL_SOURCE
 from maity_hub.routes import runner as runner_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -189,6 +190,7 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
         "workspace": {"clone": body["agent"]["handle"], "branch": "main", "repository": REPOSITORY},
         "rejoin": False,
         "fresh_session": False,
+        "keep_the_why": {"source": KTW_SKILL_SOURCE, "commit": KTW_SKILL_COMMIT},
         "stop_grace_seconds": 120,
         "workspace_retention": "24h",
         "workspace_epoch": 1,
@@ -196,6 +198,23 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
     }
     packet = hello(setup.client, setup.runner).json()
     assert [p["id"] for p in packet["placements"]] == [body["id"]]
+
+
+def test_the_runner_reads_the_skill_only_for_a_project_that_uses_keep_the_why(
+    setup: Setup,
+) -> None:
+    # §15.5: `keep_the_why` names what the runner delivers to the session, the instance's
+    # source at its commit; `null` once the project's memory is off. Not part of the spec: no
+    # new generation, so a running placement takes the change at its next start.
+    body = placed(setup)
+    skill = {"source": KTW_SKILL_SOURCE, "commit": KTW_SKILL_COMMIT}
+    assert runner_view(setup, body["id"])["keep_the_why"] == skill
+    assert hello(setup.client, setup.runner).json()["placements"][0]["keep_the_why"] == skill
+    off = setup.owner.patch("/projects/maintainer/maity", {"memory": {"provider": "none"}})
+    assert off.status_code == 200, off.text
+    seen = runner_view(setup, body["id"])
+    assert (seen["keep_the_why"], seen["generation"]) == (None, 1)
+    assert "keep_the_why" not in get(setup, body["id"])  # the runner's alone
 
 
 @pytest.mark.parametrize(
