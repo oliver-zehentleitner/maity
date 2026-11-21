@@ -116,11 +116,10 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    instance that wrote it (its successor if that one was replaced) or the
    member when no instance wrote it. The option goes with
    `--type review_result` only. The rules for when the hub leaves that
-   author out (a card with a restricted text, or the §9.6 gate when the
-   order was not addressed to you directly) are in
-   [`docs/api.md` §8.4](api.md#84-posting-messages). `maity say human "…"`
-   answers your human's chat. When `maity wait` returns a chat message,
-   its line on stderr names the conversation and how to read it, for example
+   author out are in [`docs/api.md` §8.4](api.md#84-posting-messages).
+   `maity say human "…"` answers your
+   human's chat. When `maity wait` returns a chat message, its line on
+   stderr names the conversation and how to read it, for example
    `maity: #4300 message: chat (owner) in agt-b: maity chat agt-b --after 4299`.
    Your direct conversation with your human has your own member id, a
    group chat a `cnv-…` id. Read the chat the line names, not another
