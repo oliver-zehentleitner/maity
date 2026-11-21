@@ -22,14 +22,13 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller, attachment_in, attachments
 from maity_hub.errors import ApiError, invalid, unauthenticated
 
-PROJECT_MAX = 300  # an `<owner>/<slug>` or a project id; anything longer names no project
+PROJECT_MAX = 300  # an `<owner>/<slug>`; anything longer names no project
 
 
 def project_named(conn: Connection, text: str) -> Any | None:
-    """The project `text` names: its id (§6.25) or its full name `<owner>/<slug>`, current or
-    an alias; None for neither."""
-    if text.startswith("prj-"):
-        return conn.execute(select(t.project).where(t.project.c.id == text)).first()
+    """The project `text` names: its full name `<owner>/<slug>` (§5.3, "Per project"),
+    current or an alias; None for anything else, a project id included, which `project`
+    does not take."""
     return namespace.resolve(conn, text)
 
 
@@ -50,8 +49,9 @@ def _refuse_isolated(attachment: Any) -> Any:
 
 def named(conn: Connection, caller: Caller, project: str) -> Any:
     """The live attachment in the project `project` names: one the instance is not attached
-    to, or none at all, is `invalid` (`project: not_a_member`), which tells the caller nothing
-    it does not know; an isolated one `403 isolated` (§6.2)."""
+    to, or none at all (a project id or any other form than `<owner>/<slug>` names none), is
+    `invalid` (`project: not_a_member`), which tells the caller nothing it does not know; an
+    isolated one `403 isolated` (§6.2)."""
     found = project_named(conn, project)
     attachment = attachment_in(conn, caller, found.id) if found is not None else None
     if attachment is None:

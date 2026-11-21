@@ -279,12 +279,15 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         live = attachments(conn, caller.credential_id or "")
         if len(live) > 1:
             # The packet with one entry per project is not built yet (§5.2, "Several
-            # projects"), and no client says it reads one: refused before anything else is
-            # checked or done, no session opened and no `session_started` written.
+            # projects"): refused before anything else is checked or done, no session opened
+            # and no `session_started` written. The contract's answer to a client that cannot
+            # read it, with no release to name, until the multi-project resume is built; the
+            # message says what no update of the client changes.
             raise ApiError(
                 409,
                 "conflict",
-                "this instance is attached to several projects; its client cannot read them",
+                "resume is not available yet for an instance attached to several projects; "
+                "a later hub version brings it",
                 {"reason": "client_too_old", "min_cli": None},
             )
         if not live:  # detached from everything since the call was authenticated

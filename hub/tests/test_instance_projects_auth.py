@@ -472,7 +472,9 @@ def test_patch_me_paused_applies_per_project(world: World) -> None:
     with it that one, answered with its member view; an isolated project named is `isolated`,
     one the instance is not attached to `invalid` (`not_a_member`)."""
     w = world
-    paused = w.call("PATCH", "/me", body={"paused": {"reason": "a break"}, "project": w.beta})
+    paused = w.call(
+        "PATCH", "/me", body={"paused": {"reason": "a break"}, "project": "maintainer/beta"}
+    )
     assert paused.status_code == 200, paused.text
     assert "projects" not in paused.json()
     assert _attachment(w, w.in_b).paused_since is not None
@@ -491,7 +493,7 @@ def test_patch_me_paused_applies_per_project(world: World) -> None:
     _refused(named, "forbidden")
     assert named.json()["error"]["details"]["reason"] == "isolated"
     factory.project(w.engine, "gamma")
-    for project in ("maintainer/gamma", "nobody/nothing", "prj-000000000000"):
+    for project in ("maintainer/gamma", "nobody/nothing", "prj-000000000000", w.beta):
         _invalid(
             w.call("PATCH", "/me", body={"paused": None, "project": project}),
             "project",
@@ -557,9 +559,6 @@ def test_no_route_outside_a_project_answers_500_for_an_instance_in_two(world: Wo
     for method, path, body in calls:
         answered = w.call(method, path, body=body)
         assert answered.status_code < 500, (method, path, answered.text)
-    resumed = w.call("POST", "/me/resume", body={"client": "test"})
-    assert resumed.status_code == 409, resumed.text
-    assert resumed.json()["error"]["details"]["reason"] == "client_too_old"
     _invalid(
         w.call("POST", "/me/soul/proposals", body={"markdown": "me", "reason": "why"}),
         "project",
@@ -567,6 +566,55 @@ def test_no_route_outside_a_project_answers_500_for_an_instance_in_two(world: Wo
     )
     listed = w.call("GET", "/projects").json()["items"]
     assert sorted(p["id"] for p in listed) == sorted([w.alpha, w.beta])
+
+
+def test_resume_of_an_instance_in_several_projects_is_refused_plainly(world: World) -> None:
+    """Pinned until the resume with one entry per project is built (§5.2, "Several projects"):
+    the contract's `409 conflict` with `client_too_old` and no release to name, its message
+    saying that no update helps yet. No session opens and no `session_started` is written.
+    The PR that builds it (and `accepts`, which is not taken yet) changes this test on
+    purpose."""
+    w = world
+    before = (w.event_count(w.alpha), w.event_count(w.beta))
+    resumed = w.call("POST", "/me/resume", body={"client": "test"})
+    assert resumed.status_code == 409, resumed.text
+    assert resumed.json()["error"] == {
+        "code": "conflict",
+        "message": "resume is not available yet for an instance attached to several "
+        "projects; a later hub version brings it",
+        "details": {"reason": "client_too_old", "min_cli": None},
+    }
+    assert (w.event_count(w.alpha), w.event_count(w.beta)) == before
+    with w.engine.connect() as conn:
+        opened = conn.execute(
+            select(func.count())
+            .select_from(t.agent_session)
+            .where(
+                t.agent_session.c.credential_id == w.agent.credential_id,
+                t.agent_session.c.started_at >= w.start,
+            )
+        ).scalar_one()
+    assert opened == 0
+
+
+def test_an_agents_project_is_named_by_its_full_name_only(world: World) -> None:
+    """`project` is `<owner>/<slug>` (§5.3, "Per project"): a project id, even of a project
+    the instance is attached to, names no project for it, `invalid` (`not_a_member`), as does
+    any other form, on every route that takes it."""
+    w = world
+    with w.engine.begin() as conn:
+        conn.execute(update(t.project).values(keep_the_why=True))
+    until = clock.rfc3339(clock.now() + timedelta(hours=1))
+    for project in (w.beta, "beta", "maintainer/beta/x", "/beta", ""):
+        for method, path, body in (
+            ("PATCH", "/me", {"paused": None, "project": project}),
+            ("POST", "/me/limit", {"until": until, "project": project}),
+            ("POST", "/me/keep-the-why/ack", {"project": project}),
+            ("POST", "/me/soul/proposals", {"markdown": "me", "reason": "why", "project": project}),
+        ):
+            _invalid(w.call(method, path, body=body), "project", "not_a_member")
+    assert _limit(w, w.in_b) is None
+    assert _attachment(w, w.in_b).ktw_acknowledged_at is None
 
 
 def test_get_projects_shows_an_isolated_attachment_reduced(world: World) -> None:
@@ -639,6 +687,17 @@ def test_a_cross_chat_author_not_attached_to_the_project_is_refused(chat: Any) -
     added = owner.post(f"/me/cross-chats/{chat_id}/participants", {"member_id": lone.id})
     assert added.status_code == 200, added.text
     refused = lone.post(chat["path"], {"body": chat["mention"], "project": "maintainer/beta"})
+    _invalid(refused, "project", "not_a_member")
+    assert chat["charged"] == []
+
+
+def test_a_cross_chat_post_names_its_project_by_full_name_only(chat: Any) -> None:
+    """A project id, of a project the author is attached to, names none (§9.5, §5.3)."""
+    with chat["engine"].connect() as conn:
+        beta_id = conn.execute(
+            select(t.membership.c.project_id).where(t.membership.c.id == chat["in_b"])
+        ).scalar_one()
+    refused = chat["author"].post(chat["path"], {"body": chat["mention"], "project": beta_id})
     _invalid(refused, "project", "not_a_member")
     assert chat["charged"] == []
 
