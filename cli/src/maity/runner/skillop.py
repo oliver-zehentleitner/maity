@@ -196,13 +196,21 @@ def _read_at(fd: int, name: str, limit: int, path: Path, max_bytes: int) -> byte
 def payload(copy: Path, key: str) -> str:
     """The runner's checked copy at `copy` as one JSON document for `put`: the key, the manifest
     and every file it names, as base64. Read from descriptors without following a link, as
-    `verify` reads them; the caller checked the copy just before."""
-    fd = os.open(copy, _FOLDER | _NOFOLLOW)
+    `verify` reads them; the caller checked the copy just before. Mismatch for a copy that
+    changed since into something that is no copy (the review of #2089)."""
+    try:
+        fd = os.open(copy, _FOLDER | _NOFOLLOW)
+    except OSError:
+        raise Mismatch(f"{copy} in the skill's copy is not a plain directory") from None
     try:
         raw = _read_at(fd, MANIFEST, MANIFEST_MAX, copy / MANIFEST, MAX_BYTES)
-        manifest = json.loads(raw.decode("utf-8"))
+        try:
+            manifest = json.loads(raw.decode("utf-8"))
+            names = sorted(str(n) for n in manifest["files"])
+        except (ValueError, KeyError, TypeError):
+            raise Mismatch(f"{copy / MANIFEST} is not a manifest the runner wrote") from None
         files: dict[str, str] = {}
-        for name in sorted(manifest["files"]):
+        for name in names:
             parts = PurePosixPath(name).parts
             parent = fd
             opened: list[int] = []

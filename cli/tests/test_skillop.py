@@ -386,6 +386,20 @@ def test_a_document_that_cannot_be_read_or_decoded_is_an_answer_not_a_traceback(
     assert list(home.iterdir()) == []
 
 
+@pytest.mark.parametrize("text", ["not json", '{"files": 3}', '{"source": "x"}'])
+def test_a_runner_manifest_tampered_since_the_check_is_a_mismatch_when_packaged(
+    tmp_path: Path, text: str
+) -> None:
+    # The review of #2089: packaging maps a broken manifest to Mismatch, which deliver turns
+    # into Unavailable, never a KeyError or TypeError out of the start.
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    manifest = root.parent / skillop.MANIFEST
+    os.chmod(manifest, 0o644)
+    manifest.write_text(text)
+    with pytest.raises(skillop.Mismatch, match="not a manifest the runner wrote"):
+        skillop.payload(root.parent, KEY)
+
+
 def test_an_old_host_maity_without_the_ops_is_unsupported() -> None:
     import subprocess
 
