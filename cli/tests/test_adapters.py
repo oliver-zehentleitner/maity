@@ -786,9 +786,13 @@ def test_claude_codes_leaf_is_its_claude_code_tmpdir_never_its_tmpdir(tmp_path: 
     # Without a leaf (an ssh host, or none could be made): neither.
     env = adapters.launch(context(tmp_path / "n", scratch=deep)).env
     assert "TMPDIR" not in env and "CLAUDE_CODE_TMPDIR" not in env
-    # Codex: the leaf is its TMPDIR, and it gets no CLAUDE_CODE_TMPDIR.
+    # Codex: the leaf is its TMPDIR, and it gets no CLAUDE_CODE_TMPDIR. Its launch writes its
+    # CODEX_HOME into the scratch, so that scratch is made, still with no room for a socket.
+    made = tmp_path / "c" / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    made.mkdir(parents=True)
+    assert adapters.scratch_tmpdir(made) is None
     codex = context(
-        tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=deep, tmpdir=own
+        tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=made, tmpdir=own
     )
     env = adapters.launch(codex).env
     assert env["TMPDIR"] == str(own) and "CLAUDE_CODE_TMPDIR" not in env

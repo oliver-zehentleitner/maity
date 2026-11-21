@@ -337,6 +337,8 @@ Nothing in a scratch counts as unsaved work. Once the hub reads the placement as
 
 Neither the sizes nor the removals go to the hub.
 
+**Known gap:** Claude Code placements that run as the same OS user share one temp directory (`/tmp/claude-<uid>`); one placement can list it and create files there, and may be able to change another's working files. Run placements of different owners as different OS users (`agent_user` layout) until tsk-k7svzz2p4v7y ships.
+
 ## Test slots and the test database in the scratch
 
 A project's test scripts take a run slot for each heavy suite (`tools/run_slot.sh`) and keep a PostgreSQL test cluster (`hub/scripts/with_postgres.sh`). By default both live under `~/.local/state/maity/`, which no placement's sandbox may write. So the runner points both into the placement's scratch:

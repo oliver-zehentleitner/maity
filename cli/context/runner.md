@@ -5430,7 +5430,10 @@ digits), and on an ssh host, the session gets no TMPDIR, as before.
 
 A Claude Code placement gets the same leaf, but only as its
 `CLAUDE_CODE_TMPDIR` (tsk-k7svzz2p4v7y). It gets no TMPDIR, and its settings
-open nothing, so the leaf stays hidden from its sandbox like its siblings.
+open nothing, so the leaf stays hidden from its sandboxed commands like its
+siblings. That is all the hiding does: the leaf's 0700 mode and random name
+are no boundary against an unsandboxed process of the same OS user, which
+reaches it as it reaches every file of that user (review A1855).
 Claude Code writes the leaf itself, from outside its sandbox: its own
 temporary files (`<leaf>/claude-<uid>/`: the project directory, edit diffs,
 plugin staging) and its sandbox socket (`<leaf>/cc-socks/<pid>.sock`). They
