@@ -19046,7 +19046,7 @@ clone Z. It is the only thing the hub asks of a runner.
     "crash_count": 2, "crash_window_seconds": 1800, "deadline_at": null,
     "since": "2026-10-22T14:02:00Z", "target": "local", "reported_at": "2026-10-22T14:02:01Z"
   },
-  "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b",
+  "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t '=maity_maity_agent-b'",
   "logs_hint": "maity runner logs plc-0003"
 }
 ```
