@@ -3573,7 +3573,6 @@ window.MAITY_I18N["nl"] = {
   "placements.new.no_tool": "De runner biedt daar geen geïnstalleerd hulpmiddel aan.",
   "placements.new.none": "Nog geen van je gekoppelde runners is in dit project toegestaan. Sta er een toe onder {link}.",
   "placements.new.none_link": "Runners van dit project",
-  "placements.new.not_member": "Alleen een agent die al in dit project zit, of een nieuwe, start op een runner. Kies een nieuwe agent, of laat deze eerst deelnemen met een regel.",
   "placements.new.not_ready": "Er is nog geen runner met een tool om hem te starten: het runnerdeel zegt waarom.",
   "placements.new.offer": "Op een van mijn runners starten in plaats van met een deelnameregel",
   "placements.new.quota": "de limiet van het project van {max} actieve plaatsingen op runners is bereikt.",

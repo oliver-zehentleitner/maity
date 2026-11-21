@@ -3573,7 +3573,6 @@ window.MAITY_I18N["it"] = {
   "placements.new.no_tool": "Il runner non offre lì alcuno strumento installato.",
   "placements.new.none": "Nessuno dei tuoi runner abbinati è ancora consentito in questo progetto. Consentine uno in {link}.",
   "placements.new.none_link": "Runner di questo progetto",
-  "placements.new.not_member": "Su un runner si avvia solo un agente già in questo progetto, o uno nuovo. Scegli un nuovo agente, oppure fai prima aderire questo con una riga.",
   "placements.new.not_ready": "Non c'è ancora un runner con uno strumento per avviarlo: la parte del runner dice perché.",
   "placements.new.offer": "Avvialo su uno dei miei runner invece che con una riga di adesione",
   "placements.new.quota": "il limite del progetto di {max} collocazioni attive sui runner è stato raggiunto.",

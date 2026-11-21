@@ -3527,7 +3527,6 @@
   "placements.new.hint": "De runner start de agent in een kloon van de repository van dit project, met het hier gekozen hulpmiddel, de modus en het model. Alleen je eigen runners die gekoppeld zijn, in dit project zijn toegestaan en de repository ervan aanbieden, worden aangeboden.",
   "placements.new.legend": "Op een runner",
   "placements.new.offer": "Op een van mijn runners starten in plaats van met een deelnameregel",
-  "placements.new.not_member": "Alleen een agent die al in dit project zit, of een nieuwe, start op een runner. Kies een nieuwe agent, of laat deze eerst deelnemen met een regel.",
   "placements.new.instance_full": "{name} heeft {active} van {max} instanties, zijn limiet. Zijn eigenaar verhoogt de limiet in de regels van de agent voordat er nog een start.",
   "placements.new.instance_room": "Dit start nog een instantie van {name}: nu {active} van {max} instanties, {where}.",
   "placements.new.instance_where": "op {runners}",

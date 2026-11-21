@@ -7105,9 +7105,10 @@ head above the tabs puts the menu on every tab, and the Team page no longer jump
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer on the card tsk-hdczmsq2r431, 2026-11-16 (the way on a runner was drawn without any layout; one form that starts with the agent's profile for both ways, with a part below for a runner instead of a join line); the lead's go on the design proposal, 2026-11-16; docs/api.md §15.6; for a member's own agent the card tsk-at3gnzqd8svy (2026-11-21, after tsk-swrhej87tp0c and #2073), docs/api.md §15.6 "A profile that is not a member yet", §15.4 (`capabilities` in the project's runner list for members:admin only)
+**Source:** the maintainer on the card tsk-hdczmsq2r431, 2026-11-16 (the way on a runner was drawn without any layout; one form that starts with the agent's profile for both ways, with a part below for a runner instead of a join line); the lead's go on the design proposal, 2026-11-16; docs/api.md §15.6; for a member's own agent the card tsk-at3gnzqd8svy (2026-11-21, after tsk-swrhej87tp0c and #2073), docs/api.md §15.6 "A profile that is not a member yet", §15.4 (`capabilities` in the project's runner list for members:admin only); for an admin's own profile not in the project yet the card tsk-rmvgtab6rae8 (2026-11-21, the open point of #2085), `first_join_fields` in hub/src/maity_hub/routes/joins.py
+**Verification:** corroborated
 **See:** views.md#one-page-head-for-agents-and-team-managed-agents-at-placements-the-start-on-a-runner-in-a-join-an-agent-menu — 79438329-b7bb-435a-b384-3f597a2d7d04 — as of 2026-11-17
-**Revisit when:** a placement takes a field the join has and this form hides (subagents, a take-over), a way in other than a join line and a runner needs a place in the form, the project's runner list names capabilities to every member, or the form offers an admin a profile of their own that is not a member yet
+**Revisit when:** a placement takes a field the join has and this form hides (subagents, a take-over), a way in other than a join line and a runner needs a place in the form, the project's runner list names capabilities to every member, or GET /agents lists profiles other than the caller's own
 
 **Join an agent** is one button that opens the join panel (`js/join.js`) on the project's Agents
 and Team pages and on `/agents`. Its form starts with the agent and its place in the team, as
@@ -7116,8 +7117,8 @@ every join does. For a human with members:admin it ends with **On a runner** (`r
 clone, branch and reason, read from one's own live runners here that offer the repository. Ticked,
 the button reads **Start on the runner**; the fields a placement does not take are hidden
 (validity, the instance choice, take-over, hand-over, subagents, the boss of an agent already
-here), and the submit is `POST …/placements` instead of a join. An agent by id must be a member
-here (§15.6) with room under its `max_instances` (§15.5, one placement per instance, several per
+here), and the submit is `POST …/placements` instead of a join. An agent by id is one's own
+profile not here yet (below), or a member here (§15.6) with room under its `max_instances` (§15.5, one placement per instance, several per
 agent, as the hub has taken since tsk-rfa7fwa2sz5g): the part counts its live instances and its
 active placements holding no live credential as the hub does, says for an agent that runs already
 that the start adds another instance and where the others run, and at the limit says that the
@@ -7153,8 +7154,27 @@ already holds (`agents_held`) without a new slot, so the button stays and the li
 so; a join line is refused before sending only for a profile not held (review A1877 of #2085).
 The hub's refusals of a member's own agent are said in the join's words (`memberRefusal` in `js/join.js`). On **Managed agents** such a placement runs no
 membership until its pickup, so its creator counts as the profile's owner for Start, Restart and
-Reset (only that owner creates one, §15.6). An admin's form still offers by id only an agent
-already in the project.
+Reset (only that owner creates one, §15.6).
+
+An admin's form offers a profile of their own that is not a member here too, since 2026-11-21
+(tsk-rmvgtab6rae8): no join line first. The start sends its id with the fields an admin's join
+takes, the same as for a new profile (trust, role, boss, areas, briefing), and the hub stores them
+for the first join its pickup makes (`first_join_fields`, `owner_only` for trust admin). An agent
+already here is still sent by its id alone, since a placement never changes a membership
+(`not_with_agent_id`). When the hub answers `not_with_agent_id` for a profile the list on screen
+took for one not here yet, the members are read again, the button held until then, and the next
+start sends its id alone only when that read shows the profile as a member. A read without it
+keeps the admission draft as filled in, and the refusal; a read that fails keeps both too and
+offers to read again. The hub's word alone is not taken (as a join line still takes `instance:
+required`, whose next line the hub refuses with `not_a_member` should the membership be gone): a
+membership gone before the next start would be admitted again from the id alone with the hub's
+first-join defaults (confirmed: `_admitted` in the hub's `routes/placements.py` takes the body's
+first-join fields, and their defaults where it names none), and the role, boss, areas and
+briefing shown here dropped unseen. The runner part counts no instances for a member that lists
+none (`instances: null`); the hub's `instance_quota` answers there. The
+agents offered are the caller's own profiles from `GET /agents` (§6.3), so another owner's agent,
+a member here the form knows from the member list, is never offered by id; the hub's `not_yours`
+stays the last word.
 
 **Reason:** the maintainer found the runner way asking for the profile a second time in a form of
 its own, and that form had no layout (its fields were `div.field` outside the grid that
@@ -7164,9 +7184,16 @@ bring an agent. For a member, the choices are cut to what the hub admits (inferr
 implementer's reading of the part's rule of offering only what can start): an agent already
 here, or a new profile, needs members:admin by id (`forbidden`), so offering them would be a
 choice that can only fail, and the fields a member's join may not carry (areas, capabilities)
-are `member_join_limit`.
+are `member_join_limit`. For an admin, the join line before a start of their own profile not here
+yet was a step the form asked for and the hub does not (confirmed: the card's done-when; the hub
+admits it by id since #2073, and the pickup makes the first join, §15.9).
 
 **Rejected alternatives:**
+- For an admin's own profile not here yet, the join line first (the form until tsk-rmvgtab6rae8):
+  a step the placement already does, and the only way the form asked of an admin that it no longer
+  asks of a member.
+- For it, its id alone, the hub's first-join defaults taking the rest: the form shows trust, role,
+  boss, areas and briefing for that profile, and those would be dropped unseen.
 - For a member, every profile and field offered and the hub's refusal shown: each of those
   choices can only fail, against the part's rule.
 - For a member, the runners left without tools where the project's list names no capabilities:
