@@ -104,6 +104,16 @@ def read_keep_the_why(
         raise ktw_unavailable(
             "forge_unavailable", "the Keep the Why family is being read; try again shortly"
         ) from None
+    except forge.NotCoveredError:
+        if not outside:
+            raise
+        raise not_found() from None  # the live answer before the outsiders' read: not public
+    except forge.ForgeUnavailableError as error:  # the same live answer, on a spent budget
+        if not outside:
+            raise
+        if error.retry_at is None:
+            raise ktw_unavailable("forge_unavailable") from None
+        raise _spent(error.retry_at) from None
     snapshot = entry.snapshot
     if snapshot is None:
         raise ktw_not_configured()

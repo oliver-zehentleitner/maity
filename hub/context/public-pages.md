@@ -680,18 +680,26 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
   (§11.5), are open to an outsider. Source: the owner's option A in req-vsfjgx3fch8k, its §2.3 sentence as the
   owner wrote it; tsk-jk2psmarajjb; round 2 after review A1829 (F1, F2), round 3 after review A1830; the owner's
   answer on req-adh287znbx64 (o1); the lead's decision, seq 186180, 2026-11-21 (only where the instance's token
-  serves the project).
+  serves the project); round 4 after review A1863, the lead's rulings, seq 186723 and seq 186740.
   - The source, shared with the public page's **Why** (`public_project_views.why_data`, `WHY_CACHE`): only what
     the forge serves publicly, read with the instance's token and without a grant, its visibility asked of the
     forge itself, and only for a project in the operator's own namespaces, which that token serves, where the
     page shows it too (`render_views`' `by_instance`). Three checks, in order. `access.gate`
     (`PUBLIC_REPOSITORY_READS`, before the query is read; `instance_serves_project`, from the app's settings) and
     `_require_why` with `_outside_token` answer `not_found` unless the stored `repository_public` is true and the
-    instance's token serves the namespace, the cheap first checks. Then
-    `ktw_reads.outside_reader` asks the forge live (`_visibility`, uncached) whether the repository is public, as
-    a named repository's is asked, again after `_refresh(max_age)`: at the latest every `VISIBILITY_SECONDS`, with
-    `max_age=0` every `FORCE_INTERVAL`; not public, or no answer, is `not_found`, a spent budget
-    `probe_unavailable` as for a member. The read itself goes through a reader bound to no project and holding no
+    instance's token serves the namespace, the cheap first checks. Then the gate, still before the query is read,
+    takes the forge's answer whether the repository is public (`ktw_reads.outside_visible`, one function with the
+    endpoint's `outside_reader`, which reuses the answer the gate just kept): asked live (`_visibility`,
+    uncached, in a worker thread outside any database connection) when the kept answer is older than
+    `_refresh(max_age)`, at the latest every `VISIBILITY_SECONDS`, with `max_age=0` every `FORCE_INTERVAL`, the
+    query's `max_age` read leniently for that window alone; not public, or no answer, is `not_found` before
+    validation (A1863 point 2), a spent budget passes to the endpoint, which answers `probe_unavailable` as for a
+    member. A kept positive answer only lets `OUTSIDE_CACHE` serve what it holds: every content fetch for an
+    outsider is preceded by a live visibility answer in the same request (the lead's rule, seq 186723, A1863
+    point 1). `OUTSIDE_CACHE`'s `before_read` (`_before_outside_read`) asks the forge live before each family
+    read unless the gate or the endpoint asked in this request (a context variable), and drops the forge's own
+    kept verdict (`Forge._forget`, PUBLIC_SECONDS) so the file reads that follow ask again; not public raises
+    before anything is fetched or stored. The read itself goes through a reader bound to no project and holding no
     grant into `OUTSIDE_CACHE`, a `ktw.Cache` of its own that never asks `Forge.for_project` (`bind=False`). The
     outsider path picks its token by the operator's namespaces, as the public page does
     (`routes/keep_the_why._outside_token`: the instance token where `forge_access.serves` the project's namespace
@@ -699,18 +707,21 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
     `probe_via` and the grants' state (A1830). Rejected: an anonymous read for the other projects (round 2), since
     it spends the hub-wide anonymous forge budget, which a loop over many projects with `max_age=0` could drain
     for every project (A1830, note 3; the lead, seq 186180). Why the rest: the stored flag lags the forge, since
-    the probe updates it on its own round (F1); and the members' `ktw.CACHE` may be filled through the namespace owner's grant, which reads a private
-    repository, so serving it to an outsider until the probe looked again would hand out private content (F1).
+    the probe updates it on its own round (F1); and the members' `ktw.CACHE` may be filled through the namespace
+    owner's grant, which reads a private repository, so serving it to an outsider until the probe looked again would hand out private content (F1).
     The gate runs for these routes too, so an outsider they are closed to gets no `400` for a bad query (F2).
   - The scope of the answers: the full export and its bodies, more than the page's summary, under the same
     rules as for a member. They come from what the repository publishes, never the database, so they carry no
     restricted text; a card id in an entry's text is served as published and opens nothing (`GET …/tasks/{id}`
     stays `not_found` for a hidden card).
-  - The rate: the forced family read is shared per project across members and outsiders. `OUTSIDE_CACHE` and
-    `ktw.CACHE` are each other's `peer` (`ktw.Cache.link`): a forced read (`max_age=0`) in either is made only when
-    neither read the project's repository in the last `FORCE_INTERVAL`, else the cache serves its own older entry,
-    never the other's; a cache with no entry of its own still reads once. So the owner's "the same one forge read
-    per 30 seconds per project as for a member" holds (the lead, seq 185669). Apart from it, the live visibility
+  - The rate: one refresh decision per project across both caches, the data separate. `OUTSIDE_CACHE` and
+    `ktw.CACHE` share one `ktw.Refresh` (`ktw.Cache.link`): one lock per project and the project's last family
+    read. Under that lock a forced read (`max_age` below `FORCE_INTERVAL`, i.e. `0`) is made only when neither
+    cache read the project's repository in the last `FORCE_INTERVAL`, else the cache serves its own entry, never
+    the other's; a cold first read (no entry of its own) and an ordinary refresh (an entry older than its
+    `max_age`) are always made, and an overlapping request waits and serves what was just read (the lead's
+    ruling, seq 186740; earlier seq 185669). So the owner's "the same one forge read per 30 seconds per project
+    as for a member" holds for the forced reads it governs. Apart from it, the live visibility
     check of an outsider's own repository (at most once per `FORCE_INTERVAL` with `max_age=0`) is one small forge
     request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS
     without any token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a

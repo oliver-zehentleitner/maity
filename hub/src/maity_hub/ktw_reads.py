@@ -19,6 +19,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -227,18 +228,57 @@ def named_reader(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
 
 # --- an outsider's reads (§2.3) -----------------------------------------------------------------
 
-# §11.3's answers for a public project's outsiders, apart from the members' `ktw.CACHE`, which a
-# project owner's grant may fill: filled only through `outside_reader`, which holds no grant
-# (hub/context/public-pages.md 3f9c2d71). Linked to `ktw.CACHE` as its peer, both ways: a forced
-# read (`max_age=0`) happens at most once per FORCE_INTERVAL per project across the two, and
-# each serves only its own answers. It never asks `Forge.for_project` (`bind=False`).
-OUTSIDE_CACHE = ktw.Cache(bind=False)
-OUTSIDE_CACHE.link(ktw.CACHE)
 # The forge's own answer whether a project's repository is public, for its outsiders, per
 # (project, repository): asked again after `_refresh(max_age)`, so at least every
-# VISIBILITY_SECONDS and, with `max_age=0`, every FORCE_INTERVAL.
+# VISIBILITY_SECONDS and, with `max_age=0`, every FORCE_INTERVAL. A positive answer here only
+# lets `OUTSIDE_CACHE` serve what it holds; a read for it asks again (`_before_outside_read`).
 _outside_seen: OrderedDict[tuple[str, str], tuple[float, str | None]] = OrderedDict()
 _outside_guard = threading.Lock()
+# The (project, repository) pairs the forge was asked about live in this request (the gate's or
+# the endpoint's ask): a family read for an outsider in the same request needs no second ask.
+_asked_now: ContextVar[frozenset[tuple[str, str]]] = ContextVar(
+    "ktw_outside_asked", default=frozenset()
+)
+
+
+def _outside_key(project_id: str, repository_url: str | None) -> tuple[str, str] | None:
+    if repository_url is None or forge.kind_of(repository_url) != "github":
+        return None
+    return project_id, forge.repository_of(repository_url).lower()
+
+
+def _ask(reader: forge.Forge, key: tuple[str, str]) -> str | None:
+    """The forge's live answer (`_visibility`, uncached), kept in `_outside_seen`; a spent
+    budget raises `forge.ForgeUnavailableError` with `retry_at`."""
+    verdict = _visibility(reader, key[1])
+    with _outside_guard:
+        bounded.put(_outside_seen, key, (ktw.now(), verdict), FOREIGN_KEPT)
+    return verdict
+
+
+def asked_now(project_id: str, repository_url: str | None) -> None:
+    """Notes in this request's context that the forge was just asked about the repository."""
+    key = _outside_key(project_id, repository_url)
+    if key is not None:
+        _asked_now.set(_asked_now.get() | {key})
+
+
+def outside_visible(
+    token: str, project_id: str, repository_url: str | None, max_age: int
+) -> tuple[bool, bool]:
+    """(visible, asked): whether an outsider may read the project's Why now, by the forge's
+    answer on its repository with the instance's `token`, from `_outside_seen` while younger
+    than `_refresh(max_age)`, else asked live (`asked`). Not visible off GitHub, where the
+    forge cannot say. One function for `access.gate` (before the query is read) and the
+    endpoint (`outside_reader`), which then finds the answer the gate just kept."""
+    key = _outside_key(project_id, repository_url)
+    if key is None:
+        return False, False
+    with _outside_guard:
+        seen = _outside_seen.get(key)
+    if seen is not None and ktw.now() - seen[0] < _refresh(max_age):
+        return seen[1] is None, False
+    return _ask(forge.Forge(token), key) is None, True
 
 
 def outside_reader(
@@ -247,24 +287,45 @@ def outside_reader(
     """The reader of an outsider's Why reads (§2.3): `forge.Forge(token)`, bound to no project
     and never a grant, `token` the instance's, for a project in the operator's own namespaces
     only (the caller decides it as the public page does, without asking the project's source,
-    which may write its state; never anonymous); and only while that reader's live
-    visibility check (`_visibility`) finds the repository public. None otherwise, for the
-    caller to answer `not_found`, also when the forge cannot say or the repository is on no
-    forge the hub asks. A spent budget raises `forge.ForgeUnavailableError` with `retry_at`.
-    The stored `repository_public` lags the forge (the probe updates it on its own round),
-    and the members' cache may hold what a grant read: neither decides here."""
-    if forge.kind_of(repository_url) != "github":
-        return None
-    reader = forge.Forge(token)
-    repository = forge.repository_of(repository_url).lower()
-    key = (project_id, repository)
-    with _outside_guard:
-        seen = _outside_seen.get(key)
-    if seen is None or ktw.now() - seen[0] >= _refresh(max_age):
-        seen = (ktw.now(), _visibility(reader, repository))
+    which may write its state; never anonymous); and only while `outside_visible` finds the
+    repository public. None otherwise, for the caller to answer `not_found`. A spent budget
+    raises `forge.ForgeUnavailableError` with `retry_at`. The stored `repository_public` lags
+    the forge (the probe updates it on its own round), and the members' cache may hold what a
+    grant read: neither decides here."""
+    visible, asked = outside_visible(token, project_id, repository_url, max_age)
+    if asked:
+        asked_now(project_id, repository_url)
+    return forge.Forge(token) if visible else None
+
+
+def _before_outside_read(reader: forge.Forge, project_id: str, repository: str) -> None:
+    """Before every family read `OUTSIDE_CACHE` makes: a visibility answer not older than the
+    read (the lead's rule, seq 186723). The forge is asked live unless it was asked in this
+    request already; the forge's own verdict (`Forge._require_public`, kept PUBLIC_SECONDS)
+    is dropped so the reads that follow ask again too. Not public, or no answer:
+    `forge.NotCoveredError`, nothing read and nothing stored; a spent budget raises
+    `forge.ForgeUnavailableError` with `retry_at`."""
+    key = (project_id, repository.lower())
+    reader._forget(repository)
+    if key in _asked_now.get():
         with _outside_guard:
-            bounded.put(_outside_seen, key, seen, FOREIGN_KEPT)
-    return reader if seen[1] is None else None
+            seen = _outside_seen.get(key)
+        verdict = seen[1] if seen is not None else "not_public"
+    else:
+        verdict = _ask(reader, key)
+        _asked_now.set(_asked_now.get() | {key})
+    if verdict is not None:
+        raise forge.NotCoveredError(verdict)
+
+
+# §11.3's answers for a public project's outsiders, apart from the members' `ktw.CACHE`, which a
+# project owner's grant may fill: filled only through `outside_reader`, which holds no grant
+# (hub/context/public-pages.md 3f9c2d71), each read after a live visibility answer
+# (`before_read`). It shares `ktw.CACHE`'s refresh decision (`link`): one forced read
+# (`max_age=0`) per FORCE_INTERVAL per project across the two, each serving only its own answers.
+# It never asks `Forge.for_project` (`bind=False`).
+OUTSIDE_CACHE = ktw.Cache(bind=False, before_read=_before_outside_read)
+ktw.CACHE.link(OUTSIDE_CACHE)
 
 
 @dataclass

@@ -375,6 +375,12 @@ def is_outsider(
         and instance_serves_project(conn, project, instance_namespaces)
     ):
         return False  # the read is open to an outsider: the route answers them
+    return _outsider_of(conn, cookie, project, owner_call)
+
+
+def _outsider_of(conn: Connection, cookie: str, project: Any, owner_call: bool = False) -> bool:
+    """`is_outsider` past the project's own row: the session, the membership, for one of
+    `OWNER_CALLS` the owner's reads, and the whole public test."""
     human_id = _session_human(conn, cookie)
     if human_id is None:
         return False
@@ -392,6 +398,57 @@ def is_outsider(
     from maity_hub import public_projects
 
     return project.id in public_projects.public_for_outsiders(conn, [project.id])
+
+
+def open_why_project(
+    conn: Connection, cookie: str, slug: str, instance_namespaces: frozenset[str]
+) -> Any | None:
+    """For one of `PUBLIC_REPOSITORY_READS` that `is_outsider` let through: the project row
+    when the caller is an outsider whom the stored checks open it to (a repository the hub
+    last found public, a namespace the instance's token serves), for `gate` to ask the forge
+    live before the query is read; None for anyone else, whom the route answers as before."""
+    project = namespace.resolve(conn, slug)
+    if project is None or project.repository_public is not True:
+        return None
+    if not instance_serves_project(conn, project, instance_namespaces):
+        return None
+    return project if _outsider_of(conn, cookie, project) else None
+
+
+def _lenient_max_age(request: Any) -> int:
+    """The query's `max_age` before FastAPI reads it, for the visibility answer's window alone:
+    an integer 0..86400 as written, else the default (the route refuses it later)."""
+    from maity_hub import ktw
+
+    raw = request.query_params.get("max_age")
+    if raw is not None and raw.isascii() and raw.isdigit() and len(raw) <= 5:
+        value = int(raw)
+        if value <= 86400:
+            return value
+    return ktw.DEFAULT_MAX_AGE
+
+
+async def _why_visible_now(request: Any, project: Any, token: str) -> None:
+    """The forge's answer on the repository before the query is read (`ktw_reads.
+    outside_visible`, one function with the endpoint's, which then reuses the kept answer):
+    `not_found` when not public or unanswered. The live ask runs in a worker thread, outside
+    any database connection. A spent budget passes: the endpoint answers `probe_unavailable`
+    with its `retry_at` after the query is read."""
+    from anyio import to_thread
+
+    from maity_hub import forge, ktw_reads
+
+    max_age = _lenient_max_age(request)
+    try:
+        visible, asked = await to_thread.run_sync(
+            ktw_reads.outside_visible, token, project.id, project.repository_url, max_age
+        )
+    except forge.ForgeUnavailableError:
+        return
+    if asked:
+        ktw_reads.asked_now(project.id, project.repository_url)
+    if not visible:
+        raise not_found()
 
 
 def instance_serves_project(
@@ -440,7 +497,9 @@ async def gate(
     `owner_call` for one of `OWNER_CALLS`, and with `public_repository_read` for one of
     `PUBLIC_REPOSITORY_READS`, which it opens to an outsider only while the project's stored
     `repository_public` is true and the instance's token serves its namespace (the app's
-    settings: `forge_github_token`, `forge_instance_namespaces`). Members, the owners
+    settings: `forge_github_token`, `forge_instance_namespaces`) and the forge, asked live when
+    its kept answer is older than the request's window (`_why_visible_now`), says the
+    repository is public (the lead, seq 186723). Members, the owners
     `_owns_a_part` names on one of `OWNER_CALLS`, strangers to a private or unknown project,
     agents, bridges, runners and callers without a session pass unchanged: their call is
     answered exactly as before. A
@@ -468,17 +527,24 @@ async def gate(
     if not cookie or not slug:
         return
     instance = None  # the namespaces the instance's token serves (§11.4), from the settings
+    token = None
     if public_repository_read:
         hub = request.app.state.settings
-        if hub.forge_github_token is not None:
+        token = hub.forge_github_token
+        if token is not None:
             instance = hub.forge_instance_namespaces
     engine = request.app.state.async_engine
+    opened = None
     async with engine.connect() as conn:
         outsider = await conn.run_sync(
             is_outsider, cookie, slug, owner_call, public_repository_read, instance
         )
+        if not outsider and token is not None and instance is not None:
+            opened = await conn.run_sync(open_why_project, cookie, slug, instance)
     if outsider:
         raise not_found()
+    if opened is not None and token is not None:
+        await _why_visible_now(request, opened, token)  # after the connection is closed
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

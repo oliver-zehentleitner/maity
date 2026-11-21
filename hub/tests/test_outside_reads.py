@@ -10,6 +10,8 @@ import importlib
 import inspect
 import pkgutil
 import re
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -152,6 +154,7 @@ class WhyForge(why_tests.Fake):
         self.grants.clear()
         self.tokens.clear()
         self.bound.clear()
+        self.events.clear()
         self.asked = 0
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,9 +164,11 @@ class WhyForge(why_tests.Fake):
         self.tokens: list[str | None] = []  # each file read's token
         self.asked = 0
         self.bound: list[str] = []
+        self.events: list[str] = []  # "repos" for a visibility question, "file" for a file read
         fake = self
 
         def file(reader: forge.Forge, repository: str, path: str, cap: int) -> bytes | None:
+            fake.events.append("file")
             fake.file_reads.append(path)
             fake.grants.append(reader.granted)
             fake.tokens.append(reader.token)
@@ -180,6 +185,7 @@ class WhyForge(why_tests.Fake):
 
         def send(reader: forge.Forge, path: str, query: Any = None, **kwargs: Any) -> Any:
             if path == "/repos/acme/widget":
+                fake.events.append("repos")
                 fake.asked += 1
                 return {"private": fake.private}
             return None
@@ -1381,6 +1387,154 @@ def test_the_forced_read_is_shared_by_members_and_outsiders_each_served_their_ow
     now[0] += ktw.FORCE_INTERVAL + 1
     assert entries(world.owner)[1] is True
     assert len(why.file_reads) > reads
+
+
+def test_a_refresh_for_an_outsider_asks_the_forge_once_before_its_file_reads(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every content fetch for an outsider follows a live visibility answer in the same request
+    (the lead's rule, seq 186723): a forced refresh past the shared window asks `/repos/…`
+    exactly once, before its first file read, and the endpoint reuses the gate's answer."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    assert world.outsider.get(WHY).status_code == 200
+    now[0] += ktw.FORCE_INTERVAL + 1
+    why.forget()
+    again = world.outsider.get(WHY, params={"max_age": 0})
+    assert again.status_code == 200 and again.json()["fresh"] is True, again.text
+    first_file = why.events.index("file")
+    assert why.events[:first_file] == ["repos"], why.events
+    assert why.events.count("repos") == 1, why.events
+
+
+def test_a_repository_private_inside_the_window_gets_no_file_read_for_an_outsider(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The repository turns private inside the window, the kept answers still fresh; the
+    outsider then forces a refresh past the shared 30 s window: no content file is fetched and
+    all three reads answer `not_found` (the lead's rule, seq 186723, A1863 point 1)."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    for path in WHY_READS:
+        assert world.outsider.get(path).status_code == 200, path
+    why.private = True
+    now[0] += ktw.FORCE_INTERVAL + 1
+    reads = len(why.file_reads)
+    for path in WHY_READS:
+        refused = world.outsider.get(path, params={"max_age": 0})
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+    assert len(why.file_reads) == reads
+
+
+def test_a_kept_public_answer_does_not_stand_in_for_a_new_read(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kept positive answer only lets the outsiders' cache serve what it holds: a read the
+    cache has to make (here a cold one, its entry dropped) asks the forge live first, even
+    while the kept answer is fresh, and fetches nothing when the forge says private."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    assert world.outsider.get(WHY).status_code == 200  # the kept answer: public, at 1000
+    ktw_reads.OUTSIDE_CACHE.forget(world.project_id)
+    why.private = True
+    now[0] += 5  # inside every window: the gate and the endpoint use the kept answer
+    why.forget()
+    reads = len(why.file_reads)
+    for path in WHY_READS:
+        refused = world.outsider.get(path)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+    assert len(why.file_reads) == reads
+    assert why.asked >= 1  # asked live before the read the cache would have made
+
+
+@pytest.mark.parametrize(
+    ("query", "paths"),
+    [
+        ({"max_age": "-1"}, WHY_READS),
+        ({"canonical": "x" * 2049}, WHY_READS[1:]),  # the summary takes no `canonical`
+    ],
+    ids=["max_age", "canonical"],
+)
+def test_a_bad_query_answers_an_outsider_not_found_while_the_forge_says_private(
+    world: World, why: WhyForge, query: dict[str, str], paths: tuple[str, ...]
+) -> None:
+    """The live visibility decision comes before the query is read (`access.gate`, A1863
+    point 2): the forge says private while the stored `repository_public` is still true, so an
+    outsider with a bad query gets `not_found`, never `400`; a member gets `400`."""
+    why.private = True
+    for path in paths:
+        refused = world.outsider.get(path, params=query)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+        member = world.owner.get(path, params=query)
+        assert (member.status_code, member.json()["error"]["code"]) == (400, "invalid"), path
+
+
+class _CountingCache(ktw.Cache):
+    """A cache whose family read is counted, stores an empty answer, and may wait for `go`."""
+
+    def __init__(self, reads: list[bool], go: threading.Event | None = None, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.reads, self.go = reads, go
+
+    def _read(
+        self, reader: forge.Forge, project_id: str, repository_url: str | None, last: Any
+    ) -> Any:
+        self.reads.append(self.bind)
+        if self.go is not None:
+            assert self.go.wait(5)
+        return ktw._Entry(None, ktw.now(), repository_url)
+
+
+def test_overlapping_cold_requests_make_one_read() -> None:
+    """Under the shared per-project lock an overlapping request waits for the read under way
+    and serves what it stored (`ktw.Cache.get`)."""
+    reads: list[bool] = []
+    go = threading.Event()
+    cache = _CountingCache(reads, go)
+    answers: list[bool] = []
+
+    def call() -> None:
+        answers.append(cache.get(forge.Forge(None), "prj-overlap", why_tests.REPO, 0)[1])
+
+    first = threading.Thread(target=call)
+    first.start()
+    for _ in range(500):
+        if reads:
+            break
+        time.sleep(0.01)
+    second = threading.Thread(target=call)
+    second.start()
+    time.sleep(0.05)
+    go.set()
+    first.join(5)
+    second.join(5)
+    assert reads == [True]
+    assert sorted(answers) == [False, True]
+
+
+def test_one_forced_read_per_project_across_linked_caches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lead's ruling, seq 186740: a cold first read is always made (a linked cache's
+    answer is never served); a forced read (`max_age=0`) within FORCE_INTERVAL of the last
+    read in either cache serves the cache's own entry; after it, a forced read happens."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    reads: list[bool] = []
+    members, outsiders = _CountingCache(reads), _CountingCache(reads, bind=False)
+    members.link(outsiders)
+    reader, project = forge.Forge(None), "prj-linked"
+    assert members.get(reader, project, why_tests.REPO, 0)[1] is True
+    now[0] += 5
+    assert outsiders.get(reader, project, why_tests.REPO, 0)[1] is True  # cold: allowed
+    assert outsiders.get(reader, project, why_tests.REPO, 0)[1] is False
+    assert reads == [True, False]
+    now[0] += ktw.FORCE_INTERVAL - 4  # 31 s after the members' read, 26 s after the outsiders'
+    assert members.get(reader, project, why_tests.REPO, 0)[1] is False  # within the window
+    now[0] += 5
+    assert members.get(reader, project, why_tests.REPO, 0)[1] is True
+    assert outsiders.get(reader, project, why_tests.REPO, 0)[1] is False
+    assert reads == [True, False, True]
 
 
 def test_an_outsider_reads_the_why_without_a_grant(world: World, why: WhyForge) -> None:

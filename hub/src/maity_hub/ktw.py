@@ -773,38 +773,62 @@ PROJECTS_KEPT = 256
 
 
 @dataclass
+class Refresh:
+    """When a project's family is read, decided once for every cache that shares it (`Cache.link`:
+    `ktw_reads.OUTSIDE_CACHE` beside `CACHE`): one lock per project, the requests using it, and
+    the project's last read (its repository and when). The answers stay each cache's own."""
+
+    guard: threading.Lock = field(default_factory=threading.Lock)
+    locks: dict[str, threading.Lock] = field(default_factory=dict)
+    # Requests between taking a project's lock and leaving `get`: such a project is never
+    # dropped, so a read in progress keeps its last good reads and its lock.
+    users: dict[str, int] = field(default_factory=dict)
+    last_read: OrderedDict[str, tuple[str | None, float]] = field(default_factory=OrderedDict)
+
+
+@dataclass
 class Cache:
     """The answers per project, in memory; the last good read of each member until the hub
-    restarts. One read of a project's family at a time."""
+    restarts. One read of a project's family at a time, across the caches that share `refresh`."""
 
     entries: OrderedDict[str, _Entry] = field(default_factory=OrderedDict)
     # (project, repository, member path): a repository's read never stands in for another's
     last_good: dict[tuple[str, str, str], tuple[Read, str | None]] = field(default_factory=dict)
-    locks: dict[str, threading.Lock] = field(default_factory=dict)
-    # Requests between taking a project's lock and leaving `get`: such a project is
-    # never dropped, so a read in progress keeps its last good reads and its lock.
-    users: dict[str, int] = field(default_factory=dict)
     guard: threading.Lock = field(default_factory=threading.Lock)
-    # A cache of the same projects filled by other readers (`ktw_reads.OUTSIDE_CACHE` beside
-    # `CACHE`, linked both ways by `link`): a read in either stops a forced read in the other
-    # for FORCE_INTERVAL, so the rate is one per project across both. Its answers are never
-    # served from here, nor is its own peer looked at.
-    peer: Cache | None = field(default=None, repr=False, compare=False)
+    # The refresh decision, shared with a linked cache (`link`): a read in either holds a forced
+    # read in both for FORCE_INTERVAL, so the rate is one per project across both.
+    refresh: Refresh = field(default_factory=Refresh, repr=False, compare=False)
     # Whether a read asks `Forge.for_project` for the project's source (§11.4). False for a
     # cache whose reader is never a project's (`ktw_reads.OUTSIDE_CACHE`): choosing a source
     # may write the project's and the grants' state, which an outsider's read must not.
     bind: bool = True
+    # Called with (reader, project id, repository) just before a family read, after the
+    # source is chosen: `ktw_reads.OUTSIDE_CACHE` asks the forge live there, and an exception
+    # leaves the read unmade and nothing stored.
+    before_read: Callable[[forge.Forge, str, str], None] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    @property
+    def locks(self) -> dict[str, threading.Lock]:
+        return self.refresh.locks
+
+    @property
+    def users(self) -> dict[str, int]:
+        return self.refresh.users
 
     def link(self, other: Cache) -> None:
-        """Each cache the other's `peer`."""
-        self.peer, other.peer = other, self
+        """`other` shares this cache's refresh decision, per project (one lock, one last read)."""
+        other.refresh = self.refresh
 
     def clear(self) -> None:
         with self.guard:
             self.entries.clear()
             self.last_good.clear()
-            self.locks.clear()
-            self.users.clear()
+        with self.refresh.guard:
+            self.refresh.locks.clear()
+            self.refresh.users.clear()
+            self.refresh.last_read.clear()
 
     def forget_all(self) -> None:
         """`forget` for every project; the locks stay, as requests may hold them."""
@@ -819,16 +843,18 @@ class Cache:
         with self.guard:
             self.entries.pop(project_id, None)
             self._drop_reads(project_id)
-            if self.users.get(project_id, 0) == 0:
-                self.locks.pop(project_id, None)
+            with self.refresh.guard:
+                if self.refresh.users.get(project_id, 0) == 0:
+                    self.refresh.locks.pop(project_id, None)
 
     def _drop(self, project_id: str) -> None:
         """Dropped for room: the project's last good reads and its lock, unless a request
-        uses it now. The caller holds `guard`."""
-        if self.users.get(project_id, 0) > 0:
-            return
+        uses it now. The caller holds `guard` (then `refresh.guard`, never the other order)."""
+        with self.refresh.guard:
+            if self.refresh.users.get(project_id, 0) > 0:
+                return
+            self.refresh.locks.pop(project_id, None)
         self._drop_reads(project_id)
-        self.locks.pop(project_id, None)
 
     def _drop_reads(self, project_id: str) -> None:
         for key in [k for k in self.last_good if k[0] == project_id]:
@@ -838,35 +864,34 @@ class Cache:
         with self.guard:
             return self.entries.get(project_id)
 
-    def _peer_read(self, project_id: str, repository_url: str | None) -> bool:
-        """Whether the peer read this project's repository less than FORCE_INTERVAL ago. Only
-        the peer's own entry is looked at (its guard alone, never with this one held)."""
-        if self.peer is None:
-            return False
-        other = self.peer.cached(project_id)
-        return (
-            other is not None
-            and other.repository_url == repository_url
-            and now() - other.at < FORCE_INTERVAL
-        )
+    def _read_lately(self, project_id: str, repository_url: str | None) -> bool:
+        """Whether this project's repository was read less than FORCE_INTERVAL ago, by this
+        cache or one sharing its `refresh`, forced or not: the last forge read of the family."""
+        with self.refresh.guard:
+            last = self.refresh.last_read.get(project_id)
+        return last is not None and last[0] == repository_url and now() - last[1] < FORCE_INTERVAL
+
+    def _mark_read(self, project_id: str, repository_url: str | None, at: float) -> None:
+        with self.refresh.guard:
+            bounded.put(self.refresh.last_read, project_id, (repository_url, at), 2 * PROJECTS_KEPT)
 
     def _lock(self, project_id: str) -> threading.Lock:
-        with self.guard:
-            return self.locks.setdefault(project_id, threading.Lock())
+        with self.refresh.guard:
+            return self.refresh.locks.setdefault(project_id, threading.Lock())
 
     def _enter(self, project_id: str) -> threading.Lock:
-        """The project's lock, the request counted as its user first, until `_leave`."""
-        with self.guard:
-            self.users[project_id] = self.users.get(project_id, 0) + 1
+        """The project's shared lock, the request counted as its user first, until `_leave`."""
+        with self.refresh.guard:
+            self.refresh.users[project_id] = self.refresh.users.get(project_id, 0) + 1
         return self._lock(project_id)
 
     def _leave(self, project_id: str) -> None:
-        with self.guard:
-            left = self.users.get(project_id, 1) - 1
+        with self.refresh.guard:
+            left = self.refresh.users.get(project_id, 1) - 1
             if left > 0:
-                self.users[project_id] = left
+                self.refresh.users[project_id] = left
             else:
-                self.users.pop(project_id, None)
+                self.refresh.users.pop(project_id, None)
 
     def get(
         self,
@@ -875,14 +900,19 @@ class Cache:
         repository_url: str | None,
         max_age: int = DEFAULT_MAX_AGE,
     ) -> tuple[_Entry, bool]:
-        """(entry, fresh): a cached answer younger than `max_age`, else a new read. No
-        `max_age` reads more often than FORCE_INTERVAL (`0` forces a read at that rate), nor
-        while the `peer` read the project's repository less than FORCE_INTERVAL ago: then
-        this cache's own entry is served. With no entry of its own, it reads.
+        """(entry, fresh): a cached answer younger than `max(max_age, FORCE_INTERVAL)`, else a
+        new read, decided under the project's lock that the caches sharing `refresh` share.
+        Always read: a cold cache (no entry of its own for this repository: another cache's
+        answer is never served here) and an ordinary refresh (`max_age` at least
+        FORCE_INTERVAL, the entry older than it). A forced read (`max_age` below
+        FORCE_INTERVAL, i.e. `0`) is made only when no cache sharing `refresh` read the
+        project's repository in the last FORCE_INTERVAL; otherwise this cache's own entry is
+        served (the lead's ruling, seq 186740: one forced forge read per project per 30 s).
 
         While another request reads the family, the cached answer is served at once, and a
-        request with nothing cached waits at most LOCK_WAIT before `Busy`: a waiter holds a
-        request thread, and a family read may take FAMILY_DEADLINE."""
+        request with nothing cached waits at most LOCK_WAIT before `Busy`, then serves what
+        that read stored: a waiter holds a request thread, and a family read may take
+        FAMILY_DEADLINE."""
         current = self.cached(project_id)
         lock = self._enter(project_id)
         try:
@@ -893,22 +923,22 @@ class Cache:
                 raise Busy
             try:
                 entry = self.cached(project_id)
-                if (
-                    entry is not None
-                    and entry.repository_url == repository_url
-                    and (
-                        now() - entry.at < max(max_age, FORCE_INTERVAL)
-                        or self._peer_read(project_id, repository_url)
-                    )
-                ):
-                    return entry, False
+                own = entry is not None and entry.repository_url == repository_url
+                if own and entry is not None:
+                    age = now() - entry.at
+                    if age < max(max_age, FORCE_INTERVAL):
+                        return entry, False
+                    forced = max_age < FORCE_INTERVAL
+                    if forced and self._read_lately(project_id, repository_url):
+                        return entry, False
                 entry = self._read(reader, project_id, repository_url, entry)
                 with self.guard:
-                    in_use = self.users.get
+                    in_use = self.refresh.users.get
                     for gone in bounded.put(
                         self.entries, project_id, entry, PROJECTS_KEPT, lambda p: in_use(p, 0) > 0
                     ):
                         self._drop(gone)
+                self._mark_read(project_id, repository_url, entry.at)
                 return entry, True
             finally:
                 lock.release()
@@ -926,6 +956,8 @@ class Cache:
         deadline = now() + FAMILY_DEADLINE
         if self.bind:
             reader = reader.for_project(project_id)  # the source that covers it (§11.4)
+        if self.before_read is not None:
+            self.before_read(reader, project_id, repository)  # raises: nothing read or stored
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:
