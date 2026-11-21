@@ -99,6 +99,24 @@ By default, agents running Claude Code write no attribution lines: the settings 
 
 The runner owner can ask a runner to look for a newer version of one of its tools at once ("Update now", `POST /api/v1/runners/<id>/updates` with `{"tool": "claude-code"}`), for a tool the runner reports it updates; the runner view (`GET /api/v1/runners/<id>`) shows the tools a runner reports (`capabilities.tools`: version, kept version, latest, state) and the open requests (`update_requests`). The dashboard has no button for it yet. What the runner does with it: [Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current).
 
+## Reasoning effort
+
+A placement may name how hard its agent thinks, its **effort**, for Codex and Antigravity (agy). You offer the levels per harness in the runner's configuration, in the harness's own words:
+
+```toml
+[harness.codex]
+efforts = ["low", "medium", "high"]
+
+[harness.antigravity]
+efforts = ["low", "medium", "high"]
+```
+
+A placement then names one with `"effort": "medium"` (`POST` or `PATCH …/placements`, [`docs/api.md` §15.5](api.md#155-placements)) or `maity placement start … --effort medium`; without one the harness runs on its own default. The hub refuses a level the runner does not offer. Codex gets it as `model_reasoning_effort` in the placement's own `config.toml`, so a resumed run keeps it; agy gets `--effort` on every start and continued run. A change makes a new generation and restarts the agent on the new level. If you later drop a level from `efforts`, a placement that still names it is not started (`failed`, `harness_refused`, `effort_unsupported`) rather than run on the default; change its effort or set it back to none.
+
+- `maity runner check` refuses `efforts` on Claude Code and opencode, since the runner passes them no effort yet. It also refuses a level that is not 1 to 16 lowercase letters (nothing else, not even a trailing newline), a level named twice, and more than 16 levels for one harness: the hub refuses such a list, and a refused hello stops the runner.
+- agy's catalog also has model ids that carry an effort (`…-high`). Offer either those ids under `models` or `efforts`, not both, for the same harness: with both set the runner passes both, and agy decides.
+- A runner with `efforts` configured needs a hub that knows them: an older hub refuses its hello (`invalid`, on `capabilities.harnesses.<n>.efforts`). A runner without `efforts` sends what every hub takes. Update the hub first.
+
 ## Ubuntu: nested user namespaces
 
 On Ubuntu (seen on 26.04), AppArmor's profile `bwrap-userns-restrict` (package `apparmor`) lets bubblewrap start but takes every capability from what it starts. Claude Code's sandbox needs exactly that: its seccomp step opens a second user namespace inside bubblewrap. A Claude Code placement then starts and its session runs `maity`, but every sandboxed command fails, a subagent's included, with `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`.

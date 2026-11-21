@@ -15193,7 +15193,8 @@ the reviewer naming them:
    boss is not of another owner than the sender;
 3. `member:<id>` of the **author's** `reports_to`, when that boss is
    not of another owner than the author. A boss of another owner is
-   left out of both additions. A `to` or a mention can still put that
+   left out of both additions, and so is a boss whose owner, or the
+   owner of the member it leads, cannot be resolved. A `to` or a mention can still put that
    boss in the audience. `session_paused` is the one event the edge
    itself routes across owners (§6.2). A human sender's or author's
    own `reports_to` is never of another owner (§6.2, "Across owners"),
@@ -19847,6 +19848,10 @@ owner choose):
       { "id": "claude-code", "version": "2.1.308", "available": true, "reason": null,
         "modes": ["interactive", "supervised"], "default_mode": "interactive",
         "models": ["opus", "sonnet"], "targets": ["local"], "confinement": "allowlist", "sandbox": "off" },
+      { "id": "codex", "version": "0.171.0", "available": true, "reason": null,
+        "modes": ["supervised"], "default_mode": "supervised",
+        "models": [], "efforts": ["low", "medium", "high"], "targets": ["local"],
+        "confinement": "sandbox", "sandbox": "on" },
       { "id": "opencode", "version": null, "available": false, "reason": "binary_not_found",
         "modes": ["supervised"], "default_mode": "supervised",
         "models": [], "targets": ["local"], "confinement": "allowlist", "sandbox": "off" }
@@ -20010,6 +20015,14 @@ nor shows it, and a runner view carries none (below).
     check, so opencode never reports `login_needed` (§15.16). The
     operator installs it and signs in once as the agents' OS user; the
     runner neither signs in nor reads that login.
+- `efforts` are the reasoning efforts a placement may name for the harness
+  (`effort`, §15.5), each `[a-z]{1,16}`, at most 16; the values are the
+  harness's own (Codex: `model_reasoning_effort`; agy: `--effort`), set by
+  the runner's operator. Absent from a harness with none configured, so
+  such a runner's `hello` stays what a hub from before `efforts` accepts;
+  the hub reads an absent list as `[]`. Only `codex` and `antigravity`
+  carry it: the runner passes no effort to Claude Code or opencode, and its
+  configuration check refuses `efforts` there (tsk-0fr0xzy2ce95).
 - `models` are names the runner offers; how the agents get model access
   (a login on the host, keys, a cluster Secret) is the runner's
   configuration and never reaches the hub (open: §12 2 of the design).
@@ -20086,7 +20099,7 @@ serves several (§6.2, "Isolation").
   "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
              "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12" },
   "runner": { "id": "rnr-0002", "name": "home-laptop" },
-  "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus",
+  "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus", "effort": null,
   "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
   "desired": "running", "generation": 4, "rejoin": false, "fresh_session": false, "stop_grace_seconds": 120, "workspace_retention": "24h",
   "approval": { "status": "approved", "request_id": null, "pending_change": null },
@@ -20112,6 +20125,7 @@ serves several (§6.2, "Isolation").
 | `runner` | `{id, name}`; the runner must be attached (`runner_not_attached`) |
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default. For `opencode` that is the runner's `default_model`, and a start whose model is none of its `models` is refused (`harness_refused`, `model_unsupported`), never started on opencode's own default (§15.3) |
+| `effort` | `null` (default: the harness's own reasoning effort) or one of the runner's advertised `efforts` for the harness (§15.3); the shape is `[a-z]{1,16}` (`invalid`), anything the runner does not advertise is `harness_not_offered` with `details.offered[].efforts`. A runner from before `efforts` advertises none, so a named effort never reaches a runner that would drop it. Part of the spec like `model`: a change makes a new `generation`, and an agent's change waits in `pending_change`. The runner refuses a start whose effort its harness no longer offers (`harness_refused`, `effort_unsupported`, §15.7), never starting it on the default instead. Where a model id carries an effort of its own (agy's `…-high` ids) and `effort` is set too, the runner passes both and the harness decides (tsk-0fr0xzy2ce95) |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
 | `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`. Without one the hub takes the first of `<handle>`, `<handle>-2`, `<handle>-3`, … that no active placement of the project on that runner names and that no closed placement of another membership of the project on that runner names whose clone the runner did not report removed (`workspace_outcome`): the agent's first placement keeps the handle as its clone, a further instance on the same runner gets a clone of its own, and a clone the membership left there is taken up again (`continues_existing`). The placement's id never goes into the path, so a later placement can continue a clone; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
@@ -20424,7 +20438,7 @@ agents' shared home, which no removal of a clone reaches:
 | `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; for a profile of the caller's own that is not a member yet, the right to create a join for it (§3.1) and ownership of the runner (below, "A profile that is not a member yet"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side (below) | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent`. Anyone off the runner's side is `forbidden` with `details.reason: "runner_owner_only"` |
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
-| `PATCH /projects/{owner}/{slug}/placements/{id}` | `members:admin` and ownership of the runner, not the right to admit a profile that is not a member yet (below, "Who may do what"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side, as a proposed change (below); `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
+| `PATCH /projects/{owner}/{slug}/placements/{id}` | `members:admin` and ownership of the runner, not the right to admit a profile that is not a member yet (below, "Who may do what"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side, as a proposed change (below); `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `effort`, `target`, `stop_grace_seconds`, `workspace_retention` (`model`, `effort` and `target` take `null`); a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?, fresh_session?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `fresh_session: true` makes it a **reset**: the new generation starts the agent on a fresh harness session instead of resuming the last one (`fresh_session` on the placement, §15.5; §15.14), the clone and its branches kept as by any restart. The same right as a restart, and it combines with `rejoin`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5), and for one the clone's removal may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A restart without `fresh_session` resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
@@ -20439,7 +20453,7 @@ POST /api/v1/projects/oliver/maity/placements
   "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["web/"], "capabilities": [],
   "briefing": "You own the dashboard's Runners view: …",
   "runner": "rnr-0002", "target": null,
-  "harness": "claude-code", "mode": "interactive", "model": "opus",
+  "harness": "claude-code", "mode": "interactive", "model": "opus", "effort": null,
   "workspace": { "clone": "agent-f", "branch": "main" },
   "desired": "running", "stop_grace_seconds": 120, "workspace_retention": "24h",
   "reason": "second pair of hands on web/ for the runner work"
@@ -20685,7 +20699,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `idle`, `tool` | `hung`: ended after a nudge found it silent, or a tool call stayed open past `tool_call_max_minutes` |
 | `not_listening`, `never_joined` | `hung`: from the runner's watch (§15.14), the placement's session stayed not listening (§5.3) past the runner's grace, or no session of the placement's credential started within the runner's time for a join after it started the harness; `exited` when the runner resumes the session, `failed` when it stops retrying. The hub takes both; the runner does not report them yet (tsk-twmms66p1ww4) |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
-| `mode_unsupported`, `model_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
+| `mode_unsupported`, `model_unsupported`, `effort_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `effort_unsupported`: the placement names an effort its harness no longer offers on the runner (§15.5); `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
@@ -21058,7 +21072,7 @@ A placement as the runner reads it:
   "id": "plc-0003", "project": "oliver/maity", "generation": 4, "desired": "running",
   "agent": { "id": "agt-b", "handle": "agent-b", "member": true, "credential_expected": true },
   "instance": "wqe2",
-  "harness": "claude-code", "mode": "interactive", "model": "opus",
+  "harness": "claude-code", "mode": "interactive", "model": "opus", "effort": null,
   "target": null,
   "workspace": { "clone": "agent-b", "branch": null,
                  "repository": "https://github.com/oliver-zehentleitner/maity" },
@@ -21373,7 +21387,7 @@ The kinds are in §8.2. Rules that apply to all of them:
   instance, state, desired, runner_name}`, oldest first, `[]` for humans
   and for agents without one; it is the answer to where the agent runs.
 - **Request view** (§7) gains `placement`: `{id, agent, runner_name,
-  harness, model, mode, target, isolation}` inline, or `null`;
+  harness, model, effort, mode, target, isolation}` inline, or `null`;
   `isolation` is the target's without its `user` (§15.3). Only the
   hub sets it; `POST …/requests` does not accept it.
 - **Policy** (§6.1) gains `spawn_requests` and `max_placements`.

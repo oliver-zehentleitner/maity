@@ -72,6 +72,7 @@ Harness = Literal[
     "stub",
 ]
 Mode = Literal["interactive", "supervised"]
+Effort = Annotated[str, StringConstraints(pattern=r"^[a-z]{1,16}$")]
 # What bounds a harness's commands (§15.3); the CLI advertises these, test_runner_confinement.
 Confinement = Literal["allowlist", "sandbox", "pod", "none"]
 REPORTED_STATES = Literal[
@@ -102,6 +103,9 @@ class HarnessOffer(Strict):
     modes: list[Mode] = Field(max_length=2)
     default_mode: Mode
     models: list[Name] = Field(max_length=50)
+    # The reasoning efforts a placement may name (§15.3); a runner from before them, or one
+    # with none configured, sends no key and offers none.
+    efforts: list[Effort] = Field(default_factory=list, max_length=16)
     targets: list[Name] = Field(max_length=50)
     confinement: Confinement
     sandbox: Literal["on", "off", "n/a"]

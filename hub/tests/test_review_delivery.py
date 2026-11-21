@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import chat_gate, clock, events, instances, review_delivery
+from maity_hub import chat_gate, clock, cross_owner, events, instances, review_delivery
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -578,6 +578,49 @@ def test_a_human_senders_human_lead_is_still_added(
         f"member:{writer.id}",
         f"instance:{author.id}#{author.instance}",
         f"member:{other.id}",
+    ]
+
+
+@pytest.mark.parametrize("unresolved", ["lead", "led"])
+def test_a_lead_whose_or_whose_subordinates_owner_cannot_be_resolved_is_left_out(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    unresolved: str,
+) -> None:
+    """Fail closed (§8.4, tsk-9sjg106s9wdc): a lead is added only when both its owner and the
+    owner of the agent it leads resolve and are the same. Each side is made unresolvable in
+    turn; the other path's lead, both owners resolved, is still added."""
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    reviewer_lead = flow.agent(make_client, owner, role="manager")
+    reviewer_lead.resume()
+    author_lead = flow.agent(make_client, owner, role="manager")
+    author_lead.resume()
+    reports_to(migrated, reviewer, reviewer_lead)
+    reports_to(migrated, author, author_lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    # The sender's lead itself, or the author the other lead leads, has no owner to resolve.
+    hidden, dropped, kept = (
+        (reviewer_lead.id, reviewer_lead, author_lead)
+        if unresolved == "lead"
+        else (author.id, author_lead, reviewer_lead)
+    )
+    resolve = cross_owner.owner_of
+
+    def owner_of(conn: Any, row: Any) -> str | None:
+        return None if row.agent_id == hidden else resolve(conn, row)
+
+    monkeypatch.setattr(cross_owner, "owner_of", owner_of)
+    answer = post(reviewer, task_id=card["id"])
+    assert_left_out(migrated, answer, dropped)
+    assert sent(migrated, answer) == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{kept.id}",
     ]
 
 

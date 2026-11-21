@@ -3909,6 +3909,9 @@ def cmd_placement_list(args: argparse.Namespace) -> int:
 
 
 def cmd_placement_start(args: argparse.Namespace) -> int:
+    # Before the session and the member lookup, so a usage error sends nothing (A1994, A1996).
+    if args.effort is not None and not args.effort:  # empty is not "the default"
+        raise UsageError("--effort: name one of the runner's efforts, or leave it out")
     session = Session()
     body: dict[str, Any] = {
         "agent": {"id": _member_id(session, args.agent)},
@@ -3920,6 +3923,8 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
         body["mode"] = args.mode
     if args.model:
         body["model"] = args.model
+    if args.effort is not None:
+        body["effort"] = args.effort
     if args.target:
         body["target"] = args.target
     if args.clone or args.branch:
@@ -6150,6 +6155,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--tool", required=True, help="the harness, e.g. claude-code or codex")
     r.add_argument("--mode", choices=("interactive", "supervised"), help="default: the tool's")
     r.add_argument("--model", help="one of the runner's models for the tool")
+    r.add_argument(
+        "--effort",
+        help="one of the runner's efforts for the tool (default: the tool's own; Codex and "
+        "agy only, docs/api.md §15.5)",
+    )
     r.add_argument("--target", help="a target the runner advertises")
     r.add_argument(
         "--clone",
