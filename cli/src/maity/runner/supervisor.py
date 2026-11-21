@@ -318,6 +318,9 @@ class Record:
     # The placement names a Keep the Why skill and this start went without it (skills.py):
     # reported with `running` as `keep_the_why_unavailable` (§15.7).
     skill_missing: bool = False
+    # The copy this start got (skills.key), so `gc --skills` keeps it while the session runs,
+    # even after the hub names another commit; None when it started without one.
+    skill_key: str | None = None
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     # Fresh sessions started in this generation (§15.7 `sessions`), and whether the hub reads
     # them: one whose placement carries `fresh_session` (§15.6) takes the field in a report.
@@ -1391,6 +1394,7 @@ class Supervisor:
             with self.lock:  # reported with `running` (keep_the_why_unavailable)
                 # Any value but null names a skill, a malformed one included (skills.named).
                 rec.skill_missing = skill is None and p.get("keep_the_why") is not None
+                rec.skill_key = skill.parent.name if skill is not None else None
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
@@ -1611,7 +1615,19 @@ class Supervisor:
             tmpdir=tmpdir,
             pg_pass=pg_pass,
             skill=skill,
+            skill_source=self._skill_source(p) if skill is not None else None,
         )
+
+    def _skill_source(self, p: dict[str, Any]) -> Path | None:
+        """The runner's own checked copy of the skill the placement names, which `_skill`
+        made sure of before: what a Codex placement's skills directory is written from."""
+        try:
+            wanted = skills.named(p)
+        except skills.Unavailable:
+            return None
+        if wanted is None:
+            return None
+        return skills.plugin_root(self.cfg.skills_dir, *wanted).parent
 
     def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
         """The Keep the Why skill the placement names (§15.5), as the plugin root of a checked

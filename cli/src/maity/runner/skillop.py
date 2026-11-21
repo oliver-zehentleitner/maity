@@ -16,9 +16,14 @@ and every file are reached from a descriptor without following a link, each file
 waiting on a FIFO and its type checked on the descriptor before anything is read, within the
 bounds the fetch holds.
 
-Imports only the standard library and scratchop (its removal of a tree that may hold restrictive
-directories), which does the same: like scratchop it runs with `-I` on the agents' side, through
-sudo as `python -I -m maity.runner.skillop`, and on an ssh host as `maity runner skillop`.
+For a Codex placement the skill's own files also go into its CODEX_HOME's `skills/` (`codex_put`),
+which Codex loads natively; that home lies in the placement's scratch, so it is reached from the
+workspaces root as scratchop reaches the scratch.
+
+Imports only the standard library and scratchop (its anchors below the workspaces root, and its
+removal of a tree that may hold restrictive directories), which does the same: like scratchop it
+runs with `-I` on the agents' side, through sudo as `python -I -m maity.runner.skillop`, and on an
+ssh host as `maity runner skillop`.
 """
 
 from __future__ import annotations
@@ -27,13 +32,14 @@ import base64
 import binascii
 import contextlib
 import errno
+import functools
 import hashlib
 import json
 import os
 import re
 import secrets
 import stat
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -434,13 +440,103 @@ def _remove_tree(parent: int, name: str) -> None:
     scratchop._remove_in(parent, name, os.getuid())
 
 
+def remove(home: str, keep: Sequence[str]) -> dict[str, object]:
+    """The copies below the agents' `home` whose key is not in `keep`, and leftover staging
+    directories, removed (`gc --skills`); `removed` with their names. A link on the way is
+    OnTheWay; a missing directory removes nothing."""
+    removed: list[str] = []
+    try:
+        with _holder(home, make=False) as holder:
+            for name in sorted(os.listdir(holder)):
+                if name in keep or not (KEY.fullmatch(name) or name.startswith(STAGING)):
+                    continue
+                _remove_tree(holder, name)
+                removed.append(name)
+    except FileNotFoundError:
+        pass
+    return {"result": "removed", "names": removed}
+
+
+# --- Codex's own skills directory ---------------------------------------------------------------
+
+CODEX_SKILLS = "skills"  # in CODEX_HOME; Codex keeps its own `.system/` beside the skill
+
+
+def codex_put(under: str, home: str, document: Mapping[str, Any]) -> dict[str, object]:
+    """The skill's own files (`plugin/skills/keep-the-why/…` of the runner's document) as
+    `<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME (`<scratch>/codex-home`),
+    which Codex 0.171.0 loads as the skill `keep-the-why` with no setting (ops, nte-nqs227hnpqzz).
+    Checked whole first, as `put` checks it. The scratch is descended from the workspaces root
+    `under` as scratchop descends it, codex-home and `skills` opened without following a link,
+    and only `skills/keep-the-why` is replaced, from a fresh staging directory: Codex writes
+    its own `.system/` skills beside it at every start. `put` with the number of files."""
+    try:
+        _key, _raw, _manifest, files = _decoded(document)
+    except Mismatch as exc:
+        raise OSError(str(exc)) from None
+    prefix = (PLUGIN, "skills", NAME)
+    wanted = {
+        PurePosixPath(name).parts[3:]: data
+        for name, data in files.items()
+        if PurePosixPath(name).parts[:3] == prefix and len(PurePosixPath(name).parts) > 3
+    }
+    if ("SKILL.md",) not in wanted:
+        raise OSError("the skill's document holds no SKILL.md")
+    names = scratchop._below(str(PurePosixPath(home).parent), under)
+    with scratchop._opened(under, names, make=False) as scratch_fd:
+        home_fd = scratchop._step(scratch_fd, PurePosixPath(home).name, 0o700)
+        try:
+            skills_fd = scratchop._step(home_fd, CODEX_SKILLS, 0o755)
+            try:
+                _stage_and_replace(skills_fd, NAME, wanted)
+            finally:
+                os.close(skills_fd)
+        finally:
+            os.close(home_fd)
+    return {"result": "put", "files": len(wanted)}
+
+
+def _stage_and_replace(parent: int, name: str, wanted: Mapping[tuple[str, ...], bytes]) -> None:
+    """`wanted` (each file's path parts and bytes) written into a fresh staging directory in
+    the open `parent`, 0644 files in 0755 directories, then renamed to `name`, a directory
+    already there renamed aside and removed (`_replace`). The staging directory goes on any
+    failure."""
+    staging = f"{STAGING}{secrets.token_hex(8)}"
+    os.mkdir(staging, 0o700, dir_fd=parent)
+    try:
+        staged = os.open(staging, _FOLDER | _NOFOLLOW, dir_fd=parent)
+        try:
+            for parts, data in wanted.items():
+                _write_into(staged, parts, data)
+            _open_up(staged)
+        finally:
+            os.close(staged)
+        _replace(parent, staging, name)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            _remove_tree(parent, staging)
+        raise
+
+
+def _open_up(fd: int) -> None:
+    """Every directory below the open `fd`, and `fd` itself, 0755: read by the session,
+    written by nobody but the runner's op."""
+    # Through each directory's own descriptor: chmod by name would need follow_symlinks=False,
+    # which chmod does not support on Linux (the review of #2089).
+    for _top, _dirs, _names, top_fd in os.fwalk(".", dir_fd=fd, follow_symlinks=False):
+        os.fchmod(top_fd, 0o755)  # noqa: S103
+    os.fchmod(fd, 0o755)  # noqa: S103
+
+
 # --- the entry point on the agents' side ----------------------------------------------------------
 
 LINK = 4  # the exit code for a link below the agents' home, as scratchop.LINK: nothing was done
-# The document `put` reads from stdin: the skill's own bound in base64 (4/3), its manifest, and
-# room for the JSON around them.
+# The document `put` and `codex` read from stdin: the skill's own bound in base64 (4/3), its
+# manifest, and room for the JSON around them.
 DOCUMENT_MAX = 8 * 1024 * 1024
-USAGE = "usage: skillop check --home HOME KEY SOURCE COMMIT | put --home HOME (document on stdin)"
+USAGE = ("usage: skillop check --home HOME KEY SOURCE COMMIT | put --home HOME | "
+         "codex --under DIR CODEX_HOME | remove --home HOME [KEEP...] "
+         "(the document on stdin for put and codex)")  # fmt: skip
 
 
 def supported() -> bool:
@@ -454,17 +550,22 @@ def supported() -> bool:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """`check --home HOME KEY SOURCE COMMIT` or `put --home HOME`, the runner's document on
-    stdin: one JSON line on stdout, LINK for a link below the home, 1 for a failure, 2 for a
-    usage error (what a host `maity` without these ops answers too)."""
+    """`check --home HOME KEY SOURCE COMMIT`, `put --home HOME`, `codex --under DIR CODEX_HOME`
+    or `remove --home HOME [KEEP...]`, the runner's document on stdin for `put` and `codex`: one
+    JSON line on stdout, LINK for a link on the way, 1 for a failure, 2 for a usage error (what
+    a host `maity` without these ops answers too)."""
     import sys
 
     args = list(sys.argv[1:] if argv is None else argv)
+    call: Callable[[], dict[str, object]]
     document: object = None
     if len(args) == 6 and args[0] == "check" and args[1] == "--home":
-        _op, _flag, home, key, source, commit = args
-    elif len(args) == 3 and args[0] == "put" and args[1] == "--home":
-        home = args[2]
+        call = functools.partial(check, args[2], args[3], args[4], args[5])
+    elif len(args) >= 3 and args[0] == "remove" and args[1] == "--home":
+        call = functools.partial(remove, args[2], args[3:])
+    elif (len(args) == 3 and args[0] == "put" and args[1] == "--home") or (
+        len(args) == 4 and args[0] == "codex" and args[1] == "--under"
+    ):
         try:  # a read or decoding error is an answer too, never a traceback (the review of #2089)
             text = sys.stdin.read(DOCUMENT_MAX + 1)  # the skill's bounds, base64, with room
             document = json.loads(text) if len(text) <= DOCUMENT_MAX else None
@@ -474,6 +575,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("skillop: the skill's document is not a JSON object within its bound",
                   file=sys.stderr)  # fmt: skip
             return 1
+        if args[0] == "put":
+            call = functools.partial(put, args[2], document)
+        else:
+            call = functools.partial(codex_put, args[2], args[3], document)
     else:
         print(USAGE, file=sys.stderr)
         return 2
@@ -482,10 +587,7 @@ def main(argv: Sequence[str] | None = None) -> int:
               file=sys.stderr)  # fmt: skip
         return 1
     try:
-        if isinstance(document, dict):
-            answer = put(home, document)
-        else:
-            answer = check(home, key, source, commit)
+        answer = call()
     except (OnTheWay, scratchop.OnTheWay) as exc:
         print(json.dumps({"result": "link", "why": str(exc)}))
         return LINK

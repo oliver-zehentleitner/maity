@@ -5459,7 +5459,7 @@ separate item of the incident card.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on a runner host, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on a Linux x64 runner, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); for the agents'-side copy, card tsk-7casfxb7cn49, its design and the lead's go with its conditions (2026-11-21: the same-uid exposure stated, not solved; no allow widened; the location moved out of `~/.maity-runner` once that turned out to be denied to every sandbox); `cli/src/maity/runner/skills.py`, `skillop.py`, `adapters.py`, `supervisor.py`
-**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; Codex gets a skills directory of its own; placements get an OS user each (the agents'-side copy is then no longer shared by one uid)
+**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; Codex changes where or how it loads skills from `CODEX_HOME`; placements get an OS user each (the agents'-side copy is then no longer shared by one uid)
 **See:** https://github.com/oliver-zehentleitner/maity — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-11-20
 
 A placed session could not get the skill: its sandbox does not write the
@@ -5572,10 +5572,36 @@ per placement.
   host, and trusts each host's network and git, where the bytes the runner
   already checked are what should run.
 
-**Not built yet:** Codex gets only the variable; `maity runner check`
-names a hand-installed copy for Claude Code (a warning, never a refusal:
-it is the operator's) but not yet the delivered one, and `gc` does not
-prune old copies yet. That is the second pull request of tsk-7casfxb7cn49.
+**Codex's own skills directory** (the second pull request of
+tsk-7casfxb7cn49): at every start of a Codex placement, skillop writes the
+skill's own files from the runner's checked copy into
+`<codex-home>/skills/keep-the-why/`, reached from the workspaces root as
+scratchop reaches the scratch, no link followed. Codex 0.171.0 loads it as
+its own skill `keep-the-why` with no setting, the session reads its
+`references/`, and it stays read-only (ops' live check, note
+nte-nqs227hnpqzz). The home is read-only in the session's profile already,
+so no rule changes. Only `skills/keep-the-why/` is the runner's: Codex
+writes its own `.system/` skills beside it. The bytes come from the
+runner's own copy, not the agents', because on an ssh host the runner
+cannot read the agents' side. A copy that cannot be written leaves the
+session with `MAITY_KTW_SKILL_DIR` alone, as before.
+
+**`maity runner check`** lists the runner's own copies with their state
+(whole and recorded, unrecorded, or changed), as a warning at worst: a
+start fetches again or goes without the skill. It fetches nothing. The
+agents'-side copies are not listed: they are checked against the same
+records at every start.
+
+**`gc --skills`** removes the copies that no active placement names and no
+running session started with (the supervisor keeps the started copy's key
+in its record), with their records in `skills.json`, and in the
+agent_user layout the same copies below the agents' home (`skillop
+remove`). A copy removed too early is only fetched again. Copies on ssh
+hosts are not collected: `gc` is for the local backend.
+
+**Not built yet:** hiding a hand-installed `~/.claude/skills/keep-the-why`
+from placed sessions; `maity runner check` only warns about one, and ops
+removes them on the runner hosts.
 
 ## A placement without room under its scratch gets a short TMPDIR of its own in `/tmp`
 

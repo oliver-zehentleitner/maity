@@ -9,6 +9,7 @@ manifest of every file), without git; test_skills.py covers the fetch itself.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import io
 import json
@@ -249,6 +250,92 @@ def test_deliver_hands_out_nothing_the_runner_did_not_record(
         skills.deliver(*args)
 
 
+def _codex_home(tmp_path: Path) -> tuple[Path, Path]:
+    """A placement's scratch below a workspaces root, as scratch.make leaves it; its codex-home."""
+    under = tmp_path / "ws"
+    place = under / "proj" / ".scratch" / "plc-0003"
+    (place / "tmp").mkdir(parents=True)
+    return under, place / "codex-home"
+
+
+def test_codex_gets_the_skill_in_its_own_skills_directory_beside_its_system_skills(
+    tmp_path: Path,
+) -> None:
+    # PR 2 of tsk-7casfxb7cn49, after ops' live check (nte-nqs227hnpqzz): Codex 0.171.0 loads
+    # `<CODEX_HOME>/skills/keep-the-why/SKILL.md`; it writes its own `.system/` beside it.
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    under, home = _codex_home(tmp_path)
+    (home / "skills" / ".system" / "imagegen").mkdir(parents=True)
+    (home / "skills" / ".system" / "imagegen" / "SKILL.md").write_text("codex's own\n")
+    document = json.loads(skillop.payload(root.parent, KEY))
+    assert skillop.codex_put(str(under), str(home), document) == {"result": "put", "files": 2}
+    skill = home / "skills" / "keep-the-why"
+    assert (skill / "SKILL.md").read_text() == "---\nname: keep-the-why\n---\n"
+    assert (skill / "references" / "help.md").read_text() == "# help\n"
+    assert not (skill / ".claude-plugin").exists()  # the skill alone, not the plugin around it
+    for path in [skill, *skill.rglob("*")]:
+        mode = stat.S_IMODE(path.lstat().st_mode)
+        assert mode == (0o755 if path.is_dir() else 0o644), path
+    assert (home / "skills" / ".system" / "imagegen" / "SKILL.md").read_text() == "codex's own\n"
+    (skill / "planted.md").write_text("planted\n")
+    skillop.codex_put(str(under), str(home), document)  # every launch: written whole again
+    assert not (skill / "planted.md").exists()
+    assert sorted(p.name for p in (home / "skills").iterdir()) == [".system", "keep-the-why"]
+
+
+@pytest.mark.parametrize("level", ["codex-home", "skills"])
+def test_a_link_on_the_way_to_codexs_skills_is_never_written_through(
+    tmp_path: Path, level: str
+) -> None:
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    under, home = _codex_home(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    if level == "skills":
+        home.mkdir()
+    (home if level == "codex-home" else home / "skills").symlink_to(elsewhere)
+    with pytest.raises(scratchop.OnTheWay):
+        skillop.codex_put(str(under), str(home), json.loads(skillop.payload(root.parent, KEY)))
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_codex_launch_writes_the_skill_and_a_launch_without_one_writes_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_adapters import _codex_scratch_context
+
+    from maity.runner import adapters, scratch
+
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    ctx = _codex_scratch_context(tmp_path / "with")
+    (tmp_path / "with" / "ws").mkdir()
+    assert ctx.scratch is not None
+    scratch.make(ctx.scratch)
+    place = ctx.scratch
+    ctx = dataclasses.replace(ctx, skill=root, skill_source=root.parent)
+    adapters.launch(ctx)
+    assert (place / "codex-home" / "skills" / "keep-the-why" / "SKILL.md").is_file()
+    plain = _codex_scratch_context(tmp_path / "without")
+    (tmp_path / "without" / "ws").mkdir()
+    assert plain.scratch is not None
+    scratch.make(plain.scratch)
+    adapters.launch(plain)
+    assert not (plain.scratch / "codex-home" / "skills").exists()
+
+
+def test_a_codex_skill_that_cannot_be_written_leaves_the_launch_as_it_was(tmp_path: Path) -> None:
+    # Codex then keeps MAITY_KTW_SKILL_DIR alone, as before this change.
+    from test_adapters import _codex_scratch_context
+
+    from maity.runner import adapters
+
+    ctx = _codex_scratch_context(tmp_path)
+    missing = tmp_path / "runner" / "keep-the-why" / KEY  # no copy there
+    ctx = dataclasses.replace(ctx, skill=missing / "plugin", skill_source=missing)
+    assert adapters.codex_skill(ctx, tmp_path / "home") is False
+
+
 @pytest.mark.parametrize(
     "where, error",
     [
@@ -276,6 +363,106 @@ def test_every_delivery_error_is_unavailable_so_a_start_goes_on_without_the_skil
         monkeypatch.setattr(AsUser, where, fail)
     with pytest.raises(skills.Unavailable, match="could not be put below"):
         skills.deliver(AsUser(), home, tmp_path / "runner", tmp_path / "state", SOURCE, COMMIT)
+
+
+def _cfg(tmp_path: Path, agent_user: str | None = None) -> Any:
+    """What `check` and `gc --skills` read of a configuration."""
+    from types import SimpleNamespace
+
+    layout = "agent_user" if agent_user else "single"
+    local = SimpleNamespace(layout=layout, agent_user=agent_user)
+    runner, state_dir = tmp_path / "runner", tmp_path / "state"
+    return SimpleNamespace(skills_dir=runner, state_dir=state_dir, local=local)
+
+
+def test_check_names_each_copy_and_warns_for_one_that_is_not_handed_out(tmp_path: Path) -> None:
+    from maity.runner import commands
+
+    report = commands.Report()
+    commands._check_skills(report, _cfg(tmp_path))
+    none = f"Keep the Why skill: no copy in {tmp_path / 'runner'} yet; a start fetches one"
+    assert report.lines == [("ok", none)]
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    report = commands.Report()
+    commands._check_skills(report, _cfg(tmp_path))
+    assert [level for level, _ in report.lines] == ["ok"]
+    assert COMMIT[:12] in report.lines[0][1] and "checked" in report.lines[0][1]
+    (tmp_path / "state" / skills.ANCHORS).unlink()  # a state directory made anew
+    assert skills.copies(tmp_path / "runner", tmp_path / "state")[0][3] == "unrecorded"
+    skill_md = root / "skills" / "keep-the-why" / "SKILL.md"
+    os.chmod(skill_md, 0o644)
+    skill_md.write_text("changed\n")
+    report = commands.Report()
+    commands._check_skills(report, _cfg(tmp_path))
+    ((level, text),) = report.lines
+    assert level == "warn" and "does not match its manifest" in text and "not handed out" in text
+    assert not report.failed  # a warning, never an error: a start fetches again or goes without
+
+
+def test_gc_skills_lists_then_removes_only_what_nothing_names_or_runs_with(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity.runner import operate
+
+    runner_copy(tmp_path / "runner", tmp_path / "state")
+    other = "f" * 40 + "-" + "0" * 16  # an older pin's copy, a session still running with it
+    gone = "e" * 40 + "-" + "1" * 16  # no placement names it, no session runs with it
+    for name in (other, gone):
+        (tmp_path / "runner" / "keep-the-why" / name / "plugin").mkdir(parents=True)
+        skills._record(tmp_path / "state", name, "0" * 64)
+    monkeypatch.setattr(operate, "_skills_running", lambda cfg: {other})
+    listing = [(n, "", "", "ok") for n in sorted((KEY, other, gone))]
+    monkeypatch.setattr(skills, "copies", lambda d, s: listing)
+    operate._collect_skills(_cfg(tmp_path), {KEY}, remove=False)
+    listed = capsys.readouterr().out
+    assert gone in listed and KEY not in listed and other not in listed
+    assert (tmp_path / "runner" / "keep-the-why" / gone).is_dir()  # only listed
+    operate._collect_skills(_cfg(tmp_path), {KEY}, remove=True)
+    left = sorted(p.name for p in (tmp_path / "runner" / "keep-the-why").iterdir())
+    assert left == sorted([KEY, other])
+    assert set(skills._anchors(tmp_path / "state")) == {KEY, other}  # its record went with it
+
+
+def test_gc_skills_keeps_everything_when_the_hubs_list_is_partial(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity.runner import operate
+
+    runner_copy(tmp_path / "runner", tmp_path / "state")
+    operate._collect_skills(_cfg(tmp_path), None, remove=True)
+    assert "every copy is kept" in capsys.readouterr().out
+    assert (tmp_path / "runner" / "keep-the-why" / KEY).is_dir()
+
+
+def test_gc_skills_removes_the_agents_copies_in_the_agent_user_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity.runner import operate
+
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    home = tmp_path / "agents"
+    home.mkdir()
+    skillop.put(str(home), json.loads(skillop.payload(root.parent, KEY)))
+    holder = skillop.agent_copy(home, KEY).parent
+    (holder / ("e" * 40 + "-" + "1" * 16)).mkdir()  # an older copy, nothing names it
+    (holder / ".put-left0ver").mkdir()  # a staging directory a crash left
+    (holder / "notes").mkdir()  # not the runner's: left alone
+
+    class Agents(AsUser):
+        def home(self) -> Path:
+            return home
+
+    agents = Agents("agents")
+    monkeypatch.setattr(operate, "_as_user", lambda cfg: agents)
+    monkeypatch.setattr(operate, "_skills_running", lambda cfg: set())
+
+    # In-process here: the op the sudo path starts (skillop.remove), as the agents' user would.
+    def remove(self: AsUser, h: Path, keep: set[str]) -> list[str]:
+        return [str(n) for n in skillop.remove(str(h), sorted(keep))["names"]]  # type: ignore
+
+    monkeypatch.setattr(Agents, "skill_remove", remove)
+    operate._collect_skills(_cfg(tmp_path, "agents"), {KEY}, remove=True)
+    assert sorted(p.name for p in holder.iterdir()) == [KEY, "notes"]
 
 
 # Evaluated at import, which Windows collection does too: no geteuid there (the review of #2089).
