@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import fake_opencode
 from test_supervisor import REPO, Clock, FakeTmux, Reports, placement, settle, states
 
 from maity import cli
@@ -412,15 +413,15 @@ def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake
     path.write_text(CONFIG.format(root=tmp_path) + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
     (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
     (tmp_path / "remote" / "ws").mkdir(parents=True)
-    opencode = tmp_path / "remote" / "bin" / "opencode"
-    opencode.write_text("#!/bin/sh\necho '0.5.3'\n")
-    opencode.chmod(0o755)
+    fake_opencode(tmp_path / "remote" / "bin" / "opencode", "0.5.3")
     cfg = config.load(path)
     target = targets.ssh_hosts(cfg)[1]
     report = commands.Report()
     commands._check_host(report, cfg, target)
     ok = [t for level, t in report.lines if level == "ok" and "harness opencode" in t]
     assert ok and "(0.5.3)" in ok[0], report.lines
+    # The flag probe runs on the host too (tsk-daa6e0gfncg0).
+    assert "build-2: harness opencode: `opencode run` takes the supervised start's flags" in ok
     warning = [t for level, t in report.lines if level == "warn" and "harness opencode" in t]
     assert len(warning) == 1, report.lines
     assert warning[0].startswith("build-2: harness opencode: no OS sandbox")
@@ -505,9 +506,7 @@ def test_check_refuses_opencode_on_an_ssh_host_when_a_sandbox_is_required(
     )
     (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
     (tmp_path / "remote" / "ws").mkdir(parents=True)
-    opencode = tmp_path / "remote" / "bin" / "opencode"
-    opencode.write_text("#!/bin/sh\necho '0.5.3'\n")
-    opencode.chmod(0o755)
+    fake_opencode(tmp_path / "remote" / "bin" / "opencode", "0.5.3")
     cfg = config.load(path)
     target = targets.ssh_hosts(cfg)[1]
     report = commands.Report()

@@ -681,7 +681,9 @@ project, to the owner and that project's admins; an event in one project
 never names or links another, neither the one the leak happened in nor
 the instance's other attachments, so a project's admins learn only that
 this instance was revoked. Only the owner's own views (§6.3) name the
-other projects. A string that merely matches the pattern is refused with 400
+other projects. An owner who is not a member of a project gets both as
+account records (§18.1) instead of reading them there (§8.2; not built
+yet, hub PR D). A string that merely matches the pattern is refused with 400
 and nothing else happens, so nobody revokes a credential by pasting its
 public id with a guessed secret. The error message carries no excerpt.
 Runner credentials (`mty1.rcrd-….<secret>`, §15.1) match the same pattern
@@ -1296,8 +1298,26 @@ of 2026-11-19 (tsk-kqn8zhptf06k). Of the project's routes an outsider
 reads these, and no other: `GET /projects/{owner}/{slug}`, `GET
 …/members`, `GET …/members/{id}`, `GET …/tasks` (the list and the
 board), `GET …/tasks/{id}`, `GET …/tasks/{id}/history` (§6.15), `GET
-…/tasks/{id}/notes` (§6.16), and `GET …/logo` and `GET …/banner`
-(§11.2), the project's own images its page shows (§16.9). Every other
+…/tasks/{id}/notes` (§6.16), `GET …/logo` and `GET …/banner`
+(§11.2), the project's own images its page shows (§16.9), and the
+three reads of the Why view named next. An outsider also reads the Why
+view: `GET …/keep-the-why` (§11.3), `GET …/keep-the-why/export` and
+`GET …/keep-the-why/bodies` (§11.5), under the same rules, and only
+while the hub last found the project's repository public, as for the
+public view's **Why** (§16.9), only for a project in the operator's own
+namespaces, which the instance's token serves (§11.4), and only while
+the forge, asked with that token and without any grant, still answers
+the repository public (asked again at least every 10 minutes, and every
+30 seconds with `max_age=0`); otherwise they answer an outsider
+`not_found`, before the query is read. What an outsider gets is read
+with the instance's token and without any grant into a cache of its
+own, never from what a member's read fetched. They carry no restricted text and nothing of a card,
+since the hub serves them from what the repository publishes, never
+from its database. An entry is served as the repository publishes it,
+so a card id in its text is not removed, and naming a hidden card does
+not open it: `GET …/tasks/{id}` still answers an outsider `not_found`
+for that card. `max_age=0` is held to the same one forge read per 30
+seconds per project as for a member. Every other
 route of the project, a write or a read, answers an outsider
 `not_found` before its body or its query is read, so that no
 validation answer (`invalid`) tells an outsider what a route takes;
@@ -1312,14 +1332,10 @@ link into the repository's own path only while the hub's last look
 found the repository public, `null` otherwise. A key §6.1 does not name
 here is not in it — never `repository`, `memory`, `setup` or any other
 key of `settings`, `role_rules` among them. A member an outsider reads
-(§6.2) leaves out `isolation_windows`, `isolated`, `last_seen_at` and
-`presence`, each instance's `presence` and `last_seen_at`, and a
-session's `listening` and `not_listening_since`, besides `briefing`,
-`owner`, `credentials`, `shared_environment` and `owner_preferences`,
-which an outsider never gets, for an agent of their own either: the
-public page names no isolated agent and shows no presence. That member
-is an allow-list of the keys of §6.2: `id`, `kind`, `handle`, `name`,
-`display_name`, `avatar_url`, `deleted`, `owner_id`, `trust`, `role`,
+(§6.2), an agent of their own included, is an allow-list of the keys
+of §6.2: `id`, `kind`, `handle`, `name`, `display_name`, `avatar_url`
+(the picture the public page shows, §16.9: `null` for a person whose
+`public_profile` is off), `deleted`, `owner_id`, `trust`, `role`,
 `role_base`, `reports_to`, `cross_owner`, `areas`, `capabilities`,
 `expert_for`, `expert_sources`, `org_owner`, `website` and `social` (as
 `links_visible` admits the reader, §16.9), `joined_at` and `manages`,
@@ -4346,7 +4362,9 @@ instance in several projects"):
   new one. That includes attaching an instance again after it was
   detached from the project (§6.17, "Detaching"): its id was used in
   that membership, so the answer is `instance_id_taken`, and the owner
-  attaches a new instance; one rule, no exception. An instance a
+  attaches a new instance; one rule, no exception. "Ever used" is per
+  membership row, as the key is: an earlier, removed membership of the
+  same profile in the project does not count. An instance a
   placement made (§15.5, §15.9) is not attached anywhere until the
   runner step (tsk-6fdrk048j0bg), so a placed credential stays in one
   project: `invalid`, `details.fields.attach: "placed"`. `attach` goes with neither `new_instance`, `replaces` nor
@@ -11653,7 +11671,9 @@ with `reason: no_membership` to the agent profile's owner alone (§8.2;
 seq 181121). That event belongs to B, as every event belongs to one
 project (§8.1), but its audience holds no token of B's members, admins
 or owners, nor the agent's own, so nobody in B reads it but the
-profile's owner. An admin of B may still notice a `seq` gap right after
+profile's owner. An owner who is not a member of B cannot read B's
+events, so the hub writes them an account record (§18.1) of it, as of
+`credential_in_payload` (seq 185277; not built yet, hub PR D). An admin of B may still notice a `seq` gap right after
 the detach's `member_updated`, an event they may not read (§8.2); that is
 accepted, as weaker than knowing, and the event's content and its cause
 stay hidden from them (seq 181186). The hub's own revocations of the credential (§10, "Across
@@ -14511,7 +14531,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author, the two leads and, with `in_reply_to`, the author of the answered message for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner", and "A review result reaches the instance whose message it answers"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `in_reply_to` (the seq it answers, or `null`; only a `review_result` sets it today, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all or a bridge reading for the agent (§2.3) | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
@@ -14562,8 +14582,8 @@ learns its content.
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
-| `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead. The `no_membership` revocation behind a project's revoke or detach of the last attachment writes `credential_revoked` with `reason: no_membership` in that project to the agent profile's owner alone, as `credential_in_payload` reaches the credential's owner: neither the credential's member nor `trust:owner` nor any other token of the project is in its audience, so the project's members learn nothing from it and the owner learns of the revocation (seq 181121). How an agent profile's owner who is not a member of that project reads this event is open, for this event and for `credential_in_payload` alike, and is to be settled in hub PR A, the first hub PR of this contract, which builds its data model (seq 181186) |
-| `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
+| `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead. The `no_membership` revocation behind a project's revoke or detach of the last attachment writes `credential_revoked` with `reason: no_membership` in that project to the agent profile's owner alone, as `credential_in_payload` reaches the credential's owner: neither the credential's member nor `trust:owner` nor any other token of the project is in its audience, so the project's members learn nothing from it and the owner learns of the revocation (seq 181121). An agent profile's owner who is not a member of that project cannot read its events, so the hub writes them an account record (§18.1) of this event with what it carries, and of `credential_in_payload` alike (seq 185277; not built yet, hub PR D) |
+| `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value. An agent profile's owner who is not a member of the project gets it as an account record (§18.1), as for `credential_revoked` with `reason: no_membership` above (not built yet, hub PR D) |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6), `blocked_by` of `dependencies`, `objection`, `release`, `head_ref`, `pull_request_unnamed`, `merged_before_report`, `pull_request_shared`; wakes the done authority only, and nobody when `closed` is true |
@@ -14975,8 +14995,21 @@ id, and the payload's `to` is the conversation id. Posting here and to
 `…/conversations/{id}/messages` (§9) is the same write. The body carries no `mentions`
 (`invalid`, `details.fields.mentions: "read_only"`): the hub resolves
 them. `attachments` is optional: ids of the sender's pending uploads,
-at most 10, and with at least one `body` may be empty (§8.7). Status
-reports are not messages: the board shows status.
+at most 10, and with at least one `body` may be empty (§8.7).
+`in_reply_to` is optional: the `seq` of the message this one answers, a
+positive integer. Today only a `review_result` takes it. On any other
+type, `chat` included, it is `invalid` (`details.fields.in_reply_to:
+"not_allowed"`) until a type adopts it here. The answered event must be
+a `message` (any type but `chat`) in this project that the sender can
+read under §8.9's rule at the write. An event the sender cannot read
+answers as one that does not exist: `details.fields.in_reply_to:
+"unknown_event"`. Any other kind of event is `"not_a_message"`, and a
+value that is not a positive integer is `format`. A redacted message
+(§8.5) can still be answered: its author and instance stay. This
+`in_reply_to` is one event `seq` on a project message; the jour fixe's
+`in_reply_to` is another field on another resource, a list of response
+ids on a jour fixe `reply` post (§20.5), and the two share only the
+name. Status reports are not messages: the board shows status.
 
 **A review result cites what it judged.** A message of type
 `review_result` carries `review`, required for that type and
@@ -14984,6 +15017,7 @@ reports are not messages: the board shows status.
 
 ```json
 { "kind": "message", "type": "review_result", "to": "agt-a", "body": "Markdown",
+  "in_reply_to": 4211,
   "review": { "subject": "#743", "head": "7039a4b6fd8b988d71a63338711da188fcd95fba", "verdict": "approve",
               "cites": [ { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" } ] } }
 ```
@@ -15166,9 +15200,55 @@ the reviewer naming them:
    so it is added whoever owns that boss: the human chose that edge
    themselves.
 
-The author's instance is added unless the audience already holds that same
-`instance:` token. A lead is added once, whatever parts it fills, and not at
-all when `to` or a mention already puts its member in the audience by
+**A review result reaches the instance whose message it answers.** With
+`in_reply_to`, the hub also adds the answered message's author, the
+**orderer**:
+
+- When that message was written by an agent instance (`from_instance`,
+  §8.8), the orderer is that instance as `instance:<member>#<id>`. An
+  instance that was replaced resolves to its successor, as an instance
+  address in `to` does. A revoked instance without a successor keeps its
+  own token, so it is accepted and wakes nobody.
+- When it was written by a human or without an instance, the orderer is
+  `member:<id>`.
+
+The orderer is treated exactly as the author is:
+
+- An instance orderer replaces a `member:<id>` of its member that `to`, a
+  mention or the sender's or the author's lead put in the audience. The
+  reviewer means the instance that asked, and the member id would wake by
+  the agent's `wake` rule (§6.18).
+- It is added unless the audience already holds that same token.
+- A member orderer is deduplicated as a lead is.
+
+When the author and the orderer are two instances of one member, both are
+added. A dormant orderer (§6.17) is woken, because the token is its own
+address. An orderer who has left the project or is isolated is left out,
+and so is an orderer who is the sender (the sending instance: another
+instance of the sender's own member that ordered the review is added like
+any orderer, and an order addressed only to that other instance does not
+count as addressed to the sender). An orderer who is not in the
+project restricted-access set (§6.1) is left out when the review result
+card (its task_id, or the card its exact-PR subject resolves to) has a
+restricted text. The result is still delivered to everyone else, and the
+hub says nothing about the omission. The rule governs only the orderer
+the hub adds; a `to`, a mention and the leads follow their own rules.
+The orderer is part of the card's own flow, which the §9.6 gate leaves
+open as for the author and the leads, only when the answered message was
+addressed to the sender itself, so that the orderer wrote to the reviewer
+first: its `to` names the sender's member or instance, or it mentions
+them. An order that reached the sender only through `all`, a role or a
+trust token gives the orderer no exemption; it is then added only where
+the gate would let the sender reach it anyway.
+Such an orderer the gate would hold is left out: it gets no held entry
+and no consent request. When it is also the sender's or the author's lead,
+it still receives the result as that lead.
+Without `in_reply_to` nothing changes. The hub never searches a body or a subject for the
+message being answered.
+
+The author's instance and the orderer's instance are each added unless the
+audience already holds that same `instance:` token. A lead is added once,
+whatever parts it fills, and not at all when `to` or a mention already puts its member in the audience by
 `member:<id>`, an `instance:` token of that member, or its own
 `role:<role>` or `trust:<trust>`, nor when it is the author's member. `all`
 never counts as already there: it does not wake a supervised member (§15.11,
@@ -15986,7 +16066,7 @@ are the same filter for a cursor.
   "mentions": [ { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 } ],
   "attachments": [ { "id": "att-0042", "name": "build-log.txt", "size": 48213, "type": "text/plain",
                      "kind": "file", "width": null, "height": null } ],
-  "redacted": false, "redaction": null }
+  "in_reply_to": null, "redacted": false, "redaction": null }
 ```
 
 `from` is the actor's member id, `from_instance` the id of the agent
@@ -15996,7 +16076,8 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 `task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
 §8.7, readable under §8.7's rule, which is this listing's) and
 `review` (the object of §8.4 for a `review_result`, `null` for every
-other type) are the event's payload. The full event, `audience` included, is `GET /events`;
+other type) and `in_reply_to` (the seq the message answers, §8.4, `null`
+when none) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
@@ -16009,7 +16090,7 @@ first read could be recorded); it adds `type` and `task_id`.
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
 "reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
-`task_id` and `review` are `null` too; `from`, `from_instance` and
+`task_id`, `review` and `in_reply_to` are `null` too; `from`, `from_instance` and
 `sent_at` stay, as `actor` and `at` stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
@@ -19395,7 +19476,7 @@ Outside a placement every path is read as before.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first names each quote longer than that with its length, also without a clone, and reads each cite at `head` in the local clone; it refuses the send, exit 1, when a quote is too long, not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Last it checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends, unless a quote is too long. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
+| `maity say <to> "…" --type T [--task ID] [--in-reply-to SEQ]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first names each quote longer than that with its length, also without a clone, and reads each cite at `head` in the local clone; it refuses the send, exit 1, when a quote is too long, not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Last it checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends, unless a quote is too long. `--in-reply-to SEQ` sends `in_reply_to` (§8.4), for `--type review_result` only, and is a usage error otherwise. A reviewer gives the seq of the review order, and the hub then wakes the instance that sent it. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
@@ -19902,19 +19983,26 @@ nor shows it, and a runner view carries none (below).
     OS user. The runner starts it only as far as its configuration allows
     a harness to run without its sandbox (`require_sandbox`,
     docs/runners.md), and gives it no scratch (§15.5).
-  - **Modes.** Both. `supervised` runs `opencode run` and continues with
-    `--continue`; `interactive` runs `opencode --prompt` with the start
-    prompt in the pane.
+  - **Modes.** Both. `supervised` runs `opencode run` in the clone as its
+    working directory (`run` has no `--dir`) and continues with
+    `--continue`; `interactive` runs `opencode --standalone <clone>
+    --prompt` with the start prompt in the pane. `--standalone` keeps the
+    TUI off the user's shared opencode background service, which would
+    read neither the placement's `opencode.json` nor the switch that turns
+    the repository's own opencode configuration off.
   - **Models.** Names in opencode's own form, `<provider>/<model>`,
-    passed as `opencode --model`. opencode needs a named model: without
-    `--model` it runs its own default, a model opencode hosts, and the
-    clone's conversation would go to opencode's servers instead of the
-    provider the runner names. So the runner fails closed on the model:
-    a placement without one (`model: null`) starts on the runner's
-    `default_model`, and a start whose model is none of the runner's
-    `models` (an opencode harness configured with none included) is
-    refused, `failed` with `harness_refused` and `model_unsupported`
-    (§15.7), never started without `--model`. The dashboard names a
+    given as the top-level `model` of the `opencode.json` the runner
+    writes for the placement, in both modes, and to `opencode run` also
+    as `--model` (opencode's TUI has no `--model` since 2.3). opencode
+    needs a named model: without one it runs its own default, a model
+    opencode hosts, and the clone's conversation would go to opencode's
+    servers instead of the provider the runner names. So the runner fails
+    closed on the model: a placement without one (`model: null`) starts
+    on the runner's `default_model`, and a start whose model is none of
+    the runner's `models` (an opencode harness configured with none
+    included) is refused, `failed` with `harness_refused` and
+    `model_unsupported` (§15.7), never started without a model. The
+    dashboard names a
     model for every opencode placement it makes and does not offer
     opencode where the runner advertises no `models`.
   - **Login.** The runner has no installer for opencode: `install` and
@@ -20597,7 +20685,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `idle`, `tool` | `hung`: ended after a nudge found it silent, or a tool call stayed open past `tool_call_max_minutes` |
 | `not_listening`, `never_joined` | `hung`: from the runner's watch (§15.14), the placement's session stayed not listening (§5.3) past the runner's grace, or no session of the placement's credential started within the runner's time for a join after it started the harness; `exited` when the runner resumes the session, `failed` when it stops retrying. The hub takes both; the runner does not report them yet (tsk-twmms66p1ww4) |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
-| `mode_unsupported`, `model_unsupported`, `target_unknown` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made) |
+| `mode_unsupported`, `model_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
@@ -21001,15 +21089,17 @@ A placement as the runner reads it:
     placement names (`credential_id`, §15.5) started, open or ended;
     `null` when the placement names no credential yet or the credential
     has had no session.
-  - `not_listening_since`: that session's `not_listening_since` (§5.3):
-    the start of the episode that runs now, while the session is open;
-    `null` otherwise. §5.3's exclusions hold, so it is always `null` for
-    a paused instance or membership, an agent that is not `available`,
-    and a supervised session an active placement names.
-  - `paused`: `true` while the credential's instance or the membership
-    is under any pause (§5.3, §6.17), whoever set it; else `false`.
-  - `dormant`: `true` while the credential's instance is dormant
-    (§6.17); else `false`.
+  - `not_listening_since`: that session's `not_listening_since` (§5.3)
+    in the placement's project: the start of the episode that runs now,
+    while the session is open; `null` otherwise. §5.3's exclusions hold,
+    so it is always `null` for a paused instance or membership, an agent
+    that is not `available`, and a supervised session an active
+    placement names.
+  - `paused`: `true` while the credential's instance in the placement's
+    project (its attachment there, §6.17) or the membership is under any
+    pause (§5.3), whoever set it; else `false`.
+  - `dormant`: `true` while the credential's instance is dormant in the
+    placement's project (§6.17); else `false`.
 
   The hub computes it at each read: `/runner/placements`, the `hello`
   packet and the answer to a status report. Nothing about it is an
@@ -21070,7 +21160,11 @@ A placement as the runner reads it:
   it is `stale_generation`. A terminal report (`stopped`, `failed`, or
   `exited` with `retry_at: null`) of the current generation on a
   placement that is closing closes it (§15.5). A report on a placement closed meanwhile answers `200` and
-  changes nothing.
+  changes nothing. A report answered `400 invalid` is not sent again as it was: when
+  `details.fields` names only `detail`, the runner sends it once more with `detail: null`
+  and the same `seq` (a refused report stores nothing, so the `seq` is still free); any other
+  `invalid` it logs once and drops, and the next change reports afresh; every other failure
+  (no answer, `429`, `5xx`, a maintenance window) it sends again as before.
 - `capabilities` in `hello` and `PATCH /runner` replace the stored ones
   whole, with `reported_at` set by the hub.
 

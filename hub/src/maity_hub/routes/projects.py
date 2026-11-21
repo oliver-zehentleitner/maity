@@ -1048,7 +1048,7 @@ def project_body(
 
 
 # The project view's keys an outsider reads (§2.3): an allow-list, so that a key the view gains
-# later stays hidden from outside until it is named here (hub/context/public-pages.md eb7fd1c7).
+# later stays hidden from outside until it is named here (hub/context/public-pages.md 3f9c2d71).
 # Never `repository` (`probe_via` with it), `settings` beyond `language` (`role_rules` among
 # them, §6.1), `memory` or `setup`. `links` as the public page shows them (§16.9).
 OUTSIDE_PROJECT_KEYS = (

@@ -536,6 +536,20 @@ def _credential(conn: Connection, credential_id: str) -> Any:
         raise unauthenticated()
     if runner:
         return _runner_credential(conn, credential_id)
+    attachment = t.instance_attachment
+    # TODO(hub PR B): resolve the attachment of the route's project. Until then a credential
+    # attached to several projects authenticates in its oldest attachment that is not
+    # detached, by attached_at and then id, so the choice never depends on the order the
+    # database returns rows in.
+    first = attachment.alias("first_attachment")
+    oldest = (
+        select(first.c.id)
+        .where(first.c.credential_id == t.credential.c.id, first.c.detached_at.is_(None))
+        .order_by(first.c.attached_at, first.c.id)
+        .limit(1)
+        .correlate(t.credential)
+        .scalar_subquery()
+    )
     row = conn.execute(
         select(
             t.credential.c.id,
@@ -544,7 +558,7 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             t.credential.c.revoked_reason,
             t.credential.c.revoke_due_at,
             t.credential.c.revoke_due_by,
-            t.credential.c.membership_id,
+            attachment.c.membership_id,
             t.credential.c.instance,
             t.membership.c.project_id,
             t.membership.c.agent_id,
@@ -554,7 +568,12 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             t.agent_profile.c.owner_id,
             t.project.c.signing,
         )
-        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .select_from(t.credential)
+        .join(
+            attachment,
+            and_(attachment.c.credential_id == t.credential.c.id, attachment.c.id == oldest),
+        )
+        .join(t.membership, t.membership.c.id == attachment.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.credential.c.id == credential_id)

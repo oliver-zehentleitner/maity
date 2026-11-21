@@ -453,8 +453,9 @@ def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = 
     if instance is None:
         return
     held = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == membership_id, t.credential.c.instance == instance
+        instances.credential_rows().where(
+            t.instance_attachment.c.membership_id == membership_id,
+            t.credential.c.instance == instance,
         )
     ).first()
     if held is not None and instances.human_paused(row, held):

@@ -5,7 +5,8 @@ compares them with the sessions tmux has and acts: start, restart after a backof
 grace, adopt a session it finds after its own restart, end a session no placement wants any
 more. It reports what is actually there, one record per placement and only on a change of
 (state, reason, detail, generation, restarts), each with the next `seq`, saved before it is
-sent. A report the hub did not take is sent again on the next tick.
+sent. A report the hub did not take is sent again on the next tick; one it refused as
+`invalid` is not (`Supervisor._send`).
 
 Long actions (clone, start) run as one task per placement, so a slow clone never holds up a
 stop elsewhere. Everything else runs in the supervisor's own thread. `actual.json` keeps the
@@ -44,7 +45,7 @@ from . import (
     targets,
     workspace,
 )
-from .asuser import RUNNER, AsUser, Unreachable
+from .asuser import RUNNER, AsUser, Unreachable, present
 from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -1437,21 +1438,18 @@ class Supervisor:
             # An ssh host whose `maity` predates the codex launch-write op cannot anchor the
             # home. The no-scratch fall-back would put CODEX_HOME back under the hidden state
             # directory (the original incident: no command runs), so refuse the placement with
-            # a clear reason the operator can act on, rather than crash-looping it.
-            #
-            # The reason goes to the runner's log only. `harness_refused`'s detail is a closed
-            # contract list (docs/api.md §15.7) with no code for this; an unknown detail makes
-            # the hub answer `invalid`, so the runner would re-send the rejected report every
-            # tick and the refusal would never be recorded. The report therefore carries no
-            # detail (a contract detail-code is deferred to a follow-up card). `retry_at` stays
-            # None, so the start still does not crash-loop and only a new generation retries.
+            # a clear reason the operator can act on, rather than crash-looping it: detail
+            # `codex_host_too_old` (docs/api.md §15.7). A hub older than that code refuses the
+            # detail; the report then goes once more without it (`_send`). `retry_at` stays
+            # None, so the start does not crash-loop and only a new generation retries.
             # `old` carries the host's own message, the host version among it when it names one.
             self.log(
                 f"{p['id']}: codex placement refused: the host's maity is too old for the "
                 f"codex launch-write op: {old}"
             )
             with self.lock:
-                rec.enter(self.now(), "failed", "harness_refused", retry_at=None)
+                rec.enter(self.now(), "failed", "harness_refused", detail="codex_host_too_old",
+                          retry_at=None)  # fmt: skip
             return
         except Exception as exc:  # noqa: BLE001 - a start task never dies leaving `starting`
             # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
@@ -1614,11 +1612,12 @@ class Supervisor:
         )
 
     def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
-        """The Keep the Why skill the placement names (§15.5), as the runner's checked copy's
-        plugin root (skills.py); None when it names none, and None with a log line when it
-        cannot be had here. Only where the agents run as the runner's own user on this host
-        (the `single` layout): elsewhere the agents' user may not read the runner's directory,
-        and an ssh host fetches for itself (the next part of tsk-172s8y208whg)."""
+        """The Keep the Why skill the placement names (§15.5), as the plugin root of a checked
+        copy the agents can read (skills.py); None when it names none, and None with a log line
+        when it cannot be had. Where the agents run as the runner's own user on this host (the
+        `single` layout), the runner's own copy; elsewhere (the agent_user layout, an ssh host)
+        the agents' user may not read the runner's directory, so the checked copy is put below
+        that user's home and checked there at every start (skills.deliver, tsk-7casfxb7cn49)."""
         try:
             wanted = skills.named(p)
         except skills.Unavailable as exc:
@@ -1626,15 +1625,24 @@ class Supervisor:
             return None
         if wanted is None:
             return None
-        if not (target.as_user.direct and target.as_user.here and not target.host):
-            self.log(f"{p['id']}: no Keep the Why skill: delivered only in the single layout "
-                     "on the runner's host so far")  # fmt: skip
-            return None
         try:
-            return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
-        except (skills.Unavailable, OSError) as exc:
+            if target.as_user.direct and target.as_user.here and not target.host:
+                return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+            return skills.deliver(target.as_user, self._agents_home(target),
+                                  self.cfg.skills_dir, self.cfg.state_dir, *wanted)  # fmt: skip
+        except (skills.Unavailable, OSError, ValueError, subprocess.SubprocessError) as exc:
+            # ValueError too (a decoding error, the review of #2089): the skill is never what
+            # fails a start, so it is never counted as a crash.
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None
+
+    def _agents_home(self, target: Target) -> Path:
+        """The home of the user the agents run as on `target`: the remote login's, read on
+        connecting (its agent_files lie in it), or the agents' user's here."""
+        if not target.as_user.here:
+            assert target.agent_files is not None  # noqa: S101 - connected before a start
+            return target.agent_files.parent
+        return config.home_of(target.as_user.user) if target.as_user.user else Path.home()
 
     def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
         """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a
@@ -2095,18 +2103,59 @@ class Supervisor:
             return
         self.save()  # the seq is on disk before it is sent
         for pid, rec, pending in outgoing:
-            try:
-                self.client.call("POST", f"/runner/placements/{pid}/status", body=pending["body"])
-            except hub.HubError as exc:
-                if exc.code in ("stale_generation", "not_found"):
-                    with self.lock:  # the hub moved on: settled, until the state changes
-                        rec.acked, rec.pending = pending["key"], None
-                    continue
-                self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
-                continue
-            with self.lock:
-                if rec.pending is pending:
+            again: dict[str, Any] | None = pending
+            while again is not None:
+                again = self._send(pid, rec, again)
+
+    def _send(self, pid: str, rec: Record, pending: dict[str, Any]) -> dict[str, Any] | None:
+        """POST one report (§15.8). Returns the report to send at once in its place -- the same
+        report with `detail: null` and the same `seq`, when the hub refused it as `invalid` for
+        its detail alone -- else None. A report refused as `invalid` is never sent again as it
+        was: the same body meets the same refusal every tick and the hub never records the
+        state. Any other `invalid` is dropped (the next change reports afresh); a failure that
+        is no refusal of the body (no answer, `429`, `5xx`, maintenance) is sent again on the
+        next tick. The stripped report and the drop are saved at once, so a restart before the
+        end of the tick never sends the refused body again."""
+        assert self.client is not None  # noqa: S101 - _report checks it
+        try:
+            self.client.call("POST", f"/runner/placements/{pid}/status", body=pending["body"])
+        except hub.HubError as exc:
+            if exc.code in ("stale_generation", "not_found"):
+                with self.lock:  # the hub moved on: settled, until the state changes
                     rec.acked, rec.pending = pending["key"], None
+                return None
+            if exc.status == 400 and exc.code == "invalid":
+                fields = exc.details.get("fields")
+                detail = pending["body"].get("detail")
+                if isinstance(fields, dict) and set(fields) == {"detail"} and detail is not None:
+                    # A hub older than the detail code (or one that pairs it otherwise): the
+                    # state, reason and seq still stand, and a refused report stored nothing,
+                    # so the seq is still free.
+                    self.log(f"report for {pid} refused for its detail {detail!r} ({exc}); "
+                             "sent again without the detail")  # fmt: skip
+                    stripped = {"key": pending["key"], "body": {**pending["body"], "detail": None}}
+                    with self.lock:
+                        if rec.pending is not pending:
+                            return None
+                        rec.pending = stripped
+                    # On disk before it is sent, like the first: a restart then sends the
+                    # stripped report, never the refused one again.
+                    self.save()
+                    return stripped
+                self.log(f"report for {pid} refused as invalid ({exc}); dropped, "
+                         "the next change reports afresh")  # fmt: skip
+                with self.lock:
+                    if rec.pending is not pending:
+                        return None
+                    rec.acked, rec.pending = pending["key"], None
+                self.save()  # the drop is on disk: a restart does not send it again
+                return None
+            self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
+            return None
+        with self.lock:
+            if rec.pending is pending:
+                rec.acked, rec.pending = pending["key"], None
+        return None
 
 
 # In the agents' home: logins and keys a sandboxed command never needs. A list, so not every
@@ -2142,6 +2191,16 @@ def private_paths(
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 
+# The fail-closed listings below decide with stat, never with pathlib's predicates, which stop
+# raising from Python 3.14 (asuser.present, tsk-0tje3vzzedtx).
+def _is_dir(path: Path) -> bool:
+    return present(path, "-d")
+
+
+def _is_link(path: Path) -> bool:
+    return present(path, "-L")
+
+
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
@@ -2157,11 +2216,11 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     if as_user.direct:
         found: list[Path] = []
         try:
-            for project in root.iterdir() if root.is_dir() else ():
-                if project.is_dir() and not project.is_symlink():
+            for project in root.iterdir() if _is_dir(root) else ():
+                if _is_dir(project) and not _is_link(project):
                     found += [c / ".git" / "maity" for d in project.iterdir()
                               for c in (d, d / workspace.REPO)
-                              if (c / ".git" / "maity").is_dir()]  # fmt: skip
+                              if _is_dir(c / ".git" / "maity")]  # fmt: skip
         except OSError as exc:
             raise refused from exc
         real_root, real_clone = root, clone.resolve()
@@ -2195,14 +2254,16 @@ def other_scratches(
     found: list[Path] = []
     if as_user.direct:
         try:
-            for project in root.iterdir() if root.is_dir() else ():
+            for project in root.iterdir() if _is_dir(root) else ():
                 holder = project / workspace.SCRATCH
-                if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
+                if _is_link(project) or _is_link(holder) or not _is_dir(holder):
                     continue
                 named = root / project.name / workspace.SCRATCH
                 if named != own_holder:
                     # Named whole, but only once it can be read and searched, as the delegated
                     # listing checks (`-r`, `-x`): an unreadable `.scratch` still refuses the start.
+                    # Its kind came from stat above (_is_dir); os.access is no pathlib predicate
+                    # and answers False on any error, so it fails closed on 3.14 too.
                     if not os.access(holder, os.R_OK | os.X_OK):
                         raise refused
                     found.append(named)

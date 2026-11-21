@@ -387,7 +387,7 @@ def test_minutes_online_count_working_calls_not_only_long_polls(
         member_of = dict(conn.execute(select(t.membership.c.agent_id, t.membership.c.id)).all())
         conn.execute(
             update(t.credential)
-            .where(t.credential.c.membership_id == member_of[idle.id])
+            .where(t.credential.c.id == idle.credential_id)
             .values(last_used_at=now[0] - timedelta(minutes=5))
         )
         rounds.record_presence(conn, now[0])

@@ -101,12 +101,13 @@ def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
     page: a membership with a live session of its own. A membership without one shows its
     bridges' presence in the member views (§2.3); that is not the agent's own, so it does not
     count here (§16.9)."""
-    s = t.agent_session.c
+    s, p = t.agent_session.c, t.agent_session_project.c
     own = list(
         conn.execute(
-            select(s.membership_id)
+            select(p.membership_id)
+            .join(t.agent_session, s.id == p.session_id)
             .where(
-                s.membership_id.in_([membership_id for _, membership_id in found]),
+                p.membership_id.in_([membership_id for _, membership_id in found]),
                 s.live.is_(True),
             )
             .distinct()
@@ -118,10 +119,11 @@ def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
 def latest_session(conn: Connection, found: list[tuple[Any, int]]) -> tuple[str | None, str | None]:
     """The `model` and `harness` of the agent's most recent session in one of the projects of
     its page, each `None` when that session did not give it, both when there is none (§16.9)."""
-    s = t.agent_session.c
+    s, p = t.agent_session.c, t.agent_session_project.c
     row = conn.execute(
         select(s.model, s.harness)
-        .where(s.membership_id.in_([membership_id for _, membership_id in found]))
+        .join(t.agent_session_project, p.session_id == s.id)
+        .where(p.membership_id.in_([membership_id for _, membership_id in found]))
         .order_by(s.started_at.desc(), s.id.desc())
         .limit(1)
     ).first()
