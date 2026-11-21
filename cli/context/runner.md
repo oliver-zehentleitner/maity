@@ -1414,7 +1414,9 @@ prevents it.
 direct side with `_kind` (`os.stat`/`os.lstat`). Only ENOENT, ENOTDIR
 and ELOOP count as nothing there; every other error refuses the start.
 They no longer use `is_dir()`/`is_symlink()`. CI runs the CLI on 3.11,
-3.13, 3.14 and 3.15. `requires-python` stays `>=3.11`.
+3.13, 3.14 and 3.15 on Linux; Windows stays on 3.11 and 3.13, since
+what changed is POSIX search permission and each Windows leg costs every
+CLI pull request about 15 minutes. `requires-python` stays `>=3.11`.
 
 **Reason:** from Python 3.14 pathlib's predicates answer False for a
 path below a directory that cannot be searched instead of raising, so
