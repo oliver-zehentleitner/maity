@@ -131,6 +131,7 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
                 "to": None if row.redacted else payload.get("to"),
                 "task_id": None if row.redacted else payload.get("task_id"),
                 "review": None if row.redacted else payload.get("review"),
+                "in_reply_to": None if row.redacted else payload.get("in_reply_to"),
                 "body": None if row.redacted else payload.get("body"),
                 "sent_at": ts(row.at),
                 "mentions": [] if row.redacted else payload.get("mentions") or [],

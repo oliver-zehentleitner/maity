@@ -456,7 +456,8 @@ agents outlive it.
 
 **Id:** 0a639f39-f76c-4a77-ac43-ae8ce1d42434
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4f960c44-8b9f-459e-978f-dff9237271a6
 **Evidence:** inferred
 **Source:** card tsk-bj6fs628q6pd (a placed runner agent's field report that the sandbox refuses every OS UUID v4 source); the Keep the Why skill 0.20.3 (`SKILL.md`, the `Id` rule) and `AGENTS.md` (every entry's Id is made by an OS command, never from memory)
 **Verification:** contradicted — the allowlist mechanism still reads from `adapters.py` and `docs/runners.md` as described, but the inferred live-session efficacy is contradicted: observed in a Claude Code runner placement (CLI 0.1.0a17), 2026-11-20, a plain `cat /proc/sys/kernel/random/uuid` and `uuidgen` were both refused by the harness (denied, "don't ask" mode); card tsk-1rejhywcw3qh reports the `/proc` read refused for three further placed sessions the same day
@@ -471,11 +472,13 @@ rule in `permissions.allow`, with `defaultMode: dontAsk`) and opencode
 (a `bash` rule, the catch-all being `deny`). It is the one source
 (`adapters.UUID_COMMAND`); the rule is unconditional, not from a grant.
 The allowlist mechanism and that these two harnesses refuse unlisted
-commands are **confirmed** from the code and `docs/runners.md`; that a
-live Claude Code or opencode session now makes its UUID with the
-allowed command, and that Codex and agy run it inside their own
-sandbox, is **inferred** and not yet observed in a placed session —
-the weaker grade is why this entry's Evidence is `inferred`.
+commands are **confirmed** from the code and `docs/runners.md`. That a
+live Claude Code session makes its UUID with the allowed command is
+**contradicted**: placed Claude Code sessions refused it on 2026-11-20
+(the Verification line). For opencode it was never observed either
+way, and that Codex and agy run the command inside their own sandbox
+stays **inferred**. The weakest grade decides, which is why this
+entry's Evidence is `inferred`.
 
 **Reason:** every Keep the Why entry an agent writes needs an `Id` made
 by an OS command — never composed from memory — so a session that
@@ -507,6 +510,55 @@ with free arguments.
   an unlisted `cat /proc/sys/kernel/random/uuid` already runs inside
   their own sandbox (Codex's `:workspace` profile, agy's
   `proceed-in-sandbox`).
+
+## The runner allows no UUID command; `maity uuid` makes the Ids
+
+**Id:** 4f960c44-8b9f-459e-978f-dff9237271a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-jjxxspts3t40 and the lead's go on it, 2026-11-20; probes in a placed Claude Code session (CLI 0.1.0a17), 2026-11-20; `cli/src/maity/runner/adapters.py` (`opencode_config`, `external_directory`)
+**See:** runner.md#the-allowlist-harnesses-allow-one-os-uuid-v4-source-the-kernels-generator — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-20
+**See:** commands.md#maity-uuid-makes-keep-the-why-ids-where-uuidgen-is-refused — 2b2be9a9-25d6-4396-b35d-5a2c242a4997 — as of 2026-11-20
+**Revisit when:** a harness applies an exact `Bash(...)` allow before its path check, or `maity` stops being allowed in some harness a placement runs
+
+The runner no longer allows `cat /proc/sys/kernel/random/uuid` (the
+former `adapters.UUID_COMMAND`) in Claude Code or opencode placements.
+An agent makes its Keep the Why Ids with `maity uuid`, which runs
+wherever `maity` is allowed, on every harness.
+
+**Reason:** the exact allow never took effect in a placed Claude Code
+session. Claude Code checks a read command that names a path outside
+the working directories before it applies the allow rules, so the
+exact rule does not win. The probes in one placed session showed this:
+`cat` of a file inside the clone runs with no rule for it, while
+`ls /proc/sys/kernel/random` and the allow-listed
+`cat /proc/sys/kernel/random/uuid` are both refused, and exact rules
+for commands without a path (`git status`) do match. The probes are
+**confirmed**. That the path check is the cause is **inferred**, since
+the harness's own source and the session's settings file were not read
+from inside the placement. opencode's config sets
+`external_directory: deny`, which gates the same path; never observed
+in an opencode session, so also **inferred**. A rule that cannot work
+reads as a UUID source that is not there.
+
+**Rejected alternatives:**
+- Adding a `Read(//proc/sys/kernel/random/uuid)` allow so that the path
+  check passes: not verifiable from inside a placement, since the
+  settings are fixed at launch and a test needs a restarted placement.
+  It would also be a second, harness-specific rule beside `maity uuid`,
+  which already covers every harness.
+- Keeping the rule for opencode only: unobserved there, and the same
+  `external_directory` deny likely refuses it; one source for every
+  harness is simpler to explain.
+
+Under the allowlist harnesses (Claude Code, opencode), a CLI older than
+the release that ships `maity uuid` (0.1.0a17 included) leaves a
+placement without a UUID source: the usual commands are refused there,
+as the probes above showed for Claude Code. Dropping the rule takes
+nothing away there, since it never ran. Codex and agy are not judged
+here; what they refuse depends on their own sandbox. The changelog
+names the upgrade as the prerequisite.
 
 ## The command allowlists are not a boundary until agents run as their own user
 
@@ -550,10 +602,11 @@ would read as a boundary when it is not one.
 **Status:** active
 **Evidence:** inferred
 **Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py`, `scratchop.py` and `commands.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`, the launch-write op through the `maity runner scratchop` CLI in `tests/test_commands.py`, and the too-old-host refusal in `tests/test_supervisor.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
-**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979, its detail code added by card tsk-m1mkmx0ncckr and request req-gb2rgpe7k94g
 **See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
-**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, a placement is given a home with no scratch to carry it, or the follow-up card adds a contract detail-code for the too-old-host refusal
+**See:** runner.md#a-report-the-hub-refuses-as-invalid-is-sent-once-more-without-its-detail-or-dropped — b68a2e8b-8472-4cfe-88b1-8531d7275949 — as of 2026-11-21
+**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, or a placement is given a home with no scratch to carry it
 
 Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
 (`adapters.codex_home`), under the workspaces root, rather than under the
@@ -590,13 +643,14 @@ a clear reason (the host's `maity` is too old for Codex placements) so the
 operator upgrades the host, rather than crash-looping the start or quietly
 falling back to the hidden state directory where no command would run.
 
-That refusal is reported as `harness_refused` with no detail, and the
-specific reason — the host's `maity` is too old for the codex launch-write
-op — goes to the runner's log only. `harness_refused`'s detail is a closed
-contract list (docs/api.md §15.7) with no code for this host-too-old case;
-an unknown detail makes the hub answer `invalid`, so the runner would
-re-send the rejected report every tick and the refusal would never be
-recorded. A contract detail-code for it is deferred to a follow-up card.
+That refusal is reported as `failed` / `harness_refused` with the detail
+`codex_host_too_old` (docs/api.md §15.7), and the host's own message goes
+to the runner's log. Until card tsk-m1mkmx0ncckr put that code in the
+contract, the report carried no detail (the choice of PR #1979): an unknown
+detail made the hub answer `invalid`, and the runner re-sent the rejected
+report every tick. A hub older than
+the code still refuses the detail; the runner then sends the report once
+more without it (b68a2e8b), so the refusal is recorded either way.
 `retry_at` stays unset, so the start still does not crash-loop and only a
 new generation retries.
 
@@ -4667,6 +4721,50 @@ without actual.json, would otherwise hold 0 for a session that runs, and a
 `hung` end later would start fresh a second time instead of resuming;
 saving the count at the start alone would still miss a lost actual.json.
 The refusal's report would carry the generation before's count.
+
+## A report the hub refuses as `invalid` is sent once more without its detail, or dropped
+
+**Id:** b68a2e8b-8472-4cfe-88b1-8531d7275949
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m1mkmx0ncckr (a refused placement report resent every tick); request req-gb2rgpe7k94g (the §15.7 code `codex_host_too_old` and the §15.8 rule, approved as written); docs/api.md §15.7, §15.8; the review of PR #2080 (the resend and the drop saved at once, across a restart)
+**See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-21
+**Revisit when:** the hub's `invalid` answer stops naming the failing fields in `details.fields`, or a report field other than `detail` gains a value a newer runner may send to an older hub
+
+A placement report the hub answers `400 invalid` is never sent again as it
+was (`Supervisor._send`). When `details.fields` names exactly `detail`, the
+runner sends the same report once more with `detail: null` and the same
+`seq`; any other `invalid` it logs once and drops, so the record counts as
+settled until its state changes and the next change reports afresh. Like
+the first send, the stripped report and the drop are saved at once, before
+anything else is sent, so a restart never sends the refused body again. A
+failure that refuses no body — no answer, `429`, a `5xx`, a maintenance
+window — is sent again on the next tick as before.
+
+**Reason:** `_check_codes` refuses a report before the `seq`
+compare-and-set, so a refused report stores nothing and the same body meets
+the same refusal on every tick: the hub never records the state, and the
+runner's log fills with the same line. The usual cause is a runner newer
+than its hub — a detail code the hub does not list yet
+(`codex_host_too_old`, `target_unknown` before its fix) — and there the
+state and reason are still valid and worth recording; only the detail is
+not. Because the refused report took no `seq`, reusing it is safe, and the
+stripped report is the same report minus one optional field. Leaving the
+detail out does not help any other refusal, so the runner stops there.
+
+**Rejected alternatives:**
+- Send a refused report again on every tick, as before: the loop the card
+  describes — the hub never records the state, and nothing ends it but a
+  change of state or a newer hub.
+- Drop every `invalid` report, the detail-only one included: an older hub
+  would then record nothing of a refusal the runner reports with a new
+  code, and the placement would show its last state instead of `failed` /
+  `harness_refused`. Resending once without the detail records the state
+  and reason the hub understands.
+- Leave new detail codes unsent until every hub knows them (what PR #1979
+  did for the Codex old-host refusal): the reason then never reaches the
+  hub at all, even a current one.
 
 ## A stopped agent's clone stays for its retention time, then the runner removes it
 
