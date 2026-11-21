@@ -7,5 +7,3 @@
   Code's own temporary files and its sandbox socket go there, outside the
   sandbox and removed when the placement closes, instead of in the
   `/tmp/claude-<uid>` directory every Claude Code session of that user shares.
-  Its sandbox settings are unchanged. The commands it runs keep the `$TMPDIR`
-  Claude Code gives them, which is still that shared directory.

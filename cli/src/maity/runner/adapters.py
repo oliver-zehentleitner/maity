@@ -28,7 +28,7 @@ from typing import Any
 from .. import __version__, clonecheck, ghpr, proc
 from . import capabilities, config, scratch, stub, trust
 from .asuser import AsUser
-from .workspace import OWN_TMPDIR_HARNESSES, TMP_SCRATCH_HARNESSES
+from .workspace import TMP_SCRATCH_HARNESSES
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -255,11 +255,11 @@ class Context:
     # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
     # ssh host, no uid).
     tmp_scratch_parent: Path | None = None
-    # The placement's own short temp directory (`tmp` in a fresh leaf under that per-user `/tmp`
-    # parent), made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix
-    # socket (scratch_tmpdir): Codex's TMPDIR, re-opened for it alone in its sandbox
-    # (tsk-0zb9mgzmbwn4), or Claude Code's CLAUDE_CODE_TMPDIR, kept from its sandbox
-    # (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
+    # The placement's own short TMPDIR (`tmp` in a fresh leaf under that per-user `/tmp` parent),
+    # made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix socket
+    # (scratch_tmpdir) and re-opened for this placement alone in its sandbox: Codex's whole leaf
+    # (tsk-0zb9mgzmbwn4), and Claude Code's, its `tmp` re-opened and the leaf itself its
+    # CLAUDE_CODE_TMPDIR (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
     tmpdir: Path | None = None
     # The placement's test cluster password file in the holder every sandbox is denied
     # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no
@@ -323,32 +323,52 @@ def fits_socket(tmp: Path, limit: int | None = None) -> bool:
 
 def session_tmpdir(ctx: Context) -> Path | None:
     """The session's TMPDIR: `tmp` in its scratch where a socket fits under it, else the short
-    one of its own the supervisor made under the per-user `/tmp` parent (Context.tmpdir), unless
-    the harness takes that one in another variable (Claude Code, own_tmp_env), else none, and
-    tools fall back to the system's (tsk-0zb9mgzmbwn4)."""
+    one of its own the supervisor made under the per-user `/tmp` parent (Context.tmpdir), else
+    none, and tools fall back to the system's (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
     own = scratch_tmpdir(ctx.scratch)
     if own is not None:
         return own
-    takes = OWN_TMPDIR_HARNESSES.get(ctx.harness.id, "TMPDIR") == "TMPDIR"
-    return _own_tmpdir(ctx) if takes else None
+    return ctx.tmpdir if ctx.tmpdir is not None and fits_socket(ctx.tmpdir) else None
+
+
+def own_tmpdir_in_use(ctx: Context) -> Path | None:
+    """The placement's own TMPDIR under the per-user `/tmp` parent (Context.tmpdir) when it is
+    the one the session gets (session_tmpdir), else None: the sandbox opens it, and the parent's
+    write deny is lifted, only then."""
+    return ctx.tmpdir if ctx.tmpdir is not None and session_tmpdir(ctx) == ctx.tmpdir else None
+
+
+def private_tmpdir_refusal(ctx: Context) -> str | None:
+    """Why a sandboxed Claude Code placement must not start, or None: it starts only with a
+    TMPDIR of its own (session_tmpdir). Without one, Claude Code hands its sandboxed commands
+    `/tmp/claude-<uid>`, one directory every Claude Code session of the OS user shares and can
+    write, so the start fails closed instead (tsk-k7svzz2p4v7y; security's tsk-z5c3798r1ces). An
+    unsandboxed placement is not refused: its commands already reach every file of the user.
+    The text is for the runner's log only, with the cause and the remedy."""
+    if ctx.harness.id != "claude-code" or not ctx.sandbox or session_tmpdir(ctx) is not None:
+        return None
+    where = "there is no scratch"
+    if ctx.scratch is not None:
+        where = f"{ctx.scratch / 'tmp'} is too long for a Unix socket"
+    return (
+        f"no private TMPDIR for this sandboxed Claude Code placement: {where}, "
+        "and no short one could be made under the per-user /tmp parent (none is made on an ssh "
+        "host). Its commands would share /tmp/claude-<uid> with every Claude Code session of "
+        "this OS user, so it is not started. Set a short `workspaces` root on this host, such "
+        "as /srv/mw"
+    )
 
 
 def own_tmp_env(ctx: Context) -> dict[str, str]:
-    """The placement's own short temp directory for a harness that takes it in a variable other
-    than TMPDIR (workspace.OWN_TMPDIR_HARNESSES): Claude Code's CLAUDE_CODE_TMPDIR, for its own
-    temp files and its sandbox socket, which Claude Code writes outside its sandbox. Empty where
-    the scratch's `tmp` fits (it is the TMPDIR, and Claude Code's own files follow it) or where
-    there is no leaf (tsk-k7svzz2p4v7y)."""
-    name = OWN_TMPDIR_HARNESSES.get(ctx.harness.id)
-    leaf = _own_tmpdir(ctx)
-    if name is None or name == "TMPDIR" or leaf is None or scratch_tmpdir(ctx.scratch) is not None:
+    """Claude Code's CLAUDE_CODE_TMPDIR in the leaf itself where the session's TMPDIR is the
+    leaf's `tmp`: Claude Code's own temp files (`claude-<uid>/`) and its sandbox socket
+    (`cc-socks/`) then sit beside the `tmp` its sandbox writes, outside it, so the session's
+    commands cannot reach them, and they go with the leaf (tsk-k7svzz2p4v7y). Empty otherwise:
+    where the scratch's `tmp` is the TMPDIR, Claude Code's own files follow it, as before."""
+    own = own_tmpdir_in_use(ctx)
+    if ctx.harness.id != "claude-code" or own is None:
         return {}
-    return {name: str(leaf)}
-
-
-def _own_tmpdir(ctx: Context) -> Path | None:
-    """Context.tmpdir where a socket fits under it, else None."""
-    return ctx.tmpdir if ctx.tmpdir is not None and fits_socket(ctx.tmpdir) else None
+    return {"CLAUDE_CODE_TMPDIR": str(own.parent)}
 
 
 # The test scripts' directories inside the placement's scratch (tsk-w7qtcbzcshn9): the run slots
@@ -443,7 +463,7 @@ def launch(ctx: Context) -> Launch:
         # when the placement ends instead of piling up in the agents' home (§15.5).
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := session_tmpdir(ctx)) is not None else {}),
-        # Claude Code's own temp files and sandbox socket in that leaf (own_tmp_env).
+        # Claude Code's own temp files and sandbox socket beside that `tmp` (own_tmp_env).
         **own_tmp_env(ctx),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
         **run_env(ctx.scratch if beside else None),
@@ -539,13 +559,11 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 def own_tmp_leaf(ctx: Context) -> Path | None:
     """The leaf of the placement's own TMPDIR under the per-user `/tmp` parent, to open again
     in its sandbox: only when that TMPDIR is the one the session gets (session_tmpdir), so the
-    sandbox never opens a leaf the session does not use. Only Codex's profile opens it: Claude
-    Code's sandbox mounts a leaf re-opened under a denied parent read-only, so a Claude Code
-    placement's leaf is its CLAUDE_CODE_TMPDIR alone, which Claude Code writes outside its
-    sandbox, and its sandbox opens nothing (own_tmp_env, tsk-k7svzz2p4v7y)."""
-    if ctx.tmpdir is None or session_tmpdir(ctx) != ctx.tmpdir:
-        return None
-    return ctx.tmpdir.parent
+    sandbox never opens a leaf the session does not use. Codex's profile opens the whole leaf;
+    Claude Code's settings open only its `tmp` (claude_settings), since Claude Code keeps its own
+    files in the leaf beside it (own_tmp_env)."""
+    own = own_tmpdir_in_use(ctx)
+    return None if own is None else own.parent
 
 
 def _shared_tmp(ctx: Context) -> list[str]:
@@ -599,6 +617,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             {"hooks": [{"type": "command", "command": CLAUDE_WORKTREE_HOOK}]},
         ]
     if ctx.sandbox:
+        # The placement's own TMPDIR in a leaf under the agy per-user `/tmp` parent, when it is
+        # the session's (tsk-k7svzz2p4v7y): its `tmp` is re-opened for reading and writing, and
+        # the parent is denied for reading only. A write deny on the parent mounts the re-opened
+        # `tmp` read-only (Claude Code 2.1.329), and is not what keeps a sibling leaf out: under
+        # the read deny's empty mount it does not exist in the sandbox, and a write there lands
+        # in that mount alone (the ops probe P4, 2026-11-21).
+        own = own_tmpdir_in_use(ctx)
+        writable = [str(p) for p in (ctx.scratch, own) if p is not None]
         settings["sandbox"] = {
             "enabled": True,
             "failIfUnavailable": True,  # never fall back to unsandboxed commands
@@ -614,8 +640,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            # The agy per-user `/tmp` scratch parent is hidden from read and write alike, so a
-            # placement that is not its owner cannot reach another placement's scratch there.
+            # The agy per-user `/tmp` scratch parent is hidden, so a placement that is not its
+            # owner cannot reach another placement's scratch there: from reading always, and from
+            # writing too unless the placement's own TMPDIR is re-opened under it (above).
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
                                         *_shared_tmp(ctx)],
                            # The private paths are not writable either: the runner's files
@@ -623,10 +650,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                            "denyWrite": [f"{git}/maity",
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
                                          *(str(p) for p in ctx.private),
-                                         *_shared_tmp(ctx)],
-                           # Commands write the placement's scratch besides the clone (§15.5).
-                           **({"allowWrite": [str(ctx.scratch)]}
-                              if ctx.scratch is not None else {})},
+                                         *(_shared_tmp(ctx) if own is None else [])],
+                           # Commands write the placement's scratch besides the clone (§15.5),
+                           # and its own TMPDIR.
+                           **({"allowWrite": writable} if writable else {}),
+                           **({"allowRead": [str(own)]} if own is not None else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line

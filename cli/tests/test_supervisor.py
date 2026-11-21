@@ -4208,10 +4208,9 @@ def test_a_claude_code_placement_gets_no_password_file(
 def test_a_codex_and_a_claude_code_placement_get_a_temp_leaf_of_their_own(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With no room under the scratch, a Codex placement gets its own leaf as its TMPDIR
-    (tsk-0zb9mgzmbwn4) and a Claude Code one as its CLAUDE_CODE_TMPDIR (tsk-k7svzz2p4v7y;
-    which variable is the adapter's, adapters.own_tmp_env). A harness that hides nothing (stub)
-    is given no parent, so no leaf."""
+    """With no room under the scratch, a Codex placement (tsk-0zb9mgzmbwn4) and a Claude Code
+    one (tsk-k7svzz2p4v7y) each get their own 0700 leaf, whose `tmp` is their TMPDIR. A harness
+    that hides nothing (stub) is given no parent, so no leaf."""
     sup, *_ = world
     recorded(sup.cfg)
     target = sup.targets["local"]
@@ -4228,6 +4227,25 @@ def test_a_codex_and_a_claude_code_placement_get_a_temp_leaf_of_their_own(
     ctx = sup._context(placement(n=4), codex, place, target, scratch=deep)
     assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
     assert sup._context(placement(n=5), stub, place, target, scratch=deep).tmpdir is None
+
+
+def test_a_start_without_a_private_tmpdir_fails_closed(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-k7svzz2p4v7y: where adapters.private_tmpdir_refusal gives a reason, the start is
+    refused, not launched: `harness_refused` with no detail (a closed contract list, §15.7),
+    no crash count, and the reason in the runner's log. The rule itself is tested in
+    test_adapters; here a stub placement stands in, the rule made to refuse it."""
+    sup, backend, reports, _, logs = world
+    recorded(sup.cfg)
+    monkeypatch.setattr(adapters, "private_tmpdir_refusal", lambda ctx: "no private TMPDIR: x")
+    sup.update([placement()])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "harness_refused", None)
+    assert not rec.crashes and backend.started == []
+    assert any("no private TMPDIR: x" in line for line in logs)
+    assert all(b["detail"] is None for _, b in reports.sent)
 
 
 def _stat_mode(path: Path) -> int:

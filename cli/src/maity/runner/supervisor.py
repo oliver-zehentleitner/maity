@@ -1374,6 +1374,12 @@ class Supervisor:
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
             context = self._context(p, harness, place, target, rec.resume and not reset,
                                     view=view, scratch=scratch)  # fmt: skip
+            # A sandboxed Claude Code placement with no TMPDIR of its own fails closed: its
+            # commands would share /tmp/claude-<uid> (tsk-k7svzz2p4v7y). No detail: the list of
+            # `harness_refused` details is a closed contract list (§15.7); the cause is logged.
+            why = adapters.private_tmpdir_refusal(context)
+            if why is not None:
+                raise workspace.Refused("harness_refused", why=why)
             launch = adapters.launch(context)
             if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
                     and adapters.gets_test_cluster(harness.id)
@@ -1588,12 +1594,12 @@ class Supervisor:
         Unix socket (adapters.scratch_tmpdir), as under the default `~/maity-workspaces`:
         `tmp` in a fresh leaf under the per-user `/tmp` parent this placement's sandbox hides
         (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
-        this placement alone or kept from its sandbox (adapters) and removed with it
-        (`_clear_scratch`). Called only for a placement that is given that parent and whose
-        harness takes such a leaf (workspace.OWN_TMPDIR_HARNESSES, on this machine: Codex as its
-        TMPDIR, Claude Code as its CLAUDE_CODE_TMPDIR). None where the scratch's own `tmp` fits,
-        where a leaf would not fit either (a long uid on macOS), or where it cannot be made: the
-        session then starts without one, as before (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
+        this placement alone (adapters) and removed with it (`_clear_scratch`). Called only for
+        a placement that is given that parent and whose sandbox lets it write the re-opened
+        `tmp` (workspace.OWN_TMPDIR_HARNESSES: Codex and Claude Code, on this machine). None
+        where the scratch's own `tmp` fits, where a leaf would not fit either (a long uid on
+        macOS), or where it cannot be made: the session then starts with no TMPDIR, as before
+        (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
         if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
             return None
         try:

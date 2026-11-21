@@ -852,9 +852,8 @@ def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidd
 ) -> None:
     """tsk-0zb9mgzmbwn4: a Codex placement's own TMPDIR leaf under the hidden per-user `/tmp`
     parent is opened again for it alone (`write` within `none`), and a sibling leaf stays
-    hidden. Claude Code's sandbox never opens such a leaf: live, it mounted one re-opened under
-    a denied parent read-only (Claude Code 2.1.329), so its leaf is only its CLAUDE_CODE_TMPDIR
-    (tsk-k7svzz2p4v7y). Paths only, nothing is made: short, as the runner's."""
+    hidden. Claude Code's settings open only the leaf's `tmp` and deny the parent for reading
+    alone (tsk-k7svzz2p4v7y, below). Paths only, nothing is made: short, as the runner's."""
     parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
     own, sibling = parent / ("a" * 32), parent / ("b" * 32)
 
@@ -878,12 +877,6 @@ def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidd
     room = Path("/srv/ws/proj/.scratch/plc-0003")
     assert adapters.scratch_tmpdir(room) is not None
     assert str(own) not in codex_fs(tmp_path / "y", scratch=room)
-    # Claude Code: the parent stays denied, and no leaf is opened, even if one were given.
-    claude = adapters.claude_settings(
-        context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent, tmpdir=own / "tmp")
-    )["sandbox"]["filesystem"]
-    assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
-    assert "allowRead" not in claude and str(own) not in claude.get("allowWrite", [])
 
 
 def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_made(
@@ -900,31 +893,46 @@ def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_ma
     assert launched.env["TMPDIR"] == str(room / "tmp")
 
 
-def test_claude_codes_leaf_is_its_claude_code_tmpdir_never_its_tmpdir(tmp_path: Path) -> None:
-    """tsk-k7svzz2p4v7y, the live probes of 2026-11-21 (Claude Code 2.1.329): Claude Code's own
-    temp files and its sandbox socket follow CLAUDE_CODE_TMPDIR, which Claude Code writes outside
-    its sandbox, while its sandbox mounts a leaf re-opened under the denied parent read-only. So
-    with no room under the scratch, a Claude Code placement's leaf is its CLAUDE_CODE_TMPDIR, it
-    gets no TMPDIR, and its settings open nothing; Codex keeps the leaf as its TMPDIR."""
+def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_it(
+    tmp_path: Path,
+) -> None:
+    """tsk-k7svzz2p4v7y, the live probes of 2026-11-21 (Claude Code 2.1.329). With the parent
+    denied for reading only, the sandbox writes the re-opened `tmp` and a sibling leaf does not
+    exist in it (P4); with the parent also denied for writing, the `tmp` is mounted read-only
+    (P3). So with no room under the scratch: TMPDIR is the leaf's `tmp`, opened for reading and
+    writing, the parent denied for reading alone, and Claude Code's own files and socket in the
+    leaf itself (CLAUDE_CODE_TMPDIR), which the sandbox does not open."""
     deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
     parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
-    own = parent / ("a" * 32) / "tmp"
+    leaf, sibling = parent / ("a" * 32), parent / ("b" * 32)
+    own = leaf / "tmp"
     ctx = context(tmp_path / "d", sandbox=True, scratch=deep, tmpdir=own, tmp_scratch_parent=parent)
     env = adapters.launch(ctx).env
-    assert env["CLAUDE_CODE_TMPDIR"] == str(own) and "TMPDIR" not in env
+    assert env["TMPDIR"] == str(own) and env["CLAUDE_CODE_TMPDIR"] == str(leaf)
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
-    assert str(parent) in filesystem["denyRead"] and str(parent) in filesystem["denyWrite"]
-    assert "allowRead" not in filesystem
-    assert not any(str(own.parent) in path for path in filesystem.get("allowWrite", []))
-    # Where the scratch's own `tmp` fits, it is the TMPDIR, and Claude Code's files follow it.
+    assert str(parent) in filesystem["denyRead"] and str(parent) not in filesystem["denyWrite"]
+    assert filesystem["allowRead"] == [str(own)]
+    assert filesystem["allowWrite"] == [str(deep), str(own)]
+    opened = [*filesystem["allowRead"], *filesystem["allowWrite"]]
+    assert str(leaf) not in opened and not any(str(sibling) in path for path in opened)
+    # Where the scratch's own `tmp` fits, it is the TMPDIR, the leaf is not opened, and the
+    # parent stays denied for writing too.
     room = Path("/srv/ws/maity/.scratch/plc-0003")
-    env = adapters.launch(context(tmp_path / "r", scratch=room, tmpdir=own)).env
+    ctx = context(tmp_path / "r", sandbox=True, scratch=room, tmpdir=own, tmp_scratch_parent=parent)
+    env = adapters.launch(ctx).env
     assert env["TMPDIR"] == str(room / "tmp") and "CLAUDE_CODE_TMPDIR" not in env
-    # Without a leaf (an ssh host, or none could be made): neither.
-    env = adapters.launch(context(tmp_path / "n", scratch=deep)).env
+    filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert str(parent) in filesystem["denyWrite"] and "allowRead" not in filesystem
+    assert filesystem["allowWrite"] == [str(room)]
+    # Without a leaf (an ssh host, or none could be made): neither variable, the parent denied.
+    ctx = context(tmp_path / "n", sandbox=True, scratch=deep, tmp_scratch_parent=parent)
+    env = adapters.launch(ctx).env
     assert "TMPDIR" not in env and "CLAUDE_CODE_TMPDIR" not in env
-    # Codex: the leaf is its TMPDIR, and it gets no CLAUDE_CODE_TMPDIR. Its launch writes its
-    # CODEX_HOME into the scratch, so that scratch is made, still with no room for a socket.
+    filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert str(parent) in filesystem["denyWrite"] and "allowRead" not in filesystem
+    # Codex: the leaf's `tmp` is its TMPDIR as before, with no CLAUDE_CODE_TMPDIR. Its launch
+    # writes its CODEX_HOME into the scratch, so that scratch is made, still with no room for a
+    # socket.
     made = tmp_path / "c" / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
     made.mkdir(parents=True)
     assert adapters.scratch_tmpdir(made) is None
@@ -933,6 +941,28 @@ def test_claude_codes_leaf_is_its_claude_code_tmpdir_never_its_tmpdir(tmp_path: 
     )
     env = adapters.launch(codex).env
     assert env["TMPDIR"] == str(own) and "CLAUDE_CODE_TMPDIR" not in env
+
+
+def test_a_sandboxed_claude_code_placement_without_a_tmpdir_of_its_own_is_refused(
+    tmp_path: Path,
+) -> None:
+    """tsk-k7svzz2p4v7y, security's condition: a sandboxed Claude Code placement starts only
+    with a TMPDIR of its own, else its commands would share /tmp/claude-<uid>. The leaf's `tmp`
+    or the scratch's own `tmp` will do; neither (no leaf could be made, an ssh host) refuses,
+    with the cause and the remedy. Unsandboxed, or another harness: not refused."""
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    own = Path("/tmp/maity-scratch-1002") / ("a" * 32) / "tmp"  # noqa: S108 - a path only
+    refusal = adapters.private_tmpdir_refusal
+    assert refusal(context(tmp_path / "l", sandbox=True, scratch=deep, tmpdir=own)) is None
+    assert refusal(context(tmp_path / "r", sandbox=True, scratch=room)) is None
+    why = refusal(context(tmp_path / "d", sandbox=True, scratch=deep))
+    assert why is not None and str(deep / "tmp") in why and "workspaces" in why
+    assert "/tmp/claude-<uid>" in why
+    assert refusal(context(tmp_path / "s", sandbox=True)) is not None  # no scratch at all
+    assert refusal(context(tmp_path / "u", sandbox=False, scratch=deep)) is None
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=deep)
+    assert refusal(codex) is None
 
 
 def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
