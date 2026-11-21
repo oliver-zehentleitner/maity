@@ -626,11 +626,23 @@ renderer puts it there.
 HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
 `data` in the digest, which would move that date.
 
-**Superseded for signed-in outsiders (2026-11-19).** The maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q,
-"public is public", `docs/api.md` §2.3) has a signed-in human without an active membership read a public project
-through the member routes; a visitor without a session still reads only `GET /public/pages/{path}`, and the
-rejection above still holds for them. For the outsider the risk this entry names (a field added later becomes
-public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
+**Superseded by, for signed-in outsiders only:** 3f9c2d71-8a4e-4b6f-9d15-7e2a0c8b4f63 (2026-11-19, the entry
+below). This entry, its "member routes stay closed" and the first rejection above hold for a visitor without a
+session, who still reads only `GET /public/pages/{path}`.
+
+## A signed-in outsider reads a public project through a closed list of member routes
+
+**Id:** 3f9c2d71-8a4e-4b6f-9d15-7e2a0c8b4f63
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q, "public is public", `docs/api.md` §2.3); the lead's rulings of 2026-11-19 and 2026-11-20 (tsk-kqn8zhptf06k, #2001); split out of eb7fd1c7 on the card tsk-jk2psmarajjb
+**See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-21
+**Revisit when:** an outsider needs a project read outside `access.OUTSIDE_READS`, or the public page shows a member or project field the allow-lists do not name
+
+A signed-in human without an active membership reads a public project through the member routes (`docs/api.md`
+§2.3). The risk eb7fd1c7 names for a visitor caller in those routes (a field added later becomes public) is met
+for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
 
 - A closed allow-list of routes: `access.OUTSIDE_READS`, nine GETs (the project, its members and one member, the
   cards and one card, a card's history and notes, the logo and the banner). Only those endpoints call
@@ -656,6 +668,13 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   bridge calls with its own `Authorization`, §2.3), so a cookie call with it is still the cookie's human and is
   gated as any outsider. Rejected: passing a call on a header's mere presence, a reading other than the one
   that decides the caller.
+- The gate runs in `ProjectRoute`'s handler (`namespace.py`), so before FastAPI's dependencies, among them the
+  pending-account and second-factor gates (`auth/second_factor.py`). The stated reason is the one above: before
+  FastAPI reads the body or the query (`namespace.py`, #2001). That it also runs before the pending-account and
+  second-factor gates is stated nowhere as a choice; it follows from where the gate sits. Searched (2026-11-21,
+  tsk-jk2psmarajjb): the code and this file, `git log -S'access.gate'` (only #2001), the commit messages on
+  `namespace.py`, `access.py`, `auth/second_factor.py` and `auth/caller.py` for the second factor and the
+  pending account, and the #2001 round notes. Evidence: unknown.
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
   notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
@@ -687,11 +706,15 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   public Team and Organisation pages show it, and nothing else, so no sign of presence or isolation reaches the
   outsider through a derived field either (`availability`, `paused`, `session`, `instances`, the `online` and
   `dormant` counts of `manages`, `covered_by`, `covering`, `moderation`), and a key the view gains later stays
-  hidden. The members are those the public page names (`outside_named`, `public_project_views.members`): an
+  hidden. The members are those the public page names (`outside_shown`, `public_project_views.members`): an
   isolated member, one under a moderation hold on its profile, and one whose account (or whose owner's) is not
   served are in no outsider's list, `not_found` on `GET …/members/{id}` as a hidden card is, and neither named
-  in `reports_to` nor counted in `manages`. Rejected: a deny-list with neutral values for the derived fields (a
-  value the member does not have, and a field added later would still pass). The public page names no isolated
+  in `reports_to` nor counted in `manages`. Their `avatar_url` is the picture the public page shows
+  (`outside_pictures`, the rule of `public_projects.member_pictures`, one read for the page), `null` while a
+  person's `public_profile` is off; never `avatars.url_of`, whose address `GET /avatars/{id}` refuses an outsider
+  and which names a picture the public page may not show (tsk-k7bt2393gz3d (a)). Rejected: a deny-list with
+  neutral values for the derived fields (a value the member does not have, and a field added later would still
+  pass). The public page names no isolated
   agent and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
   redaction's tombstone without its reason; no read of a card carries a restricted text; the outsider has no
   hidden window of its own. Reading a public project never makes the outsider a colleague for `links_visible`.

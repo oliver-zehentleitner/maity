@@ -22,7 +22,7 @@ from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import access, clock, public_pages
+from maity_hub import access, avatars, clock, images, public_pages
 from maity_hub import routes as route_package
 from maity_hub import tables as t
 from maity_hub import views as card_views
@@ -42,6 +42,7 @@ NOT_FOUND = {"error": {"code": "not_found", "message": "no such resource", "deta
 RESTRICTED = "RESTRICTED-SENTINEL-7f3a"  # a card's restricted text (§6.4)
 REASON = "REASON-SENTINEL-91c2"  # a redaction's reason (§8.5)
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 64
+REPOSITORY = "https://github.com/maintainer/maity"
 NEVER_IN_PROJECT = {"repository", "memory", "setup", "policy", "attachments", "aliases"}
 MEMBER_KEYS = set(member_routes.OUTSIDE_MEMBER_KEYS)
 # Signs of presence or isolation, and what only an admin, the member or an owner reads.
@@ -871,7 +872,9 @@ def test_member_views_are_the_allow_list_of_their_keys(world: World, migrated: E
     assert world.outsider.get(f"{P}/members/{world.outsider.id}").status_code == 404
     # A key the view gains later is not in the outsider's.
     agent_row = _membership_row(migrated, world)
-    later = member_routes.outside_member_view({**agent, "added_later": 1}, agent_row, set())
+    later = member_routes.outside_member_view(
+        {**agent, "added_later": 1}, agent_row, set(), picture=None
+    )
     assert "added_later" not in later
 
 
@@ -976,6 +979,145 @@ def test_member_views_leave_out_what_is_computed_from_presence(
     inside = world.owner.get(f"{P}/members/{world.owner.id}").json()
     assert "state" in inside["availability"]
     assert {"members", "instances", "online", "dormant"} <= set(inside["manages"]["direct"])
+
+
+def test_an_outsiders_member_views_carry_the_picture_the_public_page_shows(
+    world: World, migrated: Engine
+) -> None:
+    """`avatar_url` in an outsider's member views is the picture the public page shows
+    (`public_projects.member_pictures`, §2.3, §16.9): a person's public address while their
+    `public_profile` is on, `null` while it is off, an agent's always; the address answers the
+    outsider. A member's views keep the member address (`avatars.url_of`), as before."""
+    from tests.test_avatars import image, put_human
+
+    uploaded = put_human(world.owner, "/me/avatar", image())
+    assert uploaded.status_code == 200, uploaded.text
+    member_url = uploaded.json()["avatar_url"]
+    shown_both = (world.owner.id, world.agent.id)
+
+    def profile(on: bool) -> None:
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.human).where(t.human.c.id == world.owner.id).values(public_profile=on)
+            )
+
+    def pictures() -> dict[str, Any]:
+        items = world.outsider.get(f"{P}/members").json()["items"]
+        listed = {m["id"]: m["avatar_url"] for m in items}
+        single = {
+            i: world.outsider.get(f"{P}/members/{i}").json()["avatar_url"] for i in shown_both
+        }
+        assert {i: listed[i] for i in shown_both} == single
+        return single
+
+    profile(True)
+    shown = pictures()
+    assert shown[world.owner.id] == avatars.public_url(member_url.split("?v=", 1)[1])
+    for principal in shown_both:
+        url = shown[principal]
+        assert url is not None and url.startswith("/api/v1/avatars/public/"), (principal, url)
+        served = world.outsider.client.get(url)
+        assert served.status_code == 200, (principal, served.text)
+    profile(False)
+    hidden = pictures()
+    assert hidden[world.owner.id] is None
+    assert hidden[world.agent.id] == shown[world.agent.id]
+    inside = {m["id"]: m["avatar_url"] for m in world.owner.get(f"{P}/members").json()["items"]}
+    assert inside[world.owner.id] == member_url
+    assert inside[world.agent.id].startswith(f"/api/v1/avatars/{world.agent.id}?v=")
+    assert world.owner.get(f"{P}/members/{world.owner.id}").json()["avatar_url"] == member_url
+
+
+def test_a_removed_member_reads_as_an_outsider(world: World, migrated: Engine) -> None:
+    """`access.reader`: a membership that is no longer active reads the public project as any
+    outsider does (§2.3): the allow-listed reads, the project's and the member's allow-lists,
+    and `not_found` on any other route, a write before its body is read."""
+    factory.membership(migrated, world.project_id, "member", human_id=world.outsider.id)
+    joined = _membership_of(migrated, world.project_id, human_id=world.outsider.id)
+    inside = world.outsider.get(f"{P}/members").json()["items"]
+    assert world.outsider.id in {m["id"] for m in inside}  # a member, while active
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == joined)
+            .values(active=None, removed_at=clock.now())
+        )
+    view = world.outsider.get(P)
+    assert view.status_code == 200, view.text
+    assert set(view.json()) == set(project_routes.OUTSIDE_PROJECT_KEYS)
+    items = world.outsider.get(f"{P}/members").json()["items"]
+    assert world.outsider.id not in {m["id"] for m in items}
+    for item in items:
+        assert set(item) <= MEMBER_KEYS, set(item) - MEMBER_KEYS
+    assert world.outsider.get(f"{P}/members/{world.outsider.id}").status_code == 404
+    for path in _reads(world):
+        assert world.outsider.client.get(path).status_code == 200, path
+    headers = {**_as(world.outsider), "Content-Type": "application/json"}
+    for body in ({"title": "A card"}, {"title": 5}):
+        refused = world.outsider.client.post(f"/api/v1{P}/tasks", json=body, headers=headers)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (body, refused.text)
+
+
+def test_a_link_into_a_private_repository_is_null_in_an_outsiders_project_view(
+    world: World, migrated: Engine
+) -> None:
+    """`links` as the public page shows them (§2.3, §16.9, `project_links.public`): a link into
+    the repository's own path is `null` while the hub's last look did not find the repository
+    public, any other link as set; a member reads every link as set."""
+    into = "https://github.com/maintainer/maity/issues"
+    elsewhere = "https://example.org/docs"
+    linked = world.owner.patch(P, {"links": {"issues": into, "docs": elsewhere}})
+    assert linked.status_code == 200, linked.text
+
+    def repository(public: bool) -> None:
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.project)
+                .where(t.project.c.id == world.project_id)
+                .values(repository_url=REPOSITORY, repository_public=public)
+            )
+
+    repository(False)
+    links = world.outsider.get(P).json()["links"]
+    assert (links["issues"], links["docs"]) == (None, elsewhere)
+    inside = world.owner.get(P).json()["links"]
+    assert (inside["issues"], inside["docs"]) == (into, elsewhere)
+    repository(True)
+    assert world.outsider.get(P).json()["links"]["issues"] == into
+
+
+def test_the_logo_and_banner_reach_an_outsider_without_the_forge_read_through(
+    world: World, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An outsider's read leaves no trace (§2.3), so `GET …/logo` and `GET …/banner` give it
+    what is stored and never `images.read_through`: the upload, else `not_found`. A member's
+    read with nothing stored reads through the forge, as before (§11.2)."""
+    read_through: list[str] = []
+
+    def recorded(*args: Any) -> bool:
+        read_through.append(args[-1])
+        return False  # the forge did not answer
+
+    monkeypatch.setattr(images, "read_through", recorded)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == world.project_id)
+            .values(repository_url=REPOSITORY)
+        )
+    for kind in images.KINDS:
+        stored = world.outsider.client.get(f"/api/v1{P}/{kind}")
+        assert stored.status_code == 200, (kind, stored.text)
+        assert stored.content.startswith(b"\x89PNG"), kind
+        removed = world.owner.delete(f"{P}/{kind}")
+        assert removed.status_code == 200, (kind, removed.text)
+        nothing = world.outsider.client.get(f"/api/v1{P}/{kind}")
+        assert (nothing.status_code, nothing.json()) == (404, NOT_FOUND), kind
+    assert read_through == []
+    for kind in images.KINDS:  # the counter-check: a member's read reads through
+        member = world.owner.client.get(f"/api/v1{P}/{kind}")
+        assert member.status_code == 503, (kind, member.text)
+    assert read_through == list(images.KINDS)
 
 
 def test_a_release_names_no_hidden_card_to_an_outsider(world: World, migrated: Engine) -> None:

@@ -1239,14 +1239,10 @@ link into the repository's own path only while the hub's last look
 found the repository public, `null` otherwise. A key §6.1 does not name
 here is not in it — never `repository`, `memory`, `setup` or any other
 key of `settings`, `role_rules` among them. A member an outsider reads
-(§6.2) leaves out `isolation_windows`, `isolated`, `last_seen_at` and
-`presence`, each instance's `presence` and `last_seen_at`, and a
-session's `listening` and `not_listening_since`, besides `briefing`,
-`owner`, `credentials`, `shared_environment` and `owner_preferences`,
-which an outsider never gets, for an agent of their own either: the
-public page names no isolated agent and shows no presence. That member
-is an allow-list of the keys of §6.2: `id`, `kind`, `handle`, `name`,
-`display_name`, `avatar_url`, `deleted`, `owner_id`, `trust`, `role`,
+(§6.2), an agent of their own included, is an allow-list of the keys
+of §6.2: `id`, `kind`, `handle`, `name`, `display_name`, `avatar_url`
+(the picture the public page shows, §16.9: `null` for a person whose
+`public_profile` is off), `deleted`, `owner_id`, `trust`, `role`,
 `role_base`, `reports_to`, `cross_owner`, `areas`, `capabilities`,
 `expert_for`, `expert_sources`, `org_owner`, `website` and `social` (as
 `links_visible` admits the reader, §16.9), `joined_at` and `manages`,
