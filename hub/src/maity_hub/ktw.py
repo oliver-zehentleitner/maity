@@ -785,6 +785,15 @@ class Cache:
     # never dropped, so a read in progress keeps its last good reads and its lock.
     users: dict[str, int] = field(default_factory=dict)
     guard: threading.Lock = field(default_factory=threading.Lock)
+    # A cache of the same projects filled by other readers (`ktw_reads.OUTSIDE_CACHE` beside
+    # `CACHE`, linked both ways by `link`): a read in either stops a forced read in the other
+    # for FORCE_INTERVAL, so the rate is one per project across both. Its answers are never
+    # served from here, nor is its own peer looked at.
+    peer: Cache | None = field(default=None, repr=False, compare=False)
+
+    def link(self, other: Cache) -> None:
+        """Each cache the other's `peer`."""
+        self.peer, other.peer = other, self
 
     def clear(self) -> None:
         with self.guard:
@@ -825,6 +834,18 @@ class Cache:
         with self.guard:
             return self.entries.get(project_id)
 
+    def _peer_read(self, project_id: str, repository_url: str | None) -> bool:
+        """Whether the peer read this project's repository less than FORCE_INTERVAL ago. Only
+        the peer's own entry is looked at (its guard alone, never with this one held)."""
+        if self.peer is None:
+            return False
+        other = self.peer.cached(project_id)
+        return (
+            other is not None
+            and other.repository_url == repository_url
+            and now() - other.at < FORCE_INTERVAL
+        )
+
     def _lock(self, project_id: str) -> threading.Lock:
         with self.guard:
             return self.locks.setdefault(project_id, threading.Lock())
@@ -851,7 +872,9 @@ class Cache:
         max_age: int = DEFAULT_MAX_AGE,
     ) -> tuple[_Entry, bool]:
         """(entry, fresh): a cached answer younger than `max_age`, else a new read. No
-        `max_age` reads more often than FORCE_INTERVAL (`0` forces a read at that rate).
+        `max_age` reads more often than FORCE_INTERVAL (`0` forces a read at that rate), nor
+        while the `peer` read the project's repository less than FORCE_INTERVAL ago: then
+        this cache's own entry is served. With no entry of its own, it reads.
 
         While another request reads the family, the cached answer is served at once, and a
         request with nothing cached waits at most LOCK_WAIT before `Busy`: a waiter holds a
@@ -869,7 +892,10 @@ class Cache:
                 if (
                     entry is not None
                     and entry.repository_url == repository_url
-                    and now() - entry.at < max(max_age, FORCE_INTERVAL)
+                    and (
+                        now() - entry.at < max(max_age, FORCE_INTERVAL)
+                        or self._peer_read(project_id, repository_url)
+                    )
                 ):
                     return entry, False
                 entry = self._read(reader, project_id, repository_url, entry)

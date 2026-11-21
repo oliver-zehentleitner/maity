@@ -1281,6 +1281,45 @@ def test_max_age_zero_holds_an_outsider_to_one_read_per_interval(
     assert len(why.file_reads) > reads[0] and why.asked > reads[2]
 
 
+def test_the_forced_read_is_shared_by_members_and_outsiders_each_served_their_own(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ktw.CACHE` and `ktw_reads.OUTSIDE_CACHE` are each other's `peer`: a forced read in one
+    within `ktw.FORCE_INTERVAL` of a read in the other makes no family read and serves the
+    cache's own older entry, never the other's (§2.3: "the same one forge read per 30 seconds
+    per project as for a member"); after the interval a forced read happens again."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    forced = {"max_age": 0}
+    root = f"{why_tests.BASE}/state.json"
+
+    def entries(who: flow.Human) -> tuple[int, bool]:
+        """The summary's entry count and `fresh`, for a forced read by `who`."""
+        answer = who.get(WHY, params=forced)
+        assert answer.status_code == 200, answer.text
+        body = answer.json()
+        return int(body["summary"]["entries"]), bool(body["fresh"])
+
+    seeded = entries(world.outsider)  # each cache's first read happens: nothing of its own yet
+    assert seeded[1] is True
+    assert entries(world.owner)[1] is True
+    lean(why, root, why_tests.entry(1), why_tests.entry(2, "open"), why_tests.entry(3, "open"))
+    now[0] += ktw.FORCE_INTERVAL + 1
+    member = entries(world.owner)  # the member's forced read, the outsider's 31 s old
+    assert member == (seeded[0] + 1, True)
+    reads = len(why.file_reads)
+    assert entries(world.outsider) == (seeded[0], False)  # its own older entry, not the member's
+    assert len(why.file_reads) == reads, "a family read within the member's interval"
+    now[0] += ktw.FORCE_INTERVAL + 1
+    assert entries(world.outsider) == (seeded[0] + 1, True)  # the outsider's forced read
+    reads = len(why.file_reads)
+    assert entries(world.owner) == (seeded[0] + 1, False)
+    assert len(why.file_reads) == reads, "a family read within the outsider's interval"
+    now[0] += ktw.FORCE_INTERVAL + 1
+    assert entries(world.owner)[1] is True
+    assert len(why.file_reads) > reads
+
+
 def test_an_outsider_reads_the_why_without_a_grant(world: World, why: WhyForge) -> None:
     """The outsider's reads go through a reader that holds no grant and is no project's
     (`ktw_reads.named_reader`), never the project's own source, which here is the namespace

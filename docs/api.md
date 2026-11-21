@@ -1239,9 +1239,8 @@ since the hub serves them from what the repository publishes, never
 from its database. An entry is served as the repository publishes it,
 so a card id in its text is not removed, and naming a hidden card does
 not open it: `GET …/tasks/{id}` still answers an outsider `not_found`
-for that card. `max_age=0` is held to one forge read per 30 seconds per
-project, as for a member, in a window of its own beside the members'
-one. Every other
+for that card. `max_age=0` is held to the same one forge read per 30
+seconds per project as for a member. Every other
 route of the project, a write or a read, answers an outsider
 `not_found` before its body or its query is read, so that no
 validation answer (`invalid`) tells an outsider what a route takes;

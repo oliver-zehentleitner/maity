@@ -229,8 +229,11 @@ def named_reader(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
 
 # §11.3's answers for a public project's outsiders, apart from the members' `ktw.CACHE`, which a
 # project owner's grant may fill: filled only through `outside_reader`, which holds no grant
-# (hub/context/public-pages.md 3f9c2d71). Its own FORCE_INTERVAL per project, as `ktw.CACHE`'s.
+# (hub/context/public-pages.md 3f9c2d71). Linked to `ktw.CACHE` as its peer, both ways: a forced
+# read (`max_age=0`) happens at most once per FORCE_INTERVAL per project across the two, and
+# each serves only its own answers.
 OUTSIDE_CACHE = ktw.Cache()
+OUTSIDE_CACHE.link(ktw.CACHE)
 # The forge's own answer whether a project's repository is public, for its outsiders, per
 # (project, repository): asked again after `_refresh(max_age)`, so at least every
 # VISIBILITY_SECONDS and, with `max_age=0`, every FORCE_INTERVAL.

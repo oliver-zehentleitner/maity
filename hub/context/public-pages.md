@@ -696,8 +696,13 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
     rules as for a member. They come from what the repository publishes, never the database, so they carry no
     restricted text; a card id in an entry's text is served as published and opens nothing (`GET …/tasks/{id}`
     stays `not_found` for a hidden card).
-  - The rate: `max_age=0` forces at most one read per `FORCE_INTERVAL` per project in `OUTSIDE_CACHE`, a window of
-    its own beside the members' in `ktw.CACHE`. The published files (`ktw.RAW`, read over plain HTTPS without any
+  - The rate: the forced family read is shared per project across members and outsiders. `OUTSIDE_CACHE` and
+    `ktw.CACHE` are each other's `peer` (`ktw.Cache.link`): a forced read (`max_age=0`) in either is made only when
+    neither read the project's repository in the last `FORCE_INTERVAL`, else the cache serves its own older entry,
+    never the other's; a cache with no entry of its own still reads once. So the owner's "the same one forge read
+    per 30 seconds per project as for a member" holds (the lead, seq 185669). Apart from it, the live visibility
+    check of an outsider's own repository (at most once per `FORCE_INTERVAL` with `max_age=0`) is one small forge
+    request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS without any
     token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a visibility
     check) stay shared: nothing in them was read with a grant.
   - Not checked, unlike the public page: whether the project is in the operator's own namespaces (`why_data`'s
