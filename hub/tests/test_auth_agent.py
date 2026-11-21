@@ -16,7 +16,7 @@ from sqlalchemy.exc import OperationalError
 from maity_hub import avatar_generated, avatars, clock, images, middleware
 from maity_hub import tables as t
 from maity_hub.auth import credentials
-from maity_hub.auth.caller import RequestFacts, authenticate
+from maity_hub.auth.caller import RequestFacts, authenticate, settle_project_less
 from maity_hub.ids import new_id
 from maity_hub.net import Origin
 from tests import factory, flow, statements
@@ -467,7 +467,7 @@ def test_the_long_poll_does_not_renew_leases(agent: factory.Agent, migrated: Eng
     )
     clock.set_source(lambda: start + timedelta(hours=1))
     with migrated.begin() as conn:
-        caller = authenticate(conn, facts, renew_leases=False)
+        caller = settle_project_less(conn, authenticate(conn, facts), facts, renew_leases=False)
     assert caller.session_id == agent.session_id
     with migrated.connect() as conn:
         lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()

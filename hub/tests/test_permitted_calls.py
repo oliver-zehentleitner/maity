@@ -100,22 +100,20 @@ def _facts(method: str, raw_path: bytes) -> RequestFacts:
         body=b"",
         origin=Origin("127.0.0.1", "https"),
         allow_plain_http=False,
-        # As the environment sets it: a read counts (§1.7) before the isolation gate, and with
-        # the value given it reads no instance setting, so the gate runs without a connection.
+        # As the environment sets it: with the value given a read's count (§1.7) reads no
+        # instance setting, so nothing here needs a connection.
         max_reads_env=limits.READS_PER_MINUTE_DEFAULT,
     )
 
 
 def _isolated_agent_passes(method: str, raw_path: bytes) -> bool:
-    """Authentication of an isolated agent's credential (`caller._agent`), on the raw path."""
+    """The gate of a call outside any project by an agent isolated in its every attachment
+    (`caller.refuse_isolated_everywhere`), on the raw path."""
     try:
-        found = caller_module._agent(
-            None, _isolated_row(), "signed", False, _facts(method, raw_path)  # type: ignore[arg-type]
-        )
+        caller_module.refuse_isolated_everywhere([_isolated_row()], _facts(method, raw_path))
     except ApiError as error:
         assert error.details["reason"] == "isolated"
         return False
-    assert found.kind == "agent"
     return True
 
 

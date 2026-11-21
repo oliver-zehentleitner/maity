@@ -23,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import clock, maintenance
 from maity_hub.auth import second_factor
-from maity_hub.auth.caller import Caller, refuse_isolated
+from maity_hub.auth.caller import Caller, refuse_isolated, settle_project_less
 from maity_hub.deps import (  # the single routes' own refusals, per part
     _confine_pending,
     _confine_runner,
@@ -31,6 +31,7 @@ from maity_hub.deps import (  # the single routes' own refusals, per part
     _refuse_other_project,
     authenticated,
     engine_of,
+    facts_of,
     settings_of,
 )
 from maity_hub.errors import ApiError, envelope, invalid, unauthenticated
@@ -171,6 +172,8 @@ async def _caller(request: Request) -> tuple[Caller | None, ApiError | None]:
                 _confine_runner(PATH)  # neither under /runner/ nor under /projects/ (§15.1)
             except ApiError as error:
                 raise _Whole(error) from None
+        if caller.kind == "agent":  # one call's effects, outside any project (§2.4, §5.4)
+            caller = settle_project_less(conn, caller, facts_of(request), True)
         return caller
 
     try:

@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from maity_hub import events, namespace, request_stats, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
-from maity_hub.auth.caller import Caller, RequestFacts, authenticate, keep_nonces_spent
+from maity_hub.auth.caller import (
+    Caller,
+    RequestFacts,
+    authenticate,
+    keep_nonces_spent,
+    settle_project_less,
+)
 from maity_hub.auth.permitted import Calls
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
@@ -83,8 +89,10 @@ async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> C
         second_factor.gate(conn, settings, caller, request.method, path)
         if caller.kind == "runner":
             _confine_runner(path)
-        if caller.kind == "agent" and slug is not None:
-            _refuse_other_project(conn, caller, slug)
+        if caller.kind == "agent":
+            caller = settle_project_less(conn, caller, facts, renew_leases)
+            if slug is not None:
+                _refuse_other_project(conn, caller, slug)
         if "maity-for" in facts.headers:  # a bridge calling for an agent (§2.3)
             from maity_hub import bridges
 
