@@ -2286,8 +2286,9 @@ permissions it has, short of a raw `maity api` call.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-1rejhywcw3qh, the owner's decision (2026-11-20); the lead's confirmation that `maity` is allowed in every harness, 2026-11-20; `cli/src/maity/runner/adapters.py` (`UUID_COMMAND`); `cli/tests/test_uuid.py`
+**Source:** card tsk-1rejhywcw3qh, the owner's decision (2026-11-20); the lead's confirmation that `maity` is allowed in every harness, 2026-11-20; `cli/tests/test_uuid.py`; card tsk-jjxxspts3t40 (the runner's `/proc` allow dropped, 2026-11-20)
 **See:** runner.md#the-allowlist-harnesses-allow-one-os-uuid-v4-source-the-kernels-generator — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-20
+**See:** runner.md#the-runner-allows-no-uuid-command-maity-uuid-makes-the-ids — 4f960c44-8b9f-459e-978f-dff9237271a6 — as of 2026-11-20
 **Revisit when:** every harness sandbox a placement runs in allows an OS UUID command
 
 `maity uuid` prints a lowercase UUID v4 from `uuid.uuid4()` (the OS's randomness through
@@ -2295,8 +2296,8 @@ permissions it has, short of a raw `maity api` call.
 join, so it runs wherever `maity` runs.
 
 **Reason:** placed sessions may run `maity` in every harness sandbox, but `uuidgen` and
-`cat /proc/sys/kernel/random/uuid` are often refused there. That includes the `/proc` read
-the runner already allows for its Claude Code and opencode placements (the entry under
+`cat /proc/sys/kernel/random/uuid` are often refused there. That included the `/proc` read
+the runner once allowed for its Claude Code and opencode placements (the entries under
 **See**). The Keep the Why skill requires an entry's Id to come from a command, never typed
 by hand, so an agent there had no way to make one.
 
@@ -2309,6 +2310,6 @@ by hand, so an agent there had no way to make one.
   lead busy with work a command can do.
 
 The card confirms the decision, the refused commands and the lead handing out UUIDs. The
-lead confirmed that `maity` is allowed in every harness. `adapters.py` shows the runner's
-allowed `/proc` read and which harnesses it covers. The runner's rule stays as it is:
-`maity uuid` is added beside it and replaces nothing.
+lead confirmed that `maity` is allowed in every harness. `maity uuid` was first added
+beside the runner's `/proc` allow. That allow was dropped later, since it never took effect
+in a placed session, and `maity uuid` is now the one source in a runner placement.
