@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import re
 import stat
 import sys
 import tomllib
@@ -10,10 +12,11 @@ from pathlib import Path
 
 import fakehub
 import pytest
-from conftest import fake_opencode
+from conftest import fake_opencode, posix
 
 from maity import cli, state
 from maity.runner import adapters, commands, config
+from maity.runner.asuser import RUNNER
 
 MINIMAL = """\
 [hub]
@@ -492,6 +495,12 @@ def lines(capsys: pytest.CaptureFixture[str]) -> list[str]:
     return capsys.readouterr().out.splitlines()
 
 
+def marked(capsys: pytest.CaptureFixture[str], marker: str) -> list[str]:
+    """The lines whose words, paths left out, hold `marker`: a test's temporary directory is
+    named after the test, so its paths can hold any word of the test's name."""
+    return [line for line in lines(capsys) if marker in re.sub(r"/\S*", "", line)]
+
+
 def test_check_passes_on_a_paired_runner(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -702,6 +711,146 @@ def test_check_warns_about_inherited_claude_settings(
     assert len(warnings) == 2, warnings
 
 
+def test_check_says_the_worktree_guard_is_configured_and_names_a_leftover(
+    paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`check` says what the runner's settings configure, not that it was seen working, and
+    names a recorded clone that holds a worktree; it removes nothing."""
+    from maity.runner import workspace
+
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")
+    for tool in ("bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    clone = tmp_path / "ws" / "prj-1" / "agent-3"
+    (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    workspace.record(tmp_path / "st", workspace.Workspace(clone, "prj-1", "agent-3"), "a", "p")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
+    out = lines(capsys)
+    assert f"ok     {commands.WORKTREES_OFF}" in out, out
+    assert "not confirmed on this Claude Code version" in commands.WORKTREES_OFF
+    found = [line for line in out if f"clone {clone} " in line]
+    assert len(found) == 1 and found[0].startswith("warn"), out
+    assert (clone / ".claude" / "worktrees" / "agent-x").is_dir()
+
+
+@pytest.mark.parametrize("sandboxed", [False, True])
+def test_check_warns_that_the_worktree_hook_does_not_run_when_hooks_are_off(
+    home: Path, sandboxed: bool
+) -> None:
+    """Settings that switch hooks off (capabilities.claude_hooks_off) leave only the denies:
+    the worktree line is a warning, sandbox or not. Under the sandbox the hooks error that
+    refuses the starts is `_check_claude_hooks`' own, not repeated here."""
+    (home / ".claude").mkdir()
+    (home / ".claude" / "settings.json").write_text('{"allowManagedHooksOnly": true}')
+    report = commands.Report()
+    if sandboxed:
+        commands._check_claude_hooks(report, RUNNER, "")
+    commands._check_worktree_guard(report, RUNNER, "", "2.1.325")
+    assert ("ok", commands.WORKTREES_OFF) not in report.lines
+    (warning,) = [t for level, t in report.lines if level == "warn"]
+    assert warning.startswith("harness claude-code: ") and "sets allowManagedHooksOnly" in warning
+    assert "WorktreeCreate hook does not run" in warning
+    assert "EnterWorktree and git worktree denies remain" in warning
+    errors = [t for level, t in report.lines if level == "error"]
+    assert len(errors) == int(sandboxed)  # the existing refusal only, not a second one
+
+
+@pytest.mark.parametrize(
+    ("version", "ok"),
+    [("2.1.325", True), ("2.1.50", True), ("2.1.49", False), ("2.1.50-rc.1", False),
+     (None, False), ("dev build", False)],
+)  # fmt: skip
+def test_check_warns_when_claude_code_has_no_worktree_event(
+    home: Path, version: str | None, ok: bool
+) -> None:
+    """Below 2.1.50 (its release notes, as cited in review A1808), or unknown, the runner writes
+    no worktree hook
+    (adapters.claude_settings): the line says the denies alone remain."""
+    report = commands.Report()
+    commands._check_worktree_guard(report, RUNNER, "", version)
+    if ok:
+        assert report.lines == [("ok", commands.WORKTREES_OFF)]
+    else:
+        ((level, text),) = report.lines
+        assert level == "warn" and "older than 2.1.50 or unknown" in text
+        assert f"version {version or 'unknown'} " in text
+        assert "writes no WorktreeCreate hook" in text and "denies remain" in text
+
+
+def _leftover(clone: Path, kind: str) -> None:
+    """A clone's worktree state as `check` may find it."""
+    (clone / ".git").mkdir(parents=True)
+    if kind == "bare directory":
+        (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    elif kind in ("registered, cleared", "registered, kept"):
+        tree = (clone / ".claude" / "worktrees" if kind == "registered, cleared"
+                else clone.parent / "elsewhere") / "agent-x"  # fmt: skip
+        tree.mkdir(parents=True)
+        admin = clone / ".git" / "worktrees" / "agent-x"
+        admin.mkdir(parents=True)
+        (admin / "gitdir").write_text(f"{tree / '.git'}\n")
+    elif kind in ("plain file", "link to a directory"):  # what the prune never removes
+        scope = clone / ".claude" / "worktrees"
+        scope.mkdir(parents=True)
+        if kind == "plain file":
+            (scope / "agent-x").write_text("x\n")
+        else:
+            (clone.parent / "victim").mkdir()
+            (scope / "agent-x").symlink_to(clone.parent / "victim", target_is_directory=True)
+    elif kind == "empty registration directory":  # the sandbox's placeholder
+        (clone / ".git" / "worktrees").mkdir()
+    elif kind == "linked .claude":
+        target = clone.parent / "target"
+        (target / "worktrees" / "agent-x").mkdir(parents=True)
+        (clone / ".claude").symlink_to(target, target_is_directory=True)
+
+
+@pytest.mark.parametrize(
+    ("kind", "said"),
+    [("none", None), ("empty registration directory", None), ("linked .claude", None),
+     # Not a directory the start's prune removes, and nothing that stops maity's git: not named.
+     ("plain file", None), ("link to a directory", None),
+     ("bare directory", "leftover directory under .claude/worktrees/ with no registration; it "
+                        "does not stop maity's git"),
+     ("registered, cleared", "of a working tree under .claude/worktrees/, so maity runs no git"),
+     ("registered, kept", "the runner's start does not clear"),
+     ],
+)  # fmt: skip
+def test_check_tells_a_registered_worktree_from_a_leftover_directory(
+    tmp_path: Path, kind: str, said: str | None
+) -> None:
+    """A registration stops maity's git; the start clears it only when its working tree is
+    under `.claude/worktrees/` (worktree.registrations), else a person removes it. A bare
+    directory there does not stop git. A link as `.claude` counts as none. Read-only."""
+    from maity.runner import workspace
+
+    cfg = dataclasses.replace(parse(minimal()), state_dir=tmp_path / "st")
+    clone = tmp_path / "ws" / "prj-1" / "agent-3"
+    clone.mkdir(parents=True)
+    _leftover(clone, kind)
+    workspace.record(cfg.state_dir, workspace.Workspace(clone, "prj-1", "agent-3"), "a", "p")
+    # A clone on an ssh host is that host's check, not this one.
+    workspace.record(cfg.state_dir, workspace.Workspace(clone, "prj-1", "agent-4", "b"), "a", "q")
+    before = sorted(str(p) for p in tmp_path.rglob("*"))
+    report = commands.Report()
+    commands._check_leftover_worktrees(report, cfg, RUNNER)
+    found = [(level, t) for level, t in report.lines if f"clone {clone} " in t]
+    if said is None:
+        assert found == [], report.lines
+    else:
+        ((level, text),) = found
+        assert level == "warn" and said in text, text
+        if kind == "registered, kept":
+            assert "a person removes it" in text and "maity runs no git" in text
+        else:
+            assert "placement's next start" in text
+    assert sorted(str(p) for p in tmp_path.rglob("*")) == before  # nothing removed
+
+
 @pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
@@ -909,6 +1058,470 @@ def test_check_runs_no_bubblewrap_probe_under_seatbelt(
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     assert not any("inside bubblewrap" in line for line in lines(capsys))
     assert not (bin_dir / "bwrap.ran").exists()
+
+
+FILTERING = "Name:\tcat\nSeccomp:\t0\nSeccomp_filters:\t0\n"
+
+
+@pytest.mark.parametrize(
+    ("machine", "release", "status", "outcome", "arch"),
+    [
+        ("x86_64", "6.12.0-1-amd64", FILTERING, "ok", "x64"),
+        ("aarch64", "6.8.0", FILTERING, "ok", "arm64"),
+        ("arm64", "6.8.0", FILTERING, "ok", "arm64"),
+        ("amd64", "6.8.0", FILTERING, "ok", "x64"),
+        ("AMD64", "6.8.0", FILTERING, "ok", "x64"),
+        ("AArch64", "6.8.0", FILTERING, "ok", "arm64"),
+        ("x86_64", "5.4.0-200", "Seccomp:\t0\n", "ok", "x64"),  # before Seccomp_filters
+        ("riscv64", "6.12.0", FILTERING, "unsupported_arch", "riscv64"),
+        ("i686", "6.12.0", FILTERING, "unsupported_arch", "i686"),
+        ("x64", "6.12.0", FILTERING, "unsupported_arch", "x64"),  # Claude Code's name, no uname
+        ("ppc64le", "6.12.0", FILTERING, "unsupported_arch", "ppc64le"),
+        ("x86_64", "6.12.0", "Name:\tcat\n", "no_seccomp", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\t0\n", "no_seccomp", "x64"),
+        ("x86_64", "5.9.0", "Seccomp:\t0\n", "no_seccomp", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\tx\n", "inconclusive", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\t0\nSeccomp_filters:\t\n", "inconclusive", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\t0\nSeccomp_filters:\t?\n", "inconclusive", "x64"),
+        ("x86_64", "6.12.0", "Name:\tc�t\nSeccomp:\t2\nSeccomp_filters:\t1\n", "ok", "x64"),
+        ("x86_64", "unknown", "Seccomp:\t0\n", "inconclusive", "x64"),
+        ("", "6.12.0", FILTERING, "inconclusive", ""),
+        ("x86_64", "6.12.0", None, "inconclusive", ""),
+    ],
+)  # fmt: skip
+def test_the_seccomp_preflight_reads_the_machine_and_the_kernels_seccomp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    machine: str,
+    release: str,
+    status: str | None,
+    outcome: str,
+    arch: str,
+) -> None:
+    """A machine Claude Code ships its seccomp helper for, and a kernel with seccomp filtering:
+    `Seccomp:` always, `Seccomp_filters:` from Linux 5.9 on. What cannot be read is
+    `inconclusive`, never `ok`."""
+    import platform
+
+    from maity.runner import capabilities
+
+    proc = tmp_path / "status"
+    if status is not None:
+        proc.write_text(status)
+    monkeypatch.setattr(capabilities, "PROC_STATUS", proc)
+    monkeypatch.setattr(platform, "machine", lambda: machine)
+    monkeypatch.setattr(platform, "release", lambda: release)
+    found = capabilities.claude_seccomp()
+    assert (found.outcome, found.arch) == (outcome, arch)
+    if outcome != "ok":
+        assert found.detail
+
+
+def test_the_seccomp_preflight_asks_the_agents_side_in_one_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through sudo or ssh: one fixed `sh -c` as the agents' user, its three answers in order;
+    a call that fails is `inconclusive`."""
+    import subprocess
+
+    from maity.runner import capabilities
+    from maity.runner.asuser import AsUser
+
+    calls: list[list[str]] = []
+    answer = {"code": 0, "out": "aarch64\n6.12.0\n" + FILTERING}
+
+    def run(self: AsUser, argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, int(str(answer["code"])), str(answer["out"]), "")
+
+    monkeypatch.setattr(AsUser, "run", run)
+    found = capabilities.claude_seccomp(AsUser("agents"))
+    assert (found.outcome, found.arch) == ("ok", "arm64")
+    assert calls == [["sh", "-c", capabilities._SECCOMP_HOST, "sh", "/proc/self/status"]]
+    assert capabilities._SECCOMP_HOST.startswith("uname -m && uname -r && ")
+    answer["code"] = 1
+    assert capabilities.claude_seccomp(AsUser("agents")).outcome == "inconclusive"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the agents' side is a POSIX shell")
+def test_the_agents_side_status_read_replaces_bytes_outside_ascii(tmp_path: Path) -> None:
+    """The sudo/ssh read decodes as a direct read with `errors="replace"` does: a task name
+    with bytes that are no UTF-8 leaves the keys readable, never an exception."""
+    import subprocess
+
+    from maity.runner import capabilities
+
+    status = tmp_path / "status"
+    status.write_bytes(b"Name:\tc\xc3\xa4t\xff\nSeccomp:\t0\nSeccomp_filters:\t0\n")
+    done = subprocess.run(
+        ["sh", "-c", capabilities._SECCOMP_HOST, "sh", str(status)],
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    machine, release, rest = done.stdout.split("\n", 2)
+    assert machine and release
+    assert rest == "Name:\tc??t?\nSeccomp:\t0\nSeccomp_filters:\t0\n"
+    direct = status.read_text(encoding="utf-8", errors="replace")
+    assert direct.splitlines()[1:] == rest.splitlines()[1:]
+
+
+@pytest.mark.parametrize(
+    ("outcome", "level", "code"),
+    [("ok", "ok", 0), ("unsupported_arch", "error", 1), ("no_seccomp", "error", 1),
+     ("inconclusive", "error", 1)],
+)  # fmt: skip
+def test_check_reports_the_seccomp_preflight_under_bubblewrap(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+    level: str,
+    code: int,
+) -> None:
+    """Every answer but `ok` is an error, as the supervisor refuses the start on it."""
+    from maity.runner import capabilities
+
+    answers = {
+        "ok": capabilities.ClaudeSeccomp("ok", "x64"),
+        "unsupported_arch": capabilities.ClaudeSeccomp("unsupported_arch", "riscv64", "m"),
+        "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+        "inconclusive": capabilities.ClaudeSeccomp("inconclusive", detail="unreadable"),
+    }
+    monkeypatch.setattr(capabilities, "claude_seccomp", lambda as_user: answers[outcome])
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    said = marked(capsys, "seccomp")
+    assert [line.split()[0] for line in said] == [level], said
+    if outcome == "ok":
+        assert said[0].endswith("machine x64, kernel seccomp filtering present")
+    else:
+        assert said[0].endswith("its placements are not started")
+
+
+PROBE_APPLIED = "[SandboxDebug] [Sandbox Linux] Applying seccomp filter for Unix socket blocking"
+PROBE_MISSING = (
+    "[SandboxDebug] [Sandbox Linux] apply-seccomp binary not available - unix socket "
+    "blocking disabled."
+)
+
+
+@pytest.mark.parametrize(
+    ("answer", "outcome", "detail"),
+    [
+        ((0, f"start\n{PROBE_APPLIED}\n"), "ok", ""),
+        ((0, f"{PROBE_MISSING}\n"), "off", "Claude Code found no seccomp helper"),
+        ((1, f"{PROBE_MISSING}\n"), "off", "Claude Code found no seccomp helper"),
+        ((0, "[SandboxDebug] something else\n"), "inconclusive",
+         "the debug log named neither outcome"),
+        ((1, f"{PROBE_APPLIED}\nInvalid API key\n"), "inconclusive",
+         "Claude Code exited 1 (its login?)"),
+        ("timeout", "inconclusive", "no answer within 180 s"),
+        ("oserror", "inconclusive", "Claude Code did not start: No such file or directory"),
+        ("undecodable", "inconclusive", "Claude Code's output could not be read"),
+        ((0, b"\xff\xfe"), "inconclusive", "Claude Code's output could not be read"),
+    ],
+)  # fmt: skip
+def test_the_socket_probe_reads_the_runtimes_lines_and_fails_closed_otherwise(
+    monkeypatch: pytest.MonkeyPatch, answer: object, outcome: str, detail: str
+) -> None:
+    """One headless run as the agents' user with the sandbox on, socket blocking left on and
+    the debug log on; only the runtime's line that it applied the filter is `ok`."""
+    import subprocess
+
+    from conftest import REAL_SOCKET_PROBE
+
+    from maity.runner import capabilities
+    from maity.runner.asuser import AsUser
+
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(
+        self: AsUser, argv: list[str], env: dict[str, str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((list(argv), env))
+        if answer == "timeout":
+            raise subprocess.TimeoutExpired(argv, 180)
+        if answer == "oserror":
+            raise FileNotFoundError(2, "No such file or directory")
+        if answer == "undecodable":  # text-mode decoding of the output failed
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        assert isinstance(answer, tuple)
+        return subprocess.CompletedProcess(argv, answer[0], "the model's answer", answer[1])
+
+    monkeypatch.setattr(AsUser, "run", run)
+    found = REAL_SOCKET_PROBE("/opt/claude", "/agents/bin", AsUser("agents"))
+    assert (found.outcome, found.detail) == (outcome, detail)
+    [(argv, env)] = calls
+    assert argv[0] == "/opt/claude"
+    assert argv[argv.index("-p") + 1] == capabilities.SOCKET_PROBE_PROMPT
+    settings = json.loads(argv[argv.index("--settings") + 1])
+    assert settings["sandbox"]["enabled"] is True
+    assert settings["sandbox"]["network"] == {"allowAllUnixSockets": False}
+    assert env["SRT_DEBUG"] == "1"
+    assert env["PATH"] == "/agents/bin"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "level", "code"),
+    [("ok", "ok", 0), ("off", "error", 1), ("inconclusive", "error", 1)],
+)
+def test_check_runs_the_socket_probe_after_an_ok_preflight(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+    level: str,
+    code: int,
+) -> None:
+    """Under bubblewrap with an `ok` preflight, `check` runs the probe with the probed binary
+    and the agents' PATH; anything but `ok` is an error."""
+    from maity.runner import capabilities
+
+    asked: list[tuple[str, str]] = []
+
+    def probe(binary: str, path: str, as_user: object) -> capabilities.SocketProbe:
+        asked.append((binary, path))
+        return capabilities.SocketProbe(outcome, "why")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    assert [binary for binary, _ in asked] == [str(bin_dir / "claude")]
+    said = marked(capsys, "probe run")
+    assert [line.split()[0] for line in said] == [level], said
+
+
+def test_check_runs_no_socket_probe_when_the_preflight_refuses(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity.runner import capabilities
+
+    def probe(*args: object) -> object:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    monkeypatch.setattr(
+        capabilities,
+        "claude_seccomp",
+        lambda as_user: capabilities.ClaudeSeccomp("unsupported_arch", "riscv64", "m"),
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "why"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets"),
+     ('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}',
+      "sets sandbox.network.allowUnixSockets"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+     ('{"permissions": {}}', None),
+     ("{not json", "cannot be read as JSON")],
+)  # fmt: skip
+def test_check_reports_unix_socket_settings_in_the_agents_user_settings(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+    why: str | None,
+) -> None:
+    """Every start refuses on them, so `check` names them as an error; a clean file is ok."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir(exist_ok=True)
+    user.write_text(text)
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == (
+        0 if why is None else 1
+    )
+    said = marked(capsys, "Unix socket setting")
+    if why is None:
+        assert [s.split()[0] for s in said] == ["ok"], said
+    else:
+        assert [s.split()[0] for s in said] == ["error"], said
+        assert why in said[0]
+
+
+def test_check_reports_a_unix_socket_setting_in_the_managed_settings(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The managed settings win over the placement's file, so a socket key there is an error
+    as well, naming the managed file."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True, exist_ok=True)
+    managed.write_text('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}')
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+    said = marked(capsys, "Unix socket setting")
+    assert [s.split()[0] for s in said] == ["error"], said
+    assert str(managed) in said[0] and "sets sandbox.network.allowUnixSockets" in said[0]
+
+
+def test_check_keeps_the_passed_probe_version_and_warns_on_another(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A passing probe keeps the installed version for the target in the state directory; a
+    failing one forgets it and says, as an error, what a start will warn about."""
+    from maity import state
+    from maity.runner import capabilities
+
+    answer = {"outcome": "ok"}
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    monkeypatch.setattr(
+        capabilities,
+        "claude_socket_probe",
+        lambda *args: capabilities.SocketProbe(answer["outcome"], "why"),
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    state_dir = config.load(paired).state_dir
+    # A pass recorded for an older version: this run's pass replaces it before anything is
+    # compared, so no line about the probe's version and exit 0.
+    state.save_state(state_dir, {"local": "2.1.324"}, name=capabilities.PROBE_FILE)
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    assert marked(capsys, "probe last passed") == []
+    found = state.load_state(state_dir, name=capabilities.PROBE_FILE)
+    assert found == {"local": "2.1.325"}
+    answer["outcome"] = "inconclusive"
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+    assert state.load_state(state_dir, name=capabilities.PROBE_FILE) == {}
+    said = marked(capsys, "probe has not passed")
+    assert [s.split()[0] for s in said] == ["error"], said
+    # A preflight that refuses runs no probe: the record stays, and an older one is an error.
+    state.save_state(state_dir, {"local": "2.1.324"}, name=capabilities.PROBE_FILE)
+    monkeypatch.setattr(
+        capabilities,
+        "claude_seccomp",
+        lambda as_user: capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    )
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+    said = marked(capsys, "probe last passed with 2.1.324, installed 2.1.325")
+    assert [s.split()[0] for s in said] == ["error"], said
+    assert state.load_state(state_dir, name=capabilities.PROBE_FILE) == {"local": "2.1.324"}
+
+
+@pytest.mark.parametrize("unclean", [None, "claude_hooks_off", "claude_socket_settings"])
+def test_check_reads_the_settings_before_it_runs_and_keeps_the_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unclean: str | None
+) -> None:
+    """Locally as on a host: the hook and socket settings come first, and the headless probe
+    runs, and its pass is kept, only while they are clean; otherwise an older pass is
+    forgotten and the stale-version error follows."""
+    from maity import state
+    from maity.runner import capabilities, commands
+
+    order: list[str] = []
+    monkeypatch.setattr(capabilities, "claude_sandbox_tools", lambda: ("bwrap", "socat"))
+    monkeypatch.setattr(capabilities, "which", lambda tool, path, as_user: f"/usr/bin/{tool}")
+    monkeypatch.setattr(capabilities, "sandbox_version_ok", lambda harness, version: True)
+    monkeypatch.setattr(
+        capabilities, "claude_nested_userns", lambda path, as_user: capabilities.NestedUserns("ok")
+    )
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+
+    def settings(name: str) -> object:
+        def read(as_user: object) -> str | None:
+            order.append(name)
+            return "~/.claude/settings.json sets x" if name == unclean else None
+
+        return read
+
+    monkeypatch.setattr(capabilities, "claude_hooks_off", settings("claude_hooks_off"))
+    monkeypatch.setattr(capabilities, "claude_socket_settings", settings("claude_socket_settings"))
+
+    def probe(*args: object) -> capabilities.SocketProbe:
+        order.append("probe")
+        return capabilities.SocketProbe("ok")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    state_dir = tmp_path / "st"
+    state_dir.mkdir(mode=0o700)
+    state.save_state(state_dir, {"local": "2.1.324"}, name=capabilities.PROBE_FILE)
+    harness = config.Harness("claude-code", ("interactive", "supervised"), "interactive")
+    report = commands.Report()
+    commands._check_claude_code(report, harness, version="2.1.325", binary="/usr/bin/claude",
+                                state_dir=state_dir)  # fmt: skip
+    kept = state.load_state(state_dir, name=capabilities.PROBE_FILE)
+    guard = ["claude_hooks_off"]  # the worktree guard reads the hook setting once more, last
+    if unclean is None:
+        assert order == ["claude_hooks_off", "claude_socket_settings", "probe", *guard]
+        assert kept == {"local": "2.1.325"}
+        assert not report.failed, report.lines
+    else:
+        assert order == ["claude_hooks_off", "claude_socket_settings", *guard]  # no probe
+        assert kept == {}
+        assert ("warn", "harness claude-code: probe not run: the settings above refuse every "
+                "sandboxed start") in report.lines  # fmt: skip
+        stale = [lvl for lvl, text in report.lines if "probe has not passed" in text]
+        assert stale == ["error"], report.lines
+
+
+def test_check_runs_no_seccomp_preflight_under_seatbelt(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity.runner import capabilities
+
+    def preflight(as_user: object) -> object:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    monkeypatch.setattr(capabilities, "claude_socket_probe", preflight)
+    for tool in ("tmux", "maity", "sandbox-exec"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    assert marked(capsys, "seccomp") == []
 
 
 def test_check_refuses_a_loose_state_dir(
@@ -1167,7 +1780,9 @@ def test_a_nul_in_the_git_email_fails_when_the_file_is_loaded(tmp_path: Path) ->
     assert any(p.startswith("git.email: ") for p in info.value.problems), info.value.problems
 
 
-@pytest.mark.parametrize("placement", ["plc-0003", ""])
+@pytest.mark.parametrize(
+    "placement", ["plc-0003", "", " ", "plc-0003\n", "PLC-0003", "../plc-0003"]
+)
 @pytest.mark.parametrize(
     "argv",
     [["scratchop", "remove", "--under", "/", "/maity/.scratch/plc-0003"],
@@ -1228,6 +1843,31 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
     else:
         assert code == cli.EXIT_REFUSED and reached == []
         assert "for a placed agent" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("placed", ["plc-0003", "plc-0004", None])
+def test_pgenv_is_no_maity_command(monkeypatch: pytest.MonkeyPatch, placed: str | None) -> None:
+    """The review of #2032: pgenv reads a placement's password and starts any command, and an
+    agent's `maity` runs outside its sandbox, so `maity runner pgenv` does not exist, under a
+    placement (its own or another's MAITY_PLACEMENT) or without one; nothing is started."""
+    from maity.runner import pgenv
+
+    reached: list[object] = []
+
+    def fake(argv: object = None) -> int:
+        reached.append(argv)
+        return 0
+
+    monkeypatch.setattr(pgenv, "main", fake)
+    if placed is None:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", placed)
+    argv = ["runner", "pgenv", "/w", "/w/.maity-pg/plc-0003", "/w/pg", "--", "sh", "-c", "true"]
+    with pytest.raises(SystemExit) as usage:
+        cli.main(argv)
+    assert usage.value.code == 2 and reached == []
+    assert "pgenv" not in commands.IN_SESSION
 
 
 def test_the_runner_calls_on_the_agents_side_carry_no_placement(
@@ -1423,10 +2063,83 @@ def test_under_a_placement_only_that_placements_file_gets_through(
     assert commands.runner_own_file("loop", str(other))
 
 
-def test_runner_is_refused_with_for(capsys: pytest.CaptureFixture[str]) -> None:
-    """`--for` sits before the command, past the harnesses' `maity runner` deny rules."""
-    assert cli.main(["--for", "x", "runner", "loop", "--spec", "/x"]) == cli.EXIT_USAGE
-    assert "`maity runner` is the operator's" in capsys.readouterr().err
+PLACEMENT_VALUES = [None, "", " ", "plc-0003", "plc-0003\n", "PLC-0003", "../plc-0003", "plc-0004"]
+
+
+@pytest.mark.parametrize("value", PLACEMENT_VALUES)
+@pytest.mark.parametrize("name", sorted(commands.IN_SESSION_FILE))
+def test_a_placed_session_owns_only_its_own_placements_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, value: str | None
+) -> None:
+    """Set, even empty, MAITY_PLACEMENT is a placed session: plc-0003's file is its own only
+    for plc-0003. An empty or malformed id is a placed session of unknown identity and owns
+    no file; never read as unplaced, which would take any placement's file. Unset, the
+    runner's own calls take it as before."""
+    own = _runner_home(monkeypatch, tmp_path)
+    if value is None:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", value)
+    allowed = value in (None, "plc-0003")
+    assert commands.runner_own_file(name, str(own[name])) is allowed
+    reached = _reaching(monkeypatch)
+    code = cli.main(["runner", *_in_session_argv(name, str(own[name]))])
+    assert (code == 0) is allowed
+    assert reached == ([f"maity.runner.{name}"] if allowed else [])
+
+
+FIRST_ONLY = "`maity runner` is taken only as the first argument"
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        ["--for", "x", "runner", "loop", "--spec", "/x"],
+        ["--for=x", "runner", "status"],
+        ["--fo", "x", "runner", "status"],  # argparse takes an abbreviated option too
+        ["--", "runner", "loop", "--spec", "/x"],
+        ["--", "--", "runner", "status"],
+        ["--for", "x", "--", "runner", "status"],
+    ],
+)
+def test_runner_is_refused_anywhere_but_first(
+    words: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """argparse takes the `runner` group after `--` or a global option too, past the
+    harnesses' rules for `maity runner`: refused before anything runs. Where argparse itself
+    refuses a spelling first (some Python versions refuse a `--` before the command, and every
+    version refuses `-- --`), that refusal stands, but only for words with a `--` before
+    `runner`; either way it is a usage error and nothing runs."""
+    reached = _reaching(monkeypatch)
+    code: int | str | None
+    try:
+        code = cli.main(words)
+    except SystemExit as exc:  # argparse's own usage error, before the first-argument check
+        code = exc.code
+        assert "--" in words[: words.index("runner")]  # only a `--` spelling may end here
+        assert "invalid choice" in capsys.readouterr().err
+    else:
+        assert FIRST_ONLY in capsys.readouterr().err
+    assert code == cli.EXIT_USAGE
+    assert reached == []
+
+
+def test_runner_as_the_first_argument_still_parses(capsys: pytest.CaptureFixture[str]) -> None:
+    """`maity runner …` is unchanged: the first-argument rule lets it through to its own
+    checks (here argparse's, for a missing required option)."""
+    with pytest.raises(SystemExit):
+        cli.main(["runner", "loop"])
+    assert FIRST_ONLY not in capsys.readouterr().err
+
+
+def test_another_command_after_a_global_option_is_not_taken_for_runner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Only the `runner` group is held to the first argument; `--for` before another
+    command keeps its own handling (tests/test_bridge_for.py covers those commands)."""
+    assert cli.main(["--for", "x", "join", "https://x/j/t", "--code", "c"]) == cli.EXIT_USAGE
+    err = capsys.readouterr().err
+    assert FIRST_ONLY not in err and "--for applies to project commands" in err
 
 
 def test_without_a_home_in_the_user_database_nothing_gets_through(
@@ -1456,3 +2169,21 @@ def test_no_harness_lets_an_agent_run_maity_runner_from_its_shell(tmp_path: Path
     command list; the boundary stays runner_own_file, these keep the call from starting."""
     assert {"maity runner", "maity runner *"} <= set(adapters.MAITY_RUNNER_DENIED)
     assert "maity runner" in adapters.AGY_DENIED_COMMANDS
+
+
+@posix  # a link, which needs rights on Windows; the runner is POSIX anyway
+def test_check_names_a_hand_installed_keep_the_why_skill_and_refuses_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tsk-172s8y208whg, the review of #2056: the operator's own copy is warned about, since a
+    # placed Claude Code session sees it beside the delivered one; never an error.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    report = commands.Report()
+    commands._check_user_skill(report, RUNNER)
+    assert report.lines == []
+    skills_dir = tmp_path / ".claude" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "keep-the-why").symlink_to(tmp_path / "elsewhere")  # a dangling link counts
+    commands._check_user_skill(report, RUNNER)
+    [(level, text)] = report.lines
+    assert level == "warn" and "keep-the-why:keep-the-why" in text and not report.failed

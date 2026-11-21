@@ -398,7 +398,7 @@ def list_registrations(
             if len(rows) > limit
             else None
         )
-        items = [registration_accounts.item(conn, row) for row in page]
+        items = registration_accounts.items(conn, page)
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 

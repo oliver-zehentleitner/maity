@@ -3,7 +3,7 @@
 
 For every package a push touches (hub/, cli/) it runs CI's own lint and type targets,
 `make lint typecheck`, without the tests, with the Python of the hub's environment, which
-`make -C hub install` fills from the hashed lock. Before that it compares black, ruff and
+`make -C hub dev` makes from the hashed lock. Before that it compares black, ruff and
 mypy in that environment with their pins in hub/requirements/dev.txt and stops on a
 difference, so the hook does not pass or fail on another version than the lock.
 
@@ -198,7 +198,7 @@ def python_ready(top: Path) -> str | None:
     if not Path(python).exists():
         print(
             f"pre-push: no Python at {python}. Set up the hub's environment once:\n"
-            "  python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python\n"
+            "  make -C hub dev\n"
             "or point MAITY_HOOK_PYTHON at a Python where `make -C hub install` ran.",
             file=sys.stderr,
         )

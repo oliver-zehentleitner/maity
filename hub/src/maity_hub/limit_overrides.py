@@ -6,7 +6,8 @@ for the agent profiles the human owns) and the account values of §16.5. Each is
 number within its range, `unlimited`, or `null`, which removes the override. One row per
 value set (`limit_override`); no row is the instance's value or the default ceiling.
 
-`max_starred_per_human` is not here: the hub has no stars yet.
+`max_starred_per_human` is not here yet: the hub keeps stars (§5.1), bounded by the instance's
+value alone, and a `PATCH` naming it is `extra_forbidden`.
 """
 
 from __future__ import annotations

@@ -86,9 +86,7 @@ def my_reports(
         )
         return JSONResponse(
             {
-                "items": [
-                    reports.own_view(conn, row, settings_of(request).public_pages) for row in page
-                ],
+                "items": reports.own_views(conn, page, settings_of(request).public_pages),
                 "next_cursor": next_cursor,
             }
         )
@@ -145,7 +143,7 @@ def list_reports(
             if len(rows) > limit
             else None
         )
-        items = [reports.admin_view(conn, row, snapshot=False) for row in page]
+        items = reports.admin_views(conn, page, snapshot=False)
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 

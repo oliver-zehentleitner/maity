@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextlib
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +44,13 @@ def test_made_with_tmp_measured_and_removed(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     root.mkdir()
     room = _room(root)
-    assert scratchop.make(str(root), str(room)) == {"result": "made"}
+    old = os.umask(0o022)  # the scratch itself made 0700 whatever the umask leaves
+    try:
+        assert scratchop.make(str(root), str(room)) == {"result": "made"}
+    finally:
+        os.umask(old)
     assert stat.S_IMODE((room / "tmp").stat().st_mode) == 0o700
+    assert stat.S_IMODE(room.stat().st_mode) == 0o700
     (room / "tmp" / "venv.bin").write_bytes(b"z" * 4000)
     (room / "loop").symlink_to(tmp_path)  # measured as a link, never followed
     found = scratchop.size(str(root), str(room))
@@ -57,6 +64,127 @@ def test_made_with_tmp_measured_and_removed(tmp_path: Path) -> None:
     assert scratchop.remove(str(tmp_path / "none"), str(_room(tmp_path / "none"))) == {
         "result": "missing"
     }
+
+
+def test_the_pg_password_is_drawn_once_in_the_holder_and_kept(tmp_path: Path) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): the test cluster's password, in one holder
+    outside every scratch (0700), one 0600 file per placement; a restart keeps it, and it goes
+    with the placement."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    leaf = holder / "plc-0003"
+    old = os.umask(0o000)  # the modes are set, not left to the umask
+    try:
+        assert scratchop.pg_make(str(root), str(holder)) == {"result": "made"}
+        assert scratchop.pg_make(str(root), str(leaf)) == {"result": "made", "pg_pass": True}
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(holder.stat().st_mode) == 0o700
+    first = leaf.read_text()
+    assert len(first) == 65 and first.endswith("\n") and int(first, 16) >= 0
+    assert stat.S_IMODE(leaf.stat().st_mode) == 0o600
+    assert scratchop.pg_read(str(root), str(leaf)) == first.strip()
+    assert scratchop.pg_make(str(root), str(leaf))["pg_pass"] is True
+    assert leaf.read_text() == first  # kept across a restart
+    scratchop.pg_make(str(root), str(holder / "plc-0004"))
+    assert (holder / "plc-0004").read_text() != first  # one per placement
+    assert scratchop.pg_remove(str(root), str(leaf)) == {"result": "removed"}
+    assert not leaf.exists() and scratchop.pg_read(str(root), str(leaf)) is None
+    assert scratchop.pg_remove(str(root), str(leaf)) == {"result": "missing"}
+    nowhere = tmp_path / "none"
+    assert scratchop.pg_remove(str(nowhere), str(nowhere / ".maity-pg" / "plc-0003")) == {
+        "result": "missing"
+    }
+
+
+@pytest.mark.parametrize("planted", ["link", "dangling", "wide", "directory", "hardlink"])
+def test_a_planted_pg_password_is_never_written_through_read_or_vouched_for(
+    tmp_path: Path, planted: str
+) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    scratchop.pg_make(str(root), str(holder))
+    leaf = holder / "plc-0003"
+    victim = tmp_path / "victim"
+    victim.write_text("keepme")
+    if planted == "link":
+        leaf.symlink_to(victim)
+    elif planted == "dangling":
+        leaf.symlink_to(tmp_path / "nowhere")
+    elif planted == "wide":
+        leaf.write_text("a" * 64 + "\n")
+        leaf.chmod(0o644)
+    elif planted == "hardlink":  # a 0600 file of this user, but another name holds it too
+        victim.chmod(0o600)
+        os.link(victim, leaf)
+    else:
+        leaf.mkdir()
+    assert scratchop.pg_make(str(root), str(leaf))["pg_pass"] is False
+    assert scratchop.pg_read(str(root), str(leaf)) is None
+    assert victim.read_text() == "keepme" and not (tmp_path / "nowhere").exists()
+
+
+def test_a_directory_planted_as_a_password_file_leaks_no_descriptor(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    scratchop.pg_make(str(root), str(holder))
+    (holder / "plc-0003").mkdir()
+    fds = Path("/proc/self/fd")
+    before = len(list(fds.iterdir())) if fds.is_dir() else 0
+    for _ in range(5):
+        assert scratchop.pg_read(str(root), str(holder / "plc-0003")) is None
+    if fds.is_dir():
+        assert len(list(fds.iterdir())) == before
+
+
+def test_a_fifo_planted_as_a_password_file_neither_blocks_nor_is_read(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    scratchop.pg_make(str(root), str(holder))
+    os.mkfifo(holder / "plc-0003", 0o600)
+    assert scratchop.pg_read(str(root), str(holder / "plc-0003")) is None  # returns at once
+
+
+@pytest.mark.parametrize("planted", ["link", "file", "wide"])
+def test_a_planted_holder_is_never_used(tmp_path: Path, planted: str) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(mode=0o755)
+    if planted == "link":
+        holder.symlink_to(elsewhere)
+    elif planted == "file":
+        holder.write_text("x")
+    else:  # widened by someone of this user: narrowed again, not refused
+        holder.mkdir(mode=0o755)
+        holder.chmod(0o755)
+    if planted == "wide":
+        scratchop.pg_make(str(root), str(holder))
+        assert stat.S_IMODE(holder.stat().st_mode) == 0o700
+        return
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.pg_make(str(root), str(holder / "plc-0003"))
+    assert list(elsewhere.iterdir()) == [] and stat.S_IMODE(elsewhere.stat().st_mode) == 0o755
+
+
+@pytest.mark.parametrize(
+    "name", [".maity-pg/agent-3", ".maity-pg/plc-0003/x", "maity/.maity-pg/plc-0003",
+             ".scratch", ".maity-pg/.."],
+)  # fmt: skip
+def test_only_the_holder_or_a_placements_file_in_it(tmp_path: Path, name: str) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    for op in (scratchop.pg_make, scratchop.pg_remove):
+        with pytest.raises(OSError) as refused:
+            op(str(root), str(root / name))
+        assert not isinstance(refused.value, scratchop.OnTheWay)
+    assert sorted(os.listdir(root)) == []
+    assert scratchop.pg_read(str(root), str(root / name)) is None
 
 
 @pytest.mark.parametrize("linked", ["scratch", "holder", "project"])
@@ -78,7 +206,8 @@ def test_nothing_is_made_or_removed_through_a_link_on_the_way(tmp_path: Path, li
 
 @pytest.mark.parametrize(
     "name", ["maity/agent-3", "maity/.scratch", "maity/.scratch/plc-0003/tmp", "maity/x/plc-0003",
-             ".scratch/plc-0003", "maity/.scratch/agent-3", "Maity/.scratch/plc-0003"],
+             ".scratch/plc-0003", "maity/.scratch/agent-3", "Maity/.scratch/plc-0003",
+             "maity/.scratch/plc-0003\n", "maity\n/.scratch/plc-0003"],
 )  # fmt: skip
 def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, name: str) -> None:
     """A clone, the holder `.scratch` itself, anything below a scratch or of another shape:
@@ -92,6 +221,22 @@ def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, n
             op(str(root), str(target))
         assert not isinstance(refused.value, scratchop.OnTheWay)
     assert (target / "keep").read_text() == "k"
+
+
+def test_the_module_imports_only_the_standard_library_and_maity() -> None:
+    """It runs with `-I` on the agents' side and imports only the standard library and maity
+    modules that do the same: followed through, no module from anywhere else is loaded."""
+    probe = (
+        "import sys; before = set(sys.modules); import maity.runner.scratchop; "
+        "print('\\n'.join(sorted(m for m in set(sys.modules) - before "
+        "if m.split('.')[0] not in sys.stdlib_module_names and m.split('.')[0] != 'maity')))"
+    )
+    src = str(Path(scratchop.__file__).resolve().parents[2])
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {src!r}); {probe}"],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    assert done.stdout.strip() == ""
 
 
 def test_a_scratch_shaped_path_under_another_root_is_refused(tmp_path: Path) -> None:

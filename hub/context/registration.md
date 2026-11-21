@@ -1,6 +1,6 @@
 # Registration
 
-The registration's link page (`routes/register_page.py`, docs/api.md §2.7.1) beyond its frame and form: what it offers when the link cannot make the account, and how the handle's rule is said there. The page's router, cookies and frame are in [mail.md](mail.md).
+The registration's link page (`routes/register_page.py`, docs/api.md §2.7.1) beyond its frame and form: what it offers when the link cannot make the account, and how the handle's rule is said there; and how long a registration block is kept. The page's router, cookies and frame are in [mail.md](mail.md).
 
 ## The registration's link page offers "Register again" and hands the address over in a cookie; the handle's rule is checked by the field and the stylesheet
 
@@ -46,3 +46,31 @@ so the word names the upper-case case first and the rule stands beside it.
   stylesheet can show.
 - `novalidate` with the stylesheet's word only: the person would still send a handle the hub refuses
   with one more round.
+
+## A registration block that has run out is deleted with its address, not kept
+
+**Id:** 34c4a4e3-66a6-4a46-886c-7dee56322e68
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xqev8wh4rd76 (two privacy gaps: the person's links after a deletion, and old registration blocks); `registration_accounts.forget_expired_blocks`, `registration_accounts._blocked`, `routes/registration.py`
+**See:** auth.md#a-known-sources-fingerprint-is-deleted-by-a-sweep-at-30-days-not-only-when-someone-signs-in — 4c40c003-542f-4884-8975-08fa04925ec0 — as of 2026-11-20
+**Revisit when:** a read of `registration_block` stops filtering on `until > now` (a history of blocks, a count of past rejections), or the table stores a keyed hash in place of the address
+
+A row of `registration_block` (docs/api.md §16.4, §2.7.5) holds the normalised address and the
+block's `until`. `registration_accounts.Worker`, the registration's hourly pass that also deletes
+undecided accounts (`expire`) and purges old campaign origins, deletes every row whose `until` has
+passed (`forget_expired_blocks`, `until <= now`). An instance admin's lift deletes a row at once,
+as before.
+
+**Reason:** every read of a block asks for `until > now` (`_blocked` at completion, the check when a
+registration is asked for), so a row past its `until` changes no answer: it only keeps an address,
+personal data held without need. The pass runs whether or not anyone registers, which a delete
+inside a registration would not (the same argument as auth.md 4c40c003 for known sources).
+
+**Rejected alternatives:**
+- Keeping the rows for good, as before: the address stays in the table, and in every copy of the
+  database, long after the block ended, for nothing the hub reads.
+
+Storing a keyed hash of the address in place of the address is a separate card: it needs a
+migration, and it is not an alternative to deleting the expired rows.

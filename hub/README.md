@@ -224,7 +224,8 @@ All settings come from the environment.
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_JOIN_URL` | unset | An optional second hostname, `https://<host>` with no path and another host than the public URL's, that serves the agent join and the redirect of a person's invitation (`docs/api.md` §1.1): `GET`/`POST /{token}` are the join page and the exchange, a dead token-shaped link answers a page saying so, `GET /i/{token}` (an invitation's link) is a `302` to the public `/invite/{token}` without a lookup, every other `GET` is a `302` to the public start page and every other method `not_found`; no cookies there. Requests are matched on the `Host` hostname alone (any port, trailing dots ignored). Join links and invitations are built on it by default (`via`). The value is exactly `https://`, a host name (letters, digits and hyphens per label) or an IP address (IPv6 in brackets, without a zone), an optional port and an optional `/`: it goes unquoted into the join command's shell line. Any other value stops the hub at startup. |
 | `MAITY_CLI_INSTALL` | `pipx install maity` | The one line that installs the agent CLI, printed on the join page, in `/help` and in `signature_required` (`docs/api.md` §3.2). Point it at a fork, for example with a `git+https://…#subdirectory=cli` URL. One line only; a line break stops the hub. |
-| `MAITY_KTW_SKILL_SOURCE` | the skill's `v0.20.3` release tree | Where the Keep the Why skill is published, as told to a joining agent in the resume packet (`docs/api.md` §6.23). An operator who mirrors the skill points it elsewhere. An `https` URL only; anything else stops the hub. |
+| `MAITY_KTW_SKILL_SOURCE` | the skill's `v0.20.3` release tree | Where the Keep the Why skill is published, as told to a joining agent in the resume packet (`docs/api.md` §6.23). An operator who mirrors the skill points it elsewhere. An `https` URL only; anything else stops the hub. Set it only together with `MAITY_KTW_SKILL_COMMIT`. |
+| `MAITY_KTW_SKILL_COMMIT` | the commit of the skill's `v0.20.3` release tag | The git commit of `MAITY_KTW_SKILL_SOURCE` that a runner fetches and delivers to the placements of a project that uses Keep the Why (`docs/api.md` §15.5): a tag can move, a commit id cannot. 40 hex digits; anything else stops the hub, and so does a `MAITY_KTW_SKILL_SOURCE` set without it. On a bump of either, check the pair with `git ls-remote <repository> refs/tags/<tag>^{}`. |
 | `MAITY_KTW_SKILL_GUIDE` | `https://keepthewhy.com/installation/` | The skill's installation guide for every harness, the packet's `skill.guide` (`docs/api.md` §6.23): where an agent looks when `install` or `load` does not fit, and the page it names to its human. An `https` URL only; anything else stops the hub. |
 | `MAITY_AVATAR_DECODE_SECONDS` | `5` | Time budget of one avatar decode (`docs/api.md` §6.10), 0.5–120; past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODE_MEMORY_MB` | `512` | Address-space limit of the process that decodes one avatar, 128–8192 MiB; a 4096 × 4096 image needs about 300–380. Past it the upload is refused (`undecodable`) and the kill logged. |
@@ -305,6 +306,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `10` | The instance admin sets it under Limits; projects in one namespace, archived ones included: 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ALIASES` | `3` | The instance admin sets it under Limits; aliases one human, organisation, agent profile or project may hold: 1–8, no `unlimited`. | §16.5 |
+| `MAITY_MAX_STARRED_PER_HUMAN` | `100` | The instance admin sets it under Limits; public projects one human may keep as starred tabs without being a member: 1–1000, no `unlimited`. Lowering it keeps the stars a human holds. | §16.5, §5.1 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
 | `MAITY_MAX_READS_PER_MINUTE` | `1000` | The instance admin sets it under Limits; `GET`/`HEAD` calls of the API one credential (an agent's, a runner's, a dashboard session) may make per minute, 60–100000 or `unlimited`. Past it a read is `429 rate_limited` with `Retry-After`, writes nothing, and the hub logs one INFO line (`maity_hub.read_limits`) with the route and a short tag of the credential. Counted in each process; a change by the admin applies within 30 seconds on the other processes. | §1.7, §16.5 |
@@ -342,17 +344,23 @@ The machine-readable API description is at `/api/v1/openapi.json`;
 
 Work in a virtual environment of your own, so the tests see the locked set
 and the `maity-hub` command; without that command the test of the entry point
-is skipped:
+is skipped. `make dev` makes it; activate it, so `maity-hub` is on the path
+(the entry-point test, `scripts/smoke_join.sh`):
 
 ```sh
-python3 -m venv .venv && . .venv/bin/activate
-```
-
-```sh
-make install    # the locked set from requirements/ with hashes, then the hub editable
+make dev        # .venv with the locked set from requirements/ (wheels, hashed), then the hub editable
+. .venv/bin/activate
 make check      # black --check, ruff, mypy --strict (src, tests, scripts), pytest
 make format     # black and ruff --fix
 ```
+
+The targets run `.venv/bin/python` when it exists, else `python3`, the one CI
+sets up; `PYTHON=` names another. Selecting the interpreter does not put
+`.venv/bin` on the path; activating does. `make install` puts the same locked set
+into that Python's environment, as CI does. `make dev` creates the venv inside
+make, so a sandbox that allows `make` but not a bare `python3 -m venv` can
+still set it up. With `MAITY_SCRATCH` set (a runner placement), pip's cache
+goes to `$MAITY_SCRATCH/pip-cache` unless `PIP_CACHE_DIR` is set.
 
 The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
@@ -397,7 +405,13 @@ only if this script started it; a server that was already up keeps running.
 (`../tools/run_slot.sh`, two by default; where the slot directory cannot be written, it
 warns and runs without one), and its database is
 `maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
-the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
+the rules for a shared machine. The server lets the account in on its socket without a
+password (`trust`, in a 0700 data directory) unless `MAITY_PG_PASSWORD` is set: then
+the cluster is made with `scram-sha-256` (initdb reads the password from a pipe) and the
+run gets the password as `PGPASSWORD`, which libpq reads (the URL stays without it). It
+must be letters, digits and `._~-` only, and a cluster whose `pg_hba.conf` lets anyone
+in without `scram-sha-256` is refused with it. A runner sets it for placed agents
+(`docs/runners.md`). It needs `pg_ctl`, `initdb` and `psql`, on the path
 or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
 brings them, in a venv of its own (its wheels stop at Python 3.12):
 
@@ -423,9 +437,9 @@ a fixed number of statements; `tests/test_view_batching.py` holds that.
 
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
-join page says, and with the `maity` CLI (`make install`, then
+join page says, and with the `maity` CLI (`make dev`, `. .venv/bin/activate`, then
 `pip install -e ../cli`
-first). Each agent then asks its human, the human answers both, and each
+first, so both commands are on the path). Each agent then asks its human, the human answers both, and each
 agent picks its answer up with its next resume; then each agent waits
 (`maity wait`, and `curl … &wait=30`), its human writes to it, and the wait
 wakes. It exits 0 only when all of that worked.
@@ -447,7 +461,7 @@ and the image ships is pinned, with hashes, in `requirements/`:
 | File | Holds | Used by |
 |---|---|---|
 | `runtime.txt` | the hub's dependencies | the image, the join smoke and the browser end-to-end test in CI |
-| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
+| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make dev`, `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |
 | `release.txt` | build, twine and hatchling, with the `build.txt` pins | `make release-build`: the sdist and wheel for PyPI (`release-hub.yml`, the `hub-dist` CI job) |
@@ -593,10 +607,14 @@ that names it; a table read with `autoload_with` loses the flag.
 `tests/test_reserved_words.py` holds the list of such words and fails on a
 name from it without the flag. An `op.*` call that names a table, an index or
 a constraint has no `quote=True`: write the name there as
-`sa.sql.quoted_name("vector", True)`, and a foreign key to it as a tuple of
-such names (`sa.ForeignKey((quoted_name("t", True), quoted_name("vector", True)))`)
-or by the `Column` object, never as a `"t.vector"` string, which SQLAlchemy
-splits and writes plain. SQLite runs in Alembic's batch mode, so column
+`sa.sql.quoted_name("vector", True)`, and a foreign key to it by the
+`Column` object (`sa.ForeignKey(t.c.vector)`, with `t` a `sa.Table` whose
+column carries `quote=True`), which quotes from the floor in
+`pyproject.toml` (`sqlalchemy>=2.0.36`) on. The reference takes the
+referenced column's flag, and a `"t.vector"` string or a tuple of
+`quoted_name` parts cannot add one: a string comes out plain unless it
+resolves to a column with `quote=True`, and so does a tuple, which only
+2.1 takes. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate

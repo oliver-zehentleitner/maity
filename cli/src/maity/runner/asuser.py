@@ -49,6 +49,20 @@ REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
 
+def shell_quote(word: str) -> str:
+    """`shlex.quote`, and a word that starts with `=` quoted too: `shlex.quote` leaves it bare
+    (`=` is safe in POSIX sh), but zsh expands a bare `=name` to the path of the command `name`
+    and fails when there is none, so an exact tmux target (`=maity_p_c`) would not reach tmux."""
+    if word.startswith("="):
+        return "'" + word.replace("'", "'\"'\"'") + "'"
+    return shlex.quote(word)
+
+
+def shell_join(words: Sequence[str]) -> str:
+    """`shlex.join` with `shell_quote`: one line for a POSIX shell or zsh."""
+    return " ".join(shell_quote(word) for word in words)
+
+
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
 
@@ -151,6 +165,26 @@ class AsUser:
         done = self.run(["mkdir", "-p", "-m", "700", str(path)])
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
+
+    def tighten(self, path: Path) -> None:
+        """The directory `path` made 0700, also when it exists already with looser bits:
+        `mkdir -p -m 700` and `Path.mkdir(mode=0o700, parents=True)` give the mode to the last
+        directory only, and a parent made under a umask of 002 is 0775, which `maity gh`'s lead
+        commands refuse (`ghpr.owned_layout`, review A1758 of #2054). Only a real directory:
+        chmod follows a link, so a link in its place is refused first (security leg on #2054;
+        owned_layout refuses one anyway, this keeps the chmod from touching what it names)."""
+        if self.direct:
+            if not stat.S_ISDIR(os.lstat(path).st_mode):
+                raise OSError(f"cannot make {path} private for the agents: not a directory")
+            os.chmod(path, 0o700)
+            return
+        # find's -type tests the entry itself, never what a link names.
+        seen = self.run(["find", str(path), "-maxdepth", "0", "-type", "d"])
+        if seen.returncode != 0 or seen.stdout.strip() != str(path):
+            raise OSError(f"cannot make {path} private for the agents: not a directory")
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot make {path} private for the agents: {done.stderr.strip()[:200]}")
 
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
@@ -271,6 +305,31 @@ class AsUser:
             raise OSError(f"scratch {op} {path}: no answer") from None
         if not isinstance(answer, dict):
             raise OSError(f"scratch {op} {path}: no answer")
+        return answer
+
+    def pg(self, op: str, under: Path, path: Path) -> dict[str, Any]:
+        """The test clusters' password holder or a placement's file in it, made (`make`) or
+        removed (`remove`) on the agents' side (scratchop.pg_make, pg_remove), opened from
+        `under` without following a link. scratchop.OnTheWay for a link or another user's
+        holder; OSError when it fails otherwise, a host whose `maity` predates the op included."""
+        if self.direct:
+            return (scratchop.pg_make if op == "make" else scratchop.pg_remove)(
+                str(under), str(path)
+            )
+        argv = [*self.runner_module("scratchop"), f"pg{op}", "--under", str(under), str(path)]
+        done = self.run(argv)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{path}: a link or another user's directory; not used")
+        if done.returncode == 2:  # a host's `maity` that predates the op: it made none either
+            raise scratchop.Unsupported(f"host maity has no pg ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"pg {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"pg {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"pg {op} {path}: no answer")
         return answer
 
     def tmp_scratch(self, op: str, path: Path) -> dict[str, Any]:
@@ -418,7 +477,7 @@ class Ssh(AsUser):
         """One remote command line: every word quoted, `env` set explicitly."""
         pairs = [f"{key}={value}" for key, value in (env or {}).items()]
         words = [*(["env", *pairs] if pairs else []), *argv]
-        return [*self.ssh(), "--", " ".join(shlex.quote(word) for word in words)]
+        return [*self.ssh(), "--", shell_join(words)]
 
     def run(
         self,

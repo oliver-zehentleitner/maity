@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from conftest import OPENCODE_23_RUN, OPENCODE_23_TUI, opencode_23_flags
 
-from maity import __version__, clonecheck
+from maity import __version__, clonecheck, ghpr
 from maity.runner import adapters, config, loop, scratch, scratchop, supervisor
 from maity.runner.asuser import AsUser, Ssh
 
@@ -32,6 +32,7 @@ def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -
         "placement": PLACEMENT, "harness": harness, "binary": "/usr/bin/claude",
         "clone": tmp_path / "ws" / "maity" / "agent-3", "agent_dir": agent_dir,
         "grant": config.RepositoryGrant(allow=("make test",)), "restart": config.Restart(),
+        "version": "2.1.325",  # a probed Claude Code with the WorktreeCreate event
     }  # fmt: skip
     data.update(overrides)
     return adapters.Context(**data)
@@ -197,7 +198,14 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
-    assert "sandbox" not in settings and "hooks" not in settings  # no exclusion, no hook
+    assert "sandbox" not in settings  # no exclusion
+    # Without the sandbox, the worktree hook alone: no plain-call hook.
+    assert settings["hooks"] == {
+        "WorktreeCreate": [
+            {"hooks": [{"type": "command", "command": adapters.CLAUDE_WORKTREE_HOOK}]},
+        ],
+    }  # fmt: skip
+    assert settings["disableAllHooks"] is False
     strict = adapters.claude_settings(
         context(tmp_path / "s", sandbox=True, hosts=("maity.team", "github.com"))
     )["sandbox"]
@@ -222,12 +230,15 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert strict["network"] == {
         "allowedDomains": ["github.com", "maity.team"],
         "strictAllowlist": True,
+        "allowAllUnixSockets": False,  # pinned: the user's settings cannot open Unix sockets
     }
+    assert strict["network"]["allowAllUnixSockets"] is False
 
 
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
     settings = adapters.claude_settings(context(tmp_path, sandbox=True))
     assert settings["disableAllHooks"] is False
+    assert set(settings["hooks"]) == {"WorktreeCreate", "PreToolUse"}
     (entry,) = settings["hooks"]["PreToolUse"]
     assert "matcher" not in entry  # every tool, not only Bash
     (hook,) = entry["hooks"]
@@ -264,6 +275,134 @@ def test_claude_codes_sandbox_needs_the_hook_failure_policy(
     from maity.runner import capabilities
 
     assert capabilities.sandbox_version_ok(harness_id, version) is ok
+
+
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_a_placed_claude_code_session_makes_no_git_worktree(
+    tmp_path: Path, mode: str, sandbox: bool
+) -> None:
+    """While a worktree is in the clone maity runs no git there, and the session cannot remove
+    it (tsk-d5e4d9s95ytj). Every placement: EnterWorktree denied by its bare name, and a
+    WorktreeCreate hook that fails, which fails a subagent's `isolation: worktree` too. No
+    `Agent(isolation:…)` parameter rule: not verified on the hosted Claude Code yet, and a rule
+    a binary cannot read could cost the whole file (cli/context/runner.md)."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": mode}, sandbox=sandbox)
+    adapters.launch(ctx)
+    written = json.loads((ctx.agent_dir / "claude-settings.json").read_text())
+    assert written == adapters.claude_settings(ctx)
+    deny = written["permissions"]["deny"]
+    assert "EnterWorktree" in deny
+    assert {"Bash(git worktree)", "Bash(git worktree *)"} <= set(deny)  # from the shell too
+    assert not any(rule.startswith("Agent(") for rule in deny)
+    assert written["disableAllHooks"] is False  # the agents' user settings cannot turn it off
+    (entry,) = written["hooks"]["WorktreeCreate"]
+    assert "matcher" not in entry
+    (hook,) = entry["hooks"]
+    assert hook == {"type": "command", "command": adapters.CLAUDE_WORKTREE_HOOK}
+    # Claude Code takes the hook's stdout as the worktree's path: it must fail and print none.
+    payload = json.dumps({"hook_event_name": "WorktreeCreate", "name": "agent-x"})
+    done = subprocess.run(["sh", "-c", hook["command"]], input=payload, capture_output=True,
+                          text=True, check=False, timeout=60)  # fmt: skip
+    assert done.returncode != 0 and done.stdout == ""
+    assert "worktree" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "version", [None, "2.1.40", "2.1.49", "2.1.50-rc.1", "dev build"]
+)  # fmt: skip
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_claude_code_without_the_worktree_event_gets_the_denies_alone(
+    tmp_path: Path, version: str | None, sandbox: bool
+) -> None:
+    """The WorktreeCreate event is there from 2.1.50 (its release notes, as cited in review
+    A1808; not verified against a live binary): an older or
+    unknown version gets no hook, only the two denies, which a binary that does not know the
+    name takes as harmless. Without the sandbox no hook is left, so `disableAllHooks` is not
+    written either, and the agents' user's own switch stands as before."""
+    settings = adapters.claude_settings(context(tmp_path, version=version, sandbox=sandbox))
+    deny = settings["permissions"]["deny"]
+    assert "EnterWorktree" in deny and "Bash(git worktree *)" in deny
+    assert "WorktreeCreate" not in settings.get("hooks", {})
+    if sandbox:
+        assert list(settings["hooks"]) == ["PreToolUse"] and settings["disableAllHooks"] is False
+    else:
+        assert "hooks" not in settings and "disableAllHooks" not in settings
+    floor = adapters.claude_settings(context(tmp_path / "f", version="2.1.50"))
+    assert "WorktreeCreate" in floor["hooks"]
+
+
+def test_no_other_harness_gets_the_worktree_rules(tmp_path: Path) -> None:
+    """The tool deny and the hook are Claude Code's alone. `git worktree` is denied for the
+    harnesses with a command allowlist, Claude Code and opencode, also over a grant that allows
+    it; codex and agy have none to add it to."""
+    codex = adapters.codex_config(context(tmp_path / "x", harness_id="codex"))
+    # A second allow after it: without moving the denies to the end, `make check`'s allows would
+    # come after the `git worktree` deny in opencode's map.
+    worktree_grant = config.RepositoryGrant(allow=("git worktree", "make check"))
+    o_ctx = context(tmp_path / "o", harness_id="opencode", grant=worktree_grant)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    a_ctx = context(tmp_path / "a", "antigravity", folder=tmp_path / "a" / "ws" / "folder")
+    agy = json.dumps(adapters.antigravity_settings(a_ctx))
+    for text in (codex, json.dumps(bash), agy):
+        assert "EnterWorktree" not in text and "WorktreeCreate" not in text
+    assert "git worktree" not in codex and "git worktree" not in agy
+    order = list(bash)
+    for rule in adapters.GIT_WORKTREE_DENIED:  # denied, after every allow: the last match wins
+        assert bash[rule] == "deny"
+        assert all(bash[key] == "deny" for key in order[order.index(rule) :])
+
+    def resolve(rules: dict[str, str], command: str) -> str:  # opencode: the last match wins
+        verdict = "deny"
+        for pattern, value in rules.items():
+            if fnmatch.fnmatchcase(command, pattern):  # `*` matches spaces too, as opencode's
+                verdict = value
+        return verdict
+
+    for command in ("git worktree add x", "git worktree"):
+        assert resolve(bash, command) == "deny", command
+    assert resolve(bash, "make check") == "allow" and resolve(bash, "git status") == "allow"
+    claude = adapters.claude_settings(context(tmp_path / "c", grant=worktree_grant))
+    assert "Bash(git worktree)" in claude["permissions"]["allow"]  # the grant, as written
+    assert "Bash(git worktree)" in claude["permissions"]["deny"]  # and the deny, which wins
+
+
+def test_the_worktree_deny_matches_only_the_subcommand(tmp_path: Path) -> None:
+    """The known gap and its cover: the deny does not match `git -C <dir> worktree …`, but with
+    no grant nothing allows that line either (opencode's default deny; no Claude Code allow rule,
+    and dontAsk refuses the rest). And a line that only mentions the word stays allowed: a
+    wildcard before `worktree` in the deny would have refused it (review A1807)."""
+
+    def patterns(rules: list[str]) -> list[str]:
+        return [rule[len("Bash(") : -1] for rule in rules if rule.startswith("Bash(")]
+
+    def resolve(rules: dict[str, str], command: str) -> str:  # opencode: the last match wins
+        verdict = "deny"
+        for pattern, value in rules.items():
+            if fnmatch.fnmatchcase(command, pattern):
+                verdict = value
+        return verdict
+
+    no_grant = config.RepositoryGrant()
+    claude = adapters.claude_settings(context(tmp_path / "c", grant=no_grant))["permissions"]
+    allow, deny = patterns(claude["allow"]), patterns(claude["deny"])
+    o_ctx = context(tmp_path / "o", harness_id="opencode", grant=no_grant)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    assert claude["defaultMode"] == "dontAsk"
+
+    gap = "git -C . worktree add x"
+    assert not any(fnmatch.fnmatchcase(gap, pattern) for pattern in deny)  # the gap
+    assert not any(fnmatch.fnmatchcase(gap, pattern) for pattern in allow)  # refused anyway
+    assert [key for key in bash if fnmatch.fnmatchcase(gap, key)] == ["*"]  # the default alone
+    assert resolve(bash, gap) == "deny"
+
+    for command, allowed_by in (
+        ("git log --grep worktree --all", "git log *"),
+        ('git commit -m "runner: no git worktree in its clone"', "git commit *"),
+    ):
+        assert not any(fnmatch.fnmatchcase(command, pattern) for pattern in deny), command
+        assert allowed_by in allow and fnmatch.fnmatchcase(command, allowed_by)
+        assert resolve(bash, command) == "allow", command
 
 
 def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:
@@ -709,6 +848,110 @@ def test_the_agy_shared_tmp_parent_is_hidden_from_a_non_agy_sandbox(tmp_path: Pa
     assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
 
 
+def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidden(
+    tmp_path: Path,
+) -> None:
+    """tsk-0zb9mgzmbwn4: a Codex placement's own TMPDIR leaf under the hidden per-user `/tmp`
+    parent is opened again for it alone (`write` within `none`), and a sibling leaf stays
+    hidden. Claude Code's sandbox never opens such a leaf: live, it mounted one re-opened under
+    a denied parent read-only (Claude Code 2.1.329), so its leaf is only its CLAUDE_CODE_TMPDIR
+    (tsk-k7svzz2p4v7y). Paths only, nothing is made: short, as the runner's."""
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
+    own, sibling = parent / ("a" * 32), parent / ("b" * 32)
+
+    def codex_fs(base: Path, **extra: Any) -> dict[str, str]:  # a directory of its own per call
+        ctx = context(
+            base, harness_id="codex", binary="/usr/bin/codex",
+            clone=base / "ws" / "proj" / "agent-3", workspaces=base / "ws",
+            private=(base / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
+            placement={**PLACEMENT, "mode": "supervised"}, **extra,
+        )  # fmt: skip
+        fs: dict[str, str] = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"][
+            "filesystem"
+        ]
+        return fs
+
+    filesystem = codex_fs(tmp_path / "x")
+    assert filesystem[str(parent)] == "none" and filesystem[str(own)] == "write"
+    assert _effective_rule(filesystem, own / "tmp" / "pytest-1") == "write"
+    assert _effective_rule(filesystem, sibling / "tmp") == "none"
+    # Where the scratch's own `tmp` fits, that is the TMPDIR, and the leaf is not opened.
+    room = Path("/srv/ws/proj/.scratch/plc-0003")
+    assert adapters.scratch_tmpdir(room) is not None
+    assert str(own) not in codex_fs(tmp_path / "y", scratch=room)
+    # Claude Code: the parent stays denied, and no leaf is opened, even if one were given.
+    claude = adapters.claude_settings(
+        context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent, tmpdir=own / "tmp")
+    )["sandbox"]["filesystem"]
+    assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
+    assert "allowRead" not in claude and str(own) not in claude.get("allowWrite", [])
+
+
+def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_made(
+    tmp_path: Path,
+) -> None:
+    """tsk-0zb9mgzmbwn4: where the scratch's own `tmp` leaves no room for a socket, TMPDIR is
+    the placement's own short one; where the scratch's `tmp` fits, that one is kept."""
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    own = Path("/tmp/maity-scratch-1002") / ("a" * 32) / "tmp"  # noqa: S108 - a path only
+    launched = adapters.launch(context(tmp_path / "d", "stub", scratch=deep, tmpdir=own))
+    assert launched.env["TMPDIR"] == str(own) and launched.env["MAITY_SCRATCH"] == str(deep)
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    launched = adapters.launch(context(tmp_path / "r", "stub", scratch=room, tmpdir=own))
+    assert launched.env["TMPDIR"] == str(room / "tmp")
+
+
+def test_claude_codes_leaf_is_its_claude_code_tmpdir_never_its_tmpdir(tmp_path: Path) -> None:
+    """tsk-k7svzz2p4v7y, the live probes of 2026-11-21 (Claude Code 2.1.329): Claude Code's own
+    temp files and its sandbox socket follow CLAUDE_CODE_TMPDIR, which Claude Code writes outside
+    its sandbox, while its sandbox mounts a leaf re-opened under the denied parent read-only. So
+    with no room under the scratch, a Claude Code placement's leaf is its CLAUDE_CODE_TMPDIR, it
+    gets no TMPDIR, and its settings open nothing; Codex keeps the leaf as its TMPDIR."""
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
+    own = parent / ("a" * 32) / "tmp"
+    ctx = context(tmp_path / "d", sandbox=True, scratch=deep, tmpdir=own, tmp_scratch_parent=parent)
+    env = adapters.launch(ctx).env
+    assert env["CLAUDE_CODE_TMPDIR"] == str(own) and "TMPDIR" not in env
+    filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert str(parent) in filesystem["denyRead"] and str(parent) in filesystem["denyWrite"]
+    assert "allowRead" not in filesystem
+    assert not any(str(own.parent) in path for path in filesystem.get("allowWrite", []))
+    # Where the scratch's own `tmp` fits, it is the TMPDIR, and Claude Code's files follow it.
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    env = adapters.launch(context(tmp_path / "r", scratch=room, tmpdir=own)).env
+    assert env["TMPDIR"] == str(room / "tmp") and "CLAUDE_CODE_TMPDIR" not in env
+    # Without a leaf (an ssh host, or none could be made): neither.
+    env = adapters.launch(context(tmp_path / "n", scratch=deep)).env
+    assert "TMPDIR" not in env and "CLAUDE_CODE_TMPDIR" not in env
+    # Codex: the leaf is its TMPDIR, and it gets no CLAUDE_CODE_TMPDIR. Its launch writes its
+    # CODEX_HOME into the scratch, so that scratch is made, still with no room for a socket.
+    made = tmp_path / "c" / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    made.mkdir(parents=True)
+    assert adapters.scratch_tmpdir(made) is None
+    codex = context(
+        tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=made, tmpdir=own
+    )
+    env = adapters.launch(codex).env
+    assert env["TMPDIR"] == str(own) and "CLAUDE_CODE_TMPDIR" not in env
+
+
+def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
+    """The leaf the runner draws is 32 hex digits (`secrets.token_hex(16)`); with the largest
+    uid the path still leaves room for Claude Code's socket on Linux. On macOS, under the
+    resolved `/private/tmp`, a uid of up to four digits fits (macOS gives users 501 and up);
+    a longer one does not, and the runner then starts the session without one (`_tmpdir`)."""
+    linux = Path("/tmp") / f"maity-scratch-{2**32 - 1}" / ("f" * 32) / "tmp"  # noqa: S108
+    assert adapters.fits_socket(linux, adapters.socket_path_max("linux"))
+    mac = Path("/private/tmp") / "maity-scratch-9999" / ("f" * 32) / "tmp"
+    assert adapters.fits_socket(mac, adapters.socket_path_max("darwin"))
+    longer = Path("/private/tmp") / "maity-scratch-99999" / ("f" * 32) / "tmp"
+    assert not adapters.fits_socket(longer, adapters.socket_path_max("darwin"))
+    # Claude Code's sandbox socket under its CLAUDE_CODE_TMPDIR, `cc-socks/<pid>.sock` (live
+    # 2026-11-21), with the largest Linux pid, takes no more room than the name checked above.
+    assert len("cc-socks/4194304.sock") <= adapters.SOCKET_NAME_ROOM
+
+
 def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Path) -> None:
     """No workspaces root to carve (so no scratch): CODEX_HOME keeps today's location in the
     runner's directory rather than crashing. `maity runner check` reports that case."""
@@ -828,7 +1071,8 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
-    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED, *adapters.MAITY_RUNNER_DENIED)
+    denied = (*adapters.GIT_DENIED, *adapters.GIT_WORKTREE_DENIED, *adapters.GH_DENIED,
+              *adapters.MAITY_RUNNER_DENIED)  # fmt: skip
     maity = [f"maity *{char}*" for char in adapters.MAITY_NOT_PLAIN]
     # Denies last: the last match wins. `maity` only as one plain call, as for Claude Code.
     assert list(rules["bash"])[-len(maity) - len(denied) :] == [*denied, *maity]
@@ -1193,6 +1437,34 @@ def test_codex_gets_no_pull_requests_record_and_no_word_of_maity_gh(
     assert adapters.codex_left_out(config.RepositoryGrant(network=("pypi.org",))) == []
 
 
+LEAD = config.RepositoryGrant(pull_requests=True, lead=True)
+
+
+def test_the_lead_record_needs_lead_and_the_pull_request_record_and_is_cleared_without(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`lead = true` writes `lead` beside the pull-request record, in the runner's directory
+    for the agent; without it (or without pull_requests, or for Codex) the record is empty,
+    and a former launch's is overwritten. The role is not decided here: `maity gh` reads it
+    from the hub at each call."""
+    fake_gh(tmp_path, monkeypatch)
+    placed = {**PLACEMENT, "workspace": {"repository": REPOSITORY}}
+    ctx = context(tmp_path, sandbox=True, grant=LEAD, placement=placed)
+    (ctx.clone / ".git").mkdir(parents=True)
+    adapters.launch(ctx)
+    assert (ctx.agent_dir / "git" / ghpr.LEAD).read_text() == "lead\n"
+    assert not (ctx.clone / ".git" / "maity" / ghpr.LEAD).exists()
+    adapters.launch(dataclasses.replace(ctx, grant=PULLS))  # the grant taken back
+    assert (ctx.agent_dir / "git" / ghpr.LEAD).read_text() == ""
+    alone = config.RepositoryGrant(lead=True)
+    assert adapters.lead_record(context(tmp_path / "a", grant=alone, placement=placed)) == ""
+    codex = context(tmp_path / "c", "codex", grant=LEAD, placement=placed)
+    assert adapters.lead_record(codex) == ""
+    assert adapters.codex_left_out(LEAD)[-1] == (
+        "lead is not given to codex, for the same reason as pull_requests"
+    )
+
+
 def test_pull_requests_without_gh_on_the_path_record_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1285,6 +1557,68 @@ def test_the_agents_user_settings_count_only_for_managed_hooks_only() -> None:
 
 
 @pytest.mark.parametrize(
+    ("text", "why"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets"),
+     ('{"sandbox": {"network": {"allowAllUnixSockets": false}}}',
+      "sets sandbox.network.allowAllUnixSockets"),  # presence counts, whatever the value
+     ('{"sandbox": {"network": {"allowUnixSockets": []}}}',
+      "sets sandbox.network.allowUnixSockets"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+     ('{"sandbox": {"enabled": true, "network": {"allowedDomains": []}}, "permissions": {}}',
+      None),
+     ('{"sandbox": "x"}', None), ("{not json", "cannot be read as JSON"),
+     ("[]", "is not a JSON object")],
+)  # fmt: skip
+def test_the_agents_user_settings_may_carry_no_unix_socket_setting(
+    text: str, why: str | None
+) -> None:
+    """Each key of SOCKET_SETTINGS in the agents' user's settings is named, whatever its
+    value; a file that cannot be read as a JSON object counts as set, as for the hooks."""
+    from maity.runner import capabilities
+
+    assert capabilities.claude_socket_settings(AsUser(), "linux") is None  # no file
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text(text)
+    found = capabilities.claude_socket_settings(AsUser(), "linux")
+    assert (found is None) if why is None else (found is not None and why in found)
+    if found is not None:
+        assert str(user) in found
+
+
+@pytest.mark.parametrize(
+    ("text", "why"),
+    [('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+     ('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets"),
+     ('{"sandbox": {"network": {"allowUnixSockets": []}}}',
+      "sets sandbox.network.allowUnixSockets"),
+     ('{"permissions": {}}', None), ("{not json", "cannot be read as JSON"),
+     ("[]", "is not a JSON object")],
+)  # fmt: skip
+def test_managed_settings_may_carry_no_unix_socket_setting_either(
+    text: str, why: str | None
+) -> None:
+    """The managed settings win over the placement's file: a key there, or a file that cannot
+    be read as a JSON object, counts as the user's would; a drop-in counts like the file."""
+    from maity.runner import capabilities
+
+    managed = _managed(capabilities)
+    managed.write_text(text)
+    found = capabilities.claude_socket_settings(AsUser(), "linux")
+    assert (found is None) if why is None else (found is not None and why in found)
+    if found is not None:
+        assert str(managed) in found
+    managed.write_text('{"permissions": {}}')
+    drop_ins = managed.parent / "managed-settings.d"
+    drop_ins.mkdir()
+    (drop_ins / "20-net.json").write_text(text)
+    found = capabilities.claude_socket_settings(AsUser(), "linux")
+    assert (found is None) if why is None else (found is not None and "20-net.json" in found)
+
+
+@pytest.mark.parametrize(
     ("require", "on", "held", "refused"),
     [(None, True, False, False), (None, False, True, True), (None, False, False, False),
      (True, False, False, True), (True, True, False, False), (False, False, True, False)],
@@ -1360,9 +1694,158 @@ def test_the_socket_limit_is_pinned_per_platform_and_counted_in_bytes() -> None:
     assert adapters.scratch_tmpdir(wide) is None
 
 
+def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: Path) -> None:
+    """tsk-w7qtcbzcshn9: the scripts' defaults under `~/.local/state` no sandbox writes, so the
+    slots and the cluster go in the scratch, per placement; no path is opened beyond it."""
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    passfile = Path("/srv/ws/.maity-pg/plc-0003")
+    bare = adapters.launch(context(tmp_path / "b", "stub", scratch=room))
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room, pg_pass=passfile))
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    # The cluster and its password come from `pgenv`, outside the sandbox, never in the launch's
+    # env (tmux keeps that in its session environment) or the loop's spec (the review of #2032).
+    assert not {"MAITY_PG_DIR", "MAITY_PG_PASSWORD"} & set(launched.env)
+    pgenv = [*AsUser().runner_module("pgenv"), "/srv/ws", str(passfile), str(room / "pg"), "--"]
+    assert launched.argv == [*pgenv, *bare.argv]
+    # Without a password file the runner vouched for, no cluster: it would be made with trust.
+    assert bare.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert "MAITY_PG_DIR" not in bare.env and "maity.runner.pgenv" not in bare.argv
+    claude = context(tmp_path / "c", sandbox=True, scratch=room)
+    assert adapters.claude_settings(claude)["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
+    codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
+                    workspaces=Path("/srv/ws"))  # fmt: skip
+    written = [line for line in adapters.codex_config(codex).splitlines()
+               if line.endswith('= "write"')]  # fmt: skip
+    assert written == [f'"{tmp_path / "x" / "ws" / "maity" / "agent-3"}" = "write"',
+                       f'"{tmp_path / "x" / "ws" / "maity" / "agent-3" / ".git"}" = "write"',
+                       f'"{room}" = "write"']  # fmt: skip
+
+
+def test_an_ssh_hosts_session_gets_no_test_cluster(tmp_path: Path) -> None:
+    """pgenv is a module of the runner's own interpreter, never a `maity` subcommand (an agent's
+    `maity` runs outside its sandbox): a host whose interpreter the runner does not know gets
+    no cluster, and nothing is started through `maity runner`."""
+
+    class Elsewhere(AsUser):
+        @property
+        def here(self) -> bool:
+            return False
+
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    ctx = context(tmp_path / "r", "stub", scratch=room, as_user=Elsewhere(),
+                  pg_pass=Path("/srv/ws/.maity-pg/plc-0003"))  # fmt: skip
+    launched = adapters.pg_launch(ctx, adapters.Launch(["stub"], {}))
+    assert launched.argv == ["stub"]
+
+
+def test_a_claude_code_placement_gets_the_test_slots_but_no_cluster(tmp_path: Path) -> None:
+    """Claude Code's sandbox refuses socket(AF_UNIX) even in the placement's own scratch (a
+    probe on #2032), so with_postgres.sh's cluster cannot start there: no pgenv, even with a
+    password file, while the slots stay (tsk-zk2cse7s2rf7 brings the cluster over TCP)."""
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    passfile = Path("/srv/ws/.maity-pg/plc-0003")
+    assert adapters.pg_dir(room) is not None  # the socket would fit: only the harness decides
+    assert not adapters.gets_test_cluster("claude-code")
+    assert adapters.gets_test_cluster("codex") and adapters.gets_test_cluster("stub")
+    ctx = context(tmp_path / "c", scratch=room, pg_pass=passfile)
+    assert adapters.pg_launch(ctx, adapters.Launch(["claude"], {})).argv == ["claude"]
+    launched = adapters.launch(ctx)
+    assert launched.argv[0] == "/usr/bin/claude" and "maity.runner.pgenv" not in launched.argv
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert not {"MAITY_PG_DIR", "MAITY_PG_PASSWORD"} & set(launched.env)
+    # Codex is not probed yet and keeps the cluster.
+    codex = context(tmp_path / "x", "codex", scratch=room, pg_pass=passfile)
+    assert adapters.pg_launch(codex, adapters.Launch(["codex"], {})).argv[1:4] == [
+        "-I", "-m", "maity.runner.pgenv"]  # fmt: skip
+
+
+SKILL = Path("/home/op/.local/share/maity-runner/skills/keep-the-why/" + "a" * 40 + "/plugin")
+
+
+def test_a_claude_code_session_gets_the_skill_as_a_plugin_it_reads_and_never_writes(
+    tmp_path: Path,
+) -> None:
+    """tsk-172s8y208whg: the delivered Keep the Why skill for this session only (`--plugin-dir`),
+    its files readable through Read (the skill sends the agent to its references) and nowhere
+    writable: an Edit deny and the sandbox's denyWrite, whatever the clone's rules say."""
+    ctx = context(tmp_path, sandbox=True, skill=SKILL)
+    launched = adapters.launch(ctx)
+    assert f"--plugin-dir={SKILL}" in launched.argv
+    assert launched.argv.index(f"--plugin-dir={SKILL}") < len(launched.argv) - 1  # not the prompt
+    assert launched.env["MAITY_KTW_SKILL_DIR"] == str(SKILL / "skills" / "keep-the-why")
+    settings = adapters.claude_settings(ctx)
+    allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
+    assert f"Read(/{SKILL}/**)" in allow
+    assert not [r for r in allow if str(SKILL) in r and not r.startswith("Read(")]
+    assert f"Edit(/{SKILL}/**)" in deny
+    assert str(SKILL) in settings["sandbox"]["filesystem"]["denyWrite"]
+    assert str(SKILL) not in settings["sandbox"]["filesystem"].get("allowWrite", [])
+
+
+def test_without_a_delivered_skill_nothing_of_it_is_set(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    launched = adapters.launch(ctx)
+    assert not [a for a in launched.argv if a.startswith("--plugin-dir")]
+    assert "MAITY_KTW_SKILL_DIR" not in launched.env
+    settings = adapters.claude_settings(ctx)
+    assert not [r for r in settings["permissions"]["allow"] if "skills" in r]
+
+
+def test_every_harness_is_told_where_the_delivered_skill_lies(tmp_path: Path) -> None:
+    # Codex has no plugin flag the runner uses yet: the variable, which the resume block names.
+    codex = context(tmp_path, "codex", skill=SKILL)
+    expected = str(SKILL / "skills" / "keep-the-why")
+    assert adapters.skill_env(codex) == {"MAITY_KTW_SKILL_DIR": expected}
+    assert adapters.skill_env(context(tmp_path / "n", "codex")) == {}
+
+
+def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
+    """agy's scratch under `/tmp` is read-only to it but for `tmp` (the review of #2032), so a
+    slot directory or cluster there could not be written: it keeps the scripts' defaults."""
+    room = Path("/tmp/maity-scratch-1000/" + "a" * 32)  # noqa: S108 - a path, nothing written
+    folder = tmp_path / "g" / "ws"
+    ctx = context(tmp_path / "g", "antigravity", scratch=room,
+                  pg_pass=Path("/srv/ws/.maity-pg/plc-0003"))  # fmt: skip
+    launched = adapters.launch(dataclasses.replace(ctx, folder=folder))
+    assert launched.env["MAITY_SCRATCH"] == str(room)
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR"} & set(launched.env)
+    assert "maity.runner.pgenv" not in launched.argv
+
+
+def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> None:
+    # with_postgres.sh binds `<MAITY_PG_DIR>/.s.PGSQL.<port>`; past the Unix socket limit the
+    # server cannot start, so the session gets no MAITY_PG_DIR (the slots still go there).
+    room = adapters.SOCKET_PATH_MAX - adapters.PG_SOCKET_ROOM - 1 - len("/pg")
+    fits = Path("/" + "s" * (room - 1))
+    assert len(str(fits / "pg")) + 1 + adapters.PG_SOCKET_ROOM == adapters.SOCKET_PATH_MAX
+    assert adapters.pg_dir(fits) == fits / "pg"  # exactly at the limit fits
+    deep = Path(str(fits) + "s")
+    assert adapters.pg_dir(deep) is None
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep,
+                                      pg_pass=Path("/w/.maity-pg/plc-0003")))  # fmt: skip
+    assert "MAITY_PG_DIR" not in launched.env and "maity.runner.pgenv" not in launched.argv
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(deep / "slots")
+    assert adapters.pg_dir(None) is None and adapters.run_env(None) == {}
+
+
+def test_the_run_name_is_handle_and_instance(tmp_path: Path) -> None:
+    placement = {**PLACEMENT, "agent": {"id": "agt-b", "handle": "maity-coder-7"},
+                 "instance": "xpde"}  # fmt: skip
+    launched = adapters.launch(context(tmp_path / "s", "stub", placement=placement))
+    assert launched.env["MAITY_RUN_NAME"] == "maity-coder-7#xpde"
+    assert adapters.run_name({**placement, "instance": None}) == "maity-coder-7"  # before a join
+    for bad in ("a b", "a\tb", "#x", "", None, "x" * 65, "agent\n", "a\nb"):
+        assert adapters.run_name({**placement, "agent": {"handle": bad}}) is None
+        assert adapters.run_name({**placement, "instance": bad}) == "maity-coder-7"
+    assert adapters.run_name({"id": "plc-0003"}) is None
+    assert adapters.run_name({"agent": "maity-coder-7"}) is None
+
+
 def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
     ctx = context(tmp_path, sandbox=True)
     assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]
     assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
     launched = adapters.launch(context(tmp_path / "s", "stub"))
     assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSWORD",
+                "MAITY_RUN_NAME"} & set(launched.env)  # fmt: skip

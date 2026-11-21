@@ -302,7 +302,8 @@ def test_the_refusal_hint_names_a_restart_for_a_claude_worktree(placed: Path) ->
         with clonecheck.placement_git(placed):
             pass
     message = str(exc.value)
-    assert "restart" in message.lower() and ".claude/worktrees/" in message
+    assert "stop and start the placement" in message and ".claude/worktrees/" in message
+    assert "next start" in message and "uncommitted work" in message
     assert "--force" not in message and "worktree-clean" not in message  # no op, no force
 
 
@@ -313,7 +314,7 @@ def test_a_worktree_elsewhere_gets_no_restart_hint(placed: Path) -> None:
     with pytest.raises(clonecheck.Refused) as exc:
         with clonecheck.placement_git(placed):
             pass
-    assert "restart" not in str(exc.value).lower()
+    assert "stop and start" not in str(exc.value)
 
 
 def test_another_feature_beside_a_claude_worktree_gets_no_restart_hint(placed: Path) -> None:
@@ -327,7 +328,7 @@ def test_another_feature_beside_a_claude_worktree_gets_no_restart_hint(placed: P
             pass
     message = str(exc.value)
     assert "Submodules are" in message  # the refusal is for the submodule
-    assert "restart" not in message.lower()  # and names no false way out
+    assert "stop and start" not in message  # and names no false way out
 
 
 def test_a_blocked_scope_gets_no_restart_hint(placed: Path) -> None:
@@ -342,20 +343,34 @@ def test_a_blocked_scope_gets_no_restart_hint(placed: Path) -> None:
             pass
     message = str(exc.value)
     assert "Worktrees are" in message  # still the worktrees refusal
-    assert "restart" not in message.lower()  # but no misleading way out
+    assert "stop and start" not in message  # but no misleading way out
 
 
 # --- the supervisor's internal CLI surface (no agent-callable op) ------------------------------
 
 
+@pytest.mark.parametrize("value", ["", " ", "plc-0003", "plc-0003\n", "PLC-0003", "../plc-0003"])
 def test_worktree_prune_cli_is_refused_for_a_placed_agent(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str
 ) -> None:
     """`maity runner worktree-prune` is the runner's placement-start hygiene, not a placed
-    agent's to call: a placed session cannot redirect it at a path of its own."""
-    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
-    with pytest.raises(commands.Refused):
-        commands.cmd_worktree_prune(argparse.Namespace(repo="/some/clone"))
+    agent's to call: a placed session cannot redirect it at a path of its own. The refusal is
+    cli.main's gate (worktree-prune is not in IN_SESSION), for any value of MAITY_PLACEMENT,
+    empty included, before the handler runs."""
+    from maity import cli
+
+    assert "worktree-prune" not in commands.IN_SESSION
+    pruned: list[str] = []
+
+    def prune(repo: str) -> list[str]:
+        pruned.append(repo)
+        return []
+
+    monkeypatch.setattr(worktree, "prune_orphans", prune)
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, value)
+    assert cli.main(["runner", "worktree-prune", "--repo", "/some/clone"]) == cli.EXIT_REFUSED
+    assert "does not run for a placed agent" in capsys.readouterr().err
+    assert pruned == []
 
 
 def test_worktree_prune_cli_needs_a_repo(monkeypatch: pytest.MonkeyPatch) -> None:

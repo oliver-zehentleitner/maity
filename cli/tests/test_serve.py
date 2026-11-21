@@ -225,6 +225,17 @@ def test_status_file_after_hello(tmp_path: Path) -> None:
     assert status["placements"] == [{**PLACEMENT, "agent": None}]
 
 
+def test_the_status_file_leaves_out_a_placement_id_with_a_trailing_newline(
+    tmp_path: Path,
+) -> None:
+    hello = {"runner": RUNNER, "placements": [PLACEMENT, {**PLACEMENT, "id": "plc-0004\n"}],
+             "cursor": 5120}  # fmt: skip
+    svc, _, _ = service(tmp_path, Script(("POST /runner/hello", hello)))
+    run(svc)
+    status = state.load_state(tmp_path / "st", name=serve.STATUS_FILE)
+    assert [p["id"] for p in status["placements"]] == ["plc-0003"]
+
+
 # --- capabilities ----------------------------------------------------------------------------
 
 
