@@ -10,9 +10,11 @@
 // another one, or one in place of an instance (docs/api.md §3.1, §6.17).
 // A first join may name the agent member whose work the new one continues
 // and where the hand-over is written; neither moves anything (§3.1).
-// For a human with members:admin the form's last part starts the agent on
-// one of their runners instead of a line (§15.6, js/placements.js
-// `runnerPart`, tsk-hdczmsq2r431): one form for both ways, the profile first.
+// For a human with members:admin, and for a member bringing an agent of
+// their own that is not in the project yet (tsk-at3gnzqd8svy), the form's
+// last part starts the agent on one of their runners instead of a line
+// (§15.6, js/placements.js `runnerPart`, tsk-hdczmsq2r431): one form for
+// both ways, the profile first.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -47,6 +49,19 @@ window.Maity = window.Maity || {};
     "handover:not_found": () => M.t("join.failed.handover_not_found"),
     "handover:not_readable": () => M.t("join.failed.handover_not_readable"),
   };
+
+  // The hub's refusals of a member's own agent beyond "Bringing your own agent" (§3.1), for a join
+  // and for a placement that admits the agent (§15.6), in words, the field named; else null.
+  function memberRefusal(err) {
+    const d = err.details || {};
+    return d.reason === "project_not_allowed" ? { message: M.t("join.failed.project_not_allowed") }
+      : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
+        field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
+      : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
+      // No members:admin and the member's way closed (§3.1): say which right is missing.
+      : err.code === "forbidden" && !d.reason && d.scope === "members:admin" ? { message: M.t("join.failed.no_admin") }
+      : null;
+  }
 
   // Where a hand-over is written (§3.1, §5.2: {kind, id}), as a link: the
   // card, or the project's messages for a message, which have no page each.
@@ -110,11 +125,15 @@ window.Maity = window.Maity || {};
     // this project shares the short one (§6.3), as members are named here.
     const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
+    // A member bringing their own agent (hooks.member) who starts it on a runner: the placement
+    // admits only a profile of their own that is not in the project yet (§15.6), so only those are
+    // offered then, and no new profile (showAgent sets it as the runner part is turned on).
+    let admitting = false;
     const profileOptions = () => append(clear(agentSelect),
-      profiles.offered.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
+      profiles.offered.filter((p) => !admitting || !memberOf(p.id)).map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
         ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
         : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
-      h("option", { value: "" }, M.t("join.agent.new")));
+      admitting ? null : h("option", { value: "" }, M.t("join.agent.new")));
     profileOptions();
     const HANDLE = M.dom.NAME_RULES.handle;
     const handle = h("input", { id: "join-handle", placeholder: M.t("join.handle.placeholder"), pattern: HANDLE.pattern,
@@ -146,11 +165,16 @@ window.Maity = window.Maity || {};
       handleState,
       h("label", { for: "join-display" }, M.t("join.display.label")), display);
     if (!profiles.offered.length) newFields.hidden = false;
+    const own = !!hooks.member;
     // Or on a runner instead of a join line (§15.6, js/placements.js `runnerPart`,
-    // tsk-hdczmsq2r431): the part at the form's end, for a human with members:admin only.
-    const viaRunner = !hooks.member && M.placements ? M.placements.runnerPart(ctx, { changed: () => showAgent() }) : null;
+    // tsk-hdczmsq2r431): the part at the form's end, for a human with members:admin, and for a
+    // member bringing their own agent one of theirs not in the project yet (tsk-at3gnzqd8svy).
+    const viaRunner = M.placements ? M.placements.runnerPart(ctx, { changed: () => showAgent(), member: own }) : null;
+    // The handle a start's clone defaults to: the chosen profile's, or the new one's typed.
     const followRunner = () => {
-      if (viaRunner) viaRunner.follow(agentSelect.value, agentSelect.value ? memberOf(agentSelect.value) : null, handle.value.trim());
+      if (!viaRunner) return;
+      const p = agentSelect.value ? profiles.offered.find((x) => x.id === agentSelect.value) : null;
+      viaRunner.follow(agentSelect.value, agentSelect.value ? memberOf(agentSelect.value) : null, p ? p.handle : handle.value.trim());
     };
     handle.addEventListener("input", followRunner);
 
@@ -195,6 +219,14 @@ window.Maity = window.Maity || {};
     // knows no instance choice, take-over, hand-over, subagents or validity (§15.6), and never
     // changes a membership, so nothing typed there is dropped unseen.
     function showAgent() {
+      const admits = own && !!viaRunner && viaRunner.on();
+      if (admits !== admitting) {
+        admitting = admits;
+        const kept = agentSelect.value;
+        profileOptions();
+        const values = Array.from(agentSelect.querySelectorAll("option")).map((o) => o.getAttribute("value"));
+        agentSelect.value = values.includes(kept) ? kept : values.length ? values[0] : "";
+      }
       showJoinFields();
       if (!viaRunner) return;
       followRunner();
@@ -207,7 +239,7 @@ window.Maity = window.Maity || {};
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
       const fresh = (m ? m.id : "") !== shownFor;
       shownFor = m ? m.id : "";
-      newFields.hidden = agentSelect.value !== "";
+      newFields.hidden = agentSelect.value !== "" || admitting;
       // Hidden, the new profile's fields are off too: a handle typed for one and refused by its
       // pattern no longer blocks the form once an agent is chosen (review of #1558, #1919).
       handle.disabled = display.disabled = newFields.hidden;
@@ -240,7 +272,6 @@ window.Maity = window.Maity || {};
       try { M.withMembers(ctx, (await M.api.getAll(ctx.base + "/members")).items); } catch (ignored) { /* the refusal shown says enough */ }
     }
 
-    const own = !!hooks.member;
     // An agent never holds trust owner; admin and the role proxy only from an
     // owner, proxy only with trust admin (§3.1, owner_only §2.3).
     const trusts = own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
@@ -248,9 +279,9 @@ window.Maity = window.Maity || {};
     trust.value = "member";
     const role = h("select", { id: "join-role" });
     // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
-    // a base a member join may give (not ops), as the hub's member limits check it. A new profile
-    // started on a runner takes this role too: the part is offered with members:admin only, where
-    // every base is offered, as validate_assignment takes it for a placement (§15.6).
+    // a base a member join may give (not ops), as the hub's member limits check it. A start on a
+    // runner takes this role too: with members:admin every base, as validate_assignment takes it
+    // for a placement, and a member's own profile admitted the member join's bases (§15.6).
     const takeOwn = (list) => (own ? list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base)) : list);
     let ownRoles = takeOwn(M.trust.projectRoles(ctx, (list) => { ownRoles = takeOwn(list); if (ownRoles.length) fillRoles(); }));
     const fillRoles = () => {
@@ -476,15 +507,20 @@ window.Maity = window.Maity || {};
       // A tool that starts only on a named model (opencode) is never sent without one.
       const unnamed = viaRunner.unnamed();
       if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return; }
-      const req = agent.id ? { agent: { id: agent.id } } : {
-        agent,
-        trust: trust.value,
-        role: role.value,
-        reports_to: reportsTo.value || null,
-        areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
-        capabilities: [],
-      };
-      if (!agent.id && text) req.briefing = text;
+      // A member's own profile not in the project yet (`admitting`): the placement admits it with
+      // the fields of their own first join, as the join would carry them (§15.6, §3.1): trust,
+      // role, oneself or one's own manager as the boss, the briefing; no areas or capabilities.
+      const admits = admitting && !!agent.id && !member;
+      const req = admits ? { agent: { id: agent.id }, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id }
+        : agent.id ? { agent: { id: agent.id } } : {
+          agent,
+          trust: trust.value,
+          role: role.value,
+          reports_to: reportsTo.value || null,
+          areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
+          capabilities: [],
+        };
+      if ((admits || !agent.id) && text) req.briefing = text;
       Object.assign(req, viaRunner.body());
       const mine = ++submission;
       status.busy(M.t("placements.new.busy"));
@@ -497,7 +533,9 @@ window.Maity = window.Maity || {};
         // submission's to touch (review of #1919).
         if (mine !== submission) return;
         create.disabled = false;
-        viaRunner.refuse(status, err);
+        const limit = own ? memberRefusal(err) : null;
+        if (limit) status.fail(M.t("placements.new.failed"), limit);
+        else viaRunner.refuse(status, err);
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
         if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
         return;
@@ -543,6 +581,12 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (create.disabled) return;
         let agent;
+        // Starting one's own agent on a runner with none of one's profiles left to admit: why.
+        if (admitting && !agentSelect.value) {
+          status.fail(M.t("placements.new.failed"), { message: viaRunner.blocked() });
+          agentSelect.focus();
+          return;
+        }
         if (agentSelect.value) {
           agent = { id: agentSelect.value };
         } else {
@@ -557,7 +601,9 @@ window.Maity = window.Maity || {};
         const member = agent.id ? memberOf(agent.id) : null;
         // At the member's limit (§3.1) only an instance of an agent already
         // in the project is made: that counts nothing.
-        if (!member && hooks.full && hooks.full()) {
+        // A start on a runner is left to the hub's member_agents_max: a profile that a placement
+        // admits already holds its slot there, which this count does not see (§3.1, §15.6).
+        if (!member && !(viaRunner && viaRunner.on()) && hooks.full && hooks.full()) {
           status.fail(M.t("join.failed"), { message: M.t("join.failed.full") });
           agentSelect.focus();
           return;
@@ -646,14 +692,7 @@ window.Maity = window.Maity || {};
           const takeover = ["takes_over", "handover"].find((f) => Object.hasOwn(TAKEOVER_REFUSALS, f + ":" + fields[f]));
           status.fail(M.t("join.failed"), why === "taken" ? { message: M.t("join.failed.taken", { handle: agent.handle }) }
             : takeover ? { message: TAKEOVER_REFUSALS[takeover + ":" + fields[takeover]]() }
-            // §3.1's limits for a member, in words, the field named.
-            : d.reason === "project_not_allowed" ? { message: M.t("join.failed.project_not_allowed") }
-            : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
-              field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
-            : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
-            // No members:admin and the member's way closed (§3.1): say which right is missing.
-            : err.code === "forbidden" && !d.reason && d.scope === "members:admin" ? { message: M.t("join.failed.no_admin") }
-            : err);
+            : memberRefusal(err) || err);
           sayBoss();
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (takeover || d.field === "takes_over") (takeover === "handover" ? handover : takesOver).focus();

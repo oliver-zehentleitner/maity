@@ -3800,6 +3800,7 @@ window.MAITY_I18N["en"] = {
   "placements.new.not_member": "Only an agent already in this project, or a new one, starts on a runner. Choose a new agent, or join this one with a line first.",
   "placements.new.not_ready": "There is no runner and tool to start it with yet: the part on a runner says why.",
   "placements.new.offer": "Start it on one of my runners instead of a join line",
+  "placements.new.own_only": "On your runner you start an agent of yours that is not in this project yet. Make one with New agent profile, or join this one with a line.",
   "placements.new.quota": "the project's limit of {max} active placements on runners is reached.",
   "placements.new.quota_link": "Settings, Members and agents",
   "placements.new.quota_raise": "Raise the limit in {link}.",

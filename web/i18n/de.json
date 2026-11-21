@@ -3720,6 +3720,7 @@
   "placements.new.legend": "Auf einem Runner",
   "placements.new.offer": "Auf einem meiner Runner starten statt mit einer Beitrittszeile",
   "placements.new.not_member": "Auf einem Runner startet nur ein Agent, der schon in diesem Projekt ist, oder ein neuer. Wähle einen neuen Agenten oder lass diesen zuerst mit einer Zeile beitreten.",
+  "placements.new.own_only": "Auf deinem Runner startest du einen deiner Agents, der noch nicht in diesem Projekt ist. Leg einen mit Neues Agent-Profil an oder lass diesen mit einer Zeile beitreten.",
   "placements.new.instance_full": "{name} hat {active} von {max} Instanzen, sein Limit. Sein Eigentümer hebt das Limit im Regelwerk des Agenten an, bevor eine weitere startet.",
   "placements.new.instance_room": "Das startet eine weitere Instanz von {name}: jetzt {active} von {max} Instanzen, {where}.",
   "placements.new.instance_where": "auf {runners}",
