@@ -3721,6 +3721,7 @@
   "placements.new.legend": "Auf einem Runner",
   "placements.new.offer": "Auf einem meiner Runner starten statt mit einer Beitrittszeile",
   "placements.new.own_only": "Auf deinem Runner startest du einen deiner Agents, der noch nicht in diesem Projekt ist. Leg einen mit Neues Agent-Profil an oder lass diesen mit einer Zeile beitreten.",
+  "placements.new.members_unread": "Die Mitglieder des Projekts konnten nicht erneut gelesen werden, um zu sehen, ob der Agent jetzt Mitglied ist; seine Beitrittsfelder bleiben, wie ausgefüllt: {reason}",
   "placements.new.instance_full": "{name} hat {active} von {max} Instanzen, sein Limit. Sein Eigentümer hebt das Limit im Regelwerk des Agenten an, bevor eine weitere startet.",
   "placements.new.instance_room": "Das startet eine weitere Instanz von {name}: jetzt {active} von {max} Instanzen, {where}.",
   "placements.new.instance_where": "auf {runners}",

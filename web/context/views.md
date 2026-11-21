@@ -7162,7 +7162,16 @@ takes, the same as for a new profile (trust, role, boss, areas, briefing), and t
 for the first join its pickup makes (`first_join_fields`, `owner_only` for trust admin). An agent
 already here is still sent by its id alone, since a placement never changes a membership
 (`not_with_agent_id`). When the hub answers `not_with_agent_id` for a profile the list on screen
-took for one not here yet, the members are read again and the next start sends its id alone. The
+took for one not here yet, the members are read again, the button held until then, and the next
+start sends its id alone only when that read shows the profile as a member. A read without it
+keeps the admission draft as filled in, and the refusal; a read that fails keeps both too and
+offers to read again. The hub's word alone is not taken (as a join line still takes `instance:
+required`, whose next line the hub refuses with `not_a_member` should the membership be gone): a
+membership gone before the next start would be admitted again from the id alone with the hub's
+first-join defaults (confirmed: `_admitted` in the hub's `routes/placements.py` takes the body's
+first-join fields, and their defaults where it names none), and the role, boss, areas and
+briefing shown here dropped unseen. The runner part counts no instances for a member that lists
+none (`instances: null`); the hub's `instance_quota` answers there. The
 agents offered are the caller's own profiles from `GET /agents` (§6.3), so another owner's agent,
 a member here the form knows from the member list, is never offered by id; the hub's `not_yours`
 stays the last word.

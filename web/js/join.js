@@ -111,11 +111,14 @@ window.Maity = window.Maity || {};
     let joins = joinsRead;
     // The project's members as last read (ctx.members, which Agents keeps
     // current after each save): an agent among them joins as an instance.
-    // Agents the hub said are members count as such even when the list on
-    // screen does not show them yet.
+    // For a join line, agents the hub said are members (instance: required) count as such even
+    // when the list on screen does not show them yet: the next line is an instance's, which the
+    // hub refuses (not_a_member) should the membership be gone, so nothing is made on that word.
+    // A start on a runner never takes it: its id alone would be admitted with the hub's
+    // defaults, so it is a member's only once the members read show it (`recheckMember`).
     const saidMember = new Set();
     const memberOf = (id) => ctx.members.find((m) => m.id === id)
-      || (saidMember.has(id) ? { id, instances: null, team: null } : null);
+      || (saidMember.has(id) && !(viaRunner && viaRunner.on()) ? { id, instances: null, team: null } : null);
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
       return p ? p.display_name : id;
@@ -535,19 +538,18 @@ window.Maity = window.Maity || {};
         // Closed meanwhile: close() freed the form, and a form opened since is not this
         // submission's to touch (review of #1919).
         if (mine !== submission) return;
-        create.disabled = false;
-        const limit = own ? memberRefusal(err) : null;
-        if (limit) status.fail(M.t("placements.new.failed"), limit);
-        else viaRunner.refuse(status, err);
+        const say = () => {
+          const limit = own ? memberRefusal(err) : null;
+          if (limit) status.fail(M.t("placements.new.failed"), limit);
+          else viaRunner.refuse(status, err);
+        };
+        say();
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
         if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
-        // Join fields for a profile the list on screen took for one not here yet: it is a member
-        // now, so the members are read again and the next start names it by its id alone.
-        if (admits && Object.values(fields).includes("not_with_agent_id")) {
-          saidMember.add(agent.id);
-          await rereadMembers();
-          if (mine === submission) showAgent();
-        }
+        // Join fields for a profile the list on screen took for one not here yet: the members
+        // are read again, the button held until then.
+        if (admits && Object.values(fields).includes("not_with_agent_id")) { await recheckMember(mine, say); return; }
+        create.disabled = false;
         return;
       }
       // Made even when the panel was closed meanwhile: the line says so all the same, and a form
@@ -575,6 +577,30 @@ window.Maity = window.Maity || {};
         showAgent();
         checkHandle();
       } catch (ignored) { /* the placement is made; the list catches up when read again */ }
+    }
+
+    // "Already a member" (not_with_agent_id) for a profile a start sent to be admitted: the
+    // members are read again, and only a list that shows it as a member makes the next start its
+    // id alone. A list without it keeps the admission draft as filled in, and the refusal; a read
+    // that fails keeps both too and offers to read again. On the hub's word alone, a membership
+    // gone before the next start would be admitted again with the hub's defaults, and the role,
+    // boss, areas and briefing shown here dropped unseen. The button is held until the read is
+    // done; a panel closed meanwhile (`submission` counted on) is not touched.
+    async function recheckMember(mine, say) {
+      let failed = null;
+      try { M.withMembers(ctx, (await M.api.getAll(ctx.base + "/members")).items); } catch (err) { failed = err; }
+      if (mine !== submission) return;
+      create.disabled = false;
+      showAgent();
+      say();
+      if (!failed) return;
+      const again = h("button", { type: "button", class: "join-members-again", onclick: () => {
+        if (again.disabled) return;
+        again.disabled = create.disabled = true;
+        recheckMember(submission, say);
+      } }, M.t("join.retry"));
+      append(status.el, " ", h("span", { class: "join-members-unread" },
+        M.t("placements.new.members_unread", { reason: failed.message || failed.code || M.t("join.an_error") })), " ", again);
     }
 
     // Held while a join is being created: one join per submission, by click or Ctrl+Enter.

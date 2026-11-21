@@ -2238,49 +2238,128 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       arSent.push(b);
       return arAnswer instanceof Error ? Promise.reject(arAnswer) : Promise.resolve(arAnswer);
     };
-    // The members read again after a refusal: another owner's agent among them, when asked.
+    // The members read again after a refusal: another owner's agent among them, when asked; the
+    // profile as a member (arS1: "member" with its instance and room for two, "bare" a view that
+    // lists no instances), or the read failing ("fail"); held until released when arHold is set.
     const arOther = { id: "agt-theirs", kind: "agent", handle: "their-agent", display_name: "Their Agent", owner_id: "hum-other", trust: "member",
       role: "coder", reports_to: null, areas: [], presence: "offline", instances: [] };
-    win.Maity.api.getAll = (p, ...rest) => (p === "/projects/maintainer/maity/members" && arTheirs
-      ? arAll(p, ...rest).then((r) => Object.assign({}, r, { items: r.items.concat([arOther]) })) : arAll(p, ...rest));
+    const arMember = (bare) => Object.assign({ id: "agt-s1", kind: "agent", handle: "shop-dev", display_name: "Shop Dev", owner_id: "hum-maintainer",
+      trust: "member", role: "reviewer", reports_to: "hum-maintainer", areas: ["web/", "docs/"], presence: "online" },
+    bare ? { team: null, instances: null } : { team: { max_instances: 2 },
+      instances: [{ id: "s1aa", label: "shop-dev#s1aa", presence: "online", last_seen_at: null, claims: 0, revoked_at: null }] });
+    let arS1 = "", arHold = false, arRelease = null;
+    // The admitting placement whose pickup made the profile a member: active, its credential and
+    // instance made, in the clone named after its handle (§15.6), which the hub's not_with_agent_id follows.
+    const arAdmitting = { id: "plc-ar0", agent: { id: "agt-s1", handle: "shop-dev", display_name: "Shop Dev" }, runner: { id: "rnr-0002", name: "home-laptop" },
+      workspace: { clone: "shop-dev" }, active: true, credential_id: "crd-s1", instance: "s1aa" };
+    win.Maity.api.getAll = (p, ...rest) => {
+      if (p === "/projects/maintainer/maity/placements?closed=true") {
+        return arAll(p, ...rest).then((r) => Object.assign({}, r, { items: r.items.concat([arAdmitting]) }));
+      }
+      if (p !== "/projects/maintainer/maity/members") return arAll(p, ...rest);
+      const read = () => (arS1 === "fail" ? Promise.reject(new win.Maity.api.ApiError("the hub is restarting", 503, p, "unavailable"))
+        : arAll(p, ...rest).then((r) => Object.assign({}, r, { items: r.items.concat(arTheirs ? [arOther] : [], arS1 ? [arMember(arS1 === "bare")] : []) })));
+      if (!arHold) return read();
+      arHold = false;
+      return new Promise((r) => { arRelease = r; }).then(read);
+    };
     const arAgents = () => byId("join-agent").querySelectorAll("option").map((o) => o.getAttribute("value"));
+    const arClone = () => byId("placement-new-clone").getAttribute("placeholder");
+    const arUndefined = () => text(srPanel()).includes("undefined");
+    const arAgain = () => srJoin().querySelector(".join-members-again");
+    const arDraft = () => [byId("join-trust").parentNode.hidden, byId("join-role").value, byId("join-reports").value, byId("join-areas").value, byId("join-briefing").value];
+    const arDrafted = JSON.stringify([false, "reviewer", "hum-maintainer", "web/, docs/", "Mind the form."]);
+    const arFill = () => {
+      byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
+      byId("join-trust").value = "member"; byId("join-trust").dispatch("change");
+      byId("join-role").value = "reviewer"; byId("join-role").dispatch("change");
+      byId("join-reports").value = "hum-maintainer"; byId("join-areas").value = "web/, docs/";
+      byId("join-briefing").value = "Mind the form.";
+    };
+    const arAdmission = JSON.stringify({ agent: { id: "agt-s1" }, trust: "member", role: "reviewer", reports_to: "hum-maintainer",
+      areas: ["web/", "docs/"], capabilities: [], briefing: "Mind the form.", runner: "rnr-0002", target: null, harness: "claude-code", mode: "interactive", model: null });
+    const arIdAlone = JSON.stringify({ agent: { id: "agt-s1" }, runner: "rnr-0002", target: null, harness: "claude-code", mode: "interactive", model: null });
+    const arMemberSaid = "Not placed on the runner: a placement never changes a membership (invalid) — trust: not_with_agent_id; role: not_with_agent_id";
+    const arIsMember = new win.Maity.api.ApiError("a placement never changes a membership", 400, "/projects/maintainer/maity/placements", "invalid",
+      { fields: { trust: "not_with_agent_id", role: "not_with_agent_id" } });
+    const arMade = { id: "plc-ar1", agent: { id: "agt-s1", handle: "shop-dev", display_name: "Shop Dev", avatar_url: null }, runner: { id: "rnr-0002", name: "home-laptop" } };
     await srOpen();
     byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
     const arShown = [!byId("join-trust").parentNode.hidden, !byId("join-role").parentNode.hidden, !byId("join-reports").parentNode.hidden,
       !byId("join-areas").parentNode.hidden, !byId("join-briefing").parentNode.hidden, srHidden(".join-instance"), srHidden(".join-subagents"), byId("join-ttl").parentNode.hidden];
     expect(arAgents().includes("agt-s1") && arAgents().includes("agt-a") && arAgents().includes("") && srPanel().querySelector(".join-runner-why").hidden
-      && arShown.every(Boolean) && text(srCreate()) === "Start on the runner",
+      && arShown.every(Boolean) && text(srCreate()) === "Start on the runner" && arClone() === "shop-dev-2" && !arUndefined(),
       "placements: an admin's own profile not in the project is offered with an admin's join fields, nothing said against it "
-      + JSON.stringify([arAgents(), arShown]));
-    byId("join-trust").value = "member"; byId("join-trust").dispatch("change");
-    byId("join-role").value = "reviewer"; byId("join-role").dispatch("change");
-    byId("join-reports").value = "hum-maintainer"; byId("join-areas").value = "web/, docs/";
-    byId("join-briefing").value = "Mind the form.";
+      + JSON.stringify([arAgents(), arShown, arClone()]));
+    arFill();
     // The hub's refusal (owner_only, not_yours …) is said at the form with its code and field.
     arAnswer = new win.Maity.api.ApiError("a placement names one of your own agents", 400, "/projects/maintainer/maity/placements", "invalid", { fields: { "agent.id": "not_yours" } });
     await srSubmit();
     const arRefused = srSaid();
-    expect(arSent.length === 1 && JSON.stringify(arSent[0]) === JSON.stringify({ agent: { id: "agt-s1" }, trust: "member", role: "reviewer", reports_to: "hum-maintainer",
-      areas: ["web/", "docs/"], capabilities: [], briefing: "Mind the form.", runner: "rnr-0002", target: null, harness: "claude-code", mode: "interactive", model: null })
+    expect(arSent.length === 1 && JSON.stringify(arSent[0]) === arAdmission
       && arRefused === "Not placed on the runner: a placement names one of your own agents (invalid) — agent.id: not_yours" && srForm(),
       "placements: an admin's own profile not in the project is sent by its id with an admin's join fields; the hub's refusal stays at the form "
       + JSON.stringify([arSent[0], arRefused]));
-    // A member by now (not_with_agent_id): the members are read again, and the next start names it
-    // by its id alone. Another owner's agent among the members read is never offered.
-    arTheirs = true;
-    arAnswer = new win.Maity.api.ApiError("a placement never changes a membership", 400, "/projects/maintainer/maity/placements", "invalid",
-      { fields: { trust: "not_with_agent_id", role: "not_with_agent_id" } });
-    await srSubmit();
+    // "Already a member" (not_with_agent_id) and a members read that does not show the profile
+    // (its membership gone again meanwhile): the admission draft stays as filled in, and the
+    // refusal; the next start sends the join fields again, not the id alone. The button is held
+    // while the members are read. Another owner's agent among the members read is never offered.
+    arTheirs = true; arHold = true; arRelease = null;
+    arAnswer = arIsMember;
+    srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const arHeld = [!!arRelease, srCreate().disabled];
+    if (arRelease) arRelease(); for (let k = 0; k < 8; k++) await tick();
     const arReports = byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value"));
-    expect(arAgents().includes("agt-s1") && !arAgents().includes("agt-theirs") && arReports.includes("agt-theirs") && byId("join-trust").parentNode.hidden,
-      "placements: another owner's agent the form knows is not offered by id; a profile the hub says is a member now is one "
-      + JSON.stringify([arAgents(), arReports]));
-    arTheirs = false;
-    arAnswer = { id: "plc-ar1", agent: { id: "agt-s1", handle: "shop-dev", display_name: "Shop Dev", avatar_url: null }, runner: { id: "rnr-0002", name: "home-laptop" } };
+    expect(arHeld[0] && arHeld[1] && !srCreate().disabled && arAgents().includes("agt-s1") && !arAgents().includes("agt-theirs") && arReports.includes("agt-theirs"),
+      "placements: the button is held while the members are read again; another owner's agent the form knows is not offered by id "
+      + JSON.stringify([arHeld, arAgents(), arReports]));
+    expect(JSON.stringify(arDraft()) === arDrafted && srSaid() === arMemberSaid && !arAgain() && !arUndefined() && arClone() === "shop-dev-2"
+      && srPanel().querySelector(".join-runner-why").hidden,
+      "placements: \"already a member\" with a members read that does not show the profile keeps the admission draft and the refusal "
+      + JSON.stringify([arDraft(), srSaid(), arClone()]));
     await srSubmit();
-    expect(arSent.length === 3 && JSON.stringify(arSent[2]) === JSON.stringify({ agent: { id: "agt-s1" }, runner: "rnr-0002", target: null, harness: "claude-code", mode: "interactive", model: null })
+    expect(arSent.length === 3 && JSON.stringify(arSent[2]) === arAdmission && JSON.stringify(arDraft()) === arDrafted,
+      "placements: the next start after a members read without the profile sends its join fields again, not the id alone " + JSON.stringify(arSent[2]));
+    // A members read that fails: the refusal and the draft stay, with a way to read the members
+    // again; read again with the profile listed (a member view without instances), the next start
+    // is its id alone. No instance count is guessed from a view that lists none.
+    arTheirs = false; arS1 = "fail";
+    await srSubmit();
+    const arFailed = srSaid();
+    expect(arSent.length === 4 && JSON.stringify(arSent[3]) === arAdmission && JSON.stringify(arDraft()) === arDrafted && !!arAgain() && !arAgain().disabled
+      && arFailed === arMemberSaid + " The project's members could not be read again to see whether the agent is a member now; its join fields stay as filled in: the hub is restarting Try again"
+      && !arUndefined() && arClone() === "shop-dev-2",
+      "placements: \"already a member\" with a members read that fails keeps the refusal and the draft and offers to read again " + JSON.stringify([arDraft(), arFailed]));
+    arS1 = "bare";
+    if (arAgain()) arAgain().click();
+    for (let k = 0; k < 8; k++) await tick();
+    expect(byId("join-trust").parentNode.hidden && srHidden(".join-briefing") && srSaid() === arMemberSaid && !arAgain()
+      && srPanel().querySelector(".join-runner-why").hidden && srPanel().querySelector(".join-runner-another").hidden && !arUndefined() && arClone() === "shop-dev-2",
+      "placements: read again, a members list that shows the profile makes it a member; a view without instances says no count and keeps the handle's clone "
+      + JSON.stringify([srSaid(), arClone(), text(srPanel().querySelector(".join-runner-why"))]));
+    arAnswer = arMade;
+    await srSubmit();
+    expect(arSent.length === 5 && JSON.stringify(arSent[4]) === arIdAlone && srPanel().hidden,
+      "placements: a member shown by the members read again is started by its id alone, and the panel closes " + JSON.stringify(arSent[4]));
+    // "Already a member" and a members read that shows the profile with its instance (the admitting
+    // placement's) and room for two: at once a member, the count and the clone said, no "undefined";
+    // the next start is its id alone, and made, the panel closes and says where it runs.
+    arS1 = "";
+    await srOpen();
+    arFill();
+    arAnswer = arIsMember; arS1 = "member";
+    await srSubmit();
+    const arRoom = text(srPanel().querySelector(".join-runner-another"));
+    expect(arSent.length === 6 && JSON.stringify(arSent[5]) === arAdmission && byId("join-trust").parentNode.hidden && srSaid() === arMemberSaid
+      && srPanel().querySelector(".join-runner-why").hidden && arRoom === "This starts another instance of Shop Dev: 1 of 2 instances now, on home-laptop."
+      && !arUndefined() && arClone() === "shop-dev-2",
+      "placements: \"already a member\" with a members read that shows the profile names it by its id alone, with its instance count and clone "
+      + JSON.stringify([srSaid(), arRoom, arClone()]));
+    arAnswer = arMade;
+    await srSubmit();
+    expect(arSent.length === 7 && JSON.stringify(arSent[6]) === arIdAlone
       && srPanel().hidden && text(srBox().querySelector(".join-slot")).includes("Shop Dev is placed on home-laptop."),
-      "placements: a member is started by its id alone; made, the panel closes and says where it runs " + JSON.stringify(arSent[2]));
+      "placements: a member is started by its id alone; made, the panel closes and says where it runs " + JSON.stringify(arSent[6]));
     win.Maity.api.post = arPost; win.Maity.api.getAll = arAll;
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
   }
