@@ -341,7 +341,7 @@ Nothing in a scratch counts as unsaved work. Once the hub reads the placement as
 
 Neither the sizes nor the removals go to the hub.
 
-**Known gap:** Claude Code placements that run as the same OS user share one temp directory (`/tmp/claude-<uid>`); one placement can list it and create files there, and may be able to change another's working files. Run placements of different owners as different OS users (`agent_user` layout) until tsk-k7svzz2p4v7y ships.
+**Known gap:** the commands of Claude Code placements that run as the same OS user share one temp directory (`/tmp/claude-<uid>`); one placement can list it and create files there, and may be able to change another's working files. This is still open (tsk-z5c3798r1ces). The `agent_user` layout does not keep them apart, since it runs every agent of one runner as the same account. Only distinct OS accounts separate placements here: separate runner targets, or runner instances that each run under their own OS user.
 
 ## Test slots and the test database in the scratch
 
