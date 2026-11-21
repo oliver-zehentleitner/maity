@@ -100,18 +100,29 @@ def clears_a_leftover(repo: str) -> bool:
     the same no-follow reads and scope rules as `prune_orphans`, so the hint is named only when a
     restart would actually return the clone to a plain state (and not when the scope is a link or
     the admin entry is one, where the prune clears nothing)."""
+    found = registrations(repo)
+    return found is not None and found[0] > 0
+
+
+def registrations(repo: str) -> tuple[int, int] | None:
+    """How many `.git/worktrees/<name>` registrations a placement-start prune would clear and
+    how many it would leave, read-only, by the same no-follow reads and scope rules as
+    `prune_orphans`; None where this system cannot open them that way. `maity runner check`
+    names a left one as needing a person: it keeps maity refusing git after the start."""
     root = Path(repo)
     if not supported():
-        return False
+        return None
     state, scope = _worktrees_scope(root)
     admin_fd = _descend(root, (".git", "worktrees"))
     try:
         if admin_fd is None:
-            return False
-        return any(
-            _removable(root, state, scope, _admin_working_tree(admin_fd, name))
-            for name in os.listdir(admin_fd)
-        )
+            return (0, 0)
+        names = os.listdir(admin_fd)
+        cleared = sum(
+            1 for name in names
+            if _removable(root, state, scope, _admin_working_tree(admin_fd, name))
+        )  # fmt: skip
+        return (cleared, len(names) - cleared)
     finally:
         if admin_fd is not None:
             os.close(admin_fd)

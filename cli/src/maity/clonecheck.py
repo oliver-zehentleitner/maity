@@ -610,9 +610,9 @@ def _refusal(root: Path, finding: Finding) -> str:
 
         if finding.item == "worktrees" and worktree.clears_a_leftover(str(root)):
             message += (
-                ". A worktree left under .claude/worktrees/ (a Claude Code subagent's) is cleared"
-                " when the placement next starts, returning the clone to a plain state; restart"
-                " the placement"
+                ". The runner clears a worktree under .claude/worktrees/ (a Claude Code"
+                " subagent's) at the placement's next start, uncommitted work in it included:"
+                " stop and start the placement to clear it"
             )
         return message
     if finding.setting:
