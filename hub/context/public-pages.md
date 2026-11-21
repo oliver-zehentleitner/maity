@@ -1263,3 +1263,38 @@ would put the old design back over the new one until the next pass.
   crawler and a reader without script never saw the design at all.
 - Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
   removal, that the running version did not make; taking the target off is what a missing page already means.
+
+## Whether a project has a page is one rule over rows; `served` judges the row it is given
+
+**Id:** 1def6e81-4be2-4e03-8bd7-4426d59407e5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e37ckp87r9cp (audit round 4: the rule written twice since #1986, five public lists asking it per project); the plan for it and the lead's approval, 2026-11-21; `public_projects._served_of`, `served`, `served_among`; `routes.projects._refuse_outside_roles`, `agent_owners.effective`
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-21
+**Revisit when:** no caller asks `served` of a project as it will be after a write, or the rule needs a column a list's rows do not carry
+
+Whether a project has a page now (its page on, not archived, under no moderation hold, its namespace owner an
+organisation that is not deleted and under no hold, or a human who is active, not deleted and not suspended) is
+written once, in `public_projects._served_of(conn, rows)`, which judges the rows it is given in at most four
+statements. `served(conn, project)` passes it that one row as it is; `served_among(conn, ids)` reads the stored
+rows first (page on, not archived, in SQL) and passes those. The public lists (`/explore`, an organisation's page,
+a person's and an agent's projects, the landing page's count of public projects) ask `served_among` once for all
+their projects and read the full names once (`namespace.full_names`), so they cost the same for 3 projects as for
+30 (`hub/tests/test_public_lists_cost.py`). One project costs what it did before: no statement with the page off
+or archived, one under a project hold, two for a human owner, three for an organisation.
+
+**Reason:** a `PATCH` of a project asks `served` of the project as it will be: `_refuse_outside_roles` passes
+`agent_owners.effective` a row whose `public_page` is the one in the request, not yet written. A `PATCH` that
+turns the page on and narrows `outside_roles` in the same call must be judged under `anyone`, so the narrower
+list is refused while an outsider's agent at work holds a role it leaves out.
+
+**Rejected alternatives:**
+- `served(conn, project)` as `project.id in served_among(conn, [project.id])`, the card's first proposal: it
+  reads the stored page, so that `PATCH` would be judged by the page as it was and the narrower list would pass.
+  `test_a_patch_that_turns_the_page_on_checks_outside_roles_by_the_new_page` fails with it.
+- Keeping the rule written twice, once per row and once for a set: the two could drift apart without a test
+  noticing, which is what the card was opened for.
+
+**Consequence:** a list reads its candidates and `served_among` reads their rows again, one statement more per
+list, not per project: an organisation's page with a single public project costs one statement more than before.

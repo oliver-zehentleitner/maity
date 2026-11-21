@@ -29,15 +29,13 @@ def render_org(conn: Connection, hub: Settings, org_id: str) -> list[public_page
     org = conn.execute(select(t.org).where(t.org.c.id == org_id)).first()
     if org is None or not served(conn, org):
         return []
-    projects = sorted(
-        (namespace.full_name(conn, project), project.name)
-        for project in conn.execute(
-            select(t.project).where(
-                t.project.c.owner_org_id == org.id, t.project.c.public_page == "on"
-            )
-        )
-        if public_projects.served(conn, project)
-    )
+    p = t.project.c
+    candidates = conn.execute(
+        select(p.id, p.name).where(p.owner_org_id == org.id, p.public_page == "on")
+    ).all()
+    public = public_projects.served_among(conn, [row.id for row in candidates])
+    names = namespace.full_names(conn, public)
+    projects = sorted((names[row.id], row.name) for row in candidates if row.id in public)
     items = "".join(
         f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a></li>'
         for full, name in projects

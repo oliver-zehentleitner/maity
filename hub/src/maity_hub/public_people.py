@@ -168,17 +168,17 @@ def _listed(conn: Connection, human: Any) -> list[Listed]:
         .where(t.project.c.public_page == "on", m.human_id == human.id, m.active.is_(True))
         .order_by(t.project.c.id)
     ).all()
-    return (
-        sorted(
-            (
-                Listed(namespace.full_name(conn, p), p.name, p.member_role, p, p.membership_id)
-                for p in projects
-                if public_projects.served(conn, p)
-            ),
-            key=lambda listed: listed.full_name,
-        )
-        if human.public_profile
-        else []
+    if not human.public_profile:
+        return []
+    public = public_projects.served_among(conn, [p.id for p in projects])
+    names = namespace.full_names(conn, public)
+    return sorted(
+        (
+            Listed(names[p.id], p.name, p.member_role, p, p.membership_id)
+            for p in projects
+            if p.id in public
+        ),
+        key=lambda listed: listed.full_name,
     )
 
 

@@ -56,7 +56,8 @@ def memberships(conn: Connection, agent_id: str) -> list[tuple[Any, int]]:
         )
         .order_by(t.project.c.id)
     ).all()
-    return [(row, row.membership_id) for row in rows if public_projects.served(conn, row)]
+    public = public_projects.served_among(conn, [row.id for row in rows])
+    return [(row, row.membership_id) for row in rows if row.id in public]
 
 
 def served(conn: Connection, agent: Any, owner: Any) -> list[tuple[Any, int]] | None:
@@ -138,7 +139,8 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     found = served(conn, agent, owner)
     if found is None:
         return []
-    listed = sorted(((p, namespace.full_name(conn, p)) for p, _ in found), key=lambda pair: pair[1])
+    names = namespace.full_names(conn, [p.id for p, _ in found])
+    listed = sorted(((p, names[p.id]) for p, _ in found), key=lambda pair: pair[1])
     since = public_people.member_since(agent.created_at)
     up = online(conn, found)
     model, harness = latest_session(conn, found)
