@@ -196,6 +196,18 @@ def placed(
 
 
 @pytest.fixture(autouse=True)
+def _shared_tmp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test makes a per-user scratch parent, an agy scratch or a placement's TMPDIR leaf in
+    the host's real /tmp (workspace.TMP_SCRATCH_ROOT); a test that needs a short root sets its
+    own."""
+    from maity.runner import workspace
+
+    root = tmp_path / "shared-tmp-root"
+    root.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", root)
+
+
+@pytest.fixture(autouse=True)
 def _home_secret(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The environment secret of the home (§5.3) goes to the test's own directory, never to
     the real ~/.local/state/maity."""

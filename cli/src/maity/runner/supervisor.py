@@ -172,6 +172,9 @@ ACTUAL_FILE = "actual.json"
 # scratch again for removal on close and across a runner restart. Its own file, not the clone's,
 # which the agent can write.
 TMP_NAMES_FILE = "tmp_scratch.json"
+# placement id -> leaves under the per-user `/tmp` parent an earlier start could not remove,
+# retried at every start and at the close, so a failed removal orphans nothing (review A1769).
+TMP_STALE_FILE = "tmp_scratch_stale.json"
 APPROVED_FILE = "approved.json"
 LOGS = "logs"
 # The agent-side state the runner reads after a join (its member id): far below this.
@@ -406,6 +409,8 @@ class Supervisor:
     scratch_cleared: set[str] = field(default_factory=set)
     # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
+    # placement id -> earlier leaves not yet removed (TMP_STALE_FILE).
+    scratch_stale: dict[str, list[str]] = field(default_factory=dict)
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -464,6 +469,12 @@ class Supervisor:
             pid: leaf for pid, leaf in names.items()
             if isinstance(pid, str) and isinstance(leaf, str)
         }  # fmt: skip
+        stale = state.load_state(self.cfg.state_dir, name=TMP_STALE_FILE)
+        self.scratch_stale = {
+            pid: [leaf for leaf in leaves if isinstance(leaf, str)]
+            for pid, leaves in stale.items()
+            if isinstance(pid, str) and isinstance(leaves, list)
+        }  # fmt: skip
 
     def save(self) -> None:
         with self.lock:
@@ -480,6 +491,11 @@ class Supervisor:
         with self.scratch_names_lock:
             with self.lock:
                 names = dict(self.scratch_names)
+                stale = {pid: list(leaves) for pid, leaves in self.scratch_stale.items() if leaves}
+            # The stale record first: a leaf moved there from the names record must be on disk
+            # there before the names record forgets it, so a stop between the two writes loses
+            # no leaf (review A1769); it is then in both, and its second removal finds nothing.
+            state.save_state(self.cfg.state_dir, stale, name=TMP_STALE_FILE)
             state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
 
     # --- the loop --------------------------------------------------------------------------
@@ -574,6 +590,10 @@ class Supervisor:
                 if target.name not in seen or (target.remote and target.agent_files is None):
                     done = False  # its sessions are unknown: unknown means kept
                     continue
+                if not self._remove_tmpdir(p, target):
+                    done = False
+                if target.as_user.here and not self._remove_stale(p, target):
+                    done = False  # an earlier leaf still there: tried again next time
                 try:
                     located = self._scratch_location(p, target)
                     if located is None:
@@ -606,6 +626,36 @@ class Supervisor:
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
+
+    def _remove_tmpdir(self, p: dict[str, Any], target: Target) -> bool:
+        """Remove the leaf of a closed placement's own TMPDIR (`_tmpdir`) under the per-user
+        `/tmp` parent, when it had one: a placement whose scratch is beside its clone records
+        a leaf name only for that. agy's leaf is its scratch and goes with it
+        (`_scratch_location`). False when the removal should be tried again; a link or a
+        directory another user holds is logged and left, as for a scratch."""
+        if workspace.scratch_in_tmp(p.get("harness") or ""):
+            return True
+        with self.lock:
+            leaf = self.scratch_names.get(p["id"])
+        if leaf is None or not target.as_user.here:
+            return True
+        try:
+            path = workspace.tmp_scratch_of(target.as_user.uid(), leaf)
+            removed = scratch.tmp_remove(path, target.as_user)
+        except workspace.Refused:
+            return True
+        except scratchop.OnTheWay as exc:
+            self.log(f"{p['id']}: TMPDIR left on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return True
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: TMPDIR not removed on {target.name}: {exc}")
+            return False
+        if removed is not None:
+            scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
+            self.log(f"{p['id']}: TMPDIR removed on {target.name} ({removed} bytes): "
+                     "the placement is closed")  # fmt: skip
+        return True
 
     def _remove_pg_pass(self, p: dict[str, Any], target: Target) -> bool:
         """The closed placement's test cluster password file removed from the holder on
@@ -1520,6 +1570,11 @@ class Supervisor:
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
             self._make_tmp_parent(tmp_parent, target)
+        tmpdir = (
+            self._tmpdir(p, scratch, target)
+            if tmp_parent is not None and harness.id in workspace.OWN_TMPDIR_HARNESSES
+            else None
+        )
         return adapters.Context(
             placement=p,
             harness=harness,
@@ -1546,6 +1601,7 @@ class Supervisor:
             git=self.cfg.git,
             scratch=scratch,
             tmp_scratch_parent=tmp_parent,
+            tmpdir=tmpdir,
             pg_pass=pg_pass,
             skill=skill,
         )
@@ -1572,6 +1628,29 @@ class Supervisor:
         except (skills.Unavailable, OSError) as exc:
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None
+
+    def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
+        """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a
+        Unix socket (adapters.scratch_tmpdir), as under the default `~/maity-workspaces`:
+        `tmp` in a fresh leaf under the per-user `/tmp` parent this placement's sandbox hides
+        (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
+        this placement alone (adapters) and removed with it (`_clear_scratch`). Called only for
+        a placement that is given that parent and whose sandbox lets it write the re-opened
+        leaf (workspace.OWN_TMPDIR_HARNESSES: Codex, on this machine; Claude Code mounts it
+        read-only). None where the scratch's own `tmp` fits, where a leaf would not fit
+        either (a long uid on macOS), or where it cannot be made: the session then starts with
+        no TMPDIR, as before (tsk-0zb9mgzmbwn4)."""
+        if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
+            return None
+        try:
+            uid = target.as_user.uid()
+            longest = workspace.tmp_scratch_of(uid, "0" * 32) / "tmp"
+        except (OSError, workspace.Refused):
+            return None
+        if not adapters.fits_socket(longest):
+            return None
+        leaf = self._tmp_scratch(p, target, "TMPDIR")
+        return None if leaf is None else leaf / "tmp"
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
         """Create the per-user `/tmp` scratch parent (0700, owned by the agents' user) before a
@@ -1657,7 +1736,7 @@ class Supervisor:
             return None
         return leaf
 
-    def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
+    def _tmp_scratch(self, p: dict[str, Any], target: Target, what: str = "scratch") -> Path | None:
         """agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of),
         owned by the uid agy runs as: its sandbox makes the beside-clone `.scratch` read-only,
         so the scratch goes to the host-shared writable location instead. Any earlier leaf of
@@ -1670,22 +1749,31 @@ class Supervisor:
         The new name is recorded *before* the leaf is made, so a crash or an OnTheWay between
         the make and a later save can never orphan a leaf the runner cannot find again. The
         previous run's leaf is removed first, while it is still the recorded name; its name is
-        dropped from the record only once it is actually gone, and a removal failure is logged
-        rather than silently dropping the name (the new name then overwrites it, logged)."""
+        dropped from the record only once it is actually gone. A leaf that cannot be removed is
+        kept on record (`scratch_stale`) and tried again at every start and at the close, so a
+        failed removal orphans nothing (review A1769). `what` names the leaf in the log: the
+        agy scratch, or a placement's own TMPDIR (`_tmpdir`)."""
         try:
             uid = target.as_user.uid()
         except OSError as exc:
-            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            self.log(f"{p['id']}: no {what} on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
+        self._remove_stale(p, target, uid)
         with self.lock:
             old = self.scratch_names.get(p["id"])
-        if old is not None:  # a prior run's leaf: the agy scratch is made fresh each start
+        if old is not None:  # a prior run's leaf: the leaf is made fresh each start
             try:
                 scratch.tmp_remove(workspace.tmp_scratch_of(uid, old), target.as_user)
-            except (scratchop.OnTheWay, OSError, subprocess.SubprocessError,
-                    workspace.Refused) as exc:  # fmt: skip
-                self.log(f"{p['id']}: previous scratch leaf not removed on {target.name}: "
+            except (OSError, subprocess.SubprocessError) as exc:  # OnTheWay included
+                self.log(f"{p['id']}: previous {what} leaf not removed on {target.name}: "
                          f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+                if not isinstance(exc, scratchop.OnTheWay):  # a link or a foreign one: left
+                    with self.lock:  # kept on record, tried again at the next start or close
+                        kept = self.scratch_stale.setdefault(p["id"], [])
+                        if old not in kept:
+                            kept.append(old)
+            except workspace.Refused:
+                pass  # not a leaf name the runner makes: nothing to remove
             else:  # gone: drop its recorded name before the new one takes its place
                 with self.lock:
                     if self.scratch_names.get(p["id"]) == old:
@@ -1703,9 +1791,43 @@ class Supervisor:
             scratch.tmp_make(path, target.as_user)
         except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
             # The name stays recorded; the next start removes or replaces it, so it is not orphaned.
-            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            self.log(f"{p['id']}: no {what} on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
         return path
+
+    def _remove_stale(self, p: dict[str, Any], target: Target, uid: int | None = None) -> bool:
+        """Try again to remove every leaf of this placement that an earlier start could not
+        (`scratch_stale`); True when none is left. A link or a directory another user holds
+        is logged and dropped, as a scratch's would be; any other failure keeps the leaf on
+        record for the next try."""
+        with self.lock:
+            stale = list(self.scratch_stale.get(p["id"], ()))
+        if not stale:
+            return True
+        if uid is None:
+            try:
+                uid = target.as_user.uid()
+            except OSError:
+                return False
+        left: list[str] = []
+        for leaf in stale:
+            try:
+                scratch.tmp_remove(workspace.tmp_scratch_of(uid, leaf), target.as_user)
+            except workspace.Refused:
+                continue  # not a leaf name the runner makes: nothing to remove
+            except scratchop.OnTheWay as exc:
+                self.log(f"{p['id']}: earlier leaf left on {target.name}: "
+                         f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            except (OSError, subprocess.SubprocessError) as exc:
+                self.log(f"{p['id']}: earlier leaf not removed on {target.name}: {exc}")
+                left.append(leaf)
+        with self.lock:
+            if left:
+                self.scratch_stale[p["id"]] = left
+            else:
+                self.scratch_stale.pop(p["id"], None)
+        self._save_scratch_names()
+        return not left
 
     def _scratch_location(self, p: dict[str, Any], target: Target) -> tuple[Path, bool] | None:
         """Where a placement's scratch is on `target` and whether it is the `/tmp` one (agy):
