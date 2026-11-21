@@ -683,7 +683,10 @@ def test_loop_exits_map_to_reasons(code: int, expected: tuple[Any, ...]) -> None
     rec = supervisor.Record(generation=1, state="running", started_at=0.0)
     cfg: Any = type("Cfg", (), {"limits": config.Limits(projects=(), repositories=())})()
     sup: Any = type("Sup", (), {"cfg": cfg, "rand": staticmethod(lambda: 0.5),
-                                "log": staticmethod(lambda line: None)})()  # fmt: skip
+                                "log": staticmethod(lambda line: None),
+                                # the runner's notes (tsk-bzmd0avm4yhb): none for this record
+                                "_pid_of": staticmethod(lambda rec: None),
+                                "note": staticmethod(lambda *a, **k: None)})()  # fmt: skip
     sup.backend = type("B", (), {"kill": staticmethod(lambda name: None)})()
     session: Any = type("S", (), {"name": "maity_p_c", "exit_status": code})()
     supervisor.Supervisor._exited(sup, rec, session, 100.0, sup.backend)
