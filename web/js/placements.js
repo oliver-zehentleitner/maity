@@ -568,6 +568,8 @@ window.Maity = window.Maity || {};
       current = placements;
       fields = build(runners);
       fields.runner.addEventListener("change", () => follow(chosen.id, chosen.member, chosen.handle));
+      // The clone decides whether a start takes up a credential (carriesCredential): both lines again.
+      fields.clone.addEventListener("input", () => follow(chosen.id, chosen.member, chosen.handle));
       say(fields.set);
       follow(chosen.id, chosen.member, chosen.handle);
       hooks.changed();
@@ -595,13 +597,32 @@ window.Maity = window.Maity || {};
       // its instance id among the live ones.
       const byCredential = liveInstances.some((i) => i.credential_id);
       const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
-      const holdsLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : !p.instance || liveIds.has(p.instance));
+      // Without credentials named, its instance id among the live ones; with no live instance at
+      // all, no placement holds one (review A1815 of #2058).
+      const holdsLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : liveIds.size > 0 && (!p.instance || liveIds.has(p.instance)));
       const mine = current.filter((p) => p.active && p.agent && p.agent.id === member.id);
       const waiting = mine.filter((p) => !p.credential_id || !holdsLive(p)).length;
       const live = liveIds.size;
       const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
       const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
-      return { count: live + waiting, max, where };
+      // Its credential is live when a live instance names it, else when the instance it made is.
+      const isLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : !!p.instance && liveIds.has(p.instance));
+      const carried = carriesCredential(member, isLive);
+      return { count: live + waiting, max, where, carried, adding: carried ? 0 : 1 };
+    }
+    // Whether a start of `member` on the chosen runner and clone takes up a credential, as the
+    // hub does (`carried_credential`, §15.5 "Carried-over credential"): the latest closed
+    // placement of that (member, runner, clone) holds a credential that is live and that no
+    // active placement runs. Such a start is an instance already and adds none, so it passes at
+    // the limit: removing a placement and placing the agent there again (review A1815 of #2058).
+    function carriesCredential(member, isLive) {
+      if (!fields) return false;
+      const clone = fields.clone.value.trim() || cloneFor(member.handle);
+      const latest = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
+        && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone)
+        .sort((a, b) => Date.parse(b.closed_at || 0) - Date.parse(a.closed_at || 0))[0];
+      const id = latest && latest.credential_id;
+      return !!id && isLive(latest) && !current.some((p) => p.active && p.credential_id === id);
     }
     // §15.6: an agent by id is an active member of the project, and has room under its instance
     // limit for one more (§15.5: one placement per instance, several per membership).
@@ -609,15 +630,16 @@ window.Maity = window.Maity || {};
       if (!chosen.id) return null;
       if (!chosen.member) return M.t("placements.new.not_member");
       const n = instancesOf(chosen.member);
-      if (n.count >= n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
+      if (n.count + n.adding > n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
       return null;
     }
-    // An agent that runs already, with room: what the start adds and where the others run.
+    // An agent that runs already, with room: what the start adds and where the others run. A
+    // start that takes up a credential adds no instance, so nothing is said.
     function anotherText() {
       // Not before the placements are read: where the others run is not known until then.
       if (!fields || !chosen.member || blocked()) return null;
       const n = instancesOf(chosen.member);
-      if (!n.count) return null;
+      if (!n.count || n.carried) return null;
       const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
       return M.t("placements.new.instance_room", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max), where });
     }

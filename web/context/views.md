@@ -7061,7 +7061,11 @@ here (§15.6) with room under its `max_instances` (§15.5, one placement per ins
 agent, as the hub has taken since tsk-rfa7fwa2sz5g): the part counts its live instances and its
 active placements holding no live credential as the hub does, says for an agent that runs already
 that the start adds another instance and where the others run, and at the limit says that the
-agent's owner raises it first (tsk-yfpwawy3xk3a); otherwise nothing is sent.
+agent's owner raises it first (tsk-yfpwawy3xk3a); otherwise nothing is sent. A start on a runner
+and clone whose latest closed placement of that agent left a live credential that no active
+placement runs takes it up, as the hub does (§15.5 "Carried-over credential"): it adds no
+instance, so it passes at the limit and the part says nothing more. Placing an agent again where
+its removed placement ran thus works as before the limit was checked (review A1815 of #2058).
 A new profile sends its join fields. The part reads the runners and placements each time it is
 ticked and each time the panel opens. A runner that answers after it was unticked draws nothing.
 

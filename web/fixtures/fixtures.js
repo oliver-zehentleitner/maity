@@ -3820,6 +3820,7 @@ window.MAITY_FIXTURES = {
         "generation": 4,
         "harness": "claude-code",
         "id": "plc-0001",
+        "instance": "wle2",
         "logs_hint": "maity runner logs plc-0001",
         "mode": "interactive",
         "model": "opus",
