@@ -1,7 +1,7 @@
 name: ci
 
 # The changelog fragments; the dashboard's checks and smoke test; the hub's
-# checks: lint, types and tests on SQLite; the test suite against PostgreSQL
+# checks: lint, types and tests on SQLite (three shards); the test suite against PostgreSQL
 # and MariaDB; the built wheel on Python 3.13; the sdist and wheel as PyPI gets
 # them (hub-dist); the image; the Helm chart.
 # Every hub job installs the locked set from hub/requirements/, and hub-lock
@@ -270,7 +270,19 @@ jobs:
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' sqlite ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    # Each shard has the limit on its own.
     timeout-minutes: 90
+    # Three shards side by side by test file (MAITY_TEST_SHARD, hub/tests/conftest.py), as hub-postgresql: the whole
+    # suite in one job took 54 to 82 minutes of the 90 (tsk-v76hkc0fcse7). ci-ok's `needs` takes the result over all
+    # three. On the maintainer's runner (one per job type) the shards run one after another (context/process.md).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      MAITY_TEST_SHARD: ${{ matrix.shard }}/3
+      # --durations=50: the 50 slowest test phases at the end of the log, the data for the next slow run.
+      PYTEST_ADDOPTS: --durations=50
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -281,7 +293,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: make install
-      - run: make check
+      # Lint and types (`make check` without its tests) do not depend on the shard: once, in the first.
+      - if: matrix.shard == 1
+        run: make lint typecheck
+      - run: make test
       - if: always()
         run: du -sh /tmp/pytest-of-* || true
 
@@ -315,7 +330,7 @@ jobs:
   # What ships: the wheel, installed non-editable, so a file missing from it
   # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer". Only the
   # tests marked `wheel` run: the package data, the entry point and the migrations
-  # the wheel carries. The whole suite runs in hub-sqlite on the checkout.
+  # the wheel carries. The whole suite runs in hub-sqlite's three shards on the checkout.
   hub-wheel:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
