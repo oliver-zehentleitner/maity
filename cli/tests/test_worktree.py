@@ -302,7 +302,8 @@ def test_the_refusal_hint_names_a_restart_for_a_claude_worktree(placed: Path) ->
         with clonecheck.placement_git(placed):
             pass
     message = str(exc.value)
-    assert "restart" in message.lower() and ".claude/worktrees/" in message
+    assert "stop and start the placement" in message and ".claude/worktrees/" in message
+    assert "next start" in message and "uncommitted work" in message
     assert "--force" not in message and "worktree-clean" not in message  # no op, no force
 
 
@@ -313,7 +314,7 @@ def test_a_worktree_elsewhere_gets_no_restart_hint(placed: Path) -> None:
     with pytest.raises(clonecheck.Refused) as exc:
         with clonecheck.placement_git(placed):
             pass
-    assert "restart" not in str(exc.value).lower()
+    assert "stop and start" not in str(exc.value)
 
 
 def test_another_feature_beside_a_claude_worktree_gets_no_restart_hint(placed: Path) -> None:
@@ -327,7 +328,7 @@ def test_another_feature_beside_a_claude_worktree_gets_no_restart_hint(placed: P
             pass
     message = str(exc.value)
     assert "Submodules are" in message  # the refusal is for the submodule
-    assert "restart" not in message.lower()  # and names no false way out
+    assert "stop and start" not in message  # and names no false way out
 
 
 def test_a_blocked_scope_gets_no_restart_hint(placed: Path) -> None:
@@ -342,7 +343,7 @@ def test_a_blocked_scope_gets_no_restart_hint(placed: Path) -> None:
             pass
     message = str(exc.value)
     assert "Worktrees are" in message  # still the worktrees refusal
-    assert "restart" not in message.lower()  # but no misleading way out
+    assert "stop and start" not in message  # but no misleading way out
 
 
 # --- the supervisor's internal CLI surface (no agent-callable op) ------------------------------

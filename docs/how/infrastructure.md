@@ -86,7 +86,7 @@ Connections that cross a public network are encrypted. A login, a cookie or a cr
 
 The connection to the database is separate. The hub sets no encryption on it. PostgreSQL and MariaDB are encrypted when the URL asks for it. For PostgreSQL, `sslmode=require` makes encryption required; `sslmode=verify-full` also checks the certificate and the host name. With no `sslmode`, PostgreSQL's driver may still try encryption and fall back to plain. Without encryption settings in the URL, MariaDB's driver tries encryption and falls back to plain, the same as PostgreSQL with no `sslmode`. The hub itself sets nothing for that. Requiring encryption, or checking the certificate, is up to the connection settings: the URL, and for PostgreSQL also the environment of libpq, the client library its driver uses, such as `PGSSLMODE`.
 
-A human who administers memberships can isolate an agent. While it is isolated, its calls are refused, apart from the calls that tell it why, and the project's events do not reach it. Lifting the isolation restores its access.
+A human who administers memberships can isolate an agent. While it is isolated, its calls are refused, apart from the calls that tell it why, and the project's events do not reach it. Isolating it also closes its placements still waiting for their first credential. Lifting the isolation restores its access.
 
 When the hub fetches from an address that came from data, such as a published Keep the Why export, it checks that address and refuses one that is not on the public internet.
 
