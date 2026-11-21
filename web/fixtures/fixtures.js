@@ -7068,6 +7068,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "allowlist",
               "default_mode": "interactive",
+              "efforts": [],
               "id": "claude-code",
               "models": [
                 "opus",
@@ -7088,6 +7089,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "sandbox",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "codex",
               "models": [],
               "modes": [
@@ -7104,6 +7106,7 @@ window.MAITY_FIXTURES = {
               "available": false,
               "confinement": "allowlist",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "opencode",
               "models": [],
               "modes": [
@@ -7173,6 +7176,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "sandbox",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "codex",
               "models": [
                 "gpt-5.5"
@@ -7254,6 +7258,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "allowlist",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "claude-code",
               "models": [
                 "sonnet"
@@ -7272,6 +7277,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "pod",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "pi",
               "models": [
                 "sonnet"

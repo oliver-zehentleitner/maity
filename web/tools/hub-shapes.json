@@ -10,6 +10,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -1444,6 +1447,9 @@
            "available": "boolean",
            "confinement": "string",
            "default_mode": "string",
+           "efforts": {
+            "array": null
+           },
            "id": "string",
            "models": {
             "array": "string"
@@ -1530,6 +1536,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
