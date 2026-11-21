@@ -618,10 +618,11 @@ default.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; the arbiter's ruling that an orderer the gate would hold is left out entirely, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
 **Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
 **See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
 **See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
+**See:** messages.md#a-boss-of-another-owner-is-left-out-in-review_delivery-before-the-gate-not-held — 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d — as of 2026-11-21
 
 A `review_result` may carry `in_reply_to`, the `seq` of the message it
 answers. The hub adds that message's author, the orderer: the instance
@@ -667,7 +668,11 @@ exemption from the §9.6 gate needs the answered message to have been
 addressed to the sender itself (its `to` names the sender's member or
 instance, or it mentions them); after an order that reached the sender
 only through `all`, a role or a trust token, the orderer is added only
-where the gate lets the sender reach it. Whether the orderer is added depends on state another writer
+where the gate lets the sender reach it. The arbiter confirmed, on
+2026-11-21, that such an orderer the gate would hold is left out
+entirely, as a boss of another owner is (1c3c5331): not added, no held
+entry and no consent request; the author and the leads still receive
+the result. Whether the orderer is added depends on state another writer
 changes under the project's lock (the restricted-access setting, a card's
 restriction, a member's state), so the hub takes that lock before it
 validates `in_reply_to` and resolves the orderer, and reads the project
@@ -687,6 +692,9 @@ another field on another resource; §8.4 says so in one line.
 - Adding the orderer unconditionally, as the request first proposed: the
   sender's read of the order says nothing of whether the orderer may read
   the result (the arbiter's change).
+- Adding an orderer without the exemption as held, with a consent request
+  to its owner ("held as usual"): a review result to someone whose order
+  only went to all should not create consent noise (the arbiter's ruling).
 
 ## An addressed `update` or `review_result` passes the owner's gate beyond the card's own flow
 
