@@ -21014,15 +21014,17 @@ A placement as the runner reads it:
     placement names (`credential_id`, §15.5) started, open or ended;
     `null` when the placement names no credential yet or the credential
     has had no session.
-  - `not_listening_since`: that session's `not_listening_since` (§5.3):
-    the start of the episode that runs now, while the session is open;
-    `null` otherwise. §5.3's exclusions hold, so it is always `null` for
-    a paused instance or membership, an agent that is not `available`,
-    and a supervised session an active placement names.
-  - `paused`: `true` while the credential's instance or the membership
-    is under any pause (§5.3, §6.17), whoever set it; else `false`.
-  - `dormant`: `true` while the credential's instance is dormant
-    (§6.17); else `false`.
+  - `not_listening_since`: that session's `not_listening_since` (§5.3)
+    in the placement's project: the start of the episode that runs now,
+    while the session is open; `null` otherwise. §5.3's exclusions hold,
+    so it is always `null` for a paused instance or membership, an agent
+    that is not `available`, and a supervised session an active
+    placement names.
+  - `paused`: `true` while the credential's instance in the placement's
+    project (its attachment there, §6.17) or the membership is under any
+    pause (§5.3), whoever set it; else `false`.
+  - `dormant`: `true` while the credential's instance is dormant in the
+    placement's project (§6.17); else `false`.
 
   The hub computes it at each read: `/runner/placements`, the `hello`
   packet and the answer to a status report. Nothing about it is an
