@@ -1111,7 +1111,11 @@ def test_efforts_are_advertised_only_when_configured(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: True)
     probe = capabilities.Probe("/usr/bin/codex", "1.0", None)
     plain = config.Harness("codex", ("supervised",), "supervised", binary="codex")
-    assert "efforts" not in capabilities.harness_entry(plain, probe)
+    # Exactly the keys of a hello from before `efforts`, which a strict older hub takes.
+    assert set(capabilities.harness_entry(plain, probe)) == {
+        "id", "version", "available", "reason", "modes", "default_mode", "models", "targets",
+        "confinement", "sandbox",
+    }  # fmt: skip
     with_efforts = dataclasses.replace(plain, efforts=("low", "medium"))
     assert capabilities.harness_entry(with_efforts, probe)["efforts"] == ["low", "medium"]
 
