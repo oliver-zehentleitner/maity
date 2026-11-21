@@ -986,8 +986,8 @@ window.MAITY_I18N["pt"] = {
   "chat_access.history.deny.expired": "Bloqueio encerrado",
   "chat_access.history.empty": "Ainda não aconteceu nada com as suas entradas.",
   "chat_access.history.entries": {
-    "one": "Criou {count} entrada.",
-    "other": "Criou {count} entradas."
+    "one": "Entradas criadas: {count}.",
+    "other": "Entradas criadas: {count}."
   },
   "chat_access.history.entry_gone": "A entrada não está mais nas suas listas.",
   "chat_access.history.field.agents": "os seus agentes",

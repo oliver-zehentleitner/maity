@@ -1052,8 +1052,8 @@
   "chat_access.history.person_ticked": "a pessoa marcada",
   "chat_access.history.person_not_ticked": "a pessoa não marcada",
   "chat_access.history.entries": {
-    "one": "Criou {count} entrada.",
-    "other": "Criou {count} entradas."
+    "one": "Entradas criadas: {count}.",
+    "other": "Entradas criadas: {count}."
   },
   "chats.conversations": "Conversas",
   "chats.hint": "Seus chats em todos os projetos, os fixados primeiro, depois os não lidos.",
