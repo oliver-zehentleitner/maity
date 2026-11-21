@@ -5613,7 +5613,10 @@ cannot be read, or a running session whose record has no `skill_key`.
 Such a session started before this version, or the service stopped
 between its start and the next save of the records. A record always
 holds the field, null for a session started without the skill (the
-review of #2093). The runner's own copies are removed the way the
+review of #2093). The supervisor saves the record before the session
+starts, so a service stopped right after a start cannot leave the
+previous run's key there for `gc` to trust, and a key that is not a
+runner key also keeps everything. The runner's own copies are removed the way the
 agents' are. The directory holding them is opened without following a
 link, a link or file there is unlinked, never entered, and every level of
 a copy has its owner's access restored first. A copy that cannot be

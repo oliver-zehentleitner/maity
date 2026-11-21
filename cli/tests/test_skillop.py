@@ -521,6 +521,7 @@ def test_gc_skills_lists_then_removes_only_what_nothing_names_or_runs_with(
         ({"plc-1": {"skill_key": KEY}}, None),  # plc-2 runs with no record: not saved yet
         ({"plc-1": {"skill_key": KEY}, "plc-2": {"id": "plc-2"}}, None),  # an older record
         ({"plc-1": {"skill_key": KEY}, "plc-2": {"skill_key": 7}}, None),
+        ({"plc-1": {"skill_key": KEY}, "plc-2": {"skill_key": "../x"}}, None),  # no runner key
     ],
 )
 def test_gc_keeps_everything_while_a_running_sessions_copy_is_not_known(

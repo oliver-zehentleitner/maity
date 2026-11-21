@@ -4283,6 +4283,30 @@ def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
     assert not any("Keep the Why" in line for line in logs)
 
 
+def test_the_copy_a_session_starts_with_is_saved_before_it_starts(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2093 (ukxh): `gc --skills` reads the started copy from the record, so it
+    is on disk before the session runs; a service stopped right after the start leaves no
+    earlier run's key there."""
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg)
+    copy: Path = sup.cfg.skills_dir / "keep-the-why" / KTW["commit"] / "plugin"
+    monkeypatch.setattr(skills, "ensure", lambda *_: copy)
+    on_disk: list[Any] = []
+    start = backend.start
+
+    def saved_then_start(*args: Any, **kwargs: Any) -> Any:
+        on_disk.append(state.load_state(sup.cfg.state_dir, name=supervisor.ACTUAL_FILE))
+        return start(*args, **kwargs)
+
+    monkeypatch.setattr(backend, "start", saved_then_start)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    ((records,),) = [on_disk]
+    assert records["plc-0003"]["skill_key"] == KTW["commit"]
+
+
 def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

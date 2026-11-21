@@ -417,6 +417,9 @@ class Supervisor:
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Held across a snapshot of the records and its write (save), so a `_start` worker's save
+    # before its session starts is never overwritten by an older snapshot (the review of #2093).
+    records_save_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -480,9 +483,10 @@ class Supervisor:
         }  # fmt: skip
 
     def save(self) -> None:
-        with self.lock:
-            data = {pid: asdict(r) for pid, r in self.records.items()}
-        state.save_state(self.cfg.state_dir, data, name=ACTUAL_FILE)
+        with self.records_save_lock:
+            with self.lock:
+                data = {pid: asdict(r) for pid, r in self.records.items()}
+            state.save_state(self.cfg.state_dir, data, name=ACTUAL_FILE)
         self._save_scratch_names()
 
     def _save_scratch_names(self) -> None:
@@ -1414,6 +1418,10 @@ class Supervisor:
                          f"{scratch / adapters.PG} would not fit a Unix socket path; "
                          "set a shorter workspaces root")  # fmt: skip
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
+            # The copy this session starts with is on disk before it runs: `gc --skills` reads
+            # it from the record, and a service stopped right after the start must not leave
+            # the previous run's key there (the review of #2093).
+            self.save()
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
             )

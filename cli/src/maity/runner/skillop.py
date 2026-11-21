@@ -581,8 +581,13 @@ def _verify_staged(fd: int, wanted: Mapping[tuple[str, ...], bytes]) -> None:
                 if where / name not in needed:
                     raise Mismatch(f"{where / name} is not a directory of the skill")
             for name in names:
-                data = _read_at(top_fd, name, MAX_BYTES, Path(where / name), MAX_BYTES)
-                found[(where / name).parts] = hashlib.sha256(data).hexdigest()
+                parts = (where / name).parts
+                if parts not in wanted:  # refused by name, never opened (the review of #2093)
+                    raise Mismatch(f"{where / name} is not a file of the skill")
+                # At most the bytes it should hold: a larger file is refused unread past that.
+                size = len(wanted[parts])
+                data = _read_at(top_fd, name, size, Path(where / name), size)
+                found[parts] = hashlib.sha256(data).hexdigest()
     except Mismatch as exc:
         raise OSError(f"the staged skill does not hold: {exc}") from None
     if found != expected:

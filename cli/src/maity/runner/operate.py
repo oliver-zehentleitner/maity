@@ -401,7 +401,7 @@ def _skills_running(cfg: config.Config) -> set[str] | None:
         key = record.get("skill_key", 0) if isinstance(record, dict) else 0
         if key is None:
             continue
-        if not isinstance(key, str):
+        if not isinstance(key, str) or not skills.KEY.fullmatch(key):
             print(f"skills   none listed: the copy {pid}'s running session started with is not "
                   "known, so every copy is kept")  # fmt: skip
             return None
