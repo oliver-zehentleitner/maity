@@ -23,8 +23,6 @@ F = TypeVar("F", bound=Callable[..., Any])
 # once its fix lands and leaves with that card. One per line, sorted, with what the route reads
 # per row. `<route> [<case>]`: only that way of reading the route grows (`same_for_3_and_30`).
 GROWING: dict[str, str] = {
-    "/admin/registrations": "the account (`registration_accounts.item`)",
-    "/admin/reports": "the project's name, the reporter's handle (`reports.admin_view`)",
     "/agents": "the agent's view (`views.agent_view`)",
     "/agents/{}/soul/versions": "`by` and `confirmed_by` (`memory.who`)",
     "/me": "the open requests of each project (`inbox.open_requests`)",
@@ -32,7 +30,6 @@ GROWING: dict[str, str] = {
     "/me/contacts": "the person's picture (`routes.people._avatar`)",
     "/me/cross-chats": "who stays (`cross_chats.stays`), and one more read",
     "/me/preferences/versions": "the author (`preferences._handle`)",
-    "/me/reports": "the target (`reports._public_target`)",
     "/orgs": "pictures, aliases, moderation hold (`orgs.view`)",
     "/orgs/{}/members/invitations": "the inviter (`org_invitations.view`)",
     "/projects": "restricted fields, confirmations (`routes.projects.list_projects`)",

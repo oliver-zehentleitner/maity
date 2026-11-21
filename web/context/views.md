@@ -7117,7 +7117,23 @@ clone, branch and reason, read from one's own live runners here that offer the r
 the button reads **Start on the runner**; the fields a placement does not take are hidden
 (validity, the instance choice, take-over, hand-over, subagents, the boss of an agent already
 here), and the submit is `POST …/placements` instead of a join. An agent by id must be a member
-here without an active placement (§15.6, §15.5); otherwise the part says why and nothing is sent.
+here (§15.6) with room under its `max_instances` (§15.5, one placement per instance, several per
+agent, as the hub has taken since tsk-rfa7fwa2sz5g): the part counts its live instances and its
+active placements holding no live credential as the hub does, says for an agent that runs already
+that the start adds another instance and where the others run, and at the limit says that the
+agent's owner raises it first (tsk-yfpwawy3xk3a); otherwise nothing is sent. A start on a runner
+and clone whose latest closed placement of that agent left a live credential that no active
+placement runs takes it up, as the hub does (§15.5 "Carried-over credential"): it adds no
+instance, so it passes at the limit and the part says nothing more. Placing an agent again where
+its removed placement ran thus works as before the limit was checked (review A1815 of #2058).
+What the part says is a hint and the hub decides: it never blocks what the hub would take, and
+where it cannot be sure it sends the start and shows the hub's refusal (the lead's ruling on
+review A1816 of #2058). The list gives `closed_at` to the second while the hub orders by the
+stored time, so when closes within the newest second disagree, the start goes through. The
+limit the part counts against is the stored `max_instances`; a ceiling or the owner's account
+override can hold the one in effect lower (§6.31). The member view names only the stored value;
+`GET …/limits` names the one in effect, and reading it is left to tsk-9zssa5a9fq34 to keep this
+change small. Until then the hub's `instance_quota` answers for a lower limit.
 A new profile sends its join fields. The part reads the runners and placements each time it is
 ticked and each time the panel opens. A runner that answers after it was unticked draws nothing.
 

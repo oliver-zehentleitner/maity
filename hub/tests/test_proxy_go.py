@@ -18,6 +18,7 @@ from maity_hub import clock, cover, events, idempotency, inbox
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import credentials
+from maity_hub.ids import new_id
 from maity_hub.routes import requests
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -230,8 +231,11 @@ def test_an_action_request_in_flight_is_refused_once_its_proxy_became_a_coder(
 
 
 def test_a_signature_without_the_header_line_does_not_verify(proxy: Proxy) -> None:
-    refused = proxy.call("POST", TICKER, ITEM, on_request="req-a", signed_as="req-b")
+    refused = proxy.call(
+        "POST", TICKER, ITEM, on_request=new_id("request"), signed_as=new_id("request")
+    )
     assert refused.headers["Maity-Error"] == "signature_invalid"
+    assert refused.json()["error"]["message"] == "the signature does not verify"
 
 
 def test_a_go_opens_exactly_one_call_and_records_it(
@@ -261,7 +265,7 @@ def test_an_open_or_refused_or_foreign_request_opens_nothing(
     _refused(proxy.call("POST", TICKER, ITEM, on_request=opened), "unanswered")
     declined = _go(owner, proxy, "no")
     _refused(proxy.call("POST", TICKER, ITEM, on_request=declined), "declined")
-    _refused(proxy.call("POST", TICKER, ITEM, on_request="req-none"), "not_bound")
+    _refused(proxy.call("POST", TICKER, ITEM, on_request=new_id("request")), "not_bound")
     other = factory.agent(migrated, _project(migrated), owner.id, "proxy", instance="prx2")
     theirs = _go(owner, Proxy(make_client(), other))
     _refused(proxy.call("POST", TICKER, ITEM, on_request=theirs), "not_bound")

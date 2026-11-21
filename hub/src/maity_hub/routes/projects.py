@@ -16,6 +16,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    access,
     agent_owners,
     attachments,
     availability,
@@ -1021,17 +1022,70 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 
 
 @router.get("/projects/{owner}/{slug}")
+@access.outside_read
 def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        return JSONResponse(project_body(conn, request, caller, slug))
+        mine = access.reader(conn, caller, slug)
+        return JSONResponse(project_body(conn, request, caller, slug, mine))
 
 
-def project_body(conn: Connection, request: Request, caller: Caller, slug: str) -> dict[str, Any]:
+def project_body(
+    conn: Connection,
+    request: Request,
+    caller: Caller,
+    slug: str,
+    mine: Membership | access.OutsideReader | None = None,
+) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
-    `GET /bootstrap` (§5.4)."""
-    mine = membership(conn, caller, slug)
+    `GET /bootstrap` (§5.4), which passes no `mine`: the caller's membership is read here, so
+    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`."""
+    if mine is None:
+        mine = membership(conn, caller, slug)
     mine.require("project:read")
+    if isinstance(mine, access.OutsideReader):
+        return _outside_view(conn, mine.project, request)
     return _view(conn, mine.project, request, mine)
+
+
+# The project view's keys an outsider reads (§2.3): an allow-list, so that a key the view gains
+# later stays hidden from outside until it is named here (hub/context/public-pages.md eb7fd1c7).
+# Never `repository` (`probe_via` with it), `settings` beyond `language` (`role_rules` among
+# them, §6.1), `memory` or `setup`. `links` as the public page shows them (§16.9).
+OUTSIDE_PROJECT_KEYS = (
+    "id",
+    "owner",
+    "full_name",
+    "slug",
+    "name",
+    "state",
+    "released_at",
+    "state_changed_at",
+    "public_page",
+    "public_about",
+    "links",
+    "logo",
+    "banner",
+    "settings",
+    "created_at",
+)
+
+
+def _outside_view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
+    """The project as an outsider reads it (§2.3): `OUTSIDE_PROJECT_KEYS` of the view, its
+    `settings` only `language`, and its `links` as the public page shows them: one into the
+    repository's own path only while the hub's last look found the repository public
+    (`project_links.public`, §16.9), `null` otherwise."""
+    shown = images.views(conn, [project.id])[project.id]
+    owner = namespace.owner_of(conn, project)["handle"]
+    whole = project_view(project, settings_of(request), owner, shown)
+    view = {key: whole[key] for key in OUTSIDE_PROJECT_KEYS}
+    links = project.links
+    public = set(project_links.public(links, project.repository_url, project.repository_public))
+    view["links"] = {
+        key: value if value in public else None for key, value in whole["links"].items()
+    }
+    view["settings"] = {"language": whole["settings"]["language"]}
+    return view
 
 
 @router.patch("/projects/{owner}/{slug}")
