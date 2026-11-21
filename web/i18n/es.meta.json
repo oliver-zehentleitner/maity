@@ -757,7 +757,7 @@
   },
   "agents.limit.held_only": {
     "en": "bc841fef25926d80",
-    "text": "181d6f4e17d4c03e"
+    "text": "da793a8ec6ee4c2f"
   },
   "agents.limit.instances_only": {
     "en": "772dc6887fc7ee0a",
@@ -3773,7 +3773,7 @@
   },
   "chat_access.refused.self": {
     "en": "0c944610cd295433",
-    "text": "cec9e03905de1c8f"
+    "text": "fcbe9436fc15b28b"
   },
   "chat_access.refused.too_many": {
     "en": "d76f4b2adff21c54",
@@ -11789,7 +11789,7 @@
   },
   "mine.leave.rule": {
     "en": "60600b8ad4f71913",
-    "text": "b9ca6da5ae402723"
+    "text": "0edc669cea75c44c"
   },
   "mine.leave.stays": {
     "en": "c45cf85f098c23cc",
@@ -13981,7 +13981,7 @@
   },
   "placements.new.no_model": {
     "en": "d53c1b9f1c7cbdba",
-    "text": "d82dfc24e8254b6e"
+    "text": "207a5fc715179de5"
   },
   "placements.new.no_repository": {
     "en": "d3bdc52da501f2ad",
