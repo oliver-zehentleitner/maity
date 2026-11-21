@@ -408,6 +408,54 @@ def test_a_review_result_reaches_the_author_and_the_leads_ungated(
     assert loose["payload"]["held"] == [theirs.id]
 
 
+def test_a_review_results_lead_of_another_owner_is_reached_only_through_the_gate(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The reviewer `mine` reports to `theirs`, an agent of another owner: the hub does not add
+    that lead (§8.4), so it is no part of the card's own flow, and a `to` or a mention naming
+    it passes the gate as anyone's does (§9.6): held without its owner's yes, reached with it
+    (tsk-95kvvd03fgs4)."""
+    theirs, mine, other = sides["theirs"], sides["mine"], sides["other"]
+    author = flow.agent(make_client, owner)
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, mine.id, author.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[mine.id])
+            .values(reports_to=rows[theirs.id])
+        )
+        conn.execute(
+            update(t.card).where(t.card.c.id == task_id).values(claim_holder=rows[author.id])
+        )
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == theirs.id)
+        ).scalar_one()
+    sent = work(mine, "review_result", None, task_id, reviewed=True)
+    assert sent.status_code == 201, sent.text
+    plain = sent.json()
+    assert plain["payload"]["held"] == []
+    assert plain["seq"] not in seqs(theirs) and plain["seq"] not in woken(migrated, theirs.id)
+    named = work(mine, "review_result", theirs.id, task_id, reviewed=True)
+    mentioned = work(mine, "review_result", None, task_id, f"see @{handle}", reviewed=True)
+    for message in (named, mentioned):
+        assert message.status_code == 201, message.text
+        assert message.json()["payload"]["held"] == [theirs.id]
+        assert message.json()["seq"] not in seqs(theirs)
+    allow(other, agents=[theirs.id], owner_id=owner.id)
+    admitted = work(mine, "review_result", theirs.id, task_id, reviewed=True)
+    assert admitted.status_code == 201, admitted.text
+    assert admitted.json()["payload"]["held"] == []
+    assert admitted.json()["seq"] in seqs(theirs)
+    assert admitted.json()["seq"] in woken(migrated, theirs.id)
+
+
 @pytest.mark.parametrize("change", ["unwatch", "watch"])
 def test_the_gate_and_the_watcher_list_read_the_watchers_once(
     change: str,

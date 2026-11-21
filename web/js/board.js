@@ -194,7 +194,10 @@ window.Maity = window.Maity || {};
   function familyEditor(ctx, c, byId, manage) {
     if (!manage || !manage.reload) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
-    const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    // The board's cards as they are now: byId is filled in place at every draw, and the late draw
+    // may keep this part (draw, showPanelPart), so New subtask reads them when it is opened.
+    const othersNow = () => Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    const others = othersNow();
     const parts = [];
     if (M.boardEdit.editable(ctx, c)) {
       const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
@@ -249,7 +252,7 @@ window.Maity = window.Maity || {};
       const start = h("button", { type: "button", class: "small", "aria-expanded": "false", "data-focus": "subtask:" + c.id,
         onclick: () => {
           if (start.getAttribute("aria-expanded") === "true") { clear(box); start.setAttribute("aria-expanded", "false"); return; }
-          const f = M.boardEdit.newCardForm(ctx, others, async (body) => {
+          const f = M.boardEdit.newCardForm(ctx, othersNow(), async (body) => {
             try {
               await M.api.post(ctx.base + "/tasks", body);
             } catch (err) {
@@ -601,7 +604,7 @@ window.Maity = window.Maity || {};
     };
     const E = M.boardEdit;
     const controls = manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
-      E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null;
+      E.orderControl(ctx, c, manage.columnOf, manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
     const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const draggable = movable && !inPanel;
@@ -1069,7 +1072,36 @@ window.Maity = window.Maity || {};
         : null,
       moreButton(s, cards));
       if ((closedWaiting(s) && !closedError) || (openWaiting(s) && !openIncomplete(s))) col.setAttribute("aria-busy", "true");
+      cardsOf.set(col, cards);
       return col;
+    }
+
+    // The late draw keeps a column as it stands where the column drawn anew would be the same: the
+    // same card objects in the same order (its cards' listeners act on them, and a Place arrow on
+    // its neighbours), and the same tree (M.dom.sameTree). Only the columns that changed are
+    // replaced, so the browser styles and lays out those alone (tsk-3b2t7hwc352s: the late draw
+    // emptied and rebuilt every column, and each draw cost a style recalculation over about 16k
+    // elements). A menu's id is made up anew for every draw (js/menu.js); the kept column keeps
+    // its own, which its button names.
+    const cardsOf = new WeakMap();
+    const madeUp = (name, a, b) => (name === "id" || name === "aria-controls") && /^menu-\d+$/.test(a) && /^menu-\d+$/.test(b);
+    const sameCards = (a, b) => !!a && !!b && a.length === b.length && a.every((c, i) => c === b[i]);
+    const keyOf = (col) => col.getAttribute("data-status") || "other";
+    function placeColumns(fresh) {
+      const old = new Map(Array.from(columnsBox.childNodes).map((col) => [keyOf(col), col]));
+      const next = fresh.map((col) => {
+        const was = old.get(keyOf(col));
+        return was && sameCards(cardsOf.get(was), cardsOf.get(col)) && M.dom.sameTree(was, col, madeUp) ? was : col;
+      });
+      // The columns that go are taken out first, so that a kept one never moves (a moved node is
+      // styled again); each new one goes in where it stands.
+      const kept = new Set(next);
+      Array.from(columnsBox.childNodes).forEach((col) => { if (!kept.has(col)) columnsBox.removeChild(col); });
+      let at = columnsBox.firstChild;
+      next.forEach((col) => {
+        if (col === at) at = at.nextSibling;
+        else columnsBox.insertBefore(col, at);
+      });
     }
 
     // The cards a column draws. The board's own closed columns hold the pages read so far and draw
@@ -1255,6 +1287,8 @@ window.Maity = window.Maity || {};
     // focus in it included, where the new part offers one.
     let panelDrawn = null;
     let panelPart = null;
+    // The card the panel's part was drawn from.
+    let panelData = null;
     const CONTROLS = "input, select, textarea";
     const controlsOf = (root) => {
       const all = Array.from(root.querySelectorAll(CONTROLS));
@@ -1286,6 +1320,7 @@ window.Maity = window.Maity || {};
       if (spot) spot.start.parentNode.parentNode.replaceChild(was.start.parentNode, spot.start.parentNode);
       if (panelPart) panel.update(part);
       panelPart = part;
+      panelData = data;
       panelDrawn = drawnState(part);
       const fresh = new Map(controlsOf(part));
       typed.forEach(([k, state]) => { if (fresh.has(k)) setState(fresh.get(k), state); });
@@ -1382,6 +1417,7 @@ window.Maity = window.Maity || {};
       panelCard = null;
       panelPart = null;
       panelDrawn = null;
+      panelData = null;
     }
 
     function shown(c) {
@@ -1401,7 +1437,10 @@ window.Maity = window.Maity || {};
     function draw(keepTyped) {
       areaOptions();
       needsOptions();
-      byId = {};
+      // Filled in place, not replaced: a column the late draw keeps (placeColumns) holds the cards
+      // drawn before, and a card edited there is drawn again from this map, with the closed cards
+      // the late draw brought.
+      Object.keys(byId).forEach((id) => { delete byId[id]; });
       items.forEach((t) => { byId[t.id] = t; });
       const known = new Set(COLUMNS.map(([s]) => s));
       const visible = items.filter(shown);
@@ -1418,16 +1457,24 @@ window.Maity = window.Maity || {};
         // No verdict while the closed cards the filter would show are still unknown.
         append(intro, h("p", { class: "muted" }, M.t("board.no_match")));
       }
-      append(clear(columnsBox),
-        COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s])),
-        other.length && !filter.column
-          ? h("section", { class: "column", "aria-label": M.t("board.column.other") },
-            h("h3", { class: "column-head" }, M.t("board.column.unknown")),
-            other.map((c) => card(ctx, c, byId, manage)))
-          : null);
+      const fresh = COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s]));
+      if (other.length && !filter.column) {
+        const otherCol = h("section", { class: "column", "aria-label": M.t("board.column.other") },
+          h("h3", { class: "column-head" }, M.t("board.column.unknown")),
+          other.map((c) => card(ctx, c, byId, manage)));
+        cardsOf.set(otherCol, other);
+        fresh.push(otherCol);
+      }
+      // The late draw replaces only the columns that changed; every other draw, one the reader's
+      // action starts, draws them all anew.
+      if (keepTyped) placeColumns(fresh);
+      else append(clear(columnsBox), fresh);
       if (panel) {
         const data = byId[panel.id] || panelCard;
-        showPanelPart(card(ctx, data, byId, manage, true), !!keepTyped, data);
+        const part = card(ctx, data, byId, manage, true);
+        // The late draw keeps the panel's card part too where it would be the same, drawn from the
+        // same card: what the reader typed or opened in it, and the focus, stay as they are.
+        if (!(keepTyped && panelPart && panelData === data && M.dom.sameTree(panelPart, part, madeUp))) showPanelPart(part, !!keepTyped, data);
       }
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);

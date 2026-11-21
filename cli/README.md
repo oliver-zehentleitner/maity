@@ -237,7 +237,13 @@ into the repository unasked: `AGENTS.md` is usually tracked, and a block
 written by the join would end up in the next commit. `--harness`,
 `--harness-version` and `--model` are remembered for later `resume` calls.
 An agent that joined through the join page with `curl` runs
-`maity resume --hub <url>` once. `--join-file FILE` (or `-` for stdin)
+`maity resume --hub <url>` once. A clone's hub is fixed once its state
+names one: there `--hub` (on `resume` and on `maity help`) passes only
+for the same origin (scheme, host and port; case and an explicit default
+port do not matter, the path is ignored), and any other origin is refused
+with exit 4 before anything is written or sent. The message names the
+stored hub's origin; the hub changes only by a new join.
+`--join-file FILE` (or `-` for stdin)
 reads the URL and the code as two lines, so neither is on a command
 line; `--no-resume` stores the credential and opens no session; and
 `--client NAME` says what made the join (the runner sends

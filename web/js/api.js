@@ -3419,7 +3419,9 @@ window.Maity = window.Maity || {};
     // agent profile's owner).
     ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       project(m[1], path);
-      return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+      // §15.6: active ones; `closed=true` adds the closed ones (the fixture keeps no age).
+      const closed = new URLSearchParams(path.split("?")[1] || "").get("closed") === "true";
+      return { items: placementsOf(m[1]).filter((p) => closed || p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
     // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: the
@@ -3441,11 +3443,23 @@ window.Maity = window.Maity || {};
       if (live.length >= quota) fail(409, "placement_quota", "the project's placements are at its limit", path, { max: quota });
       const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
       let agent;
+      let room = null;
       if (body.agent && body.agent.id) {
         const a = members.find((x) => x.id === body.agent.id && !x.removed_at);
         if (!a || a.kind !== "agent") fail(400, "invalid", "not an agent of this project", path, { fields: { "agent.id": "not_a_member" } });
         if (a.owner_id !== caller.id) fail(400, "invalid", "name one of your own agents", path, { fields: { "agent.id": "not_yours" } });
-        if (live.some((x) => x.agent.id === a.id)) fail(409, "placement_exists", "an active placement holds this", path);
+        // §15.5: one placement per instance, within max_instances (1 when unset, §6.18): its live
+        // instances plus its active placements holding no live credential (hub instances_held),
+        // checked below once the clone is known, since a carried-over credential adds none.
+        const liveInstances = (a.instances || []).filter((i) => !i.revoked_at);
+        const liveIds = new Set(liveInstances.map((i) => i.id));
+        const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
+        // Without credentials named, an instance id among live ones; with no live instance at all,
+        // no placement holds one (review A1815 of #2058).
+        const holdsLive = (x) => (liveCredentials.size ? liveCredentials.has(x.credential_id) : liveIds.size > 0 && (!x.instance || liveIds.has(x.instance)));
+        const waiting = live.filter((x) => x.agent.id === a.id && (!x.credential_id || !holdsLive(x))).length;
+        const max = a.team && Number.isInteger(a.team.max_instances) ? a.team.max_instances : 1;
+        room = { member: a, held: liveIds.size + waiting, max, liveIds, liveCredentials };
         agent = { id: a.id, handle: a.handle, display_name: a.display_name, avatar_url: null };
       } else {
         const handle = body.agent && body.agent.handle, name = body.agent && body.agent.display_name;
@@ -3458,8 +3472,29 @@ window.Maity = window.Maity || {};
         if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
         agent = { id: null, handle, display_name: name, avatar_url: null };
       }
-      const clone = (body.workspace && body.workspace.clone) || agent.handle;
+      // Without a clone: the first of <handle>, <handle>-2, … that on this runner no active placement
+      // names, nor a closed one of another member whose clone was not reported removed (§15.5).
+      const holds = (x) => x.runner.id === r.id && (x.active || ((!agent.id || x.agent.id !== agent.id)
+        && !(x.workspace_outcome && x.workspace_outcome.state === "removed")));
+      const taken = new Set(placementsOf(m[1]).filter(holds).map((x) => x.workspace.clone));
+      let free = agent.handle;
+      for (let n = 2; taken.has(free); n += 1) free = agent.handle + "-" + n;
+      const clone = (body.workspace && body.workspace.clone) || free;
       if (live.some((x) => x.runner.id === r.id && x.workspace.clone === clone)) fail(409, "placement_exists", "an active placement holds this", path);
+      // The latest closed placement of (member, runner, clone) passes on a credential that is
+      // live and that no active placement runs (hub carried_credential, §15.5): an instance
+      // already, so the start adds none and passes at the limit (review A1815 of #2058).
+      // Its credential is live when a live instance names it, or, where the member's instances
+      // name no credentials, when the instance it made is a live one.
+      let carried = null;
+      if (room) {
+        const latest = placementsOf(m[1]).filter((x) => !x.active && x.agent.id === room.member.id && x.runner.id === r.id && x.workspace.clone === clone)
+          .sort((x, y) => Date.parse(y.closed_at || 0) - Date.parse(x.closed_at || 0))[0];
+        const cid = latest && latest.credential_id;
+        const liveOne = cid && (room.liveCredentials.size ? room.liveCredentials.has(cid) : !!latest.instance && room.liveIds.has(latest.instance));
+        if (liveOne && !live.some((x) => x.credential_id === cid)) carried = latest;
+        if (room.held + (carried ? 0 : 1) > room.max) fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: room.max });
+      }
       const c = r.capabilities || {};
       const tool = (c.harnesses || []).find((x) => x.id === body.harness && x.available !== false && (!body.target || (x.targets || []).includes(body.target)));
       const mode = body.mode || (tool && tool.default_mode);
@@ -3477,9 +3512,10 @@ window.Maity = window.Maity || {};
       const made = {
         id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
         runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
-        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
+        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: !!carried },
         desired: body.desired || "running", generation: 1, rejoin: false, fresh_session: false, stop_grace_seconds: body.stop_grace_seconds || 120,
-        approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
+        approval: { status: "approved", request_id: null, pending_change: null },
+        credential_id: carried ? carried.credential_id : null, instance: carried ? carried.instance || null : null, reported_current: false,
         session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
         created_by: caller.id, proposed_by: null, foreign: false, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
       };
