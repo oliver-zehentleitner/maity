@@ -917,18 +917,23 @@ SIDES: dict[str, Callable[[], AsUser]] = {
 @pytest.mark.parametrize("side", sorted(SIDES))
 def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> None:
     """tsk-w7qtcbzcshn9 (security review of #2032): a session reaches its own scratch only;
-    every other placement's, in its project and in others, goes to the sandbox's deny."""
+    every other placement's, in its project and in others, goes to the sandbox's deny. Another
+    project's `.scratch` goes whole, even empty, so a scratch made in it later is hidden too
+    (tsk-07dwr3t80rg0); in the own project's, each other entry goes."""
     ws = tmp_path / "ws"
     as_user = SIDES[side]()
     host = "" if as_user.here else "host"
     root = ws if host else ws.resolve()
     own = root / "maity" / ".scratch" / "plc-0003"
-    others = [root / "maity" / ".scratch" / "plc-0004", root / "other" / ".scratch" / "plc-0009"]
-    for room in (own, *others):
+    sibling = root / "maity" / ".scratch" / "plc-0004"
+    for room in (own, sibling, root / "other" / ".scratch" / "plc-0009"):
         (room / "tmp").mkdir(parents=True)
+    (ws / "empty" / ".scratch").mkdir(parents=True)  # no scratch in it yet
     (ws / "maity" / "agent-3").mkdir()  # a clone is no scratch
-    assert supervisor.other_scratches(ws, own, as_user, host) == sorted(others)
-    assert supervisor.other_scratches(ws, None, as_user, host) == sorted([own, *others])
+    holders = [root / "empty" / ".scratch", root / "other" / ".scratch"]
+    assert supervisor.other_scratches(ws, own, as_user, host) == sorted([sibling, *holders])
+    everything = sorted([root / "maity" / ".scratch", *holders])
+    assert supervisor.other_scratches(ws, None, as_user, host) == everything
     assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
 
 
@@ -953,7 +958,15 @@ def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, sid
         found = supervisor.other_scratches(linked, None, as_user, host)
     finally:
         locked.chmod(0o700)
-    assert found == [root / "maity" / ".scratch" / "plc-0004"]
+    assert found == [root / "maity" / ".scratch"]  # no own scratch: the holder whole
+    own = root / "maity" / ".scratch" / "plc-0003"
+    own.mkdir()
+    locked.chmod(0o000)
+    try:
+        found = supervisor.other_scratches(linked, own, as_user, host)
+    finally:
+        locked.chmod(0o700)
+    assert found == [root / "maity" / ".scratch" / "plc-0004"]  # in the own holder: entries
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))

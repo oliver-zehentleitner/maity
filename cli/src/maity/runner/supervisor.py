@@ -2178,16 +2178,20 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 def other_scratches(
     workspaces: Path, own: Path | None, as_user: AsUser, host: str = ""
 ) -> list[Path]:
-    """The scratch of every other placement under `workspaces` as it stands now
-    (`<root>/<project>/.scratch/<placement id>`, workspace.scratch_of), so the sandbox hides
-    them as it hides the other clones' credentials (tsk-w7qtcbzcshn9, the security review of
-    #2032). The list covers the scratches there at the start (tsk-rbys2j9q0m48 tracks the rest,
-    as for the other clones' credentials). Named as scratch_of
-    names them: below the root resolved here, as given on an
-    ssh host. A listing that cannot be completed refuses the start (`workspace.Refused`): an
-    unreadable `.scratch` could hide one, and the sandbox would start without its deny."""
+    """The other placements' scratches under `workspaces` (`<root>/<project>/.scratch/<placement
+    id>`, workspace.scratch_of), so the sandbox hides them as it hides the other clones'
+    credentials (tsk-w7qtcbzcshn9, the security review of #2032). Another project's `.scratch`
+    is named whole, so a scratch made in it after the start is hidden too (tsk-07dwr3t80rg0).
+    In the own project's `.scratch` each other entry is named. Claude Code's settings also hide
+    that whole holder and open the own scratch again (adapters.claude_settings), which covers a
+    later sibling there. A project whose `.scratch` does not exist yet at the start is not
+    covered (tsk-rbys2j9q0m48, as for the other clones' credentials). Named as scratch_of names
+    them: below the root resolved here, as given on an ssh host. A listing that cannot be
+    completed refuses the start (`workspace.Refused`): an unreadable `.scratch` could hide one,
+    and the sandbox would start without its deny."""
     root = workspaces if host else workspaces.resolve()
     refused = workspace.Refused("harness_refused")
+    own_holder = own.parent if own is not None and own.parent.name == workspace.SCRATCH else None
     found: list[Path] = []
     if as_user.direct:
         try:
@@ -2195,8 +2199,11 @@ def other_scratches(
                 holder = project / workspace.SCRATCH
                 if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
                     continue
-                found += [root / project.name / workspace.SCRATCH / e.name
-                          for e in holder.iterdir()]  # fmt: skip
+                named = root / project.name / workspace.SCRATCH
+                if named != own_holder:
+                    found.append(named)
+                    continue
+                found += [named / e.name for e in holder.iterdir()]
         except OSError as exc:
             raise refused from exc
     elif as_user.exists(root, "-d"):
@@ -2206,15 +2213,21 @@ def other_scratches(
         if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
             raise refused
         for entry in listed.stdout.split("\0"):
-            names = Path(entry).parts[-3:] if entry else ()
-            if len(names) == 3 and names[1] == workspace.SCRATCH:
-                found.append(root / names[0] / workspace.SCRATCH / names[2])
+            parts = Path(entry).parts if entry else ()
+            if len(parts) >= 2 and parts[-1] == workspace.SCRATCH:  # a holder itself
+                named = root / parts[-2] / workspace.SCRATCH
+                if named != own_holder:
+                    found.append(named)
+            elif len(parts) >= 3 and parts[-2] == workspace.SCRATCH:  # an entry in one
+                named = root / parts[-3] / workspace.SCRATCH
+                if named == own_holder:
+                    found.append(named / parts[-1])
     return sorted(set(found) - ({own} if own is not None else set()))
 
 
-# Every entry of every project's `.scratch` under the root given (with a trailing slash), one
-# NUL after each: the projects are the root's own entries (a project's name never starts with a
-# dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
+# Every project's `.scratch` under the root given (with a trailing slash) and every entry in it,
+# one NUL after each: the projects are the root's own entries (a project's name never starts with
+# a dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
 # side. A root, a project or a `.scratch` that cannot be read and searched ends with 3, as a
 # PermissionError does on the direct side: it could hide a scratch (the review of #2032).
 _SCRATCHES = r"""[ -r "$1" ] && [ -x "$1" ] || exit 3
@@ -2224,7 +2237,7 @@ for p in "$1"*; do
   h=$p/.scratch
   [ -d "$h" ] && ! [ -L "$h" ] || continue
   [ -r "$h" ] && [ -x "$h" ] || exit 3
-  find "$h" -mindepth 1 -maxdepth 1 -print0 || exit 3
+  find "$h" -maxdepth 1 -print0 || exit 3
 done
 [ -r "$1" ] && [ -x "$1" ] || exit 3"""
 

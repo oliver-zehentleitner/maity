@@ -4161,7 +4161,7 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
     assert own is not None and other is not None
     place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
     private = sup._private(target, place, own)
-    assert other in private and own not in private
+    assert other in private and own not in private and own.parent not in private
     # The test clusters' password holder: made before the settings, and private to every
     # session from its start, its own placement's included (the session never reads it).
     stub = config.Harness("stub", ("supervised",), "supervised")
@@ -4175,6 +4175,13 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
                                                                "supervised"))  # fmt: skip
     filesystem = adapters.claude_settings(claude)["sandbox"]["filesystem"]
     assert str(holder) in filesystem["denyRead"] and str(holder) in filesystem["denyWrite"]
+    # tsk-07dwr3t80rg0: the own project's `.scratch` is denied for reading only, so a scratch made
+    # there after this start (plc-0005 here) lies under it; only the own scratch is opened again.
+    own_holder = str(own.parent)
+    assert own_holder in filesystem["denyRead"] and own_holder not in filesystem["denyWrite"]
+    assert filesystem["allowRead"] == [str(own)] and filesystem["allowWrite"] == [str(own)]
+    later = sup._scratch(placement(n=5), codex, target)
+    assert later is not None and later.parent == own.parent and later not in ctx.private
     toml = adapters.codex_config(replace(ctx, harness=codex, sandbox=True))
     assert ".maity-pg" not in toml  # under the hidden root, never opened again
 
