@@ -14,7 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import ceilings, namespace
+from maity_hub import ceilings, instances, namespace
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
@@ -77,9 +77,10 @@ def _never_listened(conn: Connection, membership_id: int) -> list[dict[str, Any]
     c = t.credential.c
     rows = conn.execute(
         select(c.id, c.instance, c.created_at)
+        .select_from(instances.credential_join())
         .where(
-            c.membership_id == membership_id,
-            c.revoked_at.is_(None),
+            t.instance_attachment.c.membership_id == membership_id,
+            instances.attached_now(),
             c.resumed_at.is_(None),
         )
         .order_by(c.created_at, c.id)

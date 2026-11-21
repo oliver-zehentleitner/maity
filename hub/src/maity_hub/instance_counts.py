@@ -114,27 +114,40 @@ def for_member(
     return manages(below, views, [row.id])[row.id]
 
 
-# The same rule over `credential JOIN membership`, for counts across the instance.
+# The same rule over `credential JOIN instance_attachment JOIN membership` (`sql_from`), for
+# counts across the instance. That is one row per project an instance is in: a count across
+# the instance counts DISTINCT `credential.id`, so an instance in two projects counts once,
+# and online once when it is online in one of them.
+
+
+def sql_from() -> Any:
+    """The rows `sql_counted` and `sql_online` read: each instance in each of its projects."""
+    from maity_hub.instances import credential_join  # instances imports this module's callers
+
+    return credential_join().join(
+        t.membership, t.membership.c.id == t.instance_attachment.c.membership_id
+    )
 
 
 def sql_counted() -> ColumnElement[bool]:
-    """An instance that counts: of an active agent membership, not revoked."""
+    """An instance that counts: of an active agent membership, not revoked, attached."""
+    from maity_hub.instances import attached_now
+
     return and_(
         t.membership.c.agent_id.is_not(None),
         t.membership.c.active.is_(True),
-        t.credential.c.revoked_at.is_(None),
+        attached_now(),
     )
 
 
 def sql_online(now: datetime, window: Any) -> ColumnElement[bool]:
     """A counted instance that is online: its member not paused or isolated, the instance not
-    paused, and a call within `window` or dormant (the presence rule's call time, §5.3)."""
+    paused in that project, and a call within `window` or dormant there (the presence rule's
+    call time, §5.3)."""
+    a = t.instance_attachment
     return and_(
         t.membership.c.paused_since.is_(None),
         t.membership.c.isolated_since.is_(None),
-        t.credential.c.paused_since.is_(None),
-        or_(
-            t.credential.c.last_used_at >= now - window,
-            t.credential.c.dormant_since.is_not(None),
-        ),
+        a.c.paused_since.is_(None),
+        or_(t.credential.c.last_used_at >= now - window, a.c.dormant_since.is_not(None)),
     )

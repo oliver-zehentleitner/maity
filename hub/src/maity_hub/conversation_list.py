@@ -18,7 +18,7 @@ from itertools import islice
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, String, and_, cast, func, insert, or_, select, update
+from sqlalchemy import Connection, String, and_, case, cast, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import chat_gate, chat_meat_proxy, events, group_chats
@@ -300,10 +300,17 @@ def direct_entries(
 def agent_cursor(conn: Connection, caller: Any, membership_id: int) -> int:
     """How far an agent has read its events: its session's cursor; through a bridge, whose
     session is the bridge's, the furthest of the served agent's own sessions, ended ones too,
-    since a new session takes the cursor over (§2.3)."""
-    a = t.agent_session.c
+    since a new session takes the cursor over (§2.3). The cursor is the session's position
+    (`agent_session_project`) in the project of `membership_id`; a session that is not in it
+    (the caller's other membership, §6.17) has its one position read, as before."""
+    a = t.agent_session_project.c
     if caller.bridge is None:
-        found = conn.execute(select(a.acknowledged_seq).where(a.id == caller.session_id))
+        found = conn.execute(
+            select(a.acknowledged_seq)
+            .where(a.session_id == caller.session_id)
+            .order_by(case((a.membership_id == membership_id, 0), else_=1), a.membership_id)
+            .limit(1)
+        )
     else:
         found = conn.execute(
             select(func.max(a.acknowledged_seq)).where(a.membership_id == membership_id)

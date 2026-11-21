@@ -294,7 +294,7 @@ def test_online_team_is_one_member(
         conn.execute(
             insert(t.credential).values(
                 id="crd-badge-sibling",
-                membership_id=agent.membership_id,
+                agent_id=agent.agent_id,
                 instance="abcd",
                 verifier="0" * 64,
                 created_at=clock.now(),
@@ -302,17 +302,30 @@ def test_online_team_is_one_member(
             )
         )
         conn.execute(
+            insert(t.instance_attachment).values(
+                credential_id="crd-badge-sibling",
+                membership_id=agent.membership_id,
+                instance="abcd",
+                attached_at=clock.now(),
+            )
+        )
+        conn.execute(
             insert(t.agent_session).values(
                 id="ses-badge-sibling",
                 credential_id="crd-badge-sibling",
-                membership_id=agent.membership_id,
                 harness="test",
                 model="test",
                 client="test",
                 started_at=clock.now(),
                 last_seen_at=clock.now(),
-                acknowledged_seq=0,
                 live=True,
+            )
+        )
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id="ses-badge-sibling",
+                membership_id=agent.membership_id,
+                acknowledged_seq=0,
             )
         )
     enable(owner, "agents_online")

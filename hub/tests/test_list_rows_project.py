@@ -328,10 +328,35 @@ def test_a_member_s_credentials_cost_the_same_for_3_and_for_30(
                 "instance": instance,
                 "created_at": clock.now() + timedelta(seconds=i),
                 "last_used_at": clock.now() if i % 2 else None,
-                "dormant_since": clock.now() if i % 3 == 0 else None,
             }
 
         _copies(migrated, t.credential, agent.credential_id, n, change)
+        # Each copy in the agent's membership, as the first one is (§6.17).
+        a = t.instance_attachment
+        with migrated.begin() as conn:
+            [membership_id] = set(
+                conn.execute(
+                    select(a.c.membership_id).where(a.c.credential_id == agent.credential_id)
+                ).scalars()
+            )
+            attached = select(a.c.credential_id)
+            for i, copy in enumerate(
+                conn.execute(
+                    select(t.credential.c.id, t.credential.c.instance).where(
+                        t.credential.c.agent_id == agent.id,
+                        t.credential.c.id.not_in(attached),
+                    )
+                ).all()
+            ):
+                conn.execute(
+                    insert(a).values(
+                        credential_id=copy.id,
+                        membership_id=membership_id,
+                        instance=copy.instance,
+                        attached_at=clock.now(),
+                        dormant_since=clock.now() if i % 3 == 0 else None,
+                    )
+                )
 
     same_for_3_and_30(
         migrated,

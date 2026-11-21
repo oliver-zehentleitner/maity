@@ -144,8 +144,13 @@ def test_a_revoked_instance_without_a_successor_is_accepted_and_wakes_nobody(
     assert _last(migrated, "request_created").audience == [_token(agent, agent.instance)]
     with migrated.connect() as conn:
         live = conn.execute(
-            select(t.credential.c.instance).where(
-                t.credential.c.membership_id == _membership(migrated, agent).id,
+            select(t.credential.c.instance)
+            .join(
+                t.instance_attachment,
+                t.instance_attachment.c.credential_id == t.credential.c.id,
+            )
+            .where(
+                t.instance_attachment.c.membership_id == _membership(migrated, agent).id,
                 t.credential.c.revoked_at.is_(None),
             )
         ).all()

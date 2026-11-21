@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, instances
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership
@@ -136,7 +136,8 @@ def membership_id(w: Watch, agent_id: str | None = None) -> int:
 
 
 def credential(w: Watch, instance: str) -> str:
-    """Another instance credential of the agent, with no session yet."""
+    """Another instance credential of the agent, attached to its membership (§6.17), with no
+    session yet."""
     member_id = membership_id(w)
     credential_id = new_id("credential")
     _value, verifier = credentials.issue(credential_id)
@@ -144,10 +145,18 @@ def credential(w: Watch, instance: str) -> str:
         conn.execute(
             insert(t.credential).values(
                 id=credential_id,
-                membership_id=member_id,
+                agent_id=w.agent.id,
                 instance=instance,
                 verifier=verifier,
                 created_at=clock.now(),
+            )
+        )
+        conn.execute(
+            insert(t.instance_attachment).values(
+                credential_id=credential_id,
+                membership_id=member_id,
+                instance=instance,
+                attached_at=clock.now(),
             )
         )
     return credential_id
@@ -172,6 +181,8 @@ def open_session(
     not_listening_since: datetime | None = None,
     supervisor: str | None = None,
 ) -> str:
+    """A session of the credential with its position row in the agent's membership, which
+    holds the not-listening episode (§5.3)."""
     member_id = membership_id(w)
     session_id = new_id("session")
     with w.engine.begin() as conn:
@@ -179,16 +190,21 @@ def open_session(
             insert(t.agent_session).values(
                 id=session_id,
                 credential_id=credential_id,
-                membership_id=member_id,
                 harness="Claude Code",
                 model="claude-opus-5-5",
                 started_at=started_at,
                 last_seen_at=started_at,
-                acknowledged_seq=0,
                 live=None if ended else True,
                 ended_at=started_at if ended else None,
-                not_listening_since=not_listening_since,
                 supervisor=supervisor,
+            )
+        )
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id=session_id,
+                membership_id=member_id,
+                acknowledged_seq=0,
+                not_listening_since=not_listening_since,
             )
         )
     return session_id
@@ -197,6 +213,29 @@ def open_session(
 def set_row(w: Watch, table: Any, key: Any, **values: Any) -> None:
     with w.engine.begin() as conn:
         conn.execute(update(table).where(table.c.id == key).values(**values))
+
+
+def set_episode(w: Watch, session_id: str, since: datetime | None) -> None:
+    """The session's not-listening episode in the agent's membership (§5.3)."""
+    p = t.agent_session_project
+    member_id = membership_id(w)
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(p)
+            .where(p.c.session_id == session_id, p.c.membership_id == member_id)
+            .values(not_listening_since=since)
+        )
+
+
+def set_attachment(w: Watch, credential_id: str, **values: Any) -> None:
+    """The instance's pause or dormancy in the agent's membership (§6.17)."""
+    member_id = membership_id(w)
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(credential_id, member_id))
+            .values(**values)
+        )
 
 
 def available(w: Watch) -> None:
@@ -254,9 +293,9 @@ def test_not_listening_since_is_the_episode_that_runs_now(watch: Watch) -> None:
     available(watch)
     session_id = open_session(watch, credential_id, STARTED, not_listening_since=DEAF)
     assert session_of(watch, body["id"])["not_listening_since"] == "2026-11-20T20:09:00Z"
-    set_row(watch, t.agent_session, session_id, not_listening_since=None)
+    set_episode(watch, session_id, None)
     assert session_of(watch, body["id"])["not_listening_since"] is None
-    set_row(watch, t.agent_session, session_id, not_listening_since=DEAF)
+    set_episode(watch, session_id, DEAF)
     set_row(watch, t.agent_session, session_id, live=None, ended_at=clock.now())
     ended = session_of(watch, body["id"])  # only while the session is open
     assert ended == {**NO_SESSION, "started_at": "2026-11-20T19:09:41Z"}
@@ -273,10 +312,10 @@ def test_a_pause_of_the_membership_or_the_instance_hides_the_episode(watch: Watc
     paused = session_of(watch, body["id"])
     assert (paused["paused"], paused["not_listening_since"]) == (True, None)
     set_row(watch, t.membership, member_id, paused_since=None)
-    set_row(watch, t.credential, credential_id, paused_since=clock.now())
+    set_attachment(watch, credential_id, paused_since=clock.now())
     paused = session_of(watch, body["id"])
     assert (paused["paused"], paused["not_listening_since"]) == (True, None)
-    set_row(watch, t.credential, credential_id, paused_since=None)
+    set_attachment(watch, credential_id, paused_since=None)
     again = session_of(watch, body["id"])
     assert (again["paused"], again["not_listening_since"]) == (False, "2026-11-20T20:09:00Z")
 
@@ -285,9 +324,9 @@ def test_a_dormant_instance_reads_dormant(watch: Watch) -> None:
     body = placed(watch)
     credential_id = credential(watch, "tst1")
     name_credential(watch, body["id"], credential_id)
-    set_row(watch, t.credential, credential_id, dormant_since=clock.now())
+    set_attachment(watch, credential_id, dormant_since=clock.now())
     assert session_of(watch, body["id"])["dormant"] is True
-    set_row(watch, t.credential, credential_id, dormant_since=None)
+    set_attachment(watch, credential_id, dormant_since=None)
     assert session_of(watch, body["id"])["dormant"] is False
 
 

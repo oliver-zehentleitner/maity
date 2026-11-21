@@ -258,26 +258,41 @@ idempotency.register("member_team", load_member_as_read, _IN_MEMBERS_PROJECT)
 
 
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
-    row = conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
+    # TODO(hub PR B): the attachment of the route's project; the oldest not detached until
+    # then.
+    row = conn.execute(
+        instances.credential_rows()
+        .where(t.credential.c.id == credential_id, t.instance_attachment.c.detached_at.is_(None))
+        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
+        .limit(1)
+    ).one()
     return credential_view(conn, row)
+
+
+def _oldest_attachment(credential_id: str) -> Any:
+    """The membership of a credential's oldest attachment that is not detached, by
+    attached_at and then id. TODO(hub PR B): the attachment of the route's project."""
+    a = t.instance_attachment
+    return (
+        select(t.membership)
+        .select_from(t.membership)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
+        .order_by(a.c.attached_at, a.c.id)
+        .limit(1)
+    )
 
 
 def _credential_project(conn: Connection, credential_id: str) -> str | None:
     found: str | None = conn.execute(
-        select(t.membership.c.project_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == credential_id)
+        _oldest_attachment(credential_id).with_only_columns(t.membership.c.project_id)
     ).scalar()
     return found
 
 
 def _sees_credential(conn: Connection, mine: Membership, credential_id: str) -> bool:
     """The read of the credentials list (§10), for a replayed revocation."""
-    target = conn.execute(
-        select(t.membership)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == credential_id)
-    ).one()
+    target = conn.execute(_oldest_attachment(credential_id)).one()
     return _manages_credentials(conn, mine, target)
 
 
@@ -1422,7 +1437,11 @@ def set_paused(
     else:
         held = instances.require_active(conn, target, instance, "instance")
         lifts_a_human_pause = reason is None and instances.human_paused(target, held)
-        conn.execute(update(t.credential).where(t.credential.c.id == held.id).values(**values))
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(held.id, target.id))
+            .values(**values)
+        )
     availability.reconcile_ids(conn, [target.id], change.actor)
     if reason is None and not lifts_a_human_pause:
         return
@@ -1483,9 +1502,9 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     now = clock.now()
     credentials = (
         conn.execute(
-            select(t.credential.c.id).where(
-                t.credential.c.membership_id == target.id, t.credential.c.revoked_at.is_(None)
-            )
+            select(t.credential.c.id)
+            .select_from(instances.credential_join())
+            .where(t.instance_attachment.c.membership_id == target.id, instances.attached_now())
         )
         .scalars()
         .all()
@@ -1717,13 +1736,20 @@ def list_credentials(
         target = member_row_or_removed(conn, mine.project.id, member_id)
         _may_manage_credentials(conn, mine, target)
         since = clock.now() - REVOKED_LISTED
+        a = t.instance_attachment
         rows = conn.execute(
-            select(t.credential).where(
-                t.credential.c.membership_id == target.id,
+            instances.credential_rows().where(
+                a.c.membership_id == target.id,
                 t.credential.c.revoked_at.is_(None) | (t.credential.c.revoked_at > since),
+                # A detached attachment on purpose, for 30 days like a revoked credential:
+                # §10 lists a credential detached from this project for that long (§6.17).
+                a.c.detached_at.is_(None) | (a.c.detached_at > since),
             )
         ).all()
-        rows = sorted(rows, key=lambda r: (r.revoked_at is not None, r.created_at), reverse=False)
+        rows = sorted(
+            rows,
+            key=lambda r: (r.revoked_at is not None or r.detached_at is not None, r.created_at),
+        )
         return JSONResponse(
             {"items": [credential_view(conn, r) for r in rows], "next_cursor": None}
         )
@@ -1736,9 +1762,15 @@ def revoke_credential(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         row = conn.execute(
-            select(t.credential, t.membership.c.project_id, t.membership.c.agent_id)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-            .where(t.credential.c.id == credential_id)
+            instances.credential_rows()
+            .add_columns(t.membership.c.project_id)
+            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
+            .where(
+                t.credential.c.id == credential_id,
+                t.membership.c.project_id == mine.project.id,
+                # A project the instance was detached from revokes nothing (§6.17).
+                t.instance_attachment.c.detached_at.is_(None),
+            )
         ).first()
         if row is None or row.project_id != mine.project.id:
             raise not_found()
