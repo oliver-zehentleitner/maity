@@ -617,8 +617,8 @@ default.
 **Id:** 1d17b2d5-1d4c-4d7a-90db-67eaeb382b72
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Evidence:** confirmed
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
 **Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
 **See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
 **See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
@@ -630,7 +630,8 @@ orderer is treated as the author is (2c02c8c4): an instance orderer
 replaces its member's `member:` token from `to`, a mention or a lead, is
 added once, and passes the §9.6 gate as part of the card's own flow. It is
 left out when it has left the project, is isolated, is the sender, or
-could not read the result itself; the result still reaches everyone else
+is not in the project's restricted-access set while the result's card has
+a restricted text; the result still reaches everyone else
 and the hub says nothing of the omission. The hub never looks for the
 answered message in a body or a subject.
 
@@ -648,13 +649,13 @@ The routing, its exceptions and the two rejected alternatives are the
 approved request (confirmed). The clause on an orderer who could not read
 the result was the arbiter's one change: without it, a member who wrote
 any message a reviewer answers would receive a result on a restricted card
-it cannot read. How the hub tests that clause is this implementation's
-reading (inferred): a message's read rule (§8.9) does not itself look at
-its card, so the hub takes the contract's parenthesis literally and
-leaves the orderer out when the result's card (the one `task_id` names,
-or the exact-PR subject resolves) has a restricted text (§6.4) and the
-orderer is not in the project's restricted-access set (§6.1), which also
-excludes a guest. The jour fixe's `in_reply_to`, a list of response ids
+it cannot read. How the hub tests that clause was first this
+implementation's reading, since a message's read rule (§8.9) does not
+itself look at its card; the arbiter confirmed it and reworded §8.4 to
+say it directly (confirmed): the orderer is left out when the result's
+card (the one `task_id` names, or the exact-PR subject resolves) has a
+restricted text (§6.4) and the orderer is not in the project's
+restricted-access set (§6.1), which also excludes a guest. The jour fixe's `in_reply_to`, a list of response ids
 on a jour fixe reply, is another field on another resource; §8.4 says so
 in one line.
 

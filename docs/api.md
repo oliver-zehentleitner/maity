@@ -15201,11 +15201,11 @@ The orderer is treated exactly as the author is:
 When the author and the orderer are two instances of one member, both are
 added. A dormant orderer (§6.17) is woken, because the token is its own
 address. An orderer who has left the project or is isolated is left out,
-and so is an orderer who is the sender. An orderer who could not read the
-review result itself under §8.9 at the write (its card restricted, or the
-orderer lacking the trust the card's access needs) is left out as well.
-The result is still delivered to everyone else, and the hub says nothing
-about the omission. The orderer is part of the card's own flow, so the
+and so is an orderer who is the sender. An orderer who is not in the
+project restricted-access set (§6.4) is left out when the review result
+card (its task_id, or the card its exact-PR subject resolves to) has a
+restricted text. The result is still delivered to everyone else, and the
+hub says nothing about the omission. The orderer is part of the card's own flow, so the
 §9.6 gate leaves it open, as for the author and the leads: the orderer
 wrote to the reviewer first. Without `in_reply_to`
 nothing changes. The hub never searches a body or a subject for the

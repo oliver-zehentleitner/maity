@@ -12,9 +12,9 @@ audience already reaches (the author's instance only that same instance; `all` n
 With `in_reply_to` the answered message's author, the orderer, is added too (§8.4, "A review
 result reaches the instance whose message it answers"): the instance that wrote it, its
 successor when it was replaced, else its member. It is treated as the author is, and left out
-when it has left the project, is isolated, is the sender, or could not read the result itself
-under §8.9 at the write: the result's card has a restricted text (§6.4) and the orderer is not
-in the project's restricted-access set (§6.1), which also leaves out a guest.
+when it has left the project, is isolated, is the sender, or is not in the project's
+restricted-access set (§6.1) while the result's card has a restricted text (§6.4); that also
+leaves out a guest.
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def _orderer(
         and restricted.card_has_text(conn, card.id)
         and not restricted.in_set(conn, project, current.id)
     ):
-        return None  # could not read the result itself (§8.4, §8.9); nothing is said of it
+        return None  # outside the restricted set on a restricted card (§8.4); nothing is said
     return Recipient(member_id, token)
 
 
