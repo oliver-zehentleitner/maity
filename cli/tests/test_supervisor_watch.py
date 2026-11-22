@@ -4,6 +4,7 @@ pane, resting agents, and the finding on the report."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -1176,7 +1177,8 @@ def test_an_agent_that_joins_after_the_last_read_is_not_restarted(world: Any) ->
     two_passes(sup)
     assert backend.terminated == [] and sup.watching == {}
     assert sup.wants_placements()  # it asks for the placements anew instead
-    sup.update([watched(started_at=watch.stamp(T0 + 3))])  # serve's read after its poll
+    # Serve's read after its poll, started after the watch asked.
+    sup.update([watched(started_at=watch.stamp(T0 + 3))], read_at=clock.now)
     assert not sup.wants_placements()
     clock.now += 30
     drain(sup)
@@ -1382,3 +1384,232 @@ def test_an_offset_that_moves_between_read_and_check_makes_no_read_fresh(world: 
     sup.hub_offset = 0.0  # a later `server_time` (whole seconds) moves the offset down
     sup.tick()
     assert sup.watching == {} and sup.wants_placements()  # still not fresh: it asks again
+
+
+# --- round 10: a session that ends before the TERM, the last action, adoption ----------------
+
+
+def decided_supervised(sup: supervisor.Supervisor, backend: FakeTmux, clock: Clock) -> None:
+    """A supervised run that never joined: a fresh read, then a restart decided two seconds
+    after that read started; its TERM waits for a read after the decision."""
+    running(sup, clock, watched(mode="supervised"))
+    clock.now = T0 + JOIN
+    reread(sup)
+    clock.now += 2
+    two_passes(sup)
+    end = sup.records[PID].watch_end
+    assert end is not None and end["then"] == "restart" and not end["termed"]
+    assert backend.terminated == []
+
+
+def test_a_final_exit_before_the_term_takes_the_normal_exit_path(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    decided_supervised(sup, backend, clock)
+    backend.exit(NAME, loop.EXIT_REVOKED)  # the loop's own final exit, before any TERM
+    sup.tick()
+    body = last(reports)
+    assert (body["state"], body["reason"]) == ("failed", "agent_credential_revoked")
+    assert body["exit_code"] == loop.EXIT_REVOKED
+    rec = sup.records[PID]
+    assert rec.watch_end is None and rec.watch_restarts == []
+    assert backend.terminated == []
+    clock.now += 3600
+    settle(sup)
+    assert len(backend.started) == 1  # never started again
+
+
+def test_a_session_that_exits_before_the_term_takes_the_normal_exit_path(tmp_path: Path) -> None:
+    sup, backend, reports, clock, _ = make(tmp_path, "\n[limits.restart]\nquick_exit = 7200\n")
+    decided(sup, backend, clock)
+    backend.exit(NAME, 1)  # a plain crash, before any TERM
+    sup.tick()
+    body = last(reports)
+    assert (body["state"], body["reason"], body["exit_code"]) == ("exited", None, 1)
+    assert "finding" not in body
+    rec = sup.records[PID]
+    assert rec.crashes == [clock.now]  # the restart policy's count
+    assert rec.watch_restarts == [] and rec.watch_end is None  # no watch restart spent
+    assert backend.terminated == []
+
+
+def test_a_session_that_vanishes_before_the_term_is_a_gone_session(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    decided(sup, backend, clock)
+    backend.live.pop(NAME)  # gone, without a dead pane to read, before any TERM
+    settle(sup)
+    rec = sup.records[PID]
+    assert rec.watch_end is None and rec.watch_restarts == []
+    assert len(backend.started) == 2  # started again at once, as any gone session
+    assert last(reports)["state"] == "starting"
+    assert with_findings(reports) == [] and backend.terminated == []
+
+
+def test_a_read_from_between_the_decision_and_the_term_decides_nothing(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    decided(sup, backend, clock)
+    between = clock.now + supervisor.FRESH_MARGIN  # the read the TERM waited for
+    sup.update(list(sup.desired), read_at=between)
+    clock.now += 5
+    sup.tick()
+    assert backend.terminated == [NAME]
+    backend.attach = True  # someone attaches before the kill: the end is called off
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert NAME not in backend.killed and sup.records[PID].watch_end is None
+    backend.attach = False  # they leave
+    clock.now += supervisor.IDLE_EVERY
+    n = len(with_findings(reports))
+    two_passes(sup)  # still only the read from before the TERM: nothing decided ...
+    assert sup.wants_placements()  # ... a read is asked for
+    # The read after the TERM shows the agent listening again: no second end, no new finding.
+    sup.update([watched(started_at=watch.stamp(T0 + 60))], read_at=clock.now)
+    clock.now += supervisor.IDLE_EVERY
+    drain(sup)
+    assert backend.terminated == [NAME] and len(with_findings(reports)) == n
+
+
+def test_a_read_from_before_a_delayed_enter_decides_nothing(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    sup.pause = lambda seconds: None
+    backend.type_text = lambda name, line: backend.typed.append((name, line))
+    running(sup, clock, joined_then_quiet())
+    clock.now = QUIET_PAST_GRACE
+    reread(sup)
+    clock.now += 2
+    typed_at = clock.now
+    two_passes(sup)  # the watch's nudge: typed, its line not shown, no Enter
+    assert backend.typed == [(NAME, supervisor.NUDGE_LINE)] and backend.submitted == 0
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the line shows late
+    clock.now += supervisor.IDLE_EVERY
+    sup.tick()
+    assert backend.submitted == 1  # its Enter now
+    # A read that started after the typing but before the Enter, and a deaf wait below.
+    sup.update(list(sup.desired), read_at=typed_at + supervisor.FRESH_MARGIN + 1)
+    backend.below = tmux.WAITING
+    clock.now += supervisor.IDLE_EVERY
+    two_passes(sup)
+    assert backend.terminated == [] and sup.wants_placements()  # nothing decided, a read asked
+    # The read after the Enter shows the agent listening again: no end, no second finding.
+    sup.update([watched(started_at=watch.stamp(T0 + 60))], read_at=clock.now)
+    clock.now += supervisor.IDLE_EVERY
+    drain(sup)
+    assert backend.terminated == []
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["not_waiting"]
+
+
+def restarted(
+    sup: supervisor.Supervisor, backend: FakeTmux, reports: Reports, clock: Clock
+) -> supervisor.Supervisor:
+    """The runner restarts (an upgrade) while the session runs on: a new supervisor reads
+    actual.json, then the placements, and adopts the session at its first tick."""
+    sup.save()
+    again = supervisor.Supervisor(
+        sup.cfg, backend, reports, lambda line: None, sup.probes, now=clock, rand=lambda: 0.5  # type: ignore[arg-type]
+    )
+    again.login, again.pause = sup.login, sup.pause
+    again.load()
+    again.update(list(sup.desired), read_at=clock.now)
+    again.tick()
+    rec = again.records[PID]
+    assert (rec.state, rec.reason) == ("running", "adopted")
+    return again
+
+
+@pytest.mark.parametrize("kind", ["restart", "held", "auth"])
+def test_an_end_without_its_term_is_dropped_across_a_runner_restart(
+    tmp_path: Path, kind: str
+) -> None:
+    sup, backend, reports, clock, _ = make(
+        tmp_path, "\n[limits.watch]\nauto_restarts = 0\n" if kind == "held" else ""
+    )
+    if kind == "auth":
+        sup.login = lambda harness, binary, as_user, agent_path: "needed"
+    decided(sup, backend, clock)
+    assert sup.records[PID].watch_end["then"] == kind
+    clock.now += 30
+    again = restarted(sup, backend, reports, clock)
+    # The read the end waited for, and the looks after it: nothing of the old decision.
+    again.update(list(again.desired), read_at=clock.now + supervisor.FRESH_MARGIN)
+    for _ in range(3):
+        clock.now += supervisor.TICK
+        again.tick()
+    assert backend.terminated == [] and backend.killed == []
+    assert with_findings(reports) == []
+    assert again.records[PID].watch_restarts == []
+    assert states(reports)[-1] == ("running", "adopted", None)
+
+
+def test_an_end_whose_term_went_out_still_kills_after_a_runner_restart(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
+    ended_by_term(sup, backend, clock)
+    clock.now += 2
+    again = restarted(sup, backend, reports, clock)
+    end = again.records[PID].watch_end
+    assert end is not None and end["termed"]
+    clock.now += supervisor.KILL_AFTER
+    again.tick()
+    assert backend.killed[-1] == NAME
+    body = last(reports)
+    assert (body["state"], body["reason"]) == ("failed", "auth")
+    assert body["finding"]["cause"] == "login_invalid"
+
+
+def test_the_watchs_last_action_is_kept_in_actual_json(world: Any) -> None:
+    sup = world[0]
+    sup.records[PID] = supervisor.Record(generation=1, state="running", watch_acted_at=T0 + 5)
+    sup.save()
+    again = supervisor.Supervisor(
+        sup.cfg, FakeTmux(), Reports(), lambda line: None, {}  # type: ignore[arg-type]
+    )
+    again.load()
+    assert again.records[PID].watch_acted_at == T0 + 5
+    path = sup.cfg.state_dir / supervisor.ACTUAL_FILE
+    data = json.loads(path.read_text())
+    del data[PID]["watch_acted_at"]  # a record from before the field
+    path.write_text(json.dumps(data))
+    again.load()
+    assert again.records[PID].watch_acted_at is None
+
+
+@pytest.mark.parametrize("since", [None, T0 + 100])
+def test_a_restart_end_is_called_off_when_the_read_shows_the_episode_ended(
+    world: Any, since: float | None
+) -> None:
+    sup, backend, reports, clock, _ = world
+    decided(sup, backend, clock)
+    quiet = None if since is None else watch.stamp(since)  # listening again, or another spell
+    sup.update([watched(started_at=watch.stamp(T0 + 60), not_listening_since=quiet)],
+               read_at=clock.now + supervisor.FRESH_MARGIN)  # fmt: skip
+    sup.tick()
+    assert backend.terminated == [] and backend.killed == []
+    rec = sup.records[PID]
+    assert rec.watch_end is None and rec.watch_restarts == []
+    body = last(reports)
+    assert (body["state"], body["finding"]["cause"]) == ("running", "wait_deaf")
+
+
+def test_a_never_joined_restart_is_called_off_when_the_read_shows_a_join(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    decided_supervised(sup, backend, clock)
+    sup.update([watched(mode="supervised", started_at=watch.stamp(T0 + 3))],
+               read_at=clock.now + supervisor.FRESH_MARGIN)  # fmt: skip
+    sup.tick()
+    assert backend.terminated == [] and sup.records[PID].watch_restarts == []
+    body = last(reports)
+    assert (body["state"], body["finding"]["cause"]) == ("running", "never_joined")
+
+
+def test_a_read_that_started_before_the_request_leaves_it_standing(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE + 30
+    sup.tick()  # the read it has is from the start: it asks for one at this moment
+    assert sup.wants_placements()
+    sup.update(list(sup.desired), read_at=clock.now - 5)  # a GET under way before the ask
+    assert sup.wants_placements()
+    sup.update(list(sup.desired))  # a read at no known time
+    assert sup.wants_placements()
+    sup.update(list(sup.desired), read_at=clock.now)  # one started at the ask
+    assert not sup.wants_placements()

@@ -507,11 +507,12 @@ class Supervisor:
     hub_offset: float = 0.0
     login: Callable[[str, str | None, AsUser, str | None], str] = keeper.login_state
     # When the request that last read the placements, and with them each `session`, started
-    # (this supervisor's clock, `now`; `_fresh` puts it in hub time), and whether the watch
-    # wants a fresh read: it acts on a trigger only with facts read after the trigger began to
-    # hold (ops' live check: a join wakes no runner).
+    # (this supervisor's clock, `now`; `_fresh` puts it in hub time), and since when the watch
+    # wants a fresh read (None: it wants none): it acts on a trigger only with facts read after
+    # the trigger began to hold (ops' live check: a join wakes no runner). Only a read that
+    # started at or after that moment answers the request (`update`).
     facts_read_at: float | None = None
-    wants_read: bool = False
+    wants_read_after: float | None = None
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -621,6 +622,16 @@ class Supervisor:
             began = max(began, rec.watch_acted_at + self.hub_offset)
         return read >= began + FRESH_MARGIN
 
+    @staticmethod
+    def _drop_unsent_end(rec: Record) -> None:
+        """An end the watch decided but sent no TERM for yet is dropped, with no finding: a
+        session that exits or vanishes before the TERM ended on its own and goes to the exit
+        handling as if the watch had never decided (its final exits, the crash count); after a
+        runner restart, an adopted session is watched afresh. An end whose TERM went out is
+        kept, so its kill and its entry still follow. Ends from before `termed` were sent."""
+        if rec.watch_end is not None and not rec.watch_end.get("termed", True):
+            rec.watch_end = None
+
     def _abort_end(self, pid: str, rec: Record, verdict: dict[str, Any], why: str) -> bool:
         """An end the watch began is not carried to the kill: the session stays, and the
         finding is reported once on a `running` report. Its restart was never counted
@@ -644,6 +655,8 @@ class Supervisor:
             return False
         pid = p["id"]
         interactive = p.get("mode") == "interactive"
+        if session.dead:  # gone before the TERM: not the watch's end (`_drop_unsent_end`)
+            Supervisor._drop_unsent_end(rec)
         if rec.watch_end is not None:
             end = rec.watch_end
             ended = end.get("verdict")
@@ -654,8 +667,7 @@ class Supervisor:
                 # until then a read is asked for and the session is held.
                 read = self.facts_read_at
                 if read is None or read < end["at"] + FRESH_MARGIN:
-                    with self.lock:
-                        self.wants_read = True
+                    self._want_read(now)
                     return True
             if (
                 not session.dead
@@ -680,6 +692,9 @@ class Supervisor:
                     return self._abort_end(pid, rec, ended, "its trigger no longer holds")
             if not session.dead and not termed:
                 end["termed"], end["at"] = True, now  # the kill counts from the TERM
+                # A decision after an end called off at the kill waits for facts read since
+                # the TERM: what it did to the agent shows only in those.
+                rec.watch_acted_at = now
                 backend.terminate(session)
                 return True
             if not session.dead and now - end["at"] >= KILL_AFTER:
@@ -701,8 +716,7 @@ class Supervisor:
             # watch looks again after that (ops' live check). A dead session meanwhile goes to
             # the exit handling as without the watch.
             rec.watch_verdict = verdict
-            with self.lock:
-                self.wants_read = True
+            self._want_read(now)
             return False
         if verdict is not None and verdict["generation"] == rec.generation:
             # The verdict is acted on only while its facts still hold at acting time (Codex
@@ -880,8 +894,7 @@ class Supervisor:
         rec.watch_acted_at = now  # an end called off later decides again on later facts only
         # No TERM yet: it goes once a placements read started after this decision shows the
         # agent neither paused nor, for a restart, listening again (`_watch`, bcr2).
-        with self.lock:
-            self.wants_read = True
+        self._want_read(now)
         return True
 
     @staticmethod
@@ -1053,13 +1066,24 @@ class Supervisor:
             # The watch's facts are as fresh as the request's start, kept on this clock; the
             # watch puts it in hub time when it compares (`_fresh`, Gemini A2049).
             self.facts_read_at = read_at
-            self.wants_read = False
+            # A read that started before the watch asked (or at no known time) cannot show
+            # what the watch waits for: the request stands until one that started since.
+            asked = self.wants_read_after
+            if asked is not None and read_at is not None and read_at >= asked:
+                self.wants_read_after = None
+
+    def _want_read(self, now: float) -> None:
+        """Ask serve for the placements read anew, by a request that starts at `now` or later
+        (a later ask moves the moment on)."""
+        with self.lock:
+            asked = self.wants_read_after
+            self.wants_read_after = now if asked is None else max(asked, now)
 
     def wants_placements(self) -> bool:
         """Whether the watch waits for placements read anew: a trigger holds on facts read
         before it began to hold (§15.14; serve reads them after its next poll)."""
         with self.lock:
-            return self.wants_read
+            return self.wants_read_after is not None
 
     def closed(self, placements: list[dict[str, Any]]) -> None:
         """The hub's closed placements of this runner: their scratch goes at the next tick."""
@@ -1589,6 +1613,10 @@ class Supervisor:
                 # not_listening grace from now, the adoption.
                 rec.enter(now, "running", "adopted", started_at=None, watch_since=now,
                           watch_joined=False, watch_acted_at=None)  # fmt: skip
+                # An end decided before the runner's restart and not yet sent its TERM is
+                # dropped, with no finding: the adopted session is watched afresh. One whose
+                # TERM went out keeps its kill.
+                Supervisor._drop_unsent_end(rec)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
                 on = rec.sandbox  # the start's own view, not the tool in use now (§15.16)
                 if on is None:
@@ -1607,6 +1635,9 @@ class Supervisor:
                     self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
+            # Dead before the watch's TERM: it ended on its own, and goes where it would have
+            # gone had the watch never decided (the watch's look, then the exit handling).
+            Supervisor._drop_unsent_end(rec)
             if (
                 rec.state == "running" and rec.watch_end is None and rec.hung_at is None
                 and self._watch(p, rec, mine, target, now)
@@ -1614,6 +1645,7 @@ class Supervisor:
                 return 0  # the watch takes the exit: a trigger held when it came
             self._exited(rec, mine, now, backend, target, resting=self._resting(p))
             return 0
+        Supervisor._drop_unsent_end(rec)  # vanished before the TERM: a gone session as any other
         if rec.watch_end is not None and self._watch_ended(rec, now, None, self._resting(p)):
             # The session the watch was ending is gone without an exit to read: its end is
             # entered now (auth, held or a restart), never a start in its place (Gemini A1941).
@@ -1664,6 +1696,7 @@ class Supervisor:
         if rec.hung_at is not None:  # the runner ended it for not listening
             self._hung_exit(rec, now, code)
             return
+        Supervisor._drop_unsent_end(rec)  # an exit before the watch's TERM is the harness's own
         if rec.watch_end is not None:  # the watch ended it (§15.14)
             if self._watch_ended(rec, now, code, resting):
                 return
@@ -1805,6 +1838,7 @@ class Supervisor:
                 self.note(p["id"], "cannot send the nudge: <error>", log=False)
                 return
             rec.pane, rec.nudged_at, rec.unsent = digest, now, False
+            rec.watch_acted_at = now  # the nudge reaches the agent only now (`_nudge`)
             return
         if rec.quiet_since is None or digest != rec.pane:
             if rec.nudged_at is not None:  # a change after its Enter: the nudge was answered

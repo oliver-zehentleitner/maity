@@ -6313,8 +6313,9 @@ Where the contract left the choice open, it decided as follows.
   counts from the later of the quiet spell's start and `watch_since`, as the
   grace does: a stale spell from before a restart would otherwise make a
   working run look two hours quiet at its first look. A session that
-  vanished while the watch was ending it enters that end (auth, held or a
-  restart) instead of a fresh start.
+  vanished after the watch's TERM enters that end (auth, held or a
+  restart) instead of a fresh start; one that vanished before it is a gone
+  session as without the watch.
 - **Final exits stay with the exit handling; the watch takes only a
   plain exit** (A1940; narrowed in Gemini review A1958). A supervised loop's
   revoked credential, hot loop or folder refusal is decided as without the
@@ -6386,8 +6387,10 @@ Where the contract left the choice open, it decided as follows.
   second between two readings, a read counts as fresh only from one second
   past the moment (`FRESH_MARGIN`, Gemini A2049). The read must also have
   started after the runner's own last action on that session
-  (`watch_acted_at`: a nudge, the watch's or the own check's, or the
-  watch's TERM; cleared on a new run), plus the margin (ops' live check on
+  (`watch_acted_at`: a nudge, the watch's or the own check's, its delayed
+  Enter when the line showed late, the watch's decision to end and its
+  TERM; cleared on a new run and on an adoption; kept in actual.json),
+  plus the margin (ops' live check on
   067c7e0e: a nudge answered by a new `maity wait` was restarted as
   `wait_deaf` on facts read before the nudge). The facts carry no
   acknowledged seq, so the episode shows as ended by `not_listening_since`
@@ -6395,8 +6398,18 @@ Where the contract left the choice open, it decided as follows.
   decided end (a restart, the cap's hold, a login that needs a person) is
   not sent its TERM at once either: the TERM waits for a read started after
   the decision, and if that read shows the agent paused or dormant, or for
-  a restart its trigger gone, the end is called off (bcr2), so a pause the
-  runner had not read yet never races a TERM. A dead session meanwhile goes to the exit handling. Reason: in
+  a restart its trigger gone (listening again, another quiet spell, or for
+  `never_joined` a join), the end is called off (bcr2), so a pause the
+  runner had not read yet never races the watch's TERM (the own idle
+  check still sends its TERM at once, unchanged). A session that exits or
+  vanishes before the TERM ended on its own: the end is dropped with no
+  finding and the session goes to the exit handling as if the watch had
+  never decided (final exits, the crash count, no watch restart spent).
+  After a runner restart, an end not yet sent its TERM is dropped on
+  adoption, with no finding; one whose TERM went out keeps its kill. A read
+  asked for is answered only by a read whose request started at or after
+  the ask (`wants_read_after`); one that started earlier, or at no known
+  time, leaves the request standing. Reason: in
   ops' check the agent joined three seconds after its start, the runner had
   read placements only at the start (it re-reads every 10 minutes or on a
   wake), and no hub event reaches a runner on a session start, so it held a
@@ -6404,7 +6417,9 @@ Where the contract left the choice open, it decided as follows.
   likewise restart an agent that listens again. Rejected: a shorter
   `REREAD_INTERVAL` for every runner (more load everywhere, and the race
   stays); a hub event on every session start (a hub change, a follow-up
-  card at most).
+  card at most). The cost, seen live by ops: a quiet spell is seen only
+  at the next read, so the first look, and with it a nudge, can come up
+  to `REREAD_INTERVAL` (10 minutes) after the grace ran out.
 - **A watch restart counts only once the session is gone** (A1957): when
   the relaunch is decided, not when the TERM is sent, so an end that is
   called off (someone attached, a pause, a trigger that cleared) spends
