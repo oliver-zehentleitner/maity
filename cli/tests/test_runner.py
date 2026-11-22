@@ -15,7 +15,7 @@ import pytest
 from conftest import fake_opencode, posix
 
 from maity import cli, state
-from maity.runner import adapters, commands, config
+from maity.runner import adapters, capabilities, commands, config
 from maity.runner.asuser import RUNNER
 
 MINIMAL = """\
@@ -717,7 +717,8 @@ def test_check_warns_about_inherited_claude_settings(
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")  # the checked one: no warning for it
+    checked = capabilities.CHECKED["claude-code"]
+    fake_tool(bin_dir, "claude", f"{checked} (Claude Code)")  # the checked one: no warning for it
     for tool in ("bwrap", "socat", "unshare", "true"):  # the nesting probe passes: no warning
         fake_tool(bin_dir, tool)
     (home / ".claude").mkdir()
@@ -874,7 +875,9 @@ def test_check_tells_a_registered_worktree_from_a_leftover_directory(
     assert sorted(str(p) for p in tmp_path.rglob("*")) == before  # nothing removed
 
 
-@pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
+@pytest.mark.parametrize(
+    ("version", "warned"), [(capabilities.CHECKED["claude-code"], False), ("2.1.324", True)]
+)
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
 ) -> None:
@@ -886,7 +889,8 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
-    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.325" in line]
+    checked = capabilities.CHECKED["claude-code"]
+    found = [line for line in lines(capsys) if f"sandbox was checked with {checked}" in line]
     assert bool(found) is warned, found
     assert all(line.startswith("warn") for line in found)
 
