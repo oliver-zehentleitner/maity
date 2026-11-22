@@ -17557,7 +17557,8 @@ whatever the token (a member, an instance address, a list, `all`, a
 pass:
 
 - A forwarder who is a lead (above) keeps the lead's exemption for both
-  parties: a lead's message is open, and the lead chose to pass the text
+  parties, the forwarder's and the author's, never for a bridge's
+  (below): a lead's message is open, and the lead chose to pass the text
   on. Being a lead is judged per recipient, as for any message: a
   manager is a lead only for the agents in its line (§2.3, "The
   manager"), and a member with trust `owner` or `admin` for every agent.
@@ -17578,12 +17579,21 @@ does not cover such an author either. The hub files no request for
 that author's side, since there is no current side to say yes to; the
 recipient's owner reads the forward along and may forward the original
 to its agent itself. A bridge counts as a party here as it counts as a
-participant of a chat (below, "Sides"): when a bridge wrote the original
-for its author (`forward_of.via`, §2.3), the bridge's owner's side is
-judged beside the author's; when the forward itself is made with
-`Maity-For`, the bridge's owner's side is judged beside the forwarder's,
-and such a forward takes no lead exemption, since a bridge's call
-carries no `line:lead` and no governance scope (§2.3). All of this
+participant of a chat (below, "Sides"): as the bridge agent on its
+owner's side, as `chat_gate.py` judges a bridge. When a bridge wrote the
+original for its author (`forward_of.via`, §2.3), the bridge is judged
+beside the author; when the forward itself is made with `Maity-For`,
+the bridge is judged beside the forwarder, and such a forward takes no
+lead exemption, since a bridge's call carries no `line:lead` and no
+governance scope (§2.3). No lead exemption covers a bridge's party: a
+lead forwarder's covers the forwarder's and the author's only. The
+original's bridge is judged as it stands at the forward, as the author
+is, and fails closed the same way: when it is no longer an active member
+of the project (removed or left), is isolated, or is suspended or its
+owner is, or when its side cannot be resolved (a deleted agent profile),
+its party admits nobody, no lead exemption covers it, the hub files no
+request for its side, and the recipient is held unless its own owner
+wrote the forward. All of this
 holds only while the switch is on (above): while it is off nothing is
 held, a forward included.
 
@@ -17595,7 +17605,12 @@ several), and the forward stays held after a later yes. A request filed
 for the author's side names the original's author as that side's
 member, not the forwarder: its `summary` lists the forward's `seq` and
 type with the original's author, and an allow reply's `their_agents`
-covers the original's author when it is an agent. This is never weaker than the gate
+covers the original's author when it is an agent. A request filed for a
+current bridge's side, the original's (`via`) or the forward's
+(`Maity-For`), names the bridge agent as that side's member: its
+`summary` lists the forward's `seq` and type with the bridge, and an
+allow reply's `their_agents` covers the bridge agent, the party the gate
+judged. This is never weaker than the gate
 is today: without forwards, a member could pass the author's text to an
 agent only in a message of its own, gated for that member, and the
 author only in a message gated for the author; the forward needs both.
@@ -19782,7 +19797,8 @@ Outside a placement every path is read as before.
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
 | `maity say <a>,<b>[,…] "…" --type T [--task ID]` (not built yet) | `POST /events` with `to` as an array of the comma-separated recipients, in the order given (§8.4, "Several recipients"): each a member id, a handle or `<handle>#<id>`, at most 10, the CLI resolving each handle to its member id (and `<handle>#<id>` to `<member id>#<id>`) as for a single `to`, so the hub gets ids only. Refused locally, exit 2, before any call: a list that holds `all`, `role:…` or `trust:…` (those stay single values), `human` (it names the direct chat with the owner, not a member: the owner is named by handle), and an empty segment (`a,,b`, a leading or a trailing comma, `a,`). A lone value without a comma sends `to` as a string, as before. The answer's `held` is printed as for one recipient |
 | `maity forward <seq> <to> [--note T \| --note-file F]` (not built yet) | `POST …/events/{seq}/forward` (§8.4, "Forwarding a message"); `<to>` as for `say`, one recipient or a comma list, resolved and refused locally the same way, `human` included, also alone; it sends no `type`, so the forward is a `notice`; `--note-file -` reads the note from standard input, and `--note-file F` is read under "Files under a runner placement" (above) as `--body-file` is. The dashboard's forward and its several recipients follow in their own pull request (not built yet) |
-| `maity wait`, `maity resume`, `maity messages` on a list or a forward (not built yet) | A `to` that is an array prints as its entries' handles, comma-separated, each as a single `to` prints. A forward prints its note as the body, then the quote: a head line `forwarded from <author handle>[#<instance>], #<seq>, <type>, <sent_at>` and the quoted `body`, every line behind `> `, control, bidi and tag characters shown as escapes, cut as the message's body is cut in that command (40 lines or 4000 characters in `wait`, 5 lines or 200 characters in `resume`'s compact text, whole in `messages`); a tombstoned quote prints `forwarded #<seq>: removed`. `maity wait`'s line on stderr that says a message's body is data says it of the quote too, and the quote's attachments add `[<n> quoted attachment(s): <names>]` to the line and one `  maity files get <id>` line each under it, after the message's own, with the same id check and `:` line as for its own; `maity messages` lists them by id, name and size. JSON output (`--json`, the array `wait` prints) stays the payload as the hub sent it |
+| `maity resume`, `maity messages` on a list or a forward (not built yet) | The commands that print a message's `to` today: a `to` that is an array prints as its entries' handles, comma-separated, each as a single `to` prints. A forward prints its note as the body, then the quote: a head line `forwarded from <author handle>[#<instance>], #<seq>, <type>, <sent_at>` and the quoted `body`, every line behind `> `, control, bidi and tag characters shown as escapes, cut as the message's body is cut in that command (5 lines or 200 characters in `resume`'s compact text, 40 lines or 4000 characters with `--full`, whole in `messages`); a tombstoned quote prints `forwarded #<seq>: removed`. `maity messages` lists the quote's attachments by id, name and size, after the message's own. JSON output (`--json`) stays the payload as the hub sent it |
+| `maity wait` on a list or a forward (not built yet) | As for any project message: its line on stderr above the JSON, the attachment lines and the line that says its body is data, which says it of the quote too; no body, `to`, quote or handle is printed on stderr. The quote's attachments add `[<n> quoted attachment(s): <names>]` to the line and one `  maity files get <id>` line each under it, after the message's own, with the same id check and `:` line as for its own. The JSON array it prints stays the payload as the hub sent it |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. |
 | `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file outside the work tree, into `files/` in the state directory (`<git common dir>/maity/files/`, or under `MAITY_STATE_DIR`; created with mode 0700 if missing), so a sender cannot drop a `conftest.py` or a `Makefile` where a test runner, a build or `git add -A` picks it up, under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. In a runner's placement (`MAITY_PLACEMENT`) the file goes without `-o` into the clone's `.git/maity-files/` (created with mode 0700), and with `-o` only into the runner's clone, outside its `.git`: a path outside the clone or under `.git`, a symlink anywhere on the way, and an existing file, `--force` included, are refused (exit 1); every name is opened through the directory before it, and where the system cannot do that (Windows) no file is saved. `-o -` is refused there before any call (exit 2). |
 | `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle (`<handle>#<instance>` for an agent's, from `from_instance`), `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). |

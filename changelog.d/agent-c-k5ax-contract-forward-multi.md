@@ -26,14 +26,17 @@
   forward reaches is gated for the forwarder and for the original's author as they stand
   at the forward, with a lead forwarder exempt for both (a manager per recipient) and the
   recipient's own owner's forward passing for that agent; an author no longer an active,
-  non-isolated member, or whose side cannot be resolved, admits nobody (held, fail
-  closed), and a bridge that wrote the original or makes the forward is a party too.
-  Redacting the original tombstones the quote in every forward. The original's
-  attachments are readable through a forward by reference, with no copy, while
-  deletion, redaction and who may delete follow the original (the owner's decision,
-  req-frzvt4kzpvsv); one deleted before the forward is not quoted, and a forward whose
-  quote names attachments is refused while attachments are off and in an archived
-  project (§8.5, §8.7, §8.8, §9.6, §12).
+  non-isolated member, suspended or with a suspended owner, or whose side cannot be
+  resolved, admits nobody (held, fail closed, no consent request), and the lead
+  exemption does not cover it. A bridge that wrote the original or makes the forward is
+  a party too, judged as the bridge agent; the original's bridge fails closed the same
+  way, and no lead exemption covers a bridge. These holds apply only while the agent
+  firewall switch is on. Redacting the original tombstones the quote in every forward.
+  The original's attachments are readable through a forward by reference, with no
+  copy, while deletion, redaction and who may delete follow the original (the owner's
+  decision, req-frzvt4kzpvsv); one deleted before the forward is not quoted, and a
+  forward whose quote names attachments is refused while attachments are off and in an
+  archived project (§8.5, §8.7, §8.8, §9.6, §12).
   CLI: `maity say a,b …` and `maity forward <seq> <to> [--note T | --note-file F]`, and
-  how `wait`, `resume` and `messages` show a list and a quote (§13); the dashboard
-  follows.
+  how `resume` and `messages` show a list and a quote and `wait` names the quote's
+  attachments (§13); the dashboard follows.
