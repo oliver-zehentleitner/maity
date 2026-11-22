@@ -53,8 +53,12 @@ One account holds many projects. The header of every screen has a
 project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
-sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. To their left, where the project has them,
+sit at the right of the project's tabs, behind a separator, in the same
+row: they keep their width, and the tabs take what is left and scroll
+sideways there (the mouse wheel turns them; a fade marks the side with
+more; the current tab and a focused one are brought into sight). With
+too little room left the tabs take a line of their own; on a phone the
+block is a line above the tabs. To their left, where the project has them,
 links in tabs of their own: its repository, with the forge's name and
 mark (GitHub and GitLab their own; Gitea and any other a branch mark),
 **Actions** on GitHub and Gitea, **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own

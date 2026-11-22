@@ -2510,11 +2510,11 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.locator("header .project-state .away")).to_contain_text(
         re.compile(r"Away until " + re.escape(absence["date"]) + r", 10:00")
     )
-    # The state block sits at the projects' right, in their row, behind a separator;
-    # on a phone it goes under them, and nothing scrolls sideways.
-    chips = page.locator("header nav.switcher").bounding_box()
+    # The state block sits at the project tabs' right, in their row, behind a separator
+    # (tsk-dradpje67ak1); on a phone it is a line of its own, and nothing scrolls sideways.
+    tabs = page.locator("header nav.views").bounding_box()
     block = page.locator("header .project-state").bounding_box()
-    assert block["x"] >= chips["x"] + chips["width"] and abs(block["y"] - chips["y"]) < chips["height"], (chips, block)
+    assert block["x"] >= tabs["x"] + tabs["width"] and abs(block["y"] - tabs["y"]) < tabs["height"], (tabs, block)
     page.set_viewport_size({"width": 360, "height": 780})
     block = page.locator("header .project-state").bounding_box()
     assert block["x"] >= 0 and block["x"] + block["width"] <= 361, block
@@ -7379,6 +7379,29 @@ def project_links_step(run: Run, page: Page) -> None:
     page.route(project_read, with_repo)
     page.route(BOOTSTRAP, repo_in_bundle)
     try:
+        # At the owner's desktop width (about 1590 px) the tabs and the links share one line, the
+        # links at the right; the tabs take what is left and scroll there (tsk-dradpje67ak1).
+        page.set_viewport_size({"width": 1590, "height": 900})
+        page.reload()
+        expect(page.locator("header .project-links a.header-link", has_text="Actions")).to_be_visible()
+        line = page.evaluate("""() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+          const t = r('header nav.views'), l = r('header .project-links');
+          return [t.top, t.bottom, l.top, l.bottom, t.right, l.left]; }""")
+        assert line[2] < line[1] and line[0] < line[3] and line[4] <= line[5], f"the tabs and the links are not one line at 1590 px: {line}"
+        # Narrowed so they overflow: the mouse wheel turns the row, and a tab reached by the
+        # keyboard is scrolled into sight.
+        views = page.locator("header nav.views")
+        views.evaluate("(e) => { e.style.maxWidth = '200px'; e.scrollLeft = 0; }")
+        box = views.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.wheel(0, 120)
+        page.wait_for_function("() => document.querySelector('header nav.views').scrollLeft > 0")
+        views.locator("a").last.focus()
+        last = page.evaluate("""() => { const n = document.querySelector('header nav.views'), a = n.lastElementChild;
+          const r = n.getBoundingClientRect(), c = a.getBoundingClientRect(); return c.left >= r.left - 1 && c.right <= r.right + 1; }""")
+        assert last, "the focused last tab is not scrolled into its row"
+        views.evaluate("(e) => { e.style.maxWidth = ''; }")
+        run.shot(page, "project-tabs-links-desktop")
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             for width in (390, 360):

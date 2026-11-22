@@ -1660,15 +1660,40 @@ window.Maity = window.Maity || {};
     updateCue(nav);
   }
 
-  // A tab row scrolls sideways on its own when it is wider than the screen;
-  // the current tab is scrolled into it, without moving the page.
+  // A tab row scrolls sideways on its own when it is wider than its room;
+  // the current tab is scrolled into it, without moving the page, clear of
+  // the fade (32px, app.css) so it is not drawn faded.
+  const CUE_WIDTH = 32;
+  function intoRow(nav, el) {
+    if (!el || !nav.clientWidth) return;
+    const left = el.offsetLeft - nav.offsetLeft;
+    const right = left + el.offsetWidth;
+    if (left < nav.scrollLeft + CUE_WIDTH) nav.scrollLeft = Math.max(0, left - CUE_WIDTH);
+    else if (right > nav.scrollLeft + nav.clientWidth - CUE_WIDTH) nav.scrollLeft = right - nav.clientWidth + CUE_WIDTH;
+  }
   function showCurrent(nav) {
-    const cur = nav && nav.querySelector('[aria-current="page"]');
-    if (!cur || !nav.clientWidth) return;
-    const left = cur.offsetLeft - nav.offsetLeft;
-    const right = left + cur.offsetWidth;
-    if (left < nav.scrollLeft) nav.scrollLeft = Math.max(0, left - 8);
-    else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
+    if (nav) intoRow(nav, nav.querySelector('[aria-current="page"]'));
+  }
+  // A tab reached with Tab stands in sight too, not under the fade (tsk-dradpje67ak1).
+  function showFocused(nav) {
+    nav.addEventListener("focusin", (e) => { if (e.target !== nav) intoRow(nav, e.target.closest("a, button")); });
+  }
+  // A mouse wheel turns a row that scrolls sideways: its up and down move the row while the row has
+  // more that way, and the page as before once the row is at its end or fits (tsk-dradpje67ak1).
+  // A trackpad's or a touch's sideways move is the browser's own; a zoom (Ctrl) is left alone.
+  function wheelSideways(nav) {
+    nav.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const more = nav.scrollWidth - nav.clientWidth;
+      if (more <= 1) return;
+      const rtl = getComputedStyle(nav).direction === "rtl";
+      const step = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? nav.clientWidth : 1);
+      // scrollLeft runs from 0 to the end, negative in a right-to-left row.
+      const at = Math.abs(nav.scrollLeft);
+      if ((step > 0 && at >= more - 1) || (step < 0 && at <= 1)) return;
+      e.preventDefault();
+      nav.scrollLeft += rtl ? -step : step;
+    }, { passive: false });
   }
 
 
@@ -1789,6 +1814,8 @@ window.Maity = window.Maity || {};
     old.remove();
     fresh.scrollLeft = scrolled;
     scrollCue(fresh);
+    wheelSideways(fresh);
+    showFocused(fresh);
   }
 
   function renderHeader(ctx, current) {
@@ -1859,38 +1886,39 @@ window.Maity = window.Maity || {};
         // (Lead,) Chat, "+", the gear, Notifications, the profile: in one row on a phone too.
         // The Lead button goes in right before Chat once known (renderLead).
         h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
-      // The projects, and at their right, apart, this project's state and
-      // the owner's absence with the settings that change them.
+      // The projects and their tabs menu.
       h("div", { class: "switcher-row" },
         switcher(ctx),
-        tabsMenu(ctx),
-        ctx.scope === "project"
-          ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
+        tabsMenu(ctx)),
+      ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
+      // The time is in the block below; what holds meanwhile, here.
+      absence
+        ? h("p", { class: "flag absence" }, M.t("header.while_away", { scope: absence.scope }))
+        : null,
+      // The project's tabs, and at their right, apart, its links, its state and the owner's
+      // absence, in one line: the tabs take the room the block leaves and scroll in it (the
+      // maintainer, tsk-dradpje67ak1). On a phone the block is a line of its own above the tabs.
+      ctx.scope === "project"
+        ? h("div", { class: "views-row" },
+          h("nav", { class: "views", "aria-label": M.t("header.views") },
+            NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
+              href: projectLink(ctx.slug, item.route),
+              "aria-current": item.route === current ? "page" : null,
+            }, item.label, tabCount(ctx, item.route)))),
+          h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
             // On a phone the links are one row that scrolls; the state beside it stays in sight
             // (the maintainer, tsk-m9ew7v609fq0).
             projectLinkRow(ctx.project),
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
-            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null)
-          : null),
-      ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
-      // The time is in the block above; what holds meanwhile, here.
-      absence
-        ? h("p", { class: "flag absence" }, M.t("header.while_away", { scope: absence.scope }))
-        : null,
-      ctx.scope === "project"
-        ? h("nav", { class: "views", "aria-label": M.t("header.views") },
-          NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
-            href: projectLink(ctx.slug, item.route),
-            "aria-current": item.route === current ? "page" : null,
-          }, item.label, tabCount(ctx, item.route))))
+            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null))
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": !ctx.visiting && ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null);
     M.dom.keepImages(previous, fresh);
     while (fresh.firstChild) header.appendChild(fresh.firstChild);
-    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); wheelSideways(nav); showFocused(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.

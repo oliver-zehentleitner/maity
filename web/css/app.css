@@ -429,6 +429,13 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher a.drop-before::before { inset-inline-start: -5px; }
 .switcher a.drop-after::after { inset-inline-end: -5px; }
 .switcher-row nav.switcher { padding-inline-end: 6px; }
+/* A project's tabs and, at their right behind a separator, its links, state and absence share one line
+   (tsk-dradpje67ak1): the block keeps its full width, the tabs take what is left and scroll there, with the
+   fade on the side that has more and no scrollbar (the wheel turns them, js/app.js wheelSideways). Too
+   little left for about two tabs (12rem), the tabs take a line of their own and the block goes under them. */
+.views-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+.views-row nav.views { flex: 1 1 0; min-width: min(12rem, 100%); scrollbar-width: none; }
+.views-row nav.views::-webkit-scrollbar { display: none; }
 .project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; margin-inline-start: auto; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
@@ -1386,7 +1393,8 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
      take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
   .switcher-row .switcher { flex: 1 1 0; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
+  /* A line of its own, above the tabs as before they shared one (tsk-dradpje67ak1); the tabs scroll in theirs. */
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; order: -1; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
   .project-links { flex: 1 1 0; min-width: min(9rem, 100%); overflow-x: auto; }

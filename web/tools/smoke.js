@@ -447,9 +447,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(header).includes("Build") && text(header).includes("Fixtures") && header.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")), "project header: state, fixtures label, sign out");
   expect(chip("Maity").getAttribute("aria-current") === "page", "switcher marks the current project");
   const sRow = header.querySelector(".switcher-row");
-  expect(sRow && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "tabs-menu-box" && sRow.childNodes[2].className === "project-state"
-    && sRow.childNodes[2].querySelector(".state") && !header.querySelector(".bar .state"),
-    "header: the tabs menu, then the state and the settings sit at the projects' right, apart, not in the top bar");
+  expect(sRow && sRow.childNodes.length === 2 && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "tabs-menu-box",
+    "header: the tabs menu at the projects' right");
+  // The project's tabs and, at their right, its links and state share one row (tsk-dradpje67ak1).
+  const vRow = header.querySelector(".views-row");
+  expect(vRow && vRow.childNodes.length === 2 && vRow.childNodes[0].tagName === "NAV" && vRow.childNodes[0].className === "views"
+    && vRow.childNodes[1].className === "project-state" && vRow.childNodes[1].querySelector(".state") && !header.querySelector(".bar .state"),
+    "header: the state sits at the project tabs' right, apart, in their row, not in the top bar");
   // Project tabs (tsk-p6aye59z0k7g, docs/api.md §5.1 "Start tabs"): this browser's own, per viewer;
   // the account's list only seeds a browser that has none.
   {
