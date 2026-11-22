@@ -637,6 +637,8 @@ def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
     """tsk-xjy2d5617sar: the namespaces start; they are refused but a profile named for agy is
     loaded (the Ubuntu host with AppArmor's userns restriction, 3yc2); they are refused and
     nothing lifts that; or the probe cannot tell. Only a definite refusal is `cannot`."""
+    assert (capabilities.AGY_STARTS, capabilities.AGY_PROFILE, capabilities.AGY_CANNOT,
+            capabilities.AGY_UNKNOWN) == ("starts", "profile", "cannot", "unknown")  # fmt: skip
     profiles = tmp_path / "profiles"
     monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
     monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
@@ -686,13 +688,15 @@ def test_an_unreadable_profile_list_is_no_refusal(
         profiles.chmod(0o700)
 
 
+# The answers by value, so the parametrized tests below collect on code without them too (a
+# counter-check against main then fails test by test, not at collection).
 @pytest.mark.parametrize(
     "listing, expected",
     [
-        ((0, "bwrap\nagy\n"), capabilities.AGY_PROFILE),
-        ((0, "bwrap\n"), capabilities.AGY_CANNOT),
-        ((3, ""), capabilities.AGY_CANNOT),  # no AppArmor on that side
-        ((4, ""), capabilities.AGY_UNKNOWN),  # the list cannot be read there
+        ((0, "bwrap\nagy\n"), "profile"),
+        ((0, "bwrap\n"), "cannot"),
+        ((3, ""), "cannot"),  # no AppArmor on that side
+        ((4, ""), "unknown"),  # the list cannot be read there
     ],
 )
 def test_the_agy_sandbox_probe_reads_the_profiles_as_the_agents_user(
@@ -2089,11 +2093,12 @@ def checked(
 ) -> list[tuple[str, str]]:  # fmt: skip
     """`namespaces`: what `agy_sandbox` answers; True and False for starts and cannot."""
     if namespaces is True or namespaces is False:
-        namespaces = capabilities.AGY_STARTS if namespaces else capabilities.AGY_CANNOT
+        namespaces = "starts" if namespaces else "cannot"
     state = namespaces
     monkeypatch.setattr(AsUser, "home", lambda self: home)
     monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
-    monkeypatch.setattr(capabilities, "agy_sandbox", lambda path, as_user=None, binary=None: state)
+    monkeypatch.setattr(capabilities, "agy_sandbox", lambda path, as_user=None, binary=None: state,
+                        raising=False)  # fmt: skip
     report = commands.Report()
     commands._check_antigravity(report, harness, AsUser(), "/usr/bin")
     return report.lines
@@ -2133,10 +2138,10 @@ def test_check_reports_agys_sandbox_off_and_the_namespaces_as_a_diagnostic(
     [
         # The Ubuntu host with AppArmor's userns restriction and a profile for agy (3yc2): a
         # warning, never the error the plain refusal alone would give.
-        (capabilities.AGY_PROFILE, "warn", ("profile named for agy", "not verified")),
+        ("profile", "warn", ("profile named for agy", "not verified")),
         # Refused and nothing lifts it: an error that names the way out.
-        (capabilities.AGY_CANNOT, "error", ("cannot start", "require_sandbox = true")),
-        (capabilities.AGY_UNKNOWN, "warn", ("not checked",)),
+        ("cannot", "error", ("cannot start", "require_sandbox = true")),
+        ("unknown", "warn", ("not checked",)),
     ],
 )
 def test_check_says_what_the_agy_sandbox_probe_found(
