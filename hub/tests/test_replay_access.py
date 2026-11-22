@@ -478,6 +478,13 @@ EXPECTED = {
     "member",
     "member_patch",
     "member_read",
+    # PATCH /me and POST /me/limit (§5.3). member_self: only the credential whose own
+    # attachment to that membership is still live and not isolated gets the replay, so a
+    # detached or isolated one gets not_found (test_instance_projects_auth).
+    "member_self",
+    # member_set: stored by the credential and replayed only to it; the answer re-reads that
+    # credential's live, not isolated attachments, so a project it has lost is left out.
+    "member_set",
     "member_team",
     "memory",
     "message",
