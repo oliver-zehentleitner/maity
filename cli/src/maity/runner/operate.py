@@ -460,9 +460,10 @@ def _collect_skills(cfg: config.Config, named: set[str] | None, remove: bool) ->
 
 
 def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) -> None:
-    """Every scratch under the workspaces root whose placement the hub does not list as
-    active (§15.5): closed, or no placement of this runner at all, and that has no session
-    on this machine. Listed, and with `remove` removed and written to `removed.jsonl`.
+    """Every scratch under the workspaces root, in the holder or the former per-project layout,
+    whose placement the hub does not list as active (§15.5): closed, or no placement of this
+    runner at all, and that has no session on this machine. Listed, and with `remove` removed
+    and written to `removed.jsonl`.
     Nothing in a scratch is kept as unsaved work."""
     assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
     if active is None:
@@ -474,35 +475,77 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
         return
     as_user = _as_user(cfg)
     root = cfg.local.workspaces
+    # Each scratch in the holder `<root>/.scratch/<project>/`, and in a project's former
+    # `.scratch` while any is left (tsk-c7zzd440x8pn), listed as the agents' user: in the
+    # agent_user layout the holder is that user's 0700 directory, closed to the runner (the
+    # review of #2112). The holder and the projects' directories in it stay, even empty; only
+    # scratches go. A link is listed, never gone into.
+    found: list[tuple[Path, str]] = []  # (the scratch's path, `d`/`l`/`f`/`?`)
     try:
-        projects = sorted(p.name for p in root.iterdir() if workspace.TOKEN.fullmatch(p.name))
-    except OSError as exc:
-        raise Refused(f"cannot list {root} ({exc})") from None
-    for project in projects:
-        holder = root / project / workspace.SCRATCH
-        if holder.is_symlink() or not holder.is_dir():
+        holders, skipped = _scratch_holders(root, as_user)
+        for holder in holders:
+            found += [(holder / name, kind) for name, kind in as_user.entries(holder, 1)]
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused(f"cannot list the scratches under {root} ({exc})") from None
+    for link in sorted(skipped):  # so the operator sees why nothing behind it was cleaned
+        print(f"scratch  {onboarding.inline(str(link))}: a link, skipped (not gone into)")
+    for entry, kind in sorted(found):
+        if entry.name in active:
             continue
-        for entry in sorted(holder.iterdir()):
-            if entry.name in active:
+        if entry.name in running:
+            print(f"scratch  {entry}: kept (a session of the placement is still there)")
+            continue
+        if not workspace.SCRATCH_ID.fullmatch(entry.name) or kind != "d":
+            print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
+            continue
+        if not remove:
+            print(f"scratch  {entry}: removable (the placement is not active)")
+            continue
+        try:
+            removed = scratch.remove(entry, as_user)
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
+            continue
+        if removed is None:
+            continue  # gone meanwhile
+        scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
+        print(f"scratch  {entry}: removed")
+
+
+def _scratch_holders(root: Path, as_user: AsUser) -> tuple[list[Path], list[Path]]:
+    """The directories gc reads scratches from, as the agents' user: each project's directory
+    in the holder `<root>/.scratch`, and each project's former `<root>/<project>/.scratch`;
+    and the links met on the way, each left out and never gone into (a holder, a project's
+    directory or its `.scratch`), for gc to name. A name that is no project id is no
+    project's, and an entry that is no directory is passed over. OSError when one cannot be
+    listed."""
+    holders: list[Path] = []
+    links: list[Path] = []
+    new_holder = root / workspace.SCRATCH
+    if as_user.exists(new_holder, "-L"):
+        links.append(new_holder)
+    elif as_user.exists(new_holder, "-d"):
+        for name, kind in as_user.entries(new_holder, 1):
+            if not workspace.TOKEN.fullmatch(name):
                 continue
-            if entry.name in running:
-                print(f"scratch  {entry}: kept (a session of the placement is still there)")
-                continue
-            if not workspace.SCRATCH_ID.fullmatch(entry.name) or entry.is_symlink():
-                print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
-                continue
-            if not remove:
-                print(f"scratch  {entry}: removable (the placement is not active)")
-                continue
-            try:
-                removed = scratch.remove(entry, as_user)
-            except (OSError, subprocess.SubprocessError) as exc:
-                print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
-                continue
-            if removed is None:
-                continue  # gone meanwhile
-            scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
-            print(f"scratch  {entry}: removed")
+            if kind == "l":
+                links.append(new_holder / name)
+            elif kind == "d":
+                holders.append(new_holder / name)
+    for name, kind in as_user.entries(root, 1):
+        if not workspace.TOKEN.fullmatch(name):
+            continue
+        if kind == "l":
+            links.append(root / name)
+            continue
+        if kind != "d":
+            continue
+        former = root / name / workspace.SCRATCH
+        if as_user.exists(former, "-L"):
+            links.append(former)
+        elif as_user.exists(former, "-d"):
+            holders.append(former)
+    return holders, links
 
 
 def _collect(
