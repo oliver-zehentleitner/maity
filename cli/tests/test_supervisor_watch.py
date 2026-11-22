@@ -77,12 +77,15 @@ def reread(sup: supervisor.Supervisor) -> None:
 
 def drain(sup: supervisor.Supervisor) -> None:
     """A fresh read, a pass that starts a diagnosis, its worker, and the pass that acts on its
-    verdict."""
+    verdict; when that decided an end, the read it asks for and the pass that sends the TERM."""
     reread(sup)
     sup.tick()
     for worker in list(sup.watching.values()):
         worker.join(5)
     sup.tick()
+    if any(r.watch_end and not r.watch_end.get("termed", True) for r in sup.records.values()):
+        reread(sup)
+        sup.tick()
 
 
 def last(reports: Reports) -> dict[str, Any]:
@@ -1219,8 +1222,8 @@ def nudged(sup: supervisor.Supervisor, backend: FakeTmux, clock: Clock) -> None:
     reread(sup)  # started at QUIET_PAST_GRACE + the margin
     clock.now += 2
     two_passes(sup)
-    assert backend.typed == [(NAME, supervisor.NUDGE_LINE)]
-    assert sup.records[PID].watch_acted_at == clock.now
+    assert backend.typed == [(NAME, supervisor.NUDGE_LINE)]  # the nudge, and nothing ended
+    assert backend.terminated == []
 
 
 def test_a_nudge_answered_by_a_new_wait_is_not_restarted(world: Any) -> None:
@@ -1265,16 +1268,65 @@ def test_after_a_nudge_a_fresh_read_that_still_says_deaf_restarts(world: Any) ->
     assert last(reports)["finding"]["cause"] == "wait_deaf"
 
 
-def test_the_watchs_last_action_is_forgotten_on_a_new_run(world: Any) -> None:
+def test_the_watchs_last_action_is_kept_and_forgotten_on_a_new_run(world: Any) -> None:
     sup, backend, _, clock, _ = world
-    ended_by_term(sup, backend, clock)
-    assert sup.records[PID].watch_acted_at == QUIET_PAST_GRACE  # the TERM
-    backend.exit(NAME, 143)
+    nudged(sup, backend, clock)
+    assert sup.records[PID].watch_acted_at == clock.now  # set by the nudge
+    backend.exit(NAME, 1)  # the harness ends; no read since the nudge: a plain exit
     sup.tick()
     clock.now += 11
-    settle(sup)  # the restart
+    settle(sup)  # its restart under the policy
     assert sup.records[PID].state == "starting"
     assert sup.records[PID].watch_acted_at is None
+
+
+# --- bcr2: the TERM waits for a read after the decision -------------------------------------
+
+
+def decided(sup: supervisor.Supervisor, backend: FakeTmux, clock: Clock) -> None:
+    """A deaf `maity wait`: a fresh read, then a restart decided two seconds after that read
+    started; its TERM waits for a read after the decision."""
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    reread(sup)
+    clock.now += 2
+    two_passes(sup)
+    assert sup.records[PID].watch_end is not None  # decided ...
+    assert backend.terminated == [] and sup.wants_placements()  # ... no TERM, a read asked
+
+
+def test_no_term_goes_out_without_a_read_after_the_decision(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    decided(sup, backend, clock)
+    for _ in range(3):
+        clock.now += supervisor.TICK
+        sup.tick()
+    assert backend.terminated == [] and sup.wants_placements()
+
+
+def test_a_pause_in_the_read_after_the_decision_calls_the_end_off(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    decided(sup, backend, clock)
+    paused = joined_then_quiet(paused=True)
+    sup.update([paused], read_at=clock.now + supervisor.FRESH_MARGIN)
+    sup.tick()
+    assert backend.terminated == [] and backend.killed == []
+    rec = sup.records[PID]
+    assert rec.watch_end is None and rec.watch_restarts == []
+    body = last(reports)
+    assert (body["state"], body["finding"]["cause"]) == ("running", "wait_deaf")
+
+
+def test_a_fresh_read_that_still_shows_the_trigger_sends_the_term(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    decided(sup, backend, clock)
+    sup.update(list(sup.desired), read_at=clock.now + supervisor.FRESH_MARGIN)
+    sup.tick()
+    assert backend.terminated == [NAME]
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
 
 
 def test_a_read_that_started_before_the_trigger_is_not_fresh(world: Any) -> None:

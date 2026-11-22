@@ -6385,7 +6385,12 @@ Where the contract left the choice open, it decided as follows.
   067c7e0e: a nudge answered by a new `maity wait` was restarted as
   `wait_deaf` on facts read before the nudge). The facts carry no
   acknowledged seq, so the episode shows as ended by `not_listening_since`
-  turning null or changing; either ends the spell with no restart. A dead session meanwhile goes to the exit handling. Reason: in
+  turning null or changing; either ends the spell with no restart. A
+  decided end (a restart, the cap's hold, a login that needs a person) is
+  not sent its TERM at once either: the TERM waits for a read started after
+  the decision, and if that read shows the agent paused or dormant, or for
+  a restart its trigger gone, the end is called off (bcr2), so a pause the
+  runner had not read yet never races a TERM. A dead session meanwhile goes to the exit handling. Reason: in
   ops' check the agent joined three seconds after its start, the runner had
   read placements only at the start (it re-reads every 10 minutes or on a
   wake), and no hub event reaches a runner on a session start, so it held a

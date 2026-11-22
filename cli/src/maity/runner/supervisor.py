@@ -636,12 +636,26 @@ class Supervisor:
         if rec.watch_end is not None:
             end = rec.watch_end
             ended = end.get("verdict")
-            if not session.dead and now - end["at"] >= KILL_AFTER and ended is not None:
-                # Before the kill, the facts are read again (Codex A1940, A1957). Someone who
-                # attached meanwhile keeps the session; the finding is reported instead. A
-                # paused or dormant agent is never acted on, so a pause aborts any end; a
-                # trigger that cleared aborts a restart only, while an end for a login that
-                # needs a person or at the cap is decided and goes on.
+            termed = end.get("termed", True)  # an end from before this rule was sent its TERM
+            if not session.dead and not termed:
+                # The TERM waits for a placements read started after the decision, so a pause
+                # or a renewed listen set meanwhile is seen before anything is ended (bcr2):
+                # until then a read is asked for and the session is held.
+                read = self.facts_read_at
+                if read is None or read < end["at"] + FRESH_MARGIN:
+                    with self.lock:
+                        self.wants_read = True
+                    return True
+            if (
+                not session.dead
+                and ended is not None
+                and (not termed or now - end["at"] >= KILL_AFTER)
+            ):
+                # Before the TERM and again before the kill, the facts are read again (Codex
+                # A1940, A1957). Someone who attached meanwhile keeps the session; the finding
+                # is reported instead. A paused or dormant agent is never acted on, so a pause
+                # aborts any end; a trigger that cleared aborts a restart only, while an end
+                # for a login that needs a person or at the cap is decided and goes on.
                 if self._attached(backend, session, interactive):
                     rec.watch_end = None
                     self._someone_there(pid, rec, ended, "while it was being ended")
@@ -653,6 +667,10 @@ class Supervisor:
                     ended["trigger"], ended["episode"]
                 ):  # fmt: skip
                     return self._abort_end(pid, rec, ended, "its trigger no longer holds")
+            if not session.dead and not termed:
+                end["termed"], end["at"] = True, now  # the kill counts from the TERM
+                backend.terminate(session)
+                return True
             if not session.dead and now - end["at"] >= KILL_AFTER:
                 backend.kill(session.name)  # TERM was not enough
                 self._watch_ended(rec, now, None)
@@ -836,18 +854,23 @@ class Supervisor:
         self, pid: str, rec: Record, session: Session, backend: Tmux, now: float,
         verdict: dict[str, Any], then: str, line: str,
     ) -> bool:  # fmt: skip
-        """End the session as a stop does (TERM, kill-session after KILL_AFTER); once it is
-        gone, `_watch_ended` enters what `then` says, with the finding made now. Nobody may
-        be attached, read afresh right before the TERM as before the kill (Codex A1940)."""
+        """Decide to end the session as a stop does (TERM, kill-session after KILL_AFTER);
+        once it is gone, `_watch_ended` enters what `then` says, with the finding made now.
+        The TERM itself waits for a placements read started after this decision (`_watch`).
+        Nobody may be attached, read afresh now, right before the TERM and before the kill
+        (Codex A1940)."""
         if self._attached(backend, session, bool(verdict.get("interactive"))):
             return self._someone_there(pid, rec, verdict)
         self.note(pid, line)
         rec.watch_end = {
             "at": now, "then": then, "trigger": verdict["trigger"],
-            "finding": self._finding(pid, verdict), "verdict": verdict,
+            "finding": self._finding(pid, verdict), "verdict": verdict, "termed": False,
         }  # fmt: skip
         rec.watch_acted_at = now  # an end called off later decides again on later facts only
-        backend.terminate(session)
+        # No TERM yet: it goes once a placements read started after this decision shows the
+        # agent neither paused nor, for a restart, listening again (`_watch`, bcr2).
+        with self.lock:
+            self.wants_read = True
         return True
 
     @staticmethod
