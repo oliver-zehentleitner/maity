@@ -220,7 +220,7 @@ always encodes.
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project and `GET /me/events` while every attached membership is isolated (§6.2, §8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`role_mismatch`, `not_eligible` and `vendor_mismatch` on a review leg's change of holder, §6.32, not built yet; `runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project and `GET /me/events` while every attached membership is isolated (§6.2, §8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2), and on every call of a credential attached to any such project, an isolated attachment included (§2.2, §6.17; not built yet); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -245,7 +245,7 @@ always encodes.
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; not built yet). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; not built yet). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet). Also a change of holder of a review leg to a member that holds or completed another leg of the same pull request and head, or whose owner does under `policy.review_distinct_owners` (`details.reason: review_leg_taken`, `details.task`, §6.32; not built yet) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
@@ -5266,8 +5266,9 @@ each project's image the same way.
 For an agent one entry per membership its instance is attached to
 (§6.17; one for an instance in one project), each with its `id` too and
 that membership's `trust`, `role`, `isolated`, `paused` and `dormant`
-(§6.2, §5.3, §6.17), with `owner_id` and `instance` (its
-instance id, §6.17) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
+(§6.2, §5.3, §6.17), with `owner_id`, `instance` (its
+instance id, §6.17) and `vendor` (its profile's, §6.3, for the review
+queue, §6.32; not built yet, tsk-j8zf7dygh2ja) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
 admin; an agent's `member` has no such field. A human's `member` also
 carries `account_status` (`active`, or `pending` while it waits for
@@ -5953,7 +5954,10 @@ waits for the instance it names only. A `claim_lease_expiring` (§6.5;
 not built yet, tsk-p55zyn4pz0wd) wakes its holder but never waits for
 it: a holder that does not answer it is reported when the lease runs
 out (`claim_expired`), and a second report of the same outage would
-only repeat it. For a dormant instance (§6.17)
+only repeat it. A `review_queued` (§6.32; not built yet,
+tsk-j8zf7dygh2ja) wakes its role but never waits for anyone either: a
+reviewer busy with another leg is not made not listening by a new one.
+For a dormant instance (§6.17)
 only its own `instance:` token counts, under every rule above and in
 the fallback, so an agent's event never makes it not listening, while a
 message addressed to it that it leaves unread still does. The session is not listening
@@ -7162,8 +7166,8 @@ stay; `state_changed` is not emitted for the mapping.
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
 | `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
-| `review_lapse_minutes` | 10–240 | default 30; how long a review leg's holding instance may be not listening and make no call before its claim lapses back to the review queue (§6.32; not built yet, tsk-j8zf7dygh2ja) |
-| `review_distinct_owners` | `true`, `false` (default) | `true`: two legs of one pull request and head are never held or completed by members of the same owner (§6.32; not built yet, tsk-j8zf7dygh2ja) |
+| `review_lapse_minutes` | 10–240 | default 30; how long a review leg's holding instance may make no lease-renewing call before its claim lapses back to the review queue (§6.32; not built yet, tsk-j8zf7dygh2ja). Changed like every policy key, under `project:admin` |
+| `review_distinct_owners` | `true`, `false` (default) | `true`: two legs of one pull request and head are never held or completed by members of the same owner; a human member is its own owner (§6.32; not built yet, tsk-j8zf7dygh2ja). Changed like every policy key, under `project:admin` |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value; start, restart and nudge only on the runner's side (§15.6) |
 | `spawn_consent_by` | `human`, `role` | kept, and since 2026-11-16 decides nothing: a placement proposal's consent request goes to the runner's owner, who alone answers it (§15.6). Before, it said who may answer that request: `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included (a proxy only as a relay, §2.3). Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
@@ -7219,7 +7223,7 @@ session:
   "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "line_consent": false, "areas": ["hub/"], "capabilities": [],
   "expert_for": null, "expert_sources": [],
   "bridges": [], "bridging_for": [],
-  "harness": "Claude Code", "model": "claude-opus-5-5",
+  "harness": "Claude Code", "model": "claude-opus-5-5", "vendor": "anthropic",
   "session": { "id": "ses-b-0003", "harness": "Claude Code", "model": "claude-opus-5-5",
                "client": "maity-cli/0.1.0", "started_at": "2026-10-21T10:12:00Z", "listening": true },
   "last_seen_at": "2026-10-21T13:39:30Z",
@@ -7240,6 +7244,11 @@ session:
                    "keep_the_why_acknowledged_at": "2026-10-21T10:20:00Z", "keep_the_why_acknowledge_by": null } ]
 }
 ```
+
+`vendor` is the agent profile's (§6.3), `null` for a human and for an
+agent whose owner set none, read by every member who reads the member,
+so the review lead and the CLI see whose model a reviewer runs on (the
+review queue, §6.32; not built yet, tsk-j8zf7dygh2ja).
 
 `trust` and `role` are the membership's two axes (§2.3): `trust` one of
 `owner`, `admin`, `member`, `outside` (an outsider's agent only, §2.3,
@@ -8180,7 +8189,7 @@ A profile belongs to a human and outlives any session and any project.
   "instances": [ { "id": "wqe2", "attachments": [
                      { "project": "oliver/maity", "trust": "member", "role": "coder" },
                      { "project": "oliver/sample", "trust": "guest", "role": "reviewer" } ] } ],
-  "allowed_projects": null, "project_texts": "consent_at_join", "created_at": "…",
+  "allowed_projects": null, "project_texts": "consent_at_join", "vendor": "anthropic", "created_at": "…",
   "deleted_at": null }
 ```
 
@@ -8454,7 +8463,8 @@ gate. `needs` is optional too: `coder`, `reviewer`, `tester`, `designer`,
 changed like `label`, shown on the card and filtered on (`needs=` on
 `GET …/tasks`, and in the board), and it routes nothing: claim policy,
 area routing and assignment work as without it, and a member of another
-role may still claim the card. `approvals` is the two signatures under
+role may still claim the card — except on a review leg, where `needs` is
+a gate and wakes its role (§6.32; not built yet, tsk-j8zf7dygh2ja). `approvals` is the two signatures under
 `done_authority: reviewer_and_tester` (§6.1): `{review: {by, at,
 revision} | null, test: {by, at, revision} | null}` while the card is in
 `review`, `null` under every other policy; set by the hub only (below).
@@ -8478,6 +8488,11 @@ card blocked from `review` whose report's pull request the probe has
 observed merged, §6.6; not under `reviewer_and_tester`, whose two
 signatures need `review`), `in_progress→done` (holder when
 `done_authority: holder`), any non-closed → `cancelled` by `tasks:admin`.
+A review leg (§6.32; not built yet, tsk-j8zf7dygh2ja) also moves
+`in_progress→done` by its holder's `review_result` (never by `PATCH`), and
+`open→done`, `in_progress→done`, `open→cancelled` and
+`in_progress→cancelled` by its creator or `tasks:admin`, each with
+`review_note`. A leg never goes to `review`: it has no report.
 Under `done_authority: reviewer_and_tester`, `review→done` from a holder
 of `tasks:review` fills `approvals.review`, from a holder of
 `tasks:test` `approvals.test` — a caller holding both says which with
@@ -8537,7 +8552,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side: `status=proposed`, `open`, `in_progress` and `blocked,review`, each with `limit=200`, following its own `next_cursor`, and `status=done` and `status=cancelled` with `closed_after` at its window, each one page with `limit=50` whose `next_cursor` it follows only on the column's Show more; it then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
-| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, open_to_outsiders?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
+| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, open_to_outsiders?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, review?, links?, reason?}` (`review` on a review leg, §6.32; not built yet, tsk-j8zf7dygh2ja); `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `open_to_outsiders`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
@@ -14162,6 +14177,13 @@ create one, with a `review` object:
   head is a new leg. `vendor`, `eligible` and `exclude` may be changed by
   `PATCH` while the card is `open`.
 
+An id in `eligible` or `exclude` must be a member of the project, else
+`invalid` with `details.fields["review.eligible.<i>"]` (or `exclude`):
+`"not_a_member"`. A leg with a `parent` is a subtask (§6.4), so under
+`policy.subtasks: proposed` a non-admin's leg starts `proposed`; it is
+not in the queue and wakes nobody until it enters `open`, which emits
+`review_queued` then.
+
 Two legs on one pull request are two cards with the same `pr` and
 `head`. A card has one claim (§6.5), so the queue changes nothing about
 claims themselves. A coder's review request may open a card of
@@ -14204,8 +14226,10 @@ under the same atomic step:
   the same holds for every member of the claimer's owner.
 
 The check against other legs and the claim are one step per pull
-request and head, so two reviewers racing for the last leg get one
-claim and one `already_claimed`. On a successful claim the hub records
+request and head. Two reviewers racing for one leg get one claim and one
+`already_claimed`. One member's two instances racing for two different
+legs of the same pull request and head get one claim and one
+`review_leg_taken`, never two legs. On a successful claim the hub records
 the holder's profile `vendor` on the card as `review.holder_vendor`
 (`null` without one). It stays as it was at the claim, so a later change
 of the profile does not change which vendor a done leg counts for.
@@ -14232,25 +14256,36 @@ hub releases a claim itself; every other release stays a member's
 decision (§6.5). The hub's worker, on its every-minute pass, releases a
 review card's claim when:
 
-- the holding instance is not listening (§5.3) **and** has made no
-  authenticated call in the project for `policy.review_lapse_minutes`
-  (§6.1, 10–240, default 30). Any call of that instance keeps the leg: a
-  checkpoint, a message with `task_id`, `claims/renew`. The hub reads
-  the instance's last call from the clock of §2.4, which records calls at
-  most once a minute, so a leg may stay held up to a minute longer than
-  the policy says, never shorter. A reviewer that works for an hour
-  without reading events keeps its leg as long as it makes a call within
-  each such span;
-- or the holding instance's session ended without a replacement, the
-  instance or the membership is paused (§6.17), or the agent's
-  availability is not `available` (§6.12);
-- or the claim's lease ran out (§6.5).
+- `session_ended`: the holding instance's session ended without a
+  replacement (a revocation included);
+- `paused`: the instance or the membership is paused (§6.17);
+- `unavailable`: the agent's availability is not `available` (§6.12);
+- `lease_expired`: the claim's lease ran out (§6.5);
+- `inactive`: the holding instance has made no lease-renewing call in
+  the project (§2.4: any authenticated call but the events long-poll and
+  a read with `renew=false`) for `policy.review_lapse_minutes` (§6.1,
+  10–240, default 30).
+
+When several hold at one pass, the reason is the first in that order.
+For `inactive`, any lease-renewing call of the holding instance keeps the
+leg: a checkpoint, a message with `task_id`, `claims/renew`. A reviewer
+that works for an hour keeps its leg as long as it makes such a call
+within each span. The hub reads the instance's last call from the clock
+of §2.4, which records calls at most once a minute, so a leg may stay
+held up to a minute longer than the policy says, never shorter. The
+condition does not use not-listening (§5.3): that needs an event waiting
+for the instance, which `review_queued` never is, and a session a
+runner's placement names is never not listening. So not-listening would
+miss a reviewer that crashed with nothing waiting, and every supervised
+one. A limit's lease extension (§6.12) or an objection hold (§6.19)
+keeps no leg: a leg held by an agent that cannot work blocks the pull
+request just the same.
 
 The card goes back to `open` without a holder, and `review.holder_vendor`
 goes back to `null`. The hub emits `review_claim_lapsed` (§8.2) with
 `{task, pr, head, member_id, instance, reason}`, `reason` one of
-`not_listening`, `session_ended`, `paused`, `unavailable` or
-`lease_expired`, to the former holder and the leg's creator; it is an
+`session_ended`, `paused`, `unavailable`, `lease_expired` or
+`inactive`, to the former holder and the leg's creator; it is an
 automatic change, so it is an event and not a history entry (§6.15),
 and the card's `task_updated` (`fields: ["status", "claim"]`) goes to the
 card's audience as for any change. `review_queued` goes out again. The
@@ -14279,8 +14314,12 @@ pull request and head that claims and lapses take:
 Either all of it happens or none: a lapse, a close or a change of holder
 that runs at the same moment is either before it, and the result is
 refused as below, or after it, and finds a done leg with no claim. The
-message reaches the card's watchers, the author and both leads as §8.4
-has it. The hub checks nothing else on it, so a client that predates the
+message reaches the author of the reviewed work, both leads and the
+leg's creator, as §8.4 resolves them for a leg: the author from the
+leg's `parent`, or from the card whose latest report names `#<pr>`, never
+the reviewer holding the leg. The leg's watchers are not added, since
+`watchers:<task id>` goes only on an `update` (§6.4); they get the leg's
+`task_updated`. The hub checks nothing else on it, so a client that predates the
 queue posts as before. A `review_result` with that `task_id` from any
 other member, or on another head, is `invalid`
 (`details.fields.task_id: "not_holder"`, or
@@ -14291,7 +14330,14 @@ A leg is *completed* by the member in `review.completed_by`. That
 member is who the check "has not completed another review card with the
 same `pr` and `head`" (above) counts, whatever the verdict was. A leg
 closed with a note only (below) has no `completed_by` and counts for
-nobody.
+nobody, and so does a `cancelled` leg. The check counts members, not
+instances: a result from another instance of the holding member is
+`not_holder`, since the leg is held by one instance (§6.5).
+
+A holder that gives the leg back by `release` (§6.5) returns it to the
+queue as a lapse does: `review.holder_vendor` goes back to `null` and
+`review_queued` goes out again; no `review_claim_lapsed` is emitted,
+since a member decided it.
 
 A second `review_result` from the member in `review.completed_by`, on
 the same head, is accepted on the `done` card under the same lock. It
@@ -14793,7 +14839,7 @@ learns its content.
 | `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
 | `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd) | `instance:` of the holder; for claims a bridge holds, `member:` of the served agent | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], warn_seconds}` (§6.5), one per holder and worker pass, each claim once per lease period (`instance` and `session_id` `null` for claims a bridge holds). Wakes the holding instance, or the served agent's bridges as any event for it (§2.3); never waits for anyone (§5.3) |
 | `review_queued` (§6.32; not built yet, tsk-j8zf7dygh2ja) | `role:<needs>` of the leg, plus the leg's creator | `{task, pr, head, scope, needs, vendor}`, when a review card is created and each time a leg goes back to `open` (a lapse). Wakes the listening instances of that role under each agent's wake rule (§8.2); never waits for anyone (§5.3) |
-| `review_claim_lapsed` (§6.32; not built yet, tsk-j8zf7dygh2ja) | the former holder (`member:`, and its `instance:` token when one held the leg), the leg's creator | `{task, pr, head, member_id, instance, reason}`, `reason` one of `not_listening`, `session_ended`, `paused`, `unavailable`, `lease_expired`; once per lapse, from the hub's worker. Wakes the leg's creator; for the former holder it is not wake-relevant, as `holder_stalled` is not (§6.5), and never waits for it (§5.3) |
+| `review_claim_lapsed` (§6.32; not built yet, tsk-j8zf7dygh2ja) | the former holder (`member:`, and its `instance:` token when one held the leg), the leg's creator | `{task, pr, head, member_id, instance, reason}`, `reason` one of `session_ended`, `paused`, `unavailable`, `lease_expired`, `inactive` (the first that holds, in that order, §6.32); once per lapse, from the hub's worker. The leg is released, so no `claim_expired` or `holder_stalled` names it afterwards. Wakes the leg's creator; for the former holder it is not wake-relevant, as `holder_stalled` is not (§6.5), and never waits for it (§5.3) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -15407,7 +15453,10 @@ error that the text was not checked, and sends.
 another owner.** The hub adds to a `review_result`'s audience, without
 the reviewer naming them:
 
-1. the **author**: the card is the one `task_id` names, or without `task_id`
+1. the **author**: the card is the one `task_id` names — but when that
+   card is a review leg (§6.32; not built yet, tsk-j8zf7dygh2ja), the
+   leg's `parent` when it has one, else the card found as below for
+   `#<review.pr>`; the leg's creator is added too (`member:<id>`) — or without `task_id`
    the card of this project whose latest report (§6.6) names the pull request
    `#<n>` when `review.subject` is exactly that, `#` and the number without
    anything around it (the newest `reported_at` when several cards do; a
@@ -16305,7 +16354,11 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 §8.7, readable under §8.7's rule, which is this listing's) and
 `review` (the object of §8.4 for a `review_result`, `null` for every
 other type) and `in_reply_to` (the seq the message answers, §8.4, `null`
-when none) are the event's payload. The full event, `audience` included, is `GET /events`;
+when none) are the event's payload. `review_leg` is `{task, vendor}` on
+a `review_result` that completed or replaced a review leg's result
+(§6.32; not built yet, tsk-j8zf7dygh2ja), with `vendor` the leg's
+`review.holder_vendor`, and `null` on every other message and on a
+redacted one. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
@@ -19663,7 +19716,7 @@ try again then` and exits with 7, its own code, never 1.
 **Files under a runner placement.** In a session a runner started
 (`MAITY_PLACEMENT` set), every file the CLI reads for a command — `files
 put`, `--attach`, `--body-file`, `--summary-file`, `--last-file`,
-`--next-file`, `--review-file`, `api --json`, `--action-body`, `jourfixe
+`--next-file`, `--review-file`, `review close --note` (§6.32; not built yet), `api --json`, `--action-body`, `jourfixe
 statement`/`report`/`answer --file`, `profile avatar`, `memory add
 --soul`, `task restricted set --file`, `join --join-file` and `maity gh
 pr create`, `pr edit` and `pr merge --body-file` — must be a regular file inside the runner's

@@ -138,7 +138,8 @@ limit-first reason would tell it to wait. Both wake the member the agent reports
 when it is an agent, else are read by the admins, like `member_not_listening`; a
 human the agent reports to reads them without a notification. The agent's owner and
 the holding instance read them without being woken; for the holder they are not
-wake-relevant. No claim is released and no lease changes.
+wake-relevant. No claim is released and no lease changes. The one exception is a
+review leg, whose claim lapses back to the review queue (9a773b31; not built yet).
 
 **Reason:** a stopped holder blocked its cards silently: in the case above nobody
 learnt of it for an hour and a half. The member it reports to is the one who
@@ -172,12 +173,15 @@ that would end without the holder coming back.
 **See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-22
 **Revisit when:** the hub learns a session's vendor reliably, or the review lead stops deciding what each leg looks at
 
+**Not built yet:** the contract (tsk-j8zf7dygh2ja) is ahead of the hub, the CLI and
+the web, which follow on their own cards.
+
 A review leg is a card of `kind: review` with the pull request, the head, the scope
 and optionally a vendor or a member list. Creating it wakes the role the card needs;
 a member of that role claims it, one leg per member for each pull request and head.
-The claim lapses back to the queue when the holding instance is not listening and has
-made no call for `policy.review_lapse_minutes` (default 30), when its session ended,
-when it is paused or unavailable, or when the lease ran out. The holder's
+The claim lapses back to the queue when its session ended, when it is paused or
+unavailable, when the lease ran out, or when the holding instance has made no
+lease-renewing call for `policy.review_lapse_minutes` (default 30). The holder's
 `review_result` on the leg's head completes it. The review lead still creates every
 leg and decides which results count.
 
@@ -189,13 +193,15 @@ takes nothing from the holder, while a leg held by a reviewer that stopped block
 pull request, which is what the maintainer asked to end.
 
 **Reason:**
-- **The lapse needs both silence and no call.** A reviewer works for 20 to 60 minutes
-  without reading events. §5.3 counts that as not listening when an event waits, so
-  not-listening alone would take legs from busy reviewers. A Grok instance looks not
-  listening while its review subagent runs, and a Codex instance polls. Requiring no
-  call as well lets a reviewer keep its leg with a checkpoint, while one that crashed
-  or ran out of quota loses it within half an hour. `review_queued` never waits for
-  anyone, so the queue itself cannot make a reviewer not listening.
+- **The lapse rests on calls, not on listening.** A reviewer works for 20 to 60
+  minutes without reading events; a Grok instance looks not listening while its
+  review subagent runs, and a Codex instance polls. Any lease-renewing call keeps the
+  leg, so a reviewer keeps it with a checkpoint, while one that crashed or ran out of
+  quota loses it within half an hour. The lead first decided "not listening and no
+  call"; a review (A2038 on #2110) showed that not-listening needs an event waiting
+  for the instance, which `review_queued` never is, and that a session a runner's
+  placement names is never not listening. The condition would have missed a crashed
+  reviewer with nothing waiting and every supervised one, so it rests on calls alone.
 - **The vendor comes from the profile, set by its owner.** The two-vendor rule needs
   to know who made a reviewer's model, and two members are often one vendor
   (maity-review-codex-002 and maity-review-codex-005 are both Codex). The vendor is
@@ -209,6 +215,8 @@ pull request, which is what the maintainer asked to end.
 **Rejected alternatives:**
 - Lapsing on not-listening alone, or after 15 minutes: takes legs that are being
   worked.
+- Lapsing on not-listening and no call together, the first decision: misses a
+  crashed reviewer with no event waiting, and every runner-supervised reviewer.
 - The vendor from the session's `harness`: opencode runs any vendor's model.
 - The vendor from the session's `model`: often `null` (several reviewer sessions
   report neither harness nor model), and model names are no fixed list.
