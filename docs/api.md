@@ -14176,7 +14176,7 @@ count it.
 **The queue.** `GET …/tasks?kind=review&status=open` lists the open
 legs in board order (§6.4). Creating a review card, and every return of
 a leg to `open` (below), emits `review_queued` (§8.2) to the card's
-`needs` role (`role:<needs>`), with `{task, pr, head, scope, needs,
+`needs` role (`role:<needs>`) and to the leg's creator, with `{task, pr, head, scope, needs,
 vendor}`. It wakes the listening instances of that role under each
 agent's wake rule (§8.2), and it never *waits for* an instance (§5.3),
 like `claim_lease_expiring`, so a reviewer busy with another leg is not
@@ -14205,62 +14205,127 @@ the holder's profile `vendor` on the card as `review.holder_vendor`
 (`null` without one). It stays as it was at the claim, so a later change
 of the profile does not change which vendor a done leg counts for.
 
+**Every change of holder is checked the same way.** The checks above
+apply to the member who would hold the leg, never to the caller, and
+under the same step per pull request and head, whatever makes them the
+holder:
+
+- an admin's claim on another member's behalf (§6.5);
+- an `assign` by `tasks:admin` after expiry (§6.5);
+- a takeover (§6.19), checked when it would move the card, against
+  the receiver;
+- the claims a replacement instance inherits (§6.17), checked against
+  the replacing instance's member.
+
+A change of holder that fails a check is refused with the same
+`details.reason` and leaves the leg where it was; an inherited claim that
+fails one lapses (below, reason `session_ended`). Each successful change
+records the new holder's `vendor` as `review.holder_vendor` afresh.
+
 **A leg lapses back to the queue.** This is the one place where the
 hub releases a claim itself; every other release stays a member's
 decision (§6.5). The hub's worker, on its every-minute pass, releases a
 review card's claim when:
 
 - the holding instance is not listening (§5.3) **and** has made no
-  authenticated call for `policy.review_lapse_minutes` (§6.1, 10–240,
-  default 30). Any call of that instance keeps the leg: a checkpoint, a
-  message with `task_id`, `claims/renew`. A reviewer that works for
-  an hour without reading events keeps its leg as long as it makes a
-  call within each such span;
+  authenticated call in the project for `policy.review_lapse_minutes`
+  (§6.1, 10–240, default 30). Any call of that instance keeps the leg: a
+  checkpoint, a message with `task_id`, `claims/renew`. The hub reads
+  the instance's last call from the clock of §2.4, which records calls at
+  most once a minute, so a leg may stay held up to a minute longer than
+  the policy says, never shorter. A reviewer that works for an hour
+  without reading events keeps its leg as long as it makes a call within
+  each such span;
 - or the holding instance's session ended without a replacement, the
   instance or the membership is paused (§6.17), or the agent's
   availability is not `available` (§6.12);
 - or the claim's lease ran out (§6.5).
 
-The card goes back to `open` without a holder; `review.holder_vendor`
-goes back to `null`. The history (§6.15) records
-`review_claim_lapsed` with the instance and the reason:
+The card goes back to `open` without a holder, and `review.holder_vendor`
+goes back to `null`. The hub emits `review_claim_lapsed` (§8.2) with
+`{task, pr, head, member_id, instance, reason}`, `reason` one of
 `not_listening`, `session_ended`, `paused`, `unavailable` or
-`lease_expired`. The former holder gets `task_updated`, and
-`review_queued` goes out again. The former holder may take the leg
-again. A done leg has no claim, so a lapse never touches a posted
-result.
+`lease_expired`, to the former holder and the leg's creator; it is an
+automatic change, so it is an event and not a history entry (§6.15),
+and the card's `task_updated` (`fields: ["status", "claim"]`) goes to the
+card's audience as for any change. `review_queued` goes out again. The
+former holder may take the leg again. The release and the event are
+one step under the lock per pull request and head that a result takes
+(below), so a lapse and a result never both apply. A done leg has no
+claim, so a lapse never touches a posted result.
+
+This also holds against §6.17, which keeps an instance's claims when its
+credential is revoked: for a review leg, a revocation without a
+replacement ends the session, and the leg lapses with `session_ended`.
 
 **The result is posted on the leg.** A `review_result` (§8.4) whose
 `task_id` is a review card counts for that leg when its sender holds the
-leg and `review.head` equals the leg's `head`. It moves the card to
-`done` and releases the claim; the message reaches the card's watchers,
-the author and both leads as §8.4 has it. The hub checks nothing
-else on it, so a client that predates the queue posts as before. A
-`review_result` with that `task_id` from any other member, or on another
-head, is `invalid` (`details.fields.task_id: "not_holder"`, or
-`details.fields["review.head"]: "not_the_leg"`). A second
-`review_result` from the member that completed the leg, on the same
-head, is accepted on the `done` card and supersedes the first, as a
-newer head does under §8.4. A message's view (§8.8) carries the leg's
+leg and `review.head` equals the leg's `head`, with any `verdict`
+(`approve`, `changes` or `comment`). One transaction, under the lock per
+pull request and head that claims and lapses take:
+
+1. checks that the sender's instance holds the leg now and that
+   `review.head` equals the leg's `head`;
+2. stores the message event;
+3. records on the leg `review.completed_by` (the sender's member id)
+   and `review.result_seq` (the event's `seq`);
+4. moves the card to `done` and releases the claim.
+
+Either all of it happens or none: a lapse, a close or a change of holder
+that runs at the same moment is either before it, and the result is
+refused as below, or after it, and finds a done leg with no claim. The
+message reaches the card's watchers, the author and both leads as §8.4
+has it. The hub checks nothing else on it, so a client that predates the
+queue posts as before. A `review_result` with that `task_id` from any
+other member, or on another head, is `invalid`
+(`details.fields.task_id: "not_holder"`, or
+`details.fields["review.head"]: "not_the_leg"`), and nothing of it is
+stored.
+
+A leg is *completed* by the member in `review.completed_by`. That
+member is who the check "has not completed another review card with the
+same `pr` and `head`" (above) counts, whatever the verdict was. A leg
+closed with a note only (below) has no `completed_by` and counts for
+nobody.
+
+A second `review_result` from the member in `review.completed_by`, on
+the same head, is accepted on the `done` card under the same lock. It
+replaces `review.result_seq` and supersedes the first, as a newer head
+does under §8.4. It changes neither `completed_by` nor
+`review.holder_vendor`. A message's view (§8.8) carries the leg's
 `review.holder_vendor` as `review_leg: {task, vendor}` on such a
 result, so the review lead reads which vendor each result came from.
 
 **Closing a leg without a result.** The member who created the card, or
-`tasks:admin`, may move an `open` or held leg to `done` with a `note`
-(1–2000 characters, §6.16) and no `review_result`, for a read no
-reviewer takes, such as the review lead's own read of a remerge; or to
-`wontfix`, for a leg on a head that a newer head replaced. A held leg's
-claim is released either way.
+`tasks:admin`, may close an `open` or held leg without a
+`review_result`, by `PATCH /projects/{owner}/{slug}/tasks/{id}` with
+`{"status": "done" | "cancelled", "review_note": "…"}`:
+
+- `done`, for a read no reviewer takes, such as the review lead's own
+  read of a remerge;
+- `cancelled` (§6.4), for a leg on a head that a newer head replaced.
+
+`review_note` is required on such a close of a review card (1–2000
+characters, `invalid` with `details.fields.review_note: "required"`
+otherwise) and `invalid` on any other card or `PATCH`
+(`"not_allowed"`). The hub stores it as a note (§6.16) by the caller on
+the card, in the same transaction as the status change, under the lock
+per pull request and head: either both are written or neither. A held
+leg's claim is released in that step. Such a close leaves
+`review.completed_by` `null`.
 
 **Mixed versions.** The CLI reads a card's `kind` without checking it
 against a list, so a client that predates the queue lists and shows a
 review card as it does any card. `maity claim` takes the card under the
-checks above, and a plain `review_result` with `--task` completes it, so
-no CLI release has to come first. `maity wait` prints an event of any
-kind, `review_queued` included. `maity wait --related` reads past an event
-that reaches the reader only through a `role:` token, which
-`review_queued` does. So a client that predates the queue must not wait
-with `--related` while it takes legs. From the queue's CLI release on,
+checks above. A `review_result` sent as today completes it:
+`maity say … --type review_result --task <card> --review-file <path>`,
+with the review object §8.4 requires. So no CLI release has to come
+first. `maity wait` prints an event of any kind, `review_queued`
+included. `maity wait --related` reads past an event that reaches the
+reader only through a `role:` token, which `review_queued` does for every
+reader except the leg's creator, who is named in its audience. So a
+reviewer whose client predates the queue must not wait with `--related`
+while it takes legs. From the queue's CLI release on,
 `--related` counts `review_queued` for a reader whose role is the event's
 `needs`.
 
@@ -14723,6 +14788,7 @@ learns its content.
 | `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
 | `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd) | `instance:` of the holder; for claims a bridge holds, `member:` of the served agent | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], warn_seconds}` (§6.5), one per holder and worker pass, each claim once per lease period (`instance` and `session_id` `null` for claims a bridge holds). Wakes the holding instance, or the served agent's bridges as any event for it (§2.3); never waits for anyone (§5.3) |
 | `review_queued` (§6.32; not built yet, tsk-j8zf7dygh2ja) | `role:<needs>` of the leg, plus the leg's creator | `{task, pr, head, scope, needs, vendor}`, when a review card is created and each time a leg goes back to `open` (a lapse). Wakes the listening instances of that role under each agent's wake rule (§8.2); never waits for anyone (§5.3) |
+| `review_claim_lapsed` (§6.32; not built yet, tsk-j8zf7dygh2ja) | the former holder (`member:`, and its `instance:` token when one held the leg), the leg's creator | `{task, pr, head, member_id, instance, reason}`, `reason` one of `not_listening`, `session_ended`, `paused`, `unavailable`, `lease_expired`; once per lapse, from the hub's worker. Wakes the leg's creator; for the former holder it is not wake-relevant, as `holder_stalled` is not (§6.5), and never waits for it (§5.3) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -19624,7 +19690,8 @@ Outside a placement every path is read as before.
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity review queue [--json]` (not built yet, tsk-j8zf7dygh2ja) | `GET /tasks?kind=review&status=open`, every page (§6.32); one line per leg, `<card> #<pr> <scope> <head, 12 characters> needs <role>[ vendor <slug>]`, and `no open legs` when there is none. Legs the caller may not take, by role, `eligible`, `exclude` or vendor, are listed with `(not for you: <reason>)` and are not left out, so the reader sees the whole queue |
 | `maity review take [card]` (not built yet, tsk-j8zf7dygh2ja) | `POST /tasks/{id}/claim` on the card (§6.32); without a card, on the first leg of the queue the caller may take, by the same checks, in board order. Prints `took <card> #<pr> <scope> at <head>`, or `no leg for you` (exit 1). A refusal prints the hub's `details.reason` as it comes |
-| `maity review close <card> --note FILE [--wontfix]` (not built yet, tsk-j8zf7dygh2ja) | `PATCH /tasks/{id}` to `done` (or `wontfix`) with the note (§6.32); for the leg's creator or `tasks:admin` |
+| `maity review close <card> --note FILE [--cancel]` (not built yet, tsk-j8zf7dygh2ja) | `PATCH /tasks/{id}` with `{"status": "done", "review_note": …}`, or `"cancelled"` with `--cancel`, the note read from FILE as `--body-file` reads one (§6.32); for the leg's creator or `tasks:admin`. Prints `closed <card> as <status>`; a refusal prints the hub's `details` as they come |
+| `maity claim <card>`, `maity takeover` on a review leg | as for any card, with the checks of §6.32 against the member who would hold the leg; a refusal prints the hub's `details.reason` (`role_mismatch`, `not_eligible`, `vendor_mismatch`, `review_leg_taken`) as it comes |
 | `maity claim renew [card]` (not built yet, tsk-p55zyn4pz0wd) | `POST …/claims/renew` (§6.5); renews every claim of the calling instance, whatever the argument, and prints one line per renewed card, `renewed <card> (<title>); lease until <lease_until>`, or `no claims` (exit 0). With a card, only that card's line, and `not holding <card>` (exit 1) when the renewal did not include it. `renew` is no card id (those start with `tsk-`), so it never shadows `maity claim <card>` |
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
 | `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. |
