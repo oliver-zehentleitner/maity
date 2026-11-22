@@ -5863,7 +5863,8 @@ them:
   at the top: `server_time`, `api_version`, `hub_version`, `session`,
   `hints`, `maintenance`, `me` (the identity: `member_id`, `handle`,
   `name`, `display_name`, `avatar_url`, `instance`, `address`, `owner`,
-  `git_identity`; no `me.dormant`, since dormancy is per project, §6.17)
+  `git_identity`, `vendor` (the profile's, §6.3, §6.32; not built yet);
+  no `me.dormant`, since dormancy is per project, §6.17)
   and `cross_chats` (§9.5, the profile's, in no project). **Per
   project,** in `projects: [ … ]`, one entry per attached membership in
   the order of `GET /me` (§5.1): `project`, `membership` (with its
@@ -8554,7 +8555,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side: `status=proposed`, `open`, `in_progress` and `blocked,review`, each with `limit=200`, following its own `next_cursor`, and `status=done` and `status=cancelled` with `closed_after` at its window, each one page with `limit=50` whose `next_cursor` it follows only on the column's Show more; it then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
 | `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, open_to_outsiders?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, review?, links?, reason?}` (`review` on a review leg, §6.32; not built yet, tsk-j8zf7dygh2ja); `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `open_to_outsiders`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
+| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `open_to_outsiders`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). On a review leg (§6.32; not built yet, tsk-j8zf7dygh2ja) also `review` (only its `vendor`, `eligible` and `exclude`, while the leg is `open`) and `review_note` (required on closing the leg to `done` or `cancelled` without a result, written as a note in the same step). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{owner}/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
@@ -9201,7 +9202,14 @@ instance (§7).
 
 **A holder that stops.** An instance can stop working while it holds
 cards, and its leases then run out unnoticed. The hub says so; it
-releases nothing and changes no lease:
+releases nothing and changes no lease — except a review leg's claim,
+which lapses back to the queue (§6.32; not built yet, tsk-j8zf7dygh2ja).
+`holder_stalled` and `claim_expired` leave review legs out: a review leg
+held by a stopped instance is reported by `review_claim_lapsed` alone.
+The minute worker runs the review lapse before it builds `claim_expired`
+and a not-listening `holder_stalled`, and a `holder_stalled` sent at once
+(a limit's start, a revocation) names no review leg; that leg lapses at
+the worker's next pass:
 
 - `holder_stalled` (§8.2) when an instance that holds at least one claim
   in the project stops, for one of three causes:
@@ -10717,7 +10725,9 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
 
 - `wait`: the work stays with the member; its leases run as above.
 - `substitute`: the **cover set** is the cards the member holds
-  (`in_progress`, `blocked`, `review`), the open cards assigned to it,
+  (`in_progress`, `blocked`, `review`) other than review legs, which lapse
+  back to the review queue instead (§6.32; not built yet,
+  tsk-j8zf7dygh2ja), the open cards assigned to it,
   and the open requests addressed to its member id — for the project's
   owner also those addressed to `owner` or `trust:owner` (§7). For each
   item the hub walks the cover order (`substitutes`, expanded) and picks
@@ -14171,7 +14181,8 @@ create one, with a `review` object:
   review lead keeps the choice of who reviews what.
 - `needs` (§6.4) is `reviewer` by default and may be any role (`purple-team`
   for a security leg). On a review card it is a gate, not only a label:
-  only a member whose `role` is `needs` takes the leg.
+  only a member whose `role` or `role_base` (§6.2) is `needs` takes the
+  leg, the same members `role:<needs>` reaches (§2.3).
 - `review` is required on a review card and `invalid` on any other kind
   (`details.fields.review: "required"` or `"not_allowed"`). `pr`,
   `head`, `scope` and `base` are set at creation and never change: a new
@@ -14216,7 +14227,8 @@ made not listening by it.
 **Taking a leg** is a claim (§6.5), with these checks on top, made
 under the same atomic step:
 
-- the claimer's `role` is the card's `needs`, else `forbidden` with
+- the claimer's `role` or `role_base` is the card's `needs`, so that
+  everyone `review_queued` wakes may take the leg, else `forbidden` with
   `details.reason: role_mismatch`;
 - the claimer is in `eligible` when that is set and not in `exclude`,
   else `forbidden` with `details.reason: not_eligible`;
@@ -14245,15 +14257,22 @@ holder:
 
 - an admin's claim on another member's behalf (§6.5);
 - an `assign` by `tasks:admin` after expiry (§6.5);
-- a takeover (§6.19), checked when it would move the card, against
-  the receiver;
+- a takeover (§6.19), checked against the receiver twice: when it is
+  opened (`POST …/takeover`, refused there with the reason, so nobody
+  opens a takeover that could never move the leg), and again under the
+  lock when it would move the card;
 - the claims a replacement instance inherits (§6.17), checked against
   the replacing instance's member.
 
-A change of holder that fails a check is refused with the same
-`details.reason` and leaves the leg where it was; an inherited claim that
-fails one lapses (below, reason `session_ended`). Each successful change
+A change of holder that fails a check on a call is refused with the
+same `details.reason` and leaves the leg where it was. One that fails
+where no caller waits ends without moving the leg: a takeover whose
+window elapses in the worker closes without moving the leg, with that
+reason in its `takeover_closed` (§6.19, §8.2), and an inherited claim
+that fails one lapses (below, reason `session_ended`). Each successful change
 records the new holder's `vendor` as `review.holder_vendor` afresh.
+§6.12's cover never moves a leg: an unavailable holder's leg lapses
+(reason `unavailable`).
 
 **A leg lapses back to the queue.** This is the one place where the
 hub releases a claim itself; every other release stays a member's
@@ -14857,7 +14876,7 @@ learns its content.
 | `holder_stalled` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent, and nobody when `reports_to` is `null` or that boss is of another owner; never the holding instance, for which it is not wake-relevant |
 | `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
 | `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd) | `instance:` of the holder; for claims a bridge holds, `member:` of the served agent | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], warn_seconds}` (§6.5), one per holder and worker pass, each claim once per lease period (`instance` and `session_id` `null` for claims a bridge holds). Wakes the holding instance, or the served agent's bridges as any event for it (§2.3); never waits for anyone (§5.3) |
-| `review_queued` (§6.32; not built yet, tsk-j8zf7dygh2ja) | `role:<needs>` of the leg, plus the leg's creator | `{task, pr, head, scope, needs, vendor}`, when a review card is created and each time a leg goes back to `open` (a lapse). Wakes the listening instances of that role under each agent's wake rule (§8.2); never waits for anyone (§5.3) |
+| `review_queued` (§6.32; not built yet, tsk-j8zf7dygh2ja) | `role:<needs>` of the leg, plus the leg's creator | `{task, pr, head, scope, needs, vendor}`, when a review leg enters `open`: created `open`, moved from `proposed` to `open`, or back to `open` by a lapse or a `release`. Wakes the listening instances of that role under each agent's wake rule (§8.2); never waits for anyone (§5.3) |
 | `review_claim_lapsed` (§6.32; not built yet, tsk-j8zf7dygh2ja) | the former holder (`member:`, and its `instance:` token when one held the leg), the leg's creator | `{task, pr, head, member_id, instance, reason}`, `reason` one of `session_ended`, `paused`, `unavailable`, `lease_expired`, `inactive` (the first that holds, in that order, §6.32); once per lapse, from the hub's worker. The leg is released, so no `claim_expired` or `holder_stalled` names it afterwards. Wakes the leg's creator; for the former holder it is not wake-relevant, as `holder_stalled` is not (§6.5), and never waits for it (§5.3) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
