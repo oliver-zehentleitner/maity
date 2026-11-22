@@ -26,8 +26,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, update
 
-from maity_hub import clock, instances, namespace, read_limits
+from maity_hub import clock, idempotency, instances, namespace, read_limits
 from maity_hub import tables as t
+from maity_hub.auth.caller import Caller
 from maity_hub.ids import new_id
 from tests import factory
 from tests.conftest import ClientFactory
@@ -572,6 +573,49 @@ def test_a_replayed_single_project_write_rechecks_its_attachment(
     assert replayed.status_code == 404, replayed.text
     assert "briefing" not in replayed.text
     assert w.call("GET", "/me").status_code == 200  # B still authenticates
+
+
+@pytest.mark.parametrize("change", ["isolate", "detach"])
+@pytest.mark.parametrize(
+    "path, body",
+    [("/me", {"paused": {"reason": "a break"}}), ("/me/limit", {"until": None})],
+)
+def test_a_replayed_write_in_every_project_reads_only_the_attachments_left(
+    world: World, change: str, path: str, body: dict[str, Any]
+) -> None:
+    """The `projects` answer of `PATCH /me` or `POST /me/limit` without `project` replays
+    (§1.5) by the credential, as its attachments are then: a project detached or isolated
+    since is left out, the other kept; the stored id answers no other caller."""
+    w = world
+    with w.engine.begin() as conn:
+        for membership_id, area in ((w.in_a, "alpha-area"), (w.in_b, "beta-area")):
+            conn.execute(
+                update(t.membership).where(t.membership.c.id == membership_id).values(areas=[area])
+            )
+    method = "PATCH" if path == "/me" else "POST"
+    key = f"key-{secrets.token_hex(12)}"
+    first = w.call(method, path, body=body, key=key)
+    assert first.status_code == 200, first.text
+    assert [p["areas"] for p in first.json()["projects"]] == [["alpha-area"], ["beta-area"]]
+    getattr(w, change)(w.in_a)
+    replayed = w.call(method, path, body=body, key=key)
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.headers["Idempotent-Replayed"] == "true"
+    assert [p["areas"] for p in replayed.json()["projects"]] == [["beta-area"]]
+    assert "alpha-area" not in replayed.text
+    check = idempotency.LOADERS["member_set"].may_see
+    owner = Caller(kind="human", via="cookie", human_id=w.agent.owner_id)
+    other = factory.agent(w.engine, w.beta, w.agent.owner_id, instance="oth2")
+    stranger = Caller(
+        kind="agent",
+        via="bearer",
+        agent_id=other.agent_id,
+        owner_id=other.owner_id,
+        credential_id=other.credential_id,
+    )
+    with w.engine.connect() as conn:
+        assert not check(conn, w.agent.credential_id, owner)
+        assert not check(conn, w.agent.credential_id, stranger)
 
 
 def test_the_keep_the_why_ack_names_its_project_among_several(world: World) -> None:
