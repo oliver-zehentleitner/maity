@@ -647,9 +647,11 @@ def _check_antigravity(
         report.error(
             f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
             "namespaces it needs are refused and no AppArmor profile lifts that, so agy runs "
-            "commands unsandboxed. Set require_sandbox = true under [harness.antigravity] to "
-            "refuse its starts, or accept unsandboxed commands knowingly. If an AppArmor profile "
-            "for agy should lift this, see docs/runners.md#antigravity-agy"
+            "commands unsandboxed. Only an AppArmor profile for agy clears this: named `agy`, "
+            "attached to agy's real path, allowing `userns`, loaded as root, then a restart of "
+            "the runner (docs/runners.md#antigravity-agy). Until then require_sandbox = true "
+            "under [harness.antigravity] refuses agy's starts; unset or false, they go ahead "
+            "unsandboxed and each says so in the log. Either way this stays an error"
         )
     elif state == capabilities.AGY_UNKNOWN:
         report.warn(

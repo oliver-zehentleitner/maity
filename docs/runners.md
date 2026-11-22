@@ -210,11 +210,22 @@ So agy is given only `command(maity)` and the `read_url` hosts; a repository's `
 **The sandbox.** On Linux agy's terminal sandbox runs commands in kernel namespaces, and where they cannot start agy runs commands without it, without saying so. The runner may advertise `sandbox: on` only where it has seen agy's sandbox start, and agy has no command that starts only its sandbox without a model call, so for now the runner advertises `sandbox: off` for agy on every host: a placement reports `running` with `sandbox_unavailable`, and `require_sandbox = true` under `[harness.antigravity]` refuses it. The session settings still switch agy's sandbox on; only the report is off. `maity runner check` tries, as the agents' user, whether the namespaces agy's sandbox needs start (user, mount, PID and network, with `unshare`), and has one of four answers:
 
 - **They start:** `ok`, as a diagnostic ("agy's sandbox start not verified").
-- **They are refused, but an AppArmor profile named `agy` is loaded** (or one named after agy's path): a warning. On Ubuntu, AppArmor's restriction of unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns = 1`) refuses them to every program but one whose profile grants `userns`, and such a profile for agy lets agy's own sandbox start while the plain probe is refused. The runner cannot verify that profile without root: it can see only that a profile of that name is loaded, not what it attaches to or allows. So this stays a warning, never `ok`.
-- **They are refused and no such profile is loaded:** agy's sandbox cannot start on that host, and agy runs commands unsandboxed. `check` reports an **error**. An agy start then follows `require_sandbox`: with `require_sandbox = true` under `[harness.antigravity]` it is refused, and with `false` it starts and the runner's log says, at every such start, that the placement runs commands unsandboxed. Set `require_sandbox = true` to refuse such starts, or accept unsandboxed commands knowingly.
+- **They are refused, but an AppArmor profile named `agy` is loaded** (or one named after agy's path, as found on the agents' `PATH` or with its symlinks resolved): a warning. On Ubuntu, AppArmor's restriction of unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns = 1`) refuses them to every program but one whose profile grants `userns`, and such a profile for agy lets agy's own sandbox start while the plain probe is refused. The runner cannot verify that profile without root: it can see only that a profile of that name is loaded, not what it attaches to or allows. So this stays a warning, never `ok`.
+- **They are refused and no such profile is loaded:** agy's sandbox cannot start on that host, and agy runs commands unsandboxed. `check` reports an **error**, and it stays one whatever `require_sandbox` says. An agy start follows `require_sandbox`: with `require_sandbox = true` under `[harness.antigravity]` it is refused; unset (agy's default) or `false`, it starts and the runner's log says, at every such start, that the placement's commands will run unsandboxed. Only an AppArmor profile for agy clears the error: named `agy`, attached to agy's real path, allowing `userns`, loaded as root, then a restart of the runner. Ubuntu's own profiles for programs that need user namespaces (in `/etc/apparmor.d`) take this shape, here in `/etc/apparmor.d/agy` and loaded with `sudo apparmor_parser -r /etc/apparmor.d/agy`:
+
+  ```
+  abi <abi/4.0>,
+  include <tunables/global>
+
+  profile agy /real/path/to/agy flags=(unconfined) {
+    userns,
+  }
+  ```
+
+  The runner does not verify what a profile attaches to or allows (the warning above says so). On the Ubuntu lab host, agy's own sandbox was seen starting under an operator's profile for agy (tsk-xjy2d5617sar).
 - **It cannot tell** (no `unshare` in `/usr/bin`, `/bin`, `/usr/sbin` or `/sbin`, a failure that is no permission refusal, a timeout, the profile list unreadable or readable only in part): a warning, "not checked".
 
-A start asks the same once per host and agy binary while the service runs; after changing the host's AppArmor or agy's profile, restart the runner.
+A start asks the same once per host and agy binary while the service runs (an answer of "not checked" is asked again at the next start); after changing the host's AppArmor or agy's profile, restart the runner.
 
 Two things have not been tried in a real session yet: whether `git fetch` and `git push` reach the forge from inside agy's sandbox, and whether the deny on `.git/config` reaches the sandbox too. The runner gives each agy session the same three git settings as a sandboxed Claude Code session (below), so git works either way.
 

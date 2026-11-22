@@ -432,11 +432,12 @@ def agy_sandbox_platform(platform: str | None = None) -> bool:
 def agy_sandbox(path: str, as_user: AsUser = RUNNER, binary: str | None = None) -> str:
     """Whether agy's terminal sandbox can start for the agents' user, as far as an unprivileged
     check can tell (`AGY_*`): the namespaces it needs start (`unshare`, from `SYSTEM_PATH`);
-    they are refused but an AppArmor profile named `agy`, or after agy's resolved `binary`, is
-    loaded, which may lift the refusal for agy (not verified); they are refused and no such
-    profile is loaded, so agy runs commands unsandboxed; or it cannot tell (no `unshare`, a
-    failure of the lookup or the run, a failure that is no permission refusal, the profile
-    list unreadable or read only in part). It never turns the capability on. Only a definite
+    they are refused but an AppArmor profile named `agy`, or after agy's `binary` as found or
+    with its symlinks resolved, is loaded, which may lift the refusal for agy (not verified);
+    they are refused and no such profile is loaded, so agy runs commands unsandboxed; or it
+    cannot tell (no `unshare`, a failure of the lookup or the run, a failure that is no
+    permission refusal, the profile list unreadable or read only in part, agy's path not
+    resolvable). It never turns the capability on. Only a definite
     refusal with a complete list is `cannot`, so the check can only err towards a warning.
     `path` is the agents' PATH the run gets; it is not where unshare is looked up."""
     try:
@@ -458,7 +459,27 @@ def agy_sandbox(path: str, as_user: AsUser = RUNNER, binary: str | None = None) 
     names, complete = listed
     if names & {AGY_PROFILE_NAME, *([binary] if binary else [])}:
         return AGY_PROFILE
+    if binary:
+        # A profile without a name of its own is named after the path it attaches to, agy's
+        # real one; `which` gives the path on the PATH, maybe a symlink (the review of #2119).
+        real = resolved(binary, as_user)
+        if real in names:
+            return AGY_PROFILE
+        complete = complete and real is not None  # its real path's profile not looked for
     return AGY_CANNOT if complete else AGY_UNKNOWN  # an unread name may be agy's
+
+
+def resolved(path: str, as_user: AsUser = RUNNER) -> str | None:
+    """`path` with every symlink resolved, as the agents' user sees it (on an ssh host, there);
+    None where it cannot be (gone, unreadable, no `realpath`)."""
+    try:
+        if as_user.direct:
+            return os.path.realpath(path, strict=True)
+        done = as_user.run(["realpath", "--", path], timeout=30)
+    except (proc.ToolError, subprocess.SubprocessError, OSError, ValueError):
+        return None
+    real = (done.stdout or "").strip()
+    return real if done.returncode == 0 and real else None
 
 
 def apparmor_profiles(as_user: AsUser = RUNNER) -> tuple[set[str], bool] | None:

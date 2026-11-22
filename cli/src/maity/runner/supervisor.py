@@ -1379,9 +1379,10 @@ class Supervisor:
     def _agy_sandbox(self, target: Target, binary: str | None) -> str:
         """`capabilities.agy_sandbox` for `target` and agy's `binary`, kept per pair for the
         service's lifetime; on a platform where agy has no terminal sandbox it is not asked
-        (that is no host fault the start can name). The lock is not held across the probe, so
-        first starts that overlap may each ask once; they get the same answer, and the first
-        one kept is used from then on (the review of #2119)."""
+        (that is no host fault the start can name). `unknown` is not kept: a one-off timeout
+        would keep every later start quiet where the next probe says `cannot`, so the next
+        start asks again. The lock is not held across the probe, so first starts that overlap
+        may each ask once; the first answer kept is used from then on (the review of #2119)."""
         if target.as_user.direct and not capabilities.agy_sandbox_platform():
             return capabilities.AGY_UNKNOWN
         key = (target.name, binary or "")
@@ -1390,6 +1391,8 @@ class Supervisor:
         if known is not None:
             return known
         state = capabilities.agy_sandbox(target.agent_path, target.as_user, binary)
+        if state == capabilities.AGY_UNKNOWN:
+            return state
         with self.lock:
             return self.agy_sandbox.setdefault(key, state)
 
@@ -1397,9 +1400,9 @@ class Supervisor:
         self, pid: str, harness: config.Harness, target: Target, view: GateView | None
     ) -> None:
         """An agy start on a host where its terminal sandbox cannot start: it got through the
-        gate because `require_sandbox` is false (its default), so it is said aloud at every
-        such start attempt, before the launch and so worded as what the session will do, never
-        silently (lotse's ruling on tsk-xjy2d5617sar). Its report stays `sandbox_unavailable`,
+        gate because `require_sandbox` is unset (agy's default) or false, so it is said aloud at
+        every such start attempt, before the launch and so worded as what the session will do,
+        never silently (lotse's ruling on tsk-xjy2d5617sar). Its report stays `sandbox_unavailable`,
         as on every agy start. Nothing is said where the probe saw the namespaces start, found
         a profile named for agy, or could not tell."""
         if harness.id != "antigravity" or (view is not None and view.sandbox):

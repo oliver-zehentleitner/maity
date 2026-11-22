@@ -1076,22 +1076,32 @@ exists, the code follows the contract and reports `off`.
 
 `agy_sandbox` answers four ways, as the agents' user. The namespaces start
 (`ok`, as before). They are refused, but a loaded AppArmor profile is named
-`agy`, or after agy's resolved binary: a warning, "not verified". They are
+`agy`, or after agy's binary as found on the PATH or with its symlinks
+resolved (as the agents' user, on an ssh host there): a warning, "not
+verified". A profile without a name of its own is named after the path it
+attaches to, the real one, while `which` may give a symlink. They are
 refused and no such profile is loaded: "cannot start". Or the probe cannot
 tell (no `unshare`, a failure of the lookup or the run, a timeout, a
 failure that is no permission refusal, the profile list unreadable or read
-only in part): "not checked", a warning. Only `Operation not permitted` on
-`uid_map`, `gid_map`, `setgroups` or the unshare call (read under
-`LC_ALL=C`) counts as a refusal, and "cannot start" needs every profile
-name read. `unshare` is looked up on the system's own PATH, never the
-agents', where a directory they can write to could hold an unshare that
-exits 0 and hides the error (the review of #2119). `maity runner check` reports "cannot start" as an error naming
-`require_sandbox`. A start asks the probe once per target and agy binary
-for the service's lifetime. Where the answer is "cannot start" and
-`require_sandbox = false` let the start through, the runner logs loudly, at
-every such start, that the placement runs commands unsandboxed. With
+only in part, agy's path not resolvable): "not checked", a warning. Only
+`Operation not permitted` on `uid_map`, `gid_map`, `setgroups` or the
+unshare call (read under `LC_ALL=C`) counts as a refusal, and "cannot
+start" needs every profile name read. `unshare` is looked up on the
+system's own PATH, never the agents', where a directory they can write to
+could hold an unshare that exits 0 and hides the error (the review of
+#2119). `maity runner check` reports "cannot start" as an error that names
+the profile that clears it (named `agy`, attached to agy's real path,
+allowing `userns`, loaded as root, then a restart) and says that
+`require_sandbox` only refuses the starts, so the error stays whatever it
+says. A start asks the probe once per target and agy binary for the
+service's lifetime; "not checked" is not kept, since a one-off timeout
+would keep every later start quiet where the next probe says "cannot
+start". Where the answer is "cannot start" and `require_sandbox`, unset
+(agy's default) or false, let the start through, the runner logs loudly, at
+every such start, that the placement's commands will run unsandboxed. With
 `require_sandbox = true` the start is refused, as it already was, since
-agy's sandbox is reported off.
+agy's sandbox is reported off. The test suite stubs the probe for every
+test but its own, so no start or check test runs the host's `unshare`.
 
 **Reason:** On the Ubuntu runner, `kernel.apparmor_restrict_unprivileged_userns
 = 1` refuses user namespaces to every program whose profile lacks `userns`,
