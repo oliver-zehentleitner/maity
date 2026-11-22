@@ -17,6 +17,8 @@ from typing import Any
 import claude_sandbox_probe as probe
 import pytest
 
+from maity.runner import plaincall
+
 FAKE = """#!{python}
 import json, os, re, subprocess, sys
 from maity.runner.plaincall import refusal as hook
@@ -535,6 +537,17 @@ def test_the_probe_prints_nothing_of_a_private_line(
     assert code == 1
     assert set(outcomes(out)) == {"5.1", "5.2", "5.3"}
     assert marker not in out and marker not in err
+    # Nor in what --keep retains: no name and no content under the scratch holds it.
+    scratch = Path(out.splitlines()[0].rsplit("scratch: ", 1)[1])
+    try:
+        for kept in scratch.rglob("*"):
+            assert marker[:12] not in str(kept)
+            if kept.is_file() and not kept.is_symlink():
+                assert marker[:12].encode() not in kept.read_bytes(), kept
+        # Only 5.1 ran live (5.2 and 5.3 are NOT-TESTABLE): its status, no stream.
+        assert sorted(p.name for p in (scratch / "streams").iterdir()) == ["5.1.status"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
     assert marker[:12] not in out + err  # nor a part of it
     assert f"private line 1 [{probe.line_hash(f'true {marker} && maity probe {{T}}')}]" in out
 
@@ -646,11 +659,11 @@ def test_a_failed_settings_write_is_undone(monkeypatch: pytest.MonkeyPatch) -> N
     real = probe._write_atomic
     calls = []
 
-    def fail_on_user(path: Path, text: str) -> None:
+    def fail_on_user(path: Path, text: str, *args: Any) -> None:
         calls.append(path)
         if path == user and calls.count(user) == 1:  # the change fails, the restore works
             raise OSError("disk full")
-        real(path, text)
+        real(path, text, *args)
 
     monkeypatch.setattr(probe, "_write_atomic", fail_on_user)
     with pytest.raises(OSError):
@@ -684,7 +697,11 @@ def test_a_killed_probe_is_put_right_at_the_next_start(
     user = probe.user_settings()
     user.parent.mkdir(parents=True, exist_ok=True)
     user.write_text('{"disableAllHooks": true}')  # as a killed step left it
-    probe.user_saved().write_text(json.dumps({"text": '{"theme": "dark"}'}))
+    probe.user_saved().write_text(
+        json.dumps(
+            {"text": '{"theme": "dark"}', "mode": 0o600, "uid": os.getuid(), "gid": os.getgid()}
+        )
+    )
     managed.parent.mkdir(parents=True)
     managed.write_text('{"disableAllHooks": true}')
     probe.managed_record().write_text(f"{managed}\n")
@@ -697,6 +714,150 @@ def test_a_killed_probe_is_put_right_at_the_next_start(
     probe.managed_record().write_text(f"{other}\n")  # a path the probe never writes stays
     probe.recover()
     assert other.exists()
+
+
+@pytest.mark.parametrize("step_id", ["1a.2", "1b.2", "2.2"])
+def test_a_refusal_text_in_a_result_that_is_no_error_is_no_refusal(
+    short: Path, step_id: str
+) -> None:
+    """The result echoes a refusal (a command that prints one) but is not an error: no
+    evidence that anything refused the call."""
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == step_id]
+    target = world.fill(step.target, "t")
+    hook = f"PreToolUse:Bash hook error: [{target}]: {plaincall.PREFIX_REFUSED}"
+    for text in ("Permission to use Bash has been denied.", hook):
+        for is_error, status in ((False, "INCONCLUSIVE"), (True, "PASS")):
+            if step_id == "2.2" and text.startswith("Permission"):
+                status = "INCONCLUSIVE"  # point 2 needs the hook's own reason
+            call = probe.Call("Bash", {"command": target}, text, is_error, True)
+            found = probe.judge(step, world, "t", probe.Run([call], "", 0), short / "x", {})
+            assert found.status == status, (text, is_error, found)
+
+
+@pytest.mark.parametrize(
+    ("step_id", "escape", "fetch_head", "status"),
+    [
+        ("3.1", "", None, "INCONCLUSIVE"),  # an empty stub marker is no run
+        ("3.1", "cred=no", None, "INCONCLUSIVE"),  # nor one without the credential
+        ("3.1", "cred=ok", None, "PASS"),
+        ("3.2", "", None, "INCONCLUSIVE"),
+        ("3.5", "", None, "INCONCLUSIVE"),
+        ("4.9", None, "", "FAIL"),  # an empty FETCH_HEAD
+        ("4.9", None, "0" * 40 + "\t\tbranch 'main' of x\n", "FAIL"),  # not origin's commit
+        ("4.9", None, "HEAD", "PASS"),  # FETCH_HEAD names origin's main
+    ],
+)
+def test_the_hook_and_fetch_verdicts_need_their_exact_evidence(
+    short: Path, step_id: str, escape: str | None, fetch_head: str | None, status: str
+) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == step_id]
+    if escape is not None:
+        (world.clone / ".git" / "maity" / "probe" / "t").write_text(escape)
+        (short / "hook").touch()  # the detector hook ran (hooks-on wants it)
+    if fetch_head is not None:
+        if fetch_head == "HEAD":
+            commit = probe._git(world.root, "--git-dir", str(world.root / "origin.git"),
+                                "rev-parse", "main")  # fmt: skip
+            fetch_head = f"{commit}\t\tbranch 'main' of x\n"
+        (world.clone / ".git" / "FETCH_HEAD").write_text(fetch_head)
+    call = probe.Call("Bash", {"command": world.fill(step.target, "t")}, "", False, True)
+    marker = short / ("hook" if step_id != "3.2" else "no-hook")
+    found = probe.judge(step, world, "t", probe.Run([call], "", 0), marker, {})
+    assert found.status == status, found
+
+
+def _tree(root: Path) -> dict[str, tuple[int, bytes | None]]:
+    """Every path under `root` with its mode and, for a file, its content."""
+    return {str(p.relative_to(root)): (p.lstat().st_mode, p.read_bytes() if p.is_file() else None)
+            for p in sorted(root.rglob("*"))}  # fmt: skip
+
+
+def test_settings_keep_their_mode_through_a_step_and_a_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    os.umask(0o022)
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"theme": "dark"}')
+    user.chmod(0o600)
+    managed = tmp_path / "etc" / "managed-settings.json"
+    monkeypatch.setattr(probe, "managed_file", lambda: managed)
+    with probe.changed("user:disableAllHooks"):
+        assert user.stat().st_mode & 0o777 == 0o600  # changed, still private
+        assert probe.user_saved().stat().st_mode & 0o777 == 0o600
+    assert user.stat().st_mode & 0o777 == 0o600 and user.read_text() == '{"theme": "dark"}'
+    with probe.changed("managed:disableAllHooks"):
+        assert probe.managed_record().stat().st_mode & 0o777 == 0o600
+    # A killed step, recovered: the copy holds the mode too.
+    probe._write_atomic(probe.user_saved(), json.dumps(probe._user_copy()))
+    user.write_text('{"disableAllHooks": true}')
+    user.chmod(0o644)
+    probe.recover()
+    assert user.stat().st_mode & 0o777 == 0o600 and user.read_text() == '{"theme": "dark"}'
+    user.chmod(0o640)  # another original mode is restored as it was
+    with probe.changed("user:allowManagedHooksOnly"):
+        pass
+    assert user.stat().st_mode & 0o777 == 0o640
+
+
+def test_a_leftover_stops_the_minimal_run_and_changes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = Path.home()
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"disableAllHooks": true}')
+    user.chmod(0o600)
+    probe.user_saved().write_text(json.dumps({"text": "{}", "mode": 0o600, "uid": os.getuid(),
+                                              "gid": os.getgid()}))  # fmt: skip
+    probe.managed_record().write_text(str(tmp_path / "x") + "\n")
+    monkeypatch.setattr(probe, "claude_running", lambda any_user: [])  # not even asked
+    before = _tree(home)
+    code = probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "1a.1"])
+    err = capsys.readouterr().err
+    assert code == 2 and "an earlier probe left settings changed" in err
+    assert _tree(home) == before  # files, contents and modes
+
+
+def test_a_leftover_is_not_put_right_while_claude_code_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = Path.home()
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"disableAllHooks": true}')
+    probe.user_saved().write_text(json.dumps({"text": "{}", "mode": 0o600, "uid": os.getuid(),
+                                              "gid": os.getgid()}))  # fmt: skip
+    monkeypatch.setattr(probe, "claude_running", lambda any_user: [77])
+    before = _tree(home)
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight", "--user-settings"]) == 2
+    assert "pids [77]" in capsys.readouterr().err and _tree(home) == before
+
+
+def test_the_minimal_run_writes_nothing_outside_its_scratch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--only 1,5 --extra-lines` without --keep: the home and the temporary directory are as
+    they were, the scratch removed. The fake harness writes nothing of its own; Claude Code's
+    own files in its home are outside this test."""
+    temp = Path(tempfile.gettempdir())  # where the probe makes its scratch
+
+    def scratches() -> set[str]:
+        return {p.name for p in temp.glob("maity-claude-probe-*")}
+
+    lines = tmp_path / "lines.txt"
+    lines.write_text("true && maity probe {T}\n")
+    claude = fake(tmp_path, "sandbox")
+    home, before_home, before_temp = Path.home(), _tree(Path.home()), scratches()
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "1,5",
+                       "--extra-lines", str(lines)])  # fmt: skip
+    out, err = capsys.readouterr()
+    assert code in (0, 1), out + err  # ran to its end; the fake fails the plain controls
+    assert _tree(home) == before_home and scratches() == before_temp
+    made = out.splitlines()[0].rsplit("scratch: ", 1)[1]
+    assert not Path(made).exists()
 
 
 def test_the_settings_steps_refuse_while_claude_code_runs(

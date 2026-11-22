@@ -32,11 +32,13 @@ What it checks (cli/context/runner.md, the sandbox entries):
    turn the runner's hook off and `capabilities.claude_hooks_off` names them; the runner's
    `disableAllHooks: false` wins over a user's `true`. `--managed` writes the managed files
    (with `sudo -n` where needed; an existing managed-settings.json is never touched),
-   `--user-settings` changes ~/.claude/settings.json; each is written atomically and restored
-   afterwards, and refused while Claude Code runs on the host (any user's for `--managed`, the
-   user's own for `--user-settings`). A probe killed in such a step leaves a record and a copy
-   beside the user settings, and the next start puts both right (`recover`). Without the flags
-   those steps are SKIP.
+   `--user-settings` changes ~/.claude/settings.json; each is written atomically, with the
+   file's own mode and owner, and restored afterwards, and refused while Claude Code runs on
+   the host (any user's for `--managed`, the user's own for `--user-settings`). A probe killed
+   in such a step leaves an owner-private record and copy beside the user settings; a later run
+   with those flags puts them right after the same check (`recover`), and a run without them
+   names them and stops, changing nothing. Without the flags those steps are SKIP, and the run
+   writes nothing outside its scratch, which it removes at its end unless `--keep`.
 4. The clone's credential, another clone's and the home's secrets are not readable from a
    non-maity line or through Read; `.git`'s protected paths are not writable; plain `maity`
    still reads the credential; `git fetch` and `git commit` still work. `git push` is not
@@ -50,8 +52,8 @@ What it checks (cli/context/runner.md, the sandbox entries):
    and `{script}` (a file in the clone holding `maity probe <token>`, written before the run);
    nothing else in it is replaced. `--only` selects these steps too (`5`, `5.2`).
    The probe prints such a step by its number and the first 8 hex digits of the line's sha256
-   only, never the line or output that could echo it; the run's streams under `--keep` may
-   hold it, in the scratch directory, and are not printed.
+   only, never the line or output that could echo it, and keeps no stream for it under
+   `--keep`, only its exit code and the names of the tools called (`streams/5.N.status`).
    Before any live run, each line is run once with `bash -c` in the clone, with the session's
    variables and no sandbox and no hook (`reachable`): a line that does not run the stub
    `maity` there tests nothing and is NOT-TESTABLE, never PASS. Live, a line passes only with
@@ -581,7 +583,7 @@ def _verdict(step: Step, world: World, token: str, run: Run, call: Call, said: s
             return Outcome("PASS", f"ran inside the sandbox; {said}")
         if ran:
             return Outcome("INCONCLUSIVE", f"the stub's marker does not say cred=no; {said}")
-        if by in ("hook", "rules"):
+        if call.is_error and by in ("hook", "rules"):
             return Outcome("PASS", f"refused before it ran, by the {by}; {said}")
         return Outcome("INCONCLUSIVE", f"no marker and no refusal in the result: no evidence "
                                        f"of what happened; {said}")  # fmt: skip
@@ -604,15 +606,18 @@ def _verdict(step: Step, world: World, token: str, run: Run, call: Call, said: s
             return Outcome("FAIL", f"was not refused (ran={ran}, outside={escaped}); {said}")
         # The runner's hook refuses by its reasons; a failing hook in its place blocks without.
         wanted = ("hook",) if step.variant in ("runner", "open") else ("hook", "hook-failure")
-        if by in wanted:
+        if call.is_error and by in wanted:
             return Outcome("PASS", f"refused before it ran, by the {by}; {said}")
         return Outcome("INCONCLUSIVE", f"not run, but the result shows no refusal by the hook; "
                                        f"{said}")  # fmt: skip
     if step.expect in ("hooks-on", "hooks-off", "hooks-any"):
         hooked = hook_marker.exists()
         state = "the runner's hooks ran" if hooked else "the runner's hooks did not run"
-        if not (ran or escaped):  # the call itself must have run, or nothing is shown
-            return Outcome("INCONCLUSIVE", f"the call did not run the stub; {state}; {said}")
+        # The plain call must have run, outside as the runner's rules let it, with the
+        # credential: only then does the hook marker's presence or absence mean anything.
+        if not (escaped and escape.read_text().strip() == "cred=ok"):
+            return Outcome("INCONCLUSIVE", f"the plain call did not run outside with the "
+                                           f"credential; {state}; {said}")  # fmt: skip
         if step.expect == "hooks-on" and not hooked:
             return Outcome("FAIL", f"{state}; {said}")
         if step.expect == "hooks-off" and hooked:
@@ -650,9 +655,14 @@ def _verdict(step: Step, world: World, token: str, run: Run, call: Call, said: s
                                            f"{said}")  # fmt: skip
         return Outcome("PASS", f"ran, and nothing written; {said}")
     if step.expect == "fetched":
-        if call.is_error or not (world.clone / ".git" / "FETCH_HEAD").is_file():
-            return Outcome("FAIL", f"git fetch failed; {said}")
-        return Outcome("PASS", "FETCH_HEAD written")
+        fetch_head = world.clone / ".git" / "FETCH_HEAD"
+        named = fetch_head.read_text().split() if fetch_head.is_file() else []
+        expected = _git(world.root, "--git-dir", str(world.root / "origin.git"), "rev-parse",
+                        "main")  # fmt: skip
+        if call.is_error or not named or named[0] != expected:
+            return Outcome("FAIL", f"git fetch did not fetch origin's main ({expected[:12]}); "
+                                   f"{said}")  # fmt: skip
+        return Outcome("PASS", f"FETCH_HEAD names origin's main ({expected[:12]})")
     if step.expect == "committed":
         last = _git(world.clone, "log", "-1", "--format=%s")
         if last != f"probe-{token}":
@@ -685,11 +695,21 @@ def _staged(path: Path) -> Path:
     return path.with_name(f".{path.name}.maity-probe-{os.getpid()}")
 
 
-def _write_atomic(path: Path, text: str) -> None:
-    """`text` into `path` whole or not at all: written beside it, then renamed over it."""
+def _write_atomic(path: Path, text: str, mode: int = 0o600,
+                  owner: tuple[int, int] | None = None) -> None:  # fmt: skip
+    """`text` into `path` whole or not at all: written beside it, owner-private from its
+    creation, given `mode` (and `owner`, where it can be) and then renamed over it."""
     staged = _staged(path)
     try:
-        staged.write_text(text)
+        fd = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as out:
+            out.write(text)
+        if owner is not None and (os.stat(staged).st_uid, os.stat(staged).st_gid) != owner:
+            try:
+                os.chown(staged, *owner)
+            except PermissionError:
+                pass  # not ours to give: the mode still holds
+        os.chmod(staged, mode)
         os.replace(staged, path)
     finally:
         staged.unlink(missing_ok=True)
@@ -699,7 +719,7 @@ def _put(path: Path, text: str) -> None:
     """A file in place atomically, with `sudo -n` where the directory is not ours."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        _write_atomic(path, text)
+        _write_atomic(path, text, 0o644)  # a managed file is read, not secret
     except PermissionError:
         staged = _staged(path)
         try:
@@ -743,13 +763,29 @@ def managed_record() -> Path:
     return Path.home() / ".claude" / "maity-probe-managed"
 
 
-def _restore_user(saved: str | None) -> None:
+def _restore_user(copy: dict[str, Any]) -> None:
+    """The user settings back as `copy` (`_user_copy`) holds them, mode and owner included."""
     user = user_settings()
-    if saved is None:
+    if copy["text"] is None:
         user.unlink(missing_ok=True)
     else:
-        _write_atomic(user, saved)
+        _write_atomic(user, copy["text"], copy["mode"], (copy["uid"], copy["gid"]))
     user_saved().unlink(missing_ok=True)
+
+
+def _user_copy() -> dict[str, Any]:
+    """The user settings as they are: text (None when absent), mode, owner."""
+    user = user_settings()
+    if not user.exists():
+        return {"text": None, "mode": 0o600, "uid": os.getuid(), "gid": os.getgid()}
+    info = user.stat()
+    return {"text": user.read_text(), "mode": info.st_mode & 0o7777, "uid": info.st_uid,
+            "gid": info.st_gid}  # fmt: skip
+
+
+def pending_records() -> list[Path]:
+    """What a killed probe left for `recover`."""
+    return [path for path in (managed_record(), user_saved()) if path.is_file()]
 
 
 def recover() -> list[str]:
@@ -765,7 +801,7 @@ def recover() -> list[str]:
         record.unlink()
     saved = user_saved()
     if saved.is_file():
-        _restore_user(json.loads(saved.read_text())["text"])
+        _restore_user(json.loads(saved.read_text()))
         done.append(f"restored {user_settings()} from an earlier probe's copy")
     return done
 
@@ -809,15 +845,16 @@ def changed(change: str | None) -> Iterator[None]:
             managed_record().unlink(missing_ok=True)
         return
     user = user_settings()
-    saved = user.read_text() if user.exists() else None
-    data = json.loads(saved) if saved else {}
+    copy = _user_copy()
+    data = json.loads(copy["text"]) if copy["text"] else {}
     try:
         user.parent.mkdir(parents=True, exist_ok=True)
-        _write_atomic(user_saved(), json.dumps({"text": saved}))
-        _write_atomic(user, json.dumps({**data, key: True}, indent=2) + "\n")
+        _write_atomic(user_saved(), json.dumps(copy))  # owner-private, as every probe file
+        _write_atomic(user, json.dumps({**data, key: True}, indent=2) + "\n", copy["mode"],
+                      (copy["uid"], copy["gid"]))  # fmt: skip
         yield
     finally:
-        _restore_user(saved)
+        _restore_user(copy)
 
 
 def skipped(step: Step, managed: bool, user_settings: bool) -> str | None:
@@ -881,7 +918,13 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
         named = capabilities.claude_hooks_off() if step.hooks_check is not None else None
         code, out = runner(argv, world.env, world.clone)
     (world.root / "streams").mkdir(exist_ok=True)
-    (world.root / "streams" / f"{step.id}.jsonl").write_text(out)
+    if private(step):  # its stream may echo the line: only a status is kept
+        calls = parse_stream(out)
+        (world.root / "streams" / f"{step.id}.status").write_text(
+            f"exit {code}; {len(calls)} tool call(s): {', '.join(c.tool for c in calls)}\n"
+        )
+    else:
+        (world.root / "streams" / f"{step.id}.jsonl").write_text(out)
     outcome = judge(step, world, token, Run(parse_stream(out), out, code), marker, before)
     if step.hooks_check is True and named is None:
         return Outcome("FAIL", f"claude_hooks_off named nothing; {outcome.detail}")
@@ -1038,15 +1081,23 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
         print(f"cannot run: --only selects none of the --extra-lines steps (add {EXTRA})",
               file=sys.stderr)  # fmt: skip
         return 2
-    for line in recover():
-        print(f"recovered: {line}", file=sys.stderr)
+    left = pending_records()
+    if left and not (opts.managed or opts.user_settings):
+        # The minimal path changes nothing outside its scratch, a leftover included.
+        print(f"cannot run: an earlier probe left settings changed ({', '.join(map(str, left))}"
+              "); run with --managed or --user-settings, in a window with no placement and no "
+              "other Claude Code session, to put them right first", file=sys.stderr)  # fmt: skip
+        return 2
     if opts.managed or opts.user_settings:
-        running = claude_running(any_user=opts.managed)
+        running = claude_running(any_user=opts.managed or managed_record() in left)
         if running:
             print(f"cannot run: Claude Code runs on this host (pids {running}); --managed and "
-                  "--user-settings change settings it may read, so run them in a window with "
-                  "no placement and no other Claude Code session", file=sys.stderr)  # fmt: skip
+                  "--user-settings change settings it may read, and leftovers of an earlier "
+                  "probe are put right only then, so run them in a window with no placement and "
+                  "no other Claude Code session", file=sys.stderr)  # fmt: skip
             return 2
+        for line in recover():  # only after the gate, and only with what a record names
+            print(f"recovered: {line}", file=sys.stderr)
     if not opts.no_preflight:
         why = preflight(binary)
         if why is not None:
