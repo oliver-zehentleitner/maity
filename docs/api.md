@@ -20372,7 +20372,7 @@ agents' shared home, which no removal of a clone reaches:
   per placement, created by the runner at the start as the agents'
   user, under the one holder `<workspaces>/.scratch` (a real directory
   of the agents' user, checked at every start; a start is refused when
-  it is a link or another user's). Never in the clone, where git would
+  it is a link or another user's, or cannot be made). Never in the clone, where git would
   see it and where it would count as unsaved work, and never in an
   `antigravity` workspace folder, which holds nothing but `repo`.
   `.scratch` cannot be a clone's or a project's name, since those start

@@ -4484,6 +4484,38 @@ def test_a_scratch_holder_that_is_not_the_agents_refuses_the_start(
     assert list((tmp_path / "elsewhere").iterdir()) == []
 
 
+def test_a_holder_that_cannot_be_made_refuses_the_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The security leg's P3 (A2047): a holder that fails to be made for an ordinary reason
+    (a full disk, a lost ssh connection, no answer) refuses the start as a link does, since
+    a session started without the holder has no holder deny, so a scratch made later would
+    stay readable from it. Only an ssh host without the op falls back (Unsupported)."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    made: list[Path] = []
+
+    def full(root: Path, holder: Path, as_user: Any = None) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(scratch, "make_holder", full)
+    monkeypatch.setattr(scratch, "make", lambda path, as_user=None: made.append(path))
+    with pytest.raises(workspace.Refused) as refused:
+        sup._scratch(placement(), codex, target)
+    assert refused.value.reason == "harness_refused" and made == []
+    assert "No space left" in (refused.value.why or "")
+
+    def lost(root: Path, holder: Path, as_user: Any = None) -> None:
+        raise subprocess.TimeoutExpired(["ssh"], 30)
+
+    monkeypatch.setattr(scratch, "make_holder", lost)
+    with pytest.raises(workspace.Refused):
+        sup._scratch(placement(), codex, target)
+    assert made == []
+
+
 def test_a_host_without_the_holder_op_keeps_the_former_layout(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

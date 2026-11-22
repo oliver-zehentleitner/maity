@@ -6362,7 +6362,10 @@ A Claude Code or Codex placement's scratch is
 is made by `maity runner scratchop holder` as the agents' user, 0700, and
 checked at every start, opened without following a link and owned by that
 user: a link or another user's directory refuses the start
-(`harness_refused`), and nothing is made through it. `make` takes only this
+(`harness_refused`), and nothing is made through it. A holder that cannot
+be made for any other reason refuses the start too, since a session
+started without it has no holder deny (the security leg's P3 on #2112);
+only `Unsupported` falls back to the former layout. `make` takes only this
 shape, and checks the holder again itself. A sandboxed Claude Code
 placement gets the holder in `denyRead` only and its own scratch in
 `allowRead` and `allowWrite`, the #2091 shape one level up

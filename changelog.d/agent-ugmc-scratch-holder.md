@@ -7,7 +7,7 @@
   it in every project, including one that had no scratch yet at its start,
   which the previous release left open. The runner makes the holder as the
   agents' user and checks it at every start: a link or another user's
-  directory there refuses the start. Scratches in the former
+  directory there refuses the start, as does a holder it cannot make. Scratches in the former
   `<workspaces>/<project>/.scratch/` are still measured, removed and denied
   until their placements are gone, and an ssh host whose `maity` is older
   keeps the former layout until it is upgraded. A Claude Code placement

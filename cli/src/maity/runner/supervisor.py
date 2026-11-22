@@ -1752,7 +1752,8 @@ class Supervisor:
         with a fresh name at every start, so nothing in it survives a restart (`_tmp_scratch`).
         Through a link the agents made the runner makes nothing, and a scratch it cannot make
         (a host whose `maity` has no `scratchop` yet) is none either: the session then starts
-        without one, and the log says why. agy's scratch goes under `/tmp` instead of beside the
+        without one, and the log says why. The holder `<root>/.scratch` is stricter: one that
+        is a link, another user's, or cannot be made refuses the start (workspace.Refused). agy's scratch goes under `/tmp` instead of beside the
         clone, its sandbox being unable to write there."""
         if harness.id not in workspace.SCRATCH_HARNESSES:
             return None
@@ -1762,7 +1763,9 @@ class Supervisor:
         # directory of the agents' user, reached without following a link, or no start at all,
         # since a Claude Code sandbox denies that holder to keep every other scratch out
         # (tsk-c7zzd440x8pn). An ssh host whose `maity` has no holder op keeps the former
-        # per-project layout and its per-project denies.
+        # per-project layout and its per-project denies. A holder that cannot be made for any
+        # other reason refuses the start too: without it the session would start with no holder
+        # deny, so a later scratch would not be hidden from it (the security leg's P3, A2047).
         root = target.workspaces if target.host else target.workspaces.resolve()
         former = False
         try:
@@ -1770,15 +1773,12 @@ class Supervisor:
             scratch.make_holder(root, holder, target.as_user)
         except scratchop.Unsupported:
             former = True
-        except scratchop.OnTheWay as exc:
+        except (OSError, subprocess.SubprocessError) as exc:  # OnTheWay included
             raise workspace.Refused(
                 "harness_refused",
                 why=f"the scratch holder on {target.name} is not usable: "
                 f"{onboarding.inline(str(exc))[:200]}",
             ) from None
-        except (OSError, subprocess.SubprocessError) as exc:
-            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
-            return None
         path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host,
                                     former=former)  # fmt: skip
         if not former:
