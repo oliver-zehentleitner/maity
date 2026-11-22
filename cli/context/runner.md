@@ -6297,6 +6297,23 @@ Where the contract left the choice open, it decided as follows.
   nothing; the finding is reported once, and the gone session is handled as
   any other exit (the restart policy), its next start resuming the session.
   An auth or held end is a stop already and stays as it is.
+- **A trigger is acted on only on facts read after it began to hold**
+  (ops' live check of tsk-bzmd0avm4yhb, point 1; bcr2 seq 193802, lotse
+  193798). The moment is the run's start plus `join_within_minutes` for
+  `never_joined`, the later of the quiet spell's start and `watch_since`
+  plus the grace for `not_listening`. If the placements were read before
+  it, the watch decides nothing, neither a diagnosis nor a verdict's acting:
+  it asks serve for a fresh `GET /runner/placements`, which serve makes
+  after its next poll (at most one read per poll round), and looks again
+  after it. A dead session meanwhile goes to the exit handling. Reason: in
+  ops' check the agent joined three seconds after its start, the runner had
+  read placements only at the start (it re-reads every 10 minutes or on a
+  wake), and no hub event reaches a runner on a session start, so it held a
+  healthy agent as `never_joined`; a stale `not_listening_since` could
+  likewise restart an agent that listens again. Rejected: a shorter
+  `REREAD_INTERVAL` for every runner (more load everywhere, and the race
+  stays); a hub event on every session start (a hub change, a follow-up
+  card at most).
 - **A watch restart counts only once the session is gone** (A1957): when
   the relaunch is decided, not when the TERM is sent, so an end that is
   called off (someone attached, a pause, a trigger that cleared) spends

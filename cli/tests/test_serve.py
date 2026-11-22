@@ -152,6 +152,41 @@ def test_an_empty_poll_does_not_reread_until_the_interval(tmp_path: Path) -> Non
     assert len(seen) == 2
 
 
+class Wants:
+    """A supervisor whose watch asks for the placements anew, as it answers in turn."""
+
+    def __init__(self, *answers: bool) -> None:
+        self.answers = list(answers)
+        self.asked = 0
+
+    def advertised_capabilities(self) -> dict[str, Any]:
+        return {"backend": "local"}
+
+    def reconnected(self) -> None:
+        pass
+
+    def clock(self, server_time: Any) -> None:
+        pass
+
+    def wants_placements(self) -> bool:
+        self.asked += 1
+        return self.answers.pop(0) if self.answers else False
+
+
+def test_the_watch_asking_rereads_after_the_poll_once_per_round(tmp_path: Path) -> None:
+    script = Script(HELLO, events(), placements(PLACEMENT), events())
+    svc, seen, _ = service(tmp_path, script)  # each poll is short: no interval passes
+    svc.supervisor = Wants(True, False)
+    run(svc)
+    paths = [c[0] for c in script.calls if not c[0].endswith("?closed=true")]
+    assert paths == [
+        "POST /runner/hello", "GET /runner/events", "GET /runner/placements",
+        "GET /runner/events", "GET /runner/events",
+    ]  # fmt: skip
+    assert len(seen) == 2  # the hello's placements and the one read the watch asked for
+    assert svc.supervisor.asked == 2
+
+
 def test_a_lost_connection_backs_off_with_jitter_and_says_hello_again(tmp_path: Path) -> None:
     script = Script(
         HELLO, ("GET /runner/events", err(None)),

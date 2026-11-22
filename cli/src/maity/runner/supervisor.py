@@ -482,6 +482,11 @@ class Supervisor:
     watching: dict[str, threading.Thread] = field(default_factory=dict)
     hub_offset: float = 0.0
     login: Callable[[str, str | None, AsUser, str | None], str] = keeper.login_state
+    # When the placements, and with them each `session`, were last read from the hub (hub
+    # time), and whether the watch wants a fresh read: it acts on a trigger only with facts
+    # read after the trigger began to hold (ops' live check: a join wakes no runner).
+    facts_read_at: float | None = None
+    wants_read: bool = False
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -554,6 +559,28 @@ class Supervisor:
             )
         return trigger_, facts, episode
 
+    def _fresh(self, rec: Record, trigger_: str, facts: watch.SessionFacts) -> bool:
+        """Whether the placements were read after `trigger_` began to hold (hub time): for
+        `never_joined` the run's start plus `join_within_minutes`, for `not_listening` the
+        later of the quiet spell's start and `watch_since`, plus the grace. Only such facts
+        can show a join or a renewed listen that happened after the trigger's moment."""
+        read = self.facts_read_at
+        if read is None:
+            return False
+        settings = self.cfg.limits.watch
+        if trigger_ == watch.NEVER_JOINED:
+            if rec.started_at is None:
+                return False
+            began = rec.started_at + self.hub_offset + settings.join_within_minutes * 60.0
+        else:
+            since = facts.not_listening_since
+            if since is None:
+                return False
+            if rec.watch_since is not None:
+                since = max(since, rec.watch_since + self.hub_offset)
+            began = since + settings.not_listening_grace_minutes * 60.0
+        return read >= began
+
     def _abort_end(self, pid: str, rec: Record, verdict: dict[str, Any], why: str) -> bool:
         """An end the watch began is not carried to the kill: the session stays, and the
         finding is reported once on a `running` report. Its restart was never counted
@@ -609,6 +636,16 @@ class Supervisor:
         verdict, rec.watch_verdict = rec.watch_verdict, None
         hub_now = now + self.hub_offset
         trigger_, facts, episode = self._trigger_now(p, rec, now)
+        if trigger_ is not None and facts is not None and not self._fresh(rec, trigger_, facts):
+            # The facts were read before the trigger began to hold: an agent may have joined
+            # or listened again since, and that wakes no runner. Nothing is decided on them,
+            # neither a diagnosis nor a verdict's acting; the placements are read anew and the
+            # watch looks again after that (ops' live check). A dead session meanwhile goes to
+            # the exit handling as without the watch.
+            rec.watch_verdict = verdict
+            with self.lock:
+                self.wants_read = True
+            return False
         if verdict is not None and verdict["generation"] == rec.generation:
             # The verdict is acted on only while its facts still hold at acting time (Codex
             # A1940): not paused or dormant (no trigger then), the same trigger and quiet spell,
@@ -945,6 +982,15 @@ class Supervisor:
         with self.lock:
             self.desired = good
             self.synced = True
+            # The placements as read now: the watch's facts are this fresh (hub time).
+            self.facts_read_at = self.now() + self.hub_offset
+            self.wants_read = False
+
+    def wants_placements(self) -> bool:
+        """Whether the watch waits for placements read anew: a trigger holds on facts read
+        before it began to hold (§15.14; serve reads them after its next poll)."""
+        with self.lock:
+            return self.wants_read
 
     def closed(self, placements: list[dict[str, Any]]) -> None:
         """The hub's closed placements of this runner: their scratch goes at the next tick."""

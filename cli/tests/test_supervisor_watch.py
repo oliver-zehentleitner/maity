@@ -68,8 +68,16 @@ def running(sup: supervisor.Supervisor, clock: Clock, p: dict[str, Any]) -> None
     assert sup.records[PID].started_at == T0
 
 
+def reread(sup: supervisor.Supervisor) -> None:
+    """The placements read anew from the hub, as serve does after a poll: the watch's facts
+    are then this fresh."""
+    sup.update(list(sup.desired))
+
+
 def drain(sup: supervisor.Supervisor) -> None:
-    """A pass that starts a diagnosis, its worker, and the pass that acts on its verdict."""
+    """A fresh read, a pass that starts a diagnosis, its worker, and the pass that acts on its
+    verdict."""
+    reread(sup)
     sup.tick()
     for worker in list(sup.watching.values()):
         worker.join(5)
@@ -521,6 +529,7 @@ def test_a_verdict_whose_facts_changed_is_dropped(world: Any, change: str) -> No
     running(sup, clock, joined_then_quiet())
     backend.below = tmux.WAITING
     clock.now = QUIET_PAST_GRACE
+    reread(sup)
     sup.tick()  # the diagnosis starts
     for worker in list(sup.watching.values()):
         worker.join(5)
@@ -689,6 +698,7 @@ def test_a_pane_that_died_before_the_nudge_goes_to_the_exit(world: Any) -> None:
     sup, backend, reports, clock, _ = world
     running(sup, clock, joined_then_quiet())  # nothing below: not_waiting
     clock.now = QUIET_PAST_GRACE
+    reread(sup)
     sup.tick()  # the diagnosis starts while the harness is alive
     for worker in list(sup.watching.values()):
         worker.join(5)
@@ -1106,3 +1116,73 @@ def test_a_restart_after_a_detail_strip_sends_the_stripped_report(world: Any) ->
     again.update(sup.desired)
     again._report(again.desired)
     assert hub_.tried == [pending["body"]]  # the stripped one, never the refused one
+
+
+# --- ops' live check, point 1: facts older than the trigger ---------------------------------
+
+
+def two_passes(sup: supervisor.Supervisor) -> None:
+    """Two ticks with whatever the runner read last: no fresh read in between."""
+    sup.tick()
+    for worker in list(sup.watching.values()):
+        worker.join(5)
+    sup.tick()
+
+
+def test_an_agent_that_joins_after_the_last_read_is_not_restarted(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, watched())  # read at the start: no session yet
+    # The agent joins three seconds after the start; nothing wakes the runner.
+    clock.now = T0 + JOIN
+    two_passes(sup)
+    assert backend.terminated == [] and sup.watching == {}
+    assert sup.wants_placements()  # it asks for the placements anew instead
+    sup.update([watched(started_at=watch.stamp(T0 + 3))])  # serve's read after its poll
+    assert not sup.wants_placements()
+    clock.now += 30
+    drain(sup)
+    assert backend.terminated == [] and with_findings(reports) == []
+    assert sup.records[PID].watch_joined
+
+
+def test_a_listen_again_after_the_last_read_is_not_restarted(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    two_passes(sup)  # the last read still says not listening
+    assert backend.terminated == [] and sup.wants_placements()
+    sup.update([watched(started_at=watch.stamp(T0 + 60))])  # listening again
+    clock.now += 30
+    drain(sup)
+    assert backend.terminated == [] and with_findings(reports) == []
+
+
+def test_a_trigger_that_holds_after_the_reread_is_acted_on(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, watched(mode="supervised"))
+    clock.now = T0 + JOIN
+    two_passes(sup)
+    assert backend.terminated == [] and sup.wants_placements()
+    clock.now += 30
+    drain(sup)  # the read shows no session still
+    assert backend.terminated == [NAME]
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "never_joined")
+
+
+def test_facts_count_as_fresh_from_the_triggers_own_moment(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    sup.facts_read_at = QUIET_PAST_GRACE - 1  # read a second before the trigger's moment
+    sup.tick()
+    assert sup.watching == {} and sup.wants_placements()
+    sup.facts_read_at = QUIET_PAST_GRACE  # read at that moment
+    clock.now += supervisor.IDLE_EVERY
+    sup.tick()
+    assert PID in sup.watching  # a diagnosis starts
+    for worker in list(sup.watching.values()):
+        worker.join(5)

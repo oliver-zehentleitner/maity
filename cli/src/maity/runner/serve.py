@@ -208,7 +208,11 @@ class Service:
                     if held < POLL_FLOOR and (not woken or self.cursor == before):
                         # An answer that neither held nor moved the cursor: never spin.
                         self.sleep(POLL_FLOOR - held)
-                    if woken or self.monotonic() - self.last_read >= REREAD_INTERVAL:
+                    # Also when the watch asks for facts newer than its trigger: an agent's join
+                    # or a renewed listen wakes no runner. At most one read per poll round, so
+                    # never more often than a long-poll allows (§15.14, ops' live check).
+                    wants = self.supervisor is not None and self.supervisor.wants_placements()
+                    if woken or wants or self.monotonic() - self.last_read >= REREAD_INTERVAL:
                         self.read_placements()
             except Fatal as exc:
                 return self._fatal(str(exc))
