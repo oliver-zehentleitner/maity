@@ -109,8 +109,12 @@ def service(tmp_path: Path, script: Script, clock: Clock | None = None, **kwargs
         return script.call(method, path, **kw)
 
     client: Any = type("C", (), {"call": staticmethod(call)})()
+
+    def reconcile(placements: list[dict[str, Any]], read_at: float | None = None) -> None:
+        seen.append(placements)
+
     svc = serve.Service(
-        cfg, client, {"backend": "local"}, reconcile=seen.append,
+        cfg, client, {"backend": "local"}, reconcile=reconcile,
         sleep=clock.sleep, monotonic=clock.monotonic, rand=lambda: 0.5, **kwargs,
     )  # fmt: skip
     return svc, seen, clock
@@ -158,6 +162,10 @@ class Wants:
     def __init__(self, *answers: bool) -> None:
         self.answers = list(answers)
         self.asked = 0
+        self.t = 0.0  # its clock (`Supervisor.now`), moved on by the test's hub on each call
+
+    def now(self) -> float:
+        return self.t
 
     def advertised_capabilities(self) -> dict[str, Any]:
         return {"backend": "local"}
@@ -185,6 +193,33 @@ def test_the_watch_asking_rereads_after_the_poll_once_per_round(tmp_path: Path) 
     ]  # fmt: skip
     assert len(seen) == 2  # the hello's placements and the one read the watch asked for
     assert svc.supervisor.asked == 2
+
+
+def test_placements_are_stamped_with_the_start_of_their_read(tmp_path: Path) -> None:
+    script = Script(HELLO, events({"seq": 5121}), placements(PLACEMENT), events())
+    cfg = load(tmp_path)
+    clock, wants = Clock(), Wants()
+    stamps: list[float | None] = []
+
+    def call(method: str, path: str, **kw: Any) -> Any:
+        wants.t += 10  # every request takes ten seconds on the supervisor's clock
+        if path == "/runner/events":
+            clock.now += clock.poll_seconds
+        return script.call(method, path, **kw)
+
+    def reconcile(placements: list[dict[str, Any]], read_at: float | None = None) -> None:
+        stamps.append(read_at)
+
+    client: Any = type("C", (), {"call": staticmethod(call)})()
+    svc: Any = serve.Service(
+        cfg, client, {"backend": "local"}, reconcile=reconcile,
+        sleep=clock.sleep, monotonic=clock.monotonic, rand=lambda: 0.5,
+    )  # fmt: skip
+    svc.supervisor = wants
+    run(svc)
+    # The hello started at 0 and the read after the wake at 20 (the hello and the poll took
+    # ten seconds each): each is stamped with its start, not with its answer's arrival.
+    assert stamps == [0.0, 20.0]
 
 
 def test_a_lost_connection_backs_off_with_jitter_and_says_hello_again(tmp_path: Path) -> None:

@@ -6305,7 +6305,12 @@ Where the contract left the choice open, it decided as follows.
   it, the watch decides nothing, neither a diagnosis nor a verdict's acting:
   it asks serve for a fresh `GET /runner/placements`, which serve makes
   after its next poll (at most one read per poll round), and looks again
-  after it. A dead session meanwhile goes to the exit handling. Reason: in
+  after it. A read counts from the moment its request started, the hello's
+  and every placements read alike, not from when the answer arrived (Codex
+  A2048): the hub sampled each `session` while the request was in flight,
+  so an answer that arrives after the moment cannot show a join or a renewed
+  listen at it if the request started before. Placements given without a
+  start time count as not fresh. A dead session meanwhile goes to the exit handling. Reason: in
   ops' check the agent joined three seconds after its start, the runner had
   read placements only at the start (it re-reads every 10 minutes or on a
   wake), and no hub event reaches a runner on a session start, so it held a

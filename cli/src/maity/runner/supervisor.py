@@ -970,7 +970,11 @@ class Supervisor:
 
     # --- what serve calls ------------------------------------------------------------------
 
-    def update(self, placements: list[dict[str, Any]]) -> None:
+    def update(self, placements: list[dict[str, Any]], read_at: float | None = None) -> None:
+        """The placements as the hub sent them. `read_at` is this supervisor's clock (`now`)
+        when the request that read them started: the hub sampled each `session` after that,
+        so the watch counts them as read at that moment, never later (Codex A2048). Without
+        one, the watch counts them as read at no known time, so not fresh for a trigger."""
         good = [p for p in placements if valid(p)]
         if len(good) != len(placements):
             ids = [
@@ -982,8 +986,8 @@ class Supervisor:
         with self.lock:
             self.desired = good
             self.synced = True
-            # The placements as read now: the watch's facts are this fresh (hub time).
-            self.facts_read_at = self.now() + self.hub_offset
+            # The watch's facts are as fresh as the request's start, in hub time.
+            self.facts_read_at = None if read_at is None else read_at + self.hub_offset
             self.wants_read = False
 
     def wants_placements(self) -> bool:

@@ -69,9 +69,9 @@ def running(sup: supervisor.Supervisor, clock: Clock, p: dict[str, Any]) -> None
 
 
 def reread(sup: supervisor.Supervisor) -> None:
-    """The placements read anew from the hub, as serve does after a poll: the watch's facts
-    are then this fresh."""
-    sup.update(list(sup.desired))
+    """The placements read anew from the hub, as serve does after a poll, the read starting
+    now: the watch's facts are then this fresh."""
+    sup.update(list(sup.desired), read_at=sup.now())
 
 
 def drain(sup: supervisor.Supervisor) -> None:
@@ -1058,17 +1058,20 @@ def test_a_detail_strip_then_another_refusal_is_not_resent(world: Any) -> None:
 def test_a_finding_refused_twice_is_dropped(world: Any) -> None:
     sup, backend, _, clock, logs = world
     hub_ = exited_with_finding(sup, backend, clock, invalid("restarts"))
-    assert any("the next change carries its finding" in line for line in logs)
+    assert sup.records[PID].finding is not None  # kept for the next state change
     clock.now += 11
     hub_.answers.append(invalid("restarts"))
     settle(sup)  # `starting` carries it and is refused too
     assert hub_.tried[-1]["state"] == "starting" and "finding" in hub_.tried[-1]
-    assert any("its finding dropped" in line for line in logs)
-    assert sup.records[PID].finding is None
+    assert sup.records[PID].finding is None  # refused twice: dropped
     clock.now += supervisor.RUNNING_AFTER
     sup.tick()
-    assert hub_.sent[-1][1]["state"] == "running"
-    assert with_findings(hub_) == []
+    third = hub_.tried[-1]
+    assert third["state"] == "running" and "finding" not in third  # the rule itself
+    assert hub_.sent[-1][1] is third and with_findings(hub_) == []
+    # And the log says what happened at each refusal.
+    assert any("the next change carries its finding" in line for line in logs)
+    assert any("its finding dropped" in line for line in logs)
 
 
 @pytest.mark.parametrize(("code", "status"), [("stale_generation", 409), ("not_found", 404)])
@@ -1099,6 +1102,38 @@ def test_a_newer_finding_is_kept_whatever_the_older_reports_answer(
     sup.tick()
     assert "finding" in hub_.tried[-1] and hub_.tried[-1]["finding"] is not newer
     assert rec.finding is newer
+
+
+@pytest.mark.parametrize(
+    ("answer", "status"), [(None, None), ("stale_generation", 409), ("not_found", 404)]
+)
+def test_a_report_replaced_while_in_flight_is_left_alone(
+    world: Any, answer: str | None, status: int | None
+) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = Answers()
+    sup.client = hub_
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    rec = sup.records[PID]
+    acked = list(rec.acked or [])
+    newer_pending: dict[str, Any] = {"key": ["newer"], "body": {"state": "running"}}
+    newer_finding = {"cause": "unknown"}
+
+    def swap() -> None:  # a newer report and a newer finding while the POST is in flight
+        rec.pending = newer_pending
+        sup._found(rec, newer_finding)
+
+    hub_.during = swap
+    if answer is not None:
+        hub_.answers.append(hub.HubError(answer, code=answer, status=status))
+    sup.tick()  # `exited`/`hung` with the older finding: taken, or the hub moved past it
+    assert hub_.tried[-1]["state"] == "exited"
+    assert rec.pending is newer_pending and list(rec.acked or []) == acked
+    assert rec.finding is newer_finding
 
 
 def test_a_restart_after_a_detail_strip_sends_the_stripped_report(world: Any) -> None:
@@ -1170,6 +1205,32 @@ def test_a_trigger_that_holds_after_the_reread_is_acted_on(world: Any) -> None:
     backend.exit(NAME, 143)
     sup.tick()
     assert states(reports)[-1] == ("exited", "hung", "never_joined")
+
+
+def test_a_read_that_started_before_the_trigger_is_not_fresh(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE + 30  # the answer arrives after the trigger's moment ...
+    sup.update(list(sup.desired), read_at=QUIET_PAST_GRACE - 1)  # ... the GET started before
+    sup.tick()
+    assert sup.watching == {} and sup.wants_placements()  # it asks again
+    clock.now += 30
+    sup.update(list(sup.desired), read_at=QUIET_PAST_GRACE)  # a GET started at the moment
+    sup.tick()
+    assert PID in sup.watching
+    for worker in list(sup.watching.values()):
+        worker.join(5)
+
+
+def test_placements_without_a_read_time_are_not_fresh(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE + 30
+    sup.update(list(sup.desired))  # no read time: no known moment
+    sup.tick()
+    assert sup.watching == {} and sup.wants_placements()
 
 
 def test_facts_count_as_fresh_from_the_triggers_own_moment(world: Any) -> None:
