@@ -9040,6 +9040,11 @@ and with the project.
   stays when a new head sends a card of outsiders' work back from
   `done` to `review` (§6.6) — is not refused and counts from then on.
   Lowering the value releases nothing.
+- On a review leg (§6.32; not built yet, tsk-j8zf7dygh2ja) the claim, an
+  admin's claim on another's behalf, an `assign` and a takeover check the
+  member who would hold it: `forbidden` with `details.reason`
+  `role_mismatch`, `not_eligible` or `vendor_mismatch`, or `conflict`
+  with `details.reason: review_leg_taken` and `details.task`.
 - Lease: `lease_until = now + policy.lease_seconds`, renewed to the same
   length by any authenticated call of the holding membership (not only
   calls on this card), except the events long-poll and a conversation
