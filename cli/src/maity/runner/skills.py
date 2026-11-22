@@ -23,7 +23,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -231,6 +230,45 @@ def _deliver(
     return copy / PLUGIN
 
 
+def copies(skills_dir: Path, state_dir: Path) -> list[tuple[str, str, str, str]]:
+    """The copies in the runner's skills directory, for `maity runner check`: (key, source,
+    commit, state), the state `ok` (whole, and the manifest the runner recorded), `unrecorded`
+    (no record: the next start fetches the commit again and compares) or `changed` with why
+    (not handed out until fetched again). Nothing is fetched; the agents'-side copies are
+    checked at every start against the same records."""
+    found: list[tuple[str, str, str, str]] = []
+    parent = skills_dir / NAME
+    try:
+        names = sorted(e.name for e in parent.iterdir() if KEY.fullmatch(e.name))
+    except OSError:
+        return found
+    anchors = _anchors(state_dir)
+    for name in names:
+        copy = parent / name
+        try:
+            manifest = json.loads(_read(copy / MANIFEST, MANIFEST_MAX).decode("utf-8"))
+            source, commit = str(manifest.get("source", "")), str(manifest.get("commit", ""))
+        except (Unavailable, ValueError, AttributeError):
+            found.append((name, "", "", "changed: no manifest the runner wrote"))
+            continue
+        try:
+            digest = verify(copy, source, commit)
+        except Unavailable as exc:
+            found.append((name, source, commit, f"changed: {exc}"))
+            continue
+        recorded = anchors.get(name)
+        if key(source, commit) != name:
+            state_text = "changed: its manifest names another source or commit than its name"
+        elif recorded is None:
+            state_text = "unrecorded"
+        elif recorded != digest:
+            state_text = "changed: its manifest is not the one the runner recorded"
+        else:
+            state_text = "ok"
+        found.append((name, source, commit, state_text))
+    return found
+
+
 def _read(path: Path, limit: int) -> bytes:
     """A regular file's bytes, at most `limit` of them; refused rather than waited on or
     followed. The type is checked on the descriptor, so nothing swapped in between counts."""
@@ -367,16 +405,41 @@ def _write_manifest(into: Path, source: str, commit: str) -> None:
     _write(into / MANIFEST, (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
 
 
-def remove_unused(skills_dir: Path, keep: set[str]) -> list[str]:
-    """The cached copies (`key`) no placement names any more, removed; returns them. For `gc`."""
+def forget(state_dir: Path, names: set[str]) -> None:
+    """The records (ANCHORS) of removed copies dropped: a copy fetched again later is recorded
+    anew, and the file does not grow with every pin the hub ever named."""
+    if not names:
+        return
+    with _anchors_lock:
+        found = _anchors(state_dir)
+        kept = {k: v for k, v in found.items() if k not in names}
+        if kept != found:
+            state.save_state(state_dir, kept, name=ANCHORS)
+
+
+def remove_unused(skills_dir: Path, keep: set[str], failed: list[str] | None = None) -> list[str]:
+    """The cached copies (`key`) and `.fetch-` leftovers not in `keep`, removed; returns them.
+    For `gc`. The directory holding them is opened without following a link (OSError for a
+    link there), and each entry is removed as skillop removes the agents' copies: a link or
+    file unlinked, never entered, a directory with the owner's access restored on every level
+    (the review of #2093). An entry that cannot be removed goes into `failed`, and the others
+    are still removed, so the caller can forget exactly the ones that went."""
     removed: list[str] = []
-    parent = skills_dir / NAME
-    if not parent.is_dir():
+    try:
+        parent = os.open(skills_dir / NAME, skillop._FOLDER | skillop._NOFOLLOW)
+    except FileNotFoundError:
         return removed
-    for entry in parent.iterdir():
-        if entry.name in keep or entry.is_symlink() or not entry.is_dir():
-            continue
-        if KEY.fullmatch(entry.name) or entry.name.startswith(".fetch-"):
-            shutil.rmtree(entry)
-            removed.append(entry.name)
+    try:
+        for name in sorted(os.listdir(parent)):
+            if name in keep or not (KEY.fullmatch(name) or name.startswith(".fetch-")):
+                continue
+            try:
+                skillop._remove_tree(parent, name)
+            except OSError as exc:
+                if failed is not None:
+                    failed.append(f"{name} ({exc})")
+                continue
+            removed.append(name)
+    finally:
+        os.close(parent)
     return removed
