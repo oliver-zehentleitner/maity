@@ -993,6 +993,27 @@ def test_a_sandboxed_claude_code_placement_without_a_tmpdir_of_its_own_is_refuse
     assert refusal(codex) is None
 
 
+def test_a_sandboxed_claude_code_placement_without_a_scratch_under_a_holder_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The review of #2112 (A2045): the holder deny comes from the own scratch, so a sandboxed
+    Claude Code placement whose scratch could not be made (or lies under no holder) would start
+    without it, and a scratch made later would be readable from it: refused. A scratch in the
+    holder or in a former per-project `.scratch` will do; unsandboxed, or another harness, is
+    not refused."""
+    refusal = adapters.scratch_refusal
+    new = Path("/srv/ws/.scratch/maity/plc-0003")
+    former = Path("/srv/ws/maity/.scratch/plc-0003")
+    elsewhere = Path("/tmp/maity-scratch-1002") / ("a" * 32)  # noqa: S108 - a path only
+    assert refusal(context(tmp_path / "n", sandbox=True, scratch=new)) is None
+    assert refusal(context(tmp_path / "f", sandbox=True, scratch=former)) is None
+    assert refusal(context(tmp_path / "s", sandbox=True)) is not None  # none could be made
+    assert refusal(context(tmp_path / "e", sandbox=True, scratch=elsewhere)) is not None
+    assert refusal(context(tmp_path / "u", sandbox=False)) is None
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex")
+    assert refusal(codex) is None
+
+
 def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
     """The leaf the runner draws is 32 hex digits (`secrets.token_hex(16)`); with the largest
     uid the path still leaves room for Claude Code's socket on Linux. On macOS, under the

@@ -196,15 +196,16 @@ def make(under: str, path: str) -> dict[str, object]:
     names = _below(path, under)
     with _opened(under, [], make=False) as root:
         holder_fd = _holder(root, make=True)  # checked at every make: this user's, no link
+        fd = holder_fd
         try:
-            fd = holder_fd
             for name in [*names[1:], "tmp"]:
                 inner = _step(fd, name, 0o700)
                 if fd != holder_fd:
                     os.close(fd)
                 fd = inner
-            os.close(fd)
-        finally:
+        finally:  # the one opened last too, when a step on the way fails (A2045)
+            if fd != holder_fd:
+                os.close(fd)
             os.close(holder_fd)
     with _opened(under, names, make=False) as scratch:
         # The scratch itself private too, not only its `tmp`: mkdir left it to the umask.

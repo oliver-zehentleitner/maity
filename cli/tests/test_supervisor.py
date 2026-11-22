@@ -4553,7 +4553,14 @@ def test_a_former_scratch_is_measured_and_removed_with_its_placement(world: Any)
     rec.sized_at = None
     sup._measure([placement()], 1e9)
     assert rec.scratch_bytes is not None and rec.scratch_bytes >= 2000  # the former one counts
-    scratch_of(sup).mkdir()  # and one in the holder beside it, removed as well
+    only_former = rec.scratch_bytes
+    # Restarted into the holder, the former one still there until the close: both count, as
+    # gc keeps both (A2046).
+    scratch_of(sup).mkdir()
+    (scratch_of(sup) / "evidence").write_bytes(b"h" * 3000)
+    rec.sized_at = None
+    sup._measure([placement()], 1e9)
+    assert rec.scratch_bytes is not None and rec.scratch_bytes >= only_former + 3000
     backend.kill("maity_maity_agent-3")
     sup.update([])
     sup.closed([CLOSED])
@@ -4562,6 +4569,31 @@ def test_a_former_scratch_is_measured_and_removed_with_its_placement(world: Any)
     assert scratch_of(sup).parent.is_dir()  # the project's directory in the holder stays
     paths = {e["path"] for e in scratch.removals(sup.cfg.state_dir, 10)}
     assert str(former) in paths
+
+
+def test_a_host_on_the_former_layout_finishes_the_close_cleanup(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2112 (A2045): a host that keeps the former layout never makes the holder,
+    and its older `scratchop` cannot read a holder path, so the close asks it only for the
+    former scratch, and the placement counts as cleared instead of being tried every pass."""
+    sup, *_ = world
+    former = former_scratch_of(sup)
+    (former / "tmp").mkdir(parents=True)
+    assert not (sup.cfg.local.workspaces / ".scratch").exists()
+    asked: list[Path] = []
+    real = scratch.remove
+
+    def old_host(path: Path, as_user: Any = None) -> int | None:
+        asked.append(path)
+        if path.parent.parent.name == ".scratch":  # the holder shape: unknown to the old op
+            raise OSError("usage: scratchop: not a placement's scratch")
+        return real(path, as_user)
+
+    monkeypatch.setattr(scratch, "remove", old_host)
+    sup.closed([CLOSED])
+    sup._clear_scratch(set(), set(sup.targets))
+    assert asked == [former] and not former.exists() and "plc-0003" in sup.scratch_cleared
 
 
 def test_a_start_in_the_holder_names_claude_placements_still_on_the_former_layout(
@@ -4577,14 +4609,26 @@ def test_a_start_in_the_holder_names_claude_placements_still_on_the_former_layou
     sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
     old = placement(harness="claude-code")
     (former_scratch_of(sup) / "tmp").mkdir(parents=True)
-    sup.update([old, placement(n=4)])
+    # plc-0005: restarted after the upgrade, so in the holder, its former scratch still there
+    # until its close; plc-0006: an adopted older session with no scratch at all (A2045).
+    restarted, bare = placement(n=5, harness="claude-code"), placement(n=6, harness="claude-code")
+    (former_scratch_of(sup, "plc-0005") / "tmp").mkdir(parents=True)
+    sup.update([old, placement(n=4), restarted, bare])
     sup.records["plc-0003"] = supervisor.Record(state="running", target="local")
+    sup.records["plc-0005"] = supervisor.Record(
+        state="running", target="local", scratch_layout="holder"
+    )
+    sup.records["plc-0006"] = supervisor.Record(state="running", target="local")
     made = sup._scratch(placement(n=4), codex, target)
     assert made == scratch_of(sup, "plc-0004")
     lines = [line for line in logs if "still run on the former layout" in line]
-    assert len(lines) == 1 and "plc-0003" in lines[0]
+    assert len(lines) == 1 and "plc-0003" in lines[0] and "plc-0006" in lines[0]
+    assert "plc-0005" not in lines[0]
     sup._scratch(placement(n=4), codex, target)  # nothing changed: not logged again
     assert sum("still run on the former layout" in line for line in logs) == 1
+    assert supervisor.scratch_layout(made) == "holder"
+    assert supervisor.scratch_layout(former_scratch_of(sup)) == "former"
+    assert supervisor.scratch_layout(None) is None
 
 
 def test_a_scratch_too_deep_for_a_pg_socket_is_said_in_the_log(
@@ -4715,6 +4759,24 @@ def test_a_start_without_a_private_tmpdir_fails_closed(
     assert not rec.crashes and backend.started == []
     assert any("no private TMPDIR: x" in line for line in logs)
     assert all(b["detail"] is None for _, b in reports.sent)
+
+
+def test_a_start_without_a_denied_scratch_holder_fails_closed(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2112 (A2045): where adapters.scratch_refusal gives a reason (a sandboxed
+    Claude Code placement whose scratch could not be made below a good holder), the start is
+    refused like a missing private TMPDIR, so no session runs without the holder deny. The rule
+    itself is tested in test_adapters; a stub placement stands in here."""
+    sup, backend, reports, _, logs = world
+    recorded(sup.cfg)
+    monkeypatch.setattr(adapters, "scratch_refusal", lambda ctx: "no scratch could be made: x")
+    sup.update([placement()])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "harness_refused", None)
+    assert not rec.crashes and backend.started == []
+    assert any("no scratch could be made: x" in line for line in logs)
 
 
 def _stat_mode(path: Path) -> int:

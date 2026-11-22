@@ -993,6 +993,44 @@ def test_the_holder_layout_is_listed_beside_the_former_one(tmp_path: Path, side:
     assert supervisor.other_scratches(ws, None, as_user, host) == everything
 
 
+@pytest.mark.parametrize("side", ["single", "agent_user"])
+def test_gc_lists_the_scratches_as_the_agents_user(
+    tmp_path: Path, side: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2112 (A2045): in the agent_user layout the holder is the agents' user's
+    0700 directory, closed to the runner, so gc lists both layouts through the agents' side.
+    Here the runner's own directory listing fails on the agents' side, as it would there; a
+    link is listed as one and never gone into, and a name that is no project id is left out."""
+    from maity.runner import operate
+
+    ws = tmp_path / "ws"
+    new = ws / ".scratch"
+    for room in (new / "maity" / "plc-0003", new / "other" / "plc-0004",
+                 ws / "legacy" / ".scratch" / "plc-0005"):  # fmt: skip
+        (room / "tmp").mkdir(parents=True)
+    (tmp_path / "elsewhere" / "plc-0006").mkdir(parents=True)
+    (new / "linked").symlink_to(tmp_path / "elsewhere")  # a project's directory as a link
+    (new / "maity" / "plc-0009").symlink_to(tmp_path / "elsewhere")
+    new.chmod(0o700)
+    as_user = SIDES[side]()
+
+    def closed(self: Path) -> Any:
+        raise PermissionError(13, "closed to the runner", str(self))
+
+    if side == "agent_user":
+        monkeypatch.setattr(Path, "iterdir", closed)
+    holders = operate._scratch_holders(ws, as_user)
+    assert sorted(holders) == sorted([new / "maity", new / "other", ws / "legacy" / ".scratch"])
+    found = {(h / name, kind) for h in holders for name, kind in as_user.entries(h, 1)}
+    assert found == {
+        (new / "maity" / "plc-0003", "d"), (new / "maity" / "plc-0009", "l"),
+        (new / "other" / "plc-0004", "d"), (ws / "legacy" / ".scratch" / "plc-0005", "d"),
+    }  # fmt: skip
+    assert sorted(as_user.entries(new, 2)) == [
+        ("maity/plc-0003", "d"), ("maity/plc-0009", "l"), ("other/plc-0004", "d"),
+    ]  # `linked` is not gone into
+
+
 @pytest.mark.parametrize("side", sorted(SIDES))
 def test_a_holder_that_is_a_link_refuses_the_listing(tmp_path: Path, side: str) -> None:
     """The holder must be a real directory: a link (or a file) in its place could point the

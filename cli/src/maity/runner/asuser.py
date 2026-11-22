@@ -281,6 +281,43 @@ class AsUser:
             entries.append((where, kind, int(size)))
         return entries
 
+    def entries(self, path: Path, depth: int) -> list[tuple[str, str]]:
+        """The entries exactly `depth` levels below a directory on the agents' side, which may
+        be closed to the runner (the scratch holder is the agents' user's, 0700): (path inside
+        it, `d`/`l`/`f`/`?`). Links are listed, never followed, and nothing deeper is read.
+        OSError when a directory on the way cannot be listed: an unlisted one would look empty
+        (gc's scratch listing, the review of #2112)."""
+        if self.direct:
+            level = [(path, "")]
+            for step in range(depth):
+                if step:  # only a real directory is gone into, never through a link
+                    level = [(p, r) for p, r in level if stat.S_ISDIR(p.lstat().st_mode)]
+                below: list[tuple[Path, str]] = []
+                for at, rel in level:
+                    with os.scandir(at) as listing:
+                        below += [(Path(item.path), rel + item.name) for item in listing]
+                level = [(p, r + "/") if step < depth - 1 else (p, r) for p, r in below]
+            found = []
+            for full, rel in level:
+                mode = full.lstat().st_mode
+                kind = ("l" if stat.S_ISLNK(mode) else "d" if stat.S_ISDIR(mode)
+                        else "f" if stat.S_ISREG(mode) else "?")  # fmt: skip
+                found.append((rel, kind))
+            return found
+        argv = ["find", str(path), "-mindepth", str(depth), "-maxdepth", str(depth),
+                "-printf", "%y %P\\0"]  # fmt: skip
+        try:
+            done = self.run(argv)
+        except subprocess.TimeoutExpired:
+            raise OSError(f"listing {path} on the agents' side did not end in time") from None
+        if done.returncode != 0:
+            raise OSError(f"cannot list {path} on the agents' side")
+        listed = []
+        for item in filter(None, done.stdout.split("\0")):
+            kind, where = item.split(" ", 1)
+            listed.append((where, kind if kind in ("d", "l", "f") else "?"))
+        return listed
+
     def inode(self, path: Path) -> int:
         """The inode of `path` itself on the agents' side, a link not followed: `ls -di`,
         which BSD, macOS and GNU all print the same way (POSIX follows no link named as an

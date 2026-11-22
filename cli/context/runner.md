@@ -5300,7 +5300,7 @@ placement ends without asking what in it matters.
 **Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory; the test cluster reaches Claude Code placements over TCP (tsk-zk2cse7s2rf7); a Codex session is found unable to start the cluster
 
 The runner sets `MAITY_RUN_SLOTS_DIR=<scratch>/slots` for every placement
-with a scratch beside its clone, and `MAITY_RUN_NAME=<handle>#<instance>`
+with a scratch under the workspaces root, and `MAITY_RUN_NAME=<handle>#<instance>`
 (the handle alone before the hub has named an instance; a value of any
 other shape is left out). The session gets `MAITY_PG_DIR=<scratch>/pg` and
 its password only where `<scratch>/pg/.s.PGSQL.<port>` fits a Unix socket
@@ -5325,7 +5325,8 @@ Two hardening steps keep the scratch the placement's own:
   `outermost` leaves them out of the profile. A listing that cannot be
   completed refuses the start. The list covers the scratches that exist at
   the start. One made while a Claude Code session runs was a known residual
-  (tsk-rbys2j9q0m48, done): that session could read it, but live probes
+  (tsk-rbys2j9q0m48, done; the other clones' credentials are tracked on
+  tsk-wack9qv36n0c): that session could read it, but live probes
   showed it could neither write it (the sandbox writes only its own paths)
   nor connect to that placement's cluster socket (the sandbox refuses
   every Unix socket, its own included). agy and opencode are not kept out
@@ -6270,7 +6271,13 @@ makes, with no new event and no new right.
 **See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-21
 **See:** runner.md#a-claude-code-or-codex-placement-without-room-under-its-scratch-gets-a-private-tmpdir-in-a-leaf-under-the-read-denied-tmp-parent — 3c02dc4f-3189-4926-b52a-d3a2571e16a5 — as of 2026-11-21
 **See:** runner.md#agy-and-opencode-are-no-boundary-between-placements-of-one-os-user-and-no-deny-of-other-scratches-is-written-for-agy — dcd10585-3918-4bec-ae2e-6a9030597093 — as of 2026-11-21
-**Revisit when:** the runner pins a new Claude Code version, or Claude Code changes how a read deny is mounted (check again that a sibling scratch made later does not exist under the holder's read deny and that the own scratch stays readable and writable); a placement's scratch moves out of `<project>/.scratch`; the runner starts making `.scratch` in projects it has no placement for; placements get an OS user each
+**Revisit when:** the runner pins a new Claude Code version, or Claude Code changes how a read deny is mounted (check again that a sibling scratch made later does not exist under the holder's read deny and that the own scratch stays readable and writable); a placement's scratch moves out of the holder `<root>/.scratch` it moved into from `<project>/.scratch` (tsk-c7zzd440x8pn); the runner starts making `.scratch` in projects it has no placement for; placements get an OS user each
+
+Since tsk-c7zzd440x8pn the scratch sits at `<root>/.scratch/<project>/<placement id>`
+and this deny names that one holder, in the same shape one level up
+(entry 87396593-13e8-4289-8b95-0f97fdf38e51). What follows is the shape
+as it was made here, for the former per-project layout, which still
+applies on an ssh host without the holder op.
 
 A sandboxed Claude Code placement with a scratch beside its clone
 (`<root>/<project>/.scratch/<placement id>`) gets its project's whole
@@ -6393,8 +6400,32 @@ holder stays readable from it (never writable, and no socket of it
 reachable) until it is restarted. The upgrade procedure in
 `docs/runners.md` restarts every Claude Code placement, and until then
 each start in the holder logs, once per change, the running Claude Code
-placements on that target whose former scratch still exists, by id, so an
-operator can see the window close.
+placements on that target not started in the holder, by id, so an
+operator can see the window close. Each start records its layout
+(`Record.scratch_layout`), and a record from before has none. The log
+reads that, not the directories found: a restart leaves its former
+scratch until the close, and an adopted older session may have no scratch
+(review A2045).
+
+**No scratch, no start.** The holder deny is derived from the own
+scratch, so a sandboxed Claude Code placement whose scratch could not be
+made below a good holder would start without it, and a scratch made later
+would be readable from it (review A2045, P2). Such a start is refused
+(`adapters.scratch_refusal`, `harness_refused`, the cause logged), as one
+without a private TMPDIR is. Rejected: carrying the verified holder into
+the settings apart from the scratch, so the session starts without a
+scratch but with the deny. It keeps one more start working, but adds a
+second source for the deny and a session with no scratch to work in.
+Codex, agy and opencode are not refused: Codex hides the whole root, and
+the other two get no such deny.
+
+**gc lists as the agents' user.** In the `agent_user` layout the holder
+is the agents' user's 0700 directory, closed to the runner, so `maity
+runner gc --scratch` lists both layouts through the agents' side
+(`AsUser.entries`, a fixed depth, links listed and never gone into), with
+the same name checks (review A2045, P2). A former-layout host's close asks
+only for the former scratch: the holder's path is tried only where the
+holder exists (`_holder_paths`).
 
 **Reason:** a read deny is fixed at the session's start (P4), so a deny can
 only cover a directory that exists then. One holder made once, inside the
@@ -6411,7 +6442,7 @@ socket room of the scratch's `tmp` is unchanged.
   placement, which the lead did not want on #2091.
 - Denying the whole workspaces root and re-opening the own clone and
   scratch (option 3): it would also cover the other clones' credentials
-  (tsk-rbys2j9q0m48), but it rests on a deny (the own `.git/maity`) inside
+  (tsk-wack9qv36n0c), but it rests on a deny (the own `.git/maity`) inside
   an allow inside a deny, never probed, and is the widest change. It can
   follow later after an ops probe.
 - Keeping a running placement's former scratch across its restart: nothing

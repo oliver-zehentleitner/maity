@@ -208,7 +208,7 @@ scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough
 Codex it sits under the workspaces root, in `<workspaces>/.scratch/<project>/<placement>`
 (not in your clone); for agy it is a writable
 directory the runner manages outside your clone, since agy's sandbox
-cannot write beside the clone. Either way you reach it as
+cannot write under the workspaces root. Either way you reach it as
 `$MAITY_SCRATCH`. Keep what you need only for a while there: a review's
 evidence, a clone of another head, a venv. An agy reviewer writes its
 review there and names it with

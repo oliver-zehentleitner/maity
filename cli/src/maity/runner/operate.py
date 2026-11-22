@@ -475,42 +475,60 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
         return
     as_user = _as_user(cfg)
     root = cfg.local.workspaces
-    # Each directory that holds scratches: a project's in the holder `<root>/.scratch`, and a
-    # project's former `.scratch` while any is left (tsk-c7zzd440x8pn). The holder and the
-    # projects' directories in it stay, even empty; only scratches go.
-    new_holder = root / workspace.SCRATCH
+    # Each scratch in the holder `<root>/.scratch/<project>/`, and in a project's former
+    # `.scratch` while any is left (tsk-c7zzd440x8pn), listed as the agents' user: in the
+    # agent_user layout the holder is that user's 0700 directory, closed to the runner (the
+    # review of #2112). The holder and the projects' directories in it stay, even empty; only
+    # scratches go. A link is listed, never gone into.
+    found: list[tuple[Path, str]] = []  # (the scratch's path, `d`/`l`/`f`/`?`)
     try:
-        projects = sorted(p.name for p in root.iterdir() if workspace.TOKEN.fullmatch(p.name))
-        dirs = [] if new_holder.is_symlink() or not new_holder.is_dir() else [
-            new_holder / p.name for p in sorted(new_holder.iterdir())
-            if workspace.TOKEN.fullmatch(p.name)]  # fmt: skip
-    except OSError as exc:
-        raise Refused(f"cannot list {root} ({exc})") from None
-    dirs += [root / project / workspace.SCRATCH for project in projects]
-    for holder in dirs:
-        if holder.is_symlink() or not holder.is_dir():
+        for holder in _scratch_holders(root, as_user):
+            found += [(holder / name, kind) for name, kind in as_user.entries(holder, 1)]
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused(f"cannot list the scratches under {root} ({exc})") from None
+    for entry, kind in sorted(found):
+        if entry.name in active:
             continue
-        for entry in sorted(holder.iterdir()):
-            if entry.name in active:
-                continue
-            if entry.name in running:
-                print(f"scratch  {entry}: kept (a session of the placement is still there)")
-                continue
-            if not workspace.SCRATCH_ID.fullmatch(entry.name) or entry.is_symlink():
-                print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
-                continue
-            if not remove:
-                print(f"scratch  {entry}: removable (the placement is not active)")
-                continue
-            try:
-                removed = scratch.remove(entry, as_user)
-            except (OSError, subprocess.SubprocessError) as exc:
-                print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
-                continue
-            if removed is None:
-                continue  # gone meanwhile
-            scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
-            print(f"scratch  {entry}: removed")
+        if entry.name in running:
+            print(f"scratch  {entry}: kept (a session of the placement is still there)")
+            continue
+        if not workspace.SCRATCH_ID.fullmatch(entry.name) or kind != "d":
+            print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
+            continue
+        if not remove:
+            print(f"scratch  {entry}: removable (the placement is not active)")
+            continue
+        try:
+            removed = scratch.remove(entry, as_user)
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
+            continue
+        if removed is None:
+            continue  # gone meanwhile
+        scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
+        print(f"scratch  {entry}: removed")
+
+
+def _scratch_holders(root: Path, as_user: AsUser) -> list[Path]:
+    """The directories gc reads scratches from, as the agents' user: each project's directory
+    in the holder `<root>/.scratch`, and each project's former `<root>/<project>/.scratch`. A
+    holder or a project's directory that is a link, or no directory, is left out, never gone
+    into; a name that is no project id is no project's. OSError when one cannot be listed."""
+    holders: list[Path] = []
+    new_holder = root / workspace.SCRATCH
+    if _plain_dir(new_holder, as_user):
+        holders += [new_holder / name for name, kind in as_user.entries(new_holder, 1)
+                    if kind == "d" and workspace.TOKEN.fullmatch(name)]  # fmt: skip
+    for name, kind in as_user.entries(root, 1):
+        former = root / name / workspace.SCRATCH
+        if kind == "d" and workspace.TOKEN.fullmatch(name) and _plain_dir(former, as_user):
+            holders.append(former)
+    return holders
+
+
+def _plain_dir(path: Path, as_user: AsUser) -> bool:
+    """A directory on the agents' side, not a link to one."""
+    return as_user.exists(path, "-d") and not as_user.exists(path, "-L")
 
 
 def _collect(
