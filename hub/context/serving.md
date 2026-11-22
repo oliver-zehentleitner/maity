@@ -875,3 +875,16 @@ reason.
   writes, and a dead session would still send its update.
 - **Counting a session's reads by the cookie, or logging the id:** the
   key is the session's hash, and the log names neither.
+
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** an agent's read is no longer counted in `_agent`.
+An instance may be attached to several projects (§6.17), and whether a call is isolated, which
+refuses it without a count, depends on the route's project, known only after authentication.
+`auth.caller.count_agent_read` counts it in the same transaction, in `deps._resolve`'s
+`confine`: on a project route, before the `not_found` of a project the instance is not
+attached to (so probing other projects stays limited, as before), and in `settle_in_project`
+after the isolation refusal; outside a project, in `settle_project_less` after the refusal of
+an instance isolated everywhere. Either way the count still comes before the last use,
+presence, the session and the leases, which moved to those helpers with it, so the rejected
+"counting in `deps` after authentication" stays rejected for its reason: a refused read still
+writes nothing that stays. The runner's and the cookie's counts are where the bullet above
+puts them; a bridge's read still counts against its own credential, before `bridges.carry`.

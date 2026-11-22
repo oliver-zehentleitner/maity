@@ -964,3 +964,34 @@ recheck symmetric with a member's own join, whose exchange leaves
 `reports_to` alone: a join already handed out does not act on its
 creator's continuing authority, the placement's join does (the ruling
 on review A1826 above).
+
+## The runner's session read takes pause, dormancy and the episode from the placement's project
+
+**Id:** 17941eb5-af86-4341-b53f-e1ef9ef82b74
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hub PR A (#2088, card tsk-yzj829xdmqyy), commits b81a9deb and 391f2b6f; the reviewer's proposal in that pull request's review; the lead's ruling there to keep `detached_at IS NULL`; docs/api.md §15.8, §6.17; `placements.py` `runner_sessions`
+**See:** instances.md#an-instances-projects-are-rows-of-instance_attachment-pause-dormancy-the-commitment-and-the-handover-numbers-live-on-the-row — 8d07cc82-f612-4e24-aebe-72683131671b — as of 2026-11-21
+**See:** events.md#an-episode-of-not-listening-lives-on-the-session-checked-by-a-minute-worker — 0cbc3037-5834-4a6d-b518-ae640fb47046 — as of 2026-11-21
+**Revisit when:** hub PR D writes `detached_at`: a detached instance's placement then stops showing pause and dormancy but may still show an episode from its position row, and PR D must decide whether it should
+
+`runner_sessions` (§15.8) reads the instance's pause and dormancy from its live attachment for
+the placement's (credential, membership), and the not-listening episode from the open session's
+`agent_session_project` row in the placement's membership. It reads the episode in the same
+statement that finds the open session, as an outer join limited to the page's memberships, so
+the page still costs a fixed number of statements. The keys (credential_id, membership_id) on
+`instance_attachment` and (session_id, membership_id) on `agent_session_project` keep the join
+from multiplying values. "Live" here means `detached_at IS NULL` only: a revoked credential's
+pause and dormancy still show, as the credential row's did under #2079.
+
+**Reason:** #2088 moved pause, dormancy and the episode off `credential` and `agent_session`
+(§6.17). #2079's reads of the credential columns broke #2088's PostgreSQL shards, and once an
+instance can be in several projects these values exist only per project.
+
+**Rejected alternatives:**
+- Keep reading the `credential` columns: they are gone with #2088.
+- A third statement for the position rows: it would work, but the open-session statement
+  already has the session ids, and the join adds no statement.
+- `attached_now()`, which also drops revoked credentials: it would change #2079's answer for a
+  revoked instance whose placement still closes. The lead ruled to keep `detached_at IS NULL`.

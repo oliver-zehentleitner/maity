@@ -100,22 +100,20 @@ def _facts(method: str, raw_path: bytes) -> RequestFacts:
         body=b"",
         origin=Origin("127.0.0.1", "https"),
         allow_plain_http=False,
-        # As the environment sets it: a read counts (§1.7) before the isolation gate, and with
-        # the value given it reads no instance setting, so the gate runs without a connection.
+        # As the environment sets it: with the value given a read's count (§1.7) reads no
+        # instance setting, so nothing here needs a connection.
         max_reads_env=limits.READS_PER_MINUTE_DEFAULT,
     )
 
 
 def _isolated_agent_passes(method: str, raw_path: bytes) -> bool:
-    """Authentication of an isolated agent's credential (`caller._agent`), on the raw path."""
+    """The gate of a call outside any project by an agent isolated in its every attachment
+    (`caller.refuse_isolated_everywhere`), on the raw path."""
     try:
-        found = caller_module._agent(
-            None, _isolated_row(), "signed", False, _facts(method, raw_path)  # type: ignore[arg-type]
-        )
+        caller_module.refuse_isolated_everywhere([_isolated_row()], _facts(method, raw_path))
     except ApiError as error:
         assert error.details["reason"] == "isolated"
         return False
-    assert found.kind == "agent"
     return True
 
 
@@ -136,13 +134,20 @@ def test_an_isolated_agent_raw_path_is_compared_byte_for_byte() -> None:
 
 
 class _Conn:
-    """The one read `refuse_isolated` makes: the membership's isolation."""
+    """The one read `refuse_isolated` makes: the instance's live attachments, here one
+    isolated (or, with `free`, one that is not)."""
+
+    def __init__(self, free: bool = False) -> None:
+        self.free = free
 
     def execute(self, _query: Any) -> Any:
-        return SimpleNamespace(first=_isolated_row)
+        row = _isolated_row()
+        if self.free:
+            row.isolated_since = None
+        return [row]
 
 
-AN_AGENT = Caller(kind="agent", via="bearer", agent_id="agt-1", membership_id=1)
+AN_AGENT = Caller(kind="agent", via="bearer", agent_id="agt-1", credential_id="crd-1")
 
 
 def _bootstrap_part_passes(method: str, path: str) -> bool:
@@ -178,8 +183,7 @@ def test_a_bootstrap_part_of_an_isolated_agent_is_refused_elsewhere(method: str,
 def test_a_bootstrap_part_of_a_human_or_a_free_agent_is_never_refused_here() -> None:
     human = Caller(kind="human", via="cookie", human_id="h-1")
     caller_module.refuse_isolated(None, human, "GET", "/api/v1/projects")  # type: ignore[arg-type]
-    unbound = Caller(kind="agent", via="bearer", agent_id="agt-1")
-    caller_module.refuse_isolated(None, unbound, "GET", "/api/v1/projects")  # type: ignore[arg-type]
+    caller_module.refuse_isolated(_Conn(free=True), AN_AGENT, "GET", "/api/v1/projects")  # type: ignore[arg-type]
 
 
 # --- a second-factor or enrolment session (§2.8.2, §2.8.5) --------------------------------
