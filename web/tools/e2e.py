@@ -7392,6 +7392,8 @@ def project_links_step(run: Run, page: Page) -> None:
         # Narrowed so they overflow: the fade marks the side with more, the mouse wheel turns the row
         # and lets the page scroll once the row is at its end, a tab reached with Tab is scrolled clear
         # of the 32 px fade, and a mouse click near the edge opens the tab clicked (review, PR #2115).
+        # The narrowing is the row's own, at scrollLeft 0: no scroll and no window resize fire, so the
+        # fade after comes from the app's ResizeObserver alone.
         views = page.locator("header nav.views")
         views.evaluate("(e) => { e.style.maxWidth = '200px'; e.scrollLeft = 0; }")
         page.wait_for_function("""() => { const n = document.querySelector('header nav.views');

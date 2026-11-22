@@ -171,6 +171,15 @@ const win = {
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
 const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error, btoa, atob };
 win.window = win;
+// A ResizeObserver that never fires by itself: the rows it watches are kept, and a test calls its
+// callback with the entries it wants (the tab row's fade on its own size, review PR #2115).
+const sizeWatchers = [];
+win.ResizeObserver = class {
+  constructor(fn) { this.fn = fn; this.watched = new Set(); sizeWatchers.push(this); }
+  observe(n) { this.watched.add(n); }
+  unobserve(n) { this.watched.delete(n); }
+  disconnect() { this.watched.clear(); }
+};
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 expect0(!html.includes("fixtures/fixtures.js"), "index.html does not load the fixture bundle");
@@ -419,6 +428,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter, and holds its personal requests too");
   await go("#/all");
   expect(byId("inbox-project").value === "maintainer/sample" && main.querySelectorAll("li.entry").length === 1, "inbox: back in all projects, the filter is still set");
+  // The wheel turns a project's own tabs only; All projects' row keeps it for the page (review, PR #2115).
+  {
+    const allViews = header.querySelector("nav.views");
+    expect(allViews && !header.querySelector(".views-row") && !(allViews.listeners.wheel || []).length,
+      "header: All projects' pages row takes no wheel");
+  }
   // Who asked, across projects too: a link into the request's project (tsk-3re8qp89hc18).
   const allAsker = main.querySelector(".current .entry-body a.member-ref");
   expect(allAsker && allAsker.getAttribute("href") === "#/maintainer/sample/team/agt-s1" && text(allAsker) === "Shop Dev",
@@ -492,6 +507,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(seen.start === "more-after,cue-rtl" && seen.middle === "more-before,more-after,cue-rtl" && seen.end === "more-before,cue-rtl"
       && seen.keyboard === -212 && seen.mouse === -200 && seen.wheel[0] && seen.wheel[1] === -300 && !seen.wheelEnd[0] && seen.wheelEnd[1] === -700,
       "header: the project tabs' row right to left: fade, keyboard focus clear of the fade, no move on a mouse press, wheel " + JSON.stringify(seen));
+  }
+  // The fade follows the row's own size, with no scroll and no window resize: narrowed at scrollLeft 0
+  // (the state block grew), the fade after comes from the ResizeObserver alone (review, PR #2115).
+  {
+    const nav = vRow.childNodes[0];
+    const watcher = sizeWatchers.find((w) => w.watched.has(nav));
+    const seen = {};
+    try {
+      Object.assign(nav, { scrollWidth: 600, clientWidth: 600, scrollLeft: 0 });
+      nav.dispatch("scroll"); seen.fits = nav.className;
+      nav.clientWidth = 200;
+      seen.unseen = nav.className;
+      if (watcher) watcher.fn([{ target: nav }]);
+      seen.narrowed = nav.className;
+    } finally {
+      ["scrollWidth", "clientWidth", "scrollLeft"].forEach((k) => { delete nav[k]; });
+      nav.dispatch("scroll");
+    }
+    expect(sizeWatchers.length === 1 && watcher && header.querySelectorAll("nav").every((n) => watcher.watched.has(n))
+      && watcher.watched.has(header.querySelector(".project-links"))
+      && seen.fits === "views" && seen.unseen === "views" && seen.narrowed === "views more-after",
+      "header: one ResizeObserver watches every header row with a fade, and a narrowed tab row gets its fade from it " + JSON.stringify(seen));
   }
   // Project tabs (tsk-p6aye59z0k7g, docs/api.md §5.1 "Start tabs"): this browser's own, per viewer;
   // the account's list only seeds a browser that has none.

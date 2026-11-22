@@ -1649,7 +1649,8 @@ window.Maity = window.Maity || {};
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
-  // on render, on the row's scroll and on a resize or rotation. before and
+  // on render, on the row's scroll, on a change of the row's own size and on
+  // a resize or rotation. before and
   // after are the row's start and end: scrollLeft runs from 0 to the end,
   // negative in a right-to-left row, so its distance from the start is its
   // size; cue-rtl turns the fade's gradients to the physical sides (app.css).
@@ -1663,8 +1664,30 @@ window.Maity = window.Maity || {};
     nav.classList.toggle("more-after", more > 1 && at < more - 1);
     nav.classList.toggle("cue-rtl", more > 1 && rightToLeft(nav));
   }
+  // The row's own size changes too, with no scroll and no window resize: the state block beside
+  // the tabs grows, a count comes or goes, a narrower box at scrollLeft 0 (review, PR #2115). One
+  // ResizeObserver for every row that has the cue; a row a render replaced is let go on the next
+  // call, so the observer holds no more than the rows of the screen. Without one (an old browser)
+  // the window's resize listener below stays the only one.
+  let cueSized = null;
+  const cueRows = new Set();
+  function watchSize(nav) {
+    if (typeof window.ResizeObserver !== "function") return;
+    if (!cueSized) {
+      cueSized = new window.ResizeObserver((entries) => {
+        entries.forEach((entry) => { if (entry.target.isConnected !== false) updateCue(entry.target); });
+      });
+    }
+    cueRows.forEach((row) => {
+      if (row.isConnected === false) { cueSized.unobserve(row); cueRows.delete(row); }
+    });
+    if (cueRows.has(nav)) return;
+    cueRows.add(nav);
+    cueSized.observe(nav);
+  }
   function scrollCue(nav) {
     nav.addEventListener("scroll", () => updateCue(nav), { passive: true });
+    watchSize(nav);
     updateCue(nav);
   }
 
@@ -1697,9 +1720,10 @@ window.Maity = window.Maity || {};
       if (keyboard) intoRow(nav, e.target.closest("a, button"));
     });
   }
-  // A mouse wheel turns the project's tabs (nav.views, in a project and on All projects): its up
+  // A mouse wheel turns the project's tabs (the nav.views in .views-row, a project's own): its up
   // and down move the row while the row has more that way, and the page as before once the row is
-  // at its end or fits (tsk-dradpje67ak1). Only there: the other rows keep the wheel for the page.
+  // at its end or fits (tsk-dradpje67ak1). Only there: the other rows, All projects' pages among
+  // them, keep the wheel for the page (review, PR #2115).
   // A trackpad's or a touch's sideways move is the browser's own; Ctrl (a zoom), Shift (the
   // browser's own sideways wheel), Alt and Meta are left alone.
   function wheelSideways(nav) {
@@ -1944,7 +1968,7 @@ window.Maity = window.Maity || {};
     M.dom.keepImages(previous, fresh);
     while (fresh.firstChild) header.appendChild(fresh.firstChild);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); showFocused(nav); });
-    header.querySelectorAll("nav.views").forEach(wheelSideways);
+    header.querySelectorAll(".views-row nav.views").forEach(wheelSideways);
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
