@@ -1233,6 +1233,71 @@ def test_a_placement_made_before_the_cascade_delete_is_closed_by_it(setup: Setup
     assert _deleted_at(setup, agent_id) is not None
 
 
+NEW_AGENT = {"handle": "agent-n", "display_name": "Agent N"}
+
+
+def test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock(setup: Setup) -> None:
+    # §6.24: the handle's lock after the project's, as join creation and the exchange take
+    # them, and before the read of who holds the handle (the statement order, any database).
+    from tests.test_moderation import transactions
+
+    with transactions(setup.engine) as seen:
+        placed(setup, agent=NEW_AGENT)
+    [statements] = [x for x in seen if any(y.startswith("INSERT INTO placement ") for y in x)]
+
+    def first(test: Any) -> int:
+        return next(i for i, x in enumerate(statements) if test(x))
+
+    project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
+    handle = first(lambda x: x.startswith("INSERT INTO handle_lock "))
+    holder = first(lambda x: "FROM handle_alias" in x)
+    assert project < handle < holder, statements
+
+
+def test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # §6.24, §15.5: the placement read the handle as free under its lock and holds it; a
+    # `POST /agents` of the same owner and handle waits for it and is then refused `taken`,
+    # where before both committed and only the pickup refused the placement (`handle_taken`)
+    # (PostgreSQL, MariaDB).
+    # TODO(tsk-447hj5cxcjvc): move to the shared barrier helper in tests/concurrency.py once
+    # it lands, if it can hold one side after the meeting; this test needs the placement's
+    # transaction kept open while the other side tries the lock, which `paused` gives.
+    from maity_hub.errors import ApiError
+    from maity_hub.routes import placements as placement_routes
+    from tests.concurrency import FINISH_WITHIN, finished, race, waiting
+    from tests.test_account_deletion import paused
+
+    # `_exists` is the creation's first call after the handle's read.
+    reached, go = paused(monkeypatch, placement_routes, "_exists")
+    with race(setup.engine) as r:
+        other, giving = r.first, r.second
+        creating = r.run(other, lambda: place(setup, agent=NEW_AGENT))
+        try:
+            assert reached.wait(FINISH_WITHIN)  # the handle read, the placement not yet made
+            step = r.run(
+                giving,
+                lambda: agents.create_profile(giving, setup.owner.id, "agent-n", "Agent N", None),
+            )
+            assert waiting(step)  # on the handle's lock the placement holds
+        finally:
+            go.set()
+        made = finished(creating)
+        assert made.status_code == 201, made.text
+        with pytest.raises(ApiError) as refused:
+            finished(step)
+    assert refused.value.code == "invalid"
+    assert refused.value.details == {"fields": {"handle": "taken"}}
+    with setup.engine.connect() as conn:
+        profiles = conn.execute(
+            select(t.agent_profile.c.id).where(t.agent_profile.c.handle == "agent-n")
+        ).all()
+    assert profiles == []
+    picked = pick_up(setup, made.json())
+    assert picked.status_code == 201, picked.text
+
+
 def _manager(s: Setup, role: str = "manager") -> None:
     """The owner's joined agent with the role `manager`, or moved off it."""
     with s.engine.begin() as conn:

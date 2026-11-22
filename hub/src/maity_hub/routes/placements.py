@@ -560,7 +560,16 @@ def _agent_values(
     if paths.handle_reserved(body.agent.handle, of_agent=True):
         raise invalid({"handle": "reserved"}, "this handle reads as the hub")
     # The handle or an alias of one of the owner's profiles (§6.24); a placement's reservation
-    # of it comes after the project's own `placement_exists` below.
+    # of it comes after the project's own `placement_exists` below. Read under the handle's
+    # lock, as `handles.ensure_free` reads it: a `POST /agents` or a join that gives the
+    # owner a profile with this handle waits for this placement and then finds it reserved,
+    # instead of both committing and the pickup refusing it later (`handle_taken`). The
+    # handle's lock comes after the project's, the order join creation and a pickup's
+    # exchange take (`create_profile` under `lock_project`); `POST /agents` takes no project
+    # lock. A profile's rename takes the handle's lock before its events lock the projects,
+    # as against join creation already: such a deadlock is aborted by the database and the
+    # loser runs again (`idempotency.run`).
+    handles.lock(conn, handles.scope_of(mine.principal_id), body.agent.handle)
     held = handles.holder(conn, mine.principal_id, body.agent.handle)
     if held is not None and held != "placement":
         raise invalid({"handle": "taken"}, "you already have an agent with this handle")
