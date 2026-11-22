@@ -1390,7 +1390,7 @@ class Supervisor:
             known = self.agy_sandbox.get(key)
         if known is not None:
             return known
-        state = capabilities.agy_sandbox(target.agent_path, target.as_user, binary)
+        state = capabilities.agy_sandbox(target.as_user, binary)
         if state == capabilities.AGY_UNKNOWN:
             return state
         with self.lock:
@@ -1408,13 +1408,18 @@ class Supervisor:
         if harness.id != "antigravity" or (view is not None and view.sandbox):
             return
         found = view.found if view is not None else None
-        if self._agy_sandbox(target, found.path if found else None) != capabilities.AGY_CANNOT:
+        state = self._agy_sandbox(target, found.path if found else None)
+        if state not in capabilities.AGY_UNSANDBOXED:
             return
+        why = (
+            "the kernel or a container refuses user namespaces"
+            if state == capabilities.AGY_REFUSED
+            else "the namespaces it needs are refused and no AppArmor profile lifts that"
+        )
         self.log(
             f"{pid}: WARNING: starting this agy placement, its commands will run UNSANDBOXED: "
-            f"agy's terminal sandbox cannot start on {target.name} (the namespaces it needs are "
-            "refused and no AppArmor profile lifts that); set require_sandbox = true under "
-            "[harness.antigravity] to refuse such starts"
+            f"agy's terminal sandbox cannot start on {target.name} ({why}); set "
+            "require_sandbox = true under [harness.antigravity] to refuse such starts"
         )
 
     def _wait(self, rec: Record, why: str, name: str) -> int:

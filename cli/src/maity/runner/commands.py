@@ -619,6 +619,13 @@ def _check_opencode_flags(
             report.ok(f"{where}harness opencode: `{command}` takes the {mode} start's flags")
 
 
+_AGY_UNTIL = (
+    "Until then require_sandbox = true under [harness.antigravity] refuses agy's starts; unset "
+    "or false, they go ahead unsandboxed and each says so in the log. Either way this stays an "
+    "error"
+)
+
+
 def _check_antigravity(
     report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
     where: str = "", binary: str | None = None,
@@ -631,7 +638,7 @@ def _check_antigravity(
     if here and not capabilities.agy_sandbox_platform():
         report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
     else:
-        state = capabilities.agy_sandbox(agent_path, as_user, binary)
+        state = capabilities.agy_sandbox(as_user, binary)
     if state == capabilities.AGY_STARTS:
         report.ok(
             f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
@@ -646,12 +653,20 @@ def _check_antigravity(
     elif state == capabilities.AGY_CANNOT:
         report.error(
             f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
-            "namespaces it needs are refused and no AppArmor profile lifts that, so agy runs "
-            "commands unsandboxed. Only an AppArmor profile for agy clears this: named `agy`, "
-            "attached to agy's real path, allowing `userns`, loaded as root, then a restart of "
-            "the runner (docs/runners.md#antigravity-agy). Until then require_sandbox = true "
-            "under [harness.antigravity] refuses agy's starts; unset or false, they go ahead "
-            "unsandboxed and each says so in the log. Either way this stays an error"
+            "user namespace's uid_map, gid_map or setgroups write is refused (AppArmor's "
+            "restriction of unprivileged user namespaces) and no AppArmor profile lifts that, "
+            "so agy runs commands unsandboxed. An AppArmor profile for agy clears this: named "
+            "`agy`, attached to agy's real path, allowing `userns`, loaded as root, then a "
+            "restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_REFUSED:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "kernel or a container refuses user namespaces to the agents' user (the unshare "
+            "call itself is refused: a sysctl such as kernel.unprivileged_userns_clone, or a "
+            "container's seccomp), so agy runs commands unsandboxed. An AppArmor profile for "
+            "agy does not clear this; allowing unprivileged user namespaces there does "
+            "(docs/runners.md#antigravity-agy). " + _AGY_UNTIL
         )
     elif state == capabilities.AGY_UNKNOWN:
         report.warn(
