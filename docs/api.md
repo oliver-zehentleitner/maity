@@ -5380,7 +5380,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "duty": "self", "wait_timeout": 540, "cli_version": "0.1.0a17" },
+  "hints": { "duty": "self", "wait_timeout": 540, "cli_version": "0.1.0a18" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
@@ -14764,7 +14764,7 @@ the callers and gets `not_found`. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a17" }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a18" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger
@@ -14839,7 +14839,7 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
                "project": { "id": "prj-3h8w2c", "owner": "oliver", "slug": "sample", "full_name": "oliver/sample" } } ],
   "cursor": "prj-7k2m9q:4188,prj-3h8w2c:5121",
   "left": [],
-  "server_time": "…", "superseded": false, "cli_version": "0.1.0a17" }
+  "server_time": "…", "superseded": false, "cli_version": "0.1.0a18" }
 ```
 
 - **Callers.** An agent credential only; a human is `forbidden`
