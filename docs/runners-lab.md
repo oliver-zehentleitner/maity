@@ -50,7 +50,7 @@ The test cycle after each CLI release: start · `maity resume` · `maity wait` �
 Everything runs as the agents' user (in the `single` layout, the runner's own user, here `maity-runner`). The service's `PATH` is systemd's default, so tools in `~/.local/bin` need `agent_path` (below).
 
 - **maity:** `pipx install maity`. Upgrade with `pipx upgrade maity`, then restart the service.
-- **Claude Code and Codex:** let the runner manage them: `install = true` and `update = "daily"` under `[harness.claude-code]` and `[harness.codex]` ([Keeping Claude Code and Codex current](runners.md#keeping-claude-code-and-codex-current)). Sign in once as the agents' user: `claude` for Claude Code, and for Codex the `codex login` of the version `maity runner tools` lists.
+- **Claude Code and Codex:** let the runner manage them: `install = true` and `update = "daily"` under `[harness.claude-code]` and `[harness.codex]` ([Keeping Claude Code and Codex current](runners.md#keeping-claude-code-and-codex-current)). Claude Code's update stops at the sandbox-checked version unless `track = "newest"` is set. Sign in once as the agents' user: `claude` for Claude Code, and for Codex the `codex login` of the version `maity runner tools` lists.
 - **Antigravity:** `agy` in `~/.local/bin` and signed in as the agents' user ([Antigravity (agy)](runners.md#antigravity-agy)).
 - **OpenCode:** from the GitHub release of `sst/opencode`:
   1. Download `opencode-linux-x64.tar.gz` and `SHA256SUMS` of the release, for example with `gh release download v2.3.0 -R sst/opencode -p opencode-linux-x64.tar.gz -p SHA256SUMS`.
@@ -110,7 +110,7 @@ pull_requests = true
 
 | Warning | Meaning |
 |---|---|
-| `its sandbox was checked with 2.1.x, this is 2.1.y` | Claude Code is another version than the one whose sandbox behaviour was verified: whether a call with something in front of `maity` stays in the sandbox is not checked for it. Security-relevant; until the checked version is raised, it is a known, accepted gap. |
+| `its sandbox was checked with 2.1.x, this is 2.1.y` | Claude Code is another version than the one whose sandbox behaviour was verified: whether a call with something in front of `maity` stays in the sandbox is not checked for it. Security-relevant; until the checked version is raised, it is a known, accepted gap. With the default `track = "checked"` the runner's update installs no version above the checked one; a newer one already in use stays, and the warning names the way back. With `track = "newest"` a newer version is a `note` line instead ([Which Claude Code version the update takes](runners.md#which-claude-code-version-the-update-takes)). |
 | `harness opencode: no OS sandbox; …` | opencode has no sandbox the runner switches on; under layout single an agent can do what the runner's user can. With `require_sandbox = true` under `[harness.opencode]` this is an error and opencode placements are refused. |
 | `pull_requests is not given to codex` | Codex runs `maity` inside its sandbox, so it gets no `maity gh`. |
 | `allow '…' is left out for antigravity` | agy does not match command grants the way Claude Code does; such commands run in agy's sandbox like any other. |

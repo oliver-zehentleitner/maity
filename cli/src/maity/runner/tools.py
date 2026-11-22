@@ -82,6 +82,9 @@ class ToolState:
     # Versions the runner does not take again on its own: the one a rollback left, and
     # ones that failed their version answer (§15.16 "Rollback").
     skipped: list[str] = field(default_factory=list)
+    # The vendor's newest at the last check, when a cap (`track = "checked"`) held `latest`
+    # below it; None otherwise. Shown by `maity runner tools`, never sent to the hub.
+    newest: str | None = None
 
 
 BINARY_FILE = "binary.path"  # the binary's path inside its version directory
@@ -224,13 +227,20 @@ def take(
     *,
     requested_at: str | None = None,
     started: Callable[[], None] = lambda: None,
+    cap: str | None = None,
 ) -> ToolState:
     """Look for a newer version and install it beside the one in use (§15.16). Used for the
     first install, the daily check and `Update now` alike. Holds the tool's lock throughout,
     so a rollback waits for it; `started` is called once `installing` or `updating` is
-    saved. Never removes a version: older ones go in `prune`, once no session uses them."""
+    saved. Never removes a version: older ones go in `prune`, once no session uses them.
+
+    With `cap` (the sandbox-checked version, `track = "checked"`), the version taken is the
+    vendor's newest when that is not later than `cap`, else `cap` itself: the newest version
+    at or below it, since the vendor lists no versions and `cap` is a release that was
+    checked. `latest` then records that target. A version in use above `cap` stays: the
+    update never goes back on its own (docs/runners.md)."""
     with locked(tools_dir, tool_id):
-        return _take(tools_dir, tool_id, installer, now, requested_at, started)
+        return _take(tools_dir, tool_id, installer, now, requested_at, started, cap)
 
 
 def _take(
@@ -240,6 +250,7 @@ def _take(
     now: str,
     requested_at: str | None,
     started: Callable[[], None],
+    cap: str | None = None,
 ) -> ToolState:
     state = load(tools_dir, tool_id)
     if requested_at is not None:
@@ -254,6 +265,11 @@ def _take(
         return _failed(tools_dir, tool_id, state, error.reason, now)
     except Exception:  # noqa: BLE001 - an installer's slip still ends the attempt as failed
         return _failed(tools_dir, tool_id, state, "installer_failed", now)
+    # An unreadable cap holds too: the installer then refuses it, never a fall back to newest.
+    if cap is not None and (version_key(cap) is None or newer(latest, cap)):
+        state.newest, latest = latest, cap
+    else:
+        state.newest = None
     state.latest, state.checked_at = latest, now
     if latest == state.version or latest in state.skipped or not newer(latest, state.version):
         state.state = "rolled_back" if latest in state.skipped and state.version else "current"

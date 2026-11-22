@@ -1495,9 +1495,11 @@ class Supervisor:
         if harness.id == "opencode":  # name the model in effect: the placement's, or the default
             self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
         found = (view or GateView.of(target, harness.id)).found  # the version that started
-        warning = capabilities.unchecked(harness.id, found.version if found else None)
-        if warning is not None:
-            self.log(f"{name}: {warning}")
+        version = found.version if found else None
+        warning = capabilities.unchecked(harness.id, version, harness.track)
+        note = capabilities.unchecked_note(harness.id, version, harness.track)
+        if (warning or note) is not None:
+            self.log(f"{name}: {warning or note}")
 
     # --- the join (§15.9) -------------------------------------------------------------------
 

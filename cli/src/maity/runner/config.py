@@ -148,6 +148,10 @@ class Harness:
     # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
     install: bool = False
     update: str = "never"
+    # Which version the runner's update takes, for a harness with a sandbox-checked version
+    # (capabilities.CHECKED): "checked" at most that one, "newest" the vendor's newest. It also
+    # decides whether `check` warns about a newer version or only notes it (docs/runners.md).
+    track: str = "checked"
 
 
 @dataclass(frozen=True)
@@ -764,6 +768,11 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
+    from maity.runner.capabilities import CHECKED
+
+    if "track" in table.data and name not in CHECKED:
+        problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
     if install or update != "never":
         from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
         from maity.runner.tools import INSTALLERS
@@ -786,6 +795,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         env_file=Path(env_file).expanduser() if env_file else None,
         install=install,
         update=update,
+        track=track,
     )
     if name == "stub":
         return Harness(

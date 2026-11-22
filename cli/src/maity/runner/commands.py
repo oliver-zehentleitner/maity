@@ -270,6 +270,10 @@ class Report:
     def warn(self, text: str) -> None:
         self.lines.append(("warn", text))
 
+    def note(self, text: str) -> None:
+        """Worth knowing, nothing to fix: the operator's own choice (`track = "newest"`)."""
+        self.lines.append(("note", text))
+
     def error(self, text: str) -> None:
         self.lines.append(("error", text))
 
@@ -310,6 +314,11 @@ DEFAULTS = (
         " other harnesses start without their sandbox; false: never refused for the sandbox",
     ),
     ("harness.<id>.env_file", "unset"),
+    (
+        "harness.claude-code.track",
+        '"checked": the update installs at most the sandbox-checked version; "newest": the'
+        " vendor's newest, which check then only notes",
+    ),
     (
         "git.name, git.email",
         f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
@@ -492,6 +501,34 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
+def _check_version(
+    report: Report, harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> None:
+    """The installed version against the sandbox-checked one: a warning, or under
+    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too."""
+    note = capabilities.unchecked_note(harness.id, version, harness.track)
+    if note is not None:
+        report.note(note)
+    warning = capabilities.unchecked(harness.id, version, harness.track)
+    if warning is None:
+        return
+    if capabilities.above_checked(harness.id, version):
+        checked = capabilities.CHECKED[harness.id]
+        managed = tools_dir is not None and (harness.install or harness.update != "never")
+        if tools_dir is None or not managed:
+            warning += f"; to go back, install {checked} yourself"
+        else:
+            warning += f"; the runner's update takes at most {checked} and does not go back"
+            kept = tools.load(tools_dir, harness.id).previous_version
+            if kept is not None and not capabilities.above_checked(harness.id, kept):
+                warning += (f"; `maity runner tools rollback {harness.id}` starts new sessions"
+                            f" on the kept {kept}")  # fmt: skip
+            else:
+                warning += f"; no version at or below {checked} is kept for a rollback"
+        warning += '; or set track = "newest" to keep it'
+    report.warn(warning)
+
+
 def _check_harness(
     report: Report,
     harness: config.Harness,
@@ -520,9 +557,7 @@ def _check_harness(
         report.error(f"harness {harness.id}: `{found.path} --version` failed")
         return
     report.ok(f"harness {harness.id}: {found.path} ({found.version})")
-    warning = capabilities.unchecked(harness.id, found.version)
-    if warning is not None:
-        report.warn(warning)
+    _check_version(report, harness, found.version, tools_dir)
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
@@ -1131,9 +1166,12 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
-            warning = capabilities.unchecked(harness.id, probe.version)
+            warning = capabilities.unchecked(harness.id, probe.version, harness.track)
             if warning is not None:
                 report.warn(f"{name}: {warning}")
+            note = capabilities.unchecked_note(harness.id, probe.version, harness.track)
+            if note is not None:
+                report.note(f"{name}: {note}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
                 if capabilities.sandbox_version_ok(harness.id, probe.version):
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
@@ -1307,9 +1345,11 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        newest = tools.load(cfg.tools_dir, row["id"]).newest
+        held = f" (newest {newest}, held: track = checked)" if newest else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
-            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}{held}; "
             f"checked {row['checked_at'] or 'never'}"
         )
     return 0

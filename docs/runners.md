@@ -408,6 +408,32 @@ update = "daily"    # look for a newer version once a day, and on "Update now"
 
 Without these lines nothing changes: the runner uses the tool it finds on the agents' PATH, and it reports no tools to the hub. With them it needs a hub that knows about managed tools (0.1.0a8 or later); an older hub refuses the runner at its start. With them it uses only its own copy, in `~/.local/share/maity-runner/tools/` of the runner's user, never one on the PATH; a `binary` setting for such a tool is refused. A newer version goes in beside the one in use and is used from the next start of a session, never under a running one; the version before stays, and `maity runner tools rollback codex` goes back to it (a second rollback goes forward again; while an install or update of the tool runs, it is refused, try again after it). Older versions are removed once no running session uses them. With `install = false`, a missing tool is not installed by an update either. `maity runner tools` lists what is installed. The owner can ask for an update at once ("Update now", above; the dashboard has no button for it yet); the runner reads it within a minute.
 
+### Which Claude Code version the update takes
+
+Claude Code's sandbox behaviour is checked for one version at a time, by a probe someone runs by hand and a pull request that records the version in `maity` (`capabilities.CHECKED`, 2.1.325 in this release). A runner has one Claude Code for all its placements, so the choice is per runner, under `[harness.claude-code]`:
+
+```toml
+[harness.claude-code]
+install = true
+update = "daily"
+track = "checked"   # or "newest"; default "checked"
+```
+
+- **`checked`** (the default, stability first): the daily check and "Update now" install at most the checked version. When Anthropic's newest is later, the runner installs the checked version itself, or keeps it when it is already in use; when the newest is not later, it installs the newest as before. `maity runner tools` then shows `latest` as that target, with the newest Anthropic offers in brackets (`newest 2.1.330, held: track = checked`), and the runner's log says the same after each check. When a later `maity` raises the checked version, the next check or "Update now" takes it.
+- **`newest`**: every new Claude Code, as before this setting existed, unchecked until a later `maity` checks it.
+
+A version in use above the checked one stays in use under `checked`: the update never goes back on its own, for example after switching from `newest`. `maity runner check` warns about it, says the update takes at most the checked version, and names the way back: `maity runner tools rollback claude-code` when the kept version is the checked one or older, otherwise that no such version is kept (for a Claude Code the runner does not manage: install the checked version yourself), or `track = "newest"` to keep it.
+
+What `maity runner check` and the runner's log say about the installed version:
+
+| installed | `track = "checked"` | `track = "newest"` |
+|---|---|---|
+| the checked version | nothing | nothing |
+| newer than the checked one | a warning, with the way back above | a **note**, since you chose it |
+| older, or unknown | a warning | a warning |
+
+`track` applies to Claude Code only, the one harness with a checked version; on any other harness it is a configuration error. It also decides `check`'s note or warning where the runner does not manage Claude Code (on the PATH, or on an ssh host), though only a managed Claude Code is held at the checked version. A rollback works the same under both values: it swaps to the kept version, and the version it left is not taken again on its own.
+
 What the runner checks before it uses a download, and what it does not:
 
 - **Claude Code:** the exact version from Anthropic's download server, its release manifest signed by Anthropic's release key (shipped inside `maity`, fingerprint `31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE`), the binary matching the manifest's SHA-256 and size. It needs `gpgv` on the machine (`gpgv` or `gnupg` package); without it the install is refused.

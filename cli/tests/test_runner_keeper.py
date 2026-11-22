@@ -351,3 +351,20 @@ def test_update_now_for_a_tool_it_may_not_install_is_settled_at_once(
     published.clear()
     keep.step()  # the same request until the hub has read the report: not again
     assert not any("skipped" in line for line in published) and "PATCH" not in published
+
+
+@pytest.mark.parametrize(("track", "taken"), [("checked", "2.1.325"), ("newest", "2.1.330")])
+def test_the_update_follows_the_track(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, track: str, taken: str
+) -> None:
+    installer = FakeInstaller("2.1.330")
+    monkeypatch.setitem(tools.INSTALLERS, "claude-code", lambda: installer)
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    keep, _, logs = make(
+        tmp_path, f'\n[harness.claude-code]\ninstall = true\nupdate = "daily"\ntrack = "{track}"\n'
+    )
+    keep.step()
+    assert installer.installed == [taken]
+    assert tool(keep, "claude-code")["latest"] == taken
+    held = [line for line in logs if "held at" in line]
+    assert bool(held) is (track == "checked"), logs
