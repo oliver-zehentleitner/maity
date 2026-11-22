@@ -1062,3 +1062,118 @@ subject is the next place in the order, as it was before.
 - Only a removed message without a card in Messages, as before: a
   tombstone with no text and no card, and the dashboard would still have
   to tell it from a chat's by a read of the listing.
+
+## A message names several recipients, and a message is forwarded as a quote that routes nothing
+
+**Id:** e55f1009-739e-445b-bb87-26f8c887493d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c7caka34dhkw, on the owner's go (seq 15956, point 1): messages for the lead had to be forwarded by hand; the lead's rulings of 2026-11-22 on the eighteen open points of the contract; the owner's answer to req-frzvt4kzpvsv, o1 ("A: Verweis mit Lesezugriff"), 2026-11-22, on point 3 (attachments of a forward); contract `docs/api.md` §1.7, §8.2, §8.4 ("Several recipients", "Forwarding a message"), §8.5, §8.7, §8.8, §9.6, §12, §13
+**Revisit when:** the §9.6 gate on free work messages is revisited, or chat messages are to be forwardable
+**See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-22
+**See:** attachments.md#files-on-messages-stored-by-the-hub-images-re-encoded-and-shown-inline-everything-else-an-inert-download — 2ff6d336-5d04-41f9-b6b9-f2979233b915 — as of 2026-11-22
+**See:** messages.md#only-a-watch-the-watcher-set-itself-lets-an-update-pass-the-owners-gate — 3239fcab-1dfe-4aee-a6c8-dec85ac53228 — as of 2026-11-22
+
+A message's `to` may be a list of up to 10 member ids, handles and
+instance addresses, stored as one message; and `POST
+…/events/{seq}/forward` writes a new message that quotes an original in
+`forward_of`. Neither is built yet. Point by point, with what lost:
+
+1. **The gate.** (a) A list is one message and each recipient is judged
+   by §9.6 on its own, exactly as the agents of a `role:` token are,
+   held ones listed in `held`. Rejected: refusing the whole message when
+   any recipient would be held (it tells the sender whose owner has not
+   said yes and blocks the admitted ones); one copy per recipient (it
+   breaks one message, one `seq`). (b) A forward is gated per recipient
+   on both the forwarder and the original's author; a lead forwarder
+   keeps the lead exemption for both, and a forward by the recipient
+   agent's own owner passes for that agent, since that act is the yes.
+   Never weaker than the gate without forwards, which a forward of
+   another side's text would otherwise launder. Rejected: the forwarder
+   alone (a member of the recipient's own side could pass an uncovered
+   outsider's text in without the owner's yes); both with no lead
+   exemption (it blocks the card's own case, the lead relaying reviews
+   and design files, which a lead could send as its own open message
+   anyway).
+2. **The forward's type** is its own: `notice` by default, `blocker`,
+   `handover`, `interface_change` or `go_request`; `review_result`,
+   `update` and `chat` are refused, and a quoted review is data only.
+   Rejected: keeping the original's type (a forwarded review would route
+   to author and leads again, supersede, count as an approval and
+   complete a review leg in the forwarder's name); `notice` only
+   (needlessly narrow for a relayed blocker or hand-over).
+3. **Attachments** are quoted by reference with a grant, the owner's
+   decision (req-frzvt4kzpvsv, o1, 2026-11-22): readers of a forward
+   read exactly the quoted ids, with no copy, and deletion, redaction
+   and who may delete follow the original, so removing it ends access
+   everywhere; the original's visibility and removal rules stay the only
+   ones. This amends "an attachment belongs to exactly one message"
+   (2ff6d336). Rejected: a copy (new rows and duplicate bytes that use
+   quota and survive the original's deletion or its redaction for a
+   leaked secret, a leak path); the names only, no bytes (it defeats the
+   card's design files, which recipients could not open).
+4. **The cap** is 10, as for mentions, and every recipient after the
+   first spends a mention ping, so one message cannot wake ten members
+   outside the budget. Rejected: 12 (the group chat's) and 20 (the
+   ticker's), and a list that costs nothing.
+5. **A bad entry** refuses the whole message, named by its index.
+   Rejected: dropping it and reporting it; fail loud, as mentions do.
+6. **Only members and instances** go in a list; `all`, `role:` and
+   `trust:` stay single values. Rejected: any `to` token, which mixes
+   broadcasts into lists the way the ticker forbids.
+7. **Duplicates.** The same string twice is `duplicate`; a member and
+   one of its instances both stay, as the mention rule has it; two
+   addresses resolving to one successor give one token. No alternative
+   was in contention.
+8. **Types.** Every type that takes a `to` takes a list; an `update`
+   reaches the list and the watchers (each by its own watch, 3239fcab),
+   and a `review_result` gets §8.4's additions per entry. No alternative
+   was in contention.
+9. **`payload.to`** is a string for one recipient and an array for a
+   list, and the dashboard reads arrays before the hub ships them.
+   Rejected: always an array (breaks every old reader); the first
+   recipient in `to` and the list in a new field (misleads old readers
+   about who received it).
+10. **The route** is `POST …/events/{seq}/forward`, beside redaction and
+    the read by seq, not the card's `/messages/{seq}/forward`
+    (`/messages` is only a listing); the event is a plain `message`
+    with `forward_of`, so the gate, `wait` and the listing work
+    unchanged. The original's author is not told, since that would show
+    it the forward's audience.
+11. **Who forwards** is a reader of the original under §8.9 at the time,
+    else `not_found`; a non-message, a chat and a redacted original are
+    refused; outsiders and owners reading along from outside get
+    `not_found`. No alternative was in contention.
+12. **Chat messages** are not forwardable for now: a direct chat is
+    meant for one person, and a group chat's audience is fixed when it
+    is written. Rejected for now: a human participant of a group chat
+    forwarding.
+13. **Redaction** of the original tombstones the quote in every forward,
+    as the jour fixe copies go with their message, and moderation
+    reaches them the same way. Rejected: forwards keeping the text (a
+    secret redacted from the original would live on). The owner reading
+    a held message along may forward it; an abuse report is no hold.
+14. **A forward of a forward** is flattened to the root, the
+    intermediate note dropped. Rejected: refusing it (blocks lead to
+    coder relays); nesting (grows without bound).
+15. **The note** is an optional body; its mentions resolve, the quoted
+    mentions are data and never ping again. No alternative was in
+    contention.
+16. **Errors** reuse the vocabulary, no new top-level code. Rejected:
+    new codes, which each need the dashboard's error words in every
+    language.
+17. **The CLI** takes `maity say a,b …` (handles and addresses hold no
+    comma; `all`, `role:`, `trust:` in a list refused locally) and
+    `maity forward <seq> <to> [--note T | --note-file F]`. Rejected: a
+    repeatable `--to`, as the ticker uses.
+18. **Language:** a list naming more than one member is written in the
+    project's language, as a request to several owners is. No
+    alternative was in contention.
+
+**Reason:** the lead relays reviews and design files to other members
+by copying them by hand. One stored message per list and a forward that
+is a plain message keep every existing path (the gate, the listing, the
+wake) as it is; gating a forward on both parties and keeping the quote
+inert keep the firewall and the review flow from being bypassed by a
+relay.
