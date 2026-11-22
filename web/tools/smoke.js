@@ -2463,6 +2463,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     srCancel().click(); await tick();
     win.Maity.api.getAll = ocAll; win.Maity.api.post = ocPost;
   }
+  // No tool to start with: the form says each listed tool's reason (§15.3), not an empty choice
+  // alone (tsk-2k0jcaxfd0ja, a runner on a fresh host offered nothing and said nothing).
+  {
+    const ntAll = win.Maity.api.getAll;
+    let ntHarnesses = null;
+    win.Maity.api.getAll = (p) => (p !== "/projects/maintainer/maity/runners" ? ntAll(p) : ntAll(p).then((r) => {
+      const copy = JSON.parse(JSON.stringify(r));
+      for (const a of copy.items) {
+        if (a.runner.capabilities) a.runner.capabilities.harnesses = ntHarnesses(a.runner.capabilities.harnesses || []);
+      }
+      return copy;
+    }));
+    const reasons = { "claude-code": "login_needed", codex: "binary_not_found" };
+    ntHarnesses = (list) => list.map((x) => Object.assign({}, x, { available: false, reason: reasons[x.id] || "version_failed", version: null }));
+    await srOpen();
+    const ntBox = byId("placement-new-tool-none");
+    const ntSaid = [srOpts("placement-new-tool").length, ntBox.hidden, (byId("placement-new-tool").getAttribute("aria-describedby") || "").split(" ").includes("placement-new-tool-none"),
+      ntBox.querySelectorAll("li").map((li) => text(li))];
+    expect(ntSaid[0] === 0 && ntSaid[1] === false && ntSaid[2] && text(ntBox).includes("The runner offers no tool there that is installed.")
+      && ntSaid[3].includes("Claude Code on home-laptop waits for its login as the runner's user")
+      && ntSaid[3].includes("Codex is not installed on home-laptop") && ntSaid[3].includes("OpenCode did not report its version on home-laptop"),
+      "placements: no tool to start with, each tool's reason said under the empty choice " + JSON.stringify(ntSaid));
+    srCancel().click(); await tick();
+    ntHarnesses = () => [];
+    await srOpen();
+    const ntEmpty = byId("placement-new-tool-none").querySelectorAll("li").map((li) => text(li));
+    expect(JSON.stringify(ntEmpty) === JSON.stringify(["The runner's configuration names no tool for this target."]),
+      "placements: a runner that lists no tool at all says so " + JSON.stringify(ntEmpty));
+    srCancel().click(); await tick();
+    win.Maity.api.getAll = ntAll;
+  }
   // A join line cancelled while its POST waits, the form opened anew and placed on a runner: the
   // old join's late refusal neither frees the newer button nor speaks in its status, and a
   // second submit sends nothing (A995 at #1919). The placement stays waiting; the panel is cancelled.
@@ -3086,7 +3117,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "runners: the code given, the pairing is asked for again");
   expect(JSON.stringify(rWrites[0]) === JSON.stringify(["POST", "/runners/enrollments", { name: "new-laptop", ttl_seconds: 900, attach: ["maintainer/maity", "maintainer/sample"] }]),
     "runners: pairing asks for an enrollment that allows the chosen projects");
-  const steps = main.querySelector(".pair-steps");
+  // Two ways (tsk-2k0jcaxfd0ja): as a service on Linux, chosen first, or in a terminal; one list shown.
+  const service = main.querySelector(".pair-way-service");
+  const steps = main.querySelector(".pair-way-terminal");
+  const ways = main.querySelectorAll(".pair-way input");
+  expect(ways.length === 2 && byId("pair-way-service").checked && !byId("pair-way-terminal").checked && !service.hidden && steps.hidden
+    && text(main.querySelector(".pair-way legend")) === "How the runner runs"
+    && text(main.querySelector(".pair-way")).includes("As a service on Linux (recommended)")
+    && text(main.querySelector(".pair-way")).includes("In a terminal, to try it out (the only way on macOS)"),
+    "runners: a new runner's steps offer the service, chosen, and the terminal");
+  const serviceLines = service.querySelectorAll("pre.paste-line").map((p) => text(p));
+  const serviceConfig = service.querySelector(".runner-config").textContent;
+  expect(JSON.stringify(serviceLines.slice(0, 3)) === JSON.stringify(["sudo apt install tmux socat bubblewrap git pipx",
+    "sudo apt install make python3-venv python3-dev build-essential postgresql", "sudo pipx install --global maity"])
+    && /^printf '%s\\n' 'FIXT-URE0-RUNR' \| sudo maity runner install https:\/\/maity\.example\/r\/FIXTURE-\S+ --code-file -$/.test(serviceLines[3])
+    && serviceLines.includes("sudo systemctl restart maity-runner")
+    && serviceLines.includes("sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml")
+    && serviceLines.includes("sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude")
+    && JSON.stringify(serviceLines.slice(-2)) === JSON.stringify(["sudo -u maity-runner -H gh auth login", "sudo -u maity-runner -H gh auth setup-git"])
+    && text(service).includes("Without it the first push fails with \"could not read Username\"."),
+    "runners: the service's steps: packages, the CLI for every user, install with the code on stdin, restart, check, tool and forge login " + JSON.stringify(serviceLines));
+  expect(text(service).includes("with its home in /var/lib/maity-runner (not /home/maity-runner). Do not create that user by hand")
+    && text(service).includes("until then it names what is missing (limits: required, harness: required)")
+    && text(service).includes("install = true works for Claude Code and Codex only")
+    && text(service).includes("socat and bubblewrap give Claude Code its OS sandbox") && text(service).includes("git fetches the Keep the Why skill")
+    && text(service).includes("/usr/lib/postgresql/<version>/bin") && text(service).includes("type /login"),
+    "runners: the service's steps say who makes the user, what install waits for, which tools to list, and why each package");
+  expect(serviceConfig.startsWith("# Maity runner: /etc/maity-runner/runner.toml\n") && serviceConfig.includes('state_dir = "/var/lib/maity-runner/state"')
+    && serviceConfig.includes('workspaces = "/var/lib/maity-runner/workspaces"') && serviceConfig.includes("[harness.claude-code]\ninstall = true\n")
+    && serviceConfig.includes('projects = ["maintainer/maity", "maintainer/sample"]') && !serviceConfig.includes("/home/")
+    && !serviceConfig.includes("agent_path") && !serviceConfig.includes("FIXT-URE0"),
+    "runners: the service's configuration keeps install's state_dir and workspaces and lets the runner install Claude Code");
+  ctx.copied = null;
+  btn(service, "Copy as a command that writes the file").click(); await tick();
+  expect(ctx.copied === "sudo cp -p /etc/maity-runner/runner.toml /etc/maity-runner/runner.toml.install && sudo tee /etc/maity-runner/runner.toml > /dev/null <<'EOF'\n" + serviceConfig + "EOF",
+    "runners: the service's command writes /etc/maity-runner/runner.toml, install's file kept beside it " + JSON.stringify(ctx.copied));
+  byId("pair-way-terminal").checked = true; byId("pair-way-terminal").dispatch("change"); await tick();
+  expect(service.hidden && !steps.hidden, "runners: choosing the terminal shows its steps instead");
   const config = text(steps.querySelector(".runner-config"));
   expect(text(steps).includes("maity runner pair https://maity.example/r/FIXTURE-") && text(steps).includes("pipx install")
     && text(steps).includes("maity runner check") && text(steps).includes("maity runner serve"), "runners: the steps: install, configure, pair, check, serve");

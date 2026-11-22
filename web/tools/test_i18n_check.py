@@ -109,6 +109,10 @@ for text, before in [
     ('modes = ["interactive", "supervised"]', ""),
     ("mkdir -p ~/.config/maity-runner && (set -C; umask 077; cat > ", ""),
     (") <<'EOF'\n", ""),
+    # The pair dialog's service way: commands run with sudo, a code piped into install.
+    ("sudo apt install tmux socat bubblewrap git pipx", ""),
+    ("printf '%s\\n' '", ""),
+    ("' | sudo maity runner install ", ""),
 ]:
     expect(not prose(text, before), "code: %r after %r" % (text, before))
 

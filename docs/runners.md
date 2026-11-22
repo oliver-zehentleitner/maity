@@ -14,16 +14,112 @@ The hub never starts anything itself. You install the runner, and its configurat
 
 ## Pair a runner
 
-1. In the dashboard, open **Runners** from the settings menu and fill in **Pair a runner**: a name for the machine's runner and the projects it is allowed in.
-2. Choose **Create the pairing line** and copy the line.
-3. On the machine, run it. It reads like this:
+In the dashboard, open **Runners** from the settings menu and fill in **Pair a runner**: a name for the machine's runner and the projects it is allowed in. Choose **Create the pairing line**. The steps that follow offer two ways, and the dashboard cannot tell which machine you mean, so you choose:
+
+- **As a service on Linux (recommended):** `sudo maity runner install` sets the runner up as a systemd service under a user of its own. [Below](#as-a-service-on-linux).
+- **In a terminal, to try it out:** `maity runner pair`, then `maity runner serve` in the foreground, as your own user. The only way on macOS, which has no service yet. [Below](#in-a-terminal).
+
+The pairing line is shown once and expires after the time you chose; the code in it is single-use.
+
+### As a service on Linux
+
+[`maity runner install`](../cli/README.md#maity-runner) is the reference; these are the steps around it, in order.
+
+1. **Install what the runner needs.** On Debian or Ubuntu:
+
+   ```sh
+   sudo apt install tmux socat bubblewrap git pipx
+   ```
+
+   tmux runs the agents' sessions. socat and bubblewrap give Claude Code its OS sandbox: without them `maity runner check` warns `harness claude-code: no OS sandbox (bwrap, socat missing)` (it names the ones missing) and agents run unsandboxed. git fetches the [Keep the Why skill](#the-keep-the-why-skill).
+
+   If the agents run the project's own checks (a `make` target that builds a virtual environment, a C extension, a test database), install those tools too:
+
+   ```sh
+   sudo apt install make python3-venv python3-dev build-essential postgresql
+   ```
+
+   Debian keeps PostgreSQL's server programs (`pg_ctl`, `initdb`) outside the `PATH`, in `/usr/lib/postgresql/<version>/bin` (`ls /usr/lib/postgresql` shows the version). A script that needs them has to be pointed there; Maity's own `hub/scripts/with_postgres.sh` reads `MAITY_PG_BIN`. What a session may run at all is the repository's grant ([Letting agents run a repository's checks](#letting-agents-run-a-repositorys-checks)).
+2. **Install `maity` for every user**, the service's user included:
+
+   ```sh
+   sudo pipx install --global maity
+   ```
+
+   A `pipx install` in your own home is one the service's user cannot run; `install` stops then and says so.
+3. **Install the service and pair it**, with the URL and code of the pairing line. The dashboard shows the line ready to paste:
+
+   ```sh
+   printf '%s\n' '<code>' | sudo maity runner install https://<hub>/r/<token> --code-file -
+   ```
+
+   `--code-file -` reads the code from stdin, so it is not on install's command line, where other users could see it. `install`:
+   - **makes the user `maity-runner` itself**, with its home in `/var/lib/maity-runner`, not `/home/maity-runner`. Do not create that user by hand: install refuses an account it did not make (`a user maity-runner exists that install did not make …`) and does not take one over. If you made one, remove it (`sudo userdel maity-runner`, and its home) and run install again.
+   - writes `/etc/maity-runner/runner.toml` with the hub, the state directory `/var/lib/maity-runner/state` (where the credential goes) and the workspaces `/var/lib/maity-runner/workspaces`;
+   - writes the systemd unit, pairs as `maity-runner` and enables the service;
+   - **starts the service only once the configuration has `[limits]` and a `[harness.<id>]`.** Until then it prints `enabled maity-runner, not started`, lists what is missing (`limits: required`, `harness: required`) and the next steps. A service started on such a file would exit 78 (a configuration it cannot use) and not be restarted.
+4. **Give the runner its configuration.** Replace install's file with one that says what the runner may do, keeping install's `state_dir` and `workspaces`. The dashboard offers this file for the projects you chose, with a command that writes it (`sudo tee /etc/maity-runner/runner.toml`, install's file kept beside it as `runner.toml.install`):
+
+   ```toml
+   [hub]
+   url = "https://<hub>"
+   state_dir = "/var/lib/maity-runner/state"
+
+   [limits]
+   projects = ["you/demo"]
+   repositories = ["github.com/you/*"]
+
+   [backend]
+   kind = "local"
+
+   [backend.local]
+   layout = "single"
+   workspaces = "/var/lib/maity-runner/workspaces"
+
+   [harness.claude-code]
+   install = true
+   modes = ["interactive", "supervised"]
+   ```
+
+   - **List only tools that are installed on the machine, or that the runner installs.** `install = true` works for Claude Code and Codex only ([Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current)); it needs `gpgv` for Claude Code, which Debian and Ubuntu have installed with apt. Any other tool (agy, opencode) has to be installed for `maity-runner` first. A tool that is listed but missing is an error in `maity runner check`, and the runner offers it to no agent: the dashboard's **On a runner** form then says why under the empty tool choice ("… is not installed on …").
+   - **Leave `agent_path` out** unless you need it. Without it the agents get the service's own `PATH`. If you set it, the agents' home is `/var/lib/maity-runner`: a directory under `/home/maity-runner` does not exist.
+5. **Start it and check it** as its user:
+
+   ```sh
+   sudo systemctl restart maity-runner
+   sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml
+   ```
+
+   Every `maity runner` command for the service takes `--config /etc/maity-runner/runner.toml` and runs as `maity-runner`: without `--config` it reads `~/.config/maity-runner/runner.toml`, which the service layout does not have. The runner's log is `journalctl -u maity-runner`.
+6. **Log the tool in as `maity-runner`.** With `install = true` the runner installs Claude Code at its start, into its own tools directory. Find the version, then start that binary as the service's user and type `/login` in it:
+
+   ```sh
+   sudo ls /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions
+   sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude
+   ```
+
+   Codex the same way: `sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/codex/versions/<version>/codex/bin/codex login`. Until the login, the runner reports the tool `login_needed`, the dashboard's runner card says it waits for its login, and no agent can be started with it; the runner checks once a minute and offers it as soon as you have logged in. A tool you installed yourself is logged in the same way, as `maity-runner` with `-H`.
+7. **Log the forge in as `maity-runner`.** An agent's `git push` uses the machine's forge login of the agents' user, and `maity gh` (pull requests, with `pull_requests = true` in the repository's grant) needs gh logged in as that user ([Git in an agent's session](#git-in-an-agents-session)). Without it the first push fails with `could not read Username`. For GitHub (`sudo apt install gh` on Debian 13 and Ubuntu):
+
+   ```sh
+   sudo -u maity-runner -H gh auth login
+   sudo -u maity-runner -H gh auth setup-git
+   ```
+
+   The login is stored under `/var/lib/maity-runner`, where gh finds it under `HOME`; a token in `GH_TOKEN` or `GITHUB_TOKEN` does not reach `maity gh`. Give it a login you would hand to the agents: code an allowed command runs can push wherever it may.
+8. **The Keep the Why skill**, if your projects use it: [The Keep the Why skill](#the-keep-the-why-skill) says what the runner delivers and, with a hub of 0.1.0a10 or older, how to install it by hand.
+
+### In a terminal
+
+1. Install the CLI: `pipx install maity`.
+2. Run the pairing line on the machine. It reads like this:
 
    ```sh
    maity runner pair https://<hub>/r/<token> --code <code>
    ```
 
    The credential goes to the runner's own state directory and is never printed. Without a configuration, `pair` writes `~/.config/maity-runner/runner.toml` with the hub and the state directory.
-4. Add what the runner may do to that file:
+3. Add what the runner may do to that file:
 
    ```toml
    [limits]
@@ -34,7 +130,7 @@ The hub never starts anything itself. You install the runner, and its configurat
    modes = ["interactive", "supervised"]
    ```
 
-5. Check it:
+4. Check it:
 
    ```sh
    maity runner check
@@ -42,13 +138,15 @@ The hub never starts anything itself. You install the runner, and its configurat
 
    `check` exits with 1 on any error, and `--explain` shows the default of every key.
 
-6. Start it:
+5. Start it:
 
    ```sh
    maity runner serve
    ```
 
-   This runs in the foreground. To run it as a service, see `maity runner unit`. Until it runs, the runner stays offline and starts nothing.
+   This runs in the foreground. Until it runs, the runner stays offline and starts nothing. To run it as a service on Linux, take the [service way](#as-a-service-on-linux); `maity runner unit` prints a unit for paths other than install's, set up by hand.
+
+The dashboard offers this way's starter configuration too, with a command that writes it to `~/.config/maity-runner/runner.toml` and never over an existing file.
 
 > [!WARNING]
 > Allow rules and hooks in the runner user's own harness settings are inherited by every agent it starts. `maity runner check` warns about them. Use a user of its own for the runner.
@@ -383,6 +481,16 @@ This opens no path beyond the scratch, which the sandbox may already write. Ever
 
 A project that uses Keep the Why asks every agent to load the skill and to confirm it with `maity ack keep-the-why`. A placed session cannot install the skill itself: its sandbox does not write the harness's skills directory, and it has no network for an installer. So the runner delivers the skill:
 
+- **Which hub and runner:** the delivery needs `maity` 0.1.0a18 or later on the runner and a hub released after 0.1.0a10. A hub of 0.1.0a10 or older names no skill on the placement, and the runner then delivers nothing, without a log line and without `keep_the_why_unavailable`: the agent is asked to load a skill it does not have. Until the hub is updated, install the skill by hand for the agents' user, at the version the project's `AGENTS.md` or the agent's resume names (`<version>` below, for example `0.20.3`). For a service of `maity runner install`, that user is `maity-runner`:
+
+  ```sh
+  sudo -u maity-runner -H git clone --depth 1 --branch v<version> https://github.com/oliver-zehentleitner/keep-the-why /var/lib/maity-runner/keep-the-why-src
+  sudo -u maity-runner -H mkdir -p /var/lib/maity-runner/.claude/skills
+  sudo -u maity-runner -H cp -r /var/lib/maity-runner/keep-the-why-src/skills/keep-the-why /var/lib/maity-runner/.claude/skills/
+  sudo rm -rf /var/lib/maity-runner/keep-the-why-src
+  ```
+
+  Claude Code reads it from there as `keep-the-why`. A session started before the copy was there does not see it: restart the placement. Once the hub delivers the skill, remove the hand copy (`sudo rm -rf /var/lib/maity-runner/.claude/skills/keep-the-why`): it would show beside the delivered one, and `maity runner check` warns about it (below). The runner's `git fetch` needs git on the runner host either way.
 - **Which version:** the one the hub names on the placement (`keep_the_why`, `docs/api.md` §15.5). That is the release tree the resume packet names, plus the git commit of it (the hub's `MAITY_KTW_SKILL_COMMIT`). The runner fetches exactly that commit, never the tag, so a moved tag changes nothing it delivers.
 - **Where it comes from:** the runner runs `git fetch` for that commit itself, outside any sandbox, over https only. **The runner's process needs to reach the source's host** (github.com by default); the session does not. The fetch takes the proxy and trust roots from the runner's environment (`HTTPS_PROXY`, `NO_PROXY` and their variants, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `GIT_SSL_CAINFO`, `GIT_SSL_CAPATH`), and no git configuration and no other `GIT_*` variable. A proxy set only in a git configuration is not used, so set it in the runner service's environment. Git checks every object against the commit id.
 - **Where it goes:** `~/.local/share/maity-runner/skills/keep-the-why/<commit>-<source hash>/`, one copy per source and commit, beside the runner's state directory and not inside it. The runner takes only the skill's plain files: no links and no submodules, at most 200 files and 4 MiB. It writes them 0644 in 0755 directories and records each file's SHA-256 in a `manifest.json`. A copy is checked against that manifest at every start, for the source and commit it names too, within the same bounds, with every directory, the manifest and every file checked as what it should be and never followed through a link. The manifest's own SHA-256 is recorded in the runner's state directory (`skills.json`), which no session can reach, and a copy is handed out only with that manifest. Without a record (a new state directory), the runner fetches the commit again and keeps the copy only when it is the same. A copy that does not match is not handed out. Nothing in it is ever run. A source URL with a login in it (`user@`) is refused: the runner fetches without one.

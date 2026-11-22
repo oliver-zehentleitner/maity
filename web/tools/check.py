@@ -840,7 +840,7 @@ TEXT_BEFORE = re.compile(
     r"""(?:\.textContent\s*=\s*|\btitle["']?\s*[:=]\s*|placeholder["']?\s*[:=]\s*|aria-label["']?\s*[:=]\s*|\blabel["']?\s*:\s*|alt["']?\s*:\s*
          |\bh\([^;\n]*(?:null|\}),\s*)$""", re.X)
 # A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`.
-CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|<<'|\s&&\s|\$\(""")
+CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export|sudo|printf)\s|<<'|\s(&&|\|)\s|\$\(""")
 # A comment in a generated file with words in it: the person reads it, whatever the line is.
 WORDS_IN_COMMENT = re.compile(r"(?:^|\s)#\s+[A-Za-z]+\s+[A-Za-z]")
 HTML_NAMES = {"a", "button", "input", "select", "textarea", "form", "label", "summary", "details", "li", "ul", "ol",
