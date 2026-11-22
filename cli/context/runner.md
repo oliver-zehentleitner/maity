@@ -2019,7 +2019,7 @@ later (S200) and is why the claim above was corrected.
 **Id:** 53782ad6-6178-4037-9760-a248de7eb122
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** card tsk-nnmgvz773z5n; the version installed by the managed update on a runner host and that host's `maity runner check` warning that 2.1.330 was not checked, reported by ops, 2026-11-22; the probe (`cli/tests/claude_sandbox_probe.py`) from head a7f86c94 with `--only 1,5 --extra-lines` on that host, Claude Code 2.1.330 (the runner's own binary, sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb`, the npm linux-x64 build), maity 0.1.0a18, 2026-11-22: 50 PASS (1a 13, 1b 13, 5 24), 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, exit 0, recorded in card note nte-q2gnj0ktxk03; `maity runner check` from the same checkout on that host, 2026-11-22; the lead's decision to raise the version on that minimum run, 2026-11-22
 **See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-22
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
@@ -2052,7 +2052,8 @@ The probe ran from a7f86c94. The main merged after it moved every scratch
 under one holder of the workspaces root (tsk-c7zzd440x8pn), and the
 probe's launch follows that move since. The moved scratch is not one of
 the things points 1 and 5 check; this reading is the author's, not
-reviewed.
+reviewed, and the reason the entry is graded inferred. The rest of it is
+confirmed.
 
 **Reason:** the version check warned on every runner that took 2.1.330.
 The minimum run covers what can change between Claude Code versions: its
