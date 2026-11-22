@@ -1649,11 +1649,19 @@ window.Maity = window.Maity || {};
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
-  // on render, on the row's scroll and on a resize or rotation.
+  // on render, on the row's scroll and on a resize or rotation. before and
+  // after are the row's start and end: scrollLeft runs from 0 to the end,
+  // negative in a right-to-left row, so its distance from the start is its
+  // size; cue-rtl turns the fade's gradients to the physical sides (app.css).
+  function rightToLeft(el) {
+    return typeof window.getComputedStyle === "function" && window.getComputedStyle(el).direction === "rtl";
+  }
   function updateCue(nav) {
     const more = nav.scrollWidth - nav.clientWidth;
-    nav.classList.toggle("more-before", more > 1 && nav.scrollLeft > 1);
-    nav.classList.toggle("more-after", more > 1 && nav.scrollLeft < more - 1);
+    const at = Math.abs(nav.scrollLeft);
+    nav.classList.toggle("more-before", more > 1 && at > 1);
+    nav.classList.toggle("more-after", more > 1 && at < more - 1);
+    nav.classList.toggle("cue-rtl", more > 1 && rightToLeft(nav));
   }
   function scrollCue(nav) {
     nav.addEventListener("scroll", () => updateCue(nav), { passive: true });
@@ -1662,31 +1670,44 @@ window.Maity = window.Maity || {};
 
   // A tab row scrolls sideways on its own when it is wider than its room;
   // the current tab is scrolled into it, without moving the page, clear of
-  // the fade (32px, app.css) so it is not drawn faded.
+  // the fade (32px, app.css) so it is not drawn faded. Measured on the screen
+  // (the row's box against the tab's) and moved by the difference, so a
+  // right-to-left row, whose scrollLeft is negative, is served alike; the
+  // browser keeps scrollLeft within the row.
   const CUE_WIDTH = 32;
   function intoRow(nav, el) {
     if (!el || !nav.clientWidth) return;
-    const left = el.offsetLeft - nav.offsetLeft;
-    const right = left + el.offsetWidth;
-    if (left < nav.scrollLeft + CUE_WIDTH) nav.scrollLeft = Math.max(0, left - CUE_WIDTH);
-    else if (right > nav.scrollLeft + nav.clientWidth - CUE_WIDTH) nav.scrollLeft = right - nav.clientWidth + CUE_WIDTH;
+    const row = nav.getBoundingClientRect();
+    const tab = el.getBoundingClientRect();
+    if (tab.left < row.left + CUE_WIDTH) nav.scrollLeft += tab.left - (row.left + CUE_WIDTH);
+    else if (tab.right > row.right - CUE_WIDTH) nav.scrollLeft += tab.right - (row.right - CUE_WIDTH);
   }
   function showCurrent(nav) {
     if (nav) intoRow(nav, nav.querySelector('[aria-current="page"]'));
   }
-  // A tab reached with Tab stands in sight too, not under the fade (tsk-dradpje67ak1).
+  // A tab reached with Tab stands in sight too, not under the fade (tsk-dradpje67ak1). Only a
+  // focus the browser would ring (:focus-visible, a keyboard's): a mouse press focuses the tab
+  // between its down and its up, and a row scrolled then put the up on another tab or none, so
+  // the click was lost (review, PR #2115). A browser without :focus-visible scrolls on every focus.
   function showFocused(nav) {
-    nav.addEventListener("focusin", (e) => { if (e.target !== nav) intoRow(nav, e.target.closest("a, button")); });
+    nav.addEventListener("focusin", (e) => {
+      if (e.target === nav) return;
+      let keyboard = true;
+      try { keyboard = e.target.matches(":focus-visible"); } catch (err) { keyboard = true; }
+      if (keyboard) intoRow(nav, e.target.closest("a, button"));
+    });
   }
-  // A mouse wheel turns a row that scrolls sideways: its up and down move the row while the row has
-  // more that way, and the page as before once the row is at its end or fits (tsk-dradpje67ak1).
-  // A trackpad's or a touch's sideways move is the browser's own; a zoom (Ctrl) is left alone.
+  // A mouse wheel turns the project's tabs (nav.views, in a project and on All projects): its up
+  // and down move the row while the row has more that way, and the page as before once the row is
+  // at its end or fits (tsk-dradpje67ak1). Only there: the other rows keep the wheel for the page.
+  // A trackpad's or a touch's sideways move is the browser's own; Ctrl (a zoom), Shift (the
+  // browser's own sideways wheel), Alt and Meta are left alone.
   function wheelSideways(nav) {
     nav.addEventListener("wheel", (e) => {
-      if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
       const more = nav.scrollWidth - nav.clientWidth;
       if (more <= 1) return;
-      const rtl = getComputedStyle(nav).direction === "rtl";
+      const rtl = rightToLeft(nav);
       const step = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? nav.clientWidth : 1);
       // scrollLeft runs from 0 to the end, negative in a right-to-left row.
       const at = Math.abs(nav.scrollLeft);
@@ -1736,6 +1757,8 @@ window.Maity = window.Maity || {};
         const fresh = allCount(page);
         if (fresh) a.appendChild(fresh);
       });
+      // A count that came or went changed the row's width: the fade follows.
+      updateCue(nav);
       return;
     }
     nav.querySelectorAll("a").forEach((a) => {
@@ -1747,6 +1770,8 @@ window.Maity = window.Maity || {};
       const fresh = tabCount(ctx, route.route);
       if (fresh) a.appendChild(fresh);
     });
+    // The fade follows the row's new width; the scroll stays where the reader left it.
+    updateCue(nav);
   }
 
   // The bell follows the counts; an open one stays as it is until closed.
@@ -1814,7 +1839,6 @@ window.Maity = window.Maity || {};
     old.remove();
     fresh.scrollLeft = scrolled;
     scrollCue(fresh);
-    wheelSideways(fresh);
     showFocused(fresh);
   }
 
@@ -1897,7 +1921,8 @@ window.Maity = window.Maity || {};
         : null,
       // The project's tabs, and at their right, apart, its links, its state and the owner's
       // absence, in one line: the tabs take the room the block leaves and scroll in it (the
-      // maintainer, tsk-dradpje67ak1). On a phone the block is a line of its own above the tabs.
+      // maintainer, tsk-dradpje67ak1). On a phone the block is a line of its own under the tabs,
+      // in the order the keyboard reaches them.
       ctx.scope === "project"
         ? h("div", { class: "views-row" },
           h("nav", { class: "views", "aria-label": M.t("header.views") },
@@ -1918,7 +1943,8 @@ window.Maity = window.Maity || {};
           : null);
     M.dom.keepImages(previous, fresh);
     while (fresh.firstChild) header.appendChild(fresh.firstChild);
-    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); wheelSideways(nav); showFocused(nav); });
+    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); showFocused(nav); });
+    header.querySelectorAll("nav.views").forEach(wheelSideways);
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.

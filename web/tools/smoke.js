@@ -454,6 +454,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(vRow && vRow.childNodes.length === 2 && vRow.childNodes[0].tagName === "NAV" && vRow.childNodes[0].className === "views"
     && vRow.childNodes[1].className === "project-state" && vRow.childNodes[1].querySelector(".state") && !header.querySelector(".bar .state"),
     "header: the state sits at the project tabs' right, apart, in their row, not in the top bar");
+  // The tabs' row right to left (review, PR #2115): scrollLeft runs from 0 to minus the overflow, the fade
+  // follows the row's start and end, a tab reached with the keyboard comes clear of the 32 px fade by the
+  // boxes on screen, a mouse press moves nothing, and the wheel turns the row until its end, then not.
+  {
+    const nav = vRow.childNodes[0];
+    const tab = nav.querySelectorAll("a")[1];
+    const cueOf = () => ["more-before", "more-after", "cue-rtl"].filter((c) => nav.classList.contains(c)).join();
+    const shown = win.getComputedStyle;
+    win.getComputedStyle = () => ({ direction: "rtl" });
+    const seen = {};
+    try {
+      Object.assign(nav, { scrollWidth: 1000, clientWidth: 300, scrollLeft: 0 });
+      nav.dispatch("scroll"); seen.start = cueOf();
+      nav.scrollLeft = -350; nav.dispatch("scroll"); seen.middle = cueOf();
+      nav.scrollLeft = -700; nav.dispatch("scroll"); seen.end = cueOf();
+      // On screen the row is 100..400; the tab at 120..200 stands under the fade at the left, the row's end.
+      nav.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40 });
+      tab.getBoundingClientRect = () => ({ left: 120, right: 200, top: 0, bottom: 40 });
+      tab.closest = () => tab;
+      tab.matches = (s) => s === ":focus-visible";
+      nav.scrollLeft = -200; nav.dispatch("focusin", { target: tab }); seen.keyboard = nav.scrollLeft;
+      tab.matches = () => false;
+      nav.scrollLeft = -200; nav.dispatch("focusin", { target: tab }); seen.mouse = nav.scrollLeft;
+      let stopped = false;
+      nav.scrollLeft = -200; nav.dispatch("wheel", { deltaY: 100, deltaX: 0, deltaMode: 0, preventDefault() { stopped = true; } });
+      seen.wheel = [stopped, nav.scrollLeft];
+      stopped = false;
+      nav.scrollLeft = -700; nav.dispatch("wheel", { deltaY: 100, deltaX: 0, deltaMode: 0, preventDefault() { stopped = true; } });
+      seen.wheelEnd = [stopped, nav.scrollLeft];
+    } finally {
+      win.getComputedStyle = shown;
+      ["scrollWidth", "clientWidth", "scrollLeft", "getBoundingClientRect"].forEach((k) => { delete nav[k]; });
+      ["getBoundingClientRect", "closest", "matches"].forEach((k) => { delete tab[k]; });
+      nav.dispatch("scroll");
+    }
+    expect(seen.start === "more-after,cue-rtl" && seen.middle === "more-before,more-after,cue-rtl" && seen.end === "more-before,cue-rtl"
+      && seen.keyboard === -212 && seen.mouse === -200 && seen.wheel[0] && seen.wheel[1] === -300 && !seen.wheelEnd[0] && seen.wheelEnd[1] === -700,
+      "header: the project tabs' row right to left: fade, keyboard focus clear of the fade, no move on a mouse press, wheel " + JSON.stringify(seen));
+  }
   // Project tabs (tsk-p6aye59z0k7g, docs/api.md §5.1 "Start tabs"): this browser's own, per viewer;
   // the account's list only seeds a browser that has none.
   {

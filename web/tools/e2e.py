@@ -7388,20 +7388,55 @@ def project_links_step(run: Run, page: Page) -> None:
           const t = r('header nav.views'), l = r('header .project-links');
           return [t.top, t.bottom, l.top, l.bottom, t.right, l.left]; }""")
         assert line[2] < line[1] and line[0] < line[3] and line[4] <= line[5], f"the tabs and the links are not one line at 1590 px: {line}"
-        # Narrowed so they overflow: the mouse wheel turns the row, and a tab reached by the
-        # keyboard is scrolled into sight.
+        run.shot(page, "project-tabs-links-desktop")
+        # Narrowed so they overflow: the fade marks the side with more, the mouse wheel turns the row
+        # and lets the page scroll once the row is at its end, a tab reached with Tab is scrolled clear
+        # of the 32 px fade, and a mouse click near the edge opens the tab clicked (review, PR #2115).
         views = page.locator("header nav.views")
         views.evaluate("(e) => { e.style.maxWidth = '200px'; e.scrollLeft = 0; }")
+        page.wait_for_function("""() => { const n = document.querySelector('header nav.views');
+          return n.classList.contains('more-after') && !n.classList.contains('more-before'); }""")
         box = views.bounding_box()
         page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         page.mouse.wheel(0, 120)
-        page.wait_for_function("() => document.querySelector('header nav.views').scrollLeft > 0")
-        views.locator("a").last.focus()
-        last = page.evaluate("""() => { const n = document.querySelector('header nav.views'), a = n.lastElementChild;
-          const r = n.getBoundingClientRect(), c = a.getBoundingClientRect(); return c.left >= r.left - 1 && c.right <= r.right + 1; }""")
-        assert last, "the focused last tab is not scrolled into its row"
-        views.evaluate("(e) => { e.style.maxWidth = ''; }")
-        run.shot(page, "project-tabs-links-desktop")
+        page.wait_for_function("""() => { const n = document.querySelector('header nav.views');
+          return n.scrollLeft > 0 && n.classList.contains('more-before'); }""")
+        # At the row's end the fade before stays, the one after goes, and the wheel scrolls the page.
+        views.evaluate("(e) => { e.scrollLeft = e.scrollWidth; }")
+        page.wait_for_function("""() => { const n = document.querySelector('header nav.views');
+          return n.classList.contains('more-before') && !n.classList.contains('more-after'); }""")
+        page.evaluate("() => { document.body.style.minHeight = '4000px'; window.scrollTo(0, 0); }")
+        try:
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.mouse.wheel(0, 120)
+            page.wait_for_function("() => window.scrollY > 0")
+        finally:
+            page.evaluate("() => { window.scrollTo(0, 0); document.body.style.minHeight = ''; }")
+        # A tab inside the row whose end stands under the fade after, not the current one.
+        views.evaluate("(e) => { e.scrollLeft = 0; }")
+        under = page.evaluate("""() => { const n = document.querySelector('header nav.views'), r = n.getBoundingClientRect();
+          const tabs = Array.from(n.querySelectorAll('a'));
+          return tabs.findIndex((a, i) => { const c = a.getBoundingClientRect();
+            return i >= 1 && i < tabs.length - 1 && c.left < r.right - 32 && c.right > r.right - 32 && a.getAttribute('aria-current') !== 'page'; }); }""")
+        assert under >= 1, f"no inner tab under the fade at 200 px: {under}"
+        clear = """(i) => { const n = document.querySelector('header nav.views'), a = n.querySelectorAll('a')[i];
+          const r = n.getBoundingClientRect(), c = a.getBoundingClientRect();
+          return [c.left >= r.left + 31 && c.right <= r.right - 31, document.activeElement === a, [r.left, r.right, c.left, c.right]]; }"""
+        views.locator("a").nth(under - 1).focus()
+        views.evaluate("(e) => { e.scrollLeft = 0; }")
+        before = page.evaluate(clear, under)
+        assert not before[0], f"the tab is clear of the fade before Tab, nothing to prove: {before}"
+        page.keyboard.press("Tab")
+        after = page.evaluate(clear, under)
+        assert after[1] and after[0], f"the tab reached with Tab is not 32 px clear of the row's edges: {after}"
+        # The mouse: pressed on the same tab near the edge, the row must not move under the press.
+        views.evaluate("(e) => { e.scrollLeft = 0; }")
+        page.evaluate("() => document.activeElement && document.activeElement.blur()")
+        target = page.evaluate("""(i) => { const n = document.querySelector('header nav.views'), a = n.querySelectorAll('a')[i];
+          const r = n.getBoundingClientRect(), c = a.getBoundingClientRect();
+          return { href: a.getAttribute('href'), x: (c.left + Math.min(c.right, r.right)) / 2, y: (c.top + c.bottom) / 2 }; }""", under)
+        page.mouse.click(target["x"], target["y"])
+        expect(page).to_have_url(re.compile(re.escape(target["href"]) + r"$"))
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             for width in (390, 360):
@@ -7415,6 +7450,11 @@ def project_links_step(run: Run, page: Page) -> None:
                 # Docs after the issues link, before Chat and Why (tsk-qeftb8bg0yt6), on the row at phone width.
                 assert [t for t, _ in row][:5] == ["Repository", "Actions", "Pull Requests", "Issues", "Docs"], f"the links' order at {width} px {scheme}: {row}"
                 assert len({top for _, top in row}) == 1, f"the project's links wrap at {width} px {scheme}: {row}"
+                # Two lines on a phone, the tabs first and the block under them, as Tab reaches them
+                # (no flex order, tsk-dradpje67ak1).
+                lines = page.evaluate("""() => { const t = document.querySelector('header nav.views').getBoundingClientRect();
+                  const b = document.querySelector('header .project-state').getBoundingClientRect(); return [t.top, t.bottom, b.top]; }""")
+                assert lines[2] >= lines[1] - 1, f"the links and state are not under the tabs at {width} px {scheme}: {lines}"
                 width_now = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
                 assert width_now[0] <= width_now[1], f"the page scrolls sideways at {width} px {scheme}: {width_now}"
         run.shot(page, "project-links-actions-phone")
