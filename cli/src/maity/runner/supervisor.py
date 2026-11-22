@@ -968,10 +968,14 @@ class Supervisor:
         if cause == "not_waiting":
             if rec.watch_episode == verdict["episode"]:
                 return False  # once per quiet spell: the own check's rules go on
-            rec.watch_episode = verdict["episode"]
             if verdict["attached"]:
-                said = "someone is attached: no line typed"
-            elif rec.nudged_at is not None:
+                # Reported once, as `_someone_there` does; the spell's one nudge waits until
+                # the last person has left, when `_watch` looks again (ops live check on
+                # 1ffc5553: an attached look used it up, so no nudge came after the detach).
+                rec.watch_seen = [trigger_, verdict["episode"]]
+                return self._file(pid, rec, verdict, f"{what}: someone is attached: no line typed")
+            rec.watch_episode = verdict["episode"]
+            if rec.nudged_at is not None:
                 said = "the nudge already typed stands"
             elif self._prompt_shown(p, session, backend):
                 said = "a prompt shows: no line typed"

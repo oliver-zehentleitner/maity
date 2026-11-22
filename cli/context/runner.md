@@ -6303,6 +6303,23 @@ Where the contract left the choice open, it decided as follows.
   attached meanwhile keeps it, and the finding is reported once instead.
   Rejected: acting on the worker's snapshot, which can be seconds old and
   could end a session a person has just attached to.
+- **A person at the pane uses up nothing of the quiet spell** (ops' live
+  check on 1ffc5553). Every refusal for someone attached goes through
+  `watch_seen` alone: the finding is reported once, the watch skips its
+  looks while that person stays, and looks again once the last client has
+  left, acting within the same spell. For `not_waiting` this means: with
+  someone attached nothing is typed and the finding ("someone is attached:
+  no line typed") is reported once; the spell's one nudge (`watch_episode`)
+  waits until the last person has left, and is then typed and filed as a
+  finding of its own, since it is a different action and the hub would
+  otherwise never learn the nudge happened. While still attached, no
+  further finding. Reason: the attached look had set `watch_episode`, so
+  after the detach the spell was spent and no nudge ever came. The other
+  refusals spend nothing either: an end called off for a person, a pause or
+  a cleared trigger leaves `watch_restarts` untouched (counted only once
+  the session is gone) and only moves `watch_acted_at`, so the next
+  decision waits for a fresh read; a paused or dormant agent has no
+  trigger, which clears `watch_seen`.
 - **A session that just exited is never throttled, and the quiet span is
   clamped** (Gemini review A1941). The watch looks at most once a minute,
   but not for a dead session: one that exits within a minute of an earlier
@@ -6404,7 +6421,7 @@ Where the contract left the choice open, it decided as follows.
   check still sends its TERM at once, unchanged). A session that exits or
   vanishes before the TERM ended on its own: the end is dropped with no
   finding and the session goes to the exit handling as if the watch had
-  never decided (final exits, the crash count, no watch restart spent).
+  never decided (final exits, and a plain exit as without the watch).
   After a runner restart, an end not yet sent its TERM is dropped on
   adoption, with no finding; one whose TERM went out keeps its kill. A read
   asked for is answered only by a read whose request started at or after

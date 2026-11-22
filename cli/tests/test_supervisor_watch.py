@@ -195,6 +195,34 @@ def test_not_waiting_types_nothing_with_someone_attached(world: Any) -> None:
     assert last(reports)["finding"]["cause"] == "not_waiting"
 
 
+def test_not_waiting_nudges_once_the_last_person_has_left(world: Any) -> None:
+    # Ops live check on 1ffc5553: an attached look used up the quiet spell's one nudge, so
+    # none came once the person had detached.
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.attach = True
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    assert backend.typed == []
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["not_waiting"]
+    for _ in range(2):  # still attached: reported once already, nothing typed, no finding
+        clock.now += supervisor.IDLE_EVERY
+        drain(sup)
+    assert backend.typed == []
+    assert len(with_findings(reports)) == 1
+    backend.attach = False
+    clock.now += supervisor.IDLE_EVERY
+    drain(sup)
+    assert backend.typed == [(NAME, supervisor.NUDGE_LINE)]
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["not_waiting"] * 2
+    for _ in range(2):  # the same spell: no second line
+        clock.now += supervisor.IDLE_EVERY
+        drain(sup)
+    assert backend.typed == [(NAME, supervisor.NUDGE_LINE)]
+    assert len(with_findings(reports)) == 2
+    assert backend.terminated == []
+
+
 def test_usage_limit_waits_for_the_reset(world: Any) -> None:
     sup, backend, reports, clock, _ = world
     running(sup, clock, watched(mode="supervised"))
@@ -392,6 +420,46 @@ def test_a_person_at_the_pane_keeps_the_session(world: Any, attach: bool | None)
     backend.attach = False  # the last client left
     clock.now += supervisor.IDLE_EVERY
     drain(sup)
+    assert backend.terminated == [NAME]
+
+
+def test_wait_deaf_with_someone_attached_ends_once_the_last_person_has_left(world: Any) -> None:
+    # A refusal for a person at the pane spends nothing of the spell (ops live check on
+    # 1ffc5553, the audit of every cause): after the detach the end is decided and carried out.
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    backend.attach = True
+    clock.now = QUIET_PAST_GRACE
+    for _ in range(3):  # attached: nothing ended, the finding once
+        drain(sup)
+        clock.now += supervisor.IDLE_EVERY
+    assert backend.terminated == []
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["wait_deaf"]
+    backend.attach = False
+    drain(sup)
+    assert backend.terminated == [NAME]
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["wait_deaf"] * 2
+
+
+def test_an_end_called_off_by_a_pause_is_decided_again_once_the_pause_ends(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    reread(sup)
+    two_passes(sup)  # the end decided; its TERM waits for a fresh read
+    assert backend.terminated == []
+    sup.update([joined_then_quiet(paused=True)], read_at=clock.now + supervisor.FRESH_MARGIN)
+    sup.tick()  # the read shows the pause: called off
+    assert backend.terminated == []
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["wait_deaf"]
+    clock.now += supervisor.IDLE_EVERY
+    sup.update([joined_then_quiet()], read_at=clock.now + supervisor.FRESH_MARGIN)
+    drain(sup)  # the same quiet spell, no longer paused
     assert backend.terminated == [NAME]
 
 
