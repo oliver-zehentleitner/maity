@@ -447,6 +447,39 @@ def test_two_wrong_codes_do_not_burn(owner: flow.Human, make_client: ClientFacto
     assert flow.exchange(client, created).status_code == 201
 
 
+def test_a_refused_exchange_names_its_cause_in_the_log(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """tsk-e9pc50wdk9b9: every join that no longer works answers the same bare not_found, so
+    the hub's log names which check refused it, with the join's row id and never its token or
+    code. The attempt slot's cause reads the join as the exchange's own transaction sees it."""
+    from maity_hub.routes import joins
+
+    caplog.set_level(logging.INFO, logger="maity_hub.routes.joins")
+    client = make_client()
+    created = flow.join(owner, "maity")
+    token = created["join_url"].rsplit("/", 1)[1]
+    client.post("/api/v1/join/nope", json={"code": "x", "client": "curl"})
+    assert flow.exchange(client, created).status_code == 201
+    assert flow.exchange(client, created).status_code == 404  # used
+    burned = flow.join(owner, "maity")
+    for _ in range(3):
+        flow.exchange(client, {**burned, "code": "ZZZZ-ZZZZ-ZZZZ"})
+    assert flow.exchange(client, burned).status_code == 404
+    said = [r.getMessage() for r in caplog.records if r.name == "maity_hub.routes.joins"]
+    assert "join answered not_found: no join with this token (join None)" in said
+    assert f"join answered not_found: used (join {created['id']})" in said
+    assert f"join answered not_found: burned (join {burned['id']})" in said
+    assert not any(token in line or created["code"] in line for line in said)
+    with migrated.begin() as conn:
+        cause = joins._no_slot(conn, created["id"], clock.now())
+    assert cause.startswith("no attempt slot: failed_attempts=")
+    assert "used=True" in cause and "burned=False" in cause and "expired=False" in cause
+
+
 def test_the_exchange_is_limited_to_ten_per_minute(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
