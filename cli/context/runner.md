@@ -1078,10 +1078,14 @@ exists, the code follows the contract and reports `off`.
 (`ok`, as before). They are refused, but a loaded AppArmor profile is named
 `agy`, or after agy's resolved binary: a warning, "not verified". They are
 refused and no such profile is loaded: "cannot start". Or the probe cannot
-tell (no `unshare`, a failure that is no refusal, the profile list
-unreadable): "not checked", a warning. Only `uid_map`, `gid_map`,
-`setgroups` or the unshare call failing (read under `LC_ALL=C`) count as a
-refusal. `maity runner check` reports "cannot start" as an error naming
+tell (no `unshare`, a failure of the lookup or the run, a timeout, a
+failure that is no permission refusal, the profile list unreadable or read
+only in part): "not checked", a warning. Only `Operation not permitted` on
+`uid_map`, `gid_map`, `setgroups` or the unshare call (read under
+`LC_ALL=C`) counts as a refusal, and "cannot start" needs every profile
+name read. `unshare` is looked up on the system's own PATH, never the
+agents', where a directory they can write to could hold an unshare that
+exits 0 and hides the error (the review of #2119). `maity runner check` reports "cannot start" as an error naming
 `require_sandbox`. A start asks the probe once per target and agy binary
 for the service's lifetime. Where the answer is "cannot start" and
 `require_sandbox = false` let the start through, the runner logs loudly, at

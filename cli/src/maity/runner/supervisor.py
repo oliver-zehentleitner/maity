@@ -1377,9 +1377,11 @@ class Supervisor:
         return found
 
     def _agy_sandbox(self, target: Target, binary: str | None) -> str:
-        """`capabilities.agy_sandbox` for `target` and agy's `binary`, asked once per pair for
-        the service's lifetime; on a platform where agy has no terminal sandbox it is not
-        asked (that is no host fault the start can name)."""
+        """`capabilities.agy_sandbox` for `target` and agy's `binary`, kept per pair for the
+        service's lifetime; on a platform where agy has no terminal sandbox it is not asked
+        (that is no host fault the start can name). The lock is not held across the probe, so
+        first starts that overlap may each ask once; they get the same answer, and the first
+        one kept is used from then on (the review of #2119)."""
         if target.as_user.direct and not capabilities.agy_sandbox_platform():
             return capabilities.AGY_UNKNOWN
         key = (target.name, binary or "")
@@ -1389,26 +1391,26 @@ class Supervisor:
             return known
         state = capabilities.agy_sandbox(target.agent_path, target.as_user, binary)
         with self.lock:
-            self.agy_sandbox[key] = state
-        return state
+            return self.agy_sandbox.setdefault(key, state)
 
     def _say_if_unsandboxed(
         self, pid: str, harness: config.Harness, target: Target, view: GateView | None
     ) -> None:
         """An agy start on a host where its terminal sandbox cannot start: it got through the
-        gate by the operator's choice (`require_sandbox = false`), so it is said aloud at every
-        such start, never silently (lotse's ruling on tsk-xjy2d5617sar). Its report stays
-        `sandbox_unavailable`, as on every agy start. Nothing is said where the probe saw the
-        namespaces start, found a profile named for agy, or could not tell."""
+        gate because `require_sandbox` is false (its default), so it is said aloud at every
+        such start attempt, before the launch and so worded as what the session will do, never
+        silently (lotse's ruling on tsk-xjy2d5617sar). Its report stays `sandbox_unavailable`,
+        as on every agy start. Nothing is said where the probe saw the namespaces start, found
+        a profile named for agy, or could not tell."""
         if harness.id != "antigravity" or (view is not None and view.sandbox):
             return
         found = view.found if view is not None else None
         if self._agy_sandbox(target, found.path if found else None) != capabilities.AGY_CANNOT:
             return
         self.log(
-            f"{pid}: WARNING: this agy placement runs commands UNSANDBOXED: agy's terminal "
-            f"sandbox cannot start on {target.name} (the namespaces it needs are refused and no "
-            "AppArmor profile lifts that); set require_sandbox = true under "
+            f"{pid}: WARNING: starting this agy placement, its commands will run UNSANDBOXED: "
+            f"agy's terminal sandbox cannot start on {target.name} (the namespaces it needs are "
+            "refused and no AppArmor profile lifts that); set require_sandbox = true under "
             "[harness.antigravity] to refuse such starts"
         )
 

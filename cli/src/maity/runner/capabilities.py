@@ -410,12 +410,17 @@ AGY_PROFILE_NAME = "agy"
 # What `agy_sandbox` answers: the namespaces start; they are refused but a profile named for
 # agy is loaded (not verified); they are refused and nothing lifts that; it cannot tell.
 AGY_STARTS, AGY_PROFILE, AGY_CANNOT, AGY_UNKNOWN = "starts", "profile", "cannot", "unknown"
-# A refusal of the namespaces, as unshare words it under LC_ALL=C: the mapping write the
-# restriction refuses, or the unshare call itself. Any other failure tells nothing.
+# A refusal of the namespaces, as unshare words it under LC_ALL=C: a permission refusal of the
+# mapping write the restriction refuses, or of the unshare call itself. Any other failure (a
+# translated message, ENOMEM, ENOSPC, EINVAL) tells nothing (the review of #2119).
 _UNSHARE_REFUSED = ("uid_map", "gid_map", "setgroups", "unshare failed")
-_PROFILE_NAMES = (  # run as the agents' user: 3 when there is no AppArmor, 4 when unreadable
-    'd=$1; [ -d "$d" ] || exit 3; [ -r "$d" ] && [ -x "$d" ] || exit 4; '
-    'for f in "$d"/*/name; do [ -r "$f" ] && cat -- "$f"; done; exit 0'
+_PERMISSION = "Operation not permitted"
+# unshare is looked up here, never on the agents' PATH, which a directory they can write to
+# could hold: an unshare of theirs that exits 0 would hide the error (the review of #2119).
+SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+_PROFILE_NAMES = (  # as the agents' user: 3 no AppArmor, 4 unreadable, 5 a name unreadable
+    'd=$1; [ -d "$d" ] || exit 3; [ -r "$d" ] && [ -x "$d" ] || exit 4; rc=0; '
+    'for f in "$d"/*/name; do [ -r "$f" ] && cat -- "$f" || rc=5; done; exit $rc'
 )
 
 
@@ -426,58 +431,67 @@ def agy_sandbox_platform(platform: str | None = None) -> bool:
 
 def agy_sandbox(path: str, as_user: AsUser = RUNNER, binary: str | None = None) -> str:
     """Whether agy's terminal sandbox can start for the agents' user, as far as an unprivileged
-    check can tell (`AGY_*`): the namespaces it needs start (`unshare`, on the agents' PATH);
+    check can tell (`AGY_*`): the namespaces it needs start (`unshare`, from `SYSTEM_PATH`);
     they are refused but an AppArmor profile named `agy`, or after agy's resolved `binary`, is
     loaded, which may lift the refusal for agy (not verified); they are refused and no such
     profile is loaded, so agy runs commands unsandboxed; or it cannot tell (no `unshare`, a
-    failure that is no refusal, the profile list unreadable). It never turns the capability
-    on. Only a definite refusal is `cannot`, so the check can only err towards a warning."""
-    unshare = which("unshare", path, as_user)
-    if unshare is None:
-        return AGY_UNKNOWN
+    failure of the lookup or the run, a failure that is no permission refusal, the profile
+    list unreadable or read only in part). It never turns the capability on. Only a definite
+    refusal with a complete list is `cannot`, so the check can only err towards a warning.
+    `path` is the agents' PATH the run gets; it is not where unshare is looked up."""
     try:
+        unshare = which("unshare", SYSTEM_PATH, as_user)
+        if unshare is None:
+            return AGY_UNKNOWN
         done = as_user.run([unshare, *AGY_NAMESPACES], env={"PATH": path, "LC_ALL": "C"},
                            cwd=Path.home() if as_user.direct else None, timeout=30)  # fmt: skip
-    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
+    except (proc.ToolError, subprocess.SubprocessError, OSError, ValueError):
         return AGY_UNKNOWN
     if done.returncode == 0:
         return AGY_STARTS
-    if not any(word in (done.stderr or "") for word in _UNSHARE_REFUSED):
+    stderr = done.stderr or ""
+    if _PERMISSION not in stderr or not any(word in stderr for word in _UNSHARE_REFUSED):
         return AGY_UNKNOWN
-    names = apparmor_profiles(as_user)
-    if names is None:
+    listed = apparmor_profiles(as_user)
+    if listed is None:
         return AGY_UNKNOWN
-    wanted = {AGY_PROFILE_NAME, *([binary] if binary else [])}
-    return AGY_PROFILE if names & wanted else AGY_CANNOT
+    names, complete = listed
+    if names & {AGY_PROFILE_NAME, *([binary] if binary else [])}:
+        return AGY_PROFILE
+    return AGY_CANNOT if complete else AGY_UNKNOWN  # an unread name may be agy's
 
 
-def apparmor_profiles(as_user: AsUser = RUNNER) -> set[str] | None:
-    """The names of the loaded AppArmor profiles, as the agents' user reads them: empty where
-    there is no AppArmor, None where the list cannot be read."""
+def apparmor_profiles(as_user: AsUser = RUNNER) -> tuple[set[str], bool] | None:
+    """The names of the loaded AppArmor profiles, as the agents' user reads them, and whether
+    every one could be read: (empty, True) where there is no AppArmor, None where the list
+    cannot be read at all."""
     if as_user.direct:
         try:
             entries = os.listdir(APPARMOR_PROFILES)
         except FileNotFoundError:
-            return set()
+            return set(), True
         except OSError:
             return None
         names: set[str] = set()
+        complete = True
         for entry in entries:
             try:
                 text = Path(APPARMOR_PROFILES, entry, "name").read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
+                complete = False
                 continue
             names.add(text.strip())
-        return names
+        return names, complete
     try:
         done = as_user.run(["sh", "-c", _PROFILE_NAMES, "sh", APPARMOR_PROFILES], timeout=30)
-    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
+    except (proc.ToolError, subprocess.SubprocessError, OSError, ValueError):
         return None
     if done.returncode == 3:
-        return set()
-    if done.returncode != 0:
+        return set(), True
+    if done.returncode not in (0, 5):
         return None
-    return {line.strip() for line in (done.stdout or "").splitlines() if line.strip()}
+    found = {line.strip() for line in (done.stdout or "").splitlines() if line.strip()}
+    return found, done.returncode == 0
 
 
 # The flags the opencode adapter passes (adapters._opencode), by the command that must take

@@ -641,7 +641,13 @@ def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
             capabilities.AGY_UNKNOWN) == ("starts", "profile", "cannot", "unknown")  # fmt: skip
     profiles = tmp_path / "profiles"
     monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
-    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    looked_up: list[str | None] = []
+
+    def which(name: str, path: str | None = None) -> str:
+        looked_up.append(path)
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr("shutil.which", which)
     answer: dict[str, Any] = {"code": 0, "err": ""}
     ran: list[tuple[list[str], Any]] = []
 
@@ -650,8 +656,11 @@ def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
         return subprocess.CompletedProcess(argv, answer["code"], "", answer["err"])
 
     monkeypatch.setattr(AsUser, "run", run)
-    assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_STARTS
-    assert ran == [(PROBE, {"PATH": "/usr/bin", "LC_ALL": "C"})]  # read in English
+    assert capabilities.agy_sandbox("/home/agents/bin:/usr/bin") == capabilities.AGY_STARTS
+    assert ran == [(PROBE, {"PATH": "/home/agents/bin:/usr/bin", "LC_ALL": "C"})]  # in English
+    # Looked up on the system's own PATH, never the agents' (the review of #2119): an unshare
+    # of theirs that exits 0 would hide the error.
+    assert looked_up == [capabilities.SYSTEM_PATH]
     answer.update(code=1, err=UID_MAP)
     assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_CANNOT  # no AppArmor at all
     (profiles / "bwrap.10").mkdir(parents=True)
@@ -667,6 +676,18 @@ def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
     assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_CANNOT
     answer.update(err="unshare: unrecognized option '--fork'\n")  # no refusal: tells nothing
     assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_UNKNOWN
+    # The same call failing for another cause is no refusal (the review of #2119).
+    for other in ("unshare failed: Cannot allocate memory\n",
+                  "unshare failed: No space left on device\n"):  # fmt: skip
+        answer.update(err=other)
+        assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_UNKNOWN, other
+    # A list read only in part: an unread name may be agy's, so it is no refusal (#2119).
+    answer.update(err=UID_MAP)
+    (profiles / "agy.0" / "name").unlink()
+    (profiles / "agy.0" / "name").mkdir()  # a name that cannot be read as a file
+    assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_UNKNOWN
+    (profiles / "bwrap.10" / "name").write_text("agy\n")  # a readable one is agy's: enough
+    assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_PROFILE
     monkeypatch.setattr("shutil.which", lambda name, path=None: None)
     assert capabilities.agy_sandbox("/usr/bin") == capabilities.AGY_UNKNOWN
 
@@ -697,6 +718,8 @@ def test_an_unreadable_profile_list_is_no_refusal(
         ((0, "bwrap\n"), "cannot"),
         ((3, ""), "cannot"),  # no AppArmor on that side
         ((4, ""), "unknown"),  # the list cannot be read there
+        ((5, "bwrap\n"), "unknown"),  # read in part: an unread name may be agy's (#2119)
+        ((5, "agy\n"), "profile"),  # read in part, but agy's is among what was read
     ],
 )
 def test_the_agy_sandbox_probe_reads_the_profiles_as_the_agents_user(
@@ -717,6 +740,29 @@ def test_the_agy_sandbox_probe_reads_the_profiles_as_the_agents_user(
     assert capabilities.agy_sandbox("/usr/bin", AsUser("agents")) == expected
     assert PROBE in calls  # the namespaces tried as the agents' user
     assert ["sh", "-c", capabilities._PROFILE_NAMES, "sh", capabilities.APPARMOR_PROFILES] in calls
+
+
+@pytest.mark.parametrize("step", ["lookup", "probe", "listing"])
+def test_a_timed_out_step_of_the_agy_probe_is_not_checked(
+    monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """The review of #2119: a timeout anywhere, the lookup as the agents' user included,
+    answers `unknown`; nothing escapes to the start that asks it."""
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        listing = argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES
+        kind = "listing" if listing else "lookup" if argv[:2] == ["sh", "-c"] else "probe"
+        if kind == step:
+            raise subprocess.TimeoutExpired(argv, 30)
+        if kind == "lookup":
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        if kind == "listing":
+            return subprocess.CompletedProcess(argv, 0, "bwrap\n", "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox("/usr/bin", AsUser("agents")) == capabilities.AGY_UNKNOWN
 
 
 @dataclass
