@@ -205,9 +205,10 @@ than one plain call.
 
 Under a runner placement a Claude Code, Codex or agy session also has a
 scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough for a socket (often it is not set, and tools then use `/tmp`, so write scratch files to `$MAITY_SCRATCH` by name). For Claude Code and
-Codex it sits beside your clone (not in it); for agy it is a writable
+Codex it sits under the workspaces root, in `<workspaces>/.scratch/<project>/<placement>`
+(not in your clone); for agy it is a writable
 directory the runner manages outside your clone, since agy's sandbox
-cannot write beside the clone. Either way you reach it as
+cannot write under the workspaces root. Either way you reach it as
 `$MAITY_SCRATCH`. Keep what you need only for a while there: a review's
 evidence, a clone of another head, a venv. An agy reviewer writes its
 review there and names it with
@@ -215,8 +216,9 @@ review there and names it with
 Delete it once you have reported. The runner removes the whole scratch when the placement
 closes, and nothing in it counts as unsaved work. An agy scratch does not survive a
 restart: the runner empties it and remakes it fresh at every start, so do not rely on
-anything you left in it carrying across a restart; the beside-clone scratch of a Claude
-Code or Codex session does carry across one. maity reads a file you
+anything you left in it carrying across a restart; the scratch of a Claude
+Code or Codex session does carry across one, except the first restart after the runner
+moved scratches into `<workspaces>/.scratch/`, which starts a fresh one there. maity reads a file you
 name there (`--body-file` and the others) on the same terms as in the
 clone, and only when no directory on the way to it is a link. To check out another head, clone your clone into the scratch
 rather than adding a worktree: the runner refuses a clone with
