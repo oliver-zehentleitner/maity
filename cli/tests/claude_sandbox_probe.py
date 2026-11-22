@@ -37,8 +37,12 @@ What it checks (cli/context/runner.md, the sandbox entries):
    the host (any user's for `--managed`, the user's own for `--user-settings`). A probe killed
    in such a step leaves an owner-private record and copy beside the user settings; a later run
    with those flags puts them right after the same check (`recover`), and a run without them
-   names them and stops, changing nothing. Without the flags those steps are SKIP, and the run
-   writes nothing outside its scratch, which it removes at its end unless `--keep`.
+   names them and stops, changing nothing; user settings behind a symbolic link are refused.
+   Without the flags those steps are SKIP, and the probe writes nothing of its own outside its
+   scratch, which it removes at its end unless `--keep`. Claude Code itself writes to its files
+   in the home: every run is started with `--no-session-persistence`, so it saves no transcript
+   under ~/.claude/projects/, and the probe names each file in ~/.claude/ and ~/.claude.json
+   written during the run, failing if one holds a private line as the run filled it in.
 4. The clone's credential, another clone's and the home's secrets are not readable from a
    non-maity line or through Read; `.git`'s protected paths are not writable; plain `maity`
    still reads the credential; `git fetch` and `git commit` still work. `git push` is not
@@ -108,6 +112,8 @@ from maity import __version__
 from maity.runner import adapters, capabilities, config, plaincall, supervisor, workspace
 
 RUN_TIMEOUT = 240  # seconds for one `claude -p` run
+SCRATCH_PREFIX = "mcp-"  # short: the placement's socket path must fit under the scratch
+NO_SESSION = "--no-session-persistence"  # Claude Code saves no session of the run to disk
 HOOK_TIMEOUT = 3  # the cut timeout of the step whose hook sleeps
 PLAINCALL = "maity.runner.plaincall"
 
@@ -247,6 +253,8 @@ class World:
     env: dict[str, str]  # the session's variables
     settings: dict[str, Any]  # the runner's settings
     settings_path: Path
+    # Each private line as a run filled it in, to look for it afterwards in Claude Code's home.
+    private_targets: list[str] = field(default_factory=list)
 
     def fill(self, text: str, token: str) -> str:
         """`text` with its placeholders replaced, and nothing else: a line from
@@ -296,6 +304,19 @@ def extra_steps(lines: Sequence[str]) -> list[Step]:
     return [Step(f"{EXTRA}.{n}", f"private line {n} [{line_hash(line)}]", "Bash", line, "open",
                  "unescaped")
             for n, line in enumerate(lines, start=1)]  # fmt: skip
+
+
+# The tool names Claude Code's stream may carry that a private step's output may show; any other
+# name is shown as "other tool", so no metadata of the stream reaches what is printed or kept.
+KNOWN_TOOLS = frozenset({
+    "Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS",
+    "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "ExitPlanMode",
+})  # fmt: skip
+
+
+def tool_label(name: str) -> str:
+    """A tool's name as a private step may show it: known names only."""
+    return name if name in KNOWN_TOOLS else "other tool"
 
 
 def private(step: Step) -> bool:
@@ -436,6 +457,7 @@ class Call:
     output: str = ""
     is_error: bool = False
     answered: bool = False  # Claude Code sent a result for the call
+    malformed: bool = False  # its `is_error` was not a JSON boolean
 
 
 @dataclass
@@ -471,7 +493,11 @@ def parse_stream(text: str) -> list[Call]:
                 calls[str(part.get("id"))] = Call(str(part.get("name")), part.get("input") or {})
             elif part.get("type") == "tool_result" and str(part.get("tool_use_id")) in calls:
                 call = calls[str(part.get("tool_use_id"))]
-                call.output, call.is_error = _text(part.get("content")), bool(part.get("is_error"))
+                flag = part.get("is_error", False)
+                # Only a JSON boolean counts: a string, a number or null is malformed and never
+                # an error, so no refusal rests on it.
+                call.output, call.is_error = _text(part.get("content")), flag is True
+                call.malformed = not isinstance(flag, bool)
                 call.answered = True
     return list(calls.values())
 
@@ -545,7 +571,8 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
     if step.expect == "hidden" and world.secret in run.text:
         return Outcome("FAIL", "the marker credential was READ")
     if not complied(step, target, run.calls):
-        made = "; ".join(f"{c.tool}" if private(step) else f"{c.tool} {json.dumps(c.input)[:120]}"
+        made = "; ".join(tool_label(c.tool) if private(step)
+                         else f"{c.tool} {json.dumps(c.input)[:120]}"
                          for c in run.calls) or "none"  # fmt: skip
         return Outcome("INCONCLUSIVE", f"the model did not make exactly the call asked for "
                                        f"(calls: {made}; exit {run.exit_code})")  # fmt: skip
@@ -783,6 +810,22 @@ def _user_copy() -> dict[str, Any]:
             "gid": info.st_gid}  # fmt: skip
 
 
+def _read_copy(saved: Path) -> dict[str, Any]:
+    """A saved copy of the user settings, in this format or the earlier one, which held only
+    the text: then the existing file's mode and owner are kept, or 0600 and this user's."""
+    copy = json.loads(saved.read_text())
+    if not isinstance(copy, dict) or not isinstance(copy.get("text"), str | None):
+        raise ValueError(f"{saved}: not a copy of the user settings")
+    if not all(isinstance(copy.get(key), int) for key in ("mode", "uid", "gid")):
+        user = user_settings()
+        info = user.stat() if user.is_file() else None
+        copy = {"text": copy["text"],
+                "mode": info.st_mode & 0o7777 if info else 0o600,
+                "uid": info.st_uid if info else os.getuid(),
+                "gid": info.st_gid if info else os.getgid()}  # fmt: skip
+    return copy
+
+
 def pending_records() -> list[Path]:
     """What a killed probe left for `recover`."""
     return [path for path in (managed_record(), user_saved()) if path.is_file()]
@@ -801,7 +844,7 @@ def recover() -> list[str]:
         record.unlink()
     saved = user_saved()
     if saved.is_file():
-        _restore_user(json.loads(saved.read_text()))
+        _restore_user(_read_copy(saved))
         done.append(f"restored {user_settings()} from an earlier probe's copy")
     return done
 
@@ -903,8 +946,13 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
     argv = list(world.base)
     argv[argv.index("--settings") + 1] = str(settings)
     target = world.fill(step.target, token)
+    if private(step):
+        world.private_targets.append(target)
+    # No transcript in Claude Code's home (`~/.claude/projects/`): it would keep the prompt,
+    # which quotes a private line, and the results (`--no-session-persistence`, print mode only;
+    # read in Claude Code 2.1.330's own option list).
     argv += ["-p", prompt(step, target), "--output-format", "stream-json", "--verbose",
-             "--max-turns", "3"]  # fmt: skip
+             "--max-turns", "3", NO_SESSION]  # fmt: skip
     if model:
         argv += ["--model", model]
     if step.expect == "fetched":
@@ -921,7 +969,8 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
     if private(step):  # its stream may echo the line: only a status is kept
         calls = parse_stream(out)
         (world.root / "streams" / f"{step.id}.status").write_text(
-            f"exit {code}; {len(calls)} tool call(s): {', '.join(c.tool for c in calls)}\n"
+            f"exit {code}; {len(calls)} tool call(s): "
+            f"{', '.join(tool_label(c.tool) for c in calls)}\n"
         )
     else:
         (world.root / "streams" / f"{step.id}.jsonl").write_text(out)
@@ -1032,6 +1081,45 @@ def preflight(binary: str) -> str | None:
     return None
 
 
+def home_state() -> dict[Path, tuple[int, int]]:
+    """Claude Code's files in the home (`~/.claude/` and `~/.claude.json`), by modification
+    time and size, to name afterwards what the runs wrote there."""
+    home = Path.home()
+    found: dict[Path, tuple[int, int]] = {}
+    paths = [home / ".claude.json"]
+    if (home / ".claude").is_dir():
+        paths += [p for p in (home / ".claude").rglob("*") if not p.is_symlink()]
+    for path in paths:
+        try:
+            info = path.stat()
+        except OSError:
+            continue
+        if path.is_file():
+            found[path] = (info.st_mtime_ns, info.st_size)
+    return found
+
+
+HOME_SCAN_MAX = 64 * 1024 * 1024  # bytes read of one written file when looking for a line
+
+
+def home_report(before: dict[Path, tuple[int, int]], targets: Sequence[str]) -> list[str]:
+    """What the runs wrote to Claude Code's files in the home, by path only, and whether any of
+    those files holds a private line as the run filled it in (named by path, never quoted)."""
+    after = home_state()
+    written = sorted(p for p, state in after.items() if before.get(p) != state)
+    lines = [f"Claude Code's home: {len(written)} file(s) written during the run"]
+    lines += [f"  {path}" for path in written]
+    for path in written:
+        try:
+            with path.open("rb") as stream:
+                data = stream.read(HOME_SCAN_MAX)
+        except OSError:
+            continue
+        if any(target.encode() in data for target in targets):
+            lines.append(f"PRIVATE LINE FOUND in {path}")
+    return lines
+
+
 def remove_scratch(root: Path) -> None:
     """Remove the scratch directory, and say so on stderr, with its path, if anything stays."""
     failed: list[str] = []
@@ -1088,6 +1176,10 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
               "); run with --managed or --user-settings, in a window with no placement and no "
               "other Claude Code session, to put them right first", file=sys.stderr)  # fmt: skip
         return 2
+    if opts.user_settings and user_settings().is_symlink():
+        print(f"cannot run: {user_settings()} is a symbolic link; --user-settings writes the file "
+              "in place and would replace the link, so it refuses", file=sys.stderr)  # fmt: skip
+        return 2
     if opts.managed or opts.user_settings:
         running = claude_running(any_user=opts.managed or managed_record() in left)
         if running:
@@ -1105,7 +1197,7 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
             return 2
     version = subprocess.run([binary, "--version"], capture_output=True, text=True,
                              check=False).stdout.strip()  # fmt: skip
-    root = Path(tempfile.mkdtemp(prefix="maity-claude-probe-"))
+    root = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX))
     print(f"claude: {binary} ({version}); maity: {__version__}; scratch: {root}")
     outcomes: list[Outcome] = []
     try:
@@ -1115,6 +1207,7 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
             print(f"cannot run: {exc} (a short TMPDIR, such as /tmp, gives the probe's "
                   "scratch room)", file=sys.stderr)  # fmt: skip
             return 2
+        home_before = home_state()
         untestable = {}
         for step in chosen:  # the precondition, before any live run
             if step.change is not None and skipped(step, opts.managed, opts.user_settings):
@@ -1131,6 +1224,11 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
                                    opts.user_settings)  # fmt: skip
             outcomes.append(outcome)
             print(f"{outcome.status:<12} {step.id:<5} {step.title}: {outcome.detail}", flush=True)
+        report = home_report(home_before, world.private_targets)
+        for line in report:
+            print(line, flush=True)
+        if any(line.startswith("PRIVATE LINE FOUND") for line in report):
+            outcomes.append(Outcome("FAIL", "a private line was written to Claude Code's home"))
     finally:
         if not opts.keep:
             remove_scratch(root)

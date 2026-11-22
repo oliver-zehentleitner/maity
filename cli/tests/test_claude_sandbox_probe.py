@@ -28,6 +28,11 @@ if args == ["--version"]:
     sys.exit(0)
 prompt = args[args.index("-p") + 1]
 kind, target = re.search(r"<(command|read|write)>(.*?)</\\1>", prompt, re.S).groups()
+if "--no-session-persistence" not in args:  # Claude Code keeps a transcript by default
+    projects = os.path.join(os.environ["HOME"], ".claude", "projects", "fake-slug")
+    os.makedirs(projects, exist_ok=True)
+    with open(os.path.join(projects, f"{{os.getpid()}}.jsonl"), "a") as kept:
+        kept.write(json.dumps({{"prompt": prompt}}) + "\\n")
 print(json.dumps({{"type": "system", "subtype": "init"}}))
 if "{mode}" == "idle":
     print(json.dumps({{"type": "result", "result": "DONE"}}))
@@ -40,7 +45,7 @@ if kind == "command":
         out, err = "Error: spawn /bin/bash ENOENT", True
     elif "{mode}" == "hooked" and (reason := hook({{"tool_input": {{"command": target}}}})):
         out, err = f"PreToolUse:Bash hook error: [{{target}}]: {{reason}}", True
-    elif "{mode}" == "sandbox":  # the credential directory hidden and unwritable, as inside
+    elif "{mode}" in ("sandbox", "oddname"):  # the credential directory hidden, as inside
         os.rename(".git/maity", ".git/maity-hidden")
         open(".git/maity", "w").close()
         try:
@@ -59,6 +64,8 @@ else:
     use = {{"name": "Write", "input": {{"file_path": target, "content": "probe"}}}}
     open(target, "w").write("probe")
     out, err = "written", False
+if "{mode}" == "oddname":  # a tool name that carries the call's own text
+    use["name"] = "Tool " + target
 print(json.dumps({{"type": "assistant", "message": {{"content": [
     {{"type": "tool_use", "id": "t1", **use}}]}}}}))
 print(json.dumps({{"type": "user", "message": {{"content": [
@@ -72,7 +79,13 @@ def fake(tmp_path: Path, mode: str = "obey") -> str:
     with the clone's credential directory hidden and unwritable, as the sandbox has it
     (`sandbox`, for Bash only), or behind the runner's hook, refusing as Claude Code reports a
     blocking hook (`hooked`, for Bash only); that refuses it as a permission rule does
-    (`refuse`), answers it without starting anything (`fail`) or makes none (`idle`)."""
+    (`refuse`), answers it without starting anything (`fail`), makes none (`idle`), or makes it
+    under a tool name that carries the call's text (`oddname`). Like Claude Code, it keeps a
+    transcript of the prompt in the home unless it is given `--no-session-persistence`.
+    A test that runs the probe on it is skipped where the probe's scratch has no room for the
+    placement's socket (`_probe_tempdir`)."""
+    if not PROBE_TEMP_FITS:
+        pytest.skip("the temporary directory leaves no room for the probe's socket")
     path = tmp_path / f"claude-{mode}"
     path.write_text(FAKE.format(python=sys.executable, mode=mode))
     path.chmod(0o755)
@@ -87,6 +100,28 @@ def outcomes(output: str) -> dict[str, str]:
         if words and words[0] in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE", "NOT-TESTABLE"):
             found[words[1]] = words[0]
     return found
+
+
+PROBE_TEMP_FITS = True
+_RMTREE = shutil.rmtree  # the real one, for teardown after a test replaced it
+
+
+@pytest.fixture(autouse=True)
+def _probe_tempdir(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The probe's scratch goes to a short directory of this test's own, so tests do not see
+    each other's scratch (pytest -n) and its socket fits; where the system's temporary
+    directory is too long even for that, the tests that run the probe are skipped (`fake`)."""
+    from maity.runner import adapters
+
+    global PROBE_TEMP_FITS
+    own = Path(tempfile.mkdtemp(prefix="m"))
+    deepest = own.resolve() / (probe.SCRATCH_PREFIX + "x" * 8) / "ws" / ".scratch" / "probe"
+    PROBE_TEMP_FITS = adapters.fits_socket(deepest / "plc-probe" / "tmp")
+    monkeypatch.setattr(tempfile, "tempdir", str(own))
+    try:
+        yield
+    finally:
+        _RMTREE(own, ignore_errors=True)
 
 
 @pytest.fixture
@@ -518,7 +553,7 @@ def test_the_precondition_runs_each_line_without_sandbox_or_hook(short: Path) ->
     assert not any((world.clone / ".git" / "maity" / "probe").iterdir())
 
 
-@pytest.mark.parametrize("mode", ["obey", "sandbox", "refuse", "fail", "hooked"])
+@pytest.mark.parametrize("mode", ["obey", "sandbox", "refuse", "fail", "hooked", "oddname"])
 def test_the_probe_prints_nothing_of_a_private_line(
     tmp_path: Path, capfd: pytest.CaptureFixture[str], mode: str
 ) -> None:
@@ -768,6 +803,109 @@ def test_the_hook_and_fetch_verdicts_need_their_exact_evidence(
     assert found.status == status, found
 
 
+def test_every_run_saves_no_session(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Claude Code would keep a transcript of each run, private prompt included, in the home;
+    every run is started with `--no-session-persistence`."""
+    seen: list[list[str]] = []
+
+    def runner(argv: list[str], env: dict[str, str], cwd: Path) -> tuple[int | None, str]:
+        seen.append(argv)
+        return 0, ""
+
+    fake(tmp_path)  # the same skip as the runs on the fake harness
+    lines = tmp_path / "lines.txt"
+    lines.write_text("true && maity probe {T}\n")
+    probe.main(["--claude", "/bin/true", "--no-preflight", "--only", "1a,2.2,4.3,5",
+                "--extra-lines", str(lines)], runner=runner)  # fmt: skip
+    capsys.readouterr()
+    assert len(seen) == 13 + 1 + 1 + 1
+    assert all(argv.count(probe.NO_SESSION) == 1 and "-p" in argv for argv in seen)
+
+
+def test_a_private_line_in_claude_codes_home_fails_the_run(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Were a transcript kept anyway, the probe names the file, not the line, and fails."""
+    marker = "zq" + uuid.uuid4().hex
+    lines = tmp_path / "lines.txt"
+    lines.write_text(f"true {marker} && maity probe {{T}}\n")
+    claude = fake(tmp_path, "sandbox")
+
+    def keeps_a_transcript(
+        argv: list[str], env: dict[str, str], cwd: Path
+    ) -> tuple[int | None, str]:
+        argv = [a for a in argv if a != probe.NO_SESSION]  # as if the flag did nothing
+        return probe.run_claude(argv, env, cwd)
+
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines)], runner=keeps_a_transcript)  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == 1 and "PRIVATE LINE FOUND in " in out and marker not in out + err
+    assert "fake-slug" in out  # the file is named
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines)])  # fmt: skip
+    out, _ = capfd.readouterr()
+    assert code == 0 and "PRIVATE LINE FOUND" not in out
+    assert "Claude Code's home: 0 file(s) written during the run" in out
+
+
+@pytest.mark.parametrize("flag", ["true", "false", 1, 0, None])
+def test_a_refusal_needs_a_real_boolean_error_flag(short: Path, flag: object) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == "1b.2"]
+    target = world.fill(step.target, "t")
+    events = [
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "a", "name": "Bash", "input": {"command": target}}]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "a", "is_error": flag,
+             "content": "Permission to use Bash has been denied."}]}},
+    ]  # fmt: skip
+    (call,) = probe.parse_stream("\n".join(json.dumps(e) for e in events))
+    assert call.is_error is False and call.malformed is True
+    found = probe.judge(step, world, "t", probe.Run([call], "", 0), short / "x", {})
+    assert found.status == "INCONCLUSIVE"
+    events[1]["message"]["content"][0]["is_error"] = True  # type: ignore[index]
+    (call,) = probe.parse_stream("\n".join(json.dumps(e) for e in events))
+    assert call.is_error is True and not call.malformed
+    assert probe.judge(step, world, "t", probe.Run([call], "", 0), short / "x", {}).status == "PASS"
+
+
+def test_a_copy_in_the_earlier_format_is_restored() -> None:
+    """581ab0dd's copy held only the text: restored with the file's own mode, or 0600."""
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"disableAllHooks": true}')
+    user.chmod(0o640)
+    probe.user_saved().write_text(json.dumps({"text": '{"theme": "dark"}'}))
+    assert probe.recover() == [f"restored {user} from an earlier probe's copy"]
+    assert user.read_text() == '{"theme": "dark"}' and user.stat().st_mode & 0o777 == 0o640
+    assert not probe.user_saved().exists()
+    user.unlink()
+    probe.user_saved().write_text(json.dumps({"text": '{"theme": "light"}'}))
+    probe.recover()
+    assert user.read_text() == '{"theme": "light"}' and user.stat().st_mode & 0o777 == 0o600
+    probe.user_saved().write_text(json.dumps(["not", "a", "copy"]))
+    with pytest.raises(ValueError):
+        probe.recover()
+    assert probe.user_saved().exists()  # kept: nothing was restored
+
+
+def test_user_settings_behind_a_link_are_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = tmp_path / "dotfiles" / "settings.json"
+    real.parent.mkdir()
+    real.write_text("{}")
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.symlink_to(real)
+    monkeypatch.setattr(probe, "claude_running", lambda any_user: [])
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight", "--user-settings"]) == 2
+    assert "is a symbolic link" in capsys.readouterr().err
+    assert user.is_symlink() and real.read_text() == "{}"
+
+
 def _tree(root: Path) -> dict[str, tuple[int, bytes | None]]:
     """Every path under `root` with its mode and, for a file, its content."""
     return {str(p.relative_to(root)): (p.lstat().st_mode, p.read_bytes() if p.is_file() else None)
@@ -842,10 +980,10 @@ def test_the_minimal_run_writes_nothing_outside_its_scratch(
     """`--only 1,5 --extra-lines` without --keep: the home and the temporary directory are as
     they were, the scratch removed. The fake harness writes nothing of its own; Claude Code's
     own files in its home are outside this test."""
-    temp = Path(tempfile.gettempdir())  # where the probe makes its scratch
+    temp = Path(tempfile.gettempdir())  # this test's own (`_probe_tempdir`)
 
     def scratches() -> set[str]:
-        return {p.name for p in temp.glob("maity-claude-probe-*")}
+        return {p.name for p in temp.iterdir()}
 
     lines = tmp_path / "lines.txt"
     lines.write_text("true && maity probe {T}\n")
