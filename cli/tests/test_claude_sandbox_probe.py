@@ -8,6 +8,7 @@ import json
 import shutil
 import sys
 import tempfile
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -495,6 +496,49 @@ def test_the_precondition_runs_each_line_without_sandbox_or_hook(short: Path) ->
     # It leaves no marker behind for the live run to read.
     assert not any((world.clone / ".probe-ran").iterdir())
     assert not any((world.clone / ".git" / "maity" / "probe").iterdir())
+
+
+@pytest.mark.parametrize("mode", ["obey", "sandbox", "refuse", "fail", "hooked"])
+def test_the_probe_prints_nothing_of_a_private_line(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], mode: str
+) -> None:
+    """A private line's text, here a random marker, appears nowhere in what the probe prints,
+    whatever the harness does with the line and whether its precondition holds."""
+    marker = "zq" + uuid.uuid4().hex
+    path = tmp_path / "lines.txt"
+    path.write_text(
+        f"true {marker} && maity probe {{T}}\n"  # reaches the stub
+        f"echo {marker}\n"  # never reaches it: NOT-TESTABLE
+        f"{marker}-missing-command\n"  # fails in the shell, which names the command
+    )
+    code = probe.main(["--claude", fake(tmp_path, mode), "--no-preflight", "--only", "5",
+                       "--extra-lines", str(path), "--keep"])  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == 1
+    assert set(outcomes(out)) == {"5.1", "5.2", "5.3"}
+    assert marker not in out and marker not in err
+    assert marker[:12] not in out + err  # nor a part of it
+    assert f"private line 1 [{probe.line_hash(f'true {marker} && maity probe {{T}}')}]" in out
+
+
+def test_a_private_line_the_model_changed_is_not_quoted(short: Path) -> None:
+    marker = "zq" + uuid.uuid4().hex
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = probe.extra_steps([f"true {marker} && maity probe {{T}}"])
+    other = probe.Call("Bash", {"command": f"true {marker}"}, f"ran {marker}", False, True)
+    found = probe.judge(step, world, "t", probe.Run([other], "", 0), short / "no-marker", {})
+    assert found.status == "INCONCLUSIVE" and marker not in found.detail
+
+
+def test_a_bad_private_file_is_named_without_its_text(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "lines.txt"
+    path.write_bytes(b"maity probe \xff-secretish\r\n")
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight",
+                       "--extra-lines", str(path)]) == 2  # fmt: skip
+    out, err = capfd.readouterr()
+    assert "secretish" not in out + err and "not UTF-8" in err
 
 
 def test_extra_lines_that_only_selects_none_of_is_refused(
