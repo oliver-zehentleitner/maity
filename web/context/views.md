@@ -2885,31 +2885,46 @@ width.
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's request in a direct chat, 2026-11-22 (screenshot at about 1590 px: the tabs and the links on two lines), the proposal agreed the same day; card tsk-dradpje67ak1
-**Revisit when:** the header gets another part in the tabs' line, a project gets so many links that they leave no room for the tabs on a desktop, or the tab rows get arrow buttons after all
+**Revisit when:** the header gets another part in the tabs' line, a project gets so many links that they leave no room for the tabs on a desktop, the tab rows get arrow buttons after all, or the maintainer wants the block above the tabs on a phone
 **See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-22
 
 The project's block of links, state, released mark and absence (`.project-state`) no longer stands
 at the right of the project switcher; it stands at the right of the project's tabs, behind its
 separator, in one row (`.views-row`). The block keeps its full width; `nav.views` takes what is
 left and scrolls sideways in it, with the fade on the side that is cut off (the tab rows' existing
-cue) and no scrollbar. A mouse wheel's up and down turn the row while it has more that way, and
-scroll the page as before once it is at its end or fits; a trackpad's and a touch's sideways move
-are the browser's own. The current tab, and a tab reached with the keyboard, are scrolled into the
-row clear of the 32 px fade. Where less than about two tabs' width (12rem) would be left, the tabs
-take a line of their own and the block goes under them. At phone width (≤ 600 px) the block is a
-line of its own above the tabs, as the links and the state stood there before, and the tabs scroll
-in theirs.
+cue) and no scrollbar. A mouse wheel's up and down turn this row (and All projects' page tabs, the
+same `nav.views`) while it has more that way, and scroll the page as before once it is at its end
+or fits; the switcher and the other rows that scroll keep the wheel for the page. A trackpad's and
+a touch's sideways move are the browser's own. The current tab, and a tab reached with the keyboard
+(a focus the browser rings, `:focus-visible`), are scrolled into the row clear of the 32 px fade; a
+tab focused by a mouse press is not moved, since a row moved between the press and the release
+put the click on another tab or none. The scroll, the fade and the wheel are measured from the
+row's start, so a right-to-left row is served too. On a desktop the row does not wrap: the tabs
+keep about two tabs' width (12rem), and where the block's full width would leave less, the block
+gives way, its links scrolling in their own row and the state going under them, still beside the
+tabs; the tabs stay at the header's bottom edge. At phone width (≤ 600 px) the row has two lines:
+the tabs scrolling in theirs, and the block a line of its own under them.
 
 **Reason:** the tabs and the links took two lines of the header on a desktop where one is enough
 once the tabs may scroll. The block moves whole, so the state stays beside the links (see the
-entry above) and the phone keeps its two lines. One line, the scroll, the fade without arrows
-and the phone's two lines are the maintainer's; moving the block whole, the wheel and the 12rem
-limit are the author's.
+entry above) and the phone keeps its two lines. On a phone the block stands under the tabs, not
+above them where the links and the state stood before, because that is their order in the page and
+so the order Tab reaches them: a flex `order` put the block above while the keyboard went to the
+tabs first (WCAG 2.4.3, review of PR #2115). One line, the scroll, the fade without arrows and the
+phone's two lines are the maintainer's; moving the block whole, the wheel, the 12rem limit, the
+block giving way rather than wrapping on a desktop and the block under the tabs on a phone are the
+author's.
 
 **Rejected alternatives:** arrow buttons at the cut-off edges, which the agreed proposal ruled
 out in favour of the fade. Moving only the links beside the tabs: the state would stay in the switcher's
 row, apart from the links it was placed beside, and on a phone it would need a line of its own.
-The tabs wrapping instead of scrolling: what the request asked to end.
+The tabs wrapping instead of scrolling: what the request asked to end. On a desktop, the block
+wrapping under the tabs where too little room was left: it stood against the header's bottom edge
+with its separator beside nothing (review of PR #2115). On a phone, the block above the tabs by flex
+`order`: what is seen and the Tab order disagreed; putting the block first in the page instead would
+make the keyboard reach it before the tabs on a desktop too, where it stands at their right. The
+wheel on every header row: on the switcher and the account's rows it took the page's scroll from a
+reader who only meant to scroll the page.
 
 ## Runners in the gear menu, not in the projects' row
 
