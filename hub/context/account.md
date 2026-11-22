@@ -150,7 +150,9 @@ one place every write passes, whichever route or helper made it.
 `write_guard` still binds the authenticated human caller per request, but
 checks at the start instead of the commit: before a transaction's first
 locking statement (a write or a locking read) it takes the human's row in
-`account_lock` (one row per human, made by 0076 and on first need) with a
+`account_lock` (one row per human; made by 0076 and on first need until
+2026-11-23, since then with the account, see "An account's `account_lock`
+row is made with the account" below) with a
 shared lock and refuses a deleted account. The deletion takes that row
 exclusively as its first lock (`account_deletion.lock_account`), takes no
 lock on the human row before its object locks, and writes the human row
@@ -178,6 +180,56 @@ the deletion waits for.
   on MariaDB.
 - The check at the commit (the superseded entry): it took the human row
   after object locks, the opposite of the deletion's order.
+
+## An account's `account_lock` row is made with the account, never on first need
+
+**Id:** ea51e4b3-cb81-492d-a733-2d9d1dad740c
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** lead decision on the card, 2026-11-22; counter-checks on SQLite, 2026-11-23: with the lazy insert back the refusal test fails (`hub/tests/test_contacts.py`), with the backfill off the migration test fails (`hub/tests/test_migrations.py`); #1532 review, delta 1
+**Revisit when:** a human row is inserted somewhere other than `write_guard.make_row`'s callers, or `account_lock` is replaced by another lock
+**See:** account.md#one-lock-order-against-a-deletion-the-account-lock-before-any-other — 2cecbd85-ba32-43db-905f-11efddb97f3d — as of 2026-11-23
+
+Every `insert(t.human)` makes the human's `account_lock` row in the same
+transaction (`write_guard.make_row`: registration, quickstart and the
+account command, the load-test seed, the tests' factory); a migration
+backfilled the humans made between 0076 and this change. The lock path
+(`write_guard.lock_row`, under `share`, `hold` and the deletion's
+`lock_account`) never inserts: a human found without a row raises
+`AccountLockMissing`. `ensure_row` and the separate committed transaction
+that made the rows before a contact or chat-access change
+(`contacts.lock_rows`, `chat_access.lock_rows`) are gone. The migration's
+downgrade keeps the rows.
+
+**Reason:** a row made on first need is inserted inside the transaction
+that is about to lock it. Two humans adding each other (#1532) each
+inserted their own row, held it, then reached for the other's and waited
+for its uncommitted insert: a deadlock. With the row made when the
+account is made, every locking transaction finds both rows committed, and
+shared locks on existing rows never wait for each other. Failing loudly on
+a missing row keeps a bug visible: a lock on no row guards nothing against
+a deletion, silently.
+
+**Rejected alternatives:**
+- Keep the lazy insert and make the rows first in an extra committed
+  transaction per route (`lock_rows`, the #1532 fix): every new route that
+  names a second human had to remember it, and it cost a transaction per
+  call.
+- Keep `ensure_row` as a safety net beside the creation-time rows: the net
+  is the very lazy insert that deadlocks, and it would hide a creation path
+  that forgot the row.
+
+**Why the barrier helper (`tests/concurrency.py`, `meet`):** the earlier
+reciprocal test deleted both rows but the route's own `lock_rows` made them
+again before the change, so its barrier never stood between two lazy
+inserts, and the other one (chat access) relied on timing; neither could
+fail on the deadlock. `meet` wraps a function so each caller's first pass
+waits on a shared barrier, and fails with "interleaving not reached" when
+the parties never meet, instead of passing on whatever order the threads
+ran in. It skips on SQLite, whose single writer never lets two
+transactions stand inside at once.
 
 ## The operator's counter is derived from `deleted_at`, nothing is stored
 

@@ -142,12 +142,7 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
 
 def lock_account(conn: Connection, human_id: str) -> None:
     """Take the human's `account_lock` exclusively: the first lock of a deletion."""
-    write_guard.ensure_row(conn, human_id)
-    conn.execute(
-        select(t.account_lock.c.human_id)
-        .where(t.account_lock.c.human_id == human_id)
-        .with_for_update()
-    ).first()
+    write_guard.lock_row(conn, human_id, shared=False)
 
 
 def lock_first(conn: Connection, human_id: str) -> None:
