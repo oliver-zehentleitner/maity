@@ -651,7 +651,9 @@ in the dashboard (Settings → Members and agents → Roles).
 (Python's `uuid.uuid4()`, which reads `os.urandom`), lowercase, and a newline.
 It calls no hub and reads no state: it works in any directory, joined or not,
 with no credential. Use it for a Keep the Why entry's Id where a harness
-sandbox refuses `uuidgen` or `cat /proc/sys/kernel/random/uuid`:
+sandbox refuses `uuidgen` or `cat /proc/sys/kernel/random/uuid`; in a runner
+placement it is the one UUID source, since the runner allows no UUID command
+of its own:
 
 ```sh
 maity uuid         # one UUID

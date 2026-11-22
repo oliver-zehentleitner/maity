@@ -139,7 +139,9 @@ _DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; 
 
 
 def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
-    """`test` on the agents' side; anything but a clear yes or no is an OSError."""
+    """`test` on the agents' side; anything but a clear yes or no is an OSError. On the
+    runner's own side `AsUser.exists` already raises for a path it cannot look at (stat, not
+    pathlib's predicates, which stop raising from Python 3.14; tsk-0tje3vzzedtx)."""
     if as_user.direct:
         return as_user.exists(path, kind)
     done = as_user.run(["test", kind, str(path)])
@@ -750,7 +752,7 @@ def harness_entry(
             harness.id, found.version
         )
     on = sandbox
-    return {
+    entry: dict[str, Any] = {
         "id": harness.id,
         "version": found.version,
         "available": found.available,
@@ -763,6 +765,11 @@ def harness_entry(
         "confinement": {"stub": "none", "codex": "sandbox"}.get(harness.id, "allowlist"),
         "sandbox": "n/a" if harness.id == "stub" else "on" if on else "off",
     }
+    if harness.efforts:
+        # Only when configured: a hub from before `efforts` refuses the key in a strict
+        # hello, so a runner without efforts sends exactly what that hub takes (§15.3).
+        entry["efforts"] = list(harness.efforts)
+    return entry
 
 
 def build(

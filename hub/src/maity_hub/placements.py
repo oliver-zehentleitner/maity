@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
-from sqlalchemy import Connection, func, insert, or_, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import allowed_projects, availability, avatars, clock, events, mentions, namespace
@@ -116,7 +116,9 @@ DETAILS: dict[str, tuple[str, str]] = {
     "never_joined": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "effort_unsupported": ("reason", "harness_refused"),
     "target_unknown": ("reason", "harness_refused"),
+    "codex_host_too_old": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
 }
 # A finding (§15.7): what the runner's watch concluded, and the signals it saw. Closed lists.
@@ -151,7 +153,7 @@ RUNNING_STATES = ("starting", "running", "stopping")
 # a refused or withdrawn proposal, and a removed membership (§15.10).
 STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed", "runner_revoked")
 CLOSED_LIST_DAYS = 30
-SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
+SPEC_FIELDS = ("harness", "mode", "model", "effort", "target", "stop_grace_seconds")
 # The clone after a stop or a close (§15.5).
 RETENTIONS = ("immediate", "3h", "24h", "7d")
 WORKSPACE_STATES = ("retained", "removed", "kept")
@@ -328,6 +330,7 @@ def view(
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
+        "effort": placement.effort,
         "workspace": {
             "clone": placement.clone,
             "branch": placement.branch,
@@ -481,12 +484,18 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
         )
     }
     credential_ids = {p.credential_id for p in placements if p.credential_id is not None}
-    credentials = {
-        c.id: c
-        for c in conn.execute(
-            select(
-                t.credential.c.id, t.credential.c.paused_since, t.credential.c.dormant_since
-            ).where(t.credential.c.id.in_(credential_ids))
+    # The instance's pause and dormancy in the placement's project: its attachment there
+    # (§6.17). Live attachments only; a revoked credential's attachment still counts, as the
+    # credential row's pause and dormancy did before an instance could sit in several projects.
+    a = t.instance_attachment.c
+    attachments = {
+        (r.credential_id, r.membership_id): r
+        for r in conn.execute(
+            select(a.credential_id, a.membership_id, a.paused_since, a.dormant_since).where(
+                a.credential_id.in_(credential_ids),
+                a.membership_id.in_(membership_ids),
+                a.detached_at.is_(None),
+            )
         )
     }
     s = t.agent_session.c
@@ -497,14 +506,22 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
             .group_by(s.credential_id)
         ).all()
     )
-    live = {
-        r.credential_id: r
-        for r in conn.execute(
-            select(s.credential_id, s.not_listening_since, s.supervisor).where(
-                s.credential_id.in_(credential_ids), s.live.is_(True), s.ended_at.is_(None)
-            )
+    # The open session of each credential, and its not-listening episode per project of the
+    # page (`agent_session_project`, §5.3), in the same one read.
+    sp = t.agent_session_project.c
+    live: dict[str, Any] = {}
+    episodes: dict[tuple[str, int], datetime] = {}
+    for r in conn.execute(
+        select(s.credential_id, s.supervisor, sp.membership_id, sp.not_listening_since)
+        .outerjoin(
+            t.agent_session_project,
+            and_(sp.session_id == s.id, sp.membership_id.in_(membership_ids)),
         )
-    }
+        .where(s.credential_id.in_(credential_ids), s.live.is_(True), s.ended_at.is_(None))
+    ):
+        live[r.credential_id] = r
+        if r.not_listening_since is not None:
+            episodes[(r.credential_id, r.membership_id)] = r.not_listening_since
     # §5.3 asks whether *an* active placement names the credential, not the row shown: a
     # closed placement's credential carried over to an active one (`carried_credential`).
     named_active = set(
@@ -521,12 +538,12 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
         if owner != runner_owners.get(p.runner_id):
             found[p.id] = None  # a foreign placement: its agent is not the runner owner's
             continue
-        credential = credentials.get(p.credential_id)
+        attachment = attachments.get((p.credential_id, p.membership_id))
         paused = (member is not None and member.paused_since is not None) or (
-            credential is not None and credential.paused_since is not None
+            attachment is not None and attachment.paused_since is not None
         )
         session = live.get(p.credential_id)
-        since = None if session is None else session.not_listening_since
+        since = episodes.get((p.credential_id, p.membership_id))
         # §5.3's exclusions, also before the worker's next pass has ended the episode.
         if (
             paused
@@ -542,7 +559,7 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
             "started_at": clock.rfc3339_or_none(started.get(p.credential_id)),
             "not_listening_since": clock.rfc3339_or_none(since),
             "paused": paused,
-            "dormant": credential is not None and credential.dormant_since is not None,
+            "dormant": attachment is not None and attachment.dormant_since is not None,
         }
     return found
 
@@ -585,6 +602,7 @@ def for_runner(
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
+        "effort": placement.effort,
         "target": placement.target,
         "workspace": {
             "clone": placement.clone,
@@ -681,6 +699,7 @@ def request_summary(conn: Connection, placement_id: str | None) -> dict[str, Any
         "runner_name": runner.name,
         "harness": spec["harness"],
         "model": spec["model"],
+        "effort": spec["effort"],
         "mode": spec["mode"],
         "target": spec["target"],
         "isolation": _isolation(runner.capabilities, spec["target"]),
@@ -717,10 +736,12 @@ def view_spec(placement: Any) -> dict[str, Any]:
 # --- what a runner offers (§15.3) ----------------------------------------------------------
 
 
-def check_offered(
-    runner: Any, harness: str, mode: str, model: str | None, target: str | None
-) -> None:
-    """Refuse a spec outside what the runner last advertised; never a grant (§15.3)."""
+def check_offered(runner: Any, spec: dict[str, Any]) -> None:
+    """Refuse a spec outside what the runner last advertised; never a grant (§15.3). A
+    runner from before `efforts` advertises none, so a named effort is refused there, never
+    sent to a runner that would drop it (tsk-0fr0xzy2ce95)."""
+    harness, mode, model, target = spec["harness"], spec["mode"], spec["model"], spec["target"]
+    effort = spec.get("effort")
     capabilities = runner.capabilities or {}
     offers = [h for h in capabilities.get("harnesses") or [] if h.get("available")]
     names = {x.get("name") for x in capabilities.get("targets") or []}
@@ -729,14 +750,16 @@ def check_offered(
         offer is not None
         and mode in (offer.get("modes") or [])
         and (model is None or model in (offer.get("models") or []))
+        and (effort is None or effort in (offer.get("efforts") or []))
         and (target is None or (target in names and target in (offer.get("targets") or [])))
     )
     if not ok:
-        offered = [{k: h.get(k) for k in ("id", "modes", "models", "targets")} for h in offers]
+        keys = ("id", "modes", "models", "efforts", "targets")
+        offered = [{k: h.get(k) for k in keys} for h in offers]
         raise Refusal(
             409,
             "harness_not_offered",
-            "the runner does not offer this harness, mode, model or target",
+            "the runner does not offer this harness, mode, model, effort or target",
             {"offered": offered},
         )
 
@@ -949,8 +972,10 @@ def instances_held(conn: Connection, membership_id: int) -> int:
     count a placement's creation meets and the limits overview shows."""
     from maity_hub import instances
 
-    live = select(t.credential.c.id).where(
-        t.credential.c.membership_id == membership_id, t.credential.c.revoked_at.is_(None)
+    live = (
+        select(t.credential.c.id)
+        .select_from(instances.credential_join())
+        .where(t.instance_attachment.c.membership_id == membership_id, instances.attached_now())
     )
     waiting = conn.execute(
         select(func.count())
@@ -1382,7 +1407,7 @@ def _still_allowed(conn: Connection, placement: Any) -> None:
         raise allowed_projects.not_allowed()  # nobody gives a go for what cannot start (§6.3)
     spec = {**view_spec(placement), **(placement.pending_change or {})}
     runner = _runner(conn, placement.runner_id)
-    check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])
+    check_offered(runner, spec)
     check_repository(runner, project.repository_url)
 
 
@@ -1910,10 +1935,15 @@ def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
 
     if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
         return
+    # Told in the project of the instance's attachment to the placement's membership (§6.17).
+    a = t.instance_attachment
     member = conn.execute(
         select(t.membership.c.project_id, t.membership.c.agent_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == placement.credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(
+            a.c.credential_id == placement.credential_id,
+            a.c.membership_id == placement.membership_id,
+        )
     ).one()
     events.emit(
         conn,

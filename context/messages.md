@@ -589,9 +589,10 @@ one from prose.
 
 `review_delivery` adds the sender's and the author's `reports_to` only
 when that boss is of the same owner as its subordinate. Whether it is of
-another owner is the cross-owner test of §6.2 (`cross_owner.owners`): the
-subordinate is an agent and the boss is an agent of another owner or a
-human who is not its owner; a human's own `reports_to` is never
+another owner is the cross-owner test of §6.2 (`_same_owner`, with the
+owners `cross_owner.owner_of` resolves): the subordinate is an agent and
+the boss is an agent of another owner or a human who is not its owner;
+an owner that cannot be resolved leaves the boss out too (61ec0486); a human's own `reports_to` is never
 cross-owner, so a human sender's or author's boss is still added, the
 human having chosen that edge themselves. The check sits in `_lead`, so such a boss is never among the recipients, and therefore not
 among the card's own flow that `routes/events._deliver_review` hands the
@@ -611,6 +612,131 @@ default.
   still be added; with it on, the boss would appear in `held`, its owner
   would be asked for a consent, and the event would name it, where §8.4
   says it is not added at all.
+
+## A review result's lead whose owner cannot be resolved is left out
+
+**Id:** 61ec0486-2465-4269-87c1-78dbeb6610da
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-9sjg106s9wdc and the arbiter's ruling on its plan, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the author and both leads, except a boss of another owner")
+**Revisit when:** an agent can exist in a project without an owner the hub resolves, or the consent for a cross-owner edge comes to name review results
+**See:** messages.md#a-boss-of-another-owner-is-left-out-in-review_delivery-before-the-gate-not-held — 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d — as of 2026-11-21
+
+`review_delivery._lead` keeps the sender's or the author's `reports_to`
+only when the boss's owner resolves and, for an agent subordinate,
+equals that agent's resolved owner. When either owner cannot be
+resolved, the boss is left out (fail closed). A human subordinate's own
+`reports_to` is still added whoever owns the boss (1c3c5331), as long as
+the boss's owner resolves.
+
+**Reason:** the ruling on the plan set the fail-closed rule (confirmed).
+Why it holds is inferred: a lead is added only on the same-owner
+condition, and an owner that cannot be read cannot show it; the edge's
+consent names only `session_paused` (members.md, 8abdbd28), so a boss
+whose side is unknown is not sent work content. The previous test,
+`cross_owner.owners`, treated an unresolvable owner as "not cross-owner"
+and so added the boss.
+
+**Rejected alternatives:**
+- Keep the boss when an owner cannot be resolved (the behaviour before
+  this change): it delivers work content where the same-owner condition
+  was not established.
+
+## A review result reaches the instance whose message it answers, named by `in_reply_to`
+
+**Id:** 1d17b2d5-1d4c-4d7a-90db-67eaeb382b72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; the arbiter's ruling that an orderer the gate would hold is left out entirely, 2026-11-21; reviews A1882 and A1883, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
+**See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
+**See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
+**See:** messages.md#a-boss-of-another-owner-is-left-out-in-review_delivery-before-the-gate-not-held — 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d — as of 2026-11-21
+
+A `review_result` may carry `in_reply_to`, the `seq` of the message it
+answers. The hub adds that message's author, the orderer: the instance
+that wrote it (its successor when it was replaced), else its member. The
+orderer is treated as the author is (2c02c8c4): an instance orderer
+replaces its member's `member:` token from `to`, a mention or a lead, is
+added once, and passes the §9.6 gate as part of the card's own flow when
+the answered message was addressed to the sender. It is left out when
+it has left the project, is isolated, is the sender (the sending
+instance: another instance of the sender's own member that ordered the
+review is added like any orderer, and an order addressed only to that
+other instance does not count as addressed to the sender), or is not in
+the project's restricted-access set while the result's card has a
+restricted text; the result still reaches everyone else and the hub says
+nothing of the omission. The hub never looks for the answered message in
+a body or a subject.
+
+**Reason:** reviewers sent about 30 results to the review lead's bare
+member id. That woke whichever instance the agent's `wake` rule (§6.18)
+chose, not the dormant instance that had ordered the reviews, so another
+instance forwarded each result by hand. An answer goes to the instance
+that asked (407a0aba), and the hub already records which instance wrote
+the order, so a reviewer naming that one event is enough. The field is
+named for what it is, the seq of the event answered, so a later type can
+adopt it without a rename; until then it is `not_allowed` on every other
+type.
+
+The routing, its exceptions and the two rejected alternatives are the
+approved request (confirmed). The clause on an orderer who could not read
+the result was the arbiter's one change: without it, a member who wrote
+any message a reviewer answers would receive a result on a restricted card
+it cannot read. How the hub tests that clause was first this
+implementation's reading, since a message's read rule (§8.9) does not
+itself look at its card; the arbiter confirmed it and reworded §8.4 to
+say it directly (confirmed): the orderer is left out when the result's
+card (the one `task_id` names, or the exact-PR subject resolves) has a
+restricted text (§6.4) and the orderer is not in the project's
+restricted-access set (§6.1), which also excludes a guest. The arbiter
+also confirmed, on 2026-11-21, two consequences of that wording: the rule
+governs only the orderer the hub adds (`to`, mentions and leads keep their
+own rules, so a recipient on one of those paths still receives the
+result), and an empty restricted-access set on a card with a restricted
+text leaves every orderer out, by design, since nobody may read that
+text. The arbiter also ruled, on 2026-11-21, that the orderer's
+exemption from the §9.6 gate needs the answered message to have been
+addressed to the sender itself (its `to` names the sender's member or
+instance, or it mentions them); after an order that reached the sender
+only through `all`, a role or a trust token, the orderer is added only
+where the gate lets the sender reach it. The arbiter confirmed, on
+2026-11-21, that such an orderer the gate would hold is left out
+entirely, as a boss of another owner is (1c3c5331): not added, no held
+entry and no consent request; the author and the leads still receive
+the result, a lead that is the orderer's own member included. So the
+gate is applied to the orderer before recipients are de-duplicated:
+de-duplicating first let such an orderer take the place of that lead and
+then be dropped, leaving neither (review A1882). Whether the orderer is
+added depends on state another writer changes under the project's lock
+(the restricted-access setting, a card's restriction, a member's state),
+so the hub takes that lock before it validates `in_reply_to` and
+resolves the orderer, and reads the project and the sender's row again
+under it, as `tasks._locked` does; decided on the rows read at the
+membership lookup, a change that commits before the event write would
+leave an audience based on the earlier state. For the same reason the
+sender's `events:post` is checked again on the row read under the lock:
+the route checks it on the row read first, and a trust or role change
+committed in between would otherwise still authorize the write (review
+A1882). The jour fixe's `in_reply_to`, a list of response ids on a jour
+fixe reply, is another field on another resource; §8.4 says so in one
+line.
+
+**Rejected alternatives:**
+- Matching `review.head` against earlier messages to find the order: a
+  guess from content, which 2c02c8c4 rules out for the subject already;
+  several orders can name one head, and a head can appear in prose.
+- A CLI refusal when the text names `handle#instance`, pushing the
+  reviewer to address the instance by hand: a guard over prose, which the
+  reviewer can still get wrong; the hub has the structure to route by.
+- Adding the orderer unconditionally, as the request first proposed: the
+  sender's read of the order says nothing of whether the orderer may read
+  the result (the arbiter's change).
+- Adding an orderer without the exemption as held, with a consent request
+  to its owner ("held as usual"): a review result to someone whose order
+  only went to all should not create consent noise (the arbiter's ruling).
 
 ## An addressed `update` or `review_result` passes the owner's gate beyond the card's own flow
 

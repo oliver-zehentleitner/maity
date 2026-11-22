@@ -51,12 +51,21 @@ def revoke(
         .values(live=None, ended_at=now)
     ).rowcount
     if ended:
-        member = conn.execute(
+        # Every project the instance is attached to now, as `holder_stalled.revoked` reads
+        # them; not `attached_now()`, as the credential is revoked by now (§6.17).
+        for member in conn.execute(
             select(t.membership.c.id, t.membership.c.project_id)
-            .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-            .where(t.credential.c.id == credential_id)
-        ).one()
-        environment.refresh(conn, member.project_id, member.id)
+            .join(
+                t.instance_attachment,
+                t.instance_attachment.c.membership_id == t.membership.c.id,
+            )
+            .where(
+                t.instance_attachment.c.credential_id == credential_id,
+                t.instance_attachment.c.detached_at.is_(None),
+            )
+            .order_by(t.instance_attachment.c.id)
+        ).all():
+            environment.refresh(conn, member.project_id, member.id)
     _lead_revoked(conn, credential_id, announce=not member_goes)
     if won == 1:
         # Its open wait ends at once in this process; another replica's ends at its next
@@ -76,31 +85,37 @@ def revoke(
 
 
 def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> None:
-    """A revoked lead stops being lead: `lead_instance: null`, `member_updated` (§6.17).
-    Not announced when the whole member is being removed: `member_removed` says it."""
+    """A revoked lead stops being lead: `lead_instance: null`, `member_updated` (§6.17), in
+    every membership the instance leads and is attached to now (a detach clears its lead
+    there, §6.17). Not announced when the whole member is being removed: `member_removed`
+    says it."""
     from maity_hub.views import member_view  # views reads the auth modules
 
-    row = conn.execute(
+    attachment = t.instance_attachment
+    rows = conn.execute(
         select(t.membership)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .join(attachment, attachment.c.membership_id == t.membership.c.id)
         .where(
-            t.credential.c.id == credential_id,
-            t.membership.c.lead_instance == t.credential.c.instance,
+            attachment.c.credential_id == credential_id,
+            attachment.c.detached_at.is_(None),
+            t.membership.c.lead_instance == attachment.c.instance,
         )
-    ).first()
-    if row is None:
-        return
-    conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(lead_instance=None))
-    if row.active and announce:
-        member = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
-        emit(
-            conn,
-            row.project_id,
-            "member_updated",
-            ["all"],
-            {**member_view(conn, member), "changed": ["team"]},
-            subject=("member", row.agent_id),
+        .order_by(t.membership.c.id)
+    ).all()
+    for row in rows:
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == row.id).values(lead_instance=None)
         )
+        if row.active and announce:
+            member = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
+            emit(
+                conn,
+                row.project_id,
+                "member_updated",
+                ["all"],
+                {**member_view(conn, member), "changed": ["team"]},
+                subject=("member", row.agent_id),
+            )
 
 
 def revoke_runner_credential(

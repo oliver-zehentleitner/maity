@@ -136,28 +136,30 @@ def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) 
     assert [r for r in opencode if r not in opencode_base] == ["make test", "make test *"]
 
 
-def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: Path) -> None:
-    """Keep-the-Why gives every entry an Id made by an OS command (AGENTS.md); under a
-    deny-by-default command allowlist `uuidgen`, `node` and `od` on `/dev/urandom` are all
-    refused, so the runner allows the kernel's generator. Claude Code and opencode gate
-    commands this way; Codex and agy run an unlisted command in their sandbox instead."""
-    assert adapters.UUID_COMMAND == "cat /proc/sys/kernel/random/uuid"
-    rule = f"Bash({adapters.UUID_COMMAND})"
-    # Present with and without the harness's own sandbox, and independent of the grant.
+def test_no_os_uuid_command_is_allowed_maity_uuid_makes_the_ids(tmp_path: Path) -> None:
+    """Keep-the-Why Ids come from `maity uuid`, which runs wherever `maity` does. The exact
+    `cat /proc/sys/kernel/random/uuid` allow is gone: placed Claude Code sessions refused it
+    all the same (a read outside the working directories), and opencode's
+    `external_directory: deny` gates that path too (cli/context/runner.md). With and without
+    the sandbox, and with an empty grant, neither harness's list names a UUID source."""
     plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
-    assert rule in adapters.claude_settings(plain)["permissions"]["allow"]
-    assert (
-        rule
-        in adapters.claude_settings(context(tmp_path / "s", sandbox=True))["permissions"]["allow"]
+    sandboxed = dataclasses.replace(
+        context(tmp_path / "s", sandbox=True), grant=config.RepositoryGrant()
     )
-    # opencode resolves a command by the LAST rule in the map whose glob matches (§6.1), so
-    # check the whole map in order, not only the dict value: the bare command is allowed, and
-    # the exact rule is not reached around by a line that chains it with another command — only
-    # the catch-all `*` deny matches that, so it stays denied.
-    bash = adapters.opencode_config(context(tmp_path / "o", harness_id="opencode"))["permission"][
-        "bash"
+    opencode = dataclasses.replace(
+        context(tmp_path / "o", harness_id="opencode"), grant=config.RepositoryGrant()
+    )
+    claude_rules = [
+        *adapters.claude_settings(plain)["permissions"]["allow"],
+        *adapters.claude_settings(sandboxed)["permissions"]["allow"],
     ]
+    bash = adapters.opencode_config(opencode)["permission"]["bash"]
+    # Not a bare "uuid": tmp_path carries this test's name, and so do the file tools' rules.
+    for rule in (*claude_rules, *bash):
+        assert "kernel/random" not in rule and "uuidgen" not in rule, rule
+    assert not hasattr(adapters, "UUID_COMMAND")
 
+    # `maity uuid` is what replaces it: one plain `maity` call, allowed in both lists.
     def resolve(command: str) -> str:
         verdict = "deny"
         for pattern, value in bash.items():
@@ -165,10 +167,11 @@ def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: P
                 verdict = value
         return verdict
 
-    assert bash[adapters.UUID_COMMAND] == "allow"
-    assert resolve(adapters.UUID_COMMAND) == "allow"
-    assert resolve(f"{adapters.UUID_COMMAND} && id") == "deny"
-    assert resolve(f"{adapters.UUID_COMMAND}; rm -rf /") == "deny"
+    # In each mode on its own, not only in the two lists together (A1919).
+    for ctx in (plain, sandboxed):
+        assert "Bash(maity *)" in adapters.claude_settings(ctx)["permissions"]["allow"]
+    assert resolve("maity uuid") == "allow"
+    assert resolve("cat /proc/sys/kernel/random/uuid") == "deny"
 
 
 def test_claude_code_grant(tmp_path: Path) -> None:
@@ -714,6 +717,29 @@ def test_codex_config(tmp_path: Path) -> None:
     assert set(domains) == {"maity.team", "github.com", "pypi.org", *adapters.CODEX_PROVIDER_HOSTS}
 
 
+def test_codex_writes_the_placements_effort_into_its_own_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): `model_reasoning_effort` in the placement's config.toml, a
+    top-level key, never a `-c` flag: the resume reads the same home, so it keeps the level."""
+    effort = {**PLACEMENT, "mode": "supervised", "effort": "medium"}
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex", placement=effort)
+    found = tomllib.loads(adapters.codex_config(ctx))
+    assert found["model_reasoning_effort"] == "medium"
+    home = tmp_path / "home"
+    (home / "codex").mkdir(parents=True)
+    (home / "codex" / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(home / "codex"))
+    launch = adapters.launch(ctx)
+    written = tomllib.loads((Path(launch.env["CODEX_HOME"]) / "config.toml").read_text())
+    assert written["model_reasoning_effort"] == "medium"
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    assert not any("effort" in arg for arg in (*spec["first"], *spec["again"]))
+    # No effort: no key, so Codex runs its own default.
+    plain = context(tmp_path / "plain", harness_id="codex", binary="/usr/bin/codex")
+    assert "model_reasoning_effort" not in tomllib.loads(adapters.codex_config(plain))
+
+
 def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
     supervised = {**PLACEMENT, "mode": "supervised"}
     claude = adapters.claude_settings(context(tmp_path / "c", placement=supervised))
@@ -916,7 +942,7 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     assert env["TMPDIR"] == str(own) and env["CLAUDE_CODE_TMPDIR"] == str(leaf)
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
     assert str(parent) in filesystem["denyRead"] and str(parent) not in filesystem["denyWrite"]
-    assert filesystem["allowRead"] == [str(own)]
+    assert filesystem["allowRead"] == [str(deep), str(own)]  # the scratch too (tsk-07dwr3t80rg0)
     assert filesystem["allowWrite"] == [str(deep), str(own)]
     opened = [*filesystem["allowRead"], *filesystem["allowWrite"]]
     assert str(leaf) not in opened and not any(str(sibling) in path for path in opened)
@@ -927,14 +953,14 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     env = adapters.launch(ctx).env
     assert env["TMPDIR"] == str(room / "tmp") and "CLAUDE_CODE_TMPDIR" not in env
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
-    assert str(parent) in filesystem["denyWrite"] and "allowRead" not in filesystem
+    assert str(parent) in filesystem["denyWrite"] and filesystem["allowRead"] == [str(room)]
     assert filesystem["allowWrite"] == [str(room)]
     # Without a leaf (an ssh host, or none could be made): neither variable, the parent denied.
     ctx = context(tmp_path / "n", sandbox=True, scratch=deep, tmp_scratch_parent=parent)
     env = adapters.launch(ctx).env
     assert "TMPDIR" not in env and "CLAUDE_CODE_TMPDIR" not in env
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
-    assert str(parent) in filesystem["denyWrite"] and "allowRead" not in filesystem
+    assert str(parent) in filesystem["denyWrite"] and filesystem["allowRead"] == [str(deep)]
     # Codex: the leaf's `tmp` is its TMPDIR as before, with no CLAUDE_CODE_TMPDIR. Its launch
     # writes its CODEX_HOME into the scratch, so that scratch is made, still with no room for a
     # socket.
@@ -1209,6 +1235,24 @@ def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch
     entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
     assert entry["confinement"] == "sandbox" and entry["sandbox"] == "on"
     assert capabilities.sandbox_available(codex)
+
+
+def test_efforts_are_advertised_only_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§15.3 (tsk-0fr0xzy2ce95): a hub from before `efforts` refuses the key in a strict
+    hello, so a harness without efforts sends exactly what that hub takes."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: True)
+    probe = capabilities.Probe("/usr/bin/codex", "1.0", None)
+    plain = config.Harness("codex", ("supervised",), "supervised", binary="codex")
+    # Exactly the keys of a hello from before `efforts`, which a strict older hub takes.
+    assert set(capabilities.harness_entry(plain, probe)) == {
+        "id", "version", "available", "reason", "modes", "default_mode", "models", "targets",
+        "confinement", "sandbox",
+    }  # fmt: skip
+    with_efforts = dataclasses.replace(plain, efforts=("low", "medium"))
+    assert capabilities.harness_entry(with_efforts, probe)["efforts"] == ["low", "medium"]
 
 
 def test_codex_whose_sandbox_cannot_start_is_not_advertised_as_sandboxed(
@@ -1557,6 +1601,38 @@ def test_managed_settings_that_switch_hooks_off_are_named(text: str, off: str | 
     assert (why is None) if off is None else (why is not None and off in why)
 
 
+# No `os.geteuid` on Windows, and test_trust imports this module there (tsk-0tje3vzzedtx).
+@pytest.mark.skipif(getattr(os, "geteuid", lambda: -1)() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("quiet", [False, True])
+def test_managed_settings_that_cannot_be_looked_at_are_named_not_taken_for_absent(
+    monkeypatch: pytest.MonkeyPatch, quiet: bool
+) -> None:
+    """A managed settings file below a directory the runner cannot search could switch the
+    hook off: the check names it, never takes it for absent. Also where pathlib's predicates
+    answer False instead of raising, as from Python 3.14 (tsk-0tje3vzzedtx, A1943)."""
+    from maity.runner import capabilities
+
+    if quiet:
+        for name in ("is_dir", "is_file", "exists", "is_symlink"):
+            original = getattr(Path, name)
+
+            def answer(self: Path, *args: Any, _original: Any = original, **kw: Any) -> bool:
+                try:
+                    return bool(_original(self, *args, **kw))
+                except PermissionError:
+                    return False
+
+            monkeypatch.setattr(Path, name, answer)
+    managed = _managed(capabilities)
+    managed.write_text('{"disableAllHooks": true}')
+    managed.parent.chmod(0)
+    try:
+        why = capabilities.claude_hooks_off(AsUser(), "linux")
+    finally:
+        managed.parent.chmod(0o700)
+    assert why is not None and "cannot be checked" in why
+
+
 def test_no_managed_settings_switch_no_hook_off() -> None:
     from maity.runner import capabilities
 
@@ -1696,6 +1772,38 @@ def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_pat
     launched = adapters.launch(context(tmp_path / "s", "stub", scratch=short))
     assert launched.env["MAITY_SCRATCH"] == str(short)
     assert launched.env["TMPDIR"] == str(short / "tmp")
+
+
+def test_the_own_projects_scratch_holder_is_denied_for_reading_and_only_the_scratch_reopened(
+    tmp_path: Path,
+) -> None:
+    """tsk-07dwr3t80rg0 (the #2032 residual): a sibling scratch made in the same project after
+    this session started must not be readable. The holder goes in denyRead only (a write deny
+    on it would mount the re-opened scratch read-only, as P3 showed for the leaf), and the
+    allows name exactly the own scratch, with nothing denied for reading inside it."""
+    ws = tmp_path / "ws"
+    holder = ws / "maity" / ".scratch"
+    room, sibling = holder / "plc-0003", holder / "plc-0004"
+    other = ws / "other" / ".scratch"  # another project's holder, named whole by the supervisor
+    pg = ws / ".maity-pg"
+    ctx = context(tmp_path / "c", sandbox=True, scratch=room, private=(sibling, other, pg))
+    filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert str(holder) in filesystem["denyRead"] and str(holder) not in filesystem["denyWrite"]
+    assert filesystem["allowRead"] == [str(room)] and filesystem["allowWrite"] == [str(room)]
+    # What the sandbox may not read stays outside what it opens again: the clone and its
+    # credential, the other scratches, the password holder.
+    denied = [*filesystem["denyRead"], *filesystem["denyWrite"]]
+    for path in denied:
+        if path != str(holder):
+            assert not Path(path).is_relative_to(room), path
+    assert not ctx.clone.is_relative_to(room) and not room.is_relative_to(ctx.clone)
+    assert {str(sibling), str(other), str(pg)} <= set(filesystem["denyRead"])
+    # A scratch elsewhere (agy's under `/tmp`) or none: no holder denied, nothing opened again.
+    agy = Path("/tmp/maity-scratch-1002") / ("a" * 32)  # noqa: S108 - a path only
+    assert adapters.scratch_holder(agy) is None and adapters.scratch_holder(None) is None
+    bare = adapters.claude_settings(context(tmp_path / "n", sandbox=True))["sandbox"]["filesystem"]
+    assert "allowRead" not in bare and "allowWrite" not in bare
+    assert not any(p.endswith("/.scratch") for p in bare["denyRead"])
 
 
 def test_a_scratch_too_deep_for_a_socket_keeps_the_hosts_tmpdir(tmp_path: Path) -> None:
