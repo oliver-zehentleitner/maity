@@ -5239,7 +5239,9 @@ disk to one limit per placement.
 **See:** runner.md — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-17
 **Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement; opencode's adapter grants its file tools a writable path outside the clone; a harness needs its scratch reported to the hub
 
-Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
+Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`
+(since tsk-c7zzd440x8pn `<workspaces>/.scratch/<project_id>/<placement id>`,
+under one holder; entry 87396593-13e8-4289-8b95-0f97fdf38e51),
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it, but `TMPDIR` only when
 a Unix socket still fits under it: Claude Code binds its sandbox socket
 `claude-socks-<16 hex>.sock` (34 bytes) under `TMPDIR`, a socket path holds
@@ -5322,16 +5324,19 @@ Two hardening steps keep the scratch the placement's own:
   `denyWrite`). In Codex they stay inside the hidden workspaces root, so
   `outermost` leaves them out of the profile. A listing that cannot be
   completed refuses the start. The list covers the scratches that exist at
-  the start. One made while a Claude Code session runs is a known residual,
-  tracked as tsk-rbys2j9q0m48: that session can read it, but live probes
-  showed it can neither write it (the sandbox writes only its own paths)
+  the start. One made while a Claude Code session runs was a known residual
+  (tsk-rbys2j9q0m48, done): that session could read it, but live probes
+  showed it could neither write it (the sandbox writes only its own paths)
   nor connect to that placement's cluster socket (the sandbox refuses
   every Unix socket, its own included). agy and opencode are not kept out
   by these rules. Since tsk-07dwr3t80rg0, Claude Code also denies the own
   project's whole `.scratch` for reading and opens its own scratch again,
-  and another project's `.scratch` is listed whole, so the residual is
-  narrowed to a project with no `.scratch` yet at the start (entry
-  b856de03-d42e-4100-9ee3-a26803524f47).
+  and another project's `.scratch` is listed whole; since tsk-c7zzd440x8pn
+  every scratch sits under one holder `<root>/.scratch` that Claude Code
+  denies the same way, which closes the residual for a project with no
+  scratch yet at the start (entries
+  b856de03-d42e-4100-9ee3-a26803524f47,
+  87396593-13e8-4289-8b95-0f97fdf38e51).
 - **Password-protected cluster.** The cluster takes a password, which
   `with_postgres.sh` gets as `MAITY_PG_PASSWORD` and uses to make the
   cluster with `scram-sha-256`. The runner draws it once per placement into
@@ -6246,9 +6251,11 @@ session, including its task output wherever the scratch's own `tmp` was
 the `TMPDIR`. Nothing written there was ever writable from that session:
 the sandbox writes only its allowed paths.
 
-Still open, tracked as tsk-rbys2j9q0m48 with the other clones'
-credentials: a project that has no `.scratch` yet when the session starts.
-A scratch made there later is readable from that session.
+Left open here: a project that has no `.scratch` yet when the session
+starts. A scratch made there later was readable from that session. Closed
+by moving every scratch under one holder `<root>/.scratch`
+(tsk-c7zzd440x8pn, entry 87396593-13e8-4289-8b95-0f97fdf38e51), which
+Claude Code denies in this same shape one level up.
 
 **Codex and agy.** Codex has no such gap. Its profile hides the whole
 workspaces root and opens only the clone and the own scratch again, so a
@@ -6286,3 +6293,72 @@ since the placement has nothing of its own there.
 - The holder in `denyWrite` too, as the private paths are: P3 shows the
   re-opened scratch would be read-only, so the session could not write its
   own scratch.
+
+## Every scratch sits under one holder `<root>/.scratch`, which Claude Code denies for reading
+
+**Id:** 87396593-13e8-4289-8b95-0f97fdf38e51
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-c7zzd440x8pn, the open case of #2091 (tsk-07dwr3t80rg0), 2026-11-21; the author's plan with three options and the lead's choice of the one holder, 2026-11-21; the security leg's conditions on that plan (the upgrade window bounded and its placements logged, an ssh host whose `maity` lacks the holder op kept on the former layout), 2026-11-21; `cli/src/maity/runner/scratchop.py` (`holder`, `_holder`, `make`, `_below`), `supervisor.py` (`_scratch`, `_note_former_layout`, `other_scratches`, `_SCRATCHES`), `adapters.py` (`scratch_holder`), `workspace.py` (`scratch_of`, `scratch_holder_of`), `operate.py` (`_collect_scratch`). That the holder hides a scratch made later in a project with no scratch at the start is inferred from P4 as for b856de03-d42e-4100-9ee3-a26803524f47, and awaits the ops live check on the PR's own head (A starts, then a new project's B), with the same check on main showing the case open
+**See:** runner.md#claude-codes-sandbox-hides-the-own-projects-scratch-for-reading-and-opens-only-its-own-scratch-again — b856de03-d42e-4100-9ee3-a26803524f47 — as of 2026-11-22
+**See:** runner.md#a-placements-scratch-lives-beside-its-clone-one-per-placement-and-is-never-kept — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-22
+**Revisit when:** the runner pins a new Claude Code version, or Claude Code changes how a read deny is mounted; no runner has a scratch in the former per-project place any more (drop the former layout's measuring, removal, listing and the ssh fallback); every supported ssh host's `maity` has the holder op; placements get an OS user each
+
+A Claude Code or Codex placement's scratch is
+`<root>/.scratch/<project_id>/<placement id>`. The holder `<root>/.scratch`
+is made by `maity runner scratchop holder` as the agents' user, 0700, and
+checked at every start, opened without following a link and owned by that
+user: a link or another user's directory refuses the start
+(`harness_refused`), and nothing is made through it. `make` takes only this
+shape, and checks the holder again itself. A sandboxed Claude Code
+placement gets the holder in `denyRead` only and its own scratch in
+`allowRead` and `allowWrite`, the #2091 shape one level up
+(`adapters.scratch_holder`). The other scratches there at its start go to
+the private paths as before: another project's directory whole, the own
+project's other entries one by one.
+
+So a scratch of any project made after a session started lies under a
+read deny that session already had, a project that had no scratch at all
+at its start included.
+
+**Former layout.** A scratch in `<root>/<project_id>/.scratch/<placement
+id>` is still measured, removed at close and by gc, and listed whole for
+the other sessions' denies while one is left. `size` and `remove` take both
+shapes, `make` only the new one. A restart of a placement whose scratch is
+in the former place starts it fresh in the holder; the former one goes at
+its close. An ssh host whose `maity` has no `holder` op (`scratchop`
+answers usage, exit 2, raised as `Unsupported`) keeps the former layout and
+its per-project denies, so an old host neither crash-loops nor loses the
+deny it had.
+
+**The upgrade window.** A Claude Code session started before the move
+denies only the per-project `.scratch` it knew. A scratch made in the
+holder stays readable from it (never writable, and no socket of it
+reachable) until it is restarted. The upgrade procedure in
+`docs/runners.md` restarts every Claude Code placement, and until then
+each start in the holder logs, once per change, the running Claude Code
+placements on that target whose former scratch still exists, by id, so an
+operator can see the window close.
+
+**Reason:** a read deny is fixed at the session's start (P4), so a deny can
+only cover a directory that exists then. One holder made once, inside the
+runner's own workspaces root, exists before every session, whatever
+project comes later. It needs no wider allow and no directory in a project
+that has no placement. The path keeps the same parts, reordered, so the
+socket room of the scratch's `tmp` is unchanged.
+
+**Rejected alternatives:**
+- Making `<root>/<project>/.scratch` for every project the runner serves,
+  at its start and when a project is added (option 1): a project added
+  after a session started still has no deny there until that session
+  restarts, and the runner writes into project directories with no
+  placement, which the lead did not want on #2091.
+- Denying the whole workspaces root and re-opening the own clone and
+  scratch (option 3): it would also cover the other clones' credentials
+  (tsk-rbys2j9q0m48), but it rests on a deny (the own `.git/maity`) inside
+  an allow inside a deny, never probed, and is the widest change. It can
+  follow later after an ops probe.
+- Keeping a running placement's former scratch across its restart: nothing
+  in a scratch is unsaved work, and one path rule for every start keeps the
+  former layout to measuring, removing and denying what is left.

@@ -138,14 +138,27 @@ class Workspace:
         return self.repo / ".git" / "maity" / state.CREDENTIAL_FILE
 
 
-def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> Path:
+def scratch_of(
+    root: Path, project: str, placement_id: str, host: str = "", former: bool = False
+) -> Path:
     """The placement's scratch under `root` (§15.5), built from validated tokens and kept
-    inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
-    to write, and the runner reaches it only from the root down (scratchop)."""
+    inside `root` as a clone's path is (locate): `<root>/.scratch/<project>/<placement id>`,
+    under the one holder every Claude Code sandbox denies (scratch_holder_of,
+    tsk-c7zzd440x8pn). `former`: the shape before it, `<root>/<project>/.scratch/<placement id>`,
+    which a host whose `maity` has no holder op keeps, and which is still measured and removed
+    where a placement made it. Not resolved: what is there is the agents' to write, and the
+    runner reaches it only from the root down (scratchop)."""
     if not (TOKEN.fullmatch(project) and SCRATCH_ID.fullmatch(placement_id)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     base = root if host else root.resolve()
-    return base / project / SCRATCH / placement_id
+    if former:
+        return base / project / SCRATCH / placement_id
+    return base / SCRATCH / project / placement_id
+
+
+def scratch_holder_of(root: Path, host: str = "") -> Path:
+    """The holder of every scratch under `root`, `<root>/.scratch` (scratch_of)."""
+    return (root if host else root.resolve()) / SCRATCH
 
 
 def uses_folder(harness_id: str) -> bool:

@@ -437,14 +437,19 @@ def _no_sessions(monkeypatch: pytest.MonkeyPatch) -> Any:
     return backend
 
 
+@pytest.mark.parametrize("layout", ["holder", "former"])
 def test_gc_scratch_lists_then_removes_what_no_active_placement_names(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    layout: str,
+) -> None:  # fmt: skip
+    """In the holder `<root>/.scratch/<project>` and in a former per-project `.scratch` alike
+    (tsk-c7zzd440x8pn): what no active placement names is listed, then removed."""
     _no_sessions(monkeypatch)
     path = setup(tmp_path)
     cfg = config.load(path)
     assert cfg.local is not None
-    holder = cfg.local.workspaces / "maity" / workspace.SCRATCH
+    holder = (cfg.local.workspaces / workspace.SCRATCH / "maity" if layout == "holder"
+              else cfg.local.workspaces / "maity" / workspace.SCRATCH)  # fmt: skip
     for name in ("plc-0001", "plc-0002"):
         (holder / name / "tmp").mkdir(parents=True)
         (holder / name / "tmp" / "venv.bin").write_bytes(b"z" * 2000)

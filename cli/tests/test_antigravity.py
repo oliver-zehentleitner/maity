@@ -970,6 +970,43 @@ def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> 
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_holder_layout_is_listed_beside_the_former_one(tmp_path: Path, side: str) -> None:
+    """tsk-c7zzd440x8pn: in the holder `<root>/.scratch/<project>/<id>`, another project's
+    directory goes whole, even empty, and in the own project's each other entry. Every former
+    per-project `.scratch` goes whole while it is left, so a placement still on the former
+    layout stays hidden from a start in the holder. The same on every side."""
+    ws = tmp_path / "ws"
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    root = ws if host else ws.resolve()
+    new = root / ".scratch"
+    own = new / "maity" / "plc-0003"
+    sibling = new / "maity" / "plc-0004"
+    legacy = root / "legacy" / ".scratch" / "plc-0007"  # a placement still on the former layout
+    for room in (own, sibling, new / "other" / "plc-0009", legacy):
+        (room / "tmp").mkdir(parents=True)
+    (ws / ".scratch" / "empty").mkdir()  # a project's directory with no scratch yet
+    (ws / "maity" / "agent-3").mkdir(parents=True)  # a clone is no scratch
+    expected = sorted([sibling, new / "empty", new / "other", root / "legacy" / ".scratch"])
+    assert supervisor.other_scratches(ws, own, as_user, host) == expected
+    everything = sorted([new / "maity", new / "empty", new / "other", root / "legacy" / ".scratch"])
+    assert supervisor.other_scratches(ws, None, as_user, host) == everything
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_holder_that_is_a_link_refuses_the_listing(tmp_path: Path, side: str) -> None:
+    """The holder must be a real directory: a link (or a file) in its place could point the
+    deny elsewhere, so the listing refuses the start on every side."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (ws / ".scratch").symlink_to(tmp_path / "elsewhere")
+    as_user = SIDES[side]()
+    with pytest.raises(workspace.Refused):
+        supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
 def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, side: str) -> None:
     """A clone's content is never read (an unreadable directory in a clone refuses nothing), a
     workspaces root reached through a link is listed through it, and a `.scratch` higher up in

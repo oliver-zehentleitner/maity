@@ -203,7 +203,7 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     ((name, argv, env),) = backend.started
     assert sup.cfg.local is not None
     clone = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3").path
-    scratch = sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / "plc-0003"
+    scratch = sup.cfg.local.workspaces.resolve() / ".scratch" / "maity" / "plc-0003"
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
@@ -4102,7 +4102,12 @@ def _restore_modes(tmp_path: Path) -> Any:
                 os.chmod(os.path.join(root, name), 0o700)
 
 
-def scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003") -> Path:
+def scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003", project: str = "maity") -> Path:
+    assert sup.cfg.local is not None
+    return sup.cfg.local.workspaces.resolve() / ".scratch" / project / pid
+
+
+def former_scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003") -> Path:
     assert sup.cfg.local is not None
     return sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / pid
 
@@ -4442,13 +4447,13 @@ def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
     sup, _, _, _, logs = world
     target = sup.targets["local"]
     codex = config.Harness("codex", ("supervised",), "supervised")
-    project = sup.cfg.local.workspaces.resolve() / "maity"
-    elsewhere = project.parent.parent / "elsewhere"
-    (elsewhere / ".scratch").mkdir(parents=True)
+    project = sup.cfg.local.workspaces.resolve() / ".scratch" / "maity"
+    elsewhere = sup.cfg.local.workspaces.resolve().parent / "elsewhere"
+    elsewhere.mkdir(parents=True)
     project.parent.mkdir(parents=True, exist_ok=True)
-    project.symlink_to(elsewhere)  # the project's directory itself is a link
+    project.symlink_to(elsewhere)  # the project's directory in the holder is a link
     assert sup._scratch(placement(), codex, target) is None
-    assert not (elsewhere / ".scratch" / "plc-0003").exists()
+    assert not (elsewhere / "plc-0003").exists()
     assert any("no scratch: a directory on the way" in line for line in logs)
     project.unlink()
 
@@ -4458,6 +4463,96 @@ def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
     monkeypatch.setattr(scratch, "make", fails)  # a host whose maity has no scratchop yet
     assert sup._scratch(placement(), codex, target) is None
     assert any("no scratch on local: usage" in line for line in logs)
+
+
+def test_a_scratch_holder_that_is_not_the_agents_refuses_the_start(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-c7zzd440x8pn: the holder `<root>/.scratch` is checked at every start; a link (or a
+    directory another user holds) refuses the start, since a sandbox denies it to keep the
+    other scratches out, and nothing is made through it."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    root = sup.cfg.local.workspaces.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "elsewhere").mkdir()
+    (root / ".scratch").symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(workspace.Refused) as refused:
+        sup._scratch(placement(), codex, target)
+    assert refused.value.reason == "harness_refused" and refused.value.detail is None
+    assert list((tmp_path / "elsewhere").iterdir()) == []
+
+
+def test_a_host_without_the_holder_op_keeps_the_former_layout(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ssh host whose `maity` predates the holder op (scratchop.Unsupported) keeps the
+    per-project layout and its per-project denies (the security leg's condition 4)."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+
+    def unsupported(root: Path, holder: Path, as_user: Any = None) -> None:
+        raise scratchop.Unsupported("host maity has no holder op")
+
+    asked: list[Path] = []  # the old host's own `make`, which takes the former shape
+
+    monkeypatch.setattr(scratch, "make_holder", unsupported)
+    monkeypatch.setattr(scratch, "make", lambda path, as_user=None: asked.append(path))
+    made = sup._scratch(placement(), codex, target)
+    assert made == former_scratch_of(sup) and asked == [made]
+    assert adapters.scratch_holder(made) == made.parent  # its project's `.scratch` is denied
+
+
+def test_a_former_scratch_is_measured_and_removed_with_its_placement(world: Any) -> None:
+    """A placement that still runs on the former layout: its scratch is measured, and goes
+    when the placement closes, beside any in the holder; the holder's project directory stays."""
+    sup, backend, *_ = world
+    recorded(sup.cfg)
+    former = former_scratch_of(sup)
+    (former / "tmp").mkdir(parents=True)
+    (former / "tmp" / "evidence").write_bytes(b"f" * 2000)
+    sup.update([placement()])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    shutil.rmtree(scratch_of(sup))  # as if the placement still ran from before the holder
+    rec.sized_at = None
+    sup._measure([placement()], 1e9)
+    assert rec.scratch_bytes is not None and rec.scratch_bytes >= 2000  # the former one counts
+    scratch_of(sup).mkdir()  # and one in the holder beside it, removed as well
+    backend.kill("maity_maity_agent-3")
+    sup.update([])
+    sup.closed([CLOSED])
+    sup.tick()
+    assert not former.exists() and not scratch_of(sup).exists()
+    assert scratch_of(sup).parent.is_dir()  # the project's directory in the holder stays
+    paths = {e["path"] for e in scratch.removals(sup.cfg.state_dir, 10)}
+    assert str(former) in paths
+
+
+def test_a_start_in_the_holder_names_claude_placements_still_on_the_former_layout(
+    world: Any,
+) -> None:
+    """The window the security leg bounds: a Claude Code placement started before the holder
+    denies only the per-project `.scratch` it knew, so a scratch made in the holder stays
+    readable from it until it is restarted. A start in the holder logs those placements by id,
+    once per change, so an operator can check the window is closed (condition 1)."""
+    sup, _, _, _, logs = world
+    target = sup.targets["local"]
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    old = placement(harness="claude-code")
+    (former_scratch_of(sup) / "tmp").mkdir(parents=True)
+    sup.update([old, placement(n=4)])
+    sup.records["plc-0003"] = supervisor.Record(state="running", target="local")
+    made = sup._scratch(placement(n=4), codex, target)
+    assert made == scratch_of(sup, "plc-0004")
+    lines = [line for line in logs if "still run on the former layout" in line]
+    assert len(lines) == 1 and "plc-0003" in lines[0]
+    sup._scratch(placement(n=4), codex, target)  # nothing changed: not logged again
+    assert sum("still run on the former layout" in line for line in logs) == 1
 
 
 def test_a_scratch_too_deep_for_a_pg_socket_is_said_in_the_log(
@@ -4501,13 +4596,21 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
                                                                "supervised"))  # fmt: skip
     filesystem = adapters.claude_settings(claude)["sandbox"]["filesystem"]
     assert str(holder) in filesystem["denyRead"] and str(holder) in filesystem["denyWrite"]
-    # tsk-07dwr3t80rg0: the own project's `.scratch` is denied for reading only, so a scratch made
-    # there after this start (plc-0005 here) lies under it; only the own scratch is opened again.
-    own_holder = str(own.parent)
-    assert own_holder in filesystem["denyRead"] and own_holder not in filesystem["denyWrite"]
+    # tsk-07dwr3t80rg0, tsk-c7zzd440x8pn: the holder of every scratch, `<root>/.scratch`, is
+    # denied for reading only, and only the own scratch is opened again. A scratch made after
+    # this start lies under it: in the same project (plc-0005), and in a project that had no
+    # scratch at all when this session started (`late`, plc-0006). Before the holder that last
+    # one was in no deny of an earlier session.
+    holder_dir = sup.cfg.local.workspaces.resolve() / ".scratch"
+    assert own.parent.parent == holder_dir
+    assert str(holder_dir) in filesystem["denyRead"]
+    assert str(holder_dir) not in filesystem["denyWrite"]
     assert filesystem["allowRead"] == [str(own)] and filesystem["allowWrite"] == [str(own)]
     later = sup._scratch(placement(n=5), codex, target)
     assert later is not None and later.parent == own.parent and later not in ctx.private
+    late = sup._scratch(placement(n=6, project_id="late"), codex, target)
+    assert late is not None and late.is_relative_to(holder_dir) and late not in ctx.private
+    assert not any(late.is_relative_to(p) for p in [own, *map(Path, filesystem["allowRead"])])
     toml = adapters.codex_config(replace(ctx, harness=codex, sandbox=True))
     assert ".maity-pg" not in toml  # under the hidden root, never opened again
 

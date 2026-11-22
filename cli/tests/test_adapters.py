@@ -1771,17 +1771,25 @@ def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_pat
     assert launched.env["TMPDIR"] == str(short / "tmp")
 
 
+@pytest.mark.parametrize("layout", ["holder", "former"])
 def test_the_own_projects_scratch_holder_is_denied_for_reading_and_only_the_scratch_reopened(
-    tmp_path: Path,
+    tmp_path: Path, layout: str
 ) -> None:
-    """tsk-07dwr3t80rg0 (the #2032 residual): a sibling scratch made in the same project after
-    this session started must not be readable. The holder goes in denyRead only (a write deny
-    on it would mount the re-opened scratch read-only, as P3 showed for the leaf), and the
-    allows name exactly the own scratch, with nothing denied for reading inside it."""
+    """tsk-07dwr3t80rg0 (the #2032 residual), tsk-c7zzd440x8pn: a scratch made after this
+    session started must not be readable. The holder (every scratch's `<root>/.scratch`, or the
+    project's own on a host with the former layout) goes in denyRead only (a write deny on it
+    would mount the re-opened scratch read-only, as P3 showed for the leaf), and the allows
+    name exactly the own scratch, with nothing denied for reading inside it."""
     ws = tmp_path / "ws"
-    holder = ws / "maity" / ".scratch"
-    room, sibling = holder / "plc-0003", holder / "plc-0004"
-    other = ws / "other" / ".scratch"  # another project's holder, named whole by the supervisor
+    if layout == "holder":
+        holder = ws / ".scratch"
+        room, sibling = holder / "maity" / "plc-0003", holder / "maity" / "plc-0004"
+        other = holder / "other"  # another project's directory, named whole by the supervisor
+    else:
+        holder = ws / "maity" / ".scratch"
+        room, sibling = holder / "plc-0003", holder / "plc-0004"
+        other = ws / "other" / ".scratch"  # another project's holder, named whole
+    assert adapters.scratch_holder(room) == holder
     pg = ws / ".maity-pg"
     ctx = context(tmp_path / "c", sandbox=True, scratch=room, private=(sibling, other, pg))
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]

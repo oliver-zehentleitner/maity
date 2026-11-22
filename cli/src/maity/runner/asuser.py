@@ -328,6 +328,8 @@ class AsUser:
         done = self.run([*self.runner_module("scratchop"), op, "--under", str(under), str(path)])
         if done.returncode == scratchop.LINK:
             raise scratchop.OnTheWay(f"{path}: a link or no directory on the way; nothing done")
+        if done.returncode == 2 and op == "holder":  # a host's `maity` that predates the op
+            raise scratchop.Unsupported(f"host maity has no holder op: {done.stderr.strip()[:200]}")
         if done.returncode != 0:
             raise OSError(f"scratch {op} {path} failed: {done.stderr.strip()[:200]}")
         try:

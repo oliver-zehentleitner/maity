@@ -355,9 +355,10 @@ def _running(cfg: config.Config) -> set[str] | None:
 
 
 def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) -> None:
-    """Every scratch under the workspaces root whose placement the hub does not list as
-    active (§15.5): closed, or no placement of this runner at all, and that has no session
-    on this machine. Listed, and with `remove` removed and written to `removed.jsonl`.
+    """Every scratch under the workspaces root, in the holder or the former per-project layout,
+    whose placement the hub does not list as active (§15.5): closed, or no placement of this
+    runner at all, and that has no session on this machine. Listed, and with `remove` removed
+    and written to `removed.jsonl`.
     Nothing in a scratch is kept as unsaved work."""
     assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
     if active is None:
@@ -369,12 +370,19 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
         return
     as_user = _as_user(cfg)
     root = cfg.local.workspaces
+    # Each directory that holds scratches: a project's in the holder `<root>/.scratch`, and a
+    # project's former `.scratch` while any is left (tsk-c7zzd440x8pn). The holder and the
+    # projects' directories in it stay, even empty; only scratches go.
+    new_holder = root / workspace.SCRATCH
     try:
         projects = sorted(p.name for p in root.iterdir() if workspace.TOKEN.fullmatch(p.name))
+        dirs = [] if new_holder.is_symlink() or not new_holder.is_dir() else [
+            new_holder / p.name for p in sorted(new_holder.iterdir())
+            if workspace.TOKEN.fullmatch(p.name)]  # fmt: skip
     except OSError as exc:
         raise Refused(f"cannot list {root} ({exc})") from None
-    for project in projects:
-        holder = root / project / workspace.SCRATCH
+    dirs += [root / project / workspace.SCRATCH for project in projects]
+    for holder in dirs:
         if holder.is_symlink() or not holder.is_dir():
             continue
         for entry in sorted(holder.iterdir()):
