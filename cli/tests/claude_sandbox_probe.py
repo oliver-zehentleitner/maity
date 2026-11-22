@@ -13,10 +13,10 @@ The interpreter must import `maity` in isolated mode (`pip install -e cli` from 
 the runner's hook starts `<python> -I -m maity.runner.plaincall`, and the probe uses the
 runner's own launch (`adapters.launch`, a supervised placement with the sandbox on, the
 installed version, a scratch under the workspaces root's holder and its TMPDIR, as the
-supervisor starts one) for the settings, the argv and the session's variables. It does not run where the runner would not
-start a sandboxed Claude Code placement: off Linux, without the sandbox's tools, at a version
-the sandbox gate does not take, or where the host does not give Claude Code's seccomp step what
-it needs (`capabilities.claude_seccomp`).
+supervisor starts one) for the settings, the argv and the session's variables. It does not
+run where the runner would not start a sandboxed Claude Code placement: off Linux, without the
+sandbox's tools, at a version the sandbox gate does not take, or where the host does not give
+Claude Code's seccomp step what it needs (`capabilities.claude_seccomp`).
 
 What it checks (cli/context/runner.md, the sandbox entries):
 1. A call with something in front of `maity` does not run outside the sandbox, with the
