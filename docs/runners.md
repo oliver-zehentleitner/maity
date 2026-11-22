@@ -419,8 +419,10 @@ update = "daily"
 track = "checked"   # or "newest"; default "checked"
 ```
 
-- **`checked`** (the default, stability first): the daily check and "Update now" install at most the checked version. When Anthropic's newest is later, the runner installs the checked version itself, or keeps it when it is already in use; when the newest is not later, it installs the newest as before. `maity runner tools` then shows `latest` as that target, with the newest Anthropic offers in brackets (`newest 2.1.330, held: track = checked`), and the runner's log says the same after each check. When a later `maity` raises the checked version, the next check or "Update now" takes it.
+- **`checked`** (the default, stability first): the daily check and "Update now" install at most the checked version. When Anthropic's newest is later, the runner installs the checked version itself, or keeps it when it is already in use; when the newest is not later, it installs the newest as before. `maity runner tools` then shows Anthropic's newest as `latest` and the target in brackets (`latest 2.1.330 (held at 2.1.325: track = checked)`), and the runner's log says the same after each check. The hub sees what it saw before: `latest` is Anthropic's newest, and a runner at its held version reports `current`, since nothing is pending; the hold itself is shown only on the runner. When a later `maity` raises the checked version, the next check or "Update now" takes it.
 - **`newest`**: every new Claude Code, as before this setting existed, unchecked until a later `maity` checks it.
+
+**This changes existing runners:** one with `update = "daily"` and no `track` now holds at the checked version and stops taking newer releases, one already above it stays where it is and is warned until the checked version catches up, and `track = "newest"` brings back the old behaviour.
 
 A version in use above the checked one stays in use under `checked`: the update never goes back on its own, for example after switching from `newest`. `maity runner check` warns about it, says the update takes at most the checked version, and names the way back: `maity runner tools rollback claude-code` when the kept version is the checked one or older, otherwise that no such version is kept (for a Claude Code the runner does not manage: install the checked version yourself), or `track = "newest"` to keep it.
 
@@ -432,7 +434,7 @@ What `maity runner check` and the runner's log say about the installed version:
 | newer than the checked one | a warning, with the way back above | a **note**, since you chose it |
 | older, or unknown | a warning | a warning |
 
-`track` applies to Claude Code only, the one harness with a checked version; on any other harness it is a configuration error. It also decides `check`'s note or warning where the runner does not manage Claude Code (on the PATH, or on an ssh host), though only a managed Claude Code is held at the checked version. A rollback works the same under both values: it swaps to the kept version, and the version it left is not taken again on its own.
+`track` applies to Claude Code only, the one harness with a checked version; on any other harness it is a configuration error. It also decides `check`'s note or warning where the runner does not manage Claude Code (on the PATH, or on an ssh host), though only a managed Claude Code is held at the checked version. A rollback works the same under both values: it swaps to the kept version, and the version it left is not taken again on its own. Under `checked` it reports `rolled_back` only while the version in use is older than the held version, not merely older than Anthropic's newest.
 
 What the runner checks before it uses a download, and what it does not:
 

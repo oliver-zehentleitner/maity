@@ -1345,8 +1345,8 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
-        newest = tools.load(cfg.tools_dir, row["id"]).newest
-        held = f" (newest {newest}, held: track = checked)" if newest else ""
+        target = tools.load(cfg.tools_dir, row["id"]).held
+        held = f" (held at {target}: track = checked)" if target else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
             f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}{held}; "

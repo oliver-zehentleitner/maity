@@ -365,6 +365,7 @@ def test_the_update_follows_the_track(
     )
     keep.step()
     assert installer.installed == [taken]
-    assert tool(keep, "claude-code")["latest"] == taken
+    entry = tool(keep, "claude-code")
+    assert (entry["version"], entry["latest"], entry["state"]) == (taken, "2.1.330", "current")
     held = [line for line in logs if "held at" in line]
     assert bool(held) is (track == "checked"), logs

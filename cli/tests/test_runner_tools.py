@@ -339,20 +339,24 @@ def test_a_cap_installs_the_checked_version_not_the_newest(
 ) -> None:
     fake.offered = "2.1.330"
     state = tools.take(tmp_path, "codex", fake, "t1", cap="2.1.325")
-    assert (state.version, state.latest, state.newest, state.state) == (
-        "2.1.325", "2.1.325", "2.1.330", "current",
+    assert (state.version, state.latest, state.held, state.state) == (
+        "2.1.325", "2.1.330", "2.1.325", "current",
     )  # fmt: skip
     assert fake.installed == ["2.1.325"]
     entry = tools.report(tmp_path, "codex", install=True, update="daily", sessions_on_older=0)
-    assert entry["latest"] == "2.1.325" and "newest" not in entry  # the hub's fields only
-    state = tools.take(tmp_path, "codex", fake, "t2")  # newest: no cap
-    assert (state.version, state.previous_version, state.newest) == ("2.1.330", "2.1.325", None)
+    # The hub sees the vendor's newest as before (§15.16) and `current`: nothing is pending.
+    assert (entry["version"], entry["latest"], entry["state"]) == ("2.1.325", "2.1.330", "current")
+    assert "held" not in entry  # the hub's fields only
+    again = tools.take(tmp_path, "codex", fake, "t2", cap="2.1.325")  # the next daily check
+    assert (again.version, again.state, fake.installed) == ("2.1.325", "current", ["2.1.325"])
+    state = tools.take(tmp_path, "codex", fake, "t3")  # newest: no cap
+    assert (state.version, state.previous_version, state.held) == ("2.1.330", "2.1.325", None)
 
 
 def test_a_cap_above_the_newest_takes_the_newest(tmp_path: Path, fake: FakeInstaller) -> None:
     fake.offered = "2.1.320"
     state = tools.take(tmp_path, "codex", fake, "t1", cap="2.1.325")
-    assert (state.version, state.latest, state.newest) == ("2.1.320", "2.1.320", None)
+    assert (state.version, state.latest, state.held) == ("2.1.320", "2.1.320", None)
 
 
 def test_a_cap_never_goes_back_on_its_own(tmp_path: Path, fake: FakeInstaller) -> None:
@@ -383,11 +387,11 @@ def test_rollback_works_under_a_cap(tmp_path: Path, fake: FakeInstaller) -> None
     )  # fmt: skip
     again = tools.take(tmp_path, "codex", fake, "t3", cap="2.1.325")  # leaves the left one
     assert (again.version, again.state) == ("2.1.318", "rolled_back")
-    state = tools.rollback(tmp_path, "codex")
-    assert (state.version, state.state) == ("2.1.325", "current")
+    state = tools.rollback(tmp_path, "codex")  # back at the held target, below `latest`
+    assert (state.version, state.latest, state.state) == ("2.1.325", "2.1.330", "current")
     raised = tools.take(tmp_path, "codex", fake, "t4", cap="2.1.330")  # CHECKED rose
-    assert (raised.version, raised.previous_version, raised.newest) == (
-        "2.1.330", "2.1.325", None,
+    assert (raised.version, raised.previous_version, raised.held, raised.latest) == (
+        "2.1.330", "2.1.325", None, "2.1.330",
     )  # fmt: skip
 
 

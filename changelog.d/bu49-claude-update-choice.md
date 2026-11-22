@@ -6,9 +6,12 @@
   one. `"newest"` takes every new release, as before. With `"newest"`, `maity runner
   check` and the runner's log name a version above the checked one as a note, not a
   warning. With `"checked"`, the warning names the way back (`maity runner tools
-  rollback`). `maity runner tools` shows the newest release next to the held target.
+  rollback`). `maity runner tools` shows the version the update is held at.
 
 ### Changed
 
-- cli: a runner that updates Claude Code no longer installs a release above the
-  sandbox-checked version unless its configuration says `track = "newest"`.
+- cli: existing runners with `update = "daily"` and no `track` now hold Claude Code at
+  the sandbox-checked version and stop taking newer releases. A runner already above
+  the checked version stays where it is and `maity runner check` warns until the checked
+  version catches up. Set `track = "newest"` under `[harness.claude-code]` for the old
+  behaviour.

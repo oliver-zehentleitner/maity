@@ -191,8 +191,8 @@ class Keeper:
             self.log(f"tools: {harness.id}: failed ({result.reason})")
         elif result.version != state.version:
             self.log(f"tools: {harness.id}: {result.version} for new sessions")
-        if result.newest is not None and result.state != "failed":
-            self.log(f"tools: {harness.id}: {result.newest} offered, held at {result.latest}"
+        if result.held is not None and result.state != "failed":
+            self.log(f"tools: {harness.id}: {result.latest} offered, held at {result.held}"
                      ' (track = "checked")')  # fmt: skip
         self.refresh(harness)
         self.publish()

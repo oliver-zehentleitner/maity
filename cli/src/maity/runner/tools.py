@@ -82,9 +82,10 @@ class ToolState:
     # Versions the runner does not take again on its own: the one a rollback left, and
     # ones that failed their version answer (§15.16 "Rollback").
     skipped: list[str] = field(default_factory=list)
-    # The vendor's newest at the last check, when a cap (`track = "checked"`) held `latest`
-    # below it; None otherwise. Shown by `maity runner tools`, never sent to the hub.
-    newest: str | None = None
+    # The version a cap (`track = "checked"`) held the last check at, when the vendor's newest
+    # (`latest`) was later; None otherwise. Local only (`maity runner tools`, `check`, the
+    # log), never sent to the hub: `latest` keeps its meaning there (§15.16).
+    held: str | None = None
 
 
 BINARY_FILE = "binary.path"  # the binary's path inside its version directory
@@ -185,10 +186,10 @@ def _rollback(tools_dir: Path, tool_id: str) -> ToolState:
     left = state.version
     state.version, state.previous_version = state.previous_version, left
     state.skipped = [v for v in state.skipped if v != state.version] + [left]
+    # Against what the runner would take: the held target under a cap, else the newest.
+    target = state.held or state.latest
     state.state = (
-        "rolled_back"
-        if state.latest is not None and newer(state.latest, state.version)
-        else "current"
+        "rolled_back" if target is not None and newer(target, state.version) else "current"
     )
     state.reason = None
     save(tools_dir, tool_id, state)
@@ -237,8 +238,10 @@ def take(
     With `cap` (the sandbox-checked version, `track = "checked"`), the version taken is the
     vendor's newest when that is not later than `cap`, else `cap` itself: the newest version
     at or below it, since the vendor lists no versions and `cap` is a release that was
-    checked. `latest` then records that target. A version in use above `cap` stays: the
-    update never goes back on its own (docs/runners.md)."""
+    checked. `latest` still records the vendor's newest, `held` the target. A runner at its
+    target reports `current`: nothing is pending, the cap is the operator's setting. A
+    version in use above `cap` stays: the update never goes back on its own
+    (docs/runners.md)."""
     with locked(tools_dir, tool_id):
         return _take(tools_dir, tool_id, installer, now, requested_at, started, cap)
 
@@ -265,12 +268,12 @@ def _take(
         return _failed(tools_dir, tool_id, state, error.reason, now)
     except Exception:  # noqa: BLE001 - an installer's slip still ends the attempt as failed
         return _failed(tools_dir, tool_id, state, "installer_failed", now)
+    state.latest, state.checked_at = latest, now
     # An unreadable cap holds too: the installer then refuses it, never a fall back to newest.
     if cap is not None and (version_key(cap) is None or newer(latest, cap)):
-        state.newest, latest = latest, cap
+        state.held = latest = cap
     else:
-        state.newest = None
-    state.latest, state.checked_at = latest, now
+        state.held = None
     if latest == state.version or latest in state.skipped or not newer(latest, state.version):
         state.state = "rolled_back" if latest in state.skipped and state.version else "current"
         save(tools_dir, tool_id, state)
