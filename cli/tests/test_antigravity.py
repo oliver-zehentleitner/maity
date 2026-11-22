@@ -124,6 +124,24 @@ def test_supervised_with_a_model(tmp_path: Path) -> None:
         assert argv[argv.index("--model") + 1] == "m-1"
 
 
+def test_an_effort_reaches_the_first_and_every_continued_command(tmp_path: Path) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): agy's `--effort`, so a continued run keeps the level."""
+    effort = {"id": "plc-0003", "mode": "supervised", "effort": "medium"}
+    launch = adapters.launch(context(tmp_path, placement=effort))
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    for argv in (spec["first"], spec["again"]):
+        assert argv[argv.index("--effort") + 1] == "medium"
+    shown = {**effort, "mode": "interactive"}
+    interactive = adapters.launch(context(tmp_path / "i", placement=shown))
+    assert interactive.argv[interactive.argv.index("--effort") + 1] == "medium"
+    resumed = adapters.launch(context(tmp_path / "r", placement=shown, resume=True))
+    assert resumed.argv[resumed.argv.index("--effort") + 1] == "medium"
+
+
+def test_no_effort_passes_no_flag(tmp_path: Path) -> None:
+    assert "--effort" not in adapters.launch(context(tmp_path)).argv
+
+
 def test_the_pull_request_line_reaches_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -927,18 +945,27 @@ SIDES: dict[str, Callable[[], AsUser]] = {
 @pytest.mark.parametrize("side", sorted(SIDES))
 def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> None:
     """tsk-w7qtcbzcshn9 (security review of #2032): a session reaches its own scratch only;
-    every other placement's, in its project and in others, goes to the sandbox's deny."""
+    every other placement's, in its project and in others, goes to the sandbox's deny. Another
+    project's `.scratch` goes whole, even empty, so a scratch made in it later is hidden too
+    (tsk-07dwr3t80rg0); in the own project's, each other entry goes."""
     ws = tmp_path / "ws"
     as_user = SIDES[side]()
     host = "" if as_user.here else "host"
     root = ws if host else ws.resolve()
     own = root / "maity" / ".scratch" / "plc-0003"
-    others = [root / "maity" / ".scratch" / "plc-0004", root / "other" / ".scratch" / "plc-0009"]
-    for room in (own, *others):
+    sibling = root / "maity" / ".scratch" / "plc-0004"
+    for room in (own, sibling, root / "other" / ".scratch" / "plc-0009"):
         (room / "tmp").mkdir(parents=True)
+    (ws / "empty" / ".scratch").mkdir(parents=True)  # no scratch in it yet
     (ws / "maity" / "agent-3").mkdir()  # a clone is no scratch
-    assert supervisor.other_scratches(ws, own, as_user, host) == sorted(others)
-    assert supervisor.other_scratches(ws, None, as_user, host) == sorted([own, *others])
+    # An entry the agents' user names `.scratch` is an entry, on every side: records are told
+    # apart by their depth below the root, not by their last name.
+    odd = root / "maity" / ".scratch" / ".scratch"
+    (ws / "maity" / ".scratch" / ".scratch").mkdir()
+    holders = [root / "empty" / ".scratch", root / "other" / ".scratch"]
+    assert supervisor.other_scratches(ws, own, as_user, host) == sorted([sibling, odd, *holders])
+    everything = sorted([root / "maity" / ".scratch", *holders])
+    assert supervisor.other_scratches(ws, None, as_user, host) == everything
     assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
 
 
@@ -963,7 +990,49 @@ def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, sid
         found = supervisor.other_scratches(linked, None, as_user, host)
     finally:
         locked.chmod(0o700)
-    assert found == [root / "maity" / ".scratch" / "plc-0004"]
+    assert found == [root / "maity" / ".scratch"]  # no own scratch: the holder whole
+    own = root / "maity" / ".scratch" / "plc-0003"
+    own.mkdir()
+    locked.chmod(0o000)
+    try:
+        found = supervisor.other_scratches(linked, own, as_user, host)
+    finally:
+        locked.chmod(0o700)
+    assert found == [root / "maity" / ".scratch" / "plc-0004"]  # in the own holder: entries
+
+
+@dataclass(frozen=True)
+class Listed(Remote):
+    """An ssh host's side whose scratch listing prints the records given: what a find there
+    returns, for a root this test cannot list itself (`/`). `given` keeps the root it got."""
+
+    records: tuple[str, ...] = ()
+    given: list[str] = field(default_factory=list)
+
+    def run(self, argv: Sequence[str], env: Any = None, input: Any = None, cwd: Any = None,
+            timeout: float = 60) -> subprocess.CompletedProcess[str]:  # fmt: skip
+        if argv[0] == "sh":
+            self.given.append(argv[-1])
+            return subprocess.CompletedProcess(argv, 0, "".join(f"{r}\0" for r in self.records))
+        return subprocess.CompletedProcess(argv, 0, "")  # `test -d` on the root
+
+
+def test_a_root_of_slash_is_listed_without_a_doubled_separator_and_strays_refuse() -> None:
+    """A1930: a root of `/` was handed to the listing as `//`, which find keeps, and every
+    record then failed to fall below `/` and was dropped, so the deny list got shorter. The
+    separator is added only when absent, and a record not below the root, or at a depth the
+    listing never prints, refuses the start (A1932)."""
+    root = Path("/")
+    records = ("/maity/.scratch", "/maity/.scratch/plc-0004", "/other/.scratch")
+    listed = Listed("a", records)
+    found = supervisor.other_scratches(root, None, listed, "host")
+    assert listed.given == ["/"]
+    assert found == [Path("/maity/.scratch"), Path("/other/.scratch")]
+    # Outside the root, or at a depth the listing never prints (A1932): refused, not skipped.
+    for stray in ("//maity/.scratch", "/srv/elsewhere/.scratch", "/srv/mw/maity",
+                  "/srv/mw/maity/.scratch/plc-0004/tmp", "/srv/mw/maity/clone"):  # fmt: skip
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(Path("/srv/mw"), None, Listed("a", (stray,)), "host")
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
@@ -972,18 +1041,22 @@ def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(
     tmp_path: Path, side: str, locked: str
 ) -> None:
     """An unreadable root, project or `.scratch` could hide a scratch: every side refuses the
-    start, none returns a short list (the review of #2032)."""
+    start, none returns a short list (the review of #2032). That holds for another project's
+    `.scratch`, now named whole, and for the own one, whose entries are named (A1921)."""
     ws = tmp_path / "ws"
     holder = ws / "maity" / ".scratch"
     (holder / "plc-0004").mkdir(parents=True)
     at = {"root": ws, "project": ws / "maity", "holder": holder}[locked]
     as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    own = (ws if host else ws.resolve()) / "maity" / ".scratch" / "plc-0003"
     at.chmod(0o000)
     try:
         if os.access(at, os.R_OK):  # root reads it anyway: nothing to prove here
             pytest.skip("running as a user that reads a 0000 directory")
-        with pytest.raises(workspace.Refused):
-            supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
+        for mine in (None, own):  # the holder another project's, then the own project's
+            with pytest.raises(workspace.Refused):
+                supervisor.other_scratches(ws, mine, as_user, host)
     finally:
         at.chmod(0o700)
 
@@ -1071,6 +1144,63 @@ def test_a_place_that_cannot_be_looked_at_refuses_the_start(
         assert refused.value.reason == "harness_refused"
     finally:
         locked.chmod(0o700)
+
+
+def _pathlib_as_on_314(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pathlib's predicates as Python 3.14 and later answer them: False for a path below a
+    directory that cannot be searched, where 3.13 raised PermissionError (tsk-0tje3vzzedtx).
+    So the fail-closed listings are checked against that on every interpreter."""
+    for name in ("is_dir", "is_file", "exists", "is_symlink"):
+        original = getattr(Path, name)
+
+        def quiet(self: Path, *args: Any, _original: Any = original, **kwargs: Any) -> bool:
+            try:
+                return bool(_original(self, *args, **kwargs))
+            except PermissionError:
+                return False
+
+        monkeypatch.setattr(Path, name, quiet)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_an_unsearchable_place_refuses_also_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """The runner's own side decides with stat, not with pathlib's predicates: where those
+    answer False instead of raising (3.14+), a slot linked into a directory the agents' user
+    cannot search still refuses the start, never an empty list (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_an_unsearchable_project_refuses_the_scratch_listing_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same for the scratches: a project that cannot be searched could hide a `.scratch`,
+    so the runner's own side refuses, also where pathlib answers False (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws = tmp_path / "ws"
+    (ws / "maity" / ".scratch" / "plc-0004").mkdir(parents=True)
+    (ws / "maity").chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(ws, None, AsUser())
+    finally:
+        (ws / "maity").chmod(0o700)
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")

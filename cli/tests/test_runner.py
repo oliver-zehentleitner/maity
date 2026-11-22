@@ -261,11 +261,68 @@ def test_harness_modes_and_models() -> None:
     )
 
 
+def test_harness_efforts() -> None:
+    """tsk-0fr0xzy2ce95: `efforts` only where the launch passes one, in the hub's shape."""
+    with_codex = minimal() + '\n[harness.codex]\nefforts = ["low", "medium"]\n'
+    assert parse(with_codex).harnesses["codex"].efforts == ("low", "medium")
+    assert "harness.stub.efforts: the runner passes no effort to this harness" in problems(
+        minimal().replace("[harness.stub]\n", '[harness.stub]\nefforts = ["low"]\n')
+    )
+    bad = problems(minimal() + '\n[harness.codex]\nefforts = ["High"]\n')
+    assert any(p.startswith("harness.codex.efforts: not an effort") for p in bad), bad
+    twice = problems(minimal() + '\n[harness.codex]\nefforts = ["low", "low"]\n')
+    assert "harness.codex.efforts: an effort is named twice" in twice
+    # What the hub's hello refuses, the check refuses too, since a refused hello stops the
+    # whole runner (A1994): a trailing newline, and more than the hub's 16.
+    newline = problems(minimal() + '\n[harness.codex]\nefforts = ["low\\n"]\n')
+    assert any(p.startswith("harness.codex.efforts: not an effort") for p in newline), newline
+    many = ", ".join(f'"{letter}"' for letter in "abcdefghijklmnopq")  # 17 distinct
+    over = problems(minimal() + f"\n[harness.codex]\nefforts = [{many}]\n")
+    assert "harness.codex.efforts: at most 16, the hub's bound" in over
+    sixteen = ", ".join(f'"{letter}"' for letter in "abcdefghijklmnop")
+    assert len(parse(minimal() + f"\n[harness.codex]\nefforts = [{sixteen}]\n")
+               .harnesses["codex"].efforts) == 16  # fmt: skip
+
+
 def test_every_bad_repository_is_named() -> None:
     bad = ", ".join(f'"x/{n}"' for n in range(5))
     found = problems(minimal().replace('"github.com/oliver-zehentleitner/maity"', bad))
     (line,) = [p for p in found if p.startswith("limits.repositories:")]
     assert all(f"'x/{n}'" in line for n in range(5))
+
+
+SSH_HOST = {"name": "build-1", "address": "b1.lan", "user": "maity", "workspaces": "/srv/ws",
+            "agent_path": "/usr/bin:/bin"}  # fmt: skip
+
+
+def ssh_config(**host: str) -> str:
+    fields = {**SSH_HOST, **host}
+    lines = "".join(f"{k} = {json.dumps(v)}\n" for k, v in fields.items())
+    return minimal(b='\n[backend]\nkind = "ssh"\n[backend.ssh]\nknown_hosts = "/srv/known_hosts"\n'
+                     f"[[backend.ssh.hosts]]\n{lines}")  # fmt: skip
+
+
+def test_an_ssh_host_as_written_parses() -> None:
+    """The base for the trailing-newline cases below: without the newline, it is valid."""
+    assert parse(ssh_config()).ssh is not None
+
+
+@pytest.mark.parametrize("key", sorted(SSH_HOST))
+def test_an_ssh_host_value_ending_in_a_newline_is_refused(key: str) -> None:
+    """Each ssh host value is matched whole: a trailing newline used to pass a `^...$` check
+    with `re.match`, then reached the hub's hello (the name) or the ssh command line
+    (tsk-3jzeck5m208a)."""
+    found = problems(ssh_config(**{key: SSH_HOST[key] + "\n"}))
+    assert any(p.startswith(f"backend.ssh.hosts[0].{key}:") for p in found), found
+
+
+def test_a_project_or_mode_ending_in_a_newline_is_refused() -> None:
+    """The projects go to the hub's hello as written, the modes too (tsk-3jzeck5m208a)."""
+    project = problems(minimal().replace('"oliver/maity"', '"oliver/maity\\n"'))
+    assert any(p.startswith("limits.projects: not a project full name") for p in project), project
+    newline_mode = '[harness.stub]\nmodes = ["supervised\\n"]\n'
+    mode = problems(minimal().replace("[harness.stub]\n", newline_mode))
+    assert any(p.startswith("harness.stub.modes: not a mode") for p in mode), mode
 
 
 def test_backend_local_is_not_judged_under_another_kind() -> None:

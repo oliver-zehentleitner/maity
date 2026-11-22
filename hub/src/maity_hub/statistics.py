@@ -64,12 +64,9 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
     ):
         add("registrations", day, n)
 
-    # An instance's first exchange is its first credential (§3.3, §6.17).
-    for (first,) in conn.execute(
-        select(func.min(t.credential.c.created_at)).group_by(
-            t.credential.c.membership_id, t.credential.c.instance
-        )
-    ):
+    # An instance's first exchange is its credential (§3.3, §6.17): one row per instance,
+    # however many projects it is attached to, so a second attachment is no new instance.
+    for (first,) in conn.execute(select(t.credential.c.created_at)):
         day = _as_date(first)
         if day >= window[-1]:  # on or after `since`, the window's first midnight
             add("new_instances", day)
@@ -131,13 +128,13 @@ def _reviews(conn: Connection, since: datetime, add: Any) -> date | None:
 
 
 def _agents_active(since: datetime) -> Any:
-    """Agent instances that were the actor of an event, per day: distinct (membership,
-    instance) pairs; the long-poll writes no event, so listening alone does not count."""
+    """Agent instances that were the actor of an event, per day: distinct credentials, so an
+    instance acting in several projects counts once (§6.17); the long-poll writes no event,
+    so listening alone does not count."""
     pairs = (
         select(
             func.date(t.event.c.at).label("day"),
-            t.event.c.actor_membership.label("member"),
-            t.credential.c.instance.label("instance"),
+            t.credential.c.id.label("credential"),
         )
         .join(t.credential, t.credential.c.id == t.event.c.actor_credential_id)
         .join(t.membership, t.membership.c.id == t.event.c.actor_membership)
@@ -200,19 +197,23 @@ def _totals(conn: Connection, now: datetime) -> dict[str, int]:
 def _online(conn: Connection, now: datetime) -> int:
     """Instances `online` by §6.17: listening now, or a live session used within the
     online window; a paused membership counts as paused, not online."""
-    from maity_hub import listening
+    from maity_hub import instances, listening
 
     found = 0
+    # One row per live session: an instance in several projects counts once, when one of
+    # its memberships is active and not paused (DISTINCT over the attachments).
     rows = conn.execute(
         select(t.agent_session.c.id, t.credential.c.last_used_at)
-        .join(t.credential, t.credential.c.id == t.agent_session.c.credential_id)
-        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .select_from(instances.credential_join())
+        .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .where(
             t.agent_session.c.live.is_(True),
-            t.credential.c.revoked_at.is_(None),
+            instances.attached_now(),
             t.membership.c.active.is_(True),
             t.membership.c.paused_since.is_(None),
         )
+        .distinct()
     ).all()
     heard = listening.which((row.id for row in rows), conn)  # one read for all
     for row in rows:

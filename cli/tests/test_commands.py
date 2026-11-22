@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import stat
@@ -1067,6 +1068,42 @@ def test_placement_start_resolves_the_handle_and_names_the_consent_request(
         "workspace": {"clone": "agent-f2"},
     }  # fmt: skip
     assert "waiting for consent (request req-4)" in capsys.readouterr().out
+
+
+def test_placement_start_names_an_effort_and_refuses_an_empty_one(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--effort` reaches the hub as given; an empty one is a usage error, never the default
+    sent silently (tsk-0fr0xzy2ce95, A1994)."""
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/members")] = lambda seen: (
+        200, {"items": [{"id": "agt-f", "handle": "agent-f"}]}
+    )  # fmt: skip
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
+        201, {"id": "plc-0009", "approval": {"status": "approved", "request_id": None}}
+    )  # fmt: skip
+    start = ["placement", "start", "agent-f", "--runner", "rnr-0002", "--tool", "codex",
+             "--reason", "reviews at medium"]  # fmt: skip
+    assert cli.main([*start, "--effort", "medium"]) == cli.EXIT_OK, capsys.readouterr().err
+    assert fake.signed()[-1].json()["effort"] == "medium"
+    sent = len(fake.signed())
+    assert cli.main([*start, "--effort", ""]) == cli.EXIT_USAGE
+    assert "--effort" in capsys.readouterr().err
+    assert len(fake.signed()) == sent  # nothing went to the hub
+
+
+def test_an_empty_effort_is_refused_before_any_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check comes first: no session is made and no member lookup is signed, so the usage
+    error really sends nothing (A1996). Needs no joined clone."""
+
+    def no_session() -> None:
+        pytest.fail("a session was made before the empty --effort was refused")
+
+    monkeypatch.setattr(cli, "Session", no_session)
+    args = argparse.Namespace(effort="", agent="agent-f", runner="rnr-0002", tool="codex",
+                              reason="r", mode=None, model=None, target=None, clone=None,
+                              branch=None)  # fmt: skip
+    with pytest.raises(cli.UsageError, match="--effort"):
+        cli.cmd_placement_start(args)
 
 
 def test_placement_stop_by_handle_with_grace(

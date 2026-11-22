@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, StrictBool
-from sqlalchemy import Connection, func, insert, literal, select, update
+from sqlalchemy import Connection, and_, func, insert, literal, select, update
 
 from maity_hub import (
     API_VERSION,
@@ -227,6 +227,33 @@ def _own_membership(conn: Connection, caller: Caller) -> Membership:
     return Membership(project, row, "agent", caller.instance)
 
 
+def _attached_positions(
+    conn: Connection, credential_id: str, previous: Any | None
+) -> dict[int, tuple[Any, int | None]]:
+    """Per active membership the instance is attached to (§6.17), its membership row and
+    the position the previous session `previous` left there (§5.3), `None` without one; one
+    read for all."""
+    a = t.instance_attachment
+    p = t.agent_session_project
+    position = p.c.acknowledged_seq if previous is not None else literal(None)
+    query = (
+        select(t.membership, position.label("previous_seq"))
+        .select_from(a)
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
+        .where(
+            a.c.credential_id == credential_id,
+            a.c.detached_at.is_(None),
+            t.membership.c.active.is_(True),
+        )
+        .order_by(a.c.attached_at, a.c.id)
+    )
+    if previous is not None:
+        query = query.outerjoin(
+            p, and_(p.c.session_id == previous.id, p.c.membership_id == a.c.membership_id)
+        )
+    return {row.id: (row, row.previous_seq) for row in conn.execute(query)}
+
+
 @router.post("/me/resume")
 def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONResponse:
     return JSONResponse(retrying(lambda: _resume(body, request, caller)))
@@ -257,10 +284,10 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         )
         # The instance's own pause ends with its next session too (§5.3).
         conn.execute(
-            update(t.credential)
+            update(t.instance_attachment)
             .where(
-                t.credential.c.id == caller.credential_id,
-                t.credential.c.paused_by == caller.agent_id,
+                instances.attachment_of(caller.credential_id or "", mine.id),
+                t.instance_attachment.c.paused_by == caller.agent_id,
             )
             .values(paused_reason=None, paused_since=None, paused_by=None)
         )
@@ -284,10 +311,12 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
             .values(live=None, ended_at=now)
         )
+        attached = _attached_positions(conn, caller.credential_id or "", previous)
+        left_off = attached.get(mine.id, (None, None))[1]  # where the previous session left off
         if body.cursor is not None:
             cursor = body.cursor
-        elif previous is not None:
-            cursor = previous.acknowledged_seq
+        elif left_off is not None:
+            cursor = left_off
         else:
             # A new instance (§6.17) starts at the project's head, not at 0: the handover
             # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
@@ -309,7 +338,6 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             insert(t.agent_session).values(
                 id=session_id,
                 credential_id=caller.credential_id,
-                membership_id=mine.id,
                 harness=harness,
                 harness_version=body.harness_version,
                 model=model,
@@ -318,13 +346,27 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 started_at=now,
                 last_seen_at=now,
                 events_at=now,  # a resume counts as a call for events (§5.3)
-                acknowledged_seq=cursor,
                 live=True,
                 env_home=body.environment.home if body.environment else None,
                 env_workspace=body.environment.workspace if body.environment else None,
                 supervisor=body.supervisor,
             )
         )
+        # The session's position in each project of the instance (§5.3, §6.17): the resume's
+        # in this one; in another, where its previous session left off, else that project's
+        # head, as a new instance starts.
+        positions = [
+            {"session_id": session_id, "membership_id": mine.id, "acknowledged_seq": cursor}
+        ]
+        for membership_id, (member, seq) in attached.items():
+            if membership_id == mine.id:
+                continue
+            if seq is None:
+                seq = events.highest_readable(conn, member.project_id, member, caller.principal_id)
+            positions.append(
+                {"session_id": session_id, "membership_id": membership_id, "acknowledged_seq": seq}
+            )
+        conn.execute(insert(t.agent_session_project), positions)
         environment.refresh(conn, mine.project.id, mine.id)
         if mine.project.public_page == "on" and caller.agent_id is not None:
             # The agent's page shows its latest session's model and harness (§16.9).
@@ -336,7 +378,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                     public_pages.touch(
                         conn, public_projects.KIND, project.id, removal=False, dependents=False
                     )
-        commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
+        commitment.start(conn, mine.project, caller.credential_id or "", mine.id, session_id, now)
         conn.execute(
             update(t.card)
             .where(open_claims(mine.id, instance=caller.instance))
@@ -711,13 +753,7 @@ def _packet(
         "areas": areas,
         **_setup_block(conn, project),
         "keep_the_why": {
-            **ktw_skill.loading_block(
-                project,
-                settings,
-                conn.execute(
-                    select(t.credential).where(t.credential.c.id == caller.credential_id)
-                ).one(),
-            ),
+            **ktw_skill.loading_block(project, settings, _credential(conn, caller)),
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
         "claims": task_views(conn, held, fg, mine),
@@ -866,8 +902,8 @@ def _acknowledge(request: Request, caller: Caller) -> dict[str, Any]:
         ).scalar()
         now = clock.now()
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == caller.credential_id)
+            update(t.instance_attachment)
+            .where(instances.attachment_of(credential.id, mine.id))
             .values(ktw_acknowledged_at=now, ktw_acknowledged_session=session_id)
         )
         commitment.confirmed(conn, credential)
@@ -890,7 +926,13 @@ def _acknowledge(request: Request, caller: Caller) -> dict[str, Any]:
 
 
 def _credential(conn: Connection, caller: Caller) -> Any:
-    return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
+    """The calling instance's credential row in the caller's project (`credential_rows`)."""
+    return conn.execute(
+        instances.credential_rows().where(
+            t.credential.c.id == caller.credential_id,
+            t.instance_attachment.c.membership_id == caller.membership_id,
+        )
+    ).one()
 
 
 def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:

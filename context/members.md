@@ -1101,7 +1101,8 @@ boss reads it as any member does, and only the added `member:<id>`
 is left out. The hub code follows this contract in later hub pull
 requests; the `review_result` part is done (tsk-95kvvd03fgs4,
 messages.md, "A boss of another owner is left out in review_delivery,
-before the gate, not held"). The consent for the edge names only
+before the gate, not held"; an owner that cannot be resolved leaves the
+boss out too, tsk-9sjg106s9wdc, messages.md 61ec0486). The consent for the edge names only
 `session_paused`.
 
 **Reason:** the edge was consented as a pause notice and a `reports_to`

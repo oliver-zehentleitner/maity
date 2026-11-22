@@ -555,14 +555,17 @@ def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
 
 
 def _acknowledge(conn: Connection, caller: Caller, after: int) -> None:
-    """`after=N` acknowledges everything up to N for this session (§8.3)."""
+    """`after=N` acknowledges everything up to N for this session in the caller's project
+    (§8.3): its position row there."""
     if caller.session_id is None or after <= 0:
         return
+    position = t.agent_session_project
     conn.execute(
-        update(t.agent_session)
+        update(position)
         .where(
-            t.agent_session.c.id == caller.session_id,
-            t.agent_session.c.acknowledged_seq < after,
+            position.c.session_id == caller.session_id,
+            position.c.membership_id == caller.membership_id,
+            position.c.acknowledged_seq < after,
         )
         .values(acknowledged_seq=after)
     )

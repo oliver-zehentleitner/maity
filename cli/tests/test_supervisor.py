@@ -388,6 +388,8 @@ def test_a_new_generation_restarts_a_running_session(world: Any) -> None:
         ({"harness": "claude-code"}, ("harness_refused", None)),
         ({"mode": "interactive", "harness": "codex"}, ("harness_refused", "mode_unsupported")),
         ({"model": "opus"}, ("harness_refused", "model_unsupported")),
+        # An effort the harness does not offer (now): never started on its default instead.
+        ({"effort": "medium"}, ("harness_refused", "effort_unsupported")),
     ],
 )  # fmt: skip
 def test_placements_outside_the_configuration_fail(
@@ -2001,6 +2003,67 @@ def origin_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         check=True, env=env,
     )  # fmt: skip
     return repo
+
+
+def _pathlib_as_on_314(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pathlib's predicates as Python 3.14+ answer them: False below a directory that cannot
+    be searched, where 3.13 raised PermissionError (tsk-0tje3vzzedtx)."""
+    for name in ("is_dir", "is_file", "exists", "is_symlink"):
+        original = getattr(Path, name)
+
+        def quiet(self: Path, *args: Any, _original: Any = original, **kwargs: Any) -> bool:
+            try:
+                return bool(_original(self, *args, **kwargs))
+            except PermissionError:
+                return False
+
+        monkeypatch.setattr(Path, name, quiet)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("kind", ["-e", "-f", "-d", "-L"])
+def test_the_runners_own_exists_raises_where_it_cannot_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """`AsUser.exists` on the runner's own side: absent is False, a path below a directory it
+    cannot search raises, as pathlib did up to 3.13, also where pathlib now keeps quiet. The
+    gate in front of `workspace.owned` and `prepare`'s existing-clone branch read it
+    (tsk-0tje3vzzedtx, A1945)."""
+    _pathlib_as_on_314(monkeypatch)
+    assert AsUser().exists(tmp_path / "none", kind) is False
+    locked = tmp_path / "locked"
+    (locked / "agent-3").mkdir(parents=True)
+    locked.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            AsUser().exists(locked / "agent-3", kind)
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_prepare_does_not_take_a_clone_it_cannot_look_at_for_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clone below a project directory the runner cannot search is not missing: `prepare`
+    stops there instead of cloning into it (which would fail only by accident), also where
+    pathlib keeps quiet (tsk-0tje3vzzedtx, A1945)."""
+    _pathlib_as_on_314(monkeypatch)
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+
+    def no_clone(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("prepare took the clone for missing and went on to make one")
+
+    monkeypatch.setattr(AsUser, "mkdir", no_clone)  # the first step of a new clone
+    place.path.parent.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            workspace.prepare(cfg, place, "https://github.com/x/y", "agt-3", "plc-0003")
+    finally:
+        place.path.parent.chmod(0o700)
 
 
 def test_prepare_clones_and_records(tmp_path: Path, origin_repo: Path) -> None:
@@ -4424,7 +4487,7 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
     assert own is not None and other is not None
     place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
     private = sup._private(target, place, own)
-    assert other in private and own not in private
+    assert other in private and own not in private and own.parent not in private
     # The test clusters' password holder: made before the settings, and private to every
     # session from its start, its own placement's included (the session never reads it).
     stub = config.Harness("stub", ("supervised",), "supervised")
@@ -4438,6 +4501,13 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
                                                                "supervised"))  # fmt: skip
     filesystem = adapters.claude_settings(claude)["sandbox"]["filesystem"]
     assert str(holder) in filesystem["denyRead"] and str(holder) in filesystem["denyWrite"]
+    # tsk-07dwr3t80rg0: the own project's `.scratch` is denied for reading only, so a scratch made
+    # there after this start (plc-0005 here) lies under it; only the own scratch is opened again.
+    own_holder = str(own.parent)
+    assert own_holder in filesystem["denyRead"] and own_holder not in filesystem["denyWrite"]
+    assert filesystem["allowRead"] == [str(own)] and filesystem["allowWrite"] == [str(own)]
+    later = sup._scratch(placement(n=5), codex, target)
+    assert later is not None and later.parent == own.parent and later not in ctx.private
     toml = adapters.codex_config(replace(ctx, harness=codex, sandbox=True))
     assert ".maity-pg" not in toml  # under the hidden root, never opened again
 

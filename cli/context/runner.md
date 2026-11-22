@@ -1455,6 +1455,107 @@ log). Rejected because the harm — repository content reaching opencode's
 servers — happens on the start itself, not later, so only refusing the start
 prevents it.
 
+## A placement's effort goes into Codex's own config.toml, and an effort no longer offered refuses the start
+
+**Id:** 16f71263-bf51-4fed-9472-e5a5dd40efb7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract request req-bq4vg5f0jcvd (adopted 2026-11-21) and its accepted correction of the same day, card tsk-0fr0xzy2ce95; reviews A1994, A1996 and A1997 of #2090 and card tsk-3jzeck5m208a for the whole-value checks
+**See:** runner.md#the-opencode-adapter-fails-closed-on-the-model — 7c23704d-d02f-4cbf-80ca-494119f8fa5c — as of 2026-11-21
+**Revisit when:** Codex or agy change how they take a reasoning effort, or Claude Code or opencode get one the runner maps
+
+A placement names its reasoning effort (`effort`, docs/api.md §15.5) from the
+`efforts` the operator configures per harness. Codex gets it as
+`model_reasoning_effort` in the placement's own `config.toml` under
+CODEX_HOME; agy gets `--effort` in the base of every command. A start whose
+effort the harness no longer offers fails with `harness_refused`,
+`effort_unsupported`. `efforts` is advertised only when configured, and the
+configuration check refuses it on a harness whose launch passes none.
+
+**Reason:** the owner asked for a specific level for the reviewers; running
+another one without a word is the wrong failure, as with the opencode model
+above. Codex's resume (`exec … resume --last`) reads the same home as the
+first start, so a key in that file holds both alike, where a flag would have
+to be repeated on every command line. The hub's hello is strict about harness
+entries, so a key sent by a runner with nothing configured would make every
+older hub refuse the runner; leaving it out keeps such a runner working
+against any hub, as `tools` does. The adopted contract first said an older
+hub ignores the key; reading the hub showed `HarnessOffer` is strict, and the
+correction (only when configured, optional with default `[]` on the hub, the
+hub upgraded first) was accepted. A test pins the hello of a runner without
+efforts to exactly the old keys.
+
+Every runner-side check that mirrors a hub shape matches the whole value
+(`fullmatch`, or `\A…\Z`) and keeps the hub's count bounds, and an empty CLI
+option value is a usage error before any session or request. Reason: a value
+the runner's check takes but the hub refuses does not fail one placement, it
+stops the whole runner, since a hello the hub answers with 400 makes `serve`
+exit 78; a `^…$` pattern with `re.match` also takes a value ending in a
+newline. Found on this change (reviews A1994, A1996, A1997 of #2090) and
+applied to the other runner patterns in tsk-3jzeck5m208a.
+
+**Rejected alternatives:**
+- Leaving such values for the hub to refuse: the refusal comes as a whole
+  hello rejected, which stops the runner, not as a message about one field.
+- `-c model_reasoning_effort=…` on the Codex command line: works, but first
+  start and resume could drift apart.
+- Starting on the harness's default when the effort is gone, with a warning:
+  the placement would silently run a level nobody asked for.
+- A hub-side list of allowed values: the values differ per harness and
+  version (Codex has `ultra`, agy does not), so they come from the runner.
+- Mapping Claude Code and opencode now: not verified when the change was
+  made; adding them later is a runner-only change.
+
+## A fail-closed listing decides with stat, not pathlib's predicates; Python stays uncapped
+
+**Id:** 52b35dea-cf66-4fc9-9574-417dca42ef5e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0tje3vzzedtx (the tester's finding on Python 3.15.2, confirmed on 3.14) and the lead's go on the plan, 2026-11-21
+**Revisit when:** a listing that guards a deny is added to the runner, or pathlib's or `os.stat`'s error handling changes again
+
+`supervisor.other_credentials` and `other_scratches` decide on their
+direct side with `asuser.present` (`os.stat`/`os.lstat`), and so does
+`AsUser.exists` on the runner's own side. Only ENOENT, ENOTDIR and
+ELOOP count as nothing there; every other error raises, which refuses
+the start or names a file as one that cannot be checked. That is what
+pathlib's predicates did for every caller up to 3.13.
+
+Audit of the runner's direct-side checks (main 1ab5dfa7; the
+pull request's body predates the last two rows):
+- guarding a deny or a refusal, now by stat: the two listings above;
+  `capabilities._present`, the Claude Code settings files behind the
+  hook and socket checks; supervisor's existing-directory gate in front
+  of `workspace.owned`; `workspace.prepare`'s existing-clone branch;
+- every other `AsUser.exists` caller (adapters, commands, operate,
+  supervisor's start checks, tmux, workspace) gets the 3.13 meaning
+  back through the same method;
+- left on pathlib, since a quiet False only does less: `operate.py`'s
+  gc walk of `.scratch`, `skills.py` over the runner's own cache,
+  `asuser.link`, the runner's own state_dir checks, and the
+  `/proc/self/fd` feature probe in `scratchop.py`. CI runs the CLI on 3.11,
+3.13, 3.14 and 3.15 on Linux; Windows stays on 3.11 and 3.13, since
+what changed is POSIX search permission and each Windows leg costs every
+CLI pull request about 15 minutes. `requires-python` stays `>=3.11`.
+
+**Reason:** from Python 3.14 pathlib's predicates answer False for a
+path below a directory that cannot be searched instead of raising, so
+the listing silently skipped what it could not see. The sandbox then
+started without the deny for it. A listing behind a deny must not let
+the interpreter decide what an error means. The three errnos are the
+ones pathlib read as absence up to 3.13. ELOOP stays among them,
+because a test pins the direct side to an empty list for a loop of
+links.
+
+**Rejected alternatives:**
+- Capping `requires-python` below 3.14, which the card offered: runners
+  already run 3.14, and a cap only hides the next change of this kind
+  instead of making the listing correct.
+- Keeping pathlib and checking the Python version: it still leaves the
+  meaning of an error to the library, and breaks again on the next change.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
@@ -5226,7 +5327,11 @@ Two hardening steps keep the scratch the placement's own:
   showed it can neither write it (the sandbox writes only its own paths)
   nor connect to that placement's cluster socket (the sandbox refuses
   every Unix socket, its own included). agy and opencode are not kept out
-  by these rules.
+  by these rules. Since tsk-07dwr3t80rg0, Claude Code also denies the own
+  project's whole `.scratch` for reading and opens its own scratch again,
+  and another project's `.scratch` is listed whole, so the residual is
+  narrowed to a project with no `.scratch` yet at the start (entry
+  b856de03-d42e-4100-9ee3-a26803524f47).
 - **Password-protected cluster.** The cluster takes a password, which
   `with_postgres.sh` gets as `MAITY_PG_PASSWORD` and uses to make the
   cluster with `scram-sha-256`. The runner draws it once per placement into
@@ -6149,3 +6254,87 @@ makes, with no new event and no new right.
   to learn from. A health view of its own: not built.
 - Restart for not listening on a fresh session: the agent's context is the
   work; a fresh start stays a person's reset.
+
+## Claude Code's sandbox hides the own project's `.scratch` for reading and opens only its own scratch again
+
+**Id:** b856de03-d42e-4100-9ee3-a26803524f47
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-07dwr3t80rg0, filed from the security leg on #2084 (tsk-z5c3798r1ces), 2026-11-21; the lead's approval of the plan with option (a), no directories made in other projects, 2026-11-21; security's look at the plan with three conditions (denyRead only for the holder, the allows exactly the own scratch with nothing denied inside it, Codex and agy stated), 2026-11-21; the ops live probes P3 and P4 on the `/tmp` parent with Claude Code 2.1.329, 2026-11-21; `cli/src/maity/runner/adapters.py` (`claude_settings`, `scratch_holder`), `supervisor.py` (`other_scratches`, `_SCRATCHES`). That the same holds for a `.scratch` holder is inferred from P4 and awaits the ops live check on the PR's own head; the shape is the author's and the lead's
+**See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-21
+**See:** runner.md#a-claude-code-or-codex-placement-without-room-under-its-scratch-gets-a-private-tmpdir-in-a-leaf-under-the-read-denied-tmp-parent — 3c02dc4f-3189-4926-b52a-d3a2571e16a5 — as of 2026-11-21
+**See:** runner.md#agy-and-opencode-are-no-boundary-between-placements-of-one-os-user-and-no-deny-of-other-scratches-is-written-for-agy — dcd10585-3918-4bec-ae2e-6a9030597093 — as of 2026-11-21
+**Revisit when:** the runner pins a new Claude Code version, or Claude Code changes how a read deny is mounted (check again that a sibling scratch made later does not exist under the holder's read deny and that the own scratch stays readable and writable); a placement's scratch moves out of `<project>/.scratch`; the runner starts making `.scratch` in projects it has no placement for; placements get an OS user each
+
+A sandboxed Claude Code placement with a scratch beside its clone
+(`<root>/<project>/.scratch/<placement id>`) gets its project's whole
+`.scratch` in `denyRead`, and its own scratch in `allowRead` beside
+`allowWrite`. The holder is not in `denyWrite`. The other entries in that
+holder stay listed at the start as before (`supervisor.other_scratches`),
+and another project's `.scratch` is now listed whole instead of entry by
+entry. Both go in `denyRead` and `denyWrite` through the private paths.
+`allowRead` and `allowWrite` name exactly the own scratch, plus the own
+TMPDIR leaf's `tmp` where that is in use. Nothing the sandbox may not read
+sits inside the own scratch: the clone, the credentials and the password
+holder `<root>/.maity-pg` lie outside every `.scratch`.
+
+On the agents' user's side and on an ssh host the listing's records are
+told apart by their depth below the root (`<project>/.scratch` a holder,
+`<project>/.scratch/<name>` an entry), never by their last name, which the
+agents' user can pick. A record outside the root or at any other depth
+refuses the start, and the root is handed to the listing with one trailing
+separator only. Reason: a skipped record shortens the deny list without a
+trace; a root of `/` given as `//` dropped every record (review A1930).
+Rejected: skipping unknown records (a silently short deny list); matching
+the last name `.scratch` (an entry named `.scratch` was read as a holder,
+review A1924).
+
+So a sibling scratch made in the same project after this session started,
+or in another project whose `.scratch` already existed, lies under a
+read deny. Before, the list named only the scratches that existed at the
+start, so a later placement's scratch was readable from an earlier
+session, including its task output wherever the scratch's own `tmp` was
+the `TMPDIR`. Nothing written there was ever writable from that session:
+the sandbox writes only its allowed paths.
+
+Still open, tracked as tsk-rbys2j9q0m48 with the other clones'
+credentials: a project that has no `.scratch` yet when the session starts.
+A scratch made there later is readable from that session.
+
+**Codex and agy.** Codex has no such gap. Its profile hides the whole
+workspaces root and opens only the clone and the own scratch again, so a
+later scratch is hidden from it whatever the start order. agy is out of
+scope: its rules are not shown to bind its commands at the OS level, so
+the runner writes it no deny of other scratches and claims none
+(dcd10585-3918-4bec-ae2e-6a9030597093). The wider list of other projects'
+holders still goes to agy's file-tool deny, as the entries did. opencode
+has no sandbox.
+
+**Reason:** the #2084 probes showed how Claude Code 2.1.329 mounts a read
+deny: an empty mount over the denied directory, with a path re-opened in
+`allowRead` and `allowWrite` mounted again inside it (P4). A directory
+made later under the denied one does not exist in the sandbox. So a holder
+denied once at the start keeps out everything made in it later, which a
+list of entries cannot. A write deny on the holder would mount the
+re-opened scratch read-only (P3), and adds nothing, since the holder is not
+in `allowWrite`. Denying another project's holder whole needs no re-open,
+since the placement has nothing of its own there.
+
+**Rejected alternatives:**
+- Denying the whole workspaces root and re-opening the own clone and
+  scratch (rejected in entry 2ce039de-925e-4244-9a90-8336e9375d68): P4 now
+  shows an allow inside a read deny works, but the own credential's deny
+  would sit inside the re-opened clone. Which wins there is still not
+  shown. Only the holder is denied here, and nothing denied lies inside the
+  re-opened scratch.
+- The runner making `.scratch` in every project directory before each
+  start, so the open case goes too (option b): the lead did not want the
+  runner to create directories in other projects. A project directory made
+  later would remain open anyway.
+- Refreshing a running session's denies when a scratch is made: Claude
+  Code reads its sandbox settings at a start, so that takes a restart of
+  every earlier session for every new placement.
+- The holder in `denyWrite` too, as the private paths are: P3 shows the
+  re-opened scratch would be read-only, so the session could not write its
+  own scratch.

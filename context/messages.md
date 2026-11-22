@@ -589,9 +589,10 @@ one from prose.
 
 `review_delivery` adds the sender's and the author's `reports_to` only
 when that boss is of the same owner as its subordinate. Whether it is of
-another owner is the cross-owner test of §6.2 (`cross_owner.owners`): the
-subordinate is an agent and the boss is an agent of another owner or a
-human who is not its owner; a human's own `reports_to` is never
+another owner is the cross-owner test of §6.2 (`_same_owner`, with the
+owners `cross_owner.owner_of` resolves): the subordinate is an agent and
+the boss is an agent of another owner or a human who is not its owner;
+an owner that cannot be resolved leaves the boss out too (61ec0486); a human's own `reports_to` is never
 cross-owner, so a human sender's or author's boss is still added, the
 human having chosen that edge themselves. The check sits in `_lead`, so such a boss is never among the recipients, and therefore not
 among the card's own flow that `routes/events._deliver_review` hands the
@@ -611,6 +612,36 @@ default.
   still be added; with it on, the boss would appear in `held`, its owner
   would be asked for a consent, and the event would name it, where §8.4
   says it is not added at all.
+
+## A review result's lead whose owner cannot be resolved is left out
+
+**Id:** 61ec0486-2465-4269-87c1-78dbeb6610da
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-9sjg106s9wdc and the arbiter's ruling on its plan, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the author and both leads, except a boss of another owner")
+**Revisit when:** an agent can exist in a project without an owner the hub resolves, or the consent for a cross-owner edge comes to name review results
+**See:** messages.md#a-boss-of-another-owner-is-left-out-in-review_delivery-before-the-gate-not-held — 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d — as of 2026-11-21
+
+`review_delivery._lead` keeps the sender's or the author's `reports_to`
+only when the boss's owner resolves and, for an agent subordinate,
+equals that agent's resolved owner. When either owner cannot be
+resolved, the boss is left out (fail closed). A human subordinate's own
+`reports_to` is still added whoever owns the boss (1c3c5331), as long as
+the boss's owner resolves.
+
+**Reason:** the ruling on the plan set the fail-closed rule (confirmed).
+Why it holds is inferred: a lead is added only on the same-owner
+condition, and an owner that cannot be read cannot show it; the edge's
+consent names only `session_paused` (members.md, 8abdbd28), so a boss
+whose side is unknown is not sent work content. The previous test,
+`cross_owner.owners`, treated an unresolvable owner as "not cross-owner"
+and so added the boss.
+
+**Rejected alternatives:**
+- Keep the boss when an owner cannot be resolved (the behaviour before
+  this change): it delivers work content where the same-owner condition
+  was not established.
 
 ## A review result reaches the instance whose message it answers, named by `in_reply_to`
 

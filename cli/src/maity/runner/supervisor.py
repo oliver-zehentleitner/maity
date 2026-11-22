@@ -45,7 +45,7 @@ from . import (
     targets,
     workspace,
 )
-from .asuser import RUNNER, AsUser, Unreachable
+from .asuser import RUNNER, AsUser, Unreachable, present
 from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -1181,6 +1181,11 @@ class Supervisor:
         model = p.get("model")
         if model is not None and model not in harness.models:
             return ("harness_refused", "model_unsupported")
+        effort = p.get("effort")
+        if effort is not None and effort not in harness.efforts:
+            # Never started on the harness's default instead: the placement asked for a level
+            # the operator no longer offers (tsk-0fr0xzy2ce95).
+            return ("harness_refused", "effort_unsupported")
         view = view or GateView.of(target, harness.id)
         found = view.found
         if found is not None and not found.available:
@@ -2215,6 +2220,16 @@ def private_paths(
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 
+# The fail-closed listings below decide with stat, never with pathlib's predicates, which stop
+# raising from Python 3.14 (asuser.present, tsk-0tje3vzzedtx).
+def _is_dir(path: Path) -> bool:
+    return present(path, "-d")
+
+
+def _is_link(path: Path) -> bool:
+    return present(path, "-L")
+
+
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
@@ -2230,11 +2245,11 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     if as_user.direct:
         found: list[Path] = []
         try:
-            for project in root.iterdir() if root.is_dir() else ():
-                if project.is_dir() and not project.is_symlink():
+            for project in root.iterdir() if _is_dir(root) else ():
+                if _is_dir(project) and not _is_link(project):
                     found += [c / ".git" / "maity" for d in project.iterdir()
                               for c in (d, d / workspace.REPO)
-                              if (c / ".git" / "maity").is_dir()]  # fmt: skip
+                              if _is_dir(c / ".git" / "maity")]  # fmt: skip
         except OSError as exc:
             raise refused from exc
         real_root, real_clone = root, clone.resolve()
@@ -2251,43 +2266,73 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 def other_scratches(
     workspaces: Path, own: Path | None, as_user: AsUser, host: str = ""
 ) -> list[Path]:
-    """The scratch of every other placement under `workspaces` as it stands now
-    (`<root>/<project>/.scratch/<placement id>`, workspace.scratch_of), so the sandbox hides
-    them as it hides the other clones' credentials (tsk-w7qtcbzcshn9, the security review of
-    #2032). The list covers the scratches there at the start (tsk-rbys2j9q0m48 tracks the rest,
-    as for the other clones' credentials). Named as scratch_of
-    names them: below the root resolved here, as given on an
-    ssh host. A listing that cannot be completed refuses the start (`workspace.Refused`): an
-    unreadable `.scratch` could hide one, and the sandbox would start without its deny."""
+    """The other placements' scratches under `workspaces` (`<root>/<project>/.scratch/<placement
+    id>`, workspace.scratch_of), so the sandbox hides them as it hides the other clones'
+    credentials (tsk-w7qtcbzcshn9, the security review of #2032). Another project's `.scratch`
+    is named whole, so a scratch made in it after the start is hidden too (tsk-07dwr3t80rg0).
+    In the own project's `.scratch` each other entry is named. Claude Code's settings also hide
+    that whole holder and open the own scratch again (adapters.claude_settings), which covers a
+    later sibling there. A project whose `.scratch` does not exist yet at the start is not
+    covered (tsk-rbys2j9q0m48, as for the other clones' credentials). Named as scratch_of names
+    them: below the root resolved here, as given on an ssh host. A listing that cannot be
+    completed refuses the start (`workspace.Refused`): an unreadable `.scratch` could hide one,
+    and the sandbox would start without its deny."""
     root = workspaces if host else workspaces.resolve()
     refused = workspace.Refused("harness_refused")
+    own_holder = own.parent if own is not None and own.parent.name == workspace.SCRATCH else None
     found: list[Path] = []
     if as_user.direct:
         try:
-            for project in root.iterdir() if root.is_dir() else ():
+            for project in root.iterdir() if _is_dir(root) else ():
                 holder = project / workspace.SCRATCH
-                if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
+                if _is_link(project) or _is_link(holder) or not _is_dir(holder):
                     continue
-                found += [root / project.name / workspace.SCRATCH / e.name
-                          for e in holder.iterdir()]  # fmt: skip
+                named = root / project.name / workspace.SCRATCH
+                if named != own_holder:
+                    # Named whole, but only once it can be read and searched, as the delegated
+                    # listing checks (`-r`, `-x`): an unreadable `.scratch` still refuses the start.
+                    # Its kind came from stat above (_is_dir); os.access is no pathlib predicate
+                    # and answers False on any error, so it fails closed on 3.14 too.
+                    if not os.access(holder, os.R_OK | os.X_OK):
+                        raise refused
+                    found.append(named)
+                    continue
+                found += [named / e.name for e in holder.iterdir()]
         except OSError as exc:
             raise refused from exc
     elif as_user.exists(root, "-d"):
         # The root with a trailing slash, so a root that is a link is listed through it; only the
         # projects' own `.scratch` (never a clone's content, which may be unreadable) is read.
-        listed = as_user.run(["sh", "-c", _SCRATCHES, "sh", f"{root}/"])
+        # The separator added only when absent: a root of `/` given as `//` comes back from find
+        # as `//<project>/...`, which is not below `/` for Path and would be lost (A1930).
+        given = str(root) if str(root).endswith("/") else f"{root}/"
+        listed = as_user.run(["sh", "-c", _SCRATCHES, "sh", given])
         if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
             raise refused
         for entry in listed.stdout.split("\0"):
-            names = Path(entry).parts[-3:] if entry else ()
-            if len(names) == 3 and names[1] == workspace.SCRATCH:
-                found.append(root / names[0] / workspace.SCRATCH / names[2])
+            # Told apart by depth below the root, never by a name the agents' user could pick:
+            # `<project>/.scratch` is a holder, `<project>/.scratch/<name>` an entry in one.
+            # Anything else (not below the root, another depth) means the script and this parser
+            # are out of step: refuse, never skip, since a skipped record shortens the denies.
+            if not entry:  # after the last NUL
+                continue
+            try:
+                parts = Path(entry).relative_to(root).parts
+            except ValueError as exc:
+                raise refused from exc
+            if len(parts) not in (2, 3) or parts[1] != workspace.SCRATCH:
+                raise refused
+            named = root / parts[0] / workspace.SCRATCH
+            if len(parts) == 2 and named != own_holder:
+                found.append(named)
+            elif len(parts) == 3 and named == own_holder:
+                found.append(named / parts[2])
     return sorted(set(found) - ({own} if own is not None else set()))
 
 
-# Every entry of every project's `.scratch` under the root given (with a trailing slash), one
-# NUL after each: the projects are the root's own entries (a project's name never starts with a
-# dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
+# Every project's `.scratch` under the root given (with a trailing slash) and every entry in it,
+# one NUL after each: the projects are the root's own entries (a project's name never starts with
+# a dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
 # side. A root, a project or a `.scratch` that cannot be read and searched ends with 3, as a
 # PermissionError does on the direct side: it could hide a scratch (the review of #2032).
 _SCRATCHES = r"""[ -r "$1" ] && [ -x "$1" ] || exit 3
@@ -2297,7 +2342,7 @@ for p in "$1"*; do
   h=$p/.scratch
   [ -d "$h" ] && ! [ -L "$h" ] || continue
   [ -r "$h" ] && [ -x "$h" ] || exit 3
-  find "$h" -mindepth 1 -maxdepth 1 -print0 || exit 3
+  find "$h" -maxdepth 1 -print0 || exit 3
 done
 [ -r "$1" ] && [ -x "$1" ] || exit 3"""
 

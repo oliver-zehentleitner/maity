@@ -3432,6 +3432,8 @@
   "placements.new.hint": "运行器会在此项目仓库的克隆中，用这里选择的工具、模式和模型启动智能体。只列出你自己已配对、获准用于此项目并提供其仓库的运行器。",
   "placements.new.legend": "在运行器上",
   "placements.new.offer": "在我的某个运行器上启动，而不是用加入通道",
+  "placements.new.own_only": "在你的运行器上，你启动的是自己尚未加入本项目的智能体。用新建智能体档案创建一个，或用加入通道让此智能体加入。",
+  "placements.new.members_unread": "无法重新读取项目的成员，以确认该智能体现在是否已是成员；其加入字段保持填写时的内容：{reason}",
   "placements.new.instance_full": "{name} 已有 {active} 个实例（上限 {max} 个），已达上限。在启动另一个实例之前，其所有者需在智能体的规则中提高上限。",
   "placements.new.instance_room": "这将启动 {name} 的另一个实例：当前 {active} 个实例（上限 {max} 个），{where}。",
   "placements.new.instance_where": "在 {runners} 上运行",

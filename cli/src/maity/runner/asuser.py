@@ -13,6 +13,7 @@ there, and a harness setting an agent changes only widens what that same user co
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -65,6 +66,36 @@ def shell_join(words: Sequence[str]) -> str:
 
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
+
+
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+
+def stat_mode(path: Path, *, follow: bool = True) -> int | None:
+    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
+    other OSError raises. A check that must fail closed decides with this, never with
+    `is_dir()`/`exists()`/`is_symlink()`: from Python 3.14 those answer False for a path
+    below a directory that cannot be searched instead of raising, and the check would take
+    what it cannot see for absent (tsk-0tje3vzzedtx)."""
+    try:
+        return (os.stat if follow else os.lstat)(path).st_mode
+    except OSError as exc:
+        if exc.errno in ABSENT:
+            return None
+        raise
+
+
+def present(path: Path, kind: str = "-e") -> bool:
+    """`test -e` (`-f`, `-d`, `-L`) on the runner's own side, failing closed: absent is False,
+    any other error raises (stat_mode)."""
+    mode = stat_mode(path, follow=kind != "-L")
+    if mode is None:
+        return False
+    check = {"-e": lambda m: True, "-f": stat.S_ISREG, "-d": stat.S_ISDIR, "-L": stat.S_ISLNK}
+    return bool(check[kind](mode))
 
 
 @dataclass(frozen=True)
@@ -264,11 +295,11 @@ class AsUser:
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the
-        runner."""
+        runner. On the runner's own side with stat (`present`): absent is False, and a path it
+        cannot look at raises, as pathlib's predicates did up to Python 3.13, so no caller
+        takes what it cannot see for absent (tsk-0tje3vzzedtx)."""
         if self.direct:
-            checks = {"-e": path.exists, "-f": path.is_file, "-d": path.is_dir,
-                      "-L": path.is_symlink}  # fmt: skip
-            return checks[kind]()
+            return present(path, kind)
         return self.run(["test", kind, str(path)]).returncode == 0
 
     def link(self, target: Path, link: Path) -> None:
@@ -575,7 +606,7 @@ class Ssh(AsUser):
         home = done.stdout.strip()
         # The remote account is the agents': its shell start-up files can set HOME to
         # anything, and the runner builds paths and the attach hint from it.
-        if done.returncode != 0 or not REMOTE_HOME.match(home) or ".." in home.split("/"):
+        if done.returncode != 0 or not REMOTE_HOME.fullmatch(home) or ".." in home.split("/"):
             raise OSError(
                 f"{self.name}: {self.login}'s home is not a plain absolute path "
                 f"({home[:80]!r}); the runner refuses the host"

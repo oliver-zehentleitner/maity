@@ -46,6 +46,8 @@ from maity_hub.views import event_views
 router = APIRouter(route_class=ProjectRoute)
 
 CLONE_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
+# The shape only: which efforts a harness takes is the runner's advertised list (§15.5).
+EFFORT_PATTERN = r"^[a-z]{1,16}$"
 NOT_NULLABLE = frozenset(
     {"desired", "harness", "mode", "stop_grace_seconds", "workspace_retention"}
 )
@@ -80,6 +82,7 @@ class PlacementCreate(Strict):
     harness: str
     mode: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
+    effort: str | None = Field(default=None, pattern=EFFORT_PATTERN)
     workspace: WorkspaceIn = Field(default_factory=WorkspaceIn)
     desired: Literal["running", "stopped"] = "running"
     stop_grace_seconds: int = Field(default=120, ge=0, le=900)
@@ -92,6 +95,7 @@ class PlacementPatch(Strict):
     harness: str | None = None
     mode: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
+    effort: str | None = Field(default=None, pattern=EFFORT_PATTERN)
     target: str | None = Field(default=None, min_length=1, max_length=200)
     stop_grace_seconds: int | None = Field(default=None, ge=0, le=900)
     workspace_retention: Retention | None = None
@@ -243,7 +247,7 @@ def _check_spec(runner: Any, spec: dict[str, Any], repository_url: str | None) -
     if spec["mode"] not in pl.MODES:
         raise invalid({"mode": "unknown"})
     try:
-        pl.check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])
+        pl.check_offered(runner, spec)
         pl.check_repository(runner, repository_url)
     except pl.Refusal as refusal:
         raise _refused(refusal) from None
@@ -405,6 +409,7 @@ def create_placement(
             "harness": body.harness,
             "mode": body.mode or pl.default_mode(runner, body.harness),
             "model": body.model,
+            "effort": body.effort,
             "target": body.target,
         }
         _check_spec(runner, spec, project.repository_url)
@@ -700,6 +705,7 @@ def _file(
             "target": spec.get("target"),
             "tool": spec.get("harness"),
             "model": spec.get("model"),
+            "effort": spec.get("effort"),
             "mode": spec.get("mode"),
             "isolation": ((isolation or {}).get("isolation") or {}).get("kind"),
             "reason": reason,
@@ -726,7 +732,8 @@ def patch_placement(
     given = body.model_fields_set - {"reason"}
     if not given:
         raise invalid({"body": "empty"}, "say what to change")
-    # Only `model` and `target` take null (the runner's default, the runner's choice).
+    # Only `model`, `effort` and `target` take null (the runner's default, the harness's
+    # default, the runner's choice).
     nulls = {k: "not_nullable" for k in given & NOT_NULLABLE if getattr(body, k) is None}
     if nulls:
         raise invalid(nulls)
