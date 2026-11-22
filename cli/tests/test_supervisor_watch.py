@@ -922,3 +922,187 @@ def test_a_finding_whose_reply_was_lost_stays_in_one_seq(world: Any) -> None:
     after = hub_.sent[-1][1]
     assert after["state"] == "starting" and "finding" not in after
     assert after["seq"] == carried[0]["seq"] + 1
+
+
+# --- Gemini review A2033: a refused report that carries a finding ----------------------------
+
+
+class Answers(Reports):
+    """Every status report tried, in `tried`; the next ones answered with `answers` in turn
+    (an exception each), the rest taken. `during` runs while a report is in flight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tried: list[dict[str, Any]] = []
+        self.answers: list[hub.HubError] = []
+        self.during: Any = None
+
+    def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if path.endswith("/status"):
+            self.tried.append(body)
+            if self.during is not None:
+                self.during()
+                self.during = None
+            if self.answers:
+                raise self.answers.pop(0)
+        return super().call(method, path, body, **kwargs)
+
+
+def invalid(*fields: str) -> hub.HubError:
+    exc = hub.HubError("invalid", code="invalid", status=400)
+    exc.details = {"fields": {name: "invalid" for name in fields}}
+    return exc
+
+
+def exited_with_finding(
+    sup: supervisor.Supervisor, backend: FakeTmux, clock: Clock, *answers: hub.HubError
+) -> Answers:
+    """A deaf `maity wait` ended and gone: its `exited`/`hung` report carries the finding and
+    meets `answers`."""
+    hub_ = Answers()
+    sup.client = hub_  # type: ignore[assignment]  # a fake that answers only the report call
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    hub_.answers.extend(answers)
+    sup.tick()
+    assert hub_.tried[-1]["state"] == "exited"
+    return hub_
+
+
+def test_a_finding_report_refused_on_another_field_is_not_resent_in_the_backoff(
+    world: Any,
+) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = exited_with_finding(sup, backend, clock, invalid("restarts"))
+    tried = len(hub_.tried)
+    clock.now += supervisor.TICK  # still within the restart's first backoff step
+    sup.tick()
+    assert len(hub_.tried) == tried  # the refused body is never sent again
+    clock.now += supervisor.TICK + 1  # past it: the restart
+    settle(sup)
+    carried = with_findings(hub_)
+    assert len(carried) == 1
+    assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("starting", "wait_deaf")
+
+
+def test_a_terminal_finding_report_refused_on_another_field_is_never_resent(
+    world: Any,
+) -> None:
+    sup, backend, _, clock, _ = world
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
+    hub_ = Answers()
+    sup.client = hub_
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    hub_.answers.append(invalid("exit_code"))
+    sup.tick()
+    assert hub_.tried[-1]["state"] == "failed" and "finding" in hub_.tried[-1]
+    tried = len(hub_.tried)
+    for _ in range(5):
+        clock.now += supervisor.TICK
+        sup.tick()
+    assert len(hub_.tried) == tried
+
+
+def test_a_finding_refused_alone_is_dropped_and_its_state_still_goes(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = exited_with_finding(sup, backend, clock, invalid("finding.signals.below"))
+    refused, again = hub_.tried[-2], hub_.tried[-1]
+    assert "finding" in refused and "finding" not in again
+    assert again["seq"] == refused["seq"] and again["state"] == "exited"
+    assert hub_.sent[-1][1] is again  # taken at once
+    rec = sup.records[PID]
+    assert rec.finding is None and rec.pending is None
+    clock.now += 11
+    settle(sup)
+    assert with_findings(hub_) == [] and hub_.sent[-1][1]["state"] == "starting"
+
+
+def test_a_detail_refused_on_a_finding_report_keeps_the_finding_and_seq(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = exited_with_finding(sup, backend, clock, invalid("detail"))
+    refused, again = hub_.tried[-2], hub_.tried[-1]
+    assert refused["detail"] == "not_listening" and again["detail"] is None
+    assert again["seq"] == refused["seq"] and again["finding"] == refused["finding"]
+    assert len(with_findings(hub_)) == 1  # delivered once
+    assert sup.records[PID].finding is None
+
+
+def test_a_detail_strip_then_another_refusal_is_not_resent(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = exited_with_finding(sup, backend, clock, invalid("detail"), invalid("restarts"))
+    tried = len(hub_.tried)
+    for _ in range(3):
+        clock.now += supervisor.TICK / 2  # within the backoff: no state change
+        sup.tick()
+    assert len(hub_.tried) == tried
+    assert sum(1 for body in hub_.tried if body.get("detail") == "not_listening") == 1
+
+
+def test_a_finding_refused_twice_is_dropped(world: Any) -> None:
+    sup, backend, _, clock, logs = world
+    hub_ = exited_with_finding(sup, backend, clock, invalid("restarts"))
+    assert any("the next change carries its finding" in line for line in logs)
+    clock.now += 11
+    hub_.answers.append(invalid("restarts"))
+    settle(sup)  # `starting` carries it and is refused too
+    assert hub_.tried[-1]["state"] == "starting" and "finding" in hub_.tried[-1]
+    assert any("its finding dropped" in line for line in logs)
+    assert sup.records[PID].finding is None
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert hub_.sent[-1][1]["state"] == "running"
+    assert with_findings(hub_) == []
+
+
+@pytest.mark.parametrize(("code", "status"), [("stale_generation", 409), ("not_found", 404)])
+def test_a_finding_report_the_hub_moved_past_is_settled(world: Any, code: str, status: int) -> None:
+    sup, backend, _, clock, _ = world
+    exited_with_finding(sup, backend, clock, hub.HubError(code, code=code, status=status))
+    rec = sup.records[PID]
+    assert rec.pending is None and rec.finding is None
+
+
+@pytest.mark.parametrize("answer", [None, "invalid"])
+def test_a_newer_finding_is_kept_whatever_the_older_reports_answer(
+    world: Any, answer: str | None
+) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = Answers()
+    sup.client = hub_
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    newer = {"cause": "unknown"}
+    rec = sup.records[PID]
+    hub_.during = lambda: sup._found(rec, newer)  # filed while the older one is in flight
+    if answer == "invalid":
+        hub_.answers.append(invalid("restarts"))
+    sup.tick()
+    assert "finding" in hub_.tried[-1] and hub_.tried[-1]["finding"] is not newer
+    assert rec.finding is newer
+
+
+def test_a_restart_after_a_detail_strip_sends_the_stripped_report(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    exited_with_finding(sup, backend, clock, invalid("detail"), hub.HubError("no answer"))
+    sup.save()  # the runner stops here
+    hub_ = Answers()
+    again = supervisor.Supervisor(
+        sup.cfg, FakeTmux(), hub_, lambda line: None, {}, now=clock  # type: ignore[arg-type]
+    )
+    again.load()
+    pending = again.records[PID].pending
+    assert pending is not None and pending["body"]["detail"] is None
+    assert "finding" in pending["body"]
+    again.update(sup.desired)
+    again._report(again.desired)
+    assert hub_.tried == [pending["body"]]  # the stripped one, never the refused one

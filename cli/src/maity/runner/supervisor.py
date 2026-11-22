@@ -2730,13 +2730,16 @@ class Supervisor:
                 again = self._send(pid, rec, again)
 
     def _send(self, pid: str, rec: Record, pending: dict[str, Any]) -> dict[str, Any] | None:
-        """POST one report (§15.8). Returns the report to send at once in its place -- the same
-        report with `detail: null` and the same `seq`, when the hub refused it as `invalid` for
-        its detail alone -- else None. A report refused as `invalid` is never sent again as it
-        was: the same body meets the same refusal every tick and the hub never records the
-        state. Any other `invalid` is dropped (the next change reports afresh), except that a
-        report carrying a finding hands it on to the next report once (Codex A1957). A failure
-        that is no refusal of the body (no answer, an authentication refusal, `429`, `5xx`,
+        """POST one report (§15.8). Returns the report to send at once in its place, with the
+        same `seq` -- the same report with `detail: null` when the hub refused it as `invalid`
+        for its detail alone, or without its `finding` when it refused it for the finding
+        alone -- else None. A report refused as `invalid` is never sent again as it was: the
+        same body meets the same refusal every tick and the hub never records the state.
+        Any other `invalid` is dropped: the record counts as settled until its state changes,
+        and the next change reports afresh, carrying a finding the dropped report held on to
+        it once; refused a second time, the finding is dropped (Codex A1957, Gemini A2033).
+        A finding refused alone is dropped at once, its state still reported. A failure that
+        is no refusal of the body (no answer, an authentication refusal, `429`, `5xx`,
         maintenance) sends the same body with its `seq` again on the next tick (Codex A1965).
         The stripped report and the drop are saved at once, so a restart before the end of the
         tick never sends the refused body again."""
@@ -2746,7 +2749,8 @@ class Supervisor:
         except hub.HubError as exc:
             if exc.code in ("stale_generation", "not_found"):
                 with self.lock:  # the hub moved on: settled, until the state changes
-                    rec.acked, rec.pending = pending["key"], None
+                    if rec.pending is pending:
+                        rec.acked, rec.pending = pending["key"], None
                     self._delivered(rec, pending)
                 return None
             if _refused(exc):
@@ -2767,15 +2771,37 @@ class Supervisor:
                     # stripped report, never the refused one again.
                     self.save()
                     return stripped
+                finding_only = (
+                    isinstance(fields, dict) and bool(fields) and "finding" in pending["body"]
+                    and all(k == "finding" or str(k).startswith("finding.") for k in fields)
+                )  # fmt: skip
+                if finding_only:
+                    # The finding is what the hub refuses: the state still stands and goes at
+                    # once without it, with the same seq, so a failed state still reaches the
+                    # owner (Gemini A2033). The finding is dropped, unless a newer one took its
+                    # place meanwhile.
+                    self.log(f"report for {pid} refused for its finding ({exc}); "
+                             "sent again without it, the finding dropped")  # fmt: skip
+                    body = {k: v for k, v in pending["body"].items() if k != "finding"}
+                    stripped = {k: v for k, v in pending.items() if k != "finding_n"}
+                    stripped["body"] = body
+                    with self.lock:
+                        if rec.pending is not pending:
+                            return None
+                        rec.pending = stripped
+                        self._delivered(rec, pending)
+                    self.save()  # a restart sends the stripped report, never the refused one
+                    return stripped
                 if "finding_n" in pending:
-                    # The hub answered and did not take it: the next state's report is built
-                    # and carries the finding on, once (Codex A1957).
-                    self.log(f"report for {pid} refused as invalid ({exc}); "
-                             "the next one carries its finding")  # fmt: skip
+                    # Settled as dropped, as any other `invalid` (Gemini A2033): never sent
+                    # again as it was, and the next state change carries the finding on once;
+                    # a second refusal drops it (Codex A1957).
                     with self.lock:
                         if rec.pending is pending:
-                            rec.pending = None
-                        self._finding_refused(rec, pending)
+                            rec.acked, rec.pending = pending["key"], None
+                        kept = self._finding_refused(rec, pending)
+                    said = "the next change carries its finding" if kept else "its finding dropped"
+                    self.log(f"report for {pid} refused as invalid ({exc}); dropped, {said}")
                     self.save()
                     return None
                 self.log(f"report for {pid} refused as invalid ({exc}); dropped, "
@@ -2802,17 +2828,19 @@ class Supervisor:
             rec.finding = None
 
     @staticmethod
-    def _finding_refused(rec: Record, pending: dict[str, Any]) -> None:
+    def _finding_refused(rec: Record, pending: dict[str, Any]) -> bool:
         """The hub refused a report carrying the finding: the next report carries it on, but
         a finding refused twice is dropped, since it may be what the hub refuses, and it must
-        not hold every later report back."""
+        not hold every later report back. True while the record still holds a finding for the
+        next report (this one carried on, or a newer one), False when it was dropped."""
         n = pending.get("finding_n")
         if n is None or n != rec.finding_n:
-            return
+            return rec.finding is not None
         if rec.finding_refused == n:
             rec.finding = None
-        else:
-            rec.finding_refused = n
+            return False
+        rec.finding_refused = n
+        return True
 
 
 def _refused(exc: hub.HubError) -> bool:

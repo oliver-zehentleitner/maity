@@ -6202,7 +6202,7 @@ makes, with no new event and no new right.
 **Evidence:** inferred
 **Source:** card tsk-bzmd0avm4yhb, 2026-11-21: the contract in docs/api.md §15.7, §15.8 and §15.14 as merged in #2059; the lead's go on the plan with its rulings (seq 188562); security review A1838 (note nte-46y7xkgz9njk) for the scrub; `cli/src/maity/runner/watch.py`, `supervisor.py` (`_watch`, `_react`, `_pickup_finding`), `keeper.py` (`login_state`). Tested with fakes for tmux, the clock and the hub, not yet on a live runner
 **See:** runner.md — e6a12eff-5d04-476e-8239-22970a139c7b — as of 2026-11-21
-**Revisit when:** the hub carries `health.settings` (the grace becomes `hang_after_minutes`); a pane signature is verified on a real run; an interactive harness's limit exit is recognised; ops has seen Claude Code's and Codex's live logged-out answers (Claude Code then gets a `needed` entry); the runner restarts often enough that losing its notes hides a cause; a secret kind the scrub does not know shows up in a log line
+**Revisit when:** the hub carries `health.settings` (the grace becomes `hang_after_minutes`); a pane signature is verified on a real run; an interactive harness's limit exit is recognised; Claude Code gives a logged-out answer an unreadable configuration cannot give (it then gets a `needed` entry); the runner restarts often enough that losing its notes hides a cause; a secret kind the scrub does not know shows up in a log line
 
 The runner builds the watch exactly as the contract says (entry e6a12eff).
 Where the contract left the choice open, it decided as follows.
@@ -6276,12 +6276,15 @@ Where the contract left the choice open, it decided as follows.
   Any other exit, a timeout or an error is `unknown`, since `needed` ends
   the placement as `failed`/`auth` with no restart. A real Claude Code
   logout meanwhile shows as a restart and then `failed`/`hung` at the cap,
-  which costs availability only. Evidence: the answers come from the tools'
-  documentation and are not yet observed in a live session (neither probe
-  may run in the placement that wrote this; security delta A1959). A wrong
-  answer for Codex only turns a real logout into `unknown`. Revisit when ops
-  has seen the live not-logged-in answers: then Claude Code gets an entry
-  like Codex's, its exit code and its line.
+  which costs availability only. Evidence: ops checked both live on
+  2026-11-21 (note on tsk-bzmd0avm4yhb, Claude Code 2.1.329, Codex 0.171.0,
+  a throwaway HOME). Codex logged out exits 1 with exactly `Not logged in`
+  on stderr; its errors also exit 1 with other lines, so the line decides.
+  Claude Code logged out exits 1 with JSON `"loggedIn": false`, and so does
+  an unreadable configuration (a file as `CLAUDE_CONFIG_DIR`, a home at mode
+  000), while an unknown option also exits 1: a logout cannot be told from
+  an unreadable configuration, so `unknown` is right. Revisit when Claude
+  Code gives a logged-out answer an unreadable configuration cannot give.
 - **A pending end is called off before the kill when its facts changed**
   (Codex delta review A1957). Before the kill that follows a TERM the
   harness survived, the runner reads the facts again. A pause or dormancy
@@ -6302,14 +6305,22 @@ Where the contract left the choice open, it decided as follows.
   settled** (A1957). The hub knows a report by its `seq` alone; a lost reply
   followed by a copy in a new `seq` would give the finding twice. So that
   body is sent again as it is until the hub takes it or answers definitively;
-  the next state is reported right after it, delayed, never lost. Only a
+  the next state is reported right after it, delayed, never lost. A
   definitive refusal of the body (400 `invalid`, the hub's validation)
-  carries the finding on to the next state's report, and a second refusal
-  drops it, since the finding may be what the hub refuses and must not hold
-  every later report back. Any other answer, an authentication refusal such
-  as `timestamp_skew` included, says nothing about the body or about an
-  earlier try, so the same `seq` goes again (A1965). Rejected: any 4xx as
-  definitive, which dropped a valid finding after two clock-skew refusals.
+  follows #2080's rule (entry b68a2e8b-8472-4cfe-88b1-8531d7275949): never
+  sent again as it was (Gemini review A2033). When `details.fields` names
+  only the finding, the report goes once more at once without it, with the
+  same `seq`, and the finding is dropped, as #2080 strips a refused detail;
+  a failed state still reaches the owner. Any other `invalid` settles the
+  report as dropped, and the next state change carries the finding on once;
+  a second refusal drops it, since the finding may be what the hub refuses
+  and must not hold every later report back. Any other answer, an
+  authentication refusal such as `timestamp_skew` included, says nothing
+  about the body or about an earlier try, so the same `seq` goes again
+  (A1965). Rejected: any 4xx as definitive, which dropped a valid finding
+  after two clock-skew refusals; and leaving a refused state unacked, which
+  sent the refused body again on the next tick with a new `seq` and lost a
+  valid finding during the restart's backoff (Gemini A2033).
 - **The scrub also takes a URL's userinfo and underscore key prefixes**
   (A1942): `scheme://user:pass@host` and `scheme://token@host` keep the
   scheme and the host and lose the userinfo; Stripe `sk_live_`, `sk_test_`,
