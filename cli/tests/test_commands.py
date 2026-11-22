@@ -1410,7 +1410,7 @@ def test_runner_scratchop_codex_reaches_the_op_through_the_cli_entry(
     """
     root = tmp_path / "ws"
     root.mkdir()
-    scratch_dir = root / "maity" / ".scratch" / "plc-0003"
+    scratch_dir = root / ".scratch" / "maity" / "plc-0003"
     scratchop.make(str(root), str(scratch_dir))
     home = scratch_dir / "codex-home"
     login = tmp_path / "login" / "auth.json"

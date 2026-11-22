@@ -24,7 +24,7 @@ from sqlalchemy import ColumnElement, Connection, Engine, and_, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.cards import SOME_INSTANCE, open_claims
-from maity_hub.events import emit, lock_project, transaction
+from maity_hub.events import emit, lock_project, lock_projects, transaction
 
 log = logging.getLogger(__name__)
 
@@ -160,11 +160,14 @@ def revoked(conn: Connection, credential_id: str) -> None:
     `auth.revocation.revoke` (`holder_moves`), which then does not call this."""
     a = t.instance_attachment
     rows = conn.execute(
-        select(a.c.membership_id, a.c.instance)
+        select(a.c.membership_id, a.c.instance, t.membership.c.project_id)
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
         .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-        .order_by(a.c.attached_at, a.c.id)
+        .order_by(t.membership.c.project_id, a.c.id)
     ).all()
-    # In every project the instance is in (§6.17).
+    # In every project the instance is in (§6.17), all locked first in the order of their
+    # ids; the revocation took them already, so these are taken again harmlessly.
+    lock_projects(conn, [row.project_id for row in rows])
     for row in rows:
         stalled(conn, row.membership_id, row.instance, "session_ended")
 

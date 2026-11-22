@@ -33,6 +33,10 @@ def _restore_modes(tmp_path: Path) -> Any:
 
 
 def _room(root: Path) -> Path:
+    return root / ".scratch" / "maity" / "plc-0003"
+
+
+def _former(root: Path) -> Path:
     return root / "maity" / ".scratch" / "plc-0003"
 
 
@@ -207,7 +211,9 @@ def test_nothing_is_made_or_removed_through_a_link_on_the_way(tmp_path: Path, li
 @pytest.mark.parametrize(
     "name", ["maity/agent-3", "maity/.scratch", "maity/.scratch/plc-0003/tmp", "maity/x/plc-0003",
              ".scratch/plc-0003", "maity/.scratch/agent-3", "Maity/.scratch/plc-0003",
-             "maity/.scratch/plc-0003\n", "maity\n/.scratch/plc-0003"],
+             "maity/.scratch/plc-0003\n", "maity\n/.scratch/plc-0003",
+             ".scratch", ".scratch/maity", ".scratch/maity/plc-0003/tmp", ".scratch/Maity/plc-0003",
+             ".scratch/maity/agent-3", ".scratch/.scratch/plc-0003", "x/maity/plc-0003"],
 )  # fmt: skip
 def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, name: str) -> None:
     """A clone, the holder `.scratch` itself, anything below a scratch or of another shape:
@@ -221,6 +227,76 @@ def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, n
             op(str(root), str(target))
         assert not isinstance(refused.value, scratchop.OnTheWay)
     assert (target / "keep").read_text() == "k"
+
+
+def test_the_former_shape_is_measured_and_removed_but_never_made(tmp_path: Path) -> None:
+    """tsk-c7zzd440x8pn: a scratch a start before the holder made, in
+    `<root>/<project>/.scratch/<id>`, is still measured and removed until its placement is gone;
+    no scratch is made there any more, nor Codex's home written into one."""
+    root = tmp_path / "ws"
+    former = _former(root)
+    (former / "tmp").mkdir(parents=True)
+    (former / "tmp" / "f").write_bytes(b"z" * 100)
+    with pytest.raises(OSError, match="not a placement's scratch"):
+        scratchop.make(str(root), str(former))
+    with pytest.raises(OSError, match="not a placement's scratch"):
+        scratchop.codex(str(root), str(former / "codex-home"), "CONFIG", None)
+    assert scratchop.size(str(root), str(former))["result"] == "size"
+    assert scratchop.remove(str(root), str(former))["result"] == "removed"
+    assert not former.exists() and former.parent.is_dir()  # the former holder stays
+
+
+def test_the_holder_is_made_private_and_checked_at_every_make(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The holder of every scratch is made 0700, and both the holder op and every make check
+    it: a link or another user's directory is refused (OnTheWay) and nothing is made in it."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / ".scratch"
+    assert scratchop.holder(str(root), str(holder)) == {"result": "made"}
+    assert stat.S_IMODE(holder.stat().st_mode) == 0o700
+    assert scratchop.holder(str(root), str(holder)) == {"result": "made"}  # an existing one
+    with pytest.raises(OSError, match="not the scratch holder"):
+        scratchop.holder(str(root), str(root / "maity" / ".scratch"))
+    # Another user's holder: refused by the op and by make, nothing made under it.
+    real = scratchop._uid
+    monkeypatch.setattr(scratchop, "_uid", lambda user: real(user) + 1)
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.holder(str(root), str(holder))
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.make(str(root), str(_room(root)))
+    assert not _room(root).exists()
+    # Nor is anything removed through another user's holder (A2068); the former shape, which
+    # has no holder, is not affected.
+    monkeypatch.setattr(scratchop, "_uid", real)
+    scratchop.make(str(root), str(_room(root)))
+    monkeypatch.setattr(scratchop, "_uid", lambda user: real(user) + 1)
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.remove(str(root), str(_room(root)))
+    assert _room(root).is_dir()
+    # Another user's holder whose mode keeps us out is OnTheWay too, not a bare permission
+    # error (A2073); as root the mode keeps nobody out and the owner check says it.
+    holder.chmod(0o000)
+    try:
+        with pytest.raises(scratchop.OnTheWay):
+            scratchop.holder(str(root), str(holder))
+        with pytest.raises(scratchop.OnTheWay):
+            scratchop.remove(str(root), str(_room(root)))
+    finally:
+        holder.chmod(0o700)
+    monkeypatch.setattr(scratchop, "_uid", real)
+    assert scratchop.remove(str(root), str(_room(root)))["result"] == "removed"
+    # A link in its place: refused, the link's target untouched.
+    _room(root).parent.rmdir()  # the project's directory a remove leaves, empty
+    holder.rmdir()
+    (tmp_path / "elsewhere").mkdir()
+    holder.symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.holder(str(root), str(holder))
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.make(str(root), str(_room(root)))
+    assert list((tmp_path / "elsewhere").iterdir()) == []
 
 
 def test_the_module_imports_only_the_standard_library_and_maity() -> None:
@@ -270,7 +346,7 @@ def test_the_module_answers_in_one_line_and_says_link_by_its_exit_code(
     assert scratchop.main(["make", "--under", str(root), str(room)]) == 0
     assert capsys.readouterr().out.strip() == '{"result": "made"}'
     (root / "other").mkdir()
-    (root / "maity" / ".scratch" / "plc-0004").symlink_to(root / "other")
+    (root / ".scratch" / "maity" / "plc-0004").symlink_to(root / "other")
     assert scratchop.main(["remove", "--under", str(root), str(_room(root).parent / "plc-0004")]) \
         == scratchop.LINK  # fmt: skip
     assert '"result": "link"' in capsys.readouterr().out
@@ -292,15 +368,16 @@ def test_a_holder_swapped_for_a_link_after_it_was_opened_leads_nowhere_else(
     measure = scratchop._size
 
     def swapped(fd: int) -> int:
-        # Between the walk and the removal: `.scratch` moved away, a link in its place.
-        room.parent.rename(root / "maity" / "moved")
+        # Between the walk and the removal: the project's directory moved away, a link in its
+        # place.
+        room.parent.rename(room.parent.parent / "moved")
         room.parent.symlink_to(victim.parent)
         return measure(fd)
 
     monkeypatch.setattr(scratchop, "_size", swapped)
     assert scratchop.remove(str(root), str(room))["result"] == "removed"
     assert (victim / "keep").read_text() == "k"  # the link's target is untouched
-    assert not (root / "maity" / "moved" / "plc-0003").exists()  # what was opened went
+    assert not (room.parent.parent / "moved" / "plc-0003").exists()  # what was opened went
 
 
 def test_a_scratch_swapped_for_a_link_while_it_is_removed_leads_nowhere_else(
@@ -426,7 +503,7 @@ def test_codex_refuses_a_link_on_the_way_to_the_scratch(tmp_path: Path) -> None:
     room = _room(root)
     elsewhere = tmp_path / "elsewhere"
     (elsewhere / "plc-0003").mkdir(parents=True)
-    room.parent.mkdir(parents=True)  # <root>/maity/.scratch
+    room.parent.mkdir(parents=True)  # <root>/.scratch/maity
     (room).symlink_to(elsewhere / "plc-0003")
     with pytest.raises(scratchop.OnTheWay):
         scratchop.codex(str(root), str(_home(root)), "CONFIG", None)
@@ -480,7 +557,11 @@ def test_through_sudo_or_ssh_a_link_on_the_way_is_its_own_answer(tmp_path: Path)
         Remote(scratchop.LINK).scratch("remove", tmp_path / "ws", room)
     with pytest.raises(OSError) as failed:
         Remote(2).scratch("remove", tmp_path / "ws", room)  # a host maity without it
-    assert not isinstance(failed.value, scratchop.OnTheWay)
+    assert not isinstance(failed.value, (scratchop.OnTheWay, scratchop.Unsupported))
+    # A host whose maity predates the holder op answers it with a usage error: Unsupported,
+    # which the supervisor reads as the former layout there (tsk-c7zzd440x8pn).
+    with pytest.raises(scratchop.Unsupported):
+        Remote(2).scratch("holder", tmp_path / "ws", tmp_path / "ws" / ".scratch")
     answer = Remote(0, '{"result": "removed", "bytes": 7}').scratch("remove", tmp_path / "ws", room)
     assert answer == {"result": "removed", "bytes": 7}
 

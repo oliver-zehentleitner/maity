@@ -13,6 +13,7 @@ runner whose clone may still be on the machine, closed or not, in any project.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import timedelta
 from typing import Any
 
@@ -43,32 +44,44 @@ def due(row: Any) -> bool:
     return row.revoked_at is None and when is not None and when <= clock.now()
 
 
-def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
+def revoke_agent(
+    conn: Connection,
+    credential_id: str,
+    by: str | None,
+    project_ids: Collection[str] | None = None,
+) -> None:
     """Revoke an agent credential a runner's stop names, and say so to the agent and the
-    owners (`credential_revoked`, §15.10), once: only the revocation that wins says it."""
-    from maity_hub.auth.revocation import revoke
+    owners (`credential_revoked`, §15.10), once: only the revocation that wins says it. The
+    event is written in each project the instance is attached to (§6.17), and in each of
+    `project_ids`, the projects of the placements the revocation is about (a closed
+    placement's project the instance may have left), in the order of their ids. Never one
+    project chosen for the others. Those and every project the revocation writes in are
+    locked first, in the order of their ids, before any write."""
+    from maity_hub.auth.revocation import projects_of, revoke
 
-    if not revoke(conn, credential_id, REASON, by):
-        return
-    # TODO(hub PR B): the project of each attachment; the oldest attachment until then, as
-    # the credential authenticates there (`auth.caller._credential`).
     a = t.instance_attachment
-    member = conn.execute(
-        select(t.membership.c.project_id, t.membership.c.agent_id)
+    attached = conn.execute(
+        select(t.membership.c.project_id)
         .join(a, a.c.membership_id == t.membership.c.id)
         .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-        .order_by(a.c.attached_at, a.c.id)
-        .limit(1)
-    ).one()
-    events.emit(
-        conn,
-        member.project_id,
-        "credential_revoked",
-        [f"member:{member.agent_id}", "trust:owner"],
-        {"credential_id": credential_id, "reason": REASON},
-        actor=human_actor(conn, member.project_id, by),
-        subject=("credential", credential_id),
-    )
+    ).scalars()
+    told = {*attached, *(project_ids or ())}
+    events.lock_projects(conn, {*told, *projects_of(conn, [credential_id])})
+    if not revoke(conn, credential_id, REASON, by):
+        return
+    agent_id = conn.execute(
+        select(t.credential.c.agent_id).where(t.credential.c.id == credential_id)
+    ).scalar_one()
+    for project_id in sorted(told):
+        events.emit(
+            conn,
+            project_id,
+            "credential_revoked",
+            [f"member:{agent_id}", "trust:owner"],
+            {"credential_id": credential_id, "reason": REASON},
+            actor=human_actor(conn, project_id, by),
+            subject=("credential", credential_id),
+        )
 
 
 def revoke_due(conn: Connection, credential_id: str, by: str | None) -> None:
@@ -120,7 +133,7 @@ def apply(
                 if placement.credential_id is None:
                     continue
                 if agents == "stop":  # the machine is in doubt: no grace (§15.3)
-                    revoke_agent(conn, placement.credential_id, by)
+                    revoke_agent(conn, placement.credential_id, by, [project_id])
                 else:
                     grace = timedelta(seconds=placement.stop_grace_seconds)
                     conn.execute(
@@ -151,8 +164,13 @@ def _to_lock(
 ) -> list[str]:
     """The projects `apply` locks, in the order of their ids: the attached ones, and under
     the owner's stop also every project where a placement of the runner is active or kept
-    its clone. Another project gains no placement of the runner meanwhile: that needs an
-    attachment, and attaching takes the runner's row, which the caller holds."""
+    its clone, and every project the revocation of an agent credential a placement of the
+    runner names writes in (`auth.revocation.projects_of`: an instance may be attached to
+    projects the runner is not). Another project gains no placement of the runner
+    meanwhile: that needs an attachment, and attaching takes the runner's row, which the
+    caller holds."""
+    from maity_hub.auth.revocation import projects_of
+
     found = set(attached)
     if everywhere:
         found.update(
@@ -160,6 +178,13 @@ def _to_lock(
                 select(t.placement.c.project_id).where(_on_disk(runner_id)).distinct()
             ).scalars()
         )
+        named = conn.execute(
+            select(t.credential.c.id)
+            .join(t.placement, t.placement.c.credential_id == t.credential.c.id)
+            .where(t.placement.c.runner_id == runner_id, t.credential.c.revoked_at.is_(None))
+            .distinct()
+        ).scalars()
+        found.update(projects_of(conn, list(named)))
     return sorted(found)
 
 
@@ -179,15 +204,17 @@ def _on_the_machine(conn: Connection, runner_id: str, by: str | None) -> None:
     reported removed, in every project, attached or not. A placement closed for another
     reason (a `DELETE`, a detach, a member's removal) keeps its clone for its retention,
     and a runner without its credential can never report that clone removed."""
-    named = conn.execute(
-        select(t.credential.c.id)
+    named: dict[str, set[str]] = {}
+    for row in conn.execute(
+        select(t.credential.c.id, t.placement.c.project_id)
         .join(t.placement, t.placement.c.credential_id == t.credential.c.id)
         .where(_on_disk(runner_id), t.credential.c.revoked_at.is_(None))
         .distinct()
         .order_by(t.credential.c.id)
-    ).scalars()
-    for credential_id in list(named):
-        revoke_agent(conn, credential_id, by)
+    ):
+        named.setdefault(row.id, set()).add(row.project_id)
+    for credential_id, project_ids in named.items():
+        revoke_agent(conn, credential_id, by, project_ids)
 
 
 def _due_now(conn: Connection, runner_id: str, project_id: str, by: str | None) -> None:
@@ -208,7 +235,7 @@ def _due_now(conn: Connection, runner_id: str, project_id: str, by: str | None) 
         .order_by(t.credential.c.id)
     ).scalars()
     for credential_id in list(waiting):
-        revoke_agent(conn, credential_id, by)
+        revoke_agent(conn, credential_id, by, [project_id])
 
 
 def answer(

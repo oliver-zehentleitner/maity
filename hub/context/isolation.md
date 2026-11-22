@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §6.2 "Isolation" (#771); the card tsk-8c6vdjpw82b1 from the coordinator, 2026-10-30; the maintainer's decision it records; the implementation of `isolation.py`; the lead's decision on the window after a lift (from the coordinator, 2026-10-30; the maintainer is to confirm it)
+**Source:** docs/api.md §6.2 "Isolation" (#771); the card tsk-8c6vdjpw82b1 from the coordinator, 2026-10-30; the maintainer's decision it records; the implementation of `isolation.py`; the lead's decision on the window after a lift (from the coordinator, 2026-10-30; the maintainer is to confirm it); the lead's ruling on card tsk-w8wnar6nqqsp (hub PR B, Q10: presence and leases of a call outside any project skip the isolated attachments)
 **Revisit when:** a second way to stop an agent exists next to the pause and the isolation, or the number of seats and routes that skip an isolated agent grows past the helpers (`views.routing_boss`, `availability.coordinator_of`, `seats.routed_arbiter`)
 
 `membership.isolated_reason`, `isolated_since` and `isolated_by` are all set while an agent is isolated and all
@@ -14,7 +14,7 @@ null otherwise. Nothing else is stored: the seats that name the agent (`reports_
 `contract_arbiter`, `coordinator`, `coordinator_substitute`, a `substitutes` entry) stay as they are, so lifting
 the isolation finds the project as it was. What changes is read where it matters:
 
-- Authentication (`auth/caller.py`, `_agent`) refuses every call of the agent's credentials with `403 forbidden`,
+- Authentication (`auth/caller.py`, `_agent`; since hub PR B the resolution of the route's project, below) refuses every call of the agent's credentials with `403 forbidden`,
   `details.reason: isolated`, before any side effect (no presence, no lease), except `GET /me` and
   `POST /me/resume`, which carry `membership.isolated` so the agent learns why.
   Those two calls leave no trace: no `last_seen_at`, lease or session, no `session_started`, and the resume
@@ -70,6 +70,23 @@ stray whitespace from being an error.
   `membership`.
 - The merge with #750 keeps `availability.coordinator_of` in `onboarding.py` instead of
   `policy.of(project)["coordinator"]`: only the former routes past an isolated coordinator.
+
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** an instance may be attached to several projects
+(§6.17), and an isolation is one membership's, so authentication no longer refuses it: `_agent`
+decides only what holds in every project, and the refusal moved into the resolution of the
+call's project after it, in the same transaction (`deps._resolve`, run by its `confine`;
+`auth.caller.settle_in_project` and `settle_project_less`). It still comes before any side
+effect: no presence, no last use, no lease, no count against the read limit, no event. On a
+project route the order is: no live attachment of the instance in that project is `not_found`,
+and that read is counted first (`count_agent_read`), so probing other projects stays
+rate-limited as before; an isolated attachment there is `403 isolated`, not counted; otherwise
+the read is counted and the presence and leases in that membership follow. A call outside any
+project is refused only when every live attachment is isolated, except the calls an isolated
+agent may make (`ISOLATED_MAY`: `GET /me`, `POST /me/resume`, `GET /bootstrap`); while one is
+not, the call goes on, and its presence and leases skip the isolated attachments (the lead's
+ruling Q10 on the card). The project-less routes that act on one or every attachment refuse an
+isolated one themselves (`attached.named`, `one`, `every`). What the bullets above say of the
+effects of an isolation is unchanged.
 
 ## A hidden window is an inclusive seq range on the membership, applied where events are read
 

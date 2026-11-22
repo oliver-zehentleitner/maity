@@ -970,6 +970,113 @@ def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> 
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_holder_layout_is_listed_beside_the_former_one(tmp_path: Path, side: str) -> None:
+    """tsk-c7zzd440x8pn: in the holder `<root>/.scratch/<project>/<id>`, another project's
+    directory goes whole, even empty, and in the own project's each other entry. Every former
+    per-project `.scratch` goes whole while it is left, so a placement still on the former
+    layout stays hidden from a start in the holder. The same on every side."""
+    ws = tmp_path / "ws"
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    root = ws if host else ws.resolve()
+    new = root / ".scratch"
+    own = new / "maity" / "plc-0003"
+    sibling = new / "maity" / "plc-0004"
+    legacy = root / "legacy" / ".scratch" / "plc-0007"  # a placement still on the former layout
+    for room in (own, sibling, new / "other" / "plc-0009", legacy):
+        (room / "tmp").mkdir(parents=True)
+    (ws / ".scratch" / "empty").mkdir()  # a project's directory with no scratch yet
+    (ws / "maity" / "agent-3").mkdir(parents=True)  # a clone is no scratch
+    expected = sorted([sibling, new / "empty", new / "other", root / "legacy" / ".scratch"])
+    assert supervisor.other_scratches(ws, own, as_user, host) == expected
+    everything = sorted([new / "maity", new / "empty", new / "other", root / "legacy" / ".scratch"])
+    assert supervisor.other_scratches(ws, None, as_user, host) == everything
+
+
+@pytest.mark.parametrize("side", ["single", "agent_user"])
+def test_gc_lists_the_scratches_as_the_agents_user(
+    tmp_path: Path, side: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2112 (A2045): in the agent_user layout the holder is the agents' user's
+    0700 directory, closed to the runner, so gc lists both layouts through the agents' side.
+    Here the runner's own directory listing fails on the agents' side, as it would there; a
+    link is listed as one and never gone into, and a name that is no project id is left out."""
+    ws = tmp_path / "ws"
+    new = ws / ".scratch"
+    for room in (new / "maity" / "plc-0003", new / "other" / "plc-0004",
+                 ws / "legacy" / ".scratch" / "plc-0005"):  # fmt: skip
+        (room / "tmp").mkdir(parents=True)
+    (tmp_path / "elsewhere" / "plc-0006").mkdir(parents=True)
+    (new / "linked").symlink_to(tmp_path / "elsewhere")  # a project's directory as a link
+    (new / "maity" / "plc-0009").symlink_to(tmp_path / "elsewhere")
+    new.chmod(0o700)
+    as_user = SIDES[side]()
+
+    def closed(self: Path) -> Any:
+        raise PermissionError(13, "closed to the runner", str(self))
+
+    if side == "agent_user":
+        monkeypatch.setattr(Path, "iterdir", closed)
+    holders, links = operate._scratch_holders(ws, as_user)
+    assert sorted(holders) == sorted([new / "maity", new / "other", ws / "legacy" / ".scratch"])
+    assert links == [new / "linked"]  # named for gc's line, never gone into (A2055)
+    found = {(h / name, kind) for h in holders for name, kind in as_user.entries(h, 1)}
+    assert found == {
+        (new / "maity" / "plc-0003", "d"), (new / "maity" / "plc-0009", "l"),
+        (new / "other" / "plc-0004", "d"), (ws / "legacy" / ".scratch" / "plc-0005", "d"),
+    }  # fmt: skip
+    two_down = [("maity/plc-0003", "d"), ("maity/plc-0009", "l"), ("other/plc-0004", "d")]
+    assert sorted(as_user.entries(new, 2)) == two_down  # `linked` is not gone into
+    # A workspaces root configured as a link is gone into on both sides (A2056): the former
+    # `.scratch` below it is found as on the real path.
+    (tmp_path / "ws-link").symlink_to(ws)
+    via, _ = operate._scratch_holders(tmp_path / "ws-link", as_user)
+    assert tmp_path / "ws-link" / "legacy" / ".scratch" in via
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_layout_probe_answers_there_not_there_or_nothing(tmp_path: Path, side: str) -> None:
+    """The reviews of #2112 (A2073, A2074): the probe `_host_layout` asks with is an answer on
+    every side: a directory is there; a missing one is "not there" only below a parent that
+    can be searched, else no answer; the holder's name is never followed, so a link at it,
+    even dangling, is there."""
+    import types
+
+    target: Any = types.SimpleNamespace(as_user=SIDES[side]())
+    probe = supervisor.Supervisor._is_there_on
+    nobody: Any = None
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert probe(nobody, target, ws) is True
+    assert probe(nobody, target, ws / "gone") is False
+    assert probe(nobody, target, ws / "gone" / "deeper") is False  # the nearest parent searched
+    (ws / ".scratch").symlink_to(tmp_path / "nowhere")
+    assert probe(nobody, target, ws / ".scratch", True) is True  # never followed
+    assert probe(nobody, target, ws / ".scratch") is False  # a dangling link is no directory
+    shut = tmp_path / "shut"
+    shut.mkdir(mode=0o000)
+    try:
+        if os.access(shut, os.X_OK):  # root searches a 0000 directory anyway
+            pytest.skip("running as a user that searches a 0000 directory")
+        assert probe(nobody, target, shut / "ws") is None  # a denied look is no answer
+    finally:
+        shut.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_holder_that_is_a_link_refuses_the_listing(tmp_path: Path, side: str) -> None:
+    """The holder must be a real directory: a link (or a file) in its place could point the
+    deny elsewhere, so the listing refuses the start on every side."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (ws / ".scratch").symlink_to(tmp_path / "elsewhere")
+    as_user = SIDES[side]()
+    with pytest.raises(workspace.Refused):
+        supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
 def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, side: str) -> None:
     """A clone's content is never read (an unreadable directory in a clone refuses nothing), a
     workspaces root reached through a link is listed through it, and a `.scratch` higher up in

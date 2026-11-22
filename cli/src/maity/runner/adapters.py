@@ -373,6 +373,25 @@ def private_tmpdir_refusal(ctx: Context) -> str | None:
     )
 
 
+def scratch_refusal(ctx: Context) -> str | None:
+    """Why a sandboxed Claude Code placement must not start, or None: it starts only with a
+    scratch under a holder its sandbox denies (scratch_holder). That deny is what hides a
+    scratch made after the session started (tsk-c7zzd440x8pn), and it is derived from the own
+    scratch, so a start whose scratch could not be made would have none (the review of
+    #2112, A2045). An unsandboxed placement, and every other harness, is not refused: Codex
+    hides the whole workspaces root, and agy and opencode get no such deny. For the runner's
+    log only, with the cause."""
+    if ctx.harness.id != "claude-code" or not ctx.sandbox:
+        return None
+    if scratch_holder(ctx.scratch) is not None:
+        return None
+    return (
+        "no scratch could be made for this sandboxed Claude Code placement, so its sandbox "
+        "would not deny the scratch holder and a scratch made later would stay readable from "
+        "it; it is not started (the cause is logged above)"
+    )
+
+
 def own_tmp_env(ctx: Context) -> dict[str, str]:
     """Claude Code's CLAUDE_CODE_TMPDIR in the leaf itself where the session's TMPDIR is the
     leaf's `tmp`: Claude Code's own temp files (`claude-<uid>/`) and its sandbox socket
@@ -584,11 +603,18 @@ def own_tmp_leaf(ctx: Context) -> Path | None:
 
 
 def scratch_holder(scratch: Path | None) -> Path | None:
-    """The project's `.scratch` that holds `scratch` beside the clone (workspace.scratch_of), or
-    None for no scratch or one elsewhere (agy's under `/tmp`)."""
-    if scratch is None or scratch.parent.name != SCRATCH:
+    """The `.scratch` that holds `scratch` under the workspaces root (workspace.scratch_of): the
+    one holder of every scratch, `<root>/.scratch` for `<root>/.scratch/<project>/<id>`
+    (tsk-c7zzd440x8pn), or the project's own for the former `<root>/<project>/.scratch/<id>`
+    (an ssh host whose `maity` has no holder op). None for no scratch or one elsewhere (agy's
+    under `/tmp`)."""
+    if scratch is None:
         return None
-    return scratch.parent
+    if scratch.parent.name == SCRATCH:
+        return scratch.parent
+    if scratch.parent.parent.name == SCRATCH:
+        return scratch.parent.parent
+    return None
 
 
 def _shared_tmp(ctx: Context) -> list[str]:
@@ -655,12 +681,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # in that mount alone (the ops probe P4, 2026-11-21).
         own = own_tmpdir_in_use(ctx)
         writable = [str(p) for p in (ctx.scratch, own) if p is not None]
-        # The own project's `.scratch` the same way (tsk-07dwr3t80rg0): denied for reading only,
-        # its own scratch opened again, so a sibling scratch made there after this session
-        # started lies under the read deny's empty mount instead of staying readable. Never in
-        # denyWrite (it would mount the re-opened scratch read-only, as for the leaf); the
-        # holder is not writable from the sandbox anyway, since writes are allowed only where
-        # allowWrite says. The other projects' `.scratch` are hidden whole (ctx.private).
+        # The holder of every scratch, `<root>/.scratch`, the same way (tsk-07dwr3t80rg0,
+        # tsk-c7zzd440x8pn): denied for reading only, its own scratch opened again, so a scratch
+        # of any project made after this session started lies under the read deny's empty mount
+        # instead of staying readable. Never in denyWrite (it would mount the re-opened scratch
+        # read-only, as for the leaf); the holder is not writable from the sandbox anyway, since
+        # writes are allowed only where allowWrite says. The former per-project `.scratch` and
+        # the other entries are hidden whole (ctx.private); on a host with the former layout
+        # the project's `.scratch` is the holder denied here.
         holder = scratch_holder(ctx.scratch)
         readable = [*([str(ctx.scratch)] if holder is not None else []),
                     *([str(own)] if own is not None else [])]  # fmt: skip
