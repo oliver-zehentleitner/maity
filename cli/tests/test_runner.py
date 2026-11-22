@@ -291,6 +291,40 @@ def test_every_bad_repository_is_named() -> None:
     assert all(f"'x/{n}'" in line for n in range(5))
 
 
+SSH_HOST = {"name": "build-1", "address": "b1.lan", "user": "maity", "workspaces": "/srv/ws",
+            "agent_path": "/usr/bin:/bin"}  # fmt: skip
+
+
+def ssh_config(**host: str) -> str:
+    fields = {**SSH_HOST, **host}
+    lines = "".join(f"{k} = {json.dumps(v)}\n" for k, v in fields.items())
+    return minimal(b='\n[backend]\nkind = "ssh"\n[backend.ssh]\nknown_hosts = "/srv/known_hosts"\n'
+                     f"[[backend.ssh.hosts]]\n{lines}")  # fmt: skip
+
+
+def test_an_ssh_host_as_written_parses() -> None:
+    """The base for the trailing-newline cases below: without the newline, it is valid."""
+    assert parse(ssh_config()).ssh is not None
+
+
+@pytest.mark.parametrize("key", sorted(SSH_HOST))
+def test_an_ssh_host_value_ending_in_a_newline_is_refused(key: str) -> None:
+    """Each ssh host value is matched whole: a trailing newline used to pass a `^...$` check
+    with `re.match`, then reached the hub's hello (the name) or the ssh command line
+    (tsk-3jzeck5m208a)."""
+    found = problems(ssh_config(**{key: SSH_HOST[key] + "\n"}))
+    assert any(p.startswith(f"backend.ssh.hosts[0].{key}:") for p in found), found
+
+
+def test_a_project_or_mode_ending_in_a_newline_is_refused() -> None:
+    """The projects go to the hub's hello as written, the modes too (tsk-3jzeck5m208a)."""
+    project = problems(minimal().replace('"oliver/maity"', '"oliver/maity\\n"'))
+    assert any(p.startswith("limits.projects: not a project full name") for p in project), project
+    newline_mode = '[harness.stub]\nmodes = ["supervised\\n"]\n'
+    mode = problems(minimal().replace("[harness.stub]\n", newline_mode))
+    assert any(p.startswith("harness.stub.modes: not a mode") for p in mode), mode
+
+
 def test_backend_local_is_not_judged_under_another_kind() -> None:
     found = problems(minimal(b='\n[backend]\nkind = "ssh"\n[backend.local]\nlayout = "x"\n'))
     assert not any(p.startswith("backend.local") for p in found), found
