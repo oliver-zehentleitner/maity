@@ -208,6 +208,10 @@ NUDGE_LINE = (
 # The runner's watch (§15.14): how long work below the harness counts as work while the hub
 # says the session is not listening, until the hub carries `health.settings`.
 TOOL_CALL_MAX_MINUTES = 120
+# How far past a trigger's moment a placements read must have started to count as fresh: the
+# hub's `server_time` has whole seconds, so the clock offset may move by up to one second
+# between the read and the check (Gemini A2049).
+FRESH_MARGIN = 1.0
 # What the watch's line says it found, per cause: the runner's own words (§15.7).
 CAUSE_WORDS = {
     "harness_exited": "the harness is gone",
@@ -488,9 +492,10 @@ class Supervisor:
     watching: dict[str, threading.Thread] = field(default_factory=dict)
     hub_offset: float = 0.0
     login: Callable[[str, str | None, AsUser, str | None], str] = keeper.login_state
-    # When the placements, and with them each `session`, were last read from the hub (hub
-    # time), and whether the watch wants a fresh read: it acts on a trigger only with facts
-    # read after the trigger began to hold (ops' live check: a join wakes no runner).
+    # When the request that last read the placements, and with them each `session`, started
+    # (this supervisor's clock, `now`; `_fresh` puts it in hub time), and whether the watch
+    # wants a fresh read: it acts on a trigger only with facts read after the trigger began to
+    # hold (ops' live check: a join wakes no runner).
     facts_read_at: float | None = None
     wants_read: bool = False
 
@@ -569,10 +574,16 @@ class Supervisor:
         """Whether the placements were read after `trigger_` began to hold (hub time): for
         `never_joined` the run's start plus `join_within_minutes`, for `not_listening` the
         later of the quiet spell's start and `watch_since`, plus the grace. Only such facts
-        can show a join or a renewed listen that happened after the trigger's moment."""
-        read = self.facts_read_at
-        if read is None:
+        can show a join or a renewed listen that happened after the trigger's moment.
+
+        Both sides are put in hub time with the offset as it is now, so one offset is used for
+        both (Gemini A2049); the read's stamp is kept on this supervisor's own clock. The hub's
+        `server_time` has whole seconds, so the offset may be off by up to one second between
+        two readings: a read counts as fresh only `FRESH_MARGIN` past the moment, so a read
+        taken just before it never passes for one taken after."""
+        if self.facts_read_at is None:
             return False
+        read = self.facts_read_at + self.hub_offset
         settings = self.cfg.limits.watch
         if trigger_ == watch.NEVER_JOINED:
             if rec.started_at is None:
@@ -582,10 +593,13 @@ class Supervisor:
             since = facts.not_listening_since
             if since is None:
                 return False
-            if rec.watch_since is not None:
-                since = max(since, rec.watch_since + self.hub_offset)
+            # The same "later of" as the trigger and the quiet clamp: `watch_since`, else the
+            # run's start (Gemini A2049).
+            watched = rec.watch_since if rec.watch_since is not None else rec.started_at
+            if watched is not None:
+                since = max(since, watched + self.hub_offset)
             began = since + settings.not_listening_grace_minutes * 60.0
-        return read >= began
+        return read >= began + FRESH_MARGIN
 
     def _abort_end(self, pid: str, rec: Record, verdict: dict[str, Any], why: str) -> bool:
         """An end the watch began is not carried to the kill: the session stays, and the
@@ -992,8 +1006,9 @@ class Supervisor:
         with self.lock:
             self.desired = good
             self.synced = True
-            # The watch's facts are as fresh as the request's start, in hub time.
-            self.facts_read_at = None if read_at is None else read_at + self.hub_offset
+            # The watch's facts are as fresh as the request's start, kept on this clock; the
+            # watch puts it in hub time when it compares (`_fresh`, Gemini A2049).
+            self.facts_read_at = read_at
             self.wants_read = False
 
     def wants_placements(self) -> bool:

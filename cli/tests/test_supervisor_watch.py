@@ -69,9 +69,10 @@ def running(sup: supervisor.Supervisor, clock: Clock, p: dict[str, Any]) -> None
 
 
 def reread(sup: supervisor.Supervisor) -> None:
-    """The placements read anew from the hub, as serve does after a poll, the read starting
-    now: the watch's facts are then this fresh."""
-    sup.update(list(sup.desired), read_at=sup.now())
+    """The placements read anew from the hub, as serve does after the poll that follows the
+    watch's request: the read starts `FRESH_MARGIN` after the tick's moment, so a trigger
+    that began at this tick's time already counts it as fresh."""
+    sup.update(list(sup.desired), read_at=sup.now() + supervisor.FRESH_MARGIN)
 
 
 def drain(sup: supervisor.Supervisor) -> None:
@@ -1216,7 +1217,8 @@ def test_a_read_that_started_before_the_trigger_is_not_fresh(world: Any) -> None
     sup.tick()
     assert sup.watching == {} and sup.wants_placements()  # it asks again
     clock.now += 30
-    sup.update(list(sup.desired), read_at=QUIET_PAST_GRACE)  # a GET started at the moment
+    # A GET started at the moment plus the margin for the hub's whole-second clock.
+    sup.update(list(sup.desired), read_at=QUIET_PAST_GRACE + supervisor.FRESH_MARGIN)
     sup.tick()
     assert PID in sup.watching
     for worker in list(sup.watching.values()):
@@ -1238,12 +1240,24 @@ def test_facts_count_as_fresh_from_the_triggers_own_moment(world: Any) -> None:
     running(sup, clock, joined_then_quiet())
     backend.below = tmux.WAITING
     clock.now = QUIET_PAST_GRACE
-    sup.facts_read_at = QUIET_PAST_GRACE - 1  # read a second before the trigger's moment
+    sup.facts_read_at = QUIET_PAST_GRACE  # read at that moment: within the margin
     sup.tick()
     assert sup.watching == {} and sup.wants_placements()
-    sup.facts_read_at = QUIET_PAST_GRACE  # read at that moment
+    sup.facts_read_at = QUIET_PAST_GRACE + supervisor.FRESH_MARGIN  # read past the margin
     clock.now += supervisor.IDLE_EVERY
     sup.tick()
     assert PID in sup.watching  # a diagnosis starts
     for worker in list(sup.watching.values()):
         worker.join(5)
+
+
+def test_an_offset_that_moves_between_read_and_check_makes_no_read_fresh(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE + 30
+    sup.hub_offset = 1.0  # the hub a second ahead when the read starts ...
+    sup.update(list(sup.desired), read_at=QUIET_PAST_GRACE - 0.5)  # ... just before the moment
+    sup.hub_offset = 0.0  # a later `server_time` (whole seconds) moves the offset down
+    sup.tick()
+    assert sup.watching == {} and sup.wants_placements()  # still not fresh: it asks again

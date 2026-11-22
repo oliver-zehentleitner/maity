@@ -6333,9 +6333,9 @@ Where the contract left the choice open, it decided as follows.
 - **Only a confirmed "not logged in" is `needed`** (security review A1942,
   the lead, seq 189308 and 189704): `codex login status` exiting 1 with the
   line `Not logged in` (it also exits 1 on an error, with another line).
-  Claude Code has no `needed` answer until ops confirms its marker: every
-  non-zero exit of `claude auth status` is `unknown`, also exit 1, which its
-  documentation names for "not logged in" but which may cover an error too.
+  Claude Code stays out of `LOGIN_NEEDED`, because its logged-out answer is
+  the same as an unreadable configuration's (below): every non-zero exit of
+  `claude auth status` is `unknown`, exit 1 included.
   Any other exit, a timeout or an error is `unknown`, since `needed` ends
   the placement as `failed`/`auth` with no restart. A real Claude Code
   logout meanwhile shows as a restart and then `failed`/`hung` at the cap,
@@ -6373,7 +6373,12 @@ Where the contract left the choice open, it decided as follows.
   A2048): the hub sampled each `session` while the request was in flight,
   so an answer that arrives after the moment cannot show a join or a renewed
   listen at it if the request started before. Placements given without a
-  start time count as not fresh. A dead session meanwhile goes to the exit handling. Reason: in
+  start time count as not fresh. The read's start is kept on the runner's
+  own clock and put in hub time with the current offset at the comparison,
+  as the trigger's moment is, so one offset serves both; and since the
+  hub's `server_time` has whole seconds and the offset can move by up to a
+  second between two readings, a read counts as fresh only from one second
+  past the moment (`FRESH_MARGIN`, Gemini A2049). A dead session meanwhile goes to the exit handling. Reason: in
   ops' check the agent joined three seconds after its start, the runner had
   read placements only at the start (it re-reads every 10 minutes or on a
   wake), and no hub event reaches a runner on a session start, so it held a
