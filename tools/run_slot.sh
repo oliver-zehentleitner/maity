@@ -9,6 +9,9 @@
 # a slot by itself. The slots are lock files in MAITY_RUN_SLOTS_DIR (default
 # ~/.local/state/maity/run-slots). PYTEST_XDIST_AUTO_NUM_WORKERS defaults to 2, so `pytest -n
 # auto` starts two workers. Without flock (macOS) the command runs at once, without a slot.
+# So does it, with a warning and without a log line, when the slot directory or a slot file in it
+# cannot be written (a sandboxed agent session may write only its clone and a few other places);
+# MAITY_RUN_SLOTS_DIR can then point to a directory it may write.
 #
 # Each run that gets a slot appends a start line, and once its process is gone an end line, to
 # $MAITY_RUN_SLOTS_DIR/log, tab-separated, the time in UTC:
@@ -53,7 +56,17 @@ case "$slots" in
     ;;
 esac
 dir="${MAITY_RUN_SLOTS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/maity/run-slots}"
-mkdir -p "$dir"
+# A slot directory or slot file this run may not write: the command runs without a slot, as without
+# flock, rather than not at all. Failing made sandboxed agents skip the slot (`make smoke SLOT=`),
+# and then their runs were not logged either.
+no_slot() { # <path that cannot be written> <command> [argument ...]
+  echo "$0: cannot write $1; running without a slot and without a log line" \
+    "(MAITY_RUN_SLOTS_DIR can point to a directory this run may write)" >&2
+  shift
+  export MAITY_RUN_SLOT=none
+  exec "$@"
+}
+mkdir -p "$dir" 2>/dev/null || no_slot "$dir" "$@"
 who="${MAITY_RUN_NAME:-${USER:-someone}}"
 log="$dir/log"
 # What the log and the slot's .who file name of the command: the program and its first argument
@@ -80,9 +93,15 @@ start=$SECONDS
 while :; do
   for ((i = 0; i < slots; i++)); do
     # Opened for appending, so that a failed try does not empty the file another run holds.
-    exec 7>>"$dir/slot$i"
+    # `command` keeps a failed open from ending the script, even in POSIX mode (POSIXLY_CORRECT),
+    # where a failed redirection on the special builtin exec would end it before the command ran.
+    if ! { command exec 7>>"$dir/slot$i"; } 2>/dev/null; then
+      no_slot "$dir/slot$i" "$@"
+    fi
     if flock -n 7; then
-      printf '%s (pid %s): %s\n' "$who" "$$" "$cmd" >"$dir/slot$i.who"
+      # The holder's name is for the waiting runs' message only; one that cannot be written
+      # (a read-only directory with slot files from before) does not stop the run.
+      { printf '%s (pid %s): %s\n' "$who" "$$" "$cmd" >"$dir/slot$i.who"; } 2>/dev/null || true
       if [ -n "$waited" ]; then
         echo "$0: got slot $i after $((SECONDS - start)) s" >&2
       fi
@@ -126,7 +145,9 @@ while :; do
   if [ -z "$waited" ]; then
     holders=""
     for ((i = 0; i < slots; i++)); do
-      holders+="$(cat "$dir/slot$i.who" 2>/dev/null || true); "
+      # A holder that could not write its .who (a read-only directory) leaves it empty or missing.
+      holder="$(cat "$dir/slot$i.who" 2>/dev/null || true)"
+      holders+="${holder:-unknown}; "
     done
     echo "$0: all $slots run slots are taken (${holders%; }); waiting for one" >&2
     waited=1

@@ -51,6 +51,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
     "/me": ("### 5.1 `GET /me`", {"member", "projects", "maintenance", "server_time"}),
     "/bootstrap": ("### 5.4 `GET /bootstrap`", {"maintenance", "session", "me"}),
     "/me/chat-access": ("| `GET /me/chat-access` | human |", {"allow", "deny"}),
+    "/me/chat-access/history": PAGE,  # §9.6 "History": newest first, paged (§1.4)
     "/me/contact-of": PAGE,
     "/me/contacts": PAGE,
     "/projects/{}/{}": (

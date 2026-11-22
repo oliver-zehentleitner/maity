@@ -20,7 +20,7 @@ from maity_hub.deps import AnyCaller, engine_of, presence_caller, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
-from maity_hub.notifications import preferences, presence
+from maity_hub.notifications import address, preferences, presence
 from maity_hub.ratelimit import Attempt
 from maity_hub.views import member_view
 
@@ -81,6 +81,9 @@ def patch_settings(
 ) -> JSONResponse:
     session_hash = _human(caller)
     hub = settings_of(request)
+    # The key of the verification mail's counts (`known_sources.address_key`), before the
+    # transaction that reads it.
+    addresses.prepare(engine_of(request), hub.secret_key)
 
     def run() -> tuple[dict[str, Any], int]:
         with events.transaction(engine_of(request)) as conn:
@@ -125,7 +128,7 @@ def verify_from_dashboard(
     addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
         # Another human's token is `not_found`, the same as an invalid one (§18.4).
-        done = preferences.verify(
+        done = address.verify(
             conn,
             token,
             hub.mail.signing_key,
@@ -159,9 +162,10 @@ def _decide(
     if set(body) != {"id", "address"}:
         raise invalid({"body": "id_and_address"})
     hub = settings_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # the key of the verification's counts
     with engine_of(request).begin() as conn:
         human, session = _context(conn, caller, session_hash)
-        preferences.decide_held(
+        address.decide_held(
             conn,
             human=human,
             session=session,

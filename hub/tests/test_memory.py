@@ -13,6 +13,7 @@ from maity_hub import clock, events, memory
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 
 M = "/projects/maintainer/maity/memory"
 
@@ -285,6 +286,7 @@ def test_the_packet_reads_many_tiny_entries_in_batches(
     assert len(team["items"]) == team["total"] and team["items"][0]["text"] == "e59"
 
 
+@flat_rows("/projects/{}/{}/memory")
 def test_entry_views_cost_the_same_for_3_entries_and_for_20(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

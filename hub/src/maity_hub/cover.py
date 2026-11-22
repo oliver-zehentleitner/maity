@@ -370,7 +370,7 @@ def _announce_card(conn: Connection, project: Any, card_id: str, actor: Actor | 
             "assigned_instance": card.assigned_instance,
             "holder": principal_id(conn, card.claim_holder),
             "instance": card.claim_instance,
-            "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
+            "lease_until": clock.rfc3339_or_none(card.lease_until),
             "project_state": project.state,
             "reason": "cover",
         },

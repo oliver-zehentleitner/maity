@@ -377,7 +377,7 @@ def test_a_lift_moves_the_cursor_past_what_happened_meanwhile(
     meanwhile = say(owner, "all", "while you were out").json()["seq"]
     lift(owner, agent.id)
     with migrated.connect() as conn:
-        cursors = list(conn.execute(select(t.agent_session.c.acknowledged_seq)).scalars())
+        cursors = list(conn.execute(select(t.agent_session_project.c.acknowledged_seq)).scalars())
     assert cursors and all(c >= meanwhile for c in cursors)
     packet = agent.resume().json()
     assert all("while you were out" not in str(e) for e in packet["events"]["items"])

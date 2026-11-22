@@ -50,6 +50,8 @@ def _latest_session(conn: Connection, membership_id: int, instance: str) -> Any 
     """The instance's credential and its latest session, or None without a credential. An
     instance can hold a claim before its first resume: then the session's columns are None,
     and the credential still says whether it was revoked."""
+    from maity_hub.instances import credential_join  # instances imports this module's imports
+
     row = conn.execute(
         select(
             t.credential.c.revoked_at,
@@ -57,8 +59,12 @@ def _latest_session(conn: Connection, membership_id: int, instance: str) -> Any 
             t.agent_session.c.last_seen_at,
             t.agent_session.c.ended_at,
         )
+        .select_from(credential_join())
         .outerjoin(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
-        .where(t.credential.c.membership_id == membership_id, t.credential.c.instance == instance)
+        .where(
+            t.instance_attachment.c.membership_id == membership_id,
+            t.credential.c.instance == instance,
+        )
         .order_by(t.agent_session.c.started_at.desc())
         .limit(1)
     ).first()
@@ -89,7 +95,7 @@ def _payload(
             {
                 "id": c.id,
                 "title": c.title,
-                "lease_until": clock.rfc3339(c.lease_until) if c.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(c.lease_until),
             }
             for c in cards
         ],
@@ -152,12 +158,14 @@ def revoked(conn: Connection, credential_id: str) -> None:
     """The instance's session ended by a revocation (§6.5). A replacement moves the claims to
     the new instance and a removal releases them in the same transaction: both say so to
     `auth.revocation.revoke` (`holder_moves`), which then does not call this."""
-    row = conn.execute(
-        select(t.credential.c.membership_id, t.credential.c.instance).where(
-            t.credential.c.id == credential_id
-        )
-    ).first()
-    if row is not None:
+    a = t.instance_attachment
+    rows = conn.execute(
+        select(a.c.membership_id, a.c.instance)
+        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
+        .order_by(a.c.attached_at, a.c.id)
+    ).all()
+    # In every project the instance is in (§6.17).
+    for row in rows:
         stalled(conn, row.membership_id, row.instance, "session_ended")
 
 

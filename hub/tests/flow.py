@@ -44,6 +44,12 @@ class Human:
     def delete(self, path: str) -> Any:
         return self.client.delete(f"/api/v1{path}", headers={"X-CSRF-Token": self.csrf})
 
+    def raw(self, method: str, path: str, body: bytes) -> Any:
+        """A JSON body sent as these bytes: a `\\ud800` in them reaches the handler as a lone
+        surrogate, which the client's own JSON encoding would not send."""
+        headers = {"X-CSRF-Token": self.csrf, "Content-Type": "application/json"}
+        return self.client.request(method, f"/api/v1{path}", content=body, headers=headers)
+
 
 @dataclass
 class Agent:

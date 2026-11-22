@@ -21,6 +21,7 @@ from maity_hub import (
     account_deletion,
     avatars,
     chat_access,
+    chat_access_history,
     contacts,
     cross_chats,
     export,
@@ -57,9 +58,6 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("conversation_participant", "removed_by"): True,
     ("cross_chat_participant", "added_by"): True,  # a principal id, as on a project group chat
     ("cross_chat_participant", "removed_by"): True,
-    ("credential", "ktw_acknowledge_by"): False,  # a deadline
-    ("credential", "dormant_by"): True,
-    ("credential", "paused_by"): True,
     ("credential", "revoke_due_by"): True,
     ("credential", "revoked_by"): True,
     ("email_sign_in", "address_epoch"): False,  # a counter
@@ -69,6 +67,11 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("human_session", "confirmed_by"): False,  # the confirming session's public id
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
+    ("instance_attachment", "attached_by"): True,
+    ("instance_attachment", "detached_by"): True,
+    ("instance_attachment", "dormant_by"): True,
+    ("instance_attachment", "ktw_acknowledge_by"): False,  # a deadline
+    ("instance_attachment", "paused_by"): True,
     ("instance_landing", "updated_by"): True,
     ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
@@ -131,12 +134,14 @@ DELETION_KEEPS = {
     "chat_verdict": f"a verdict on a chat message, as the message itself: {_RECORD}",
     "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
-    "credential": f"who paused or revoked an agent's credential: {_RECORD}",
+    "credential": f"who revoked an agent's credential: {_RECORD}",
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
     "handle_register": "the handle of a deleted account stays taken for good (§2.9, §6.24)",
     "idempotency_key": "a key expires after 24 hours (§1.5) and holds no personal data",
     "handle_alias": "a deleted account keeps its handle taken, and so its aliases (§2.9, §6.24); "
     "a deleted profile's go with it, in `delete_profile`",
+    "instance_attachment": "who attached, detached, paused or put an instance to rest in a "
+    f"project: {_RECORD}",
     "instance_landing": f"who edited the landing page: {_RECORD}",
     "instance_legal": f"who edited the legal pages: {_RECORD}",
     "instance_secret": f"who changed an instance secret: {_RECORD}",
@@ -164,6 +169,7 @@ KEPT_THOUGH_READ = {"project"}
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
     "chat_access": chat_access,  # exported: `chat_access`, `{allow, deny}`
+    "chat_access_history": chat_access_history,  # exported: `chat_access_history`
     "contact": contacts,  # exported: `contacts` and `contact_of`
     "cross_chat": cross_chats,  # export_of, which export.py calls
     "cross_chat_participant": cross_chats,
@@ -201,6 +207,7 @@ EXPORT_LEAVES_OUT = {
     "human_device": _SECRET,
     "known_source": "not part of the export, by the maintainer's decision (§2.1)",
     "idempotency_key": _BOOKKEEPING,
+    "instance_attachment": f"an agent instance's projects, not the caller's data; {_UNLISTED}",
     "not_listening_seen": f"what the digest's `seen` silences (§5.3): {_BOOKKEEPING}",
     "instance_landing": _INSTANCE,
     "instance_legal": _INSTANCE,

@@ -802,3 +802,165 @@ not, and the removal stops a placement that runs. A check at the runner's pickup
 cannot tell whose start it carries out, so it would refuse the owner's
 own rejoin, or need a stored record of who started; the start already
 knows who asks.
+
+## A reset is a restart with `fresh_session`, stored as the generation it made
+
+**Id:** 37b4b9a1-a0f0-4f6f-bb26-b607590ffa18
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r4apvj4kbf3a (the owner's request in chat, 2026-11-19, for a Reset beside Restart on a placement held as `failed`/`hung`/`idle`; the card fixes the shape: "a restart with a fresh-session flag"); the contract, docs/api.md §15.5, §15.6, §15.7, §15.14
+**Revisit when:** the runner keeps the harness's session id per placement (§15.14, "The session continues"), or a second kind of restart needs a flag of its own
+
+A reset is `POST …/placements/{id}/restart` with `fresh_session: true`:
+everything a restart is (the same right, a new `generation`, `desired:
+running`, a cleared `crash_loop`, combinable with `rejoin`), and the new
+generation starts the harness on a fresh session instead of resuming the
+last one. The hub stores the generation the reset made
+(`placement.fresh_session_generation`, never cleared) and every view reads
+`fresh_session` as that generation being the current one
+(`placements.fresh_session`). A plain restart or a change of spec moves
+the generation and so ends the reset without a write of its own; a stop
+and a start keep the generation, and the reset still holds for its start.
+A runner's report takes `sessions` (§15.7), stored only when sent.
+
+**Reason:** a restart already carries everything a reset needs (who may,
+the generation the runner acts on, the hung hold it lifts); only what the
+start does with the harness's conversation differs. The hold that brought
+the card (`hung`/`idle` until the generation moves) is lifted the same way.
+A generation instead of a boolean leaves no flag to clear on every other
+path that bumps the generation (spec changes, settling a proposal, a
+plain restart), where a forgotten clear would make a later restart drop
+the conversation unasked.
+
+**Rejected alternatives:** a route of its own (`…/reset`): a second copy of
+the restart's rights, proposal settling, flapping and rejoin checks for
+one boolean. A boolean column cleared by every generation bump: each path
+that bumps the generation would have to know about it. Leaving it to a
+replacement with `handover: none` (§15.14): not built, and it makes a new
+placement and clone, where the owner wants the same clone and branches.
+
+## A profile that is not a member yet is admitted by its placement
+
+**Id:** 2f6d6292-c1df-4853-9405-e29be0140e15
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation); the lead's and the review lead's ruling on review A1826 (the stored `reports_to`, the profile lock first); the review lead's ruling on review A1833 (the lock only on the caller's own profiles); `hub/tests/test_join_pickup.py`: `test_a_members_placement_reports_only_to_a_manager_still_theirs`, `test_an_admitting_placement_locks_the_profile_before_the_project`, `test_a_placement_naming_another_owners_profile_takes_no_lock_on_it`
+**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, the new-instance rule of §3.1 changes, a member's own join starts re-checking `reports_to` at its exchange, a profile's deletion stops taking the profile's lock before any project's, or a profile's owner can change
+**See:** placements.md#a-new-profiles-placement-re-checks-its-creator-at-the-pickup-and-the-exchange — ac153895-7fbe-49a5-adad-6e5403d4fd6f — as of 2026-11-20
+
+A human who owns a profile with no active membership in the project
+places it by `{"agent":{"id"}}`, with the right they would need to create
+its first join (`members:admin`, or trust `member` under "Bringing your
+own agent") and on a runner of their own. The placement takes the first
+join's fields and stores them in `new_profile` beside the new column
+`placement.agent_id`; the pickup mints a first join (neither
+`new_instance` nor `replaces`), and its exchange makes the membership. A
+profile that is a member by the pickup or the exchange (by a line, or
+another placement's exchange) gets an instance instead, by the new-instance
+rule against that membership (`max_instances`, else `instance_quota`),
+and only while the creator may add one to it as a `new_instance` join
+would: `members:admin`, with trust `owner` for an admin or proxy member,
+or under "Bringing your own agent" a membership within its limits. Join
+and placement share one check of the fields (`routes.joins.assignment`,
+`first_join_fields`) and one recheck of the creator at the pickup and the
+exchange (`routes.joins.admission_holds`), read against the policy as it
+is then: `member_agents` turned `off` after a member's placement ends it
+(`creator_lacks_authority` at the pickup, `not_found` at the exchange),
+its pickup join already handed out included; one made with
+`members:admin` is unaffected. Under "Bringing your own agent" that
+recheck also reads the stored `reports_to` (a membership row id): it must
+still be the creator or an agent of the creator's with the role
+`manager` in the project (`_reports_within_limits`, the same query as at
+creation), else the same answers. A member's own join keeps its
+reporting line at the exchange (`_recheck_member_rule` does not read it),
+on purpose. The creation of an admitting placement locks the profile
+first, then the project (`_lock_named_profile`, then `lock_project`),
+the order join creation, the exchange and the profile's deletion take,
+but only a profile of the caller's own: it reads the owner first without
+a lock and locks only when that is the caller, the locking read itself
+also bound to `owner_id`. Another owner's profile is never locked, and
+`_admitted` answers it `not_yours` before any lock; the caller's own is
+read again under the lock (`live_profile`: not deleted, else
+`not_found`). The admitting right under "Bringing your
+own agent" covers creating the placement only: a spec change by `PATCH`
+still needs `members:admin` and the runner, while `desired` stays the
+profile owner's. Removing or isolating the membership closes the
+profile's placements still without a credential (`membership_removed`,
+`membership_isolated`). A placement that admits the profile makes it in
+use (§6.3): a bare `DELETE` is refused with `profile_in_use` and changes
+nothing, and only `?cascade=true` deletes it, closing those placements
+at once with `removed`, on the owner's authority alone (no
+`members:admin`, the owner as the event's actor), their unused pickups
+revoked.
+
+**Reason:** the placement already carries the owner's consent, and a
+profile made on its own should not need a join line to reach a runner
+of the owner's (confirmed: the owner's decision and the approved
+contract). One check for both ways, so a placement gives nothing a join
+could not. Unlike a member's own join, which survives `member_agents`
+turned `off`, a placement acts on its creator's continuing authority,
+while a join already handed out does not, so its pickup and exchange
+read that authority as it is then. The reporting target is part of that
+authority: a member names only themselves or their own manager, so a
+manager moved off the role or gone while the placement waited voids the
+stored line, at the pickup and at the exchange alike. The asymmetry with
+a member's own join, whose exchange recheck leaves `reports_to` alone,
+is deliberate and for the same reason: that join was handed out already
+and is not re-made on the creator's authority, the placement's join is
+(confirmed: the lead's and the review lead's ruling on review A1826,
+which withdrew the earlier reading that the admission need not re-check
+`reports_to` because a join's recheck does not). The profile lock comes
+first because deletion takes it first and then counts the admitting
+placements as the profile's use: with the creation in the same order,
+either the deletion sees the new placement (a bare `DELETE` refuses, a
+cascade closes it) or the creation sees the tombstone (`not_found`),
+never an active placement for a deleted profile (confirmed: the same
+ruling; a race test on PostgreSQL and MariaDB, the statement order on
+SQLite). Such a placement could never run, as the exchange refuses a
+deleted profile (`live_profile`), yet it would hold one of the project's
+`max_placements` and one of the creator's `member_agents_max`
+(`agents_held` counts the admitting placements of every profile the
+owner owns, deleted ones included) until closed by hand. SQLite
+serialises writers, so only PostgreSQL and MariaDB showed the race. The
+lock covers only the caller's own profiles because only those are ever
+admitted (§15.6), and any human member may name any profile's id: a lock
+taken before the ownership check would let one member hold another
+person's profile for a whole transaction, stalling that owner's join
+creation, exchange and `DELETE` (confirmed: the review lead's ruling on
+review A1833; `test_a_placement_naming_another_owners_profile_takes_no_lock_on_it`).
+The owner is read before the locking read, not left to an `owner_id`
+condition on it alone, because InnoDB under repeatable read keeps the
+lock on a row it reads by its key even when the rest of the condition
+then drops it (inferred: InnoDB's documented locking, not shown by a
+test here); a profile's owner never changes, so that read cannot go
+stale. And the placement was made under the
+right to a first join, not to a further instance, so an instance needs
+the creator's right to that one (confirmed: the contract's ruling,
+docs/api.md §3.1 and §15.9, commit cd3a12da). Closing with `removed` on
+deletion, a spec change kept to `members:admin`, and an isolation closing
+the waiting placements as a removal does are the lead's rulings on review
+A1796, whose contract text follows on the contract branch (confirmed;
+`removed` was an open reading before, as the contract names no reason).
+
+**Rejected alternatives:** a join line first, exchanged by hand, then a
+placement of the member: rejected by the owner's decision; the reason
+beyond "only the owner decides where their agent joins" is not
+recorded. A separate admit endpoint: rejected in the approved contract;
+why is not recorded, the hub's reading is that it would copy the join's
+checks a second time (inferred). Reusing `new_handle` with the profile's
+handle instead of a new column: its unique key per project would refuse
+the second placement of one profile, which the contract lets add an
+instance. Re-reading the profile under the project lock only: the
+deletion takes the profile's lock first, then the projects of the
+profile's active memberships and of its active admitting placements
+(`delete_profile`, then `placements.profile_deleted`), all chosen from
+what it reads at that moment. A placement being created in a project
+where the profile has neither, such as its first placement anywhere,
+gives the deletion no project to lock, so only the profile's lock
+serialises the two. Keeping the admission's
+recheck symmetric with a member's own join, whose exchange leaves
+`reports_to` alone: a join already handed out does not act on its
+creator's continuing authority, the placement's join does (the ruling
+on review A1826 above).

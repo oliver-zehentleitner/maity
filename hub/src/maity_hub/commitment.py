@@ -17,6 +17,7 @@ from sqlalchemy import Connection, Engine, select, update
 from maity_hub import clock, instances, maintenance, namespace, policy, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
+from maity_hub.plain_text import plain_line
 
 log = logging.getLogger(__name__)
 INTERVAL = 60.0  # seconds between the worker's sweeps
@@ -33,18 +34,25 @@ def required(project: Any) -> bool:
 
 
 def start(
-    conn: Connection, project: Any, credential_id: str, session_id: str, now: datetime
+    conn: Connection,
+    project: Any,
+    credential_id: str,
+    membership_id: int,
+    session_id: str,
+    now: datetime,
 ) -> None:
-    """The first resume of an instance under `required` fixes its deadline; a later one,
-    and an instance that confirmed, change nothing."""
+    """The first resume of an instance under `required` fixes its deadline in that project
+    (its attachment to `membership_id`); a later one, and an instance that confirmed,
+    change nothing."""
     if not required(project):
         return
+    a = t.instance_attachment
     conn.execute(
-        update(t.credential)
+        update(a)
         .where(
-            t.credential.c.id == credential_id,
-            t.credential.c.ktw_acknowledged_at.is_(None),
-            t.credential.c.ktw_acknowledge_by.is_(None),
+            instances.attachment_of(credential_id, membership_id),
+            a.c.ktw_acknowledged_at.is_(None),
+            a.c.ktw_acknowledge_by.is_(None),
         )
         .values(ktw_acknowledge_by=now + WINDOW, ktw_session_id=session_id)
     )
@@ -58,7 +66,7 @@ def packet(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     return {
         "commitment": "required",
-        "acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "acknowledged_at": clock.rfc3339_or_none(confirmed),
         **(
             {"acknowledge_by": clock.rfc3339(credential.ktw_acknowledge_by)}
             if confirmed is None and credential.ktw_acknowledge_by is not None
@@ -76,7 +84,7 @@ def instance_fields(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     due = credential.ktw_acknowledge_by
     return {
-        "keep_the_why_acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "keep_the_why_acknowledged_at": clock.rfc3339_or_none(confirmed),
         "keep_the_why_acknowledge_by": clock.rfc3339(due) if confirmed is None and due else None,
     }
 
@@ -121,25 +129,27 @@ def confirmed(conn: Connection, credential: Any) -> None:
 
 
 def _outstanding(conn: Connection, project_id: str, credential_id: str | None) -> list[Any]:
-    """The project's active instances that have not confirmed and have a deadline,
-    with what the hub needs to know about their member; one instance when named."""
+    """The project's instances that have not confirmed and have a deadline, with what the
+    hub needs to know about their member; one instance when named. One row per instance in
+    this project: the commitment is per attachment (§6.17). A revoked or detached one is
+    read on purpose: `reconcile` ends what it owes."""
+    a = t.instance_attachment
     query = (
-        select(
-            t.credential,
+        instances.credential_rows()
+        .add_columns(
             t.membership.c.id.label("member_row"),
-            t.membership.c.agent_id.label("agent_id"),
             t.membership.c.active.label("membership_active"),
             t.membership.c.paused_since.label("member_paused"),
             t.agent_profile.c.owner_id.label("owner_id"),
             t.agent_profile.c.handle.label("handle"),
             t.agent_profile.c.deleted_at.label("profile_deleted"),
         )
-        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(
             t.membership.c.project_id == project_id,
-            t.credential.c.ktw_acknowledged_at.is_(None),
-            t.credential.c.ktw_acknowledge_by.isnot(None),
+            a.c.ktw_acknowledged_at.is_(None),
+            a.c.ktw_acknowledge_by.isnot(None),
         )
     )
     if credential_id is not None:
@@ -173,18 +183,19 @@ def reconcile(
         ended = (
             not on
             or row.revoked_at is not None
+            or row.detached_at is not None  # the instance left this project (§6.17)
             or not row.membership_active
             or row.profile_deleted is not None
         )
         if ended:
             # Nothing is owed any more: withdraw an open request, and let a later
             # `required` start the clock afresh.
-            # A revoked instance is reset too: it owes nothing, and leaving its deadline
-            # would keep its project in every sweep for good.
+            # A revoked or detached instance is reset too: it owes nothing, and leaving its
+            # deadline would keep its project in every sweep for good.
             withdraw_hub_notice(conn, row.ktw_request_id, "the commitment no longer applies")
             conn.execute(
-                update(t.credential)
-                .where(t.credential.c.id == row.id)
+                update(t.instance_attachment)
+                .where(instances.attachment_of(row.id, row.membership_id))
                 .values(ktw_acknowledge_by=None, ktw_reminded_at=None, ktw_request_id=None)
             )
             continue
@@ -211,7 +222,9 @@ def reconcile(
             }
             emit(conn, project.id, "keep_the_why_reminder", [token], payload)
             conn.execute(
-                update(t.credential).where(t.credential.c.id == row.id).values(ktw_reminded_at=now)
+                update(t.instance_attachment)
+                .where(instances.attachment_of(row.id, row.membership_id))
+                .values(ktw_reminded_at=now)
             )
         request_id = row.ktw_request_id
         if request_id is not None:
@@ -226,28 +239,32 @@ def reconcile(
                 project.id,
                 row.member_row,
                 row.agent_id,
-                f"{row.handle}#{row.instance} has not confirmed Keep the Why in {project.name}",
+                f"{row.handle}#{row.instance} has not confirmed Keep the Why in "
+                f"{plain_line(project.name)}",
                 f"The commitment was due at {clock.rfc3339(due)} (UTC); "
                 f"session {row.ktw_session_id}.",
             )
             conn.execute(
-                update(t.credential)
-                .where(t.credential.c.id == row.id)
+                update(t.instance_attachment)
+                .where(instances.attachment_of(row.id, row.membership_id))
                 .values(ktw_request_id=request_id)
             )
 
 
 def sweep(engine: Engine) -> None:
     """One pass over the projects that check the commitment, or that still hold an
-    outstanding one."""
+    outstanding one; a detached attachment's included on purpose, so `reconcile` ends it."""
     with engine.connect() as conn:
         ids = list(
             conn.execute(
                 select(t.membership.c.project_id)
-                .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+                .join(
+                    t.instance_attachment,
+                    t.instance_attachment.c.membership_id == t.membership.c.id,
+                )
                 .where(
-                    t.credential.c.ktw_acknowledged_at.is_(None),
-                    t.credential.c.ktw_acknowledge_by.isnot(None),
+                    t.instance_attachment.c.ktw_acknowledged_at.is_(None),
+                    t.instance_attachment.c.ktw_acknowledge_by.isnot(None),
                 )
                 .distinct()
             ).scalars()

@@ -50,10 +50,15 @@ def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
 
     if not revoke(conn, credential_id, REASON, by):
         return
+    # TODO(hub PR B): the project of each attachment; the oldest attachment until then, as
+    # the credential authenticates there (`auth.caller._credential`).
+    a = t.instance_attachment
     member = conn.execute(
         select(t.membership.c.project_id, t.membership.c.agent_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
+        .order_by(a.c.attached_at, a.c.id)
+        .limit(1)
     ).one()
     events.emit(
         conn,

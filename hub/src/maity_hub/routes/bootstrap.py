@@ -46,7 +46,9 @@ PATH = "/api/v1/bootstrap"
 # The refusals of authentication that answer the whole request: the route's own rule for a
 # caller it would refuse (§5.4). Every other one is each caller part's answer, as on its
 # single route.
-WHOLE = {"csrf_mismatch", "insecure_transport"}
+# A read past the limit per credential answers the whole request too, with its `Retry-After`,
+# which a part's refusal would drop: the bundle counts as one read (§1.7, §5.4).
+WHOLE = {"csrf_mismatch", "insecure_transport", "rate_limited"}
 
 Part = dict[str, Any]
 

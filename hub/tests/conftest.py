@@ -437,6 +437,9 @@ def _fresh_process_state() -> Iterator[None]:
     # address and a few fixed addresses make all the visitors of the suite.
     for limiter in process_limiters():
         limiter.reset()
+    from maity_hub import read_limits
+
+    read_limits.reset()  # the reads per credential, and the instance's value kept for them
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
@@ -459,6 +462,9 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import ktw_reads
 
     ktw_reads.FOREIGN.clear()
+    ktw_reads.OUTSIDE_CACHE.clear()  # the peer link to `ktw.CACHE` stays
+    ktw_reads._outside_seen.clear()
+    ktw_reads._asked_now.set(frozenset())  # no answer of an earlier test counts as this one's
     ktw_reads._slots.clear()
     ktw_reads._flights.clear()
     ktw_reads._failed.clear()

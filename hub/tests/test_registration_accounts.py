@@ -136,7 +136,7 @@ def test_the_account_holds_its_address_as_verified(
 ) -> None:
     """The completion writes the address through the notification settings' store
     (§18.4), not through a stand-in."""
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address, preferences
 
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     row = requested(make_client, migrated, settings)
@@ -144,20 +144,20 @@ def test_the_account_holds_its_address_as_verified(
     assert done.kind == "created"
     with migrated.begin() as conn:
         view = preferences.view(conn, done.human_id, True)["email"]
-        assert preferences.has_verified_address(conn, "ada@example.com") is True
+        assert address.has_verified_address(conn, "ada@example.com") is True
     assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
 
 
 def test_a_taken_address_makes_no_account(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address
 
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     row = requested(make_client, migrated, settings)
     holder = flow.human(make_client, migrated, "holder")
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
+        assert address.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
     assert complete(migrated, settings, row.id).kind == "gone"
     with migrated.connect() as conn:
         assert conn.execute(select(t.human).where(t.human.c.handle == "ada")).first() is None
@@ -682,6 +682,33 @@ def test_an_undecided_account_goes_after_thirty_days(
     assert admin.get(ADMIN).json()["items"] == []
     late = admin.post(f"{ADMIN}/{done.human_id}/approve")
     assert late.json()["error"]["details"]["from"] == "expired"
+
+
+def test_the_hourly_pass_deletes_a_block_that_ran_out_and_keeps_a_live_one(
+    migrated: Engine,
+) -> None:
+    """§16.4: every read of a block asks for `until > now`, so a block that ran out only keeps
+    an address; the registration's pass deletes it, a block still running stays."""
+    now = clock.now()
+    with migrated.begin() as conn:
+        registration_accounts.block(conn, "old@example.com", now - timedelta(seconds=1))
+        registration_accounts.block(conn, "live@example.com", now + timedelta(days=1))
+
+    def blocked() -> list[str]:
+        with migrated.connect() as conn:
+            return sorted(conn.execute(select(t.registration_block.c.address_normalized)).scalars())
+
+    assert blocked() == ["live@example.com", "old@example.com"]
+    worker = registration_accounts.Worker(migrated, settings_for(), interval=0.05)
+    worker.start()
+    try:
+        for _ in range(100):
+            if blocked() == ["live@example.com"]:
+                break
+            threading.Event().wait(0.05)
+    finally:
+        worker.stop()
+    assert blocked() == ["live@example.com"]
 
 
 def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(

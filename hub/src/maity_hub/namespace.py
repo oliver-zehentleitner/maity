@@ -35,10 +35,33 @@ FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
 
 class ProjectRoute(APIRoute):
     """A route under `/projects/{owner}/{slug}`: its `slug` path parameter becomes the full
-    name `<owner>/<slug>` before the dependencies and the endpoint read it."""
+    name `<owner>/<slug>` before the dependencies and the endpoint read it.
+
+    A route under `/api/v1/projects/{owner}/{slug}` that is not one of `access.OUTSIDE_READS`
+    for the request's method first passes `access.gate`: a public project's outsider is
+    answered `not_found` there, before FastAPI reads the body or the query (§2.3), an owner of
+    an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3). One
+    of `access.PUBLIC_REPOSITORY_READS` passes the gate too, which opens it to an outsider only
+    while the project's stored `repository_public` is true, the instance's token serves the
+    project's namespace (the operator's own, §11.4), and the forge's answer on the repository,
+    asked live when the kept one is too old, says it is public, all before the query is read."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()
+        from maity_hub import access  # access resolves projects through this module
+
+        # The route's template as the app serves it. FastAPI keeps an included router behind
+        # its own object (hub/context/namespace.md), so `self.path` is the router's own path,
+        # below the prefix `access.API` the API's routers are included with; a FastAPI that
+        # copied the route on inclusion gave it the prefix. Both name one template here, so
+        # the gate holds on either: reading `self.path` alone left every project route
+        # ungated under FastAPI 0.159.
+        path = self.path if self.path.startswith(access.API + "/") else access.API + self.path
+        below = path.startswith(access.API_PROJECT + "/")
+        project_route = path == access.API_PROJECT or below
+        readable = frozenset(m for m, p in access.OUTSIDE_READS if p == path)
+        owned = frozenset(m for m, p in access.OWNER_CALLS if p == path)
+        conditional = frozenset(m for m, p in access.PUBLIC_REPOSITORY_READS if p == path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}
@@ -46,6 +69,10 @@ class ProjectRoute(APIRoute):
                 params = dict(params)
                 params["slug"] = f"{params.pop('owner')}/{params['slug']}"
                 request.scope["path_params"] = params
+            if project_route and request.method in conditional:
+                await access.gate(request, public_repository_read=True)
+            elif project_route and request.method not in readable:
+                await access.gate(request, request.method in owned)
             return await inner(request)
 
         return handler
@@ -99,23 +126,12 @@ def owner_values(owner_id: str) -> dict[str, Any]:
     }
 
 
-def _owners(table: Any) -> Any:
-    """`table` with its owner, a human or an organisation, joined for the handle."""
-    return table.outerjoin(t.human, t.human.c.id == table.c.owner_human_id).outerjoin(
+def join_owner(query: Any, table: Any = t.project) -> Any:
+    """`query`, which has `table` (`project` or `project_alias`) among its tables or is that
+    table, with the row's owner, a human or an organisation, joined: use `owner_handle()` for
+    its handle."""
+    return query.outerjoin(t.human, t.human.c.id == table.c.owner_human_id).outerjoin(
         t.org, t.org.c.id == table.c.owner_org_id
-    )
-
-
-def _handle(table: Any) -> Any:
-    """The current handle of the row's namespace owner, whichever kind it is."""
-    return func.coalesce(t.human.c.handle, t.org.c.handle)
-
-
-def join_owner(query: Any) -> Any:
-    """`query`, which has `project` among its tables, with the project's owner joined: use
-    `owner_handle()` for its handle."""
-    return query.outerjoin(t.human, t.human.c.id == t.project.c.owner_human_id).outerjoin(
-        t.org, t.org.c.id == t.project.c.owner_org_id
     )
 
 
@@ -165,8 +181,8 @@ def resolve(conn: Connection, full_name: str) -> Any | None:
 def owner_of(conn: Connection, project: Any) -> dict[str, str]:
     """`{id, handle}` of the project's namespace owner, by its current handle."""
     handle = conn.execute(
-        select(_handle(t.project))
-        .select_from(_owners(t.project))
+        select(owner_handle())
+        .select_from(join_owner(t.project))
         .where(t.project.c.id == project.id)
     ).scalar_one()
     return {"id": project.owner_id, "handle": handle}
@@ -186,24 +202,13 @@ def full_name(conn: Connection, project: Any) -> str:
 
 def name_of(conn: Connection, project_id: str) -> str:
     """The full name of the project with this id (§6.25)."""
-    row = conn.execute(
-        select(t.project.c.slug, _handle(t.project).label("handle"))
-        .select_from(_owners(t.project))
-        .where(t.project.c.id == project_id)
-    ).one()
-    return f"{row.handle}/{row.slug}"
+    return full_names(conn, [project_id])[project_id]
 
 
 def aliases_of(conn: Connection, project_id: str) -> list[str]:
     """The project's earlier full names, oldest first, each with its owner's current handle
     (an owner's own handle aliases resolve anyway, §6.24)."""
-    rows = conn.execute(
-        select(t.project_alias.c.slug, _handle(t.project_alias).label("handle"))
-        .select_from(_owners(t.project_alias))
-        .where(t.project_alias.c.project_id == project_id)
-        .order_by(t.project_alias.c.id)
-    ).all()
-    return [f"{row.handle}/{row.slug}" for row in rows]
+    return aliases_by(conn, [project_id])[project_id]
 
 
 def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
@@ -212,8 +217,8 @@ def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug, _handle(t.project).label("handle"))
-        .select_from(_owners(t.project))
+        select(t.project.c.id, t.project.c.slug, owner_handle().label("handle"))
+        .select_from(join_owner(t.project))
         .where(t.project.c.id.in_(ids))
     ).all()
     return {row.id: f"{row.handle}/{row.slug}" for row in rows}
@@ -253,9 +258,9 @@ def aliases_by(conn: Connection, project_ids: Iterable[str]) -> dict[str, list[s
         select(
             t.project_alias.c.project_id,
             t.project_alias.c.slug,
-            _handle(t.project_alias).label("handle"),
+            owner_handle().label("handle"),
         )
-        .select_from(_owners(t.project_alias))
+        .select_from(join_owner(t.project_alias, t.project_alias))
         .where(t.project_alias.c.project_id.in_(ids))
         .order_by(t.project_alias.c.id)
     ).all()

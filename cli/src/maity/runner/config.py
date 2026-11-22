@@ -24,6 +24,7 @@ DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
+DEFAULT_SKILLS_DIR = "~/.local/share/maity-runner/skills"
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -53,6 +54,13 @@ BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",
             "antigravity": "agy", "pi": "pi", "hermes": "hermes", "kimi": "kimi", "cline": "cline",
             "omp": "omp"}  # fmt: skip
 MODES = ("interactive", "supervised")
+# The harnesses whose launch passes a placement's effort (adapters.py): Codex's
+# model_reasoning_effort, agy's --effort. Claude Code and opencode take none yet.
+EFFORT_HARNESSES = ("codex", "antigravity")
+# The hub's shape for an effort (§15.5), the whole string: `\Z`, not `$`, which also matches
+# before a trailing newline the hub refuses (A1994).
+EFFORT_PATTERN = re.compile(r"\A[a-z]{1,16}\Z")
+EFFORTS_MAX = 16  # the hub's bound on a harness's advertised efforts (HarnessOffer.efforts)
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # A project as the hub names it (§6.25): the namespace owner's handle and the slug.
 FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}/[a-z0-9][a-z0-9-]{1,62}$")
@@ -127,6 +135,8 @@ class Harness:
     default_mode: str
     models: tuple[str, ...] = ()
     default_model: str | None = None
+    # The reasoning efforts a placement may name (§15.3); only for EFFORT_HARNESSES.
+    efforts: tuple[str, ...] = ()
     binary: str | None = None
     # True: no start without the harness's sandbox. None (unset): Claude Code is refused when
     # its sandbox tools are there but its version keeps the sandbox off. False: never refused
@@ -146,6 +156,9 @@ class RepositoryGrant:
     network: tuple[str, ...] = ()
     # Agents open and read their pull requests through `maity gh` (cli/context/runner.md).
     pull_requests: bool = False
+    # A placed lead (role `manager`, read from the hub per call) also merges, edits, readies
+    # and reads CI through `maity gh`; only together with `pull_requests` (cli/context/runner.md).
+    lead: bool = False
     # `allow` entries for gh, which no session runs any more: left out of `allow`, named by
     # `maity runner check`, never a reason to stop the runner or its other placements.
     refused: tuple[str, ...] = ()
@@ -176,6 +189,9 @@ class Config:
     # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
     # sandboxed command may read, while a harness's sandbox runs the harness's own files.
     tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
+    # The Keep the Why skill the runner delivers to its placements (§15.5, skills.py): beside
+    # state_dir for the same reason, a session reads it and writes nothing there.
+    skills_dir: Path = Path(DEFAULT_SKILLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -342,7 +358,8 @@ def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable
         if not all(isinstance(v, str) and v for v in values):
             return "expected a list of non-empty strings"
         if pattern is not None:
-            bad = [v for v in values if not pattern.match(v)]
+            # The whole value: `match` with `$` also takes one ending in a newline (A1994).
+            bad = [v for v in values if not pattern.fullmatch(v)]
             if bad:
                 return f"not {what}: {', '.join(repr(v) for v in bad)}"
         return None
@@ -501,6 +518,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
                 allow=tuple(rule for rule in allow if rule not in gh),
                 network=tuple(table.get("network", list, [], check=_strings())),
                 pull_requests=table.get("pull_requests", bool, False),
+                lead=table.get("lead", bool, False),
                 refused=gh,
             )
             table.done()
@@ -728,6 +746,19 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     default_model = table.get("default_model", str, models[0] if models else None)
     if default_model is not None and default_model not in models:
         problems.append(f"{where}.default_model: must be one of its models")
+    efforts = tuple(
+        table.get("efforts", list, [], check=_strings(EFFORT_PATTERN, "an effort ([a-z]{1,16})"))
+    )
+    if efforts and name not in EFFORT_HARNESSES:
+        # Never advertise what the launch cannot pass: the hub would accept a placement the
+        # harness then runs on its default (tsk-0fr0xzy2ce95).
+        problems.append(f"{where}.efforts: the runner passes no effort to this harness")
+    if len(set(efforts)) != len(efforts):
+        problems.append(f"{where}.efforts: an effort is named twice")
+    if len(efforts) > EFFORTS_MAX:
+        # A hello the hub refuses stops the whole runner (serve exits 78), so the check refuses
+        # what the hub would (A1994).
+        problems.append(f"{where}.efforts: at most {EFFORTS_MAX}, the hub's bound")
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
@@ -747,6 +778,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         default_mode=default_mode,
         models=models,
         default_model=default_model,
+        efforts=efforts,
         binary=None if name == "stub" else table.get("binary", str, BINARIES.get(name)),
         require_sandbox=table.get("require_sandbox", bool, None),
         env_file=Path(env_file).expanduser() if env_file else None,

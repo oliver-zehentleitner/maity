@@ -17,7 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import catalog, clock, landing, link_frame, paths, render, write_guard
 from maity_hub import tables as t
-from maity_hub.auth import anonymous, second_factor, sessions, sign_in_settings
+from maity_hub.auth import anonymous, known_sources, second_factor, sessions, sign_in_settings
 from maity_hub.auth import email_links as links
 from maity_hub.auth.caller import (
     SESSION_COOKIE,
@@ -30,6 +30,7 @@ from maity_hub.errors import ApiError, forbidden, rate_limited
 from maity_hub.mail import address, outbox
 from maity_hub.notifications import preferences, tokens
 from maity_hub.routes import auth, device_codes
+from maity_hub.text_language import text_language
 
 router = APIRouter(prefix="/auth")
 page_router = APIRouter()
@@ -59,7 +60,7 @@ def _enabled(conn: Connection, hub: Settings) -> None:
 def _anonymous(request: Request) -> None:
     anonymous.entry(request)
     presented = request.cookies.get(SESSION_COOKIE)
-    if not presented:
+    if not presented or not presented.isascii():  # a non-ASCII value names no session
         return
     with engine_of(request).connect() as conn:
         row = conn.execute(
@@ -75,13 +76,15 @@ def _anonymous(request: Request) -> None:
 def request_link(body: LinkRequest, request: Request, background: BackgroundTasks) -> JSONResponse:
     _anonymous(request)
     hub, engine = settings_of(request), engine_of(request)
+    address.prepare(engine, hub.secret_key)  # the key of the address's counts, before reading it
     with engine.begin() as conn:
         # Under `email` the answer stays the `202` and nothing is sent (§2.8.8, rule 3).
         silent = sign_in_settings.second_factor_policy(conn, hub) == "email"
         if not silent:
             _enabled(conn, hub)
+        keyed = known_sources.address_key(conn, body.address.strip().casefold())
     origin = origin_of(request)
-    wait, allowed = LIMITS.take(body.address, origin.limit_key)
+    wait, allowed = LIMITS.take(keyed, origin.limit_key)
     if wait:
         raise rate_limited(wait)
     pending = secrets.token_urlsafe(32)
@@ -192,7 +195,7 @@ def deliver(
             },
         )
         human = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
-        language = preferences.text_language(conn, human_id)
+        language = text_language(conn, human_id)
         browser, system = sessions.describe(user_agent)
         body = links.mail_body(
             language=language,
@@ -322,7 +325,7 @@ def link_page(token: str, request: Request) -> HTMLResponse:
         ):
             return _dead(conn, request)
         human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-        language = preferences.text_language(conn, row.human_id)
+        language = text_language(conn, row.human_id)
         name = f"{human.display_name} ({human.handle})"
         form = secrets.token_urlsafe(32)
         words = catalog.section("sign_in", language)

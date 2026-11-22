@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "maity-hub"
-version = "0.1.0a9"
+version = "0.1.0a10"
 description = "The Maity hub: the server humans and their coding agents join"
 readme = "README.md"
 license = "MIT"
@@ -85,4 +85,5 @@ tmp_path_retention_policy = "failed"
 markers = [
     "load: the notifications' cost does not grow with history or tabs (CI's hub-load job runs only these, on PostgreSQL)",
     "wheel: what the installed wheel has to prove (CI's hub-wheel job runs only these): the package data, the entry point and the migrations it carries",
+    "flat_rows: the test shows that these list routes cost the same statements for 3 rows as for 30 (tests/list_rows.py; the guard is tests/test_list_rows.py)",
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Annotated
 
@@ -9,16 +10,18 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from maity_hub import events, namespace, runner_revoke, write_guard
+from maity_hub import events, namespace, request_stats, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
-from maity_hub.auth.caller import Caller, RequestFacts, authenticate
+from maity_hub.auth.caller import Caller, RequestFacts, authenticate, keep_nonces_spent
 from maity_hub.auth.permitted import Calls
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.forge import Forge
 from maity_hub.net import Origin
+
+log = logging.getLogger(__name__)
 
 
 def engine_of(request: Request) -> Engine:
@@ -51,6 +54,7 @@ def facts_of(request: Request) -> RequestFacts:
     return RequestFacts(
         method=request.method,
         raw_path=request.scope.get("raw_path") or request.url.path.encode(),
+        path=request.scope.get("path", ""),
         raw_query=request.scope["state"].get("raw_query", b""),
         headers={k.lower(): v for k, v in request.headers.items()},
         cookies=dict(request.cookies),
@@ -58,6 +62,8 @@ def facts_of(request: Request) -> RequestFacts:
         origin=origin_of(request),
         allow_plain_http=settings_of(request).allow_plain_http,
         cli_install=settings_of(request).cli_install,
+        max_reads_env=settings_of(request).max_reads_per_minute,
+        route=request_stats.route_of(request.scope),
     )
 
 
@@ -132,6 +138,22 @@ async def authenticated(
         async with engine.begin() as conn:
             await conn.run_sync(_end_session, ended)
         raise unauthenticated("the sign-in has to start again") from None
+    except Exception:
+        # A refusal after the nonce was spent in the database rolled the spend back with the
+        # rest; it is spent again, committed on its own, before the refusal is answered (§2.2).
+        # Nothing is recorded where the process's window keeps the nonce, so nothing runs there.
+        if facts.nonces_spent:
+            try:
+                await retrying_async(lambda: _keep_nonces_spent(engine, facts))
+            except Exception as failed:
+                # The refusal is still the answer, never a 500; the nonce stays unspent, as it
+                # was before the claim again existed (hub/context/auth.md fbc8c3e0). The line
+                # names the failure's type only: no nonce, credential or statement in it.
+                log.warning(
+                    "a refused request's nonce could not be claimed again (%s); it stays unspent",
+                    type(failed).__name__,
+                )
+        raise
     request.state.caller = caller
     if caller.kind == "human" and caller.human_id is not None:
         write_guard.bind(caller.human_id)  # its writes commit only while it exists (§2.9)
@@ -139,6 +161,11 @@ async def authenticated(
         # A bridge's writes for an agent commit only while the connection lives (§2.3).
         write_guard.bind_bridge(caller.project_id, caller.bridge.bridge_id)
     return caller
+
+
+async def _keep_nonces_spent(engine: AsyncEngine, facts: RequestFacts) -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(keep_nonces_spent, facts)
 
 
 def _end_session(conn: Connection, ended: second_factor.SessionEnded) -> None:

@@ -124,6 +124,24 @@ def test_supervised_with_a_model(tmp_path: Path) -> None:
         assert argv[argv.index("--model") + 1] == "m-1"
 
 
+def test_an_effort_reaches_the_first_and_every_continued_command(tmp_path: Path) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): agy's `--effort`, so a continued run keeps the level."""
+    effort = {"id": "plc-0003", "mode": "supervised", "effort": "medium"}
+    launch = adapters.launch(context(tmp_path, placement=effort))
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    for argv in (spec["first"], spec["again"]):
+        assert argv[argv.index("--effort") + 1] == "medium"
+    shown = {**effort, "mode": "interactive"}
+    interactive = adapters.launch(context(tmp_path / "i", placement=shown))
+    assert interactive.argv[interactive.argv.index("--effort") + 1] == "medium"
+    resumed = adapters.launch(context(tmp_path / "r", placement=shown, resume=True))
+    assert resumed.argv[resumed.argv.index("--effort") + 1] == "medium"
+
+
+def test_no_effort_passes_no_flag(tmp_path: Path) -> None:
+    assert "--effort" not in adapters.launch(context(tmp_path)).argv
+
+
 def test_the_pull_request_line_reaches_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -167,7 +185,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
                 *(f"write_file({git_dir / name})" for name in adapters.GIT_PROTECTED),
                 "command(git -c)", "command(git --config-env)", "command(git --exec-path)",
-                "command(gh)",
+                "command(gh)", "command(maity runner)",  # S201/S202: not from an agent's shell
             ],
         },
     }  # fmt: skip
@@ -181,6 +199,25 @@ def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None
     ]["deny"]
     assert f"read_file({home / '.gemini'})" not in deny
     assert f"read_file({home / '.gemini' / adapters.AGY_LOGIN.relative_to('.gemini')})" in deny
+
+
+def test_the_delivered_skill_is_never_written_by_agys_file_tools(tmp_path: Path) -> None:
+    # The review of #2056: read through MAITY_KTW_SKILL_DIR, so its write_file is denied.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    deny = adapters.antigravity_settings(context(tmp_path, skill=skill))["permissions"]["deny"]
+    assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+    plain = adapters.antigravity_settings(context(tmp_path / "n"))["permissions"]["deny"]
+    assert not [rule for rule in plain if "skills" in rule]
+
+
+def test_in_the_agent_user_layout_agy_never_writes_the_agents_copy(tmp_path: Path) -> None:
+    # tsk-7casfxb7cn49: the copy the runner puts below the agents' user's home gets the same
+    # write_file deny as the runner's own copy in the single layout.
+    skill = Path("/home/agents/.local/share/maity-runner/skills/keep-the-why") / (
+        "a" * 40 + "-" + "b" * 16) / "plugin"  # fmt: skip
+    ctx = context(tmp_path, skill=skill, as_user=AsUser("agents"))
+    deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
+    assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
 
 
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
@@ -906,6 +943,70 @@ SIDES: dict[str, Callable[[], AsUser]] = {
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
+def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): a session reaches its own scratch only;
+    every other placement's, in its project and in others, goes to the sandbox's deny."""
+    ws = tmp_path / "ws"
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    root = ws if host else ws.resolve()
+    own = root / "maity" / ".scratch" / "plc-0003"
+    others = [root / "maity" / ".scratch" / "plc-0004", root / "other" / ".scratch" / "plc-0009"]
+    for room in (own, *others):
+        (room / "tmp").mkdir(parents=True)
+    (ws / "maity" / "agent-3").mkdir()  # a clone is no scratch
+    assert supervisor.other_scratches(ws, own, as_user, host) == sorted(others)
+    assert supervisor.other_scratches(ws, None, as_user, host) == sorted([own, *others])
+    assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, side: str) -> None:
+    """A clone's content is never read (an unreadable directory in a clone refuses nothing), a
+    workspaces root reached through a link is listed through it, and a `.scratch` higher up in
+    the root's own path matches nothing extra."""
+    real = tmp_path / ".scratch" / "real-ws"  # `.scratch` on the way to the root itself
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    other = real / "maity" / ".scratch" / "plc-0004"
+    other.mkdir(parents=True)
+    locked = real / "maity" / "agent-3" / "deep"
+    locked.mkdir(parents=True)
+    (locked / "x").mkdir()
+    linked = tmp_path / "ws"
+    linked.symlink_to(real)
+    root = linked if host else linked.resolve()
+    locked.chmod(0o000)
+    try:
+        found = supervisor.other_scratches(linked, None, as_user, host)
+    finally:
+        locked.chmod(0o700)
+    assert found == [root / "maity" / ".scratch" / "plc-0004"]
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("locked", ["root", "project", "holder"])
+def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(
+    tmp_path: Path, side: str, locked: str
+) -> None:
+    """An unreadable root, project or `.scratch` could hide a scratch: every side refuses the
+    start, none returns a short list (the review of #2032)."""
+    ws = tmp_path / "ws"
+    holder = ws / "maity" / ".scratch"
+    (holder / "plc-0004").mkdir(parents=True)
+    at = {"root": ws, "project": ws / "maity", "holder": holder}[locked]
+    as_user = SIDES[side]()
+    at.chmod(0o000)
+    try:
+        if os.access(at, os.R_OK):  # root reads it anyway: nothing to prove here
+            pytest.skip("running as a user that reads a 0000 directory")
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
+    finally:
+        at.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", ["clone", "repo", "git", "maity"])
 def test_other_credentials_are_listed_where_they_lie(
     tmp_path: Path, side: str, linked: str
@@ -988,6 +1089,63 @@ def test_a_place_that_cannot_be_looked_at_refuses_the_start(
         assert refused.value.reason == "harness_refused"
     finally:
         locked.chmod(0o700)
+
+
+def _pathlib_as_on_314(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pathlib's predicates as Python 3.14 and later answer them: False for a path below a
+    directory that cannot be searched, where 3.13 raised PermissionError (tsk-0tje3vzzedtx).
+    So the fail-closed listings are checked against that on every interpreter."""
+    for name in ("is_dir", "is_file", "exists", "is_symlink"):
+        original = getattr(Path, name)
+
+        def quiet(self: Path, *args: Any, _original: Any = original, **kwargs: Any) -> bool:
+            try:
+                return bool(_original(self, *args, **kwargs))
+            except PermissionError:
+                return False
+
+        monkeypatch.setattr(Path, name, quiet)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_an_unsearchable_place_refuses_also_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """The runner's own side decides with stat, not with pathlib's predicates: where those
+    answer False instead of raising (3.14+), a slot linked into a directory the agents' user
+    cannot search still refuses the start, never an empty list (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_an_unsearchable_project_refuses_the_scratch_listing_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same for the scratches: a project that cannot be searched could hide a `.scratch`,
+    so the runner's own side refuses, also where pathlib answers False (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws = tmp_path / "ws"
+    (ws / "maity" / ".scratch" / "plc-0004").mkdir(parents=True)
+    (ws / "maity").chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(ws, None, AsUser())
+    finally:
+        (ws / "maity").chmod(0o700)
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
@@ -1547,6 +1705,38 @@ def test_an_interactive_restart_checks_the_folder_again(
     settle(sup)
     assert len(backend.started) == 2, logs
     assert backend.started[1][1][-3:-1] == ["-c", "-i"]
+
+
+def test_a_reset_starts_agy_on_a_fresh_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reset (`fresh_session`, §15.6): the generation's first start is `-i` with the start
+    prompt, never `-c`, even with a resume left on the record; a resume later in the same
+    generation continues the new conversation, and only the fresh start counts in
+    `sessions` (§15.7)."""
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    # A record that would resume: the reset must not hand the last conversation back.
+    sup.records["plc-0003"] = supervisor.Record(generation=2, since=clock[0], resume=True)
+    sup.update([placement(mode="interactive", generation=2, fresh_session=True)])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    argv = backend.started[0][1]
+    assert "-c" not in argv and argv[-2] == "-i" and adapters.START_PROMPT in argv[-1]
+    rec = sup.records["plc-0003"]
+    assert rec.sessions == 1 and sup._body(rec)["sessions"] == 1
+    assert any("reset: a fresh session" in line for line in logs), logs
+    backend.exit(next(iter(backend.live)), 1)
+    sup.tick()
+    assert rec.state == "exited" and rec.retry_at is not None
+    rec.resume = True  # as after the idle check's end, now inside the reset's generation
+    clock[0] = rec.retry_at + 1
+    settle(sup)
+    assert len(backend.started) == 2, logs
+    assert backend.started[1][1][-3:-1] == ["-c", "-i"]
+    assert rec.sessions == 1 and sup._body(rec)["sessions"] == 1
 
 
 def test_running_without_agys_sandbox_is_reported(

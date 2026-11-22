@@ -13,6 +13,7 @@ there, and a harness setting an agent changes only widens what that same user co
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import state
-from . import limitread, scratchop
+from . import limitread, scratchop, skillop
 
 TIMEOUT = 60.0
 # A read on the agents' side: a few kilobytes, or a log's next chunk.
@@ -49,8 +50,52 @@ REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
 
+def shell_quote(word: str) -> str:
+    """`shlex.quote`, and a word that starts with `=` quoted too: `shlex.quote` leaves it bare
+    (`=` is safe in POSIX sh), but zsh expands a bare `=name` to the path of the command `name`
+    and fails when there is none, so an exact tmux target (`=maity_p_c`) would not reach tmux."""
+    if word.startswith("="):
+        return "'" + word.replace("'", "'\"'\"'") + "'"
+    return shlex.quote(word)
+
+
+def shell_join(words: Sequence[str]) -> str:
+    """`shlex.join` with `shell_quote`: one line for a POSIX shell or zsh."""
+    return " ".join(shell_quote(word) for word in words)
+
+
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
+
+
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+
+def stat_mode(path: Path, *, follow: bool = True) -> int | None:
+    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
+    other OSError raises. A check that must fail closed decides with this, never with
+    `is_dir()`/`exists()`/`is_symlink()`: from Python 3.14 those answer False for a path
+    below a directory that cannot be searched instead of raising, and the check would take
+    what it cannot see for absent (tsk-0tje3vzzedtx)."""
+    try:
+        return (os.stat if follow else os.lstat)(path).st_mode
+    except OSError as exc:
+        if exc.errno in ABSENT:
+            return None
+        raise
+
+
+def present(path: Path, kind: str = "-e") -> bool:
+    """`test -e` (`-f`, `-d`, `-L`) on the runner's own side, failing closed: absent is False,
+    any other error raises (stat_mode)."""
+    mode = stat_mode(path, follow=kind != "-L")
+    if mode is None:
+        return False
+    check = {"-e": lambda m: True, "-f": stat.S_ISREG, "-d": stat.S_ISDIR, "-L": stat.S_ISLNK}
+    return bool(check[kind](mode))
 
 
 @dataclass(frozen=True)
@@ -114,6 +159,22 @@ class AsUser:
 
         return Path(pwd.getpwnam(str(self.user)).pw_dir)
 
+    def uid(self) -> int:
+        """The uid the agents run as: the runner's own (`single`) or the agents' user's
+        (`agent_user`). agy's scratch under `/tmp` is owned by and reachable only to this uid
+        (scratchop.tmp_make). OSError when the host has no uid or the user is unknown."""
+        if self.direct:
+            getuid = getattr(os, "getuid", None)
+            if getuid is None:
+                raise OSError("this system has no uid; no /tmp scratch here")
+            return int(getuid())
+        import pwd  # POSIX only, and every maity command imports this module
+
+        try:
+            return pwd.getpwnam(str(self.user)).pw_uid
+        except KeyError:
+            raise OSError(f"the agents' user {self.user} is not known here") from None
+
     def write(self, path: Path, text: str) -> Path:
         """A file 0600 for the agents' side; the file's own directory is made 0700 if missing.
         Tools BSD, macOS and GNU all have (`sh`, `mkdir`, `mktemp`, `cat`, `chmod`, `mv`), and
@@ -135,6 +196,26 @@ class AsUser:
         done = self.run(["mkdir", "-p", "-m", "700", str(path)])
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
+
+    def tighten(self, path: Path) -> None:
+        """The directory `path` made 0700, also when it exists already with looser bits:
+        `mkdir -p -m 700` and `Path.mkdir(mode=0o700, parents=True)` give the mode to the last
+        directory only, and a parent made under a umask of 002 is 0775, which `maity gh`'s lead
+        commands refuse (`ghpr.owned_layout`, review A1758 of #2054). Only a real directory:
+        chmod follows a link, so a link in its place is refused first (security leg on #2054;
+        owned_layout refuses one anyway, this keeps the chmod from touching what it names)."""
+        if self.direct:
+            if not stat.S_ISDIR(os.lstat(path).st_mode):
+                raise OSError(f"cannot make {path} private for the agents: not a directory")
+            os.chmod(path, 0o700)
+            return
+        # find's -type tests the entry itself, never what a link names.
+        seen = self.run(["find", str(path), "-maxdepth", "0", "-type", "d"])
+        if seen.returncode != 0 or seen.stdout.strip() != str(path):
+            raise OSError(f"cannot make {path} private for the agents: not a directory")
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot make {path} private for the agents: {done.stderr.strip()[:200]}")
 
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
@@ -214,11 +295,11 @@ class AsUser:
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the
-        runner."""
+        runner. On the runner's own side with stat (`present`): absent is False, and a path it
+        cannot look at raises, as pathlib's predicates did up to Python 3.13, so no caller
+        takes what it cannot see for absent (tsk-0tje3vzzedtx)."""
         if self.direct:
-            checks = {"-e": path.exists, "-f": path.is_file, "-d": path.is_dir,
-                      "-L": path.is_symlink}  # fmt: skip
-            return checks[kind]()
+            return present(path, kind)
         return self.run(["test", kind, str(path)]).returncode == 0
 
     def link(self, target: Path, link: Path) -> None:
@@ -255,6 +336,145 @@ class AsUser:
             raise OSError(f"scratch {op} {path}: no answer") from None
         if not isinstance(answer, dict):
             raise OSError(f"scratch {op} {path}: no answer")
+        return answer
+
+    def pg(self, op: str, under: Path, path: Path) -> dict[str, Any]:
+        """The test clusters' password holder or a placement's file in it, made (`make`) or
+        removed (`remove`) on the agents' side (scratchop.pg_make, pg_remove), opened from
+        `under` without following a link. scratchop.OnTheWay for a link or another user's
+        holder; OSError when it fails otherwise, a host whose `maity` predates the op included."""
+        if self.direct:
+            return (scratchop.pg_make if op == "make" else scratchop.pg_remove)(
+                str(under), str(path)
+            )
+        argv = [*self.runner_module("scratchop"), f"pg{op}", "--under", str(under), str(path)]
+        done = self.run(argv)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{path}: a link or another user's directory; not used")
+        if done.returncode == 2:  # a host's `maity` that predates the op: it made none either
+            raise scratchop.Unsupported(f"host maity has no pg ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"pg {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"pg {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"pg {op} {path}: no answer")
+        return answer
+
+    def tmp_scratch(self, op: str, path: Path) -> dict[str, Any]:
+        """A placement's `/tmp` scratch (agy) made, measured or removed on the agents' side,
+        or (`op` "parent") the per-user parent created or adopted: the per-user parent (0700,
+        owned by the agents' user) and the per-placement leaf opened without following a link
+        and checked owned by the uid the agents run as (os.getuid there). scratchop.OnTheWay for
+        a link, a directory another user holds, or a leaf that already exists; OSError when it
+        fails otherwise."""
+        if self.direct:
+            if op == "parent":
+                return scratchop.tmp_parent_make(str(path))
+            return scratchop.tmp_run(op, str(path))
+        done = self.run([*self.runner_module("scratchop"), f"tmp{op}", str(path)])
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(
+                f"{path}: a link, a foreign-owned or pre-existing directory; nothing done"
+            )
+        if done.returncode != 0:
+            raise OSError(f"tmp scratch {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"tmp scratch {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"tmp scratch {op} {path}: no answer")
+        return answer
+
+    def codex(self, under: Path, home: Path, config_text: str, auth_target: Path | None) -> None:
+        """Codex's control files written inside the per-placement codex-home on the agents'
+        side (scratchop.codex): config.toml and, when `auth_target` is given, the auth.json
+        link. Every directory from `under` (the workspaces root) down to codex-home is opened
+        without following a link, and codex-home itself is opened without following one, so a
+        codex-home swapped for a link is refused rather than followed out of the scratch.
+        scratchop.OnTheWay when it is a link; OSError when it fails otherwise."""
+        target = str(auth_target) if auth_target is not None else None
+        if self.direct:
+            scratchop.codex(str(under), str(home), config_text, target)
+            return
+        argv = [*self.runner_module("scratchop"), "codex", "--under", str(under)]
+        if target is not None:
+            argv += ["--auth", target]
+        done = self.run([*argv, str(home)], input=config_text)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{home}: a link where codex-home must be; nothing written")
+        if done.returncode == 2:
+            # The op reaches an ssh host through its own `maity runner scratchop`. A host whose
+            # `maity` has no `codex` op (older than this) rejects the subcommand as an argument
+            # error (exit 2), distinct from LINK (4) and a genuine failure (1): refuse the
+            # placement, do not crash-loop it. The runner always builds a well-formed argv.
+            raise scratchop.Unsupported(
+                f"host maity too old for codex placements: {done.stderr.strip()[:200]}"
+            )
+        if done.returncode != 0:
+            raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
+
+    def skill_check(self, home: Path, key: str, source: str, commit: str) -> dict[str, Any]:
+        """The delivered skill's copy `key` below the agents' `home` (skillop.check): `ok` with
+        its manifest's SHA-256, `missing` or `mismatch`. skillop.OnTheWay when a directory
+        below the home is a link; scratchop.Unsupported when an ssh host's `maity` has no skill
+        ops; OSError otherwise."""
+        if self.direct:
+            return dict(skillop.check(str(home), key, source, commit))
+        argv = [*self.runner_module("skillop"), "check", "--home", str(home), key, source, commit]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "check", key)
+
+    def skill_put(self, home: Path, payload: str) -> dict[str, Any]:
+        """The runner's checked copy (skillop.payload) put below the agents' `home`
+        (skillop.put): `put` with its manifest's SHA-256. The document goes on stdin, at most
+        the skill's own bound. Errors as for `skill_check`."""
+        if self.direct:
+            return dict(skillop.put(str(home), json.loads(payload)))
+        argv = [*self.runner_module("skillop"), "put", "--home", str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "put", "")
+
+    @staticmethod
+    def _skill_answer(done: subprocess.CompletedProcess[str], op: str, key: str) -> dict[str, Any]:
+        """A skill op's one JSON line (skillop.main): LINK (4) for a link below the home, 2 for
+        a host `maity` without the ops (older than this one), as with scratchop's `codex`."""
+        what = f"skill {op} {key}" if key else f"skill {op}"
+        if done.returncode == skillop.LINK:
+            raise skillop.OnTheWay(f"{what}: a link below the agents' home")
+        if done.returncode == 2:
+            raise scratchop.Unsupported(f"host maity has no skill ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"{what} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"{what}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"{what}: no answer")
+        return answer
+
+    def worktree_prune(self, repo: Path) -> dict[str, Any]:
+        """Clear a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
+        on placement start (worktree.prune_orphans), by file operations only, never git: the
+        runner runs no git in an existing clone. For the runner's own user it runs in-process;
+        through sudo or on an ssh host the op runs there (`maity runner worktree-prune --repo`)
+        and prints one JSON line. OSError when it fails."""
+        from . import worktree
+
+        if self.direct:
+            return worktree.prune_orphans(str(repo))
+        argv = [*self.maity, "runner", "worktree-prune", "--repo", str(repo)]
+        done = self.run(argv, env=self.module_env())
+        if done.returncode != 0:
+            raise OSError(f"worktree prune {repo} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"worktree prune {repo}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"worktree prune {repo}: no answer")
         return answer
 
     def terminate(self, pid: int) -> None:
@@ -326,7 +546,7 @@ class Ssh(AsUser):
         """One remote command line: every word quoted, `env` set explicitly."""
         pairs = [f"{key}={value}" for key, value in (env or {}).items()]
         words = [*(["env", *pairs] if pairs else []), *argv]
-        return [*self.ssh(), "--", " ".join(shlex.quote(word) for word in words)]
+        return [*self.ssh(), "--", shell_join(words)]
 
     def run(
         self,
@@ -343,6 +563,11 @@ class Ssh(AsUser):
             stdin=subprocess.DEVNULL if input is None else None,  # never the operator's tty
             timeout=timeout, check=False,
         )  # fmt: skip
+
+    def uid(self) -> int:
+        """An ssh host's agents run under a remote account whose uid the runner does not hold,
+        so agy's `/tmp` scratch (keyed on that uid) is not made there."""
+        raise OSError(f"{self.name}: a /tmp scratch is not made on an ssh host")
 
     def home(self) -> Path:
         done = self.run(["printenv", "HOME"])

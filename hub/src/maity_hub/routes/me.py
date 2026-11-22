@@ -21,6 +21,7 @@ from maity_hub import (
     maintenance,
     moderation,
     namespace,
+    stars,
     start_tabs,
 )
 from maity_hub import tables as t
@@ -104,6 +105,8 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             # The account's time zone, the one value of §18.4; `null` until set (§5.1).
             "timezone": preferences.preferences(conn, human.id)["email"]["timezone"],
             "start_tabs": start_tabs.visible(human.start_tabs, (p["id"] for p in projects)),
+            # §5.1 "Stars": the public projects kept without a membership, hidden ones left out.
+            "starred": stars.visible(conn, human.starred, [p["id"] for p in projects]),
             "terms": (
                 {
                     "version": human.terms_version,
@@ -113,10 +116,8 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
                 else None
             ),
             # §5.1, "Experiment notice": null until the person confirmed it.
-            "experiment_notice_understood_at": (
-                clock.rfc3339(human.experiment_notice_understood_at)
-                if human.experiment_notice_understood_at is not None
-                else None
+            "experiment_notice_understood_at": clock.rfc3339_or_none(
+                human.experiment_notice_understood_at
             ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),

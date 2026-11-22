@@ -5,7 +5,9 @@ Three kinds of caller act on a placement. A human with `members:admin` who owns 
 runner has *the right*: their action is their own consent. The owner of the agent
 profile may stop, start and restart it. An agent with `agents:propose` may stop,
 start, restart and delete, and proposes everything else under the project's
-`spawn_requests`.
+`spawn_requests`. A human who may create a join for a profile of their own that is not
+a member yet, `members:admin` or trust `member` under "Bringing your own agent", places it
+on a runner of their own with that join's fields and limits (§15.6, §3.1).
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.models import HANDLE_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
-from maity_hub.routes.members import validate_assignment
+from maity_hub.routes import joins
 from maity_hub.routes.requests import file_to_runner_owner
 from maity_hub.runners import active_attachment, live_credential_id
 from maity_hub.views import event_views
@@ -44,6 +46,8 @@ from maity_hub.views import event_views
 router = APIRouter(route_class=ProjectRoute)
 
 CLONE_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
+# The shape only: which efforts a harness takes is the runner's advertised list (§15.5).
+EFFORT_PATTERN = r"^[a-z]{1,16}$"
 NOT_NULLABLE = frozenset(
     {"desired", "harness", "mode", "stop_grace_seconds", "workspace_retention"}
 )
@@ -70,11 +74,15 @@ class PlacementCreate(Strict):
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
     briefing: str | None = markdown(default=None)
+    # The subagent instruction and its language, as in a join (§3.1, §15.6).
+    subagents: bool | None = None
+    subagents_language: str | None = Field(default=None, max_length=16)
     runner: str = Field(min_length=1, max_length=64)
     target: str | None = Field(default=None, min_length=1, max_length=200)
     harness: str
     mode: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
+    effort: str | None = Field(default=None, pattern=EFFORT_PATTERN)
     workspace: WorkspaceIn = Field(default_factory=WorkspaceIn)
     desired: Literal["running", "stopped"] = "running"
     stop_grace_seconds: int = Field(default=120, ge=0, le=900)
@@ -87,6 +95,7 @@ class PlacementPatch(Strict):
     harness: str | None = None
     mode: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
+    effort: str | None = Field(default=None, pattern=EFFORT_PATTERN)
     target: str | None = Field(default=None, min_length=1, max_length=200)
     stop_grace_seconds: int | None = Field(default=None, ge=0, le=900)
     workspace_retention: Retention | None = None
@@ -95,6 +104,7 @@ class PlacementPatch(Strict):
 
 class RestartIn(Strict):
     rejoin: bool = False
+    fresh_session: bool = False  # a reset: the start drops the harness's last session
 
 
 class Empty(Strict):
@@ -134,7 +144,26 @@ def _briefing(mine: Membership, placement: Any) -> bool:
 
 def _view(conn: Connection, mine: Membership, placement: Any) -> dict[str, Any]:
     return pl.view(
-        conn, placement, viewer_id=mine.principal_id, briefing=_briefing(mine, placement)
+        conn,
+        placement,
+        viewer_id=mine.principal_id,
+        briefing=_briefing(mine, placement),
+        logs=_logs(conn, mine, placement),
+    )
+
+
+def _logs(conn: Connection, mine: Membership, placement: Any) -> bool:
+    """Whether the caller reads the runner's log lines of the stored finding (§15.7); asked
+    only when there are lines, so a placement without them costs no read."""
+    finding = (placement.reported or {}).get("finding")
+    if not finding or "log" not in finding:
+        return False
+    return pl.reads_logs(
+        conn,
+        placement,
+        principal_id=mine.principal_id,
+        trust=mine.trust,
+        bridged=mine.bridged,
     )
 
 
@@ -218,7 +247,7 @@ def _check_spec(runner: Any, spec: dict[str, Any], repository_url: str | None) -
     if spec["mode"] not in pl.MODES:
         raise invalid({"mode": "unknown"})
     try:
-        pl.check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])
+        pl.check_offered(runner, spec)
         pl.check_repository(runner, repository_url)
     except pl.Refusal as refusal:
         raise _refused(refusal) from None
@@ -333,12 +362,25 @@ def create_placement(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        # The profile of their own a human names by id alone first, before the project, as
+        # join creation, the exchange and the profile's deletion take it (§6.3): a placement
+        # that admits it then counts as its use, and a deletion cannot commit between the
+        # check and the placement. Another owner's profile is never locked. What the name
+        # means is decided below, under both locks.
+        _lock_named_profile(conn, mine, body)
         project = events.lock_project(conn, mine.project.id)
-        mine.require("members:admin" if mine.kind == "human" else "agents:propose")
+        # Without `members:admin`, a human places only a profile of their own that is not a
+        # member yet, with the right to create its join under "Bringing your own agent"
+        # (§15.6, §3.1); anything else is the scope's `forbidden`, as before.
+        member_rule = mine.kind == "human" and not mine.may("members:admin")
+        if member_rule and _admits(conn, mine, body):
+            joins.require_member_rule(mine)
+        else:
+            mine.require("members:admin" if mine.kind == "human" else "agents:propose")
         runner = _runner(conn, body.runner)
         if runner is None or active_attachment(conn, project.id, runner.id) is None:
             raise ApiError(409, "runner_not_attached", "the runner is not attached here")
-        right = _has_right(mine, runner)
+        right = _has_right(mine, runner) or (member_rule and _runner_owner(mine, runner))
         if not right and (mine.kind == "human" or not _runner_side(conn, mine, runner)):
             raise _runner_owner_only()
         if not right and project.spawn_requests == "off":
@@ -352,7 +394,7 @@ def create_placement(
         _require_open(project)
         _require_live(conn, runner)
         _refuse_over_placements(conn, mine, project)
-        agent_values, handle = _agent_values(conn, mine, body, right)
+        agent_values, handle = _agent_values(conn, mine, project, body, right, member_rule)
         member_id = agent_values.get("membership_id")
         clone = body.workspace.clone or pl.free_clone(
             conn, project.id, runner.id, member_id, handle
@@ -367,6 +409,7 @@ def create_placement(
             "harness": body.harness,
             "mode": body.mode or pl.default_mode(runner, body.harness),
             "model": body.model,
+            "effort": body.effort,
             "target": body.target,
         }
         _check_spec(runner, spec, project.repository_url)
@@ -410,10 +453,61 @@ def create_placement(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _lock_named_profile(conn: Connection, mine: Membership, body: PlacementCreate) -> None:
+    """Lock the agent profile a human's placement names by `{"id"}` alone, if it is one of
+    the caller's own. Only a human admits a profile, and only their own (§15.6), so another
+    member naming it never holds the lock its owner's joins and deletion wait for; whether
+    the placement admits it, and what any other profile answers, comes after, as before.
+    Whose it is is read first, without a lock: a profile's owner never changes, and a
+    locking read alone would still lock another owner's row where InnoDB keeps the lock
+    of a row it read but did not return."""
+    if mine.kind != "human" or body.agent.id is None or body.agent.handle is not None:
+        return
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == body.agent.id)
+    ).scalar()
+    if owner != mine.principal_id:
+        return
+    conn.execute(
+        select(t.agent_profile.c.id)
+        .where(
+            t.agent_profile.c.id == body.agent.id,
+            t.agent_profile.c.owner_id == mine.principal_id,
+        )
+        .with_for_update()
+    ).first()
+
+
+def _admits(conn: Connection, mine: Membership, body: PlacementCreate) -> bool:
+    """`{"id"}` alone names an agent profile, not deleted, with no active membership in the
+    project: a placement that would admit it (§15.6). Whose it is comes after."""
+    if body.agent.id is None or body.agent.handle is not None:
+        return False
+    profile = conn.execute(
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.id == body.agent.id, t.agent_profile.c.deleted_at.is_(None)
+        )
+    ).first()
+    member = conn.execute(
+        select(t.membership.c.id).where(
+            t.membership.c.project_id == mine.project.id,
+            t.membership.c.agent_id == body.agent.id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    return profile is not None and member is None
+
+
 def _agent_values(
-    conn: Connection, mine: Membership, body: PlacementCreate, right: bool
+    conn: Connection,
+    mine: Membership,
+    project: Any,
+    body: PlacementCreate,
+    right: bool,
+    member_rule: bool,
 ) -> tuple[dict[str, Any], str]:
-    """The membership a placement runs, or the profile it will create (humans only)."""
+    """The membership a placement runs, the profile it will create, or the profile of the
+    caller's own it admits that is not a member yet (both humans only)."""
     join_fields = {
         "trust": body.trust,
         "role": body.role,
@@ -421,15 +515,12 @@ def _agent_values(
         "areas": body.areas,
         "capabilities": body.capabilities,
         "briefing": body.briefing,
+        "subagents": body.subagents,
+        "subagents_language": body.subagents_language,
     }
     if body.agent.id is not None:
         if body.agent.handle is not None or body.agent.display_name is not None:
             raise invalid({"agent": "id_or_handle"}, "name an agent by id, or create one")
-        given = sorted(k for k, v in join_fields.items() if v is not None)
-        if given:
-            raise invalid(
-                {k: "not_with_agent_id" for k in given}, "a placement never changes a membership"
-            )
         deleted = conn.execute(
             select(t.agent_profile.c.id).where(
                 t.agent_profile.c.id == body.agent.id, t.agent_profile.c.deleted_at.is_not(None)
@@ -437,9 +528,17 @@ def _agent_values(
         ).first()
         if deleted is not None:  # a deleted profile is never placed again (§6.3)
             raise not_found()
+        if mine.kind == "human" and _admits(conn, mine, body):
+            return _admitted(conn, mine, project, body, member_rule)
+        given = sorted(k for k, v in join_fields.items() if v is not None)
+        if given:
+            raise invalid(
+                {k: "not_with_agent_id" for k in given}, "a placement never changes a membership"
+            )
         try:
             member = member_row(conn, mine.project.id, body.agent.id)
         except ApiError:
+            # An agent never admits a profile, its own human's included (§15.6).
             raise invalid({"agent.id": "not_a_member"}) from None
         if member.agent_id is None:
             raise invalid({"agent.id": "not_an_agent"})
@@ -474,34 +573,38 @@ def _agent_values(
         raise invalid(
             {"handle": "taken"}, "a placement of yours will create an agent with this handle"
         )
-    assignment = validate_assignment(
-        conn,
-        mine.project.id,
-        kind="agent",
-        role=body.role,
-        reports_to=body.reports_to,
-        areas=body.areas,
-        capabilities=body.capabilities,
-        trust=body.trust,
-    )
-    trust, role = assignment.get("trust", "member"), assignment.get("role", "coder")
-    if (trust == "admin" or role == "proxy") and mine.trust != "owner":
-        raise ApiError(
-            403,
-            "forbidden",
-            "only an owner grants trust admin or the role proxy",
-            {"reason": "owner_only"},
-        )
+    # The join fields under a first join's checks (§3.1), the subagent instruction included.
     profile = {
         "display_name": body.agent.display_name,
-        "trust": trust,
-        "role": role,
-        "reports_to": assignment.get("reports_to"),
-        "areas": assignment.get("areas", []),
-        "capabilities": assignment.get("capabilities", []),
-        "briefing": body.briefing or None,
+        **joins.first_join_fields(conn, mine, project, body, member_rule=False, agent_id=None),
     }
     return {"new_handle": body.agent.handle, "new_profile": profile}, body.agent.handle
+
+
+def _admitted(
+    conn: Connection, mine: Membership, project: Any, body: PlacementCreate, member_rule: bool
+) -> tuple[dict[str, Any], str]:
+    """A profile of the caller's own that is not a member yet (§15.6): it takes the fields
+    of a first join under that join's rules and limits (§3.1), stored until the pickup's
+    first join makes the membership (§15.9). The placement is the owner's consent to the
+    join (req-emyp23q0fhmz)."""
+    assert body.agent.id is not None
+    # Whose it is, before any lock: another owner's profile is never locked here (§15.6).
+    # The caller's own is read again under the lock the creation took first: not deleted
+    # (§6.3).
+    profile = conn.execute(
+        select(t.agent_profile.c.owner_id, t.agent_profile.c.handle).where(
+            t.agent_profile.c.id == body.agent.id
+        )
+    ).one()
+    if profile.owner_id != mine.principal_id:
+        raise invalid({"agent.id": "not_yours"}, "a placement names one of your own agents")
+    joins.live_profile(conn, body.agent.id)
+    allowed_projects.refuse(conn, body.agent.id, project)  # §6.3
+    fields = joins.first_join_fields(
+        conn, mine, project, body, member_rule=member_rule, agent_id=body.agent.id
+    )
+    return {"agent_id": body.agent.id, "new_profile": fields}, str(profile.handle)
 
 
 def _profile_owner(conn: Connection, agent_id: str) -> str:
@@ -602,6 +705,7 @@ def _file(
             "target": spec.get("target"),
             "tool": spec.get("harness"),
             "model": spec.get("model"),
+            "effort": spec.get("effort"),
             "mode": spec.get("mode"),
             "isolation": ((isolation or {}).get("isolation") or {}).get("kind"),
             "reason": reason,
@@ -628,7 +732,8 @@ def patch_placement(
     given = body.model_fields_set - {"reason"}
     if not given:
         raise invalid({"body": "empty"}, "say what to change")
-    # Only `model` and `target` take null (the runner's default, the runner's choice).
+    # Only `model`, `effort` and `target` take null (the runner's default, the harness's
+    # default, the runner's choice).
     nulls = {k: "not_nullable" for k in given & NOT_NULLABLE if getattr(body, k) is None}
     if nulls:
         raise invalid(nulls)
@@ -784,6 +889,7 @@ def restart_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller, body: RestartIn | None = None
 ) -> JSONResponse:
     rejoin = body.rejoin if body else False
+    fresh = body.fresh_session if body else False
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -811,7 +917,9 @@ def restart_placement(
             placement = _settle_by_right(conn, placement, actor, mine.principal_id, approve=True)
         _require_open(project)
         _require_live(conn, runner)
-        placement = pl.restart(conn, placement, rejoin, actor, mine.principal_id)
+        placement = pl.restart(
+            conn, placement, rejoin, actor, mine.principal_id, fresh_session=fresh
+        )
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
 
     return idempotency.run(engine_of(request), request, caller, action)

@@ -26,6 +26,7 @@ from sqlalchemy import Connection, or_, select
 from maity_hub import (
     avatars,
     chat_access,
+    chat_access_history,
     clock,
     contacts,
     cross_chats,
@@ -35,6 +36,7 @@ from maity_hub import (
     namespace,
     reports,
     restricted,
+    stars,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
@@ -105,6 +107,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "pinned_conversations": _pinned_conversations(conn, human_id),
         **contacts.exported(conn, human_id),  # `contacts`, `contact_of` (§6.29)
         "chat_access": chat_access.exported(conn, human_id),  # `{allow, deny}` (§9.6)
+        "chat_access_history": chat_access_history.exported(conn, human_id),  # §9.6, oldest first
         "restricted_texts": _restricted_texts(conn, readers, names),
         "cross_chats": cross_chats.export_of(conn, human_id),
     }
@@ -270,6 +273,9 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         "social": human.social or {},
         "links_visible": human.links_visible,
         "start_tabs": _start_tabs(conn, human.start_tabs),  # §5.1
+        # §5.1 "Stars", as `GET /me` shows them: an entry hidden while its project is not public
+        # would name a private project by its current name (hub/context/persistence.md c0e833f1).
+        "starred": stars.visible_of(conn, human.id, human.starred),
         "preferences": (
             {
                 "markdown": prefs.markdown,

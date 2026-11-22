@@ -16,6 +16,7 @@ from maity_hub import limits, registration
 from maity_hub.config import (
     DEFAULT_BIND,
     DEFAULT_CLI_INSTALL,
+    KTW_SKILL_COMMIT,
     KTW_SKILL_GUIDE,
     KTW_SKILL_SOURCE,
     Settings,
@@ -197,12 +198,14 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("MAITY_AGENT_FIREWALL", "agents", "off"),
     Entry("MAITY_ON_RUNNER_REVOKE", "agents", "keep"),
     Entry("MAITY_KTW_SKILL_SOURCE", "agents", KTW_SKILL_SOURCE),
+    Entry("MAITY_KTW_SKILL_COMMIT", "agents", KTW_SKILL_COMMIT),
     Entry("MAITY_KTW_SKILL_GUIDE", "agents", KTW_SKILL_GUIDE),
     # limits
     Entry("MAITY_MAX_AGENTS_PER_HUMAN", "limits", _limit("max_agents_per_human"), admin=LIMITS),
     Entry("MAITY_MAX_ORGS_PER_HUMAN", "limits", _limit("max_orgs_per_human"), admin=LIMITS),
     Entry("MAITY_MAX_PROJECTS_PER_OWNER", "limits", _limit("max_projects_per_owner"), admin=LIMITS),
     Entry("MAITY_MAX_ALIASES", "limits", _limit(limits.ALIASES), admin=LIMITS),
+    Entry("MAITY_MAX_STARRED_PER_HUMAN", "limits", _limit(limits.STARRED), admin=LIMITS),
     Entry(
         "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT",
         "limits",
@@ -210,6 +213,7 @@ ENTRIES: tuple[Entry, ...] = (
         admin=LIMITS,
     ),
     Entry("MAITY_MAX_ATTACHMENT_STORAGE", "limits", _limit(limits.STORAGE), admin=LIMITS),
+    Entry("MAITY_MAX_READS_PER_MINUTE", "limits", _limit(limits.READS), admin=LIMITS),
     Entry("MAITY_ROUTE_LIMITS", "limits"),
     Entry("MAITY_PUBLIC_PAGE_LIMIT", "limits", "60/60"),
     Entry("MAITY_BADGE_LIMIT", "limits", "60/60"),

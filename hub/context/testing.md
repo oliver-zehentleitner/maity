@@ -1,14 +1,15 @@
 # Testing
 
-## Test matrix: full check on SQLite, the suite again on PostgreSQL 17 and MariaDB 11.4
+## Test matrix: full check on SQLite, the suite again on PostgreSQL 17 and MariaDB 11.4, a subset on MariaDB 11.8
 
 **Id:** c7d0850a-a677-4f0f-a209-e64da3b0fe8f
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture)
+**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture); card tsk-5cah3a82dv63 (the subset on MariaDB 11.8, #2022)
 **Revisit when:** a user reports a difference between MySQL and MariaDB, or a query relies on behaviour the two engines implement differently
 **See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
+**See:** persistence.md#a-name-mysql-or-mariadb-reserve-is-quoted-with-quotetrue-not-renamed — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 CI runs `make check` (black, ruff, mypy strict, pytest) on SQLite with
 an editable install, pytest alone against a PostgreSQL 17 and a MariaDB
@@ -24,6 +25,11 @@ the parallel suite below.
 Which engines run in CI — SQLite, PostgreSQL and MariaDB — came from
 the coordinator's brief; the job split, the versions and the fixture were
 decided in the implementation session.
+
+Since 2026-11-20 `hub-mariadb` also runs a subset on MariaDB 11.8 LTS: the
+migrations, the schema checks and the notification tests. 11.7 reserved
+`vector`, a column name of the hub, and 11.4 alone could not show it (the
+entry on reserved names in `persistence.md`). The full suite stays on 11.4.
 
 **Reason:** lint and types do not depend on the database, so they run
 once; the tests are what differs per engine. An editable install tests
@@ -84,7 +90,7 @@ is what such a race exercises.
 **Evidence:** confirmed
 **Source:** card tsk-ta0xcr6s4qwg (the coordinator's proposal after hub jobs took 60 to 90 minutes, 2026-10-27); implementation session, 2026-10-28 (local before/after measurement)
 **Revisit when:** a test needs state shared between workers, or the CI runners change their core count
-**See:** testing.md#test-matrix-full-check-on-sqlite-the-suite-again-on-postgresql-17-and-mariadb-114 — c7d0850a-a677-4f0f-a209-e64da3b0fe8f — as of 2026-10-28
+**See:** testing.md#test-matrix-full-check-on-sqlite-the-suite-again-on-postgresql-17-and-mariadb-114-a-subset-on-mariadb-118 — c7d0850a-a677-4f0f-a209-e64da3b0fe8f — as of 2026-10-28
 
 `make test` runs pytest with `-n auto` (pytest-xdist). On SQLite each test
 still gets its own file, but a migrated one is copied from a template that
@@ -392,3 +398,84 @@ A thread started with `threading.Thread` begins with an empty context: a test th
 starts its own threads in the call hands each `contextvars.copy_context().run`
 (`test_load.held_statements`). The app starts such threads only for background
 reads that are by design no request's cost (the maintenance frame).
+
+## Every list route has a 3-versus-30 statement test, claimed by `@flat_rows` and found by a guard
+
+**Id:** 8f5ec285-3aa8-452a-9321-2fe2fa9f8269
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xdn21ph67js9 (item 15 of the list in `context/performance.md`, the lead's go of 2026-11-18: a statement-count test per list route, 3 rows against 30 in the style of `test_view_batching`, a guard that fails a list route without one, a route that grows becoming its own card); implementation session, 2026-11-20 (how the routes and the claims are found); the review of #2039 (2026-11-20: lists under a key other than `items`, an enrollment list measured with empty rows); `hub/tests/list_rows.py`, `hub/tests/test_list_rows.py`
+**Revisit when:** the hub gains response models (a list could then be known from its type), or the `GROWING` list is empty and could become a hard rule with no exceptions
+**See:** https://github.com/oliver-zehentleitner/maity — f81ab39d-1f35-40e2-bf25-aea0fa6fb102 — as of 2026-11-20
+**See:** testing.md#get-answers-are-checked-against-hand-listed-contract-keys-each-anchored-to-a-line-of-docsapimd — 4e114a53-b5e1-417d-a29d-62af96440a74 — as of 2026-11-20
+
+A test claims the list routes it measures with `@flat_rows("/path/{}")` (`tests/list_rows.py`).
+The guard, `tests/test_list_rows.py`, reads those decorators from the source of every
+`tests/test_*.py` and takes the GET routes under `/api/v1/` from the app's router, walked as
+`test_contract_shapes` walks it. Every route is claimed by a test, or is in `NOT_LISTS` (no
+list), `ITEMS_INSIDE` (its code names `items` in a part, with the reason) or `CATALOGS` (a list
+from the hub's own code, no rows); a route in none, an entry that is no route, and an entry in
+two fail. A list is a list of rows under any top-level key, not only `items` (`/me`'s
+`projects`, the jour fixe's `series`): its test counts the rows under that key (`rows=`). Each
+`NOT_LISTS` entry says what the route answers. To find a list put into `NOT_LISTS` by mistake,
+the guard does two things. It looks for `"items"` in the route's function and in the hub
+functions it calls, four calls deep by the names they call; a `NOT_LISTS` route that names it
+fails. And it reads every `NOT_LISTS` route as a small project's owner and as its agent: an
+answer with a list at the top under a key `LIST_KEYS` does not name for that route fails.
+`LIST_KEYS` names the lists that are bounded by something other than a table's rows (a
+catalog, one object's own parts, a setting). The new tests measure with `same_for_3_and_30`: one call
+first (so a first read's one-time write is not row cost), then 3 rows and 27 more, the list
+showing exactly 27 more rows, the statements on the sync engine the same both times. SQLite's
+`PRAGMA query_only`, which `db.read_transaction` switches on a pooled connection whose last use
+was a write, is not counted: which connection the pool hands out decides it, not the rows
+(seen with a minute between the two counts). A seed must reach the code that runs per row:
+an enrollment with an empty `attach` reads no project names, so that test attaches one. And
+its first 3 rows must already hold every kind the 30 hold: a view reads each kind once, so a
+kind that comes only with the 27 adds a statement that is no row cost. The overview's reports
+picked their reporter (the owner or one of three agents) by a counter shared by the file's
+tests, so whether the 3 held the human depended on the tests before it: it counted 11
+against 12 on PostgreSQL in CI, and recording the statements on PostgreSQL showed the extra one
+reading the reporting humans; a 13 against 14 on SQLite once under load was most likely the
+same. The counter now starts
+again in every test, and the reporters follow the test's own rows. The
+older tests that already measured a list (`test_view_batching`, the requests, the bell, the
+chat lists, the memory, the admin's users) only gained the decorator and keep their own
+numbers (2 against 8 chats, 5 against 30 requests, 3 against 20 entries).
+
+A route whose cost grows today is in `GROWING` with what it reads per row; its test asserts
+that the cost grows, so the entry fails and leaves once the fix lands. 25 of the 59 list
+routes grew when the guard came (2026-11-20; 21 first, on SQLite and PostgreSQL, four more
+after the review, on SQLite), plus `…/jour-fixe/rounds` for two readers of an owner circle
+(27 `GROWING` entries); each is to become a card of its own, and none was fixed in this
+change. A route whose cost depends on who reads it is measured once per reader, each with a
+`case`; a `GROWING` entry `<route> [<case>]` names only that reader, so the route's other
+tests stay flat. The jour fixe's rounds are flat for a project-wide series and for an owner
+circle read by its owner, and grow when the moderator or one of the owner's agents reads an
+owner circle (`circle.reads`, review of #2039): a growing reader would otherwise have taken
+the flat claim of the whole route along, or the flat reader its exception.
+
+**Reason:** the card asks for the cost of every list to stay flat after the performance cards.
+3 and 30 are the counts the 2026-11-08 measurement and `test_view_batching` used: 27 rows
+apart, so a read per row shows as 27 statements more, and 30 fits one page of every list. A
+claim on the test keeps the route and the test that measures it in one place, and a pull
+request that adds a list and its test touches no shared table. The "names `items`" search
+cannot prove that a route is no list (a deeper helper, a key built at run time), but it
+catches the common case, a route whose own code builds `{"items": …}`; `ITEMS_INSIDE` keeps
+its false hits explicit. The read of every `NOT_LISTS` route catches a list under another
+key, which no search of the source finds (`{"series": shown}`), but only for the routes the
+owner or the agent of a small project can read with 200; a route that needs more set up (an id
+of its own) is checked by its entry's reason alone. A `GROWING` test that asserts the growth keeps the exception honest
+in both directions.
+
+**Rejected alternatives:**
+- A central map from route to test name in the guard: it goes stale when a test is renamed,
+  and parallel pull requests adding lists would all change it.
+- Calling every GET route at run time to decide which is a list: 136 routes, many with ids
+  to set up first; a route the read cannot reach would be classified by nothing. The read is
+  kept as a second check on `NOT_LISTS`, where an entry already says what the route is.
+- Reading the lists from docs/api.md: the same three forms of shape and no marker of route,
+  as in 4e114a53.
+- Fixing the growing routes here: the card keeps this change to tests and CI; each fix is its
+  own card.
+- A tolerance of a few statements: hides a real read per row, as in 6063bcb5.

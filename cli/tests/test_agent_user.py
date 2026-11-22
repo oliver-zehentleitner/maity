@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -381,9 +382,18 @@ def test_the_attach_hint_goes_through_sudo() -> None:
     socket = Path("/home/maity-agent/.maity-runner/tmux.sock")
     assert tmux.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
         "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux.sock attach -t "
-        "maity_maity_agent-3"
+        "'=maity_maity_agent-3'"
     )
     assert tmux.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
+
+
+def test_the_attach_hint_quotes_the_exact_target_for_zsh() -> None:
+    # zsh expands a bare word that starts with `=` (`=maity_x_y` to the path of a command
+    # `maity_x_y`), which `shlex.quote` leaves bare.
+    socket = Path("/srv/runner/tmux.sock")
+    hint = tmux.attach_hint(socket, "maity_x_y", AsUser())
+    assert hint.endswith(" -t '=maity_x_y'")
+    assert shlex.split(hint) == tmux.attach_words(socket, "maity_x_y", AsUser())
 
 
 def test_harnesses_are_probed_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:

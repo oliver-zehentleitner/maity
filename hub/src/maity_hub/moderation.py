@@ -179,11 +179,16 @@ def _projects_to_lock(conn: Connection, runner_ids: list[str], own: Any) -> list
     """The projects a suspension locks, sorted: those of the account's live credentials,
     which their revocation locks, and for each of its runners what the owner's stop locks
     (`runner_revoke.projects_to_lock`, the rule `apply` itself follows below)."""
+    from maity_hub.instances import attached_now, credential_join  # not at the top
+
+    # Every project a live credential is attached to now: its revocation locks each, and
+    # none it was detached from (§6.17).
     found = set(
         conn.execute(
             select(t.membership.c.project_id)
-            .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-            .where(t.credential.c.revoked_at.is_(None), own)
+            .select_from(credential_join())
+            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
+            .where(attached_now(), own)
         ).scalars()
     )
     for runner_id in runner_ids:
@@ -205,6 +210,7 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     then runner); then, in one pass in the order of their ids, every project the
     revocations below lock, so none is taken out of that order; the human's own rows
     last, as project work locks the project before the human."""
+    from maity_hub.instances import credential_join  # imported here, not at the top
     from maity_hub.routes import runners as runner_routes
 
     account_deletion.lock_account(conn, human_id)
@@ -215,16 +221,23 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     own = (m.human_id == human_id) | m.agent_id.in_(agents)
     for project_id in _projects_to_lock(conn, runner_ids, own):
         lock_project(conn, project_id)
+    a = t.instance_attachment.c
+    # One row per project a live credential was ever attached to (§6.17), its oldest first:
+    # each is revoked whatever its attachments, and told only where it is attached now.
     credentials = conn.execute(
-        select(c.id, m.project_id, m.agent_id)
-        .join(t.membership, m.id == c.membership_id)
+        select(c.id, m.project_id, m.agent_id, a.detached_at)
+        .select_from(credential_join())
+        .join(t.membership, m.id == a.membership_id)
         .where(c.revoked_at.is_(None), own)
-        .order_by(c.id)
+        .order_by(c.id, a.attached_at, a.id)
     ).all()
+    won: dict[str, bool] = {}
     for credential in credentials:
         # Said as a revocation by hand says it (§6.17), so the agent's owner sees why its
-        # instances stopped; only the revocation that wins says it.
-        if revocation.revoke(conn, credential.id, REVOKED_REASON, None) and credential.agent_id:
+        # instances stopped; only the revocation that wins says it, in each project.
+        if credential.id not in won:
+            won[credential.id] = revocation.revoke(conn, credential.id, REVOKED_REASON, None)
+        if won[credential.id] and credential.agent_id and credential.detached_at is None:
             events.emit(
                 conn,
                 credential.project_id,

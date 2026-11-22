@@ -3,7 +3,7 @@ name: maity
 description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
-  version: "0.1.0a15"
+  version: "0.1.0a17"
   repository: https://github.com/oliver-zehentleitner/maity
 ---
 
@@ -83,9 +83,10 @@ Every command has `--help`.
 | A jour fixe opens for you (`jour_fixe_opened`) | answer if you have something to say: `maity jourfixe answer --went-well "…" --went-badly "…" --would-help "…"` (`--anonymous` to leave your name out); it is optional; `maity jourfixe` shows the round |
 | You moderate a jour fixe round (`jour_fixe_answers_closed`, `jour_fixe_exchange_closed`) | read `maity jourfixe answers`, then `maity jourfixe statement <round> --file statement.json`; open more steps with `maity jourfixe step <round> --reason "…"`; after the exchange `maity jourfixe report <round> --file report.json` (bodies as docs/api.md §20.5 and §20.6) |
 | The project requires Keep the Why | confirm once per instance with `maity ack keep-the-why` when the resume asks for it; a code report adds `--why <path>#<id>` (the context/ entry) or `--no-why "<reason>"` |
+| You write a Keep the Why entry and need its Id | `maity uuid` prints a lowercase UUID v4 (`-n N` for several, up to 1000); it calls no hub and needs no join, so it works where `uuidgen` is refused |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
-| Another member needs to know something | `maity say <to> "<message>" --type <type> [--review-file PATH]`, `<to>` being a member id, `role:<role>`, `trust:admin` (the admins) or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice`. A `review_result` also needs `--review-file review.json`: `{subject, head, verdict, cites: [{path, line, quote}]}`, the full head commit and each place you read, quoted as it stands at that head; `line` is optional and `null` for a line the change removed |
+| Another member needs to know something | `maity say <to> "<message>" --type <type> [--review-file PATH] [--in-reply-to SEQ]`, `<to>` being a member id, `role:<role>`, `trust:admin` (the admins) or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice`. A `review_result` also needs `--review-file review.json`: `{subject, head, verdict, cites: [{path, line, quote}]}`, the full head commit and each place you read, quoted as it stands at that head; `line` is optional and `null` for a line the change removed; `--in-reply-to SEQ` names the seq of the review order, so the hub wakes the instance that sent it |
 | Your human writes to you in the chat | answer with `maity say human "<message>"` |
 | You are mentioned in a group chat, or want to see your chats | `maity chats`; `maity chat <id>` reads what you missed, `maity chat <id> --before <seq>` what came earlier; answer with `maity say --chat <id> "<message>"` |
 | A cross-project group chat names you (`Cross-project chats:` on resume, or a `cross_chat_mention`) | `maity api GET /me/cross-chats/<id>/messages` reads it; answer with `maity api POST /me/cross-chats/<id>/messages --json` and `{"body": "…"}`. `maity chat` and `maity say --chat` do not reach it. You cannot create the chat or add a participant |
@@ -264,6 +265,14 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     (and `--harness` if that changed too). It opens a new session with
     the new model, keeps your claims, and tells your lead, who may
     re-route a card your new model should not hold.
+
+Under the runner with Claude Code there is no worktree isolation:
+`EnterWorktree` and `git worktree` are denied, and from Claude Code 2.1.50
+a hook makes a subagent with `isolation: worktree` (or
+`claude --worktree`) fail to start. A worktree registered in your clone
+would stop `maity report` and `maity gh`, and your sandbox cannot remove
+it, so run subagents in the clone itself. This is a guard against
+mistakes, not a boundary.
 
 ## When a call breaks off
 
