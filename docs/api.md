@@ -14267,8 +14267,9 @@ holder:
 A change of holder that fails a check on a call is refused with the
 same `details.reason` and leaves the leg where it was. One that fails
 where no caller waits ends without moving the leg: a takeover whose
-window elapses in the worker closes without moving the leg, with that
-reason in its `takeover_closed` (§6.19, §8.2), and an inherited claim
+window elapses in the worker, or that fails the check at the transfer,
+ends `cancelled` and leaves the leg where it was, with that reason in its
+`takeover_closed` (§6.19, §8.2), and an inherited claim
 that fails one lapses (below, reason `session_ended`). Each successful change
 records the new holder's `vendor` as `review.holder_vendor` afresh.
 §6.12's cover never moves a leg: an unavailable holder's leg lapses
@@ -14297,9 +14298,13 @@ would keep a leg by it. `review.active_at` is set when the leg gets its
 holder (a claim or any change of holder above), and refreshed only by a
 call of the holding instance in the leg's project that renews the
 leg's lease under §2.4: a checkpoint, a message with `task_id`,
-`claims/renew`, any other authenticated call there but the long-poll
-and a read with `renew=false`. A limit that extends the lease (§6.12)
-leaves it as it is. Like `last_seen_at`, it is written at most once every
+`claims/renew`, any other authenticated call there but the events
+long-poll (`GET …/events` with `wait > 0`) and a read with
+`renew=false`. A project-less call that renews the instance's leases in
+every attached project (§2.4) refreshes it too. It is its own field,
+never derived from `lease_until`: a limit that extends the lease (§6.12)
+or a change of `policy.lease_seconds` moves `lease_until` and leaves
+`review.active_at` as it is. Like `last_seen_at`, it is written at most once every
 60 seconds, so a leg may stay held up to a minute longer than the policy
 says, never shorter. The worker reads it again inside the lapse's
 transaction, so a renewing call that lands during the pass keeps the
