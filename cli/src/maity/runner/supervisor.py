@@ -617,16 +617,19 @@ class Supervisor:
                     path, in_tmp = located
                     # Beside the clone, the former per-project scratch goes too, wherever a start
                     # before the holder made one (tsk-c7zzd440x8pn); the holder's project
-                    # directory stays, even empty (scratchop.remove). The holder's path is tried
-                    # only where the holder exists: a host that keeps the former layout (its
-                    # `maity` has no holder op) never makes it, and its older `scratchop` cannot
-                    # read that path, so asking it would fail every pass (A2045).
+                    # directory stays, even empty (scratchop.remove). The holder's path is asked
+                    # for only on a host whose `maity` has the holder op: an older one keeps the
+                    # former layout and cannot read that path (A2045). Where that cannot be told
+                    # (ssh unreachable), the placement stays uncleared and is tried again (A2055).
                     paths = [path]
                     if not in_tmp:
                         old = workspace.scratch_of(
                             target.workspaces, p["project_id"], p["id"], target.host, former=True
                         )
-                        paths = [*self._holder_paths(target, path), old]
+                        layout = self._host_layout(target)
+                        if layout == "unknown":
+                            done = False
+                        paths = [*([path] if layout == "holder" else []), old]
                 except workspace.Refused:
                     break
                 for path in paths:
@@ -657,17 +660,24 @@ class Supervisor:
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
 
-    def _holder_paths(self, target: Target, path: Path) -> list[Path]:
-        """`[path]` (a scratch in the holder) when the holder `<root>/.scratch` exists on
-        `target`, else `[]`: no scratch can be in a holder that is not there, and a host that
-        keeps the former layout never makes one. Where it cannot be told, `[path]`, so a
-        scratch is never left for an unknown."""
+    def _host_layout(self, target: Target) -> str:
+        """The scratch layout `target`'s `maity` uses, from its answer to the holder op, never
+        from what directories exist (A2055): `holder` when it has the op (the holder is then
+        made or checked, as the next start would), `former` when it answers that it has none
+        (scratchop.Unsupported), `unknown` when there is no answer (an ssh transport failure,
+        exit 255). A holder that is a link or another user's is `holder`: a removal through
+        it refuses itself (OnTheWay) and is logged."""
         root = target.workspaces if target.host else target.workspaces.resolve()
         try:
-            there = target.as_user.exists(workspace.scratch_holder_of(root, target.host), "-d")
+            scratch.make_holder(root, workspace.scratch_holder_of(root, target.host),
+                                target.as_user)  # fmt: skip
+        except scratchop.Unsupported:
+            return "former"
+        except scratchop.OnTheWay:
+            return "holder"
         except (OSError, subprocess.SubprocessError):
-            return [path]
-        return [path] if there else []
+            return "unknown"
+        return "holder"
 
     def _remove_tmpdir(self, p: dict[str, Any], target: Target) -> bool:
         """Remove the leaf of a closed placement's own TMPDIR (`_tmpdir`) under the per-user
@@ -750,7 +760,8 @@ class Supervisor:
                 # into the holder keeps its former scratch until its close, as gc does.
                 former = workspace.scratch_of(target.workspaces, p["project_id"], p["id"],
                                               target.host, former=True)  # fmt: skip
-                paths = [*self._holder_paths(target, located[0]), former]
+                old_host = self._host_layout(target) == "former"
+                paths = [*([] if old_host else [located[0]]), former]
                 sizes = [s for s in (scratch.measure(q, target.as_user) for q in paths)
                          if s is not None]  # fmt: skip
                 room = sum(sizes) if sizes else None

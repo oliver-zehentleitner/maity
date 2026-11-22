@@ -6423,9 +6423,15 @@ the other two get no such deny.
 is the agents' user's 0700 directory, closed to the runner, so `maity
 runner gc --scratch` lists both layouts through the agents' side
 (`AsUser.entries`, a fixed depth, links listed and never gone into), with
-the same name checks (review A2045, P2). A former-layout host's close asks
-only for the former scratch: the holder's path is tried only where the
-holder exists (`_holder_paths`).
+the same name checks (review A2045, P2); a link it skips is named in one line,
+nothing behind it listed (A2055). A former-layout host's close asks only
+for the former scratch. Which layout a host uses comes from its answer to
+the holder op (`_host_layout`: `holder`, `former` for Unsupported, or
+`unknown` with no answer), never from which directories exist. With
+`unknown` (an ssh transport failure) the placement stays uncleared and is
+tried again (A2055). Rejected: deciding by whether the holder exists (an
+unreachable host looked like "no holder", and an older helper left with
+a holder still got a path it cannot read).
 
 **Reason:** a read deny is fixed at the session's start (P4), so a deny can
 only cover a directory that exists then. One holder made once, inside the

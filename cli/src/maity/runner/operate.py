@@ -482,10 +482,13 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
     # scratches go. A link is listed, never gone into.
     found: list[tuple[Path, str]] = []  # (the scratch's path, `d`/`l`/`f`/`?`)
     try:
-        for holder in _scratch_holders(root, as_user):
+        holders, skipped = _scratch_holders(root, as_user)
+        for holder in holders:
             found += [(holder / name, kind) for name, kind in as_user.entries(holder, 1)]
     except (OSError, subprocess.SubprocessError) as exc:
         raise Refused(f"cannot list the scratches under {root} ({exc})") from None
+    for link in skipped:  # so the operator sees why nothing behind it was cleaned (A2055)
+        print(f"scratch  {onboarding.inline(str(link))}: a link, skipped (not gone into)")
     for entry, kind in sorted(found):
         if entry.name in active:
             continue
@@ -509,26 +512,40 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
         print(f"scratch  {entry}: removed")
 
 
-def _scratch_holders(root: Path, as_user: AsUser) -> list[Path]:
+def _scratch_holders(root: Path, as_user: AsUser) -> tuple[list[Path], list[Path]]:
     """The directories gc reads scratches from, as the agents' user: each project's directory
-    in the holder `<root>/.scratch`, and each project's former `<root>/<project>/.scratch`. A
-    holder or a project's directory that is a link, or no directory, is left out, never gone
-    into; a name that is no project id is no project's. OSError when one cannot be listed."""
+    in the holder `<root>/.scratch`, and each project's former `<root>/<project>/.scratch`;
+    and the links met on the way, each left out and never gone into (a holder, a project's
+    directory or its `.scratch`), for gc to name. A name that is no project id is no
+    project's, and an entry that is no directory is passed over. OSError when one cannot be
+    listed."""
     holders: list[Path] = []
+    links: list[Path] = []
     new_holder = root / workspace.SCRATCH
-    if _plain_dir(new_holder, as_user):
-        holders += [new_holder / name for name, kind in as_user.entries(new_holder, 1)
-                    if kind == "d" and workspace.TOKEN.fullmatch(name)]  # fmt: skip
+    if as_user.exists(new_holder, "-L"):
+        links.append(new_holder)
+    elif as_user.exists(new_holder, "-d"):
+        for name, kind in as_user.entries(new_holder, 1):
+            if not workspace.TOKEN.fullmatch(name):
+                continue
+            if kind == "l":
+                links.append(new_holder / name)
+            elif kind == "d":
+                holders.append(new_holder / name)
     for name, kind in as_user.entries(root, 1):
+        if not workspace.TOKEN.fullmatch(name):
+            continue
+        if kind == "l":
+            links.append(root / name)
+            continue
+        if kind != "d":
+            continue
         former = root / name / workspace.SCRATCH
-        if kind == "d" and workspace.TOKEN.fullmatch(name) and _plain_dir(former, as_user):
+        if as_user.exists(former, "-L"):
+            links.append(former)
+        elif as_user.exists(former, "-d"):
             holders.append(former)
-    return holders
-
-
-def _plain_dir(path: Path, as_user: AsUser) -> bool:
-    """A directory on the agents' side, not a link to one."""
-    return as_user.exists(path, "-d") and not as_user.exists(path, "-L")
+    return holders, links
 
 
 def _collect(

@@ -4574,15 +4574,19 @@ def test_a_former_scratch_is_measured_and_removed_with_its_placement(world: Any)
 def test_a_host_on_the_former_layout_finishes_the_close_cleanup(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The review of #2112 (A2045): a host that keeps the former layout never makes the holder,
-    and its older `scratchop` cannot read a holder path, so the close asks it only for the
-    former scratch, and the placement counts as cleared instead of being tried every pass."""
+    """The reviews of #2112 (A2045, A2055): a host whose `maity` answers it has no holder op
+    keeps the former layout, and its older `scratchop` cannot read a holder path, so the close
+    asks it only for the former scratch and the placement counts as cleared, even with a
+    holder left from a newer helper: the host's answer decides, not what exists."""
     sup, *_ = world
     former = former_scratch_of(sup)
     (former / "tmp").mkdir(parents=True)
-    assert not (sup.cfg.local.workspaces / ".scratch").exists()
+    (sup.cfg.local.workspaces.resolve() / ".scratch").mkdir()  # a downgraded helper left it
     asked: list[Path] = []
     real = scratch.remove
+
+    def no_op(root: Path, holder: Path, as_user: Any = None) -> None:
+        raise scratchop.Unsupported("host maity has no holder op")
 
     def old_host(path: Path, as_user: Any = None) -> int | None:
         asked.append(path)
@@ -4590,10 +4594,35 @@ def test_a_host_on_the_former_layout_finishes_the_close_cleanup(
             raise OSError("usage: scratchop: not a placement's scratch")
         return real(path, as_user)
 
+    monkeypatch.setattr(scratch, "make_holder", no_op)
     monkeypatch.setattr(scratch, "remove", old_host)
     sup.closed([CLOSED])
     sup._clear_scratch(set(), set(sup.targets))
     assert asked == [former] and not former.exists() and "plc-0003" in sup.scratch_cleared
+
+
+def test_a_host_that_does_not_answer_keeps_the_placement_uncleared(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2112 (A2055): with no answer to the holder op (an ssh transport failure,
+    exit 255) the layout is unknown, so the placement is not counted as cleared, and the next
+    pass, with an answer, asks for the holder's scratch too and clears it."""
+    sup, *_ = world
+    room, former = scratch_of(sup), former_scratch_of(sup)
+    (room / "tmp").mkdir(parents=True)
+    (former / "tmp").mkdir(parents=True)
+    real_holder = scratch.make_holder
+
+    def lost(root: Path, holder: Path, as_user: Any = None) -> None:
+        raise OSError("ssh: connect to host h: exit 255")
+
+    monkeypatch.setattr(scratch, "make_holder", lost)
+    sup.closed([CLOSED])
+    sup._clear_scratch(set(), set(sup.targets))
+    assert "plc-0003" not in sup.scratch_cleared and room.is_dir()  # kept for an unknown
+    monkeypatch.setattr(scratch, "make_holder", real_holder)
+    sup._clear_scratch(set(), set(sup.targets))
+    assert "plc-0003" in sup.scratch_cleared and not room.exists() and not former.exists()
 
 
 def test_a_start_in_the_holder_names_claude_placements_still_on_the_former_layout(

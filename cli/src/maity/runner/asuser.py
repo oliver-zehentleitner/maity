@@ -304,7 +304,10 @@ class AsUser:
                         else "f" if stat.S_ISREG(mode) else "?")  # fmt: skip
                 found.append((rel, kind))
             return found
-        argv = ["find", str(path), "-mindepth", str(depth), "-maxdepth", str(depth),
+        # A trailing `/`, so a start path that is itself a link (a linked workspaces root) is
+        # gone into, as os.scandir does on the direct side; below it no link is (A2056).
+        start = str(path) if str(path).endswith("/") else f"{path}/"
+        argv = ["find", start, "-mindepth", str(depth), "-maxdepth", str(depth),
                 "-printf", "%y %P\\0"]  # fmt: skip
         try:
             done = self.run(argv)

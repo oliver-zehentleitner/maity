@@ -1001,8 +1001,6 @@ def test_gc_lists_the_scratches_as_the_agents_user(
     0700 directory, closed to the runner, so gc lists both layouts through the agents' side.
     Here the runner's own directory listing fails on the agents' side, as it would there; a
     link is listed as one and never gone into, and a name that is no project id is left out."""
-    from maity.runner import operate
-
     ws = tmp_path / "ws"
     new = ws / ".scratch"
     for room in (new / "maity" / "plc-0003", new / "other" / "plc-0004",
@@ -1019,16 +1017,21 @@ def test_gc_lists_the_scratches_as_the_agents_user(
 
     if side == "agent_user":
         monkeypatch.setattr(Path, "iterdir", closed)
-    holders = operate._scratch_holders(ws, as_user)
+    holders, links = operate._scratch_holders(ws, as_user)
     assert sorted(holders) == sorted([new / "maity", new / "other", ws / "legacy" / ".scratch"])
+    assert links == [new / "linked"]  # named for gc's line, never gone into (A2055)
     found = {(h / name, kind) for h in holders for name, kind in as_user.entries(h, 1)}
     assert found == {
         (new / "maity" / "plc-0003", "d"), (new / "maity" / "plc-0009", "l"),
         (new / "other" / "plc-0004", "d"), (ws / "legacy" / ".scratch" / "plc-0005", "d"),
     }  # fmt: skip
-    assert sorted(as_user.entries(new, 2)) == [
-        ("maity/plc-0003", "d"), ("maity/plc-0009", "l"), ("other/plc-0004", "d"),
-    ]  # `linked` is not gone into
+    two_down = [("maity/plc-0003", "d"), ("maity/plc-0009", "l"), ("other/plc-0004", "d")]
+    assert sorted(as_user.entries(new, 2)) == two_down  # `linked` is not gone into
+    # A workspaces root configured as a link is gone into on both sides (A2056): the former
+    # `.scratch` below it is found as on the real path.
+    (tmp_path / "ws-link").symlink_to(ws)
+    via, _ = operate._scratch_holders(tmp_path / "ws-link", as_user)
+    assert tmp_path / "ws-link" / "legacy" / ".scratch" in via
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))

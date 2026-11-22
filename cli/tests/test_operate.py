@@ -605,7 +605,19 @@ def test_gc_scratch_removes_nothing_through_a_linked_project_directory(
     (elsewhere / workspace.SCRATCH / "plc-0001" / "keep").write_text("k")
     cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
     (cfg.local.workspaces / "maity").symlink_to(elsewhere)
+    # In the holder layout too: a project's directory in `<root>/.scratch` that is a link.
+    (elsewhere / "inner" / "plc-0002").mkdir(parents=True)
+    (elsewhere / "inner" / "plc-0002" / "keep").write_text("k")
+    (cfg.local.workspaces / workspace.SCRATCH).mkdir()
+    (cfg.local.workspaces / workspace.SCRATCH / "other").symlink_to(elsewhere / "inner")
     _hub_answers(monkeypatch, {"items": []})
     assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
-    assert "not removed" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # A link on the way is named in one line and never gone into (the reviews of #2112,
+    # A2055): nothing behind it is listed, let alone removed.
+    ws = cfg.local.workspaces
+    for link in (ws / "maity", ws / workspace.SCRATCH / "other"):
+        assert f"scratch  {link}: a link, skipped (not gone into)" in out
+    assert "plc-0001" not in out and "plc-0002" not in out
     assert (elsewhere / workspace.SCRATCH / "plc-0001" / "keep").read_text() == "k"
+    assert (elsewhere / "inner" / "plc-0002" / "keep").read_text() == "k"
