@@ -11477,7 +11477,8 @@ project's members (§8.2). After a revocation the hub makes itself (§10,
 "Across projects": a leak, `runner_revoked`, `workspace_removed`,
 `suspended`) the instance's claims stay with it; nobody renews their
 leases any more, and they move only by a `replaces` join, a takeover
-(§6.19) or a human's reassignment. A revoked lead stops being lead
+(§6.19) or a human's reassignment — except a review leg's claim, which
+lapses back to the review queue (§6.32; not built yet, tsk-j8zf7dygh2ja). A revoked lead stops being lead
 (`lead_instance: null`, `member_updated`).
 
 **A dormant instance.** An instance that should stay as it is — its
@@ -14270,16 +14271,24 @@ review card's claim when:
   10–240, default 30).
 
 When several hold at one pass, the reason is the first in that order.
-For `inactive`, the span is counted from the holding instance's
-`last_seen_at`, whatever its listening state, and any lease-renewing call
-of that instance keeps the leg: a checkpoint, a message with `task_id`,
-`claims/renew`. `GET /events` (the long-poll) and a read with
-`renew=false` do not count. A reviewer working on a long review keeps its
-leg by renewing on purpose, with `claims/renew` or a checkpoint at least
-every half `review_lapse_minutes`; `maity review take` prints that
-interval when it takes a leg. `last_seen_at` comes from the clock of
-§2.4, which records calls at most once a minute, so a leg may stay
-held up to a minute longer than the policy says, never shorter. The
+For `inactive`, the span is counted from the leg's own
+`review.active_at`, not from `last_seen_at`: §2.4 writes `last_seen_at`
+on every call, the long-poll included, so a session that only listens
+would keep a leg by it. `review.active_at` is set when the leg gets its
+holder (a claim or any change of holder above), and refreshed only by a
+call of the holding instance in the leg's project that renews the
+leg's lease under §2.4: a checkpoint, a message with `task_id`,
+`claims/renew`, any other authenticated call there but the long-poll
+and a read with `renew=false`. A limit that extends the lease (§6.12)
+leaves it as it is. Like `last_seen_at`, it is written at most once every
+60 seconds, so a leg may stay held up to a minute longer than the policy
+says, never shorter. The worker reads it again inside the lapse's
+transaction, so a renewing call that lands during the pass keeps the
+leg. A reviewer working on a long review keeps its leg by renewing on
+purpose, with `claims/renew` or a checkpoint at least every half
+`review_lapse_minutes`; `maity review take` prints that interval when it
+takes a leg. A subagent that cannot call the hub needs its parent
+session to renew for it. The
 condition does not use not-listening (§5.3): that needs an event waiting
 for the instance, which `review_queued` never is, and a session a
 runner's placement names is never not listening. So not-listening would
