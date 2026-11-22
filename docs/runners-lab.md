@@ -101,7 +101,7 @@ network = []
 pull_requests = true
 ```
 
-- **`default_model`** is meant for a placement that names no model. In 0.1.0a15 it does not apply to opencode yet: such a placement runs opencode's own default model (tsk-kf2kp09d6qew). Name the model on the placement until the fix is released.
+- **`default_model`** is meant for a placement that names no model. In 0.1.0a15 it does not apply to opencode yet: such a placement runs opencode's own default model (tsk-kf2kp09d6qew). Name the model on the placement on 0.1.0a15. From 0.1.0a16 the runner applies `default_model` and refuses a placement without a model it can use (#1969); the lab has not re-run this yet.
 - **A repository grant** gives agents its `allow` commands and, with `pull_requests = true`, `maity gh` ([Letting agents run a repository's checks](runners.md#letting-agents-run-a-repositorys-checks)). Without a grant for a repository, its agents get neither. A Codex placement gets no pull-request grant while its sandbox is on, and `check` warns about that.
 - **The service.** Either `sudo maity runner install`, or a systemd unit of your own for an existing user (`maity runner unit` prints one). After changing `runner.toml`, restart the service. Running placements are taken over (`running adopted`), not restarted.
 - **Check with the service's `PATH`**, not your shell's. Read the `PATH` the running service actually has: `tr '\0' '\n' < /proc/$(systemctl show maity-runner -p MainPID --value)/environ | grep ^PATH=` (as the service's user). Then start `maity` by its absolute path, since pipx puts it in `~/.local/bin`, which that `PATH` usually lacks: `env -i HOME=$HOME PATH=<the service's PATH> ~/.local/bin/maity runner check`. Your login shell may find tools that the service does not.
@@ -129,11 +129,11 @@ pull_requests = true
 
 | Gap | Where | Card |
 |---|---|---|
-| Codex's exec helper lives in its `CODEX_HOME`, which the runner puts inside the state directory that the sandbox profile hides, so every command is denied | Ubuntu 26.04, Codex 0.169 and 0.170 | tsk-hv7jbgy75zjt |
+| Codex's exec helper lives in its `CODEX_HOME`, which the runner puts inside the state directory that the sandbox profile hides, so every command is denied. Fixed in maity 0.1.0a16 (#1979: `CODEX_HOME` in the placement scratch); not re-run in the lab yet | Ubuntu 26.04, Codex 0.169 and 0.170 | tsk-hv7jbgy75zjt |
 | Claude Code in a placement: several workflow commands (pytest, make, black, ruff, mypy, uuidgen, `git -C`, `cd … &&`) are refused under dontAsk, by the allow list's content and command form; the main session and subagents can differ | Ubuntu 26.04 (Debian not tested) | tsk-66zyvc4xnhtv, #1962 |
-| An OpenCode placement without a model runs OpenCode's own default model | both | tsk-kf2kp09d6qew |
+| An OpenCode placement without a model runs OpenCode's own default model. Fixed in maity 0.1.0a16 (#1969: `default_model` used, fails closed); not re-run in the lab yet | both | tsk-kf2kp09d6qew |
 | Coders cannot build the project's dev venv or run its full checks in a placement | both | tsk-kshmb8vc92rr |
-| The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind | both | tsk-estwtzbae972, #1954 |
+| The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind. Fixed in maity 0.1.0a16 (#1954); not re-run in the lab yet | both | tsk-estwtzbae972, #1954 |
 | A supervised agent shows as offline or away on the team page while its placement runs ("where they run" is green) | both | tsk-hv7jbgy75zjt (note nte-w7bwz93q1vnx) |
 | Claude Code without its sandbox as an opt-in where the host cannot allow it | – | tsk-yp2bprwv9whv |
 | `runner check` does not probe the nested user namespace on ssh hosts | ssh backend | tsk-5b5x3k5zvg7x (follow-up) |
