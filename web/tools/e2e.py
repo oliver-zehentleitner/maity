@@ -7414,12 +7414,13 @@ def project_links_step(run: Run, page: Page) -> None:
             page.wait_for_function("() => window.scrollY > 0")
         finally:
             page.evaluate("() => { window.scrollTo(0, 0); document.body.style.minHeight = ''; }")
-        # A tab inside the row whose end stands under the fade after, not the current one.
+        # An inner tab whose box meets the fade band after (the row's last 32 px), not the current one:
+        # one that starts inside the band counts too, where the gap between tabs lands on its edge.
         views.evaluate("(e) => { e.scrollLeft = 0; }")
         under = page.evaluate("""() => { const n = document.querySelector('header nav.views'), r = n.getBoundingClientRect();
           const tabs = Array.from(n.querySelectorAll('a'));
           return tabs.findIndex((a, i) => { const c = a.getBoundingClientRect();
-            return i >= 1 && i < tabs.length - 1 && c.left < r.right - 32 && c.right > r.right - 32 && a.getAttribute('aria-current') !== 'page'; }); }""")
+            return i >= 1 && i < tabs.length - 1 && c.right > r.right - 32 && c.left < r.right && a.getAttribute('aria-current') !== 'page'; }); }""")
         assert under >= 1, f"no inner tab under the fade at 200 px: {under}"
         clear = """(i) => { const n = document.querySelector('header nav.views'), a = n.querySelectorAll('a')[i];
           const r = n.getBoundingClientRect(), c = a.getBoundingClientRect();
@@ -7431,13 +7432,20 @@ def project_links_step(run: Run, page: Page) -> None:
         page.keyboard.press("Tab")
         after = page.evaluate(clear, under)
         assert after[1] and after[0], f"the tab reached with Tab is not 32 px clear of the row's edges: {after}"
-        # The mouse: pressed on the same tab near the edge, the row must not move under the press.
+        # The mouse: pressed on the same tab inside the fade band, the row must not move between the
+        # press and the release (the old focusin scroll moved it there, review of PR #2115).
         views.evaluate("(e) => { e.scrollLeft = 0; }")
         page.evaluate("() => document.activeElement && document.activeElement.blur()")
         target = page.evaluate("""(i) => { const n = document.querySelector('header nav.views'), a = n.querySelectorAll('a')[i];
           const r = n.getBoundingClientRect(), c = a.getBoundingClientRect();
-          return { href: a.getAttribute('href'), x: (c.left + Math.min(c.right, r.right)) / 2, y: (c.top + c.bottom) / 2 }; }""", under)
-        page.mouse.click(target["x"], target["y"])
+          return { href: a.getAttribute('href'), x: (Math.max(c.left, r.right - 32) + Math.min(c.right, r.right)) / 2, y: (c.top + c.bottom) / 2 }; }""", under)
+        scroll_of = "() => document.querySelector('header nav.views').scrollLeft"
+        page.mouse.move(target["x"], target["y"])
+        pressed_at = page.evaluate(scroll_of)
+        page.mouse.down()
+        held_at = page.evaluate(scroll_of)
+        page.mouse.up()
+        assert held_at == pressed_at, f"the tab row moved under a mouse press: scrollLeft {pressed_at} -> {held_at}"
         expect(page).to_have_url(re.compile(re.escape(target["href"]) + r"$"))
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
