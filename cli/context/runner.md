@@ -2002,6 +2002,91 @@ read together with a downstream guard that catches the relevant case was
 judged enough to raise the recorded version then. The runtime check came
 later (S200) and is why the claim above was corrected.
 
+## A checked Claude Code version is raised only on the probe's output from a signed-in machine
+
+**Id:** 92a0cb54-1bff-4194-bc4f-695e67784432
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22
+**See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
+**See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-22
+**Revisit when:** a scheduled job with its own key runs the probe against each new release (ae02241e, not decided); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
+
+`cli/tests/claude_sandbox_probe.py` re-checks what the runner relies on in
+Claude Code's sandbox, for the installed version: a call with something in
+front of `maity` does not run outside the sandbox, the hook's refusal
+paths and its failure policy, the hook switches in managed and user
+settings, and the credentials and `.git` paths the sandbox hides. It starts
+from the runner's own launch (`adapters.launch`) with what the supervisor
+gives a placement that the settings depend on (the installed version, the
+scratch and its TMPDIR), refuses to run where the runner would not start a
+sandboxed Claude Code placement, and reads each result from the file
+system, not from what the model says. Someone runs it by hand on a machine
+where Claude Code is installed and signed in. Its counts go into the pull
+request and its full output to the lead. `capabilities.CHECKED` is raised
+in a commit of its own, only after the steps the bump rests on passed: at
+least the prefixed calls (`--only 1`). The bump's own entry names the
+steps that ran and those that did not.
+
+**Reason:** the earlier checks were `claude -p` runs in which the model
+made the probe calls, so a re-check needs a model login. The session that
+took the card could build the sandbox and install the new version, but
+had no login it could use. A script can be run by whoever has one.
+Because it is in the repository, the next version is checked the same
+way, and the steps are visible in review.
+
+**Rejected alternatives:**
+- A new key for the session that took the card: the lead does not create
+  credentials for this, and a session does not use its own harness login
+  for it.
+- Raising the version on a static read again, as for 2.1.325: the runtime
+  confirmation that entry left open would stay open.
+- Bringing the first pull request up to date with main: it conflicted with
+  main, and its evidence was taken on an older version; the lead had it
+  rebuilt from main instead.
+- Landing that pull request's change to the runner's hook with the probe:
+  main's hook was rewritten meanwhile under its own reviews (63492c65), and
+  the hook test the probe carries passes against it, so the probe lands on
+  main's hook unchanged. This alternative and its reason are the author's
+  reading of main, not yet reviewed; the rest of the entry is confirmed.
+
+## How the checked Claude Code version keeps up with the runner's daily update
+
+**Id:** ae02241e-aed4-44e3-9eb7-9550cd006fb2
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n (the proposal in its notes, put to the owner through the lead, not decided), 2026-11-17; the lead's order to record it as a proposal in the pull request that lands the probe, 2026-11-22; the runner's managed update and its kept previous version (4c984f97)
+**See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-22
+**See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-22
+**Revisit when:** the owner decides; the probe stops needing a model login
+
+Pending the owner's decision. A runner whose owner set `update = "daily"`
+for Claude Code takes each new release, while `capabilities.CHECKED` moves
+only when someone with a signed-in Claude Code runs the probe and a pull
+request raises it (92a0cb54). Between the two, `maity runner check` and
+the runner's log warn that the installed version was not checked. Two
+ways to close that gap are proposed, neither built:
+
+- **(a) A scheduled CI job.** Daily, outside the jobs `ci-ok` waits for:
+  when npm's `latest` for Claude Code differs from `CHECKED`, it installs
+  that version and runs the probe with a key of its own, capped in what it
+  may spend. A pass opens a pull request that raises `CHECKED`; a failure
+  opens a ci-red issue and a card.
+- **(b) The runner's managed update follows the checked version.** It
+  installs a version only up to the one in `CHECKED`, or keeps the
+  previous version for a rollback. The runner already keeps the previous
+  version beside the new one for `maity runner tools rollback` (4c984f97);
+  what is not built is the cap.
+
+**Reason:** the probe needs a model login, so nothing in the repository
+can raise `CHECKED` on its own today, and the runner installs new
+versions daily without a check.
+
+**Rejected alternatives:** unknown — the owner has not decided between
+(a), (b), both or neither.
+
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
 **Id:** 3edc329a-6a10-427d-a0a3-733127f14b20
