@@ -626,3 +626,44 @@ set cannot see.
   further ones within 10 minutes: every change would be a mail or a
   push, and a digest would be a second kind of notice to build and
   keep for what the events already show.
+
+## Milestones as on GitHub: one per card, per project, several open, a release may point to one
+
+**Id:** c50d8929-b996-4656-9755-f579272948b3
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the maintainer's agreement of 2026-10-29 in a chat, recorded in the body of card tsk-k6a4bnnc4wct; contract draft in `docs/api.md` §6.33 (milestones), §6.4, §6.7 and §5.2
+**Revisit when:** the open points of `docs/api.md` §6.33.1 are answered, or a project needs a card in more than one milestone or a milestone across projects
+
+A project has milestones: each with a title, a description, an
+optional due date and a state, open or closed, and several may be open
+at the same time. A card belongs to at most one milestone. A
+milestone's view shows its progress, done of total, and the board and
+the card list filter by milestone. A release may point to a milestone,
+and the milestone's cards are then the release's cards. The resume
+packet names the milestone and the due date of each card the agent
+holds or is assigned. The model is GitHub's milestones. The contract
+draws these out in `docs/api.md` §6.33; what the agreed scope leaves
+open (who manages milestones, deleting, progress counting, the
+release's `depends_on`, the form of the due date and more) is listed
+there in §6.33.1 with the draft's proposals, none of them decided, and
+this entry is updated when they are answered.
+
+**Reason:** the scope is the maintainer's and recorded on the card, so
+the decision itself is confirmed; the reason was not stated with it,
+hence `unknown` above, the weakest part. Inferred: Maity's projects work
+on GitHub repositories (the probe reads GitHub), so the people and
+agents in them already know GitHub's milestones, and taking that model
+whole spares inventing one. Why a release points to a milestone and
+why the packet carries the due date is not recorded (unknown).
+
+**Rejected alternatives** (excluded by the scope itself; why each lost
+was not stated, the reasons given are inferred):
+- Several milestones per card: the scope says one per card, as on
+  GitHub, where an issue has at most one milestone; with one, progress
+  counts each card once and the board filter is unambiguous.
+- Milestones across projects: the scope says per project, as on
+  GitHub, where a milestone belongs to one repository; a project is
+  also where membership and reading rights end, so a cross-project
+  milestone would count cards some of its readers may not see.
