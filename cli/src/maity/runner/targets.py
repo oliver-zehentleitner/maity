@@ -187,7 +187,7 @@ def pin_maity(as_user: AsUser, agent_path: str) -> AsUser:
         raise Unreachable(done.stderr.strip()[:200])
     paths = dict(line.split("\t", 1) for line in done.stdout.splitlines() if "\t" in line)
     found = paths.get("maity", "")
-    if not found.startswith("/") or not REMOTE_PATH.match(found):
+    if not found.startswith("/") or not REMOTE_PATH.fullmatch(found):
         raise OSError(f"{as_user.name}: `maity` is not on agent_path ({agent_path}) as a plain"
                       " absolute path; the runner refuses the host")  # fmt: skip
     return replace(as_user, maity_path=found)
