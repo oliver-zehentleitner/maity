@@ -412,6 +412,26 @@ def _check_git(report: Report, cfg: config.Config) -> None:
         )
 
 
+def _check_skills(report: Report, cfg: config.Config) -> None:
+    """The Keep the Why copies the runner holds (skills.copies), each named with its commit:
+    ok when whole and the one it recorded; a warning otherwise, never an error, since a start
+    fetches again or goes without the skill and says so (tsk-7casfxb7cn49). Nothing fetched."""
+    found = skills.copies(cfg.skills_dir, cfg.state_dir)
+    if not found:
+        report.ok(f"Keep the Why skill: no copy in {cfg.skills_dir} yet; a start fetches one")
+        return
+    for name, _source, commit, state_text in found:
+        where = cfg.skills_dir / skills.NAME / name
+        if state_text == "ok":
+            report.ok(f"Keep the Why skill at {commit[:12]}: {where}, checked")
+        elif state_text == "unrecorded":
+            report.warn(f"Keep the Why skill at {commit[:12]}: {where} has no record in the "
+                        "state directory; the next start fetches and compares")  # fmt: skip
+        else:
+            report.warn(f"Keep the Why skill: {where} {state_text}; it is not handed out, and "
+                        "the next start fetches it again or starts without it")  # fmt: skip
+
+
 def _check_state(report: Report, cfg: config.Config) -> None:
     directory = cfg.state_dir
     if not directory.is_dir():
@@ -1203,6 +1223,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     _check_state(report, cfg)
     _check_repositories(report, cfg)
     _check_git(report, cfg)
+    _check_skills(report, cfg)
     if cfg.ssh is not None:
         _check_ssh(report, cfg, getattr(args, "target", None))
     elif getattr(args, "target", None):
@@ -1700,12 +1721,15 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "--revoked: every recorded workspace without a placement whose credential the hub "
         "reports as revoked, with its uncommitted files and the commits on no remote (git run "
         "with hooks, fsmonitor and pagers off). --scratch: every placement's scratch the hub "
-        "does not list as active. Removes only with --yes.",
+        "does not list as active. --skills: every Keep the Why copy that no active placement "
+        "names and no running session started with. Removes only with --yes.",
     )
     r.add_argument("--revoked", action="store_true",
                    help="workspaces whose credential is revoked")  # fmt: skip
     r.add_argument("--scratch", action="store_true",
                    help="the scratch of placements that are not active (§15.5)")  # fmt: skip
+    r.add_argument("--skills", action="store_true",
+                   help="Keep the Why copies nothing names or runs with any more")  # fmt: skip
     r.add_argument("--yes", action="store_true", help="remove the workspaces listed")
     r.set_defaults(handler=_operate("cmd_gc"))
 

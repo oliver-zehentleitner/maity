@@ -361,3 +361,37 @@ def test_gc_removes_only_copies_no_placement_names(tmp_path: Path) -> None:
         (parent / name).mkdir(parents=True)
     assert sorted(skills.remove_unused(tmp_path, {kept})) == sorted([".fetch-x", old])
     assert sorted(p.name for p in parent.iterdir()) == sorted([kept, "notes", "c" * 40])
+
+
+@posix
+def test_gc_never_follows_a_link_where_the_copies_are_kept(tmp_path: Path) -> None:
+    # The review of #2093 (kduz): a link at <skills_dir>/keep-the-why is refused, not followed.
+    elsewhere = tmp_path / "elsewhere"
+    old = skills.key(SOURCE, "b" * 40)
+    (elsewhere / old).mkdir(parents=True)
+    (tmp_path / "skills").mkdir()
+    (tmp_path / "skills" / "keep-the-why").symlink_to(elsewhere)
+    with pytest.raises(OSError):
+        skills.remove_unused(tmp_path / "skills", set())
+    assert (elsewhere / old).is_dir()
+
+
+@posix
+def test_gc_removes_a_read_only_copy_and_goes_on_past_one_it_cannot_remove(
+    tmp_path: Path,
+) -> None:
+    # The review of #2093 (kduz): a 0555 level is widened as skillop widens it, a link or file
+    # with a key's name is unlinked (as `copies` lists it), and the entries that went are named.
+    parent = tmp_path / "keep-the-why"
+    locked, linked, plain = (skills.key(SOURCE, c * 40) for c in "bde")
+    (parent / locked / "plugin" / "skills").mkdir(parents=True)
+    (parent / locked / "plugin" / "skills" / "SKILL.md").write_text("x\n")
+    os.chmod(parent / locked / "plugin" / "skills", 0o555)  # noqa: S103 - the case under test
+    os.chmod(parent / locked / "plugin", 0o555)  # noqa: S103
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (parent / linked).symlink_to(elsewhere)
+    (parent / plain).write_text("not a directory\n")
+    failed: list[str] = []
+    assert skills.remove_unused(tmp_path, set(), failed) == sorted([locked, linked, plain])
+    assert failed == [] and list(parent.iterdir()) == [] and elsewhere.is_dir()
