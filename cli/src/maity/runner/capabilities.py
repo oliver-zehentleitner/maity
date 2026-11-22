@@ -347,7 +347,7 @@ def sandbox_available(
     needs its tools (`claude_sandbox_tools`, §6.1) found on the agents' PATH. Codex's is
     tried once per binary (`codex sandbox -- true`): a host where it cannot start is not
     advertised as sandboxed. agy's is reported off until the runner has a bounded check
-    that sees agy's own sandbox start (§15.3, `agy_namespaces`). Nothing else is switched on
+    that sees agy's own sandbox start (§15.3, `agy_sandbox`). Nothing else is switched on
     yet. A Codex the runner manages (§15.16) is tried as the binary its sessions start with,
     from `tools_dir`, never one the PATH finds, as `probe` does."""
     if harness.id == "codex":
@@ -395,10 +395,28 @@ def _codex_sandbox_starts(binary: str, user: str | None = None) -> bool:
 # and without saying so (§15.3). The contract reports the sandbox on only once the runner has
 # seen agy's sandbox start, and agy has no command that starts its sandbox alone (as `codex
 # sandbox` does) while a headless run costs the operator's model quota and needs the sign-in.
-# So the capability stays off (`sandbox_available`), and `maity runner check` only tries the
-# namespaces agy's sandbox needs, as the agents' user: user, mount, pid and network. That they
-# start says agy's sandbox could, never that it did (cli/context/runner.md).
+# So the capability stays off (`sandbox_available`), and the runner only tries the namespaces
+# agy's sandbox needs, as the agents' user: user, mount, pid and network. That they start says
+# agy's sandbox could, never that it did (cli/context/runner.md).
 AGY_NAMESPACES = ("--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "true")
+# Where those namespaces are refused, agy may still get its own: AppArmor's restriction of
+# unprivileged user namespaces (Ubuntu) is lifted per profile, and an operator can load one for
+# agy that grants `userns`. An unprivileged process cannot run the probe under that profile (it
+# only stacks it, `agy//&unconfined`, and stays restricted), and a profile's `attach` reads
+# `<unknown>` without privilege, so only the names of the loaded profiles can be read
+# (tsk-xjy2d5617sar, cli/context/runner.md).
+APPARMOR_PROFILES = "/sys/kernel/security/apparmor/policy/profiles"
+AGY_PROFILE_NAME = "agy"
+# What `agy_sandbox` answers: the namespaces start; they are refused but a profile named for
+# agy is loaded (not verified); they are refused and nothing lifts that; it cannot tell.
+AGY_STARTS, AGY_PROFILE, AGY_CANNOT, AGY_UNKNOWN = "starts", "profile", "cannot", "unknown"
+# A refusal of the namespaces, as unshare words it under LC_ALL=C: the mapping write the
+# restriction refuses, or the unshare call itself. Any other failure tells nothing.
+_UNSHARE_REFUSED = ("uid_map", "gid_map", "setgroups", "unshare failed")
+_PROFILE_NAMES = (  # run as the agents' user: 3 when there is no AppArmor, 4 when unreadable
+    'd=$1; [ -d "$d" ] || exit 3; [ -r "$d" ] && [ -x "$d" ] || exit 4; '
+    'for f in "$d"/*/name; do [ -r "$f" ] && cat -- "$f"; done; exit 0'
+)
 
 
 def agy_sandbox_platform(platform: str | None = None) -> bool:
@@ -406,20 +424,60 @@ def agy_sandbox_platform(platform: str | None = None) -> bool:
     return (sys.platform if platform is None else platform).startswith("linux")
 
 
-def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
-    """A diagnostic for `maity runner check`: whether the namespaces agy's sandbox needs start
-    as the agents' user (`unshare`, on the agents' PATH). It never turns the capability on."""
+def agy_sandbox(path: str, as_user: AsUser = RUNNER, binary: str | None = None) -> str:
+    """Whether agy's terminal sandbox can start for the agents' user, as far as an unprivileged
+    check can tell (`AGY_*`): the namespaces it needs start (`unshare`, on the agents' PATH);
+    they are refused but an AppArmor profile named `agy`, or after agy's resolved `binary`, is
+    loaded, which may lift the refusal for agy (not verified); they are refused and no such
+    profile is loaded, so agy runs commands unsandboxed; or it cannot tell (no `unshare`, a
+    failure that is no refusal, the profile list unreadable). It never turns the capability
+    on. Only a definite refusal is `cannot`, so the check can only err towards a warning."""
     unshare = which("unshare", path, as_user)
     if unshare is None:
-        return False
+        return AGY_UNKNOWN
     try:
-        if as_user.direct:
-            done = proc.run([unshare, *AGY_NAMESPACES], cwd=Path.home(), timeout=30)
-        else:
-            done = as_user.run([unshare, *AGY_NAMESPACES], env={"PATH": path}, timeout=30)
+        done = as_user.run([unshare, *AGY_NAMESPACES], env={"PATH": path, "LC_ALL": "C"},
+                           cwd=Path.home() if as_user.direct else None, timeout=30)  # fmt: skip
     except (proc.ToolError, subprocess.TimeoutExpired, OSError):
-        return False
-    return done.returncode == 0
+        return AGY_UNKNOWN
+    if done.returncode == 0:
+        return AGY_STARTS
+    if not any(word in (done.stderr or "") for word in _UNSHARE_REFUSED):
+        return AGY_UNKNOWN
+    names = apparmor_profiles(as_user)
+    if names is None:
+        return AGY_UNKNOWN
+    wanted = {AGY_PROFILE_NAME, *([binary] if binary else [])}
+    return AGY_PROFILE if names & wanted else AGY_CANNOT
+
+
+def apparmor_profiles(as_user: AsUser = RUNNER) -> set[str] | None:
+    """The names of the loaded AppArmor profiles, as the agents' user reads them: empty where
+    there is no AppArmor, None where the list cannot be read."""
+    if as_user.direct:
+        try:
+            entries = os.listdir(APPARMOR_PROFILES)
+        except FileNotFoundError:
+            return set()
+        except OSError:
+            return None
+        names: set[str] = set()
+        for entry in entries:
+            try:
+                text = Path(APPARMOR_PROFILES, entry, "name").read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            names.add(text.strip())
+        return names
+    try:
+        done = as_user.run(["sh", "-c", _PROFILE_NAMES, "sh", APPARMOR_PROFILES], timeout=30)
+    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
+        return None
+    if done.returncode == 3:
+        return set()
+    if done.returncode != 0:
+        return None
+    return {line.strip() for line in (done.stdout or "").splitlines() if line.strip()}
 
 
 # The flags the opencode adapter passes (adapters._opencode), by the command that must take

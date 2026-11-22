@@ -432,6 +432,10 @@ class Supervisor:
     # Held across a snapshot of the records and its write (save), so a `_start` worker's save
     # before its session starts is never overwritten by an older snapshot (the review of #2093).
     records_save_lock: threading.Lock = field(default_factory=threading.Lock)
+    # What `capabilities.agy_sandbox` answered, per target name and agy binary, for the
+    # service's lifetime as the Codex sandbox probe is: after changing the host's AppArmor or
+    # agy's profile, restart the runner (tsk-xjy2d5617sar).
+    agy_sandbox: dict[tuple[str, str], str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -1372,6 +1376,42 @@ class Supervisor:
             target.seccomp = found
         return found
 
+    def _agy_sandbox(self, target: Target, binary: str | None) -> str:
+        """`capabilities.agy_sandbox` for `target` and agy's `binary`, asked once per pair for
+        the service's lifetime; on a platform where agy has no terminal sandbox it is not
+        asked (that is no host fault the start can name)."""
+        if target.as_user.direct and not capabilities.agy_sandbox_platform():
+            return capabilities.AGY_UNKNOWN
+        key = (target.name, binary or "")
+        with self.lock:
+            known = self.agy_sandbox.get(key)
+        if known is not None:
+            return known
+        state = capabilities.agy_sandbox(target.agent_path, target.as_user, binary)
+        with self.lock:
+            self.agy_sandbox[key] = state
+        return state
+
+    def _say_if_unsandboxed(
+        self, pid: str, harness: config.Harness, target: Target, view: GateView | None
+    ) -> None:
+        """An agy start on a host where its terminal sandbox cannot start: it got through the
+        gate by the operator's choice (`require_sandbox = false`), so it is said aloud at every
+        such start, never silently (lotse's ruling on tsk-xjy2d5617sar). Its report stays
+        `sandbox_unavailable`, as on every agy start. Nothing is said where the probe saw the
+        namespaces start, found a profile named for agy, or could not tell."""
+        if harness.id != "antigravity" or (view is not None and view.sandbox):
+            return
+        found = view.found if view is not None else None
+        if self._agy_sandbox(target, found.path if found else None) != capabilities.AGY_CANNOT:
+            return
+        self.log(
+            f"{pid}: WARNING: this agy placement runs commands UNSANDBOXED: agy's terminal "
+            f"sandbox cannot start on {target.name} (the namespaces it needs are refused and no "
+            "AppArmor profile lifts that); set require_sandbox = true under "
+            "[harness.antigravity] to refuse such starts"
+        )
+
     def _wait(self, rec: Record, why: str, name: str) -> int:
         if rec.waiting != why:
             rec.waiting = why
@@ -1473,6 +1513,7 @@ class Supervisor:
                 with self.lock:  # stopped or moved on while the task was queued
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
+            self._say_if_unsandboxed(p["id"], harness, target, view)
             # A Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
             # would read as unsupported and refuse the start (worktree, §15.5): clear it first, by
             # file operations only (the runner runs no git in an existing clone). Only this agent's
