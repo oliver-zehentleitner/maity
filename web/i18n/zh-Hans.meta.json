@@ -3541,7 +3541,7 @@
   },
   "chat_access.history.by_list": {
     "en": "055398d1753e3927",
-    "text": "faec5e6ded9dd450"
+    "text": "f4e6fdb622b9dc67"
   },
   "chat_access.history.by_request": {
     "en": "86d11265573cc0bb",
@@ -3549,7 +3549,7 @@
   },
   "chat_access.history.by_unknown": {
     "en": "7b5bf316914e76dd",
-    "text": "ff746078df9ea3e6"
+    "text": "5e83ccc2454170ad"
   },
   "chat_access.history.deleted": {
     "en": "7c0b087cf4500fbb",
@@ -3673,7 +3673,7 @@
   },
   "chat_access.history.reply.block": {
     "en": "d1d20e955f84425d",
-    "text": "fbf5c901b256d7ad"
+    "text": "a7f34c492919c2a8"
   },
   "chat_access.history.reply.no": {
     "en": "df8dc7d521768604",
@@ -3733,7 +3733,7 @@
   },
   "chat_access.no_people": {
     "en": "618bded23f2132c0",
-    "text": "5a98aa87fc9eb23d"
+    "text": "f9141101780b2965"
   },
   "chat_access.other_agent": {
     "en": "aa7e6ee1e235416d",
@@ -3825,7 +3825,7 @@
   },
   "chat_access.since": {
     "en": "a4814167ce00aec8",
-    "text": "3485f3e52ae0d116"
+    "text": "77a254a51af4ed84"
   },
   "chat_access.subject.agent": {
     "en": "1264b85bfb373456",
@@ -10689,7 +10689,7 @@
   },
   "members.expert.for.placeholder": {
     "en": "aaae3c19a9211219",
-    "text": "2e22fda57d388470"
+    "text": "7a9fcf9a82959fbe"
   },
   "members.expert.refused.expert_only": {
     "en": "86756677eff37538",
@@ -11033,7 +11033,7 @@
   },
   "members.refused.holds_cards": {
     "en": "97b7ef41e748dd04",
-    "text": "9aae23007b737ce3"
+    "text": "1dabd449c4d61566"
   },
   "members.refused.humans_only": {
     "en": "bc316578fa54c2b7",
@@ -16705,7 +16705,7 @@
   },
   "roles.move.approvals": {
     "en": "62c6b1c01db81b0c",
-    "text": "5c02622fba11756b"
+    "text": "ab93b8f24276888a"
   },
   "roles.move.back": {
     "en": "7ceade8f25b58fe9",
@@ -18453,7 +18453,7 @@
   },
   "settings.repo.forge_rule": {
     "en": "8385e3bd11777f1f",
-    "text": "86111122865b6cb3"
+    "text": "261ce4b283c3913d"
   },
   "settings.repo.hint": {
     "en": "d93dadbb10ff55c5",
