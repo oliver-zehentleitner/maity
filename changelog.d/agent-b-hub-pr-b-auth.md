@@ -43,6 +43,8 @@
   MariaDB. A leaked runner credential's revocation also locks the project of each active
   placement of the runner, among them one still closing after the runner was detached from
   that project, which the revocation closes there; it was locked late before
-  (tsk-k6fsdcn03pyd). `PATCH /me` and `POST /me/limit` without `project` take the projects
+  (tsk-k6fsdcn03pyd). It takes the runner's credential and runner rows first, as the
+  owner's revoke of the runner does, and only then the projects, so the two cannot wait on
+  each other either. `PATCH /me` and `POST /me/limit` without `project` take the projects
   of every attachment they write in the same way, up front, so they cannot deadlock against
   a revocation either.

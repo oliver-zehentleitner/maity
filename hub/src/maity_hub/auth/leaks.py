@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from maity_hub import placements
+from maity_hub import runners as runner_rows
 from maity_hub import tables as t
 from maity_hub.auth import credentials, verifiers
 from maity_hub.auth.caller import is_runner_credential
@@ -38,6 +39,16 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
         return []
     runner_ids = sorted(i for i in secrets_by_id if is_runner_credential(i))
     runners = _leaked_runners(conn, runner_ids, secrets_by_id)
+    if runners:
+        # The runners' credential and runner rows first, in the order every runner call and
+        # the owner's revoke take them (`runners.lock`), and only then their projects: a leak
+        # that locked the projects first would wait for an owner's revoke of the same runner
+        # that holds its rows and waits for those projects. Holding the runner's row also
+        # keeps an attach out until this commits (`routes/runners`), so the projects read
+        # below stay its projects. Read again under the lock: a revocation that committed
+        # meanwhile already did the work.
+        runner_rows.lock(conn, t.runner.c.id.in_(sorted({r.runner_id for r in runners})))
+        runners = _still_live(conn, runners)
     rows = conn.execute(
         select(
             t.credential.c.id,
@@ -61,7 +72,8 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
         if row.revoked_at is None and _verifies("credential", row, secrets_by_id[row.id])
     }
     # Every project any of these revocations writes in, locked in the order of their ids
-    # before the first write, so two leaks over overlapping projects cannot deadlock. A
+    # after the runners' rows and before the first write, so two leaks over overlapping
+    # projects cannot deadlock. A
     # runner's are those it is attached to and those of its active placements: one still
     # closing after the runner's detach closes now, in its own project
     # (`placements.runner_credential_gone`).
@@ -110,6 +122,19 @@ def _verifies(table: verifiers.Table, row: Any, secrets: set[str]) -> bool:
     return verifier is not None and any(
         credentials.secret_matches(secret, verifier) for secret in secrets
     )
+
+
+def _still_live(conn: Connection, runners: list[Any]) -> list[Any]:
+    """Those of `runners` whose credential is still unrevoked, read under their lock."""
+    live = set(
+        conn.execute(
+            select(t.runner_credential.c.id).where(
+                t.runner_credential.c.id.in_([r.id for r in runners]),
+                t.runner_credential.c.revoked_at.is_(None),
+            )
+        ).scalars()
+    )
+    return [r for r in runners if r.id in live]
 
 
 def _leaked_runners(
