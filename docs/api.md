@@ -14284,9 +14284,12 @@ leaves it as it is. Like `last_seen_at`, it is written at most once every
 60 seconds, so a leg may stay held up to a minute longer than the policy
 says, never shorter. The worker reads it again inside the lapse's
 transaction, so a renewing call that lands during the pass keeps the
-leg. A reviewer working on a long review keeps its leg by renewing on
-purpose, with `claims/renew` or a checkpoint at least every half
-`review_lapse_minutes`; `maity review take` prints that interval when it
+leg. A review that runs longer than `review_lapse_minutes` without a
+renewing call loses its leg, even while the reviewer's `maity wait`
+keeps listening: a running wait alone never holds a leg. A reviewer
+working on a long review keeps its leg by renewing on purpose, before a
+long check and during it, with `claims/renew` or a checkpoint at least
+every half `review_lapse_minutes`; `maity review take` prints that interval when it
 takes a leg. A subagent that cannot call the hub needs its parent
 session to renew for it. The
 condition does not use not-listening (§5.3): that needs an event waiting
