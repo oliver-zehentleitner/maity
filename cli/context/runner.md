@@ -2020,14 +2020,19 @@ later (S200) and is why the claim above was corrected.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-nnmgvz773z5n; the version installed by the managed update on a runner host and that host's `maity runner check` warning that 2.1.330 was not checked, reported by ops, 2026-11-22; the probe (`cli/tests/claude_sandbox_probe.py`) from head a7f86c94 with `--only 1,5 --extra-lines` on that host, Claude Code 2.1.330 (the runner's own binary, sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb`, the npm linux-x64 build), maity 0.1.0a18, 2026-11-22: 50 PASS (1a 13, 1b 13, 5 24), 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, exit 0, recorded in card note nte-q2gnj0ktxk03; `maity runner check` from the same checkout on that host, 2026-11-22; the lead's decision to raise the version on that minimum run, 2026-11-22
+**Source:** card tsk-nnmgvz773z5n; the version installed by the managed update on a runner host and that host's `maity runner check` warning that 2.1.330 was not checked, reported by ops, 2026-11-22; the probe (`cli/tests/claude_sandbox_probe.py`) from head a7f86c94 with `--only 1,5 --extra-lines` on that host, Claude Code 2.1.330 (the runner's own binary, sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb`, the npm linux-x64 build), maity 0.1.0a18, 2026-11-22: 50 PASS (1a 13, 1b 13, 5 24), 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, exit 0, recorded in card note nte-q2gnj0ktxk03; `maity runner check` from the same checkout on that host, 2026-11-22; the lead's decision to raise the version on that minimum run, 2026-11-22; the lead's ruling, after the reviews of #2111 (A2117, A2118, A2119) found verdicts of the probe that could pass without their evidence, that the first run no longer carries the bump on its own and a second minimum run from the fixed head is the proof, 2026-11-22
 **See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-22
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
-**Revisit when:** the full run (`--managed --user-settings`) on 2.1.330 is done (card tsk-3dyptc98pejt) or fails; the runner's managed update installs a version other than 2.1.330; the probe or a review shows a line that runs `maity` outside the sandbox other than as one plain call
+**Revisit when:** the second minimum run, from the head with the fixes of the reviews of #2111, is in or fails; the full run (`--managed --user-settings`) on 2.1.330 is done (card tsk-3dyptc98pejt) or fails; the runner's managed update installs a version other than 2.1.330; the probe or a review shows a line that runs `maity` outside the sandbox other than as one plain call
 
 `capabilities.CHECKED` for `claude-code` is raised from 2.1.325 to
-2.1.330, the version the runners' managed update installed, on the
-probe's minimum run. What ran: points 1 and 5, that is a call with
+2.1.330, the version the runners' managed update installed. The proof it
+rests on is a second minimum run (`--only 1,5 --extra-lines`) from the
+head with the fixes of the reviews of #2111, which has not run yet. The
+first run, below, was taken with the probe before those fixes, which
+tightened its verdicts (the exact marker value, timeouts, a denial for
+the native tools), so it no longer carries the bump on its own. What ran
+in it: points 1 and 5, that is a call with
 something in front of `maity` with the runner's permission rules (1a)
 and with Bash allowed behind the runner's hook and sandbox (1b), and the
 prefixed lines probed live from the private list (`--extra-lines`). All
@@ -2074,7 +2079,7 @@ refuses a start where those settings switch the hook off.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22; the reviews of #2111 (A2117, A2118, A2119), which found verdicts that passed without their evidence and settings changes that could be left behind, and the lead's order to fix them before the second run, 2026-11-22
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-22
 **Revisit when:** a scheduled job with its own key runs the probe against each new release (ae02241e, not decided); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
@@ -2096,8 +2101,13 @@ line only, never the line or output that could echo it. Every step is checked as
 positive evidence: a line that should not run `maity` outside the sandbox
 must reach the stub `maity` when run without a sandbox and a hook, or the
 step is NOT-TESTABLE; live, a step passes only on a marker the stub left
-inside the sandbox, a refusal the result shows, or output its command
-must print, and without such evidence it is INCONCLUSIVE, never PASS. Someone runs it by hand on a machine where Claude Code is
+inside the sandbox saying it read no credential, a refusal the result
+shows, or output its command must print, and without such evidence it is
+INCONCLUSIVE, never PASS. A run that timed out never passes, and a run in
+which no step passed does not exit 0. The steps that change managed or
+user settings are refused while Claude Code runs on the host, write
+atomically, and leave a record that the next start uses to undo what a
+killed run left. Someone runs it by hand on a machine where Claude Code is
 installed and signed in. Its counts go into the pull
 request and its full output to the lead. `capabilities.CHECKED` is raised
 in a commit of its own, only after the steps the bump rests on passed: at

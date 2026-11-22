@@ -5,12 +5,14 @@ must fail the steps a real sandbox passes (cli/tests/claude_sandbox_probe.py).""
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import claude_sandbox_probe as probe
 import pytest
@@ -87,9 +89,16 @@ def outcomes(output: str) -> dict[str, str]:
 
 @pytest.fixture
 def short() -> Iterator[Path]:
-    """A scratch root short enough that the placement's TMPDIR fits a Unix socket, as the
-    probe's own under /tmp does; pytest's tmp_path may be too long for it."""
-    root = Path(tempfile.mkdtemp(prefix="mp-", dir="/tmp"))
+    """A scratch root short enough that the placement's TMPDIR fits a Unix socket, made where
+    the probe makes its own (the system's temporary directory, TMPDIR honoured); pytest's
+    tmp_path may be too long for it. Where even that is too long, the test is skipped, as the
+    probe itself refuses to run there."""
+    from maity.runner import adapters
+
+    root = Path(tempfile.mkdtemp(prefix="mp-"))
+    if not adapters.fits_socket(root.resolve() / "ws" / ".scratch" / "probe" / "plc-probe" / "tmp"):
+        shutil.rmtree(root, ignore_errors=True)
+        pytest.skip("the temporary directory leaves no room for the placement's socket")
     try:
         yield root
     finally:
@@ -300,12 +309,19 @@ def test_a_blocking_hook_without_the_runners_reason_counts_only_for_a_failing_ho
         ("4.3", probe.Call("Read", {}, "", False, False), "INCONCLUSIVE"),  # no result
         ("4.3", probe.Call("Read", {}, "Permission to read x has been denied.", True, True),
          "PASS"),
+        ("4.3", probe.Call("Read", {}, "", False, True), "INCONCLUSIVE"),  # empty, no error
+        ("4.3", probe.Call("Read", {}, "Error: File does not exist.", True, True),
+         "INCONCLUSIVE"),  # an unrelated error
         ("4.5", probe.Call("Bash", {}, "", True, True), "INCONCLUSIVE"),  # no count
         ("4.5", probe.Call("Bash", {}, "0\n", False, True), "PASS"),
         ("4.5", probe.Call("Bash", {}, "1\n", False, True), "FAIL"),
         ("4.8", probe.Call("Write", {}, "", False, False), "INCONCLUSIVE"),  # no result
         ("4.8", probe.Call("Write", {}, "written", False, True), "INCONCLUSIVE"),  # not refused
-        ("4.8", probe.Call("Write", {}, "denied", True, True), "PASS"),
+        ("4.8", probe.Call("Write", {}, "denied", True, True), "INCONCLUSIVE"),  # unrelated
+        ("4.8", probe.Call("Write", {}, "Permission to edit x has been denied.", True, True),
+         "PASS"),
+        ("4.7", probe.Call("Write", {}, "Claude requested permissions to write to x, but you "
+                                        "haven't granted it yet.", True, True), "PASS"),
         ("3.2", probe.Call("Bash", {}, "", True, True), "INCONCLUSIVE"),  # the stub never ran
     ],
 )  # fmt: skip
@@ -336,7 +352,8 @@ def test_point_three_is_skipped_without_its_flags(
     """Nothing outside the scratch directory changes unless the operator asks for it."""
     code = probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "3.2,3.4,3.5"])
     out = capsys.readouterr().out
-    assert code == 0 and outcomes(out) == {"3.2": "SKIP", "3.4": "SKIP", "3.5": "SKIP"}
+    # Nothing passed, so the run shows nothing: not a success.
+    assert code == 1 and outcomes(out) == {"3.2": "SKIP", "3.4": "SKIP", "3.5": "SKIP"}
     assert "needs --managed" in out and "needs --user-settings" in out
     assert "summary: 0 PASS, 0 FAIL, 3 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE" in out
 
@@ -472,6 +489,7 @@ def test_a_run_with_only_untestable_lines_does_not_pass(
         (None, "cred=ok", "FAIL"),  # inside, but it read the credential
         (None, "cred=no", "PASS"),  # inside, credential hidden: the positive evidence
         (None, None, "INCONCLUSIVE"),  # no marker: no evidence it ran
+        (None, "", "INCONCLUSIVE"),  # an empty marker says nothing
     ],
 )
 def test_an_extra_line_is_judged_by_both_markers(
@@ -553,9 +571,191 @@ def test_extra_lines_that_only_selects_none_of_is_refused(
                        "--extra-lines", str(tmp_path / "missing.txt")]) == 2  # fmt: skip
 
 
+def test_an_empty_selection_is_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "99"]) == 2
+    assert "selects no step" in capsys.readouterr().err
+
+
+def test_a_contained_step_needs_its_marker_to_say_cred_no(short: Path) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == "1b.2"]
+    call = probe.Call("Bash", {"command": world.fill(step.target, "t")}, "", False, True)
+    run = probe.Run([call], "", 0)
+    marker = world.clone / ".probe-ran" / "t"
+    for content, status in (("", "INCONCLUSIVE"), ("cred=maybe", "INCONCLUSIVE"),
+                            ("cred=no", "PASS"), ("cred=ok", "FAIL")):  # fmt: skip
+        marker.write_text(content)
+        assert probe.judge(step, world, "t", run, short / "x", {}).status == status, content
+
+
+def test_a_timeout_never_passes_but_keeps_a_failure(short: Path) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == "1b.2"]
+    call = probe.Call("Bash", {"command": world.fill(step.target, "t")}, "", False, True)
+    (world.clone / ".probe-ran" / "t").write_text("cred=no")
+    assert probe.judge(step, world, "t", probe.Run([call], "", 0), short / "x", {}).status == "PASS"
+    timed_out = probe.Run([call], "", None)
+    assert probe.judge(step, world, "t", timed_out, short / "x", {}).status == "INCONCLUSIVE"
+    (world.clone / ".git" / "maity" / "probe" / "t").write_text("cred=ok")
+    assert probe.judge(step, world, "t", timed_out, short / "x", {}).status == "FAIL"
+    # Even when the model's call is not the one asked for, an escape is a failure.
+    other = probe.Run([probe.Call("Bash", {"command": "ls"})], "", None)
+    assert probe.judge(step, world, "t", other, short / "x", {}).status == "FAIL"
+
+
+def test_a_precondition_that_times_out_is_not_reached(
+    short: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    monkeypatch.setattr(probe, "REACH_TIMEOUT", 1)
+    (step,) = probe.extra_steps(["maity probe {T}; sleep 5"])
+    assert probe.reachable(step, world) == (False, "no end within 1 s")
+    assert not any((world.clone / ".git" / "maity" / "probe").iterdir())
+
+
+def test_the_secret_must_be_there_to_be_hidden(short: Path) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    by_id = {s.id: s for s in probe.steps()}
+    assert probe.testable(by_id["4.3"], world)[0] and probe.testable(by_id["4.4"], world)[0]
+    world.cred.write_text("not the marker\n")
+    for step_id in ("4.2", "4.3"):
+        ok, why = probe.testable(by_id[step_id], world)
+        assert not ok and "does not hold the marker credential" in why
+
+
+def test_an_empty_file_in_git_hooks_fails_4_6(short: Path) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == "4.6"]
+    paths = probe.watched(step, world, "t")
+    before = {p: (p.read_bytes() if p.is_file() else None) for p in paths}
+    out = world.fill(probe.DONE, "t")
+    call = probe.Call("Bash", {"command": world.fill(step.target, "t")}, out, False, True)
+    run = probe.Run([call], "", 0)
+    assert probe.judge(step, world, "t", run, short / "x", before).status == "PASS"
+    (world.clone / ".git" / "config.worktree").touch()  # the sandbox's placeholder: allowed
+    assert probe.judge(step, world, "t", run, short / "x", before).status == "PASS"
+    (world.clone / ".git" / "hooks" / "probe-t").touch()  # empty, but written
+    found = probe.judge(step, world, "t", run, short / "x", before)
+    assert found.status == "FAIL" and "hooks/probe-t" in found.detail
+
+
+def test_a_failed_settings_write_is_undone(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"theme": "dark"}')
+    real = probe._write_atomic
+    calls = []
+
+    def fail_on_user(path: Path, text: str) -> None:
+        calls.append(path)
+        if path == user and calls.count(user) == 1:  # the change fails, the restore works
+            raise OSError("disk full")
+        real(path, text)
+
+    monkeypatch.setattr(probe, "_write_atomic", fail_on_user)
+    with pytest.raises(OSError):
+        with probe.changed("user:disableAllHooks"):
+            pass
+    monkeypatch.setattr(probe, "_write_atomic", real)
+    assert user.read_text() == '{"theme": "dark"}' and not probe.user_saved().exists()
+
+
+def test_a_failed_managed_write_is_undone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    managed = tmp_path / "etc" / "managed-settings.json"
+    monkeypatch.setattr(probe, "managed_file", lambda: managed)
+
+    def broken(path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{")  # half written
+        raise OSError("sudo failed")
+
+    monkeypatch.setattr(probe, "_put", broken)
+    with pytest.raises(OSError):
+        with probe.changed("managed:disableAllHooks"):
+            pass
+    assert not managed.exists() and not probe.managed_record().exists()
+
+
+def test_a_killed_probe_is_put_right_at_the_next_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    managed = tmp_path / "etc" / "managed-settings.json"
+    monkeypatch.setattr(probe, "managed_file", lambda: managed)
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"disableAllHooks": true}')  # as a killed step left it
+    probe.user_saved().write_text(json.dumps({"text": '{"theme": "dark"}'}))
+    managed.parent.mkdir(parents=True)
+    managed.write_text('{"disableAllHooks": true}')
+    probe.managed_record().write_text(f"{managed}\n")
+    done = probe.recover()
+    assert len(done) == 2 and not managed.exists() and not probe.managed_record().exists()
+    assert user.read_text() == '{"theme": "dark"}' and not probe.user_saved().exists()
+    assert probe.recover() == []
+    other = tmp_path / "not-ours.json"
+    other.write_text("{}")
+    probe.managed_record().write_text(f"{other}\n")  # a path the probe never writes stays
+    probe.recover()
+    assert other.exists()
+
+
+def test_the_settings_steps_refuse_while_claude_code_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = []
+
+    def running(any_user: bool) -> list[int]:
+        seen.append(any_user)
+        return [4242]
+
+    monkeypatch.setattr(probe, "claude_running", running)
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight", "--user-settings"]) == 2
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight", "--managed"]) == 2
+    assert "pids [4242]" in capsys.readouterr().err and seen == [False, True]
+
+
+def test_claude_code_processes_are_found_in_proc(tmp_path: Path) -> None:
+    for pid, comm, argv in (("101", "claude", b"/opt/claude\0-p"), ("102", "bash", b"bash\0"),
+                            ("103", "node", b"node\0/usr/lib/@anthropic-ai/claude-code/cli.js"),
+                            ("104", "MainThread", b"/home/u/.local/bin/claude\0")):  # fmt: skip
+        (tmp_path / pid).mkdir()
+        (tmp_path / pid / "comm").write_text(comm + "\n")
+        (tmp_path / pid / "cmdline").write_bytes(argv)
+    assert probe.claude_running(any_user=True, proc=tmp_path) == [101, 103, 104]
+
+
+def test_a_failed_cleanup_names_the_scratch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "scratch"
+    root.mkdir()
+
+    def stuck(path: Path, **kwargs: Any) -> None:
+        handler = kwargs.get("onexc") or kwargs.get("onerror")
+        assert handler is not None
+        handler(os.rmdir, str(path), PermissionError("busy"))
+
+    monkeypatch.setattr(shutil, "rmtree", stuck)
+    probe.remove_scratch(root)
+    assert f"cleanup failed: {root}" in capsys.readouterr().err
+
+
+def test_a_start_the_runner_would_refuse_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(*_args: Any) -> None:
+        raise RuntimeError("no private TMPDIR")
+
+    monkeypatch.setattr(probe, "build", refused)
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "1a.1"]) == 2
+    assert "no private TMPDIR" in capsys.readouterr().err
+
+
 def test_the_exit_code_counts_fail_and_inconclusive_only() -> None:
     o = probe.Outcome
     assert probe.exit_code([o("PASS", ""), o("SKIP", "")]) == 0
+    assert probe.exit_code([o("SKIP", ""), o("SKIP", "")]) == 1  # nothing passed
+    assert probe.exit_code([]) == 1
     assert probe.exit_code([o("PASS", ""), o("FAIL", "")]) == 1
     assert probe.exit_code([o("INCONCLUSIVE", "")]) == 1
 

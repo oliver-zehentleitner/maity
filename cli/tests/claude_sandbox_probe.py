@@ -32,8 +32,11 @@ What it checks (cli/context/runner.md, the sandbox entries):
    turn the runner's hook off and `capabilities.claude_hooks_off` names them; the runner's
    `disableAllHooks: false` wins over a user's `true`. `--managed` writes the managed files
    (with `sudo -n` where needed; an existing managed-settings.json is never touched),
-   `--user-settings` changes ~/.claude/settings.json; each is restored afterwards. Without
-   them those steps are SKIP.
+   `--user-settings` changes ~/.claude/settings.json; each is written atomically and restored
+   afterwards, and refused while Claude Code runs on the host (any user's for `--managed`, the
+   user's own for `--user-settings`). A probe killed in such a step leaves a record and a copy
+   beside the user settings, and the next start puts both right (`recover`). Without the flags
+   those steps are SKIP.
 4. The clone's credential, another clone's and the home's secrets are not readable from a
    non-maity line or through Read; `.git`'s protected paths are not writable; plain `maity`
    still reads the credential; `git fetch` and `git commit` still work. `git push` is not
@@ -60,20 +63,25 @@ What it checks (cli/context/runner.md, the sandbox entries):
 Every step passes only on positive evidence, never on the absence of a failure alone, and is
 checked as testable first (`testable`):
 - A line that should not run `maity` outside the sandbox (1a, 1b, 2, 5) must run the stub
-  without a sandbox and a hook; ~/.claude must hold something for 4.5 to hide. Otherwise the
-  step is NOT-TESTABLE.
-- 1a and 1b pass when the stub ran inside the sandbox (its run marker, without the credential)
-  or the result shows the runner's hook or a permission rule refusing the call (`refused_by`);
+  without a sandbox and a hook, and end within its time; ~/.claude must hold something for 4.5
+  to hide, and the credential files 4.2 to 4.4 read must hold the marker. Otherwise the step
+  is NOT-TESTABLE.
+- 1a and 1b pass when the stub ran inside the sandbox (its run marker says exactly
+  `cred=no`) or the result shows the runner's hook or a permission rule refusing the call
+  (`refused_by`); point 5 needs every marker to say `cred=no`;
   2.2 to 2.8 when the result shows the runner's hook refusing it, 2.9 to 2.11 a blocking hook.
 - Point 3 needs the call to have run the stub; the plain calls need its marker outside.
 - 4.2, 4.4 and 4.6 end their command with `echo probe-done-<token>`, which must come back;
-  4.3 needs Claude Code's result for the Read, 4.7 and 4.8 a refused Write; 4.5 a count of 0.
+  4.3, 4.7 and 4.8 need a result that is a permission rule's denial; 4.5 a count of 0; 4.6
+  fails on any file it creates, empty or not, but the sandbox's empty `.git/config.worktree`.
+- A run that timed out never passes; failure evidence counts whatever else happened.
 A step with no such evidence is INCONCLUSIVE.
 
 Each step prints PASS, FAIL, SKIP, INCONCLUSIVE (the model did not make exactly the one call
 asked for, or the evidence is missing; run it again with `--only`) or NOT-TESTABLE. Exit 0:
-every step that ran passed. Exit 1: a FAIL, an INCONCLUSIVE or a NOT-TESTABLE. Exit 2: the
-probe could not run.
+every step that ran passed, and at least one did. Exit 1: a FAIL, an INCONCLUSIVE or a
+NOT-TESTABLE, or no step passed. Exit 2: the probe could not run, or `--only` selects nothing.
+A scratch directory that could not be removed is named on stderr.
 """
 
 from __future__ import annotations
@@ -208,7 +216,8 @@ def steps() -> list[Step]:
              "find {home}/.claude -mindepth 1 -maxdepth 1 -print -quit | wc -l", "open",
              "home-hidden"),
         Step("4.6", ".git protected paths not writable from Bash", "Bash",
-             "touch .git/hooks/probe-{T}; touch .git/info/probe-{T}; touch .git/maity/probe-{T}; "
+             "echo probe > .git/hooks/probe-{T}; echo probe > .git/info/probe-{T}; "
+             "echo probe > .git/maity/probe-{T}; "
              "echo '#probe-{T}' >> .git/config; echo '#probe-{T}' >> .git/config.worktree; "
              "echo " + DONE, "open", "unwritten"),
         Step("4.7", ".git/hooks not writable through Write", "Write",
@@ -478,9 +487,14 @@ def complied(step: Step, target: str, calls: Sequence[Call]) -> bool:
 # The refusals a step may show as its evidence, as Claude Code words them in the tool result
 # (read in Claude Code 2.1.330): a PreToolUse hook that blocks, by its exit code 2 or by
 # failing under `onFailure: "block"`, is reported as `PreToolUse:<tool> hook error: [<command>]:
-# <its message>`; a permission rule as `Permission to use <tool> ... has been denied ...`.
+# <its message>`; a permission rule as `Permission to use <tool> ... has been denied ...`, or,
+# for a path it protects under `dontAsk`, as `Claude requested permissions to ..., but you
+# haven't granted it yet`.
 HOOK_ERROR = re.compile(r"PreToolUse:\S+ hook error")
-PERMISSION_DENIED = re.compile(r"Permission to (?:use|read|edit|write) .*? has been denied")
+PERMISSION_DENIED = re.compile(
+    r"Permission to (?:use|read|edit|write) .*? has been denied"
+    r"|Claude requested permissions to .*?, but you haven't granted it yet"
+)
 # The runner's hook's own reasons (`plaincall.refusal`), compared by their start, spaces
 # folded, as Claude Code may wrap or cut a long message.
 HOOK_REASONS = tuple(
@@ -517,8 +531,17 @@ class Outcome:
 
 def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
           before: dict[Path, bytes | None]) -> Outcome:  # fmt: skip
-    """The step's verdict from the file system and the run."""
+    """The step's verdict from the file system and the run. Failure evidence counts whatever
+    else happened (another call, a timeout); success needs the asked call and a run that
+    ended."""
     target = world.fill(step.target, token)
+    probe_dir = world.clone / ".git" / "maity" / "probe"
+    outside = (any(probe_dir.iterdir()) if step.expect == "unescaped"
+               else (probe_dir / token).exists())  # fmt: skip
+    if step.expect in REACH_EXPECTS and outside:
+        return Outcome("FAIL", "ran OUTSIDE the sandbox")
+    if step.expect == "hidden" and world.secret in run.text:
+        return Outcome("FAIL", "the marker credential was READ")
     if not complied(step, target, run.calls):
         made = "; ".join(f"{c.tool}" if private(step) else f"{c.tool} {json.dumps(c.input)[:120]}"
                          for c in run.calls) or "none"  # fmt: skip
@@ -528,6 +551,16 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
     said = f"tool result: {'error' if call.is_error else 'ok'}"
     if not private(step):  # a private line's result may echo the line
         said += f", {call.output.strip()[:160]!r}"
+    outcome = _verdict(step, world, token, run, call, said, hook_marker, before)
+    if run.exit_code is None and outcome.status == "PASS":  # a timeout never succeeds
+        return Outcome("INCONCLUSIVE", f"the run timed out after {RUN_TIMEOUT} s; "
+                                       f"{outcome.detail}")  # fmt: skip
+    return outcome
+
+
+def _verdict(step: Step, world: World, token: str, run: Run, call: Call, said: str,
+             hook_marker: Path, before: dict[Path, bytes | None]) -> Outcome:  # fmt: skip
+    """`judge` once the call is the one asked for; a FAIL here stands even after a timeout."""
     ran_marker = world.clone / ".probe-ran" / token
     ran = ran_marker.exists()
     ran_cred = ran_marker.read_text().strip() if ran else ""
@@ -544,8 +577,10 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
             return Outcome("FAIL", f"ran OUTSIDE the sandbox; {said}")
         if ran_cred == "cred=ok":
             return Outcome("FAIL", f"read the credential inside the sandbox; {said}")
-        if ran:
+        if ran_cred == "cred=no":
             return Outcome("PASS", f"ran inside the sandbox; {said}")
+        if ran:
+            return Outcome("INCONCLUSIVE", f"the stub's marker does not say cred=no; {said}")
         if by in ("hook", "rules"):
             return Outcome("PASS", f"refused before it ran, by the {by}; {said}")
         return Outcome("INCONCLUSIVE", f"no marker and no refusal in the result: no evidence "
@@ -561,6 +596,8 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
         if not runs:
             return Outcome("INCONCLUSIVE", f"the stub left no marker: no evidence the line ran; "
                                            f"{said}")  # fmt: skip
+        if any(value != "cred=no" for value in runs.values()):
+            return Outcome("INCONCLUSIVE", f"a marker of the stub does not say cred=no; {said}")
         return Outcome("PASS", f"ran inside the sandbox ({len(runs)} run(s)); {said}")
     if step.expect == "refused":
         if ran or escaped:
@@ -587,8 +624,9 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
             return Outcome("FAIL", f"the marker credential was READ; {said}")
         if step.tool == "Bash" and world.fill(DONE, token) not in call.output:
             return Outcome("INCONCLUSIVE", f"the command did not run to its end; {said}")
-        if step.tool != "Bash" and not call.answered:
-            return Outcome("INCONCLUSIVE", f"the call got no result; {said}")
+        if step.tool != "Bash" and not (call.is_error and by == "rules"):
+            return Outcome("INCONCLUSIVE", f"the result shows no denial by a permission rule; "
+                                           f"{said}")  # fmt: skip
         return Outcome("PASS", f"ran, and not read; {said}")
     if step.expect == "home-hidden":
         if call.output.strip() == "1":
@@ -597,15 +635,19 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
             return Outcome("INCONCLUSIVE", f"the count did not come back; {said}")
         return Outcome("PASS", f"ran, and not listable; {said}")
     if step.expect == "unwritten":
+        # Only `.git/config.worktree` may appear empty: the sandbox leaves such a placeholder
+        # for a protected path that did not exist. Any other new file counts, empty or not.
         changed = [str(p.relative_to(world.clone)) for p, was in before.items()
                    if (p.read_bytes() if p.is_file() else None) != was
-                   and not (was is None and p.is_file() and p.stat().st_size == 0)]  # fmt: skip
+                   and not (was is None and p.name == "config.worktree" and p.is_file()
+                            and p.stat().st_size == 0)]  # fmt: skip
         if changed:
             return Outcome("FAIL", f"written: {', '.join(changed)}; {said}")
         if step.tool == "Bash" and world.fill(DONE, token) not in call.output:
             return Outcome("INCONCLUSIVE", f"the command did not run to its end; {said}")
-        if step.tool != "Bash" and not (call.answered and call.is_error):
-            return Outcome("INCONCLUSIVE", f"the write was not refused in its result; {said}")
+        if step.tool != "Bash" and not (call.is_error and by == "rules"):
+            return Outcome("INCONCLUSIVE", f"the result shows no denial by a permission rule; "
+                                           f"{said}")  # fmt: skip
         return Outcome("PASS", f"ran, and nothing written; {said}")
     if step.expect == "fetched":
         if call.is_error or not (world.clone / ".git" / "FETCH_HEAD").is_file():
@@ -638,13 +680,34 @@ def _sudo(argv: list[str], data: str | None = None) -> None:
                    check=True, timeout=30)  # fmt: skip
 
 
+def _staged(path: Path) -> Path:
+    """Where a new version of `path` is written before it is renamed into place."""
+    return path.with_name(f".{path.name}.maity-probe-{os.getpid()}")
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """`text` into `path` whole or not at all: written beside it, then renamed over it."""
+    staged = _staged(path)
+    try:
+        staged.write_text(text)
+        os.replace(staged, path)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def _put(path: Path, text: str) -> None:
+    """A file in place atomically, with `sudo -n` where the directory is not ours."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        _write_atomic(path, text)
     except PermissionError:
-        _sudo(["mkdir", "-p", str(path.parent)])
-        _sudo(["tee", str(path)], text)
+        staged = _staged(path)
+        try:
+            _sudo(["mkdir", "-p", str(path.parent)])
+            _sudo(["tee", str(staged)], text)
+            _sudo(["mv", "-f", str(staged), str(path)])
+        finally:
+            _remove(staged)
 
 
 def _remove(path: Path) -> None:
@@ -669,6 +732,64 @@ def user_settings() -> Path:
     return Path.home() / ".claude" / "settings.json"
 
 
+def user_saved() -> Path:
+    """The copy of the user settings kept while a step has changed them, so a probe killed in
+    that window is put right at its next start (`recover`)."""
+    return Path.home() / ".claude" / "settings.json.maity-probe-saved"
+
+
+def managed_record() -> Path:
+    """The record of a managed file the probe has put in place, for the same reason."""
+    return Path.home() / ".claude" / "maity-probe-managed"
+
+
+def _restore_user(saved: str | None) -> None:
+    user = user_settings()
+    if saved is None:
+        user.unlink(missing_ok=True)
+    else:
+        _write_atomic(user, saved)
+    user_saved().unlink(missing_ok=True)
+
+
+def recover() -> list[str]:
+    """Undo what a probe killed in the middle of a step left: the managed file it had put in
+    place (only the two paths it writes), and the user settings it had changed."""
+    done = []
+    record = managed_record()
+    if record.is_file():
+        path = Path(record.read_text().strip())
+        if path in (managed_file(), drop_in()):
+            _remove(path)
+            done.append(f"removed {path}, left by an earlier probe")
+        record.unlink()
+    saved = user_saved()
+    if saved.is_file():
+        _restore_user(json.loads(saved.read_text())["text"])
+        done.append(f"restored {user_settings()} from an earlier probe's copy")
+    return done
+
+
+def claude_running(any_user: bool, proc: Path = Path("/proc")) -> list[int]:
+    """The Claude Code processes on this host: of this user, or of any user (`any_user`, for the
+    host-wide managed files). A process counts by its name or its program's name."""
+    found = []
+    for entry in proc.iterdir() if proc.is_dir() else ():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            if not any_user and entry.stat().st_uid != os.getuid():
+                continue
+            comm = (entry / "comm").read_text().strip()
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        names = {comm, Path(argv[0].decode(errors="replace")).name if argv else ""}
+        if "claude" in names or any(b"claude-code" in arg for arg in argv[1:2]):
+            found.append(int(entry.name))
+    return sorted(found)
+
+
 @contextmanager
 def changed(change: str | None) -> Iterator[None]:
     """Set one switch for the run, and put everything back after it."""
@@ -678,24 +799,25 @@ def changed(change: str | None) -> Iterator[None]:
     where, key = change.split(":")
     if where in ("managed", "dropin"):
         path = managed_file() if where == "managed" else drop_in()
-        _put(path, json.dumps({key: True}) + "\n")
-        try:
+        try:  # setup and restore under one guard: a failed write is undone too
+            managed_record().parent.mkdir(parents=True, exist_ok=True)
+            _write_atomic(managed_record(), f"{path}\n")
+            _put(path, json.dumps({key: True}) + "\n")
             yield
         finally:
             _remove(path)
+            managed_record().unlink(missing_ok=True)
         return
     user = user_settings()
     saved = user.read_text() if user.exists() else None
     data = json.loads(saved) if saved else {}
-    user.parent.mkdir(parents=True, exist_ok=True)
-    user.write_text(json.dumps({**data, key: True}, indent=2) + "\n")
     try:
+        user.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(user_saved(), json.dumps({"text": saved}))
+        _write_atomic(user, json.dumps({**data, key: True}, indent=2) + "\n")
         yield
     finally:
-        if saved is None:
-            user.unlink(missing_ok=True)
-        else:
-            user.write_text(saved)
+        _restore_user(saved)
 
 
 def skipped(step: Step, managed: bool, user_settings: bool) -> str | None:
@@ -789,6 +911,10 @@ def testable(step: Step, world: World) -> tuple[bool, str]:
     it without a sandbox and a hook (`reachable`); ~/.claude must hold something to hide."""
     if step.expect in REACH_EXPECTS and step.tool == "Bash":
         return reachable(step, world)
+    if step.expect == "hidden":  # the positive control: there is a secret to hide
+        target = Path(world.fill(step.target.split(";")[0].removeprefix("cat ").strip(), ""))
+        found = target.is_file() and world.secret in target.read_text(errors="replace")
+        return found, "" if found else f"{target} does not hold the marker credential"
     if step.expect == "home-hidden":
         home = Path.home() / ".claude"
         found = home.is_dir() and any(home.iterdir())
@@ -812,7 +938,8 @@ def reachable(step: Step, world: World) -> tuple[bool, str]:
         if not private(step):  # the shell's messages may quote a private line
             said += f", {(done.stdout + done.stderr).strip()[:160]!r}"
     except subprocess.TimeoutExpired:
-        said = f"no end within {REACH_TIMEOUT} s"
+        clear_markers(world)  # a timeout never counts as reached, whatever it left
+        return False, f"no end within {REACH_TIMEOUT} s"
     reached = any((world.clone / ".git" / "maity" / "probe").iterdir())
     clear_markers(world)
     return reached, said
@@ -832,7 +959,10 @@ def selected(all_steps: Sequence[Step], only: str | None) -> list[Step]:
 
 
 def exit_code(outcomes: Sequence[Outcome]) -> int:
-    return 1 if any(o.status in ("FAIL", "INCONCLUSIVE", NOT_TESTABLE) for o in outcomes) else 0
+    """0 only when no step failed or lacked evidence and at least one passed: a run of SKIPs
+    alone shows nothing."""
+    bad = any(o.status in ("FAIL", "INCONCLUSIVE", NOT_TESTABLE) for o in outcomes)
+    return 1 if bad or not any(o.status == "PASS" for o in outcomes) else 0
 
 
 def preflight(binary: str) -> str | None:
@@ -857,6 +987,22 @@ def preflight(binary: str) -> str | None:
     if seccomp.outcome != "ok":
         return capabilities.claude_seccomp_line(seccomp)
     return None
+
+
+def remove_scratch(root: Path) -> None:
+    """Remove the scratch directory, and say so on stderr, with its path, if anything stays."""
+    failed: list[str] = []
+
+    def note(_func: Any, path: str, exc: Any) -> None:
+        failed.append(f"{path}: {exc[1] if isinstance(exc, tuple) else exc}")
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(root, onexc=note)
+    else:  # pragma: no cover - Python 3.11
+        shutil.rmtree(root, onerror=note)
+    if failed or root.exists():
+        print(f"cleanup failed: {root} was not removed whole ({len(failed)} error(s); first: "
+              f"{failed[0] if failed else 'none'})", file=sys.stderr)  # fmt: skip
 
 
 def version_of(line: str) -> str | None:
@@ -885,10 +1031,22 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
             print(f"cannot run: --extra-lines: {exc}", file=sys.stderr)
             return 2
     chosen = selected([*steps(), *extra], opts.only)
+    if not chosen:
+        print(f"cannot run: --only {opts.only!r} selects no step", file=sys.stderr)
+        return 2
     if extra and not any(step.id.split(".")[0] == EXTRA for step in chosen):
         print(f"cannot run: --only selects none of the --extra-lines steps (add {EXTRA})",
               file=sys.stderr)  # fmt: skip
         return 2
+    for line in recover():
+        print(f"recovered: {line}", file=sys.stderr)
+    if opts.managed or opts.user_settings:
+        running = claude_running(any_user=opts.managed)
+        if running:
+            print(f"cannot run: Claude Code runs on this host (pids {running}); --managed and "
+                  "--user-settings change settings it may read, so run them in a window with "
+                  "no placement and no other Claude Code session", file=sys.stderr)  # fmt: skip
+            return 2
     if not opts.no_preflight:
         why = preflight(binary)
         if why is not None:
@@ -900,7 +1058,12 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
     print(f"claude: {binary} ({version}); maity: {__version__}; scratch: {root}")
     outcomes: list[Outcome] = []
     try:
-        world = build(root, binary, version_of(version))
+        try:
+            world = build(root, binary, version_of(version))
+        except RuntimeError as exc:  # the runner would not start the placement here
+            print(f"cannot run: {exc} (a short TMPDIR, such as /tmp, gives the probe's "
+                  "scratch room)", file=sys.stderr)  # fmt: skip
+            return 2
         untestable = {}
         for step in chosen:  # the precondition, before any live run
             if step.change is not None and skipped(step, opts.managed, opts.user_settings):
@@ -919,7 +1082,7 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
             print(f"{outcome.status:<12} {step.id:<5} {step.title}: {outcome.detail}", flush=True)
     finally:
         if not opts.keep:
-            shutil.rmtree(root, ignore_errors=True)
+            remove_scratch(root)
     counts = {s: sum(o.status == s for o in outcomes)
               for s in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE", NOT_TESTABLE)}  # fmt: skip
     print("summary: " + ", ".join(f"{n} {s}" for s, n in counts.items()))
