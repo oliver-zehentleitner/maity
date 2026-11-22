@@ -114,7 +114,8 @@ pull_requests = true
 | `harness opencode: no OS sandbox; …` | opencode has no sandbox the runner switches on; under layout single an agent can do what the runner's user can. With `require_sandbox = true` under `[harness.opencode]` this is an error and opencode placements are refused. |
 | `pull_requests is not given to codex` | Codex runs `maity` inside its sandbox, so it gets no `maity gh`. |
 | `allow '…' is left out for antigravity` | agy does not match command grants the way Claude Code does; such commands run in agy's sandbox like any other. |
-| `the namespaces agy's terminal sandbox needs do not start` | On this host agy runs commands unsandboxed. |
+| `the namespaces agy's terminal sandbox needs are refused here, but an AppArmor profile named for agy is loaded` | AppArmor restricts unprivileged user namespaces on this host, and a profile for agy may grant agy its own; the runner cannot verify it without root. On the Ubuntu lab host agy's own sandbox was seen starting under such a profile (tsk-xjy2d5617sar). |
+| `agy's terminal sandbox cannot start on this host` (an error) | The namespaces are refused and nothing lifts that: agy runs commands unsandboxed. With `require_sandbox = true` under `[harness.antigravity]` agy starts are refused; with `false` they start and the log says so at every start. |
 | `sandbox reported off … sandbox_unavailable` | agy's sandbox is reported off until the runner has seen it start, on every host for now. |
 | `~/.claude/settings.json allows N rule(s) of its own` | Every Claude Code agent the runner starts inherits them; use a user of its own for the runner. |
 | `could not tell whether a user namespace starts inside bubblewrap` | The nesting probe did not answer; it blames nothing. Run it by hand ([Ubuntu: nested user namespaces](runners.md#ubuntu-nested-user-namespaces)). |
@@ -123,7 +124,7 @@ pull_requests = true
 
 - **Ubuntu, AppArmor:** Claude Code's sandbox needs a nested user namespace that Ubuntu's `bwrap-userns-restrict` refuses. The verified fix and its scope are in [Ubuntu: nested user namespaces](runners.md#ubuntu-nested-user-namespaces). It needs root and affects every bubblewrap sandbox on the host.
 - **OpenCode has no sandbox.** Under the `single` layout an OpenCode agent can do what the agents' user can, including reading the other agents' clones. Place only test members with it until it gets one (tsk-nynpvag9zvhh).
-- **Antigravity** runs unsandboxed where its namespaces do not start, and is reported `sandbox_unavailable` everywhere for now. Its command grants do not apply (above).
+- **Antigravity** runs unsandboxed where its namespaces cannot start, and is reported `sandbox_unavailable` everywhere for now. Its command grants do not apply (above). On Ubuntu with AppArmor's userns restriction on, an AppArmor profile for agy that grants `userns` lets agy's sandbox start; it needs root and is the operator's call. Where agy's sandbox cannot start, `check` reports an error, and `require_sandbox = true` refuses agy starts there ([Antigravity (agy)](runners.md#antigravity-agy)).
 
 ## Known gaps
 

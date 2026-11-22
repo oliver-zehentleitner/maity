@@ -1064,6 +1064,69 @@ exists, the code follows the contract and reports `off`.
   which a supervised run refuses, and a host where it does start would
   lose it.
 
+## The agy probe tells a refusal agy's AppArmor profile may lift from one nothing lifts, and an agy start where nothing lifts it is said aloud
+
+**Id:** 24f14360-e568-46eb-8132-690dd741b94e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-xjy2d5617sar, 2026-11-22: ops 3yc2's live check on the Ubuntu runner (note nte-vhg5zfwsje6h: agy 1.5.14's own `clone` of user, mount, pid and net namespaces succeeds there under its AppArmor profile, while plain `unshare` fails at `uid_map`); the four-host table (notes nte-dty526f7nv5s, nte-w7et0ds1eb3h); 3yc2's checks (a)–(c) on the same host; lotse's rulings on the warn-or-refuse question and on the fallback
+**See:** runner.md#agys-sandbox-is-reported-off-until-the-runner-sees-agys-own-sandbox-start — 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6 — as of 2026-11-22
+**Revisit when:** an unprivileged process can run under, or read the attachment and rules of, a loaded AppArmor profile; agy gains a bounded start of its sandbox alone; Oliver overrules the start-anyway rule below
+
+`agy_sandbox` answers four ways, as the agents' user. The namespaces start
+(`ok`, as before). They are refused, but a loaded AppArmor profile is named
+`agy`, or after agy's resolved binary: a warning, "not verified". They are
+refused and no such profile is loaded: "cannot start". Or the probe cannot
+tell (no `unshare`, a failure that is no refusal, the profile list
+unreadable): "not checked", a warning. Only `uid_map`, `gid_map`,
+`setgroups` or the unshare call failing (read under `LC_ALL=C`) count as a
+refusal. `maity runner check` reports "cannot start" as an error naming
+`require_sandbox`. A start asks the probe once per target and agy binary
+for the service's lifetime. Where the answer is "cannot start" and
+`require_sandbox = false` let the start through, the runner logs loudly, at
+every such start, that the placement runs commands unsandboxed. With
+`require_sandbox = true` the start is refused, as it already was, since
+agy's sandbox is reported off.
+
+**Reason:** On the Ubuntu runner, `kernel.apparmor_restrict_unprivileged_userns
+= 1` refuses user namespaces to every program whose profile lacks `userns`,
+so the plain probe failed and `check` said agy runs unsandboxed. But an
+operator-loaded profile for agy grants `userns`, and agy's own sandbox was
+seen starting there (3yc2), so the warning was false. The probe can only
+tell the two apart by the profile's name. The behavioural check was tried
+first, and it cannot work unprivileged: 3yc2's check (b) found that under
+`aa-exec -p agy`, or after writing `exec agy` to
+`/proc/self/attr/apparmor/exec`, the label becomes the stack
+`agy//&unconfined`, and `unshare` still fails at `uid_map`. Check (a) found
+that the profile's `attach` reads `<unknown>` and its `raw_data` is
+unreadable without privilege. The cost of going by the name: a host whose
+profile named `agy` does not grant `userns` gets a warning, where the error
+would be right. The probe can err only towards a warning, never towards
+`ok`. Oliver's standing rule (2026-11-18) is that every agent must be
+startable and that a trade-off such as no sandbox is allowed when it is
+documented, so the start follows `require_sandbox` instead of being
+refused outright, and it is never silent.
+
+**Rejected alternatives:**
+- The behavioural probe: run the same `unshare` under agy's profile
+  (`aa-exec`, or a `change_onexec` write). An unprivileged task only
+  stacks the profile and stays restricted, so it never succeeds (3yc2's
+  check (b)), and it cannot confirm agy's profile.
+- Reading `kernel.apparmor_restrict_unprivileged_userns` to choose the
+  branch: what decides is the loaded profiles, not the sysctl, as the
+  bubblewrap probe found (0f216e9d-1661-4887-a035-094efa301dfa). The
+  probe stays behavioural up to the refusal and reads only the profile
+  names after it.
+- Refusing every agy start where its sandbox cannot start, whatever
+  `require_sandbox` says (xpde's first proposal, matching Claude Code's
+  "strict or not at all"): lotse ruled against it under Oliver's
+  startable-agents rule, so it is recorded here for Oliver to overrule in
+  the PR.
+- A contract detail code for the unsandboxed start: lotse left it out of
+  this change. The report stays `sandbox_unavailable`, and a code would
+  be its own contract card.
+
 ## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
 
 **Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
