@@ -809,7 +809,7 @@ def test_codex_home_lies_in_the_reopened_scratch_not_the_hidden_state_dir(tmp_pa
     placement's own codex-home, so Codex's per-command helper can be created and run. Red before
     the fix, when CODEX_HOME sat in agent_dir under the hidden state directory."""
     workspaces = tmp_path / "ws"
-    place_scratch = workspaces / "proj" / ".scratch" / "plc-0003"
+    place_scratch = workspaces / ".scratch" / "proj" / "plc-0003"
     place_scratch.mkdir(parents=True)
     state_dir = tmp_path / "st"  # the fixture's agent_dir lives under it
     ctx = context(
@@ -837,7 +837,7 @@ def test_a_placements_profile_hides_another_placements_codex_home(tmp_path: Path
     placement's codex-home, under the shared workspaces root this profile hides, is not
     reachable from it."""
     workspaces = tmp_path / "ws"
-    mine = workspaces / "proj" / ".scratch" / "plc-0003"
+    mine = workspaces / ".scratch" / "proj" / "plc-0003"
     mine.mkdir(parents=True)
     ctx = context(
         tmp_path, harness_id="codex", binary="/usr/bin/codex",
@@ -846,7 +846,7 @@ def test_a_placements_profile_hides_another_placements_codex_home(tmp_path: Path
         placement={**PLACEMENT, "mode": "supervised"},
     )  # fmt: skip
     filesystem = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"]["filesystem"]
-    other = workspaces / "other" / ".scratch" / "plc-9999" / "codex-home"
+    other = workspaces / ".scratch" / "other" / "plc-9999" / "codex-home"
     assert _effective_rule(filesystem, other) == "none"
     assert _effective_rule(filesystem, adapters.codex_home(ctx)) == "read"
     assert _effective_rule(filesystem, adapters.codex_home(ctx) / "tmp") == "read"
@@ -961,7 +961,7 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     # Codex: the leaf's `tmp` is its TMPDIR as before, with no CLAUDE_CODE_TMPDIR. Its launch
     # writes its CODEX_HOME into the scratch, so that scratch is made, still with no room for a
     # socket.
-    made = tmp_path / "c" / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    made = tmp_path / "c" / ("w" * 60) / ".scratch" / "maity" / "plc-0000000000000003"
     made.mkdir(parents=True)
     assert adapters.scratch_tmpdir(made) is None
     codex = context(
@@ -1022,7 +1022,7 @@ def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Pa
 
 def _codex_scratch_context(tmp_path: Path) -> adapters.Context:
     workspaces = tmp_path / "ws"
-    place_scratch = workspaces / "proj" / ".scratch" / "plc-0003"
+    place_scratch = workspaces / ".scratch" / "proj" / "plc-0003"
     return context(
         tmp_path, harness_id="codex", binary="/usr/bin/codex",
         clone=workspaces / "proj" / "agent-3",

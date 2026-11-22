@@ -106,12 +106,14 @@ def _below(path: str, under: str, former: bool = False) -> list[str]:
         names = PurePath(path).relative_to(PurePath(under)).parts
     except ValueError:
         raise OSError(f"{path} is not inside {under}") from None
-    if len(names) == 3 and SCRATCH_ID.fullmatch(names[2]) and (
-        (names[0] == SCRATCH and TOKEN.fullmatch(names[1]))
-        or (former and TOKEN.fullmatch(names[0]) and names[1] == SCRATCH)
-    ):
+    wrong = OSError(f"{path} is not a placement's scratch under {under}")
+    if len(names) != 3 or not SCRATCH_ID.fullmatch(names[2]):
+        raise wrong
+    new = names[0] == SCRATCH and TOKEN.fullmatch(names[1])
+    old = former and names[1] == SCRATCH and TOKEN.fullmatch(names[0])
+    if new or old:
         return list(names)
-    raise OSError(f"{path} is not a placement's scratch under {under}")
+    raise wrong
 
 
 def _holder(root_fd: int, make: bool) -> int:

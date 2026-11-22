@@ -606,8 +606,12 @@ class Supervisor:
                     # Beside the clone, the former per-project scratch goes too, wherever a start
                     # before the holder made one (tsk-c7zzd440x8pn); the holder's project
                     # directory stays, even empty (scratchop.remove).
-                    paths = [path] if in_tmp else [path, workspace.scratch_of(
-                        target.workspaces, p["project_id"], p["id"], target.host, former=True)]
+                    paths = [path]
+                    if not in_tmp:
+                        old = workspace.scratch_of(
+                            target.workspaces, p["project_id"], p["id"], target.host, former=True
+                        )
+                        paths.append(old)
                 except workspace.Refused:
                     break
                 for path in paths:
