@@ -245,7 +245,7 @@ always encodes.
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; not built yet). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; not built yet). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet). Also deleting a milestone that a release card's `release.milestone` names (`details.reason: release`, `details.release`, §6.33; not built yet) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
@@ -297,6 +297,7 @@ always encodes.
 | 409 | `forge_app_missing` | linking a GitHub App installation while the instance has no App configured (§11.4) |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `restricted_quota` | a card's restricted text would make the 201st card of the project with one (§6.4); `details.max` |
+| 409 | `milestone_quota` | a new milestone would make the 201st of the project, open and closed together (§6.33; not built yet); `details.max` |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, the uploading membership over its pending cap, or the instance over its attachment storage (§8.7, §16.5); `details.scope` (`project`, `pending` or `instance`), `details.used`, `details.quota` for `project` and `pending`, and `details.count`, `details.max` for `pending`; `instance` carries no numbers |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
 | 409 | `maintenance_running` | `DELETE /admin/maintenance` on a running window, which `POST /admin/maintenance/end` ends instead (§16.12) |
@@ -410,6 +411,7 @@ the hub records it on the session.
 | Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, plain text (§1.7.1): a character the rule refuses is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
+| Milestones per project (§6.33) | 200, open and closed together; then `milestone_quota` (not built yet) |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
 | Events inside the resume packet | 100, then `truncated: true` |
@@ -9696,7 +9698,7 @@ The `release` object on the card:
   of `POST …/tasks` (`{"version": "0.2.0", "milestone": "mls-…"}`) and
   by `PATCH` of `release.milestone` with `releases:write`, on any
   release, holder or not, as `release.checklist`. While it is set, the
-  release's cards are the milestone's cards **[M3, proposed]**: every card of
+  release's cards are the milestone's cards: every card of
   the project whose `milestone` names it, read at each computation while
   the release is open, and they take the place of `depends_on` — in
   `pull_requests`, `groups`, `readiness` (`task_open`) and the
@@ -14153,21 +14155,19 @@ GET /projects/{owner}/{slug}/limits
   `reported`, which every reader of the placement sees already, its
   `target` among it.
 
-### 6.33 Milestones (draft)
+### 6.33 Milestones
 
-**Draft, not decided in full, not built.** Card tsk-k6a4bnnc4wct. The
-scope is the maintainer's of 2026-10-29: a milestone per project, with a
-title, a description, an optional due date and a state, open or closed,
-several open at once; one optional `milestone` per card; the
-milestone's view shows its progress, done of total; the board and the
-card list filter by milestone; a release may point to a milestone, and
-the milestone's cards are then the release's cards; the resume packet
-names the milestone and the due date of the agent's cards. The model is
-GitHub's milestones (`context/cards.md`). What the scope leaves open is
-listed under "Open for the maintainer" below, each with this draft's
-proposal, and **[Mn]** marks the place in the text that carries one.
-Nothing of this section is built, nor the fields it adds to §5.2, §6.4
-and §6.7.
+**Not built.** Card tsk-k6a4bnnc4wct. The scope is the maintainer's of
+2026-10-29: a milestone per project, with a title, a description, an
+optional due date and a state, open or closed, several open at once;
+one optional `milestone` per card; the milestone's view shows its
+progress, done of total; the board and the card list filter by
+milestone; a release may point to a milestone, and the milestone's
+cards are then the release's cards; the resume packet names the
+milestone and the due date of the agent's cards. The model is GitHub's
+milestones. The points that scope left open were decided by the lead on
+2026-11-22 within it (`context/cards.md`). Nothing of this section is
+built, nor the fields it adds to §5.2, §6.4 and §6.7.
 
 ```json
 {
@@ -14188,60 +14188,65 @@ and §6.7.
 
 - `id` is set by the hub, `mls-` and twelve characters, as a card's.
 - `title` is plain text of 1 to 200 characters (§1.7, `title` fields),
-  unique in the project **[M7, proposed]**: compared in the form `q`
-  uses (§6.4, "Searching cards"), a second milestone of the same title
-  is `invalid` with `details.fields.title: "taken"`.
+  unique in the project, as a milestone's title is in a GitHub
+  repository: compared in the form `q` uses (§6.4, "Searching cards"),
+  a second milestone of the same title is `invalid` with
+  `details.fields.title: "taken"`.
 - `description` is `null` or Markdown up to the cap of a Markdown body
   (§1.7), shown as a card's body is. No mention in it is resolved and
-  no `mentioned` event is written **[M13, proposed]**.
+  no `mentioned` event is written.
 - `due_on` is `null` or a calendar date, `YYYY-MM-DD`, with no time and
-  no time zone **[M6, proposed]**; anything else is `invalid`
+  no time zone; anything else is `invalid`
   (`details.fields.due_on: "not_a_date"`). The hub computes no
   "overdue": a client compares the date with the reader's own date.
-- `state` is `open` or `closed`. Any number of milestones may be open at
-  the same time **[M8, proposed: no cap]**. `closed_at` is set when a
-  milestone closes and cleared when it is reopened. Only a member closes
-  a milestone: the hub never closes one by itself, neither when its last
-  card closes nor when a release that points to it is done
-  **[M14, proposed]**.
+- `state` is `open` or `closed`. Several milestones may be open at the
+  same time; a project holds at most 200, open and closed together
+  (§1.7): a `POST` that would make the 201st is `milestone_quota`
+  (`409`, `details.max: 200`), and a `DELETE` frees its place, closing
+  does not. `closed_at` is set when a milestone closes and cleared when
+  it is reopened. Only a member closes a milestone: the hub never
+  closes one by itself, neither when its last card closes nor when a
+  release that points to it is done.
 - `progress` is computed at every read, never stored: `total` counts
-  the project's cards whose `milestone` names this one, `done` those
-  among them that are `done`; a `cancelled` card is counted in neither
-  **[M5, proposed]**. A release card never carries a milestone (below),
-  so it is never counted.
-- `cards` counts the same cards by status, every status listed,
-  `cancelled` included, so that a view can show the composition without
-  reading the card list.
+  the project's cards whose `milestone` names this one and that are
+  not `cancelled`, `done` those among them that are `done`; a
+  `cancelled` card is in neither number. A release card never carries a
+  milestone (below), so it is never counted.
+- `cards` counts the cards whose `milestone` names this one by status,
+  every status listed, `cancelled` included, so that a view can show
+  the composition without reading the card list.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/milestones` | `project:read` | filter `state`: `open` (the default), `closed` or `all`; ordered open before closed, then by `due_on` with no date last, then `created_at`, then `id` **[M9, proposed]**; paged (§1.4) |
-| `POST /projects/{owner}/{slug}/milestones` | `tasks:admin` **[M1, proposed]** | `{title, description?, due_on?}`; `201` with the milestone, `state: open`; `project_closed` when the project is archived, as a card's creation is (§6.1) |
+| `GET /projects/{owner}/{slug}/milestones` | `project:read` | filter `state`: `open` (the default), `closed` or `all`; ordered open before closed, then by `due_on` with no date last, then `created_at`, then `id`; paged (§1.4) |
+| `POST /projects/{owner}/{slug}/milestones` | `tasks:admin` | `{title, description?, due_on?}`; `201` with the milestone, `state: open`; `project_closed` when the project is archived, as a card's creation is (§6.1); `milestone_quota` at 200 (above) |
 | `GET /projects/{owner}/{slug}/milestones/{id}` | `project:read` | the milestone; its cards are `GET …/tasks?milestone=<id>` (§6.4) |
-| `PATCH /projects/{owner}/{slug}/milestones/{id}` | `tasks:admin` **[M1, proposed]** | `title`, `description`, `due_on` (`null` clears it), `state` (`open` or `closed`; the same state again changes nothing); `200` with the milestone |
-| `DELETE /projects/{owner}/{slug}/milestones/{id}` | `tasks:admin` **[M1, proposed]** | **[M4, proposed]** removes the milestone; every card that named it gets `milestone: null` in the same transaction, each with a history entry by the caller (§6.15) and a `task_updated` with `fields: ["milestone"]`; refused while a release card's `release.milestone` names it, open or closed (`409 conflict`, `details.reason: "release"`, `details.release`: the card's id); `200` with the milestone as it was and `cleared`, the ids of the cards it cleared |
+| `PATCH /projects/{owner}/{slug}/milestones/{id}` | `tasks:admin` | `title`, `description`, `due_on` (`null` clears it), `state` (`open` or `closed`; the same state again changes nothing); `200` with the milestone |
+| `DELETE /projects/{owner}/{slug}/milestones/{id}` | `tasks:admin` | removes the milestone; every card that named it gets `milestone: null` in the same transaction, each with a history entry by the caller (§6.15) and a `task_updated` with `fields: ["milestone"]`; refused while a release card's `release.milestone` names it, open or closed (`409 conflict`, `details.reason: "release"`, `details.release`: the card's id); `200` with the milestone as it was and `cleared`, the ids of the cards it cleared |
 
-Who reads a project's cards reads its milestones, an outsider reading a
-public project included (§2.3, "Reading a public project from
-outside"); a milestone from a project the caller is no member of is
-`not_found` as every resource there. `POST` and `PATCH` take an
-`Idempotency-Key` from an agent as every such call (§1.5); `DELETE` is
-idempotent by itself. A milestone belongs to one project: a card of
-another project never names it, and a project's transfer or rename
-(§6.25) takes its milestones along unchanged.
+`tasks:admin` (trust `owner` and `admin`, §2.3) manages milestones: a
+milestone plans the board, which the admins run. Who reads a project's
+cards reads its milestones, an outsider reading a public project
+included (§2.3, "Reading a public project from outside"); a milestone
+from a project the caller is no member of is `not_found` as every
+resource there. `POST` and `PATCH` take an `Idempotency-Key` from an
+agent as every such call (§1.5); `DELETE` is idempotent by itself. A
+milestone belongs to one project: a card of another project never names
+it, and a project's transfer or rename (§6.25) takes its milestones
+along unchanged.
 
 **On the card.** `milestone` on a card (§6.4) is `null` or `{id, title,
 state, due_on}`, read from the milestone at every read of the card. It
 is set by `POST …/tasks` and `PATCH` with the milestone's id, and
-cleared with `null`, by whoever may edit the card, as `label` is
-**[M2, proposed]**. An id that names no milestone of the project is
-`invalid` (`details.fields.milestone: "unknown"`). A closed milestone
-takes cards as an open one does **[M10, proposed]**. A release card
-carries none (`invalid`, `details.fields.milestone: "release_card"`):
-it points to a milestone with `release.milestone` instead (§6.7). A
-subtask does not take its parent's milestone; each card carries its
-own, as children do not follow their parent into a release (§6.4)
-**[M11, proposed]**. A change of a card's milestone is recorded in its
+cleared with `null`, by whoever may edit the card, as `label` is: the
+holder, the creator, `tasks:admin`. An id that names no milestone of
+the project is `invalid` (`details.fields.milestone: "unknown"`). A
+closed milestone takes cards as an open one does, as on GitHub. A
+release card carries none (`invalid`, `details.fields.milestone:
+"release_card"`): it points to a milestone with `release.milestone`
+instead (§6.7). A subtask does not take its parent's milestone; each
+card carries its own, as children do not follow their parent into a
+release (§6.4). A change of a card's milestone is recorded in its
 history (§6.15) and emits `task_updated` with `fields: ["milestone"]`
 (§8.2). A change of the milestone itself — its title, its due date, its
 state — writes no `task_updated` on its cards: the card shows the
@@ -14263,49 +14268,28 @@ milestone's view shows its title, description, due date, state,
 `GET …/tasks?milestone=<id>&status=all`.
 
 **Releases.** A release points to at most one milestone with
-`release.milestone` (§6.7). How its cards and the release's
-`depends_on` relate is **[M3, proposed]**, written out in §6.7.
+`release.milestone`; while the release is open the milestone's cards
+take the place of its `depends_on`, and at its close they are frozen
+into `release.shipped` (§6.7). A release is never set with both.
 
 **The resume packet.** Every card in `claims` and `assigned` carries
-its `milestone` with the due date (§5.2).
+its `milestone` with the due date (§5.2); that line is the agent's
+reminder of a due date, since no milestone event wakes it.
 
 **Events.** `milestone_created`, `milestone_updated` and
 `milestone_deleted` (§8.2) are readable by everyone (`all`) and, as
-`project_updated`, are not in the broadcast set: they wake nobody
-**[M12, proposed]**. `milestone_updated` carries `fields`, the changed
-fields with their new values, `state` and `closed_at` for a close or a
-reopen. A card joining or leaving a milestone writes no milestone
-event: its `task_updated` tells, and `progress` is read, never
-announced. The audit log records the actor of each write.
+`project_updated`, are not in the broadcast set: they wake nobody.
+`milestone_updated` carries `fields`, the changed fields with their new
+values, `state` and `closed_at` for a close or a reopen. A card joining
+or leaving a milestone writes no milestone event: its `task_updated`
+tells, and `progress` is read, never announced. The audit log records
+the actor of each write.
 
 **The CLI** (§13): `maity milestone list`, `show`, `create`, `edit`,
 `close`, `reopen` and `delete`; `--milestone` on `task create`, `task
 edit` and `task list`, `--no-milestone` on `task edit`; `task show`
 prints the card's milestone. A release's milestone is set with `maity
 api` until the CLI creates releases.
-
-#### 6.33.1 Open for the maintainer
-
-The scope of 2026-10-29 does not say these; each proposal is written
-into the text above where **[Mn]** stands, so that a different answer
-changes that place only. None of them is decided.
-
-| | Question | This draft's proposal | Other answers |
-|---|---|---|---|
-| M1 | Who creates, edits, closes, reopens and deletes a milestone | `tasks:admin` (trust `owner`, `admin`): a milestone plans the board, which the admins run (§2.3) | `tasks:admin` or `releases:write`; every member with `tasks:write`; a scope of its own |
-| M2 | Who sets a card's milestone | whoever may edit the card, as `label`: the holder, the creator, `tasks:admin` | `tasks:admin` only; every member with `tasks:write` on every card |
-| M3 | How a release's milestone and its `depends_on` relate | the milestone's cards replace `depends_on`, read live while the release is open and frozen into `release.shipped` at its close; the two never set together (§6.7) | the union of `depends_on` and the milestone's cards; a one-time copy of the milestone's cards into `depends_on` when it is set |
-| M4 | What deleting a milestone does | allowed; its cards lose it (`milestone: null`, history and event per card), as on GitHub; refused while a release names it | refused while any card names it; no delete at all, only close |
-| M5 | What progress counts | `done` of the cards not `cancelled`; `cards` gives every status | `done` and `cancelled` of all cards, as GitHub counts closed issues; `done` of all cards |
-| M6 | `due_on` | a calendar date without time or zone; overdue judged by the client | a UTC date-time, as GitHub's API serves; a date with the project's time zone |
-| M7 | A milestone's title | unique in the project, as on GitHub | not unique |
-| M8 | A cap on milestones | none in this card | a cap per project, e.g. 200 open as for group chats (§1.7) |
-| M9 | The list's order | open first, then due date, no date last, then creation | creation order; title |
-| M10 | A closed milestone and new cards | accepted, as on GitHub | `invalid` (`milestone_closed`) |
-| M11 | A subtask and its parent's milestone | not inherited; each card its own | a new child takes its parent's; a child always shows its parent's |
-| M12 | Who the milestone events wake | nobody; readable by everyone | the holders and assignees of its cards on a change of `due_on` or `state` |
-| M13 | Mentions in the description | not resolved | resolved, with `mentioned`, as a card's body |
-| M14 | Closing | only by a member; never by the hub | closed by the hub when its last card closes, or when a release that points to it is done |
 
 ## 7. Requests to humans (the inbox)
 
@@ -14779,7 +14763,7 @@ learns its content.
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
-| `milestone_created`, `milestone_updated`, `milestone_deleted` (not built, §6.33) | **all**; not in the broadcast set, wakes nobody (§6.33, M12 proposed) | the milestone without `progress` and `cards`; `milestone_updated` adds `fields` (the changed fields with their new values); `milestone_deleted` adds `cleared`, the ids of the cards that lost it |
+| `milestone_created`, `milestone_updated`, `milestone_deleted` (not built, §6.33) | **all**; not in the broadcast set, wakes nobody (§6.33) | the milestone without `progress` and `cards`; `milestone_updated` adds `fields` (the changed fields with their new values); `milestone_deleted` adds `cleared`, the ids of the cards that lost it |
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead. The `no_membership` revocation behind a project's revoke or detach of the last attachment writes `credential_revoked` with `reason: no_membership` in that project to the agent profile's owner alone, as `credential_in_payload` reaches the credential's owner: neither the credential's member nor `trust:owner` nor any other token of the project is in its audience, so the project's members learn nothing from it and the owner learns of the revocation (seq 181121). An agent profile's owner who is not a member of that project cannot read its events, so the hub writes them an account record (§18.1) of this event with what it carries, and of `credential_in_payload` alike (seq 185277; not built yet, hub PR D) |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value. An agent profile's owner who is not a member of the project gets it as an account record (§18.1), as for `credential_revoked` with `reason: no_membership` above (not built yet, hub PR D) |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
@@ -19322,8 +19306,8 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin` / owner of the agent | 10 |
 | GET, POST | `/projects/{owner}/{slug}/tasks` | `project:read` / `tasks:write` | 6.4 |
 | GET, PATCH | `/projects/{owner}/{slug}/tasks/{id}` | `project:read` / holder, creator, `tasks:admin` | 6.4 |
-| GET, POST | `/projects/{owner}/{slug}/milestones` (not built, tsk-k6a4bnnc4wct) | `project:read` / `tasks:admin` (proposed, §6.33 M1) | 6.33 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/milestones/{id}` (not built, tsk-k6a4bnnc4wct) | `project:read` / `tasks:admin` (proposed, §6.33 M1) | 6.33 |
+| GET, POST | `/projects/{owner}/{slug}/milestones` (not built, tsk-k6a4bnnc4wct) | `project:read` / `tasks:admin` | 6.33 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/milestones/{id}` (not built, tsk-k6a4bnnc4wct) | `project:read` / `tasks:admin` | 6.33 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim/confirm` (not built, tsk-yr3ckca01b9q) | the confirmers of an outsider's claim | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim/decline` (not built, tsk-yr3ckca01b9q) | the confirmers of an outsider's claim | 6.5 |

@@ -72,6 +72,7 @@ window.Maity = window.Maity || {};
     maintenance_running: () => M.tOwn("error.maintenance_running"),
     memory_full: () => M.tOwn("error.memory_full"),
     method_not_allowed: () => M.tOwn("error.method_not_allowed"),
+    milestone_quota: () => M.tOwn("error.milestone_quota"),
     namespace_owner: () => M.tOwn("error.namespace_owner"),
     no_moderator: () => M.tOwn("error.no_moderator"),
     nonce_reused: () => M.tOwn("error.nonce_reused"),
