@@ -2890,11 +2890,15 @@ width.
 
 The project's block of links, state, released mark and absence (`.project-state`) no longer stands
 at the right of the project switcher; it stands at the right of the project's tabs, behind its
-separator, in one row (`.views-row`). The block keeps its full width; `nav.views` takes what is
-left and scrolls sideways in it, with the fade on the side that is cut off (the tab rows' existing
-cue) and no scrollbar. A mouse wheel's up and down turn this row (and All projects' page tabs, the
-same `nav.views`) while it has more that way, and scroll the page as before once it is at its end
-or fits; the switcher and the other rows that scroll keep the wheel for the page. A trackpad's and
+separator, in one row (`.views-row`). Where there is room the block keeps its full width;
+`nav.views` takes what is left and scrolls sideways in it, with the fade on the side that is cut
+off (the tab rows' existing cue) and no scrollbar. The fade also follows a change of the row's own
+size (a ResizeObserver on every row with the cue, the window's resize as the fallback), since the
+block or a count beside the tabs can narrow the row with no scroll and no window resize. A mouse
+wheel's up and down turn this row only (the `nav.views` inside `.views-row`) while it has more
+that way, and scroll the page as before once it is at its end or fits; All projects' page tabs,
+though also a `nav.views`, the switcher and the other rows that scroll keep the wheel for the page.
+A trackpad's and
 a touch's sideways move are the browser's own. The current tab, and a tab reached with the keyboard
 (a focus the browser rings, `:focus-visible`), are scrolled into the row clear of the 32 px fade; a
 tab focused by a mouse press is not moved, since a row moved between the press and the release
@@ -2923,8 +2927,11 @@ wrapping under the tabs where too little room was left: it stood against the hea
 with its separator beside nothing (review of PR #2115). On a phone, the block above the tabs by flex
 `order`: what is seen and the Tab order disagreed; putting the block first in the page instead would
 make the keyboard reach it before the tabs on a desktop too, where it stands at their right. The
-wheel on every header row: on the switcher and the account's rows it took the page's scroll from a
-reader who only meant to scroll the page.
+wheel on every header row, or on every `nav.views` (All projects' page tabs too): on the switcher,
+the account's rows and All projects' tabs it took the page's scroll from a reader who only meant
+to scroll the page, and the request was about the project's tabs (review of PR #2115). The fade
+recomputed only on scroll and window resize: a row narrowed by itself kept a stale fade, or none
+(review of PR #2115, seen in the e2e run).
 
 ## Runners in the gear menu, not in the projects' row
 
