@@ -62,10 +62,10 @@ def logged_in(harness_id: str, binary: str, as_user: AsUser) -> bool:
 # Each probe's own answer for "not logged in": its exit code, and where the same code also
 # means an error, the line it then writes (security review A1942). `codex login status`
 # exits 1 with the line "Not logged in", and also exits 1 on an error, with another line.
-# Claude Code has no entry yet, so none of its answers is `needed` (the lead, seq 189704):
-# `claude auth status` exits 1 when not logged in, but whether an error exits 1 too, and
-# which line a logout then writes, waits for ops to see it live; a real logout meanwhile
-# shows as a restart and then `hung`, which costs availability only.
+# Claude Code has no entry, so none of its answers is `needed` (the lead, seq 189704): ops'
+# live check (2026-11-21) saw `claude auth status` answer a logout and an unreadable
+# configuration the same way (exit 1, `"loggedIn": false`), so a logout cannot be told from
+# an error; a real logout shows as a restart and then `hung`, which costs availability only.
 LOGIN_NEEDED: dict[str, tuple[int, str | None]] = {
     "codex": (1, "Not logged in"),
 }
