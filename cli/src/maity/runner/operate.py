@@ -487,7 +487,7 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
             found += [(holder / name, kind) for name, kind in as_user.entries(holder, 1)]
     except (OSError, subprocess.SubprocessError) as exc:
         raise Refused(f"cannot list the scratches under {root} ({exc})") from None
-    for link in skipped:  # so the operator sees why nothing behind it was cleaned (A2055)
+    for link in sorted(skipped):  # so the operator sees why nothing behind it was cleaned
         print(f"scratch  {onboarding.inline(str(link))}: a link, skipped (not gone into)")
     for entry, kind in sorted(found):
         if entry.name in active:

@@ -350,9 +350,14 @@ def size(under: str, path: str) -> dict[str, object]:
 def remove(under: str, path: str) -> dict[str, object]:
     """The scratch at `path`, of either shape, removed from its open parent, with its size
     before; `missing` when there is none. Only the scratch goes: the project's directory in the
-    holder stays, even empty, since a start may be making a scratch in it (no lock is shared)."""
+    holder stays, even empty, since a start may be making a scratch in it (no lock is shared).
+    In the holder shape the holder is checked first, as `make` checks it: a link or another
+    user's directory there is OnTheWay, and nothing is removed through it (A2068)."""
     names = _below(path, under, former=True)
     try:
+        if names[0] == SCRATCH:
+            with _opened(under, [], make=False) as root:
+                os.close(_holder(root, make=False))
         with _opened(under, names[:-1], make=False) as parent:
             return _remove_in(parent, names[-1])
     except FileNotFoundError:  # no root, project or `.scratch` either: no scratch

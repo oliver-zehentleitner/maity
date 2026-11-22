@@ -419,6 +419,9 @@ class Supervisor:
     # target name -> the running Claude Code placements last logged as still on the former
     # scratch layout there (`_note_former_layout`), so the line is written once per change.
     former_noted: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Targets whose scratch layout could not be told, each logged once with its cause until an
+    # answer comes (_host_layout; review A2069).
+    layout_unknown: set[str] = field(default_factory=set)
     # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
     # placement id -> earlier leaves not yet removed (TMP_STALE_FILE).
@@ -618,9 +621,10 @@ class Supervisor:
                     # Beside the clone, the former per-project scratch goes too, wherever a start
                     # before the holder made one (tsk-c7zzd440x8pn); the holder's project
                     # directory stays, even empty (scratchop.remove). The holder's path is asked
-                    # for only on a host whose `maity` has the holder op: an older one keeps the
-                    # former layout and cannot read that path (A2045). Where that cannot be told
-                    # (ssh unreachable), the placement stays uncleared and is tried again (A2055).
+                    # for only where a holder is there and the host's `maity` has the holder op:
+                    # an older one keeps the former layout and cannot read that path (A2045).
+                    # Where the host does not answer (ssh unreachable), nothing is asked of it
+                    # this pass, and the placement stays uncleared to be tried again (A2068).
                     paths = [path]
                     if not in_tmp:
                         old = workspace.scratch_of(
@@ -629,6 +633,7 @@ class Supervisor:
                         layout = self._host_layout(target)
                         if layout == "unknown":
                             done = False
+                            continue
                         paths = [*([path] if layout == "holder" else []), old]
                 except workspace.Refused:
                     break
@@ -661,23 +666,64 @@ class Supervisor:
                     self._save_scratch_names()
 
     def _host_layout(self, target: Target) -> str:
-        """The scratch layout `target`'s `maity` uses, from its answer to the holder op, never
-        from what directories exist (A2055): `holder` when it has the op (the holder is then
-        made or checked, as the next start would), `former` when it answers that it has none
-        (scratchop.Unsupported), `unknown` when there is no answer (an ssh transport failure,
-        exit 255). A holder that is a link or another user's is `holder`: a removal through
-        it refuses itself (OnTheWay) and is logged."""
+        """Whether a scratch can be in the holder on `target`, for the close and the sizes,
+        changing nothing there (A2068):
+        - `none` when the host answers that the workspaces root or the holder `<root>/.scratch`
+          is not there: no scratch can be in it, whatever the host's `maity` supports;
+        - else from the host's answer to the holder op on that existing holder (A2055):
+          `holder` when it has the op, `former` when it answers it has none
+          (scratchop.Unsupported); a link or another user's holder is `holder`, since a removal
+          through it refuses itself (OnTheWay, scratchop.remove) and is logged;
+        - `unknown` when no answer came: the directory question got none (an ssh transport
+          failure, a timeout, a path the runner cannot look at), or the holder op on an
+          existing holder failed otherwise. Logged once per target with its cause, so an
+          operator sees why a closed placement stays uncleared."""
         root = target.workspaces if target.host else target.workspaces.resolve()
+        holder = workspace.scratch_holder_of(root, target.host)
+        layout, cause = "holder", ""
+        for path in (root, holder):
+            there = self._is_dir_on(target, path)
+            if there is None:
+                layout, cause = "unknown", f"no answer whether {path} is there"
+                break
+            if not there:
+                layout = "none"
+                break
+        else:
+            try:
+                scratch.make_holder(root, holder, target.as_user)  # it exists: only checked
+            except scratchop.Unsupported:
+                layout = "former"
+            except scratchop.OnTheWay:
+                layout = "holder"
+            except (OSError, subprocess.SubprocessError) as exc:
+                layout, cause = "unknown", onboarding.inline(str(exc))[:200]
+        with self.lock:
+            first = layout == "unknown" and target.name not in self.layout_unknown
+            if layout == "unknown":
+                self.layout_unknown.add(target.name)
+            else:
+                self.layout_unknown.discard(target.name)
+        if first:
+            self.log(f"{target.name}: the scratch layout there cannot be told ({cause}); "
+                     "closed placements there stay uncleared until it answers")  # fmt: skip
+        return layout
+
+    def _is_dir_on(self, target: Target, path: Path) -> bool | None:
+        """Whether `path` is a directory on `target`'s agents' side, as an answer: None when
+        none came (an ssh transport failure, or a path the runner cannot look at), never
+        taken for "not there"."""
+        if target.as_user.direct:
+            try:
+                return present(path, "-d")
+            except OSError:
+                return None
+        probe = 'if test -d "$1"; then echo yes; else echo no; fi'
         try:
-            scratch.make_holder(root, workspace.scratch_holder_of(root, target.host),
-                                target.as_user)  # fmt: skip
-        except scratchop.Unsupported:
-            return "former"
-        except scratchop.OnTheWay:
-            return "holder"
+            done = target.as_user.run(["sh", "-c", probe, "sh", str(path)])
         except (OSError, subprocess.SubprocessError):
-            return "unknown"
-        return "holder"
+            return None
+        return {"yes": True, "no": False}.get(done.stdout.strip())
 
     def _remove_tmpdir(self, p: dict[str, Any], target: Target) -> bool:
         """Remove the leaf of a closed placement's own TMPDIR (`_tmpdir`) under the per-user
@@ -760,8 +806,8 @@ class Supervisor:
                 # into the holder keeps its former scratch until its close, as gc does.
                 former = workspace.scratch_of(target.workspaces, p["project_id"], p["id"],
                                               target.host, former=True)  # fmt: skip
-                old_host = self._host_layout(target) == "former"
-                paths = [*([] if old_host else [located[0]]), former]
+                in_holder = self._host_layout(target) in ("holder", "unknown")  # unknown: tried
+                paths = [*([located[0]] if in_holder else []), former]
                 sizes = [s for s in (scratch.measure(q, target.as_user) for q in paths)
                          if s is not None]  # fmt: skip
                 room = sum(sizes) if sizes else None

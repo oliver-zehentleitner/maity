@@ -6425,13 +6425,20 @@ runner gc --scratch` lists both layouts through the agents' side
 (`AsUser.entries`, a fixed depth, links listed and never gone into), with
 the same name checks (review A2045, P2); a link it skips is named in one line,
 nothing behind it listed (A2055). A former-layout host's close asks only
-for the former scratch. Which layout a host uses comes from its answer to
-the holder op (`_host_layout`: `holder`, `former` for Unsupported, or
-`unknown` with no answer), never from which directories exist. With
-`unknown` (an ssh transport failure) the placement stays uncleared and is
-tried again (A2055). Rejected: deciding by whether the holder exists (an
-unreachable host looked like "no holder", and an older helper left with
-a holder still got a path it cannot read).
+for the former scratch. `_host_layout` changes nothing on the host
+(A2068). An answered "the root or the holder is not there" is `none`: no
+scratch can be in a holder there. Where the holder is there, the host's
+answer to the holder op on it decides: `holder`, or `former` for
+Unsupported. No answer (an ssh transport failure, a timeout, a path the
+runner cannot look at, or the holder op on an existing holder failing
+otherwise) is `unknown`: the close asks nothing of that host this pass and
+keeps the placement uncleared to try again (A2055), and the cause is
+logged once per target until an answer comes (A2069). Rejected: taking a holder that exists as
+support for the op (an older helper left with a holder still got a path it
+cannot read). Rejected too: the holder op alone, which made `.scratch` from
+the close and the sizes and read a missing root as no answer, so a closed
+placement was tried for ever. `scratchop.remove` checks the holder as
+`make` does, so nothing is removed through another user's holder.
 
 **Reason:** a read deny is fixed at the session's start (P4), so a deny can
 only cover a directory that exists then. One holder made once, inside the

@@ -4601,13 +4601,37 @@ def test_a_host_on_the_former_layout_finishes_the_close_cleanup(
     assert asked == [former] and not former.exists() and "plc-0003" in sup.scratch_cleared
 
 
+def test_the_close_and_the_sizes_make_no_holder_and_clear_without_one(world: Any) -> None:
+    """The review of #2112 (A2068): with no workspaces root yet, or a root without the holder,
+    the host has answered that no scratch can be in a holder: the close clears the placement
+    (no retry for ever), and neither the close nor the sizes make `.scratch` there."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    root = sup.cfg.local.workspaces.resolve()
+    assert not root.exists()
+    assert sup._host_layout(target) == "none"
+    sup.closed([CLOSED])
+    sup._clear_scratch(set(), set(sup.targets))
+    assert "plc-0003" in sup.scratch_cleared and not root.exists()
+    root.mkdir(parents=True)
+    former = former_scratch_of(sup)
+    (former / "tmp").mkdir(parents=True)
+    (former / "tmp" / "evidence").write_bytes(b"f" * 1000)
+    assert sup._host_layout(target) == "none"
+    recorded(sup.cfg)
+    sup.records["plc-0003"] = supervisor.Record(state="running", target="local")
+    sup._measure([placement()], 1e9)
+    assert sup.records["plc-0003"].scratch_bytes is not None  # the former one is measured
+    assert not (root / ".scratch").exists()  # and no holder was made for it
+
+
 def test_a_host_that_does_not_answer_keeps_the_placement_uncleared(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The review of #2112 (A2055): with no answer to the holder op (an ssh transport failure,
     exit 255) the layout is unknown, so the placement is not counted as cleared, and the next
     pass, with an answer, asks for the holder's scratch too and clears it."""
-    sup, *_ = world
+    sup, _, _, _, logs = world
     room, former = scratch_of(sup), former_scratch_of(sup)
     (room / "tmp").mkdir(parents=True)
     (former / "tmp").mkdir(parents=True)
@@ -4620,6 +4644,9 @@ def test_a_host_that_does_not_answer_keeps_the_placement_uncleared(
     sup.closed([CLOSED])
     sup._clear_scratch(set(), set(sup.targets))
     assert "plc-0003" not in sup.scratch_cleared and room.is_dir()  # kept for an unknown
+    sup._clear_scratch(set(), set(sup.targets))  # the cause is logged once (A2069)
+    said = [line for line in logs if "scratch layout there cannot be told" in line]
+    assert len(said) == 1 and "exit 255" in said[0]
     monkeypatch.setattr(scratch, "make_holder", real_holder)
     sup._clear_scratch(set(), set(sup.targets))
     assert "plc-0003" in sup.scratch_cleared and not room.exists() and not former.exists()

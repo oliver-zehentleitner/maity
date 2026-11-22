@@ -267,8 +267,18 @@ def test_the_holder_is_made_private_and_checked_at_every_make(
     with pytest.raises(scratchop.OnTheWay):
         scratchop.make(str(root), str(_room(root)))
     assert not _room(root).exists()
+    # Nor is anything removed through another user's holder (A2068); the former shape, which
+    # has no holder, is not affected.
     monkeypatch.setattr(scratchop, "_uid", real)
+    scratchop.make(str(root), str(_room(root)))
+    monkeypatch.setattr(scratchop, "_uid", lambda user: real(user) + 1)
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.remove(str(root), str(_room(root)))
+    assert _room(root).is_dir()
+    monkeypatch.setattr(scratchop, "_uid", real)
+    assert scratchop.remove(str(root), str(_room(root)))["result"] == "removed"
     # A link in its place: refused, the link's target untouched.
+    _room(root).parent.rmdir()  # the project's directory a remove leaves, empty
     holder.rmdir()
     (tmp_path / "elsewhere").mkdir()
     holder.symlink_to(tmp_path / "elsewhere")
