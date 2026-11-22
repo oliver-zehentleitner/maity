@@ -4623,6 +4623,12 @@ def test_the_close_and_the_sizes_make_no_holder_and_clear_without_one(world: Any
     sup._measure([placement()], 1e9)
     assert sup.records["plc-0003"].scratch_bytes is not None  # the former one is measured
     assert not (root / ".scratch").exists()  # and no holder was made for it
+    # A link at the holder's name is never followed and counts as there (A2073): the holder op
+    # refuses it, so it is `holder` (a removal through it refuses itself), not `none` or
+    # `unknown`, even where it points into a directory nobody can search.
+    (root / ".scratch").symlink_to(root / "nowhere" / "below")
+    assert sup._host_layout(target) == "holder"
+    assert not (root / "nowhere").exists()
 
 
 def test_a_host_that_does_not_answer_keeps_the_placement_uncleared(

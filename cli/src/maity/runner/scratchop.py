@@ -123,7 +123,9 @@ def _holder(root_fd: int, make: bool) -> int:
     if make:
         with contextlib.suppress(FileExistsError):
             os.mkdir(SCRATCH, 0o700, dir_fd=root_fd)
-    fd = _step(root_fd, SCRATCH, None)
+    # Another user's holder whose mode keeps us out (0700) is said as OnTheWay too, not as a
+    # bare permission error (A2073).
+    fd = _open_nofollow(root_fd, SCRATCH, _uid(None))
     if os.fstat(fd).st_uid != _uid(None):
         os.close(fd)
         raise OnTheWay(f"{SCRATCH} is another user's directory; not used")
@@ -352,12 +354,22 @@ def remove(under: str, path: str) -> dict[str, object]:
     before; `missing` when there is none. Only the scratch goes: the project's directory in the
     holder stays, even empty, since a start may be making a scratch in it (no lock is shared).
     In the holder shape the holder is checked first, as `make` checks it: a link or another
-    user's directory there is OnTheWay, and nothing is removed through it (A2068)."""
+    user's directory there is OnTheWay, and nothing is removed through it (A2068). The way down
+    continues from the checked holder's descriptor, as in `make`, so the holder cannot be
+    swapped between the check and the removal (A2073)."""
     names = _below(path, under, former=True)
     try:
         if names[0] == SCRATCH:
             with _opened(under, [], make=False) as root:
-                os.close(_holder(root, make=False))
+                holder_fd = _holder(root, make=False)
+                try:
+                    project = _step(holder_fd, names[1], None)
+                finally:
+                    os.close(holder_fd)
+                try:
+                    return _remove_in(project, names[-1])
+                finally:
+                    os.close(project)
         with _opened(under, names[:-1], make=False) as parent:
             return _remove_in(parent, names[-1])
     except FileNotFoundError:  # no root, project or `.scratch` either: no scratch

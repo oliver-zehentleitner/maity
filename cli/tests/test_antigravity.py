@@ -1035,6 +1035,35 @@ def test_gc_lists_the_scratches_as_the_agents_user(
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_layout_probe_answers_there_not_there_or_nothing(tmp_path: Path, side: str) -> None:
+    """The reviews of #2112 (A2073, A2074): the probe `_host_layout` asks with is an answer on
+    every side: a directory is there; a missing one is "not there" only below a parent that
+    can be searched, else no answer; the holder's name is never followed, so a link at it,
+    even dangling, is there."""
+    import types
+
+    target: Any = types.SimpleNamespace(as_user=SIDES[side]())
+    probe = supervisor.Supervisor._is_there_on
+    nobody: Any = None
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert probe(nobody, target, ws) is True
+    assert probe(nobody, target, ws / "gone") is False
+    assert probe(nobody, target, ws / "gone" / "deeper") is False  # the nearest parent searched
+    (ws / ".scratch").symlink_to(tmp_path / "nowhere")
+    assert probe(nobody, target, ws / ".scratch", True) is True  # never followed
+    assert probe(nobody, target, ws / ".scratch") is False  # a dangling link is no directory
+    shut = tmp_path / "shut"
+    shut.mkdir(mode=0o000)
+    try:
+        if os.access(shut, os.X_OK):  # root searches a 0000 directory anyway
+            pytest.skip("running as a user that searches a 0000 directory")
+        assert probe(nobody, target, shut / "ws") is None  # a denied look is no answer
+    finally:
+        shut.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
 def test_a_holder_that_is_a_link_refuses_the_listing(tmp_path: Path, side: str) -> None:
     """The holder must be a real directory: a link (or a file) in its place could point the
     deny elsewhere, so the listing refuses the start on every side."""

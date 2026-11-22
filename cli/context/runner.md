@@ -6427,7 +6427,11 @@ the same name checks (review A2045, P2); a link it skips is named in one line,
 nothing behind it listed (A2055). A former-layout host's close asks only
 for the former scratch. `_host_layout` changes nothing on the host
 (A2068). An answered "the root or the holder is not there" is `none`: no
-scratch can be in a holder there. Where the holder is there, the host's
+scratch can be in a holder there. The holder's name is never followed:
+anything at it, a link or a file included, counts as there, and the
+holder op then refuses it (OnTheWay); "not there" is answered only where
+the nearest existing parent can be searched, so a denied look is no
+answer (A2073). Where the holder is there, the host's
 answer to the holder op on it decides: `holder`, or `former` for
 Unsupported. No answer (an ssh transport failure, a timeout, a path the
 runner cannot look at, or the holder op on an existing holder failing

@@ -603,6 +603,7 @@ class Supervisor:
         with self.lock:
             closed = [p for p in self.closed_placements
                       if p["id"] not in self.scratch_cleared and p["id"] not in live]  # fmt: skip
+        layouts: dict[str, str] = {}  # each target asked once per pass, not per placement
         for p in closed:
             done = True
             for target in self.targets.values():
@@ -630,7 +631,9 @@ class Supervisor:
                         old = workspace.scratch_of(
                             target.workspaces, p["project_id"], p["id"], target.host, former=True
                         )
-                        layout = self._host_layout(target)
+                        if target.name not in layouts:
+                            layouts[target.name] = self._host_layout(target)
+                        layout = layouts[target.name]
                         if layout == "unknown":
                             done = False
                             continue
@@ -681,8 +684,8 @@ class Supervisor:
         root = target.workspaces if target.host else target.workspaces.resolve()
         holder = workspace.scratch_holder_of(root, target.host)
         layout, cause = "holder", ""
-        for path in (root, holder):
-            there = self._is_dir_on(target, path)
+        for path, name_only in ((root, False), (holder, True)):
+            there = self._is_there_on(target, path, name_only)
             if there is None:
                 layout, cause = "unknown", f"no answer whether {path} is there"
                 break
@@ -709,19 +712,36 @@ class Supervisor:
                      "closed placements there stay uncleared until it answers")  # fmt: skip
         return layout
 
-    def _is_dir_on(self, target: Target, path: Path) -> bool | None:
-        """Whether `path` is a directory on `target`'s agents' side, as an answer: None when
-        none came (an ssh transport failure, or a path the runner cannot look at), never
-        taken for "not there"."""
+    def _is_there_on(self, target: Target, path: Path, name_only: bool = False) -> bool | None:
+        """Whether `path` is there on `target`'s agents' side, as an answer; None when none
+        came (an ssh transport failure, a timeout, a path the runner or the agents' user cannot
+        look at), never taken for "not there" (A2073). Plain: a directory, following a link
+        (the workspaces root may be a configured link). `name_only` (the holder): anything at
+        that name, never followed, so a link or a file there counts as there and the holder op
+        refuses it (OnTheWay). "Not there" is answered only where the nearest existing parent
+        can be searched, so a denied look is no answer."""
         if target.as_user.direct:
             try:
+                if name_only:
+                    os.lstat(path)
+                    return True
                 return present(path, "-d")
+            except FileNotFoundError:
+                return False
             except OSError:
                 return None
-        probe = 'if test -d "$1"; then echo yes; else echo no; fi'
+        probe = (
+            'p=$1; if [ "$2" = name ]; then [ -e "$p" ] || [ -L "$p" ] && { echo yes; exit 0; };'
+            ' else [ -d "$p" ] && { echo yes; exit 0; }; [ -e "$p" ] && { echo no; exit 0; }; fi;'
+            ' d=$(dirname -- "$p"); while [ ! -e "$d" ] && [ "$d" != / ]; do'
+            ' d=$(dirname -- "$d"); done; if [ -x "$d" ]; then echo no; else echo unknown; fi'
+        )
+        argv = ["sh", "-c", probe, "sh", str(path), "name" if name_only else "dir"]
         try:
-            done = target.as_user.run(["sh", "-c", probe, "sh", str(path)])
+            done = target.as_user.run(argv)
         except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode != 0:
             return None
         return {"yes": True, "no": False}.get(done.stdout.strip())
 

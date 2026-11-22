@@ -275,6 +275,16 @@ def test_the_holder_is_made_private_and_checked_at_every_make(
     with pytest.raises(scratchop.OnTheWay):
         scratchop.remove(str(root), str(_room(root)))
     assert _room(root).is_dir()
+    # Another user's holder whose mode keeps us out is OnTheWay too, not a bare permission
+    # error (A2073); as root the mode keeps nobody out and the owner check says it.
+    holder.chmod(0o000)
+    try:
+        with pytest.raises(scratchop.OnTheWay):
+            scratchop.holder(str(root), str(holder))
+        with pytest.raises(scratchop.OnTheWay):
+            scratchop.remove(str(root), str(_room(root)))
+    finally:
+        holder.chmod(0o700)
     monkeypatch.setattr(scratchop, "_uid", real)
     assert scratchop.remove(str(root), str(_room(root)))["result"] == "removed"
     # A link in its place: refused, the link's target untouched.
