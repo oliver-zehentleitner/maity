@@ -6,5 +6,6 @@
   calls, the hook's refusal paths and failure policy, the hook switches and
   the hidden credentials, and prints PASS or FAIL per step; `--extra-lines`
   probes further prefixed lines live from a file kept outside the
-  repository. The checked Claude Code version moves only after it passed
-  for the new version.
+  repository. Each step is checked as testable first and passes only on
+  positive evidence. The checked Claude Code version moves only after it
+  passed for the new version.

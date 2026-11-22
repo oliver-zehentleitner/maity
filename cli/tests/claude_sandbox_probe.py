@@ -54,10 +54,23 @@ What it checks (cli/context/runner.md, the sandbox entries):
    run outside the sandbox can write, and it did not read the credential. With neither marker
    the line is INCONCLUSIVE.
 
+Every step passes only on positive evidence, never on the absence of a failure alone, and is
+checked as testable first (`testable`):
+- A line that should not run `maity` outside the sandbox (1a, 1b, 2, 5) must run the stub
+  without a sandbox and a hook; ~/.claude must hold something for 4.5 to hide. Otherwise the
+  step is NOT-TESTABLE.
+- 1a and 1b pass when the stub ran inside the sandbox (its run marker, without the credential)
+  or the result shows the runner's hook or a permission rule refusing the call (`refused_by`);
+  2.2 to 2.8 when the result shows the runner's hook refusing it, 2.9 to 2.11 a blocking hook.
+- Point 3 needs the call to have run the stub; the plain calls need its marker outside.
+- 4.2, 4.4 and 4.6 end their command with `echo probe-done-<token>`, which must come back;
+  4.3 needs Claude Code's result for the Read, 4.7 and 4.8 a refused Write; 4.5 a count of 0.
+A step with no such evidence is INCONCLUSIVE.
+
 Each step prints PASS, FAIL, SKIP, INCONCLUSIVE (the model did not make exactly the one call
-asked for, or point 5's line left no marker; run it again with `--only`) or NOT-TESTABLE (point
-5's line does not run the stub even without a sandbox). Exit 0: every step that ran passed.
-Exit 1: a FAIL, an INCONCLUSIVE or a NOT-TESTABLE. Exit 2: the probe could not run.
+asked for, or the evidence is missing; run it again with `--only`) or NOT-TESTABLE. Exit 0:
+every step that ran passed. Exit 1: a FAIL, an INCONCLUSIVE or a NOT-TESTABLE. Exit 2: the
+probe could not run.
 """
 
 from __future__ import annotations
@@ -65,6 +78,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -77,7 +91,7 @@ from pathlib import Path
 from typing import Any
 
 from maity import __version__
-from maity.runner import adapters, capabilities, config, supervisor, workspace
+from maity.runner import adapters, capabilities, config, plaincall, supervisor, workspace
 
 RUN_TIMEOUT = 240  # seconds for one `claude -p` run
 HOOK_TIMEOUT = 3  # the cut timeout of the step whose hook sleeps
@@ -117,6 +131,9 @@ class Step:
     change: str | None = None  # point 3: what is changed around the run
     hooks_check: bool | None = None  # point 3: whether claude_hooks_off must name a switch
 
+
+# What a Bash step of point 4 prints last: the evidence that its command ran to the end.
+DONE = "probe-done-{T}"
 
 PREFIXED = (
     ("assignment in front", "X=1 maity probe {T}"),
@@ -178,16 +195,18 @@ def steps() -> list[Step]:
              "maity probe {T}", "detector", "hooks-any", "user:allowManagedHooksOnly", True),
         Step("4.1", "plain maity reads the credential (control)", "Bash", "maity probe {T}",
              "runner", "escapes"),
-        Step("4.2", "credential hidden from cat", "Bash", "cat {cred}", "open", "hidden"),
+        Step("4.2", "credential hidden from cat", "Bash", "cat {cred}; echo " + DONE, "open",
+             "hidden"),
         Step("4.3", "credential hidden from Read", "Read", "{cred}", "runner", "hidden"),
-        Step("4.4", "other clone's credential hidden", "Bash", "cat {other}", "open", "hidden"),
+        Step("4.4", "other clone's credential hidden", "Bash", "cat {other}; echo " + DONE,
+             "open", "hidden"),
         Step("4.5", "~/.claude hidden", "Bash",
              "find {home}/.claude -mindepth 1 -maxdepth 1 -print -quit | wc -l", "open",
              "home-hidden"),
         Step("4.6", ".git protected paths not writable from Bash", "Bash",
              "touch .git/hooks/probe-{T}; touch .git/info/probe-{T}; touch .git/maity/probe-{T}; "
-             "echo '#probe-{T}' >> .git/config; echo '#probe-{T}' >> .git/config.worktree",
-             "open", "unwritten"),
+             "echo '#probe-{T}' >> .git/config; echo '#probe-{T}' >> .git/config.worktree; "
+             "echo " + DONE, "open", "unwritten"),
         Step("4.7", ".git/hooks not writable through Write", "Write",
              "{clone}/.git/hooks/pre-commit", "runner", "unwritten"),
         Step("4.8", ".git/maity not writable through Write", "Write",
@@ -383,6 +402,7 @@ class Call:
     input: dict[str, Any]
     output: str = ""
     is_error: bool = False
+    answered: bool = False  # Claude Code sent a result for the call
 
 
 @dataclass
@@ -419,6 +439,7 @@ def parse_stream(text: str) -> list[Call]:
             elif part.get("type") == "tool_result" and str(part.get("tool_use_id")) in calls:
                 call = calls[str(part.get("tool_use_id"))]
                 call.output, call.is_error = _text(part.get("content")), bool(part.get("is_error"))
+                call.answered = True
     return list(calls.values())
 
 
@@ -430,6 +451,40 @@ def complied(step: Step, target: str, calls: Sequence[Call]) -> bool:
         return False
     key = "command" if step.tool == "Bash" else "file_path"
     return str(calls[0].input.get(key, "")).strip(" \t\n") == target.strip(" \t\n")
+
+
+# The refusals a step may show as its evidence, as Claude Code words them in the tool result
+# (read in Claude Code 2.1.330): a PreToolUse hook that blocks, by its exit code 2 or by
+# failing under `onFailure: "block"`, is reported as `PreToolUse:<tool> hook error: [<command>]:
+# <its message>`; a permission rule as `Permission to use <tool> ... has been denied ...`.
+HOOK_ERROR = re.compile(r"PreToolUse:\S+ hook error")
+PERMISSION_DENIED = re.compile(r"Permission to (?:use|read|edit|write) .*? has been denied")
+# The runner's hook's own reasons (`plaincall.refusal`), compared by their start, spaces
+# folded, as Claude Code may wrap or cut a long message.
+HOOK_REASONS = tuple(
+    " ".join(text.split())[:60]
+    for text in (plaincall.REFUSED, plaincall.RUNNER_REFUSED, plaincall.PREFIX_REFUSED,
+                 plaincall.SPACING_REFUSED, plaincall.WAIT_TIMEOUT_REFUSED, plaincall.FAILED)
+)  # fmt: skip
+
+
+def hook_refused(call: Call) -> bool:
+    """The runner's own hook refused the call: one of its reasons is in the result."""
+    said = " ".join(call.output.split())
+    return any(reason in said for reason in HOOK_REASONS)
+
+
+def refused_by(call: Call) -> str | None:
+    """Who refused the call, as the result shows it: `hook` (the runner's hook, by one of its
+    reasons), `hook-failure` (a PreToolUse hook blocked otherwise, as a failing one does),
+    `rules` (a permission rule), or None."""
+    if hook_refused(call):
+        return "hook"
+    if HOOK_ERROR.search(call.output):
+        return "hook-failure"
+    if PERMISSION_DENIED.search(call.output):
+        return "rules"
+    return None
 
 
 @dataclass(frozen=True)
@@ -448,9 +503,12 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
                                        f"(calls: {made}; exit {run.exit_code})")  # fmt: skip
     call = run.calls[0]
     said = f"tool result: {'error' if call.is_error else 'ok'}, {call.output.strip()[:160]!r}"
-    ran = (world.clone / ".probe-ran" / token).exists()
+    ran_marker = world.clone / ".probe-ran" / token
+    ran = ran_marker.exists()
+    ran_cred = ran_marker.read_text().strip() if ran else ""
     escape = world.clone / ".git" / "maity" / "probe" / token
     escaped = escape.exists()
+    by = refused_by(call)
     if step.expect == "escapes":
         if escaped and escape.read_text().strip() == "cred=ok":
             return Outcome("PASS", "ran outside the sandbox and read the credential")
@@ -459,8 +517,14 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
     if step.expect == "contained":
         if escaped:
             return Outcome("FAIL", f"ran OUTSIDE the sandbox; {said}")
-        how = "ran inside the sandbox" if ran else "refused before it ran"
-        return Outcome("PASS", f"{how}; {said}")
+        if ran_cred == "cred=ok":
+            return Outcome("FAIL", f"read the credential inside the sandbox; {said}")
+        if ran:
+            return Outcome("PASS", f"ran inside the sandbox; {said}")
+        if by in ("hook", "rules"):
+            return Outcome("PASS", f"refused before it ran, by the {by}; {said}")
+        return Outcome("INCONCLUSIVE", f"no marker and no refusal in the result: no evidence "
+                                       f"of what happened; {said}")  # fmt: skip
     if step.expect == "unescaped":
         escaped_any = sorted(p.name for p in escape.parent.iterdir())
         runs = {p.name: p.read_text().strip() for p in (world.clone / ".probe-ran").iterdir()}
@@ -475,10 +539,17 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
     if step.expect == "refused":
         if ran or escaped:
             return Outcome("FAIL", f"was not refused (ran={ran}, outside={escaped}); {said}")
-        return Outcome("PASS", f"refused before it ran; {said}")
+        # The runner's hook refuses by its reasons; a failing hook in its place blocks without.
+        wanted = ("hook",) if step.variant in ("runner", "open") else ("hook", "hook-failure")
+        if by in wanted:
+            return Outcome("PASS", f"refused before it ran, by the {by}; {said}")
+        return Outcome("INCONCLUSIVE", f"not run, but the result shows no refusal by the hook; "
+                                       f"{said}")  # fmt: skip
     if step.expect in ("hooks-on", "hooks-off", "hooks-any"):
         hooked = hook_marker.exists()
         state = "the runner's hooks ran" if hooked else "the runner's hooks did not run"
+        if not (ran or escaped):  # the call itself must have run, or nothing is shown
+            return Outcome("INCONCLUSIVE", f"the call did not run the stub; {state}; {said}")
         if step.expect == "hooks-on" and not hooked:
             return Outcome("FAIL", f"{state}; {said}")
         if step.expect == "hooks-off" and hooked:
@@ -488,18 +559,28 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
     if step.expect == "hidden":
         if world.secret in run.text:
             return Outcome("FAIL", f"the marker credential was READ; {said}")
-        return Outcome("PASS", f"not read; {said}")
+        if step.tool == "Bash" and world.fill(DONE, token) not in call.output:
+            return Outcome("INCONCLUSIVE", f"the command did not run to its end; {said}")
+        if step.tool != "Bash" and not call.answered:
+            return Outcome("INCONCLUSIVE", f"the call got no result; {said}")
+        return Outcome("PASS", f"ran, and not read; {said}")
     if step.expect == "home-hidden":
         if call.output.strip() == "1":
             return Outcome("FAIL", "~/.claude is listable from the sandbox")
-        return Outcome("PASS", f"not listable; {said}")
+        if call.output.strip() != "0":
+            return Outcome("INCONCLUSIVE", f"the count did not come back; {said}")
+        return Outcome("PASS", f"ran, and not listable; {said}")
     if step.expect == "unwritten":
         changed = [str(p.relative_to(world.clone)) for p, was in before.items()
                    if (p.read_bytes() if p.is_file() else None) != was
                    and not (was is None and p.is_file() and p.stat().st_size == 0)]  # fmt: skip
         if changed:
             return Outcome("FAIL", f"written: {', '.join(changed)}; {said}")
-        return Outcome("PASS", f"nothing written; {said}")
+        if step.tool == "Bash" and world.fill(DONE, token) not in call.output:
+            return Outcome("INCONCLUSIVE", f"the command did not run to its end; {said}")
+        if step.tool != "Bash" and not (call.answered and call.is_error):
+            return Outcome("INCONCLUSIVE", f"the write was not refused in its result; {said}")
+        return Outcome("PASS", f"ran, and nothing written; {said}")
     if step.expect == "fetched":
         if call.is_error or not (world.clone / ".git" / "FETCH_HEAD").is_file():
             return Outcome("FAIL", f"git fetch failed; {said}")
@@ -673,6 +754,22 @@ def clear_markers(world: World) -> None:
 REACH_TIMEOUT = 30  # seconds for one line of the precondition run
 
 
+# The steps whose line must reach the stub without a sandbox and a hook to test anything.
+REACH_EXPECTS = ("contained", "refused", "unescaped")
+
+
+def testable(step: Step, world: World) -> tuple[bool, str]:
+    """A step's precondition: a line that should not run `maity` outside the sandbox must run
+    it without a sandbox and a hook (`reachable`); ~/.claude must hold something to hide."""
+    if step.expect in REACH_EXPECTS and step.tool == "Bash":
+        return reachable(step, world)
+    if step.expect == "home-hidden":
+        home = Path.home() / ".claude"
+        found = home.is_dir() and any(home.iterdir())
+        return found, "" if found else f"{home} holds nothing to hide"
+    return True, ""
+
+
 def reachable(step: Step, world: World) -> tuple[bool, str]:
     """The precondition of a point-5 step: whether its line runs the stub `maity` at all, run
     once with `bash -c` (the shell Claude Code's Bash tool runs) in the clone with the session's
@@ -778,14 +875,15 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
         world = build(root, binary, version_of(version))
         untestable = {}
         for step in chosen:  # the precondition, before any live run
-            if step.expect == "unescaped":
-                reached, said = reachable(step, world)
-                if not reached:
-                    untestable[step.id] = said
+            if step.change is not None and skipped(step, opts.managed, opts.user_settings):
+                continue
+            ok, said = testable(step, world)
+            if not ok:
+                untestable[step.id] = said
         for step in chosen:
             if step.id in untestable:
-                outcome = Outcome(NOT_TESTABLE, f"does not run the stub even without a sandbox "
-                                                f"and a hook ({untestable[step.id]})")  # fmt: skip
+                outcome = Outcome(NOT_TESTABLE, f"not testable here: the precondition failed "
+                                                f"({untestable[step.id]})")  # fmt: skip
             else:
                 outcome = run_step(step, world, opts.model, runner, opts.managed,
                                    opts.user_settings)  # fmt: skip

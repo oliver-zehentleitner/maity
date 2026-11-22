@@ -16,6 +16,7 @@ import pytest
 
 FAKE = """#!{python}
 import json, os, re, subprocess, sys
+from maity.runner.plaincall import refusal as hook
 args = sys.argv[1:]
 if args == ["--version"]:
     print("2.1.326 (Claude Code)")
@@ -30,6 +31,10 @@ if kind == "command":
     use = {{"name": "Bash", "input": {{"command": target}}}}
     if "{mode}" == "refuse":
         out, err = "Permission to use Bash has been denied.", True
+    elif "{mode}" == "fail":  # the call is answered, but nothing started
+        out, err = "Error: spawn /bin/bash ENOENT", True
+    elif "{mode}" == "hooked" and (reason := hook({{"tool_input": {{"command": target}}}})):
+        out, err = f"PreToolUse:Bash hook error: [{{target}}]: {{reason}}", True
     elif "{mode}" == "sandbox":  # the credential directory hidden and unwritable, as inside
         os.rename(".git/maity", ".git/maity-hidden")
         open(".git/maity", "w").close()
@@ -60,7 +65,9 @@ print(json.dumps({{"type": "result", "result": "DONE"}}))
 def fake(tmp_path: Path, mode: str = "obey") -> str:
     """A `claude` that makes the asked call itself, unsandboxed and without hooks (`obey`), or
     with the clone's credential directory hidden and unwritable, as the sandbox has it
-    (`sandbox`, for Bash only), refuses it (`refuse`) or makes none (`idle`)."""
+    (`sandbox`, for Bash only), or behind the runner's hook, refusing as Claude Code reports a
+    blocking hook (`hooked`, for Bash only); that refuses it as a permission rule does
+    (`refuse`), answers it without starting anything (`fail`) or makes none (`idle`)."""
     path = tmp_path / f"claude-{mode}"
     path.write_text(FAKE.format(python=sys.executable, mode=mode))
     path.chmod(0o755)
@@ -171,7 +178,7 @@ def test_a_stream_is_read_into_calls_with_their_results() -> None:
     ]  # fmt: skip
     text = "\n".join(json.dumps(e) for e in events) + "\nnot json\n"
     calls = probe.parse_stream(text)
-    assert calls == [probe.Call("Bash", {"command": "ls"}, "denied", True)]
+    assert calls == [probe.Call("Bash", {"command": "ls"}, "denied", True, True)]
     step = probe.Step("x", "x", "Bash", "ls", "runner", "refused")
     assert probe.complied(step, "ls", calls) and probe.complied(step, " ls ", calls)
     assert not probe.complied(step, "ls -a", calls)
@@ -208,10 +215,107 @@ def test_a_harness_without_a_sandbox_fails_the_probe(
 def test_a_harness_that_refuses_everything_passes_containment_but_not_the_controls(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A permission rule's refusal is evidence for 1a, not for point 2, which is the hook's."""
     code = probe.main(["--claude", fake(tmp_path, "refuse"), "--no-preflight",
                        "--only", "1a.1,1a.2,2.2"])  # fmt: skip
     found = outcomes(capsys.readouterr().out)
-    assert code == 1 and found == {"1a.1": "FAIL", "1a.2": "PASS", "2.2": "PASS"}
+    assert code == 1 and found == {"1a.1": "FAIL", "1a.2": "PASS", "2.2": "INCONCLUSIVE"}
+
+
+def test_a_line_that_failed_to_start_is_inconclusive(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No marker and no refusal in the result: no evidence either way, so never a pass; nor
+    for point 4, whose commands must show that they ran."""
+    code = probe.main(["--claude", fake(tmp_path, "fail"), "--no-preflight",
+                       "--only", "1a.2,1b.5,2.2,2.10,4.2,4.4,4.6"])  # fmt: skip
+    found = outcomes(capsys.readouterr().out)
+    assert code == 1 and set(found.values()) == {"INCONCLUSIVE"}, found
+
+
+def test_a_refusal_by_the_runners_hook_passes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Behind the runner's real hook: every prefixed line and every line point 2 expects
+    refused shows the hook's own reason in the result."""
+    code = probe.main(["--claude", fake(tmp_path, "hooked"), "--no-preflight",
+                       "--only", "1b,2.2,2.3,2.4,2.5,2.6,2.7,2.8"])  # fmt: skip
+    out = capsys.readouterr().out
+    found = outcomes(out)
+    assert found.pop("1b.1") == "PASS"  # the plain call passes the hook and runs
+    assert code == 0 and set(found.values()) == {"PASS"}, out
+    assert out.count("refused before it ran, by the hook") == len(found)
+
+
+def test_a_run_inside_the_sandbox_passes_by_its_marker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = probe.main(["--claude", fake(tmp_path, "sandbox"), "--no-preflight",
+                       "--only", "1a.2,1b.2,4.2"])  # fmt: skip
+    out = capsys.readouterr().out
+    assert code == 0 and outcomes(out) == {"1a.2": "PASS", "1b.2": "PASS", "4.2": "PASS"}, out
+    assert out.count("ran inside the sandbox") == 2 and "ran, and not read" in out
+
+
+def test_an_unreachable_public_line_is_not_testable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "PREFIXED", (("runs no maity", "echo nothing {T}"),))
+    code = probe.main(["--claude", fake(tmp_path, "sandbox"), "--no-preflight", "--only", "1a.2"])
+    out = capsys.readouterr().out
+    assert code == 1 and outcomes(out) == {"1a.2": "NOT-TESTABLE"}, out
+
+
+def test_nothing_to_hide_in_the_home_is_not_testable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert not (Path.home() / ".claude").exists()  # the test's own home (conftest)
+    code = probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "4.5"])
+    assert code == 1 and outcomes(capsys.readouterr().out) == {"4.5": "NOT-TESTABLE"}
+
+
+@pytest.mark.parametrize(
+    ("step_id", "status"), [("2.10", "PASS"), ("2.11", "PASS"), ("2.2", "INCONCLUSIVE")]
+)
+def test_a_blocking_hook_without_the_runners_reason_counts_only_for_a_failing_hook(
+    short: Path, step_id: str, status: str
+) -> None:
+    """2.9 to 2.11 put a failing hook in the runner's place: Claude Code's block is their
+    evidence. 2.2 to 2.8 need the runner's own reason."""
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == step_id]
+    target = world.fill(step.target, "t")
+    said = f"PreToolUse:Bash hook error: [{target}]: hook timed out"
+    call = probe.Call("Bash", {"command": target}, said, True, True)
+    found = probe.judge(step, world, "t", probe.Run([call], "", 0), short / "no-marker", {})
+    assert found.status == status, found
+
+
+@pytest.mark.parametrize(
+    ("step_id", "call", "status"),
+    [
+        ("4.3", probe.Call("Read", {}, "", False, False), "INCONCLUSIVE"),  # no result
+        ("4.3", probe.Call("Read", {}, "Permission to read x has been denied.", True, True),
+         "PASS"),
+        ("4.5", probe.Call("Bash", {}, "", True, True), "INCONCLUSIVE"),  # no count
+        ("4.5", probe.Call("Bash", {}, "0\n", False, True), "PASS"),
+        ("4.5", probe.Call("Bash", {}, "1\n", False, True), "FAIL"),
+        ("4.8", probe.Call("Write", {}, "", False, False), "INCONCLUSIVE"),  # no result
+        ("4.8", probe.Call("Write", {}, "written", False, True), "INCONCLUSIVE"),  # not refused
+        ("4.8", probe.Call("Write", {}, "denied", True, True), "PASS"),
+        ("3.2", probe.Call("Bash", {}, "", True, True), "INCONCLUSIVE"),  # the stub never ran
+    ],
+)  # fmt: skip
+def test_point_four_and_three_need_evidence_that_the_call_ran(
+    short: Path, step_id: str, call: probe.Call, status: str
+) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = [s for s in probe.steps() if s.id == step_id]
+    key = "command" if step.tool == "Bash" else "file_path"
+    call.input[key] = world.fill(step.target, "t")
+    before: dict[Path, bytes | None] = {p: None for p in probe.watched(step, world, "t")}
+    found = probe.judge(step, world, "t", probe.Run([call], "", 0), short / "no-marker", before)
+    assert found.status == status, found
 
 
 def test_a_model_that_makes_no_call_is_inconclusive(
