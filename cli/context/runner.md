@@ -2008,7 +2008,7 @@ later (S200) and is why the claim above was corrected.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-22
 **Revisit when:** a scheduled job with its own key runs the probe against each new release (ae02241e, not decided); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
@@ -2022,8 +2022,11 @@ from the runner's own launch (`adapters.launch`) with what the supervisor
 gives a placement that the settings depend on (the installed version, the
 scratch and its TMPDIR), refuses to run where the runner would not start a
 sandboxed Claude Code placement, and reads each result from the file
-system, not from what the model says. Someone runs it by hand on a machine
-where Claude Code is installed and signed in. Its counts go into the pull
+system, not from what the model says. Further prefixed lines are probed
+live in the same run (`--extra-lines`), each a containment step of its
+own; their list is kept out of the repository and handed to whoever runs
+the probe. Someone runs it by hand on a machine where Claude Code is
+installed and signed in. Its counts go into the pull
 request and its full output to the lead. `capabilities.CHECKED` is raised
 in a commit of its own, only after the steps the bump rests on passed: at
 least the prefixed calls (`--only 1`). The bump's own entry names the
@@ -2035,6 +2038,9 @@ took the card could build the sandbox and install the new version, but
 had no login it could use. A script can be run by whoever has one.
 Because it is in the repository, the next version is checked the same
 way, and the steps are visible in review.
+
+The list is kept private on the lead's decision; the repository says only
+that prefixed lines were probed live.
 
 **Rejected alternatives:**
 - A new key for the session that took the card: the lead does not create

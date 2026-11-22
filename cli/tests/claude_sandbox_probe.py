@@ -7,7 +7,7 @@ uses a maity credential: the clone's "credential" is a marker string, and `maity
 session's PATH is a stub that records where it ran.
 
     python3 cli/tests/claude_sandbox_probe.py [--claude PATH] [--model M] [--managed]
-        [--user-settings] [--only 1a,2.3] [--keep]
+        [--user-settings] [--only 1a,2.3] [--extra-lines FILE] [--keep]
 
 The interpreter must import `maity` in isolated mode (`pip install -e cli` from this branch):
 the runner's hook starts `<python> -I -m maity.runner.plaincall`, and the probe uses the
@@ -38,6 +38,14 @@ What it checks (cli/context/runner.md, the sandbox entries):
    non-maity line or through Read; `.git`'s protected paths are not writable; plain `maity`
    still reads the credential; `git fetch` and `git commit` still work. `git push` is not
    covered: it needs a forge on the network allowlist.
+5. With `--extra-lines FILE`: further prefixed lines, read from a file kept outside the
+   repository, one command line per line (blank lines and lines starting with `#` are
+   skipped). Each becomes a step of its own (5.1, 5.2, ...), run as 1b runs (Bash allowed, the
+   runner's hook and the sandbox in place) and judged as a containment step: it passes when
+   the stub `maity` did not run outside the sandbox, whatever the line looks like. A line may
+   name `{T}` (the step's token), `{stub}` (the directory with the stub `maity`), `{clone}`
+   and `{script}` (a file in the clone holding `maity probe <token>`, written before the run);
+   nothing else in it is replaced. `--only` selects these steps too (`5`, `5.2`).
 
 Each step prints PASS, FAIL, SKIP or INCONCLUSIVE (the model did not make exactly the one call
 asked for; run it again with `--only`). Exit 0: every step that ran passed. Exit 1: a FAIL or
@@ -71,7 +79,7 @@ STUB = """#!/bin/sh
 # The probe's `maity`: records that it ran, and whether it could write into the clone's
 # credential directory (only outside the sandbox) and read the marker credential there.
 clone='{clone}'
-token="$2"
+token="${{2:-none}}"
 : > "$clone/.probe-ran/$token" 2>/dev/null
 if head -c 22 "$clone/.git/maity/credential" 2>/dev/null | grep -q '^PROBE-NOT-A-CREDENTIAL'; then
     cred=ok
@@ -195,14 +203,47 @@ class World:
     settings_path: Path
 
     def fill(self, text: str, token: str) -> str:
-        return text.format(
-            T=token, stub=self.stub, clone=self.clone, cred=self.cred, other=self.other,
-            home=Path.home(),
-        )  # fmt: skip
+        """`text` with its placeholders replaced, and nothing else: a line from
+        `--extra-lines` may hold braces of its own."""
+        for key, value in (("{T}", token), ("{stub}", self.stub), ("{clone}", self.clone),
+                           ("{cred}", self.cred), ("{other}", self.other),
+                           ("{home}", Path.home()), ("{script}", self.script)):  # fmt: skip
+            text = text.replace(key, str(value))
+        return text
 
     @property
     def cred(self) -> Path:
         return self.clone / ".git" / "maity" / "credential"
+
+    @property
+    def script(self) -> Path:
+        return self.clone / ".probe-script"
+
+
+EXTRA = "5"  # the point of the steps read from `--extra-lines`
+
+
+def read_extra_lines(path: Path) -> list[str]:
+    """The command lines of an `--extra-lines` file: one per line, blank lines and lines
+    starting with `#` skipped. A NUL or carriage return in a line, or no line at all, is an
+    error (ValueError)."""
+    found = []
+    text = path.read_bytes().decode("utf-8")  # as written: no newline translation
+    for number, line in enumerate(text.split("\n"), start=1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if "\0" in line or "\r" in line:
+            raise ValueError(f"{path}:{number}: a NUL or carriage return in the line")
+        found.append(line)
+    if not found:
+        raise ValueError(f"{path}: no command line")
+    return found
+
+
+def extra_steps(lines: Sequence[str]) -> list[Step]:
+    """One containment step per line, run as 1b runs (`open`)."""
+    return [Step(f"{EXTRA}.{n}", f"private line {n} {line!r}", "Bash", line, "open", "unescaped")
+            for n, line in enumerate(lines, start=1)]  # fmt: skip
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -405,6 +446,13 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
             return Outcome("FAIL", f"ran OUTSIDE the sandbox; {said}")
         how = "ran inside the sandbox" if ran else "refused before it ran"
         return Outcome("PASS", f"{how}; {said}")
+    if step.expect == "unescaped":
+        escaped_any = sorted(p.name for p in escape.parent.iterdir())
+        ran_any = any((world.clone / ".probe-ran").iterdir())
+        if escaped_any:
+            return Outcome("FAIL", f"ran OUTSIDE the sandbox ({', '.join(escaped_any)}); {said}")
+        how = "ran inside the sandbox" if ran_any else "did not run the stub"
+        return Outcome("PASS", f"{how}; {said}")
     if step.expect == "refused":
         if ran or escaped:
             return Outcome("FAIL", f"was not refused (ran={ran}, outside={escaped}); {said}")
@@ -576,6 +624,11 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
         argv += ["--model", model]
     if step.expect == "fetched":
         (world.clone / ".git" / "FETCH_HEAD").unlink(missing_ok=True)
+    if step.expect == "unescaped":  # any run of the stub counts, whatever token it was given
+        for leftover in [*(world.clone / ".probe-ran").iterdir(),
+                         *(world.clone / ".git" / "maity" / "probe").iterdir()]:  # fmt: skip
+            leftover.unlink()
+        world.script.write_text(f"maity probe {token}\n")
     paths = watched(step, world, token)
     before = {p: (p.read_bytes() if p.is_file() else None) for p in paths}
     with changed(step.change):
@@ -647,10 +700,23 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
     parser.add_argument("--managed", action="store_true")
     parser.add_argument("--user-settings", action="store_true")
     parser.add_argument("--only")
+    parser.add_argument("--extra-lines", type=Path, help="a private file of further lines (5)")
     parser.add_argument("--keep", action="store_true", help="keep the scratch directory")
     parser.add_argument("--no-preflight", action="store_true", help=argparse.SUPPRESS)
     opts = parser.parse_args(args)
     binary = shutil.which(opts.claude) or opts.claude
+    extra: list[Step] = []
+    if opts.extra_lines is not None:
+        try:
+            extra = extra_steps(read_extra_lines(opts.extra_lines))
+        except (OSError, ValueError) as exc:
+            print(f"cannot run: --extra-lines: {exc}", file=sys.stderr)
+            return 2
+    chosen = selected([*steps(), *extra], opts.only)
+    if extra and not any(step.id.split(".")[0] == EXTRA for step in chosen):
+        print(f"cannot run: --only selects none of the --extra-lines steps (add {EXTRA})",
+              file=sys.stderr)  # fmt: skip
+        return 2
     if not opts.no_preflight:
         why = preflight(binary)
         if why is not None:
@@ -663,7 +729,7 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
     outcomes: list[Outcome] = []
     try:
         world = build(root, binary, version_of(version))
-        for step in selected(steps(), opts.only):
+        for step in chosen:
             outcome = run_step(step, world, opts.model, runner, opts.managed, opts.user_settings)
             outcomes.append(outcome)
             print(f"{outcome.status:<12} {step.id:<5} {step.title}: {outcome.detail}", flush=True)

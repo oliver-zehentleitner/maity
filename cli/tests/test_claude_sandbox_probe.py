@@ -255,6 +255,78 @@ def test_the_probe_does_not_run_where_the_runner_would_not_start_the_placement(
     assert probe.preflight(fake(tmp_path)) == capabilities.claude_seccomp_line(off)
 
 
+# A synthetic list for `--extra-lines`, harmless and not the private one: the real list stays
+# out of the repository.
+SYNTHETIC = """# a comment, skipped
+
+true && maity probe {T}
+cat {script} | sh
+echo ${HOME:-none} > /dev/null; maity probe {T}
+echo nothing here
+"""
+
+
+def test_extra_lines_are_read_one_per_line(tmp_path: Path) -> None:
+    path = tmp_path / "lines.txt"
+    path.write_text(SYNTHETIC)
+    assert probe.read_extra_lines(path) == [
+        "true && maity probe {T}", "cat {script} | sh",
+        "echo ${HOME:-none} > /dev/null; maity probe {T}", "echo nothing here",
+    ]  # fmt: skip
+    for bad in ("", "# only a comment\n\n", "maity probe\0 {T}\n", "maity probe {T}\r\n"):
+        path.write_text(bad)
+        with pytest.raises(ValueError):
+            probe.read_extra_lines(path)
+
+
+def test_each_extra_line_is_a_containment_step_of_its_own(short: Path) -> None:
+    steps = probe.extra_steps(["true && maity probe {T}", "echo ${HOME:-none}"])
+    assert [s.id for s in steps] == ["5.1", "5.2"]
+    assert {(s.tool, s.variant, s.expect) for s in steps} == {("Bash", "open", "unescaped")}
+    assert [s.id for s in probe.selected([*probe.steps(), *steps], "5.2")] == ["5.2"]
+    world = probe.build(short, "/usr/bin/claude")
+    # Only the placeholders are replaced; the line's own braces stay as they are.
+    assert world.fill(steps[1].target, "t") == "echo ${HOME:-none}"
+    assert world.fill("{script} {stub} {T}", "t") == f"{world.script} {world.stub} t"
+
+
+def test_a_harness_without_a_sandbox_fails_the_extra_lines(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The counter-check for point 5: run unsandboxed, every line that runs the stub `maity`
+    escapes and fails, whatever token it passes; a line that runs no `maity` passes."""
+    path = tmp_path / "lines.txt"
+    path.write_text(SYNTHETIC)
+    code = probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "5",
+                       "--extra-lines", str(path)])  # fmt: skip
+    found = outcomes(capsys.readouterr().out)
+    assert code == 1
+    assert found == {"5.1": "FAIL", "5.2": "FAIL", "5.3": "FAIL", "5.4": "PASS"}
+
+
+def test_a_harness_that_refuses_everything_passes_the_extra_lines(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "lines.txt"
+    path.write_text(SYNTHETIC)
+    code = probe.main(["--claude", fake(tmp_path, "refuse"), "--no-preflight", "--only", "5",
+                       "--extra-lines", str(path)])  # fmt: skip
+    assert code == 0
+    assert set(outcomes(capsys.readouterr().out).values()) == {"PASS"}
+
+
+def test_extra_lines_that_only_selects_none_of_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "lines.txt"
+    path.write_text(SYNTHETIC)
+    code = probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "1a.1",
+                       "--extra-lines", str(path)])  # fmt: skip
+    assert code == 2 and "add 5" in capsys.readouterr().err
+    assert probe.main(["--claude", fake(tmp_path), "--no-preflight",
+                       "--extra-lines", str(tmp_path / "missing.txt")]) == 2  # fmt: skip
+
+
 def test_the_exit_code_counts_fail_and_inconclusive_only() -> None:
     o = probe.Outcome
     assert probe.exit_code([o("PASS", ""), o("SKIP", "")]) == 0
