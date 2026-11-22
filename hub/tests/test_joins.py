@@ -455,10 +455,11 @@ def test_a_refused_exchange_names_its_cause_in_the_log(
 ) -> None:
     """tsk-e9pc50wdk9b9: every join that no longer works answers the same bare not_found, so
     the hub's log names which check refused it, with the join's row id and never its token or
-    code. The attempt slot's cause reads the join as the exchange's own transaction sees it."""
+    code. The attempt slot's join state is read only at debug, as the exchange's own
+    transaction sees it. No level is set here: the records come through conftest's setting,
+    the same way a failing test in CI shows them (review A2100)."""
     from maity_hub.routes import joins
 
-    caplog.set_level(logging.INFO, logger="maity_hub.routes.joins")
     client = make_client()
     created = flow.join(owner, "maity")
     token = created["join_url"].rsplit("/", 1)[1]
@@ -478,6 +479,53 @@ def test_a_refused_exchange_names_its_cause_in_the_log(
         cause = joins._no_slot(conn, created["id"], clock.now())
     assert cause.startswith("no attempt slot: failed_attempts=")
     assert "used=True" in cause and "burned=False" in cause and "expired=False" in cause
+    # The state is noted at debug only; at info no read is made and nothing is logged for it.
+    caplog.clear()
+    with migrated.begin() as conn:
+        joins._note_no_slot(conn, created["id"], clock.now())
+    noted = [r.getMessage() for r in caplog.records if r.name == "maity_hub.routes.joins"]
+    assert noted == [f"join {created['id']}: {cause}"]
+    caplog.clear()
+    caplog.set_level(logging.INFO, logger="maity_hub.routes.joins")
+    with migrated.begin() as conn:
+        joins._note_no_slot(conn, created["id"], clock.now())
+    assert not [r for r in caplog.records if r.name == "maity_hub.routes.joins"]
+
+
+def test_a_failing_slot_diagnostic_still_answers_not_found(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review of #2118 (A2100): the refusal never depends on the diagnostic. When the
+    attempt slot matches no row and reading the join's state for the debug line fails, the
+    exchange still answers the same 404 `not_found`, with the plain reason at info."""
+    from typing import Any
+
+    from sqlalchemy import false
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.routes import joins
+
+    def broken(conn: Any, join_id: Any, now: Any) -> str:
+        raise OperationalError("SELECT", {}, Exception("the read failed"))
+
+    real = joins.update
+    monkeypatch.setattr(joins, "_no_slot", broken)
+    created = flow.join(owner, "maity")
+
+    def no_slot(table: Any) -> Any:  # the attempt slot's UPDATE then matches no row
+        statement = real(table)
+        return statement.where(false()) if table is t.join_link else statement
+
+    monkeypatch.setattr(joins, "update", no_slot)
+    response = flow.exchange(make_client(), created)
+    assert response.status_code == 404 and response.headers["Maity-Error"] == "not_found"
+    said = [r.getMessage() for r in caplog.records if r.name == "maity_hub.routes.joins"]
+    assert f"join answered not_found: no attempt slot (join {created['id']})" in said
+    assert f"join {created['id']}: no attempt slot; its state could not be read" in said
 
 
 def test_the_exchange_is_limited_to_ten_per_minute(

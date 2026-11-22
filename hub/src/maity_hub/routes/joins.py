@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from markdown_it import MarkdownIt
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
@@ -733,7 +733,7 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     return bool(len(held) <= _member_agents_limit(conn, project).limit)
 
 
-def live_profile(conn: Connection, agent_id: str) -> None:
+def live_profile(conn: Connection, agent_id: str, row: Any = None) -> None:
     """Lock the agent's profile, and refuse a deleted one: a deleted profile never joins
     again (§6.3). Join creation, the exchange and the profile's deletion all take this
     lock first, before the join and the project, so a deletion cannot commit between
@@ -744,7 +744,7 @@ def live_profile(conn: Connection, agent_id: str) -> None:
         .with_for_update()
     ).one()
     if deleted.deleted_at is not None:
-        raise _gone("its agent profile was deleted")
+        raise _gone("its agent profile was deleted", row)  # `row`: the exchange's join
 
 
 def _agent_for_join(
@@ -838,15 +838,29 @@ def _gone(reason: str, row: Any = None) -> ApiError:
     """The bare `not_found` of a join that no longer works (§1.1), its cause in the hub's log
     at info: every such answer looks the same to the caller, so only the log tells which
     check refused (tsk-e9pc50wdk9b9). `reason` is a fixed text naming the check; besides it
-    only the join's row id is logged, never its token or code."""
+    only the join's row id is logged, never its token or code. Mostly the exchange's exits;
+    the shared checks also log it where they refuse elsewhere: `_usable` for the join page,
+    and `live_profile`'s deleted profile at join and placement creation (no join id there)."""
     log.info("join answered not_found: %s (join %s)", reason, getattr(row, "id", None))
     return not_found()
+
+
+def _note_no_slot(conn: Connection, join_id: Any, now: Any) -> None:
+    """At debug only, the join's state when the exchange's attempt slot matched no row
+    (`_no_slot`). Normal serving makes no extra read: the refusal does not wait on it, and
+    a failure of that read is logged and never replaces the `not_found` (review A2100)."""
+    if not log.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        log.debug("join %s: %s", join_id, _no_slot(conn, join_id, now))
+    except SQLAlchemyError:
+        log.debug("join %s: no attempt slot; its state could not be read", join_id)
 
 
 def _no_slot(conn: Connection, join_id: Any, now: Any) -> str:
     """Why the exchange's attempt slot matched no row, as its own transaction reads the join
     then: which of the slot's conditions failed. Read only to name the cause in the log
-    (`_gone`); flags and counts, nothing secret."""
+    (`_note_no_slot`); flags and counts, nothing secret."""
     j = t.join_link.c
     now_row = conn.execute(
         select(j.failed_attempts, j.used_at, j.burned_at, j.revoked_at, j.expires_at).where(
@@ -1166,7 +1180,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
             if owner is not None:
                 write_guard.share(conn, owner)
             if row.agent_id is not None:  # a pickup's new profile does not exist yet (§15.9)
-                live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
+                live_profile(conn, row.agent_id, row)  # first, as the deletion takes it (§6.3)
             # Take an attempt slot before comparing: one conditional UPDATE, so
             # concurrent guesses cannot all read the same count (a lost update
             # would let more than three codes be tried, or unburn a join).
@@ -1184,7 +1198,8 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
                 .values(failed_attempts=t.join_link.c.failed_attempts + 1)
             ).rowcount
             if slot != 1:
-                raise _gone(_no_slot(conn, row.id, now), row)
+                _note_no_slot(conn, row.id, now)
+                raise _gone("no attempt slot", row)
             if code_matches(body.code, row.code_hash):
                 made = _consume(conn, row, body.client)
                 campaigns.activated(
@@ -1623,7 +1638,7 @@ def _create_for_join(conn: Connection, row: Any) -> str:
         None,
         "placement",
     ):
-        raise not_found()
+        raise _gone("pickup: its new profile's handle is taken or held", row)
     # `POST /agents` does not take the project lock: a profile of that handle may land
     # after the check above. Its `invalid`, or the unique constraint, is still a join
     # that no longer works, never a 400 or a 500 that tells the holder of the link more.
@@ -1633,8 +1648,8 @@ def _create_for_join(conn: Connection, row: Any) -> str:
             placement=True,
         )  # fmt: skip
     except IntegrityError:
-        raise not_found() from None
+        raise _gone("pickup: its new profile's handle was taken meanwhile", row) from None
     except ApiError as error:
         if error.code == "invalid":
-            raise not_found() from None
+            raise _gone("pickup: its new profile is refused as invalid", row) from None
         raise
