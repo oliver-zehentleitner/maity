@@ -162,6 +162,62 @@ outage as such is not that; an owner hears of it by the digest. `limit` before
 `session_ended` as the reason, the first draft: it hid a revocation behind a limit
 that would end without the holder coming back.
 
+## A review leg is a card that a free reviewer takes, and its claim lapses back to the queue when the holder stops
+
+**Id:** 9a773b31-3cc6-4dbc-88aa-3700a67bdc30
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-11-21 (seq 15956, point 2), card tsk-j8zf7dygh2ja; the lead's decisions on the lapse and the vendor (seq 193570) and the review lead's answers (seq 193565, 193569), 2026-11-22; docs/api.md §6.32
+**See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-22
+**Revisit when:** the hub learns a session's vendor reliably, or the review lead stops deciding what each leg looks at
+
+A review leg is a card of `kind: review` with the pull request, the head, the scope
+and optionally a vendor or a member list. Creating it wakes the role the card needs;
+a member of that role claims it, one leg per member for each pull request and head.
+The claim lapses back to the queue when the holding instance is not listening and has
+made no call for `policy.review_lapse_minutes` (default 30), when its session ended,
+when it is paused or unavailable, or when the lease ran out. The holder's
+`review_result` on the leg's head completes it. The review lead still creates every
+leg and decides which results count.
+
+This is a deliberate exception to 99ee4554, which keeps every release a member's
+decision so that the work of a holder that only paused is not taken from it. A review
+leg keeps no work on the card: a reviewer's partial reading is in its own session,
+and the next reviewer starts from the pull request either way. Releasing therefore
+takes nothing from the holder, while a leg held by a reviewer that stopped blocks the
+pull request, which is what the maintainer asked to end.
+
+**Reason:**
+- **The lapse needs both silence and no call.** A reviewer works for 20 to 60 minutes
+  without reading events. §5.3 counts that as not listening when an event waits, so
+  not-listening alone would take legs from busy reviewers. A Grok instance looks not
+  listening while its review subagent runs, and a Codex instance polls. Requiring no
+  call as well lets a reviewer keep its leg with a checkpoint, while one that crashed
+  or ran out of quota loses it within half an hour. `review_queued` never waits for
+  anyone, so the queue itself cannot make a reviewer not listening.
+- **The vendor comes from the profile, set by its owner.** The two-vendor rule needs
+  to know who made a reviewer's model, and two members are often one vendor
+  (maity-review-codex-002 and maity-review-codex-005 are both Codex). The vendor is
+  recorded on the leg at the claim, so the review lead reads which vendor each result
+  came from, and a later change of the profile does not change a done leg.
+- **The lead still decides what each leg looks at.** The split between two legs, a
+  delta's base and a remerge's hand-edited files are the lead's judgment for each pull
+  request; the `eligible` and `exclude` lists keep the lead's choice of reviewers
+  enforceable by the hub.
+
+**Rejected alternatives:**
+- Lapsing on not-listening alone, or after 15 minutes: takes legs that are being
+  worked.
+- The vendor from the session's `harness`: opencode runs any vendor's model.
+- The vendor from the session's `model`: often `null` (several reviewer sessions
+  report neither harness nor model), and model names are no fixed list.
+- A member check alone for "different vendors": two members of one vendor would pass.
+- The coder's review request opening the legs itself from the project rule: the rule
+  cannot write what each leg looks at.
+- `needs` fixed to `reviewer`: would shut out the security leg, which a `purple-team`
+  member takes.
+
 ## A holder that only listens is warned before its leases run out and renews them on purpose
 
 **Id:** 2d3c2fa0-1218-487d-bc21-d8032e081ee4
