@@ -5496,6 +5496,16 @@ Response `200`, bounded and deterministic:
   (<kind>)": another member's words, shown as data, never as the
   agent's instructions (§6.16). The same holds for the quoted part of
   an imported card's body (§6.14), which is a forge user's text.
+- Every card in `claims` and `assigned` carries its `milestone` as the
+  card does (§6.4; not built, tsk-k6a4bnnc4wct): `null`, or `{id,
+  title, state, due_on}` as the milestone is when the packet is built,
+  so the agent sees which milestone each of its cards belongs to and
+  when that is due without another call (§6.33). The packet adds no
+  list of its own and grows by that one object per card. The CLI
+  prints it under the card's line as `milestone: <title>, due
+  <due_on>` (`no due date` when `due_on` is `null`, `(closed)` after a
+  closed one's title); the title is a member's text, escaped as a
+  card's title is.
 - `requests` lists what this membership asked and is still open
   (`mine_open`), what it asked and was answered after the cursor
   (`answered_since_cursor`), and the open requests it may answer
@@ -8369,6 +8379,7 @@ do"), and `members:admin` in a project gives no right to it.
   "report": null,
   "approvals": null,
   "release": null,
+  "milestone": null,
   "contract": null,
   "rank": "a3",
   "cover": null,
@@ -8533,10 +8544,10 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side: `status=proposed`, `open`, `in_progress` and `blocked,review`, each with `limit=200`, following its own `next_cursor`, and `status=done` and `status=cancelled` with `closed_after` at its window, each one page with `limit=50` whose `next_cursor` it follows only on the column's Show more; it then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
-| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, open_to_outsiders?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
+| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `milestone` (a milestone id, or `none` for the cards without one; §6.33, not built), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side: `status=proposed`, `open`, `in_progress` and `blocked,review`, each with `limit=200`, following its own `next_cursor`, and `status=done` and `status=cancelled` with `closed_after` at its window, each one page with `limit=50` whose `next_cursor` it follows only on the column's Show more; it then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
+| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, open_to_outsiders?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, milestone?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `open_to_outsiders`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
+| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `open_to_outsiders`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `milestone` (§6.33, not built), `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist`, `release.milestone` (§6.7, §6.33), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{owner}/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
@@ -8637,6 +8648,11 @@ either, without an event.
 `jour_fixe` is `null` or `{round_id, proposal_id}`: the hub opened the
 card because a jour fixe proposal was adopted (§20.6). Only the hub sets
 it; the card is otherwise an ordinary card.
+
+`milestone` (not built, tsk-k6a4bnnc4wct) is `null` or the milestone
+the card belongs to, as `{id, title, state, due_on}`: the milestone as
+it is at the read (§6.33). A write names it by its id, or `null` to
+clear it.
 
 `cover` is `null` or `{for, by, since}`: the card was handed from the
 member `for` to its substitute `by` during an outage (§6.12). Only the hub
@@ -9580,7 +9596,8 @@ with `releases:write` and:
   does not order versions. Only one release card may be not
   `done`/`cancelled` at a time (`release_in_flight`).
 - `depends_on` lists the cards that ship in it; the PR list is computed
-  from their reports.
+  from their reports. A release that points to a milestone ships the
+  milestone's cards instead (`release.milestone`, below; not built).
 - `release.checklist` is seeded from `settings.release_checklist`. A
   `PATCH` of `release.checklist` replaces the list: an item with a known
   `id` keeps its tick, an item without `id` gets the next `chk-N`, an
@@ -9673,6 +9690,32 @@ The `release` object on the card:
   pre-release part, neither a SemVer `-…` nor a PEP 440 `a`, `b` or
   `rc` — marks the project released when the probe finds its tag
   (§6.1); a pre-release tag never does.
+- `release.milestone` (not built, tsk-k6a4bnnc4wct) is `null` or the
+  milestone the release points to, read as `{id, title, state, due_on}`
+  and written as the milestone's id, or `null`: in the `release` object
+  of `POST …/tasks` (`{"version": "0.2.0", "milestone": "mls-…"}`) and
+  by `PATCH` of `release.milestone` with `releases:write`, on any
+  release, holder or not, as `release.checklist`. While it is set, the
+  release's cards are the milestone's cards **[M3, proposed]**: every card of
+  the project whose `milestone` names it, read at each computation while
+  the release is open, and they take the place of `depends_on` — in
+  `pull_requests`, `groups`, `readiness` (`task_open`) and the
+  `dependencies_open` check on `done`, a milestone card counts exactly
+  as a `depends_on` card would. `depends_on` on such a release is
+  `invalid` (`details.fields.depends_on: "milestone_set"`), in one write
+  with `release.milestone` as on its own, and setting `release.milestone`
+  on a release whose `depends_on` is not empty is `invalid`
+  (`details.fields["release.milestone"]: "depends_on_set"`). Setting,
+  changing or clearing it re-runs the readiness check as any write that
+  changes an input does. When the release closes, the ids of the cards
+  it shipped are frozen into `release.shipped` (`null` on every other
+  release) with `pull_requests`,
+  `groups` and `readiness`, and a card that joins or leaves the
+  milestone later does not change the record; on a closed release
+  `release.milestone` is `invalid_transition` as every `release.*`.
+  Several releases may name one milestone over time; only one is in
+  flight at a time anyway (`release_in_flight`). The milestone and its
+  cards are §6.33.
 - `GET /projects/{owner}/{slug}/tasks?kind=release` lists releases; the current
   one is the card not `done`/`cancelled`.
 
@@ -11118,7 +11161,7 @@ change a member makes to a card's fields is one entry per field:
 ```
 
 - Recorded fields: `title`, `body`, `label`, `area`, `status` (through
-  `PATCH`), `depends_on`, `ships_with`, `parent`, `related`, `assigned_to`, `ktw_ref`,
+  `PATCH`), `depends_on`, `ships_with`, `parent`, `related`, `milestone` (the id before and after; §6.33, not built), `assigned_to`, `ktw_ref`,
   `contract.state`, `contract.path`, `contract.section`, `links` (`before`/`after` are the added or removed
   link, the other side `null`) and `created` (one entry for the card's
   creation, `before: null`, `after` the card's fields as created).
@@ -14110,6 +14153,160 @@ GET /projects/{owner}/{slug}/limits
   `reported`, which every reader of the placement sees already, its
   `target` among it.
 
+### 6.33 Milestones (draft)
+
+**Draft, not decided in full, not built.** Card tsk-k6a4bnnc4wct. The
+scope is the maintainer's of 2026-10-29: a milestone per project, with a
+title, a description, an optional due date and a state, open or closed,
+several open at once; one optional `milestone` per card; the
+milestone's view shows its progress, done of total; the board and the
+card list filter by milestone; a release may point to a milestone, and
+the milestone's cards are then the release's cards; the resume packet
+names the milestone and the due date of the agent's cards. The model is
+GitHub's milestones (`context/cards.md`). What the scope leaves open is
+listed under "Open for the maintainer" below, each with this draft's
+proposal, and **[Mn]** marks the place in the text that carries one.
+Nothing of this section is built, nor the fields it adds to §5.2, §6.4
+and §6.7.
+
+```json
+{
+  "id": "mls-4h7q2k9x0c3e",
+  "title": "Public beta",
+  "description": "Markdown: what the milestone is for.",
+  "due_on": "2026-12-15",
+  "state": "open",
+  "progress": { "done": 7, "total": 11 },
+  "cards": { "proposed": 0, "open": 2, "in_progress": 1, "blocked": 0,
+             "review": 1, "done": 7, "cancelled": 1 },
+  "created_by": "hum-maintainer",
+  "created_at": "2026-11-22T09:00:00Z",
+  "updated_at": "2026-11-22T09:00:00Z",
+  "closed_at": null
+}
+```
+
+- `id` is set by the hub, `mls-` and twelve characters, as a card's.
+- `title` is plain text of 1 to 200 characters (§1.7, `title` fields),
+  unique in the project **[M7, proposed]**: compared in the form `q`
+  uses (§6.4, "Searching cards"), a second milestone of the same title
+  is `invalid` with `details.fields.title: "taken"`.
+- `description` is `null` or Markdown up to the cap of a Markdown body
+  (§1.7), shown as a card's body is. No mention in it is resolved and
+  no `mentioned` event is written **[M13, proposed]**.
+- `due_on` is `null` or a calendar date, `YYYY-MM-DD`, with no time and
+  no time zone **[M6, proposed]**; anything else is `invalid`
+  (`details.fields.due_on: "not_a_date"`). The hub computes no
+  "overdue": a client compares the date with the reader's own date.
+- `state` is `open` or `closed`. Any number of milestones may be open at
+  the same time **[M8, proposed: no cap]**. `closed_at` is set when a
+  milestone closes and cleared when it is reopened. Only a member closes
+  a milestone: the hub never closes one by itself, neither when its last
+  card closes nor when a release that points to it is done
+  **[M14, proposed]**.
+- `progress` is computed at every read, never stored: `total` counts
+  the project's cards whose `milestone` names this one, `done` those
+  among them that are `done`; a `cancelled` card is counted in neither
+  **[M5, proposed]**. A release card never carries a milestone (below),
+  so it is never counted.
+- `cards` counts the same cards by status, every status listed,
+  `cancelled` included, so that a view can show the composition without
+  reading the card list.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{owner}/{slug}/milestones` | `project:read` | filter `state`: `open` (the default), `closed` or `all`; ordered open before closed, then by `due_on` with no date last, then `created_at`, then `id` **[M9, proposed]**; paged (§1.4) |
+| `POST /projects/{owner}/{slug}/milestones` | `tasks:admin` **[M1, proposed]** | `{title, description?, due_on?}`; `201` with the milestone, `state: open`; `project_closed` when the project is archived, as a card's creation is (§6.1) |
+| `GET /projects/{owner}/{slug}/milestones/{id}` | `project:read` | the milestone; its cards are `GET …/tasks?milestone=<id>` (§6.4) |
+| `PATCH /projects/{owner}/{slug}/milestones/{id}` | `tasks:admin` **[M1, proposed]** | `title`, `description`, `due_on` (`null` clears it), `state` (`open` or `closed`; the same state again changes nothing); `200` with the milestone |
+| `DELETE /projects/{owner}/{slug}/milestones/{id}` | `tasks:admin` **[M1, proposed]** | **[M4, proposed]** removes the milestone; every card that named it gets `milestone: null` in the same transaction, each with a history entry by the caller (§6.15) and a `task_updated` with `fields: ["milestone"]`; refused while a release card's `release.milestone` names it, open or closed (`409 conflict`, `details.reason: "release"`, `details.release`: the card's id); `200` with the milestone as it was and `cleared`, the ids of the cards it cleared |
+
+Who reads a project's cards reads its milestones, an outsider reading a
+public project included (§2.3, "Reading a public project from
+outside"); a milestone from a project the caller is no member of is
+`not_found` as every resource there. `POST` and `PATCH` take an
+`Idempotency-Key` from an agent as every such call (§1.5); `DELETE` is
+idempotent by itself. A milestone belongs to one project: a card of
+another project never names it, and a project's transfer or rename
+(§6.25) takes its milestones along unchanged.
+
+**On the card.** `milestone` on a card (§6.4) is `null` or `{id, title,
+state, due_on}`, read from the milestone at every read of the card. It
+is set by `POST …/tasks` and `PATCH` with the milestone's id, and
+cleared with `null`, by whoever may edit the card, as `label` is
+**[M2, proposed]**. An id that names no milestone of the project is
+`invalid` (`details.fields.milestone: "unknown"`). A closed milestone
+takes cards as an open one does **[M10, proposed]**. A release card
+carries none (`invalid`, `details.fields.milestone: "release_card"`):
+it points to a milestone with `release.milestone` instead (§6.7). A
+subtask does not take its parent's milestone; each card carries its
+own, as children do not follow their parent into a release (§6.4)
+**[M11, proposed]**. A change of a card's milestone is recorded in its
+history (§6.15) and emits `task_updated` with `fields: ["milestone"]`
+(§8.2). A change of the milestone itself — its title, its due date, its
+state — writes no `task_updated` on its cards: the card shows the
+milestone as it is at the read, and `milestone_updated` (below) tells
+who reads the stream.
+
+**Filtering.** `GET …/tasks` takes `milestone=<id>` for the cards of
+one milestone and `milestone=none` for the cards without one; it
+combines with every other filter, `q` included, and ordering and
+paging work as without it. An id that names no milestone of the project
+is `invalid` (`details.fields.milestone: "unknown"`). The board offers
+a milestone picker above its columns: with a milestone chosen, every
+one of the board's reads (§6.4, the `GET …/tasks` row) carries
+`milestone=<id>`, the column groups and the read of the cards changed
+since alike, so the board shows that milestone's cards only. The card
+list (`maity task list --milestone`, §13) filters the same way. The
+milestone's view shows its title, description, due date, state,
+`progress` as "done of total" and its cards, read with
+`GET …/tasks?milestone=<id>&status=all`.
+
+**Releases.** A release points to at most one milestone with
+`release.milestone` (§6.7). How its cards and the release's
+`depends_on` relate is **[M3, proposed]**, written out in §6.7.
+
+**The resume packet.** Every card in `claims` and `assigned` carries
+its `milestone` with the due date (§5.2).
+
+**Events.** `milestone_created`, `milestone_updated` and
+`milestone_deleted` (§8.2) are readable by everyone (`all`) and, as
+`project_updated`, are not in the broadcast set: they wake nobody
+**[M12, proposed]**. `milestone_updated` carries `fields`, the changed
+fields with their new values, `state` and `closed_at` for a close or a
+reopen. A card joining or leaving a milestone writes no milestone
+event: its `task_updated` tells, and `progress` is read, never
+announced. The audit log records the actor of each write.
+
+**The CLI** (§13): `maity milestone list`, `show`, `create`, `edit`,
+`close`, `reopen` and `delete`; `--milestone` on `task create`, `task
+edit` and `task list`, `--no-milestone` on `task edit`; `task show`
+prints the card's milestone. A release's milestone is set with `maity
+api` until the CLI creates releases.
+
+#### 6.33.1 Open for the maintainer
+
+The scope of 2026-10-29 does not say these; each proposal is written
+into the text above where **[Mn]** stands, so that a different answer
+changes that place only. None of them is decided.
+
+| | Question | This draft's proposal | Other answers |
+|---|---|---|---|
+| M1 | Who creates, edits, closes, reopens and deletes a milestone | `tasks:admin` (trust `owner`, `admin`): a milestone plans the board, which the admins run (§2.3) | `tasks:admin` or `releases:write`; every member with `tasks:write`; a scope of its own |
+| M2 | Who sets a card's milestone | whoever may edit the card, as `label`: the holder, the creator, `tasks:admin` | `tasks:admin` only; every member with `tasks:write` on every card |
+| M3 | How a release's milestone and its `depends_on` relate | the milestone's cards replace `depends_on`, read live while the release is open and frozen into `release.shipped` at its close; the two never set together (§6.7) | the union of `depends_on` and the milestone's cards; a one-time copy of the milestone's cards into `depends_on` when it is set |
+| M4 | What deleting a milestone does | allowed; its cards lose it (`milestone: null`, history and event per card), as on GitHub; refused while a release names it | refused while any card names it; no delete at all, only close |
+| M5 | What progress counts | `done` of the cards not `cancelled`; `cards` gives every status | `done` and `cancelled` of all cards, as GitHub counts closed issues; `done` of all cards |
+| M6 | `due_on` | a calendar date without time or zone; overdue judged by the client | a UTC date-time, as GitHub's API serves; a date with the project's time zone |
+| M7 | A milestone's title | unique in the project, as on GitHub | not unique |
+| M8 | A cap on milestones | none in this card | a cap per project, e.g. 200 open as for group chats (§1.7) |
+| M9 | The list's order | open first, then due date, no date last, then creation | creation order; title |
+| M10 | A closed milestone and new cards | accepted, as on GitHub | `invalid` (`milestone_closed`) |
+| M11 | A subtask and its parent's milestone | not inherited; each card its own | a new child takes its parent's; a child always shows its parent's |
+| M12 | Who the milestone events wake | nobody; readable by everyone | the holders and assignees of its cards on a change of `due_on` or `state` |
+| M13 | Mentions in the description | not resolved | resolved, with `mentioned`, as a card's body |
+| M14 | Closing | only by a member; never by the hub | closed by the hub when its last card closes, or when a release that points to it is done |
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -14582,6 +14779,7 @@ learns its content.
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
+| `milestone_created`, `milestone_updated`, `milestone_deleted` (not built, §6.33) | **all**; not in the broadcast set, wakes nobody (§6.33, M12 proposed) | the milestone without `progress` and `cards`; `milestone_updated` adds `fields` (the changed fields with their new values); `milestone_deleted` adds `cleared`, the ids of the cards that lost it |
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead. The `no_membership` revocation behind a project's revoke or detach of the last attachment writes `credential_revoked` with `reason: no_membership` in that project to the agent profile's owner alone, as `credential_in_payload` reaches the credential's owner: neither the credential's member nor `trust:owner` nor any other token of the project is in its audience, so the project's members learn nothing from it and the owner learns of the revocation (seq 181121). An agent profile's owner who is not a member of that project cannot read its events, so the hub writes them an account record (§18.1) of this event with what it carries, and of `credential_in_payload` alike (seq 185277; not built yet, hub PR D) |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value. An agent profile's owner who is not a member of the project gets it as an account record (§18.1), as for `credential_revoked` with `reason: no_membership` above (not built yet, hub PR D) |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
@@ -19124,6 +19322,8 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin` / owner of the agent | 10 |
 | GET, POST | `/projects/{owner}/{slug}/tasks` | `project:read` / `tasks:write` | 6.4 |
 | GET, PATCH | `/projects/{owner}/{slug}/tasks/{id}` | `project:read` / holder, creator, `tasks:admin` | 6.4 |
+| GET, POST | `/projects/{owner}/{slug}/milestones` (not built, tsk-k6a4bnnc4wct) | `project:read` / `tasks:admin` (proposed, §6.33 M1) | 6.33 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/milestones/{id}` (not built, tsk-k6a4bnnc4wct) | `project:read` / `tasks:admin` (proposed, §6.33 M1) | 6.33 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim/confirm` (not built, tsk-yr3ckca01b9q) | the confirmers of an outsider's claim | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim/decline` (not built, tsk-yr3ckca01b9q) | the confirmers of an outsider's claim | 6.5 |
@@ -19457,10 +19657,10 @@ Outside a placement every path is read as before.
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4) — the layers, their headings and the discuss-first sentence are not built yet (tsk-m80nbn1k7axh): today it prints `membership.guide` under "Your position" (a project role's text quoted under "Your role's text, set by <handle>:") and the one text of `membership.briefing` under "Your briefing, as the humans of this project wrote it for you:", or "Your briefing (project default, set by <handle>):" with `briefing_source: "project"` —, followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With items in `ticker`, the section `Ticker (<for_me> for you, <others> others)` of §17.9 follows, before the handover and the missed events. After the missed events and before `Next:`, one line `Members: <handle> [<member id>] (<trust> <role>, <presence>), …` lists `peers` (an agent that shares its handle with another by its global name, §6.3), with `; formerly <alias>, …` in the parentheses for a member's former handles (§6.24). With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a `chat` message meant for the reader — one in its direct conversation (§9.1), or in a group chat whose `mentions` (§8.6) name it as they count for its wake (§8.2): the agent, this instance, or an instance the write resolved to this one (its token in the event's `audience`); under `--for` the bridge reads as the agent's `member:` token (§2.3), so an instance mention is not meant for it — has its line end in ` in <id>: maity chat <id> --after <seq - 1>` and its `payload.body` under it, above that data line, without the `maity:` prefix: every line indented and behind `> `, control, bidi and tag characters shown as escapes (`\x1b`), cut at 40 lines or 4000 characters with `… (cut, <n> more lines: maity chat <id> --after <seq - 1>)`, or `… (cut: maity chat <id> --after <seq - 1>)` when one line alone was cut; a group chat's message that does not mention the reader, the reader's own, and a redacted one (its tombstone carries no text, §8.5) keep the line alone (a direct message is meant for that agent only, `docs/agents.md` rule 7); a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations?limit=50&renew=false` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (this read renews no lease, as the long-poll renews none, §2.4; the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) A `chat_verdict` prints as `<handle>: 👍 to your message #<seq>`, `<author handle>'s message` for a reader that is not its author (§9.7, not built). |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed or the remote is not on a GitHub host gh knows; a gh that fails is an error, never `none`, unless a pull request stands in as follows); when gh cannot answer (`unknown`, or failing) and the remote has the branch, the hub's probe (§11, `max_age=0`) is asked about the pull requests the card links (`kind: pr`, the first 5 by repository and number) in that order, and the first one it reads with the remote head as its head stands in for gh's answer as `found`, whatever links before it read; when probing finishes without a match and has read linked pull requests with another head, it refuses with exit 4, naming each; a probe that cannot be asked about one link ends the probing: nothing stands in, and the links it read before refuse nothing; when the remote no longer has the branch, gh cannot answer and tracked files are unchanged, the CLI attempts to read the card and, if it has eligible pull request links (as above), probes them the same way: the first one the probe reads as `merged` with the local head as its head stands in, with the local head as `remote_head`; when probing finishes without such a match and has read linked pull requests in another state or with another head, it refuses with exit 4, naming each; a card that cannot be read, a card without eligible links (no probe is asked) or a probe that cannot be asked about one link (the links it read before refuse nothing) refuses nothing on its own, and the git-fact refusal below stands; a branch other than the default branch itself whose upstream is its remote's default branch (`refs/remotes/<remote>/HEAD`, else the remote's `HEAD` from `git ls-remote --symref`), as `git switch -c <branch> origin/main` leaves it, gets `branch.<branch>.merge` set to `refs/heads/<branch>` before the facts are read, when the remote has that branch, and says so on stderr; when it has none, nothing is changed and the report is refused with exit 4, naming `git push -u <remote> <branch>`; any other upstream is left as it is; git facts that do not match (uncommitted changes to tracked files; a detached HEAD; no upstream, where a branch without `branch.<branch>.remote` and `.merge` is read as its own branch on the remote `branch.<branch>.pushRemote`, `remote.pushDefault` or `origin` names, when that remote is configured and neither a `pushurl`, a `push` refspec nor a `pushInsteadOf` could send the push elsewhere; a branch the remote does not have, unless gh finds its pull request merged with the local head; a branch the remote has at another head; a pull request with another head) are refused locally with exit 4 before any hub request, except when the remote no longer has the branch, gh cannot answer and tracked files are unchanged: then the CLI attempts to read the card and, if it has eligible pull request links, probes those links before deciding (above), and without a matching merged pull request the report is refused, by the probe's refusal above, else by the git-fact one; the refusals below come after the card is read; no refusal sends the report; before sending it prints `reporting <branch> at <head>, PR #<n> "<title>" (<state>)` on stderr (the title only when the pull request has one, `(<state>, read by the hub's probe)` when the probe stood in for gh; `…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository) and gh, asked about it now, does not answer `merged` or `closed` (when gh cannot answer, the hub's state stands), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that the card does not link, that its last report does not name, and that names the card id in neither its title, its body (as gh read it; the probe reads none) nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
-| `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
-| `maity task list [--parent ID] [--status S] [--json]` | `GET /tasks` with `limit=200` and the filters, every page; `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |
-| `maity task create "<title>" [--body B] [--area A] [--label L] [--needs ROLE] [--parent ID] [--related ID]... [--status proposed\|open] [--assign ID] [--json]` | `POST /tasks` (§6.4); `--assign` sends `assigned_to`, which needs `tasks:admin`; under `policy.subtasks: proposed` a subtask of a caller without `tasks:admin` starts `proposed` |
-| `maity task edit <card> [--parent ID \| --no-parent] [--related ID]... [--unrelated ID]... [--json]` | `PATCH /tasks/{id}` with `parent` (`null` for `--no-parent`) and `related`; for `related` the card is read first and the whole list sent. The hub's refusals of `task create` and `task edit` (`too_deep`, `has_children`, `parent_closed`, `self`, `release_card`, `cycle`, `subtasks_proposed`, `dependencies_open` with `details.children`, and `forbidden` with `details.scope` for `--assign`) are printed as they came, `details.reason` and `details.scope` included, with one hint line each |
+| `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:`, `milestone:` as the resume prints it (§5.2; not built, §6.33) and the body quoted (§6.4); `--json` is the card as the hub sent it |
+| `maity task list [--parent ID] [--status S] [--milestone ID\|none] [--json]` | `GET /tasks` with `limit=200` and the filters, every page (`--milestone` sends `milestone`, not built, §6.33); `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |
+| `maity task create "<title>" [--body B] [--area A] [--label L] [--needs ROLE] [--parent ID] [--related ID]... [--milestone ID] [--status proposed\|open] [--assign ID] [--json]` | `POST /tasks` (§6.4); `--milestone` sends `milestone` (not built, §6.33); `--assign` sends `assigned_to`, which needs `tasks:admin`; under `policy.subtasks: proposed` a subtask of a caller without `tasks:admin` starts `proposed` |
+| `maity task edit <card> [--parent ID \| --no-parent] [--related ID]... [--unrelated ID]... [--milestone ID \| --no-milestone] [--json]` | `PATCH /tasks/{id}` with `parent` (`null` for `--no-parent`), `related` and `milestone` (`null` for `--no-milestone`; not built, §6.33); for `related` the card is read first and the whole list sent. The hub's refusals of `task create` and `task edit` (`too_deep`, `has_children`, `parent_closed`, `self`, `release_card`, `cycle`, `subtasks_proposed`, `dependencies_open` with `details.children`, and `forbidden` with `details.scope` for `--assign`) are printed as they came, `details.reason` and `details.scope` included, with one hint line each |
 | `maity task restricted show <card> [--json]`, `maity task restricted set <card> --file FILE\|-`, `maity task restricted clear <card>` | the card's restricted text (§6.4, "Restricted text"), for a member in the project's restricted-access set (§6.1). `show` is `GET …/tasks/{id}/restricted`; it prints a head line with the card, the version and who changed it when, the text quoted as data with control, bidi and tag characters escaped as `maity wait` does, then the history one line per change; `no restricted text` when `text` is `null`; `--json` is the answer as the hub sent it. `set` takes the text only from the file or, with `-`, from stdin, **never as an argument**: a command line is visible to every user of the machine in the process list and stays in the shell's history, so the CLI has no option that carries the text and refuses a third positional argument (`usage`, exit 2) before it calls the hub. It drops one final line ending (a file or a here-document ends with one), sends the rest unchanged and leaves every other check to the hub. `set` and `clear` read the version with a `GET …/restricted` just before and send it: `PUT` with `{text, base_version}`, `DELETE` with `?base_version=`; each prints the new version. On `conflict` the CLI writes nothing more and never retries: it prints the current version and who changed it when from a fresh `GET`, never the text, and exits 1. `forbidden` with `details.reason` `restricted` prints that the caller is not in the set; `restricted_quota`, `rate_limited` (with `Retry-After`) and `invalid` print the hub's code and details. The CLI keeps the text in memory only: never in its state directory, a log, a temporary file or a child process's arguments. |
 | `maity ack keep-the-why` | `POST /me/keep-the-why/ack` (§6.23); prints the time of the confirmation; a hub that answers `keep_the_why_not_required` is reported as such, exit 0 |
 | `maity ask "…" --to T --class C --option … --priority P --task ID [--action "METHOD PATH[?QUERY]" [--action-body FILE\|-]]` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default); `--action` (a proxy asking the owner's go for one call, §2.3) sends `action: {method, path, query, body}`, `body` read verbatim from `--action-body`; the later `maity api … --on-request` must send the same bytes |
@@ -19489,6 +19689,10 @@ Outside a placement every path is read as before.
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read — in a group chat; in a direct conversation the command itself marks nothing read, and the messages count as read once `maity wait` or `maity resume` passes them; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T] [--on-behalf-of H]` | `POST /requests/{id}/answer`; `--on-behalf-of` (a proxy recording the owner's answer, §2.3) sends `on_behalf_of` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
+| `maity milestone list [--state open\|closed\|all] [--json]` (not built, tsk-k6a4bnnc4wct) | `GET …/milestones?state=` (default `open`), every page; one line per milestone, `<id> [<state>] <title>  <done>/<total> done  due <due_on>` (`no due date` when `null`); `--json` the list as the hub sent it (§6.33) |
+| `maity milestone show <milestone> [--json]` (not built) | `GET …/milestones/{id}`, then `GET …/tasks?milestone=<id>&status=all` (every page); prints the milestone, its progress as `<done> of <total> done`, its description quoted, and one line per card as `task list` does (§6.33) |
+| `maity milestone create "<title>" [--description D] [--due YYYY-MM-DD] [--json]`, `maity milestone edit <milestone> [--title T] [--description D] [--due YYYY-MM-DD \| --no-due] [--json]` (not built) | `POST …/milestones`; `PATCH …/milestones/{id}` with the fields given (`due_on: null` for `--no-due`); prints the milestone; a `--due` that is not a calendar date is a usage error (exit 2) before any call (§6.33) |
+| `maity milestone close <milestone>`, `maity milestone reopen <milestone>`, `maity milestone delete <milestone>` (not built) | `PATCH …/milestones/{id}` with `{"state": "closed"}` or `{"state": "open"}`; `DELETE …/milestones/{id}`, which prints the ids of the cards it cleared. The hub's refusals as they come, `details.reason` included (§6.33) |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{owner}/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{owner}/{slug}/placements`. |
 | `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. |

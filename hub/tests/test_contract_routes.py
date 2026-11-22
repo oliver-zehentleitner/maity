@@ -18,6 +18,7 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/members/{}/instances/{}"),  # no route yet: tsk-jrwpngsn584f, detach
+    ("DELETE", "/projects/{}/{}/milestones/{}"),  # no route yet: tsk-k6a4bnnc4wct, milestones
     ("DELETE", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
@@ -32,6 +33,8 @@ NOT_ROUTED = {
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/contribution"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
+    ("GET", "/projects/{}/{}/milestones"),  # no route yet: tsk-k6a4bnnc4wct, milestones
+    ("GET", "/projects/{}/{}/milestones/{}"),  # no route yet: tsk-k6a4bnnc4wct, milestones
     ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
@@ -39,11 +42,13 @@ NOT_ROUTED = {
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
+    ("PATCH", "/projects/{}/{}/milestones/{}"),  # no route yet: tsk-k6a4bnnc4wct, milestones
     ("PATCH", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/agents/{}/instances/{}/revoke"),  # no route yet: tsk-jrwpngsn584f, revoke everywhere
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
+    ("POST", "/projects/{}/{}/milestones"),  # no route yet: tsk-k6a4bnnc4wct, milestones
     ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/nudge"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/replace"),  # no route yet: tsk-j9e0yapj21wj
