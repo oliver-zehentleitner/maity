@@ -633,8 +633,9 @@ set cannot see.
 **Type:** decision
 **Status:** active
 **Evidence:** unknown
-**Source:** the maintainer's agreement of 2026-10-29 in a chat, recorded in the body of card tsk-k6a4bnnc4wct; contract draft in `docs/api.md` §6.33 (milestones), §6.4, §6.7 and §5.2
-**Revisit when:** the open points of `docs/api.md` §6.33.1 are answered, or a project needs a card in more than one milestone or a milestone across projects
+**Source:** the maintainer's agreement of 2026-10-29 in a chat, recorded in the body of card tsk-k6a4bnnc4wct; contract in `docs/api.md` §6.33 (milestones), §6.4, §6.7 and §5.2
+**Revisit when:** a project needs a card in more than one milestone or a milestone across projects
+**See:** cards.md#milestones-the-points-the-scope-left-open-decided-within-it — 4f03f826-f4a4-4875-9e15-bfa3a2a33dad — as of 2026-11-22
 
 A project has milestones: each with a title, a description, an
 optional due date and a state, open or closed, and several may be open
@@ -644,11 +645,8 @@ the card list filter by milestone. A release may point to a milestone,
 and the milestone's cards are then the release's cards. The resume
 packet names the milestone and the due date of each card the agent
 holds or is assigned. The model is GitHub's milestones. The contract
-draws these out in `docs/api.md` §6.33; what the agreed scope leaves
-open (who manages milestones, deleting, progress counting, the
-release's `depends_on`, the form of the due date and more) is listed
-there in §6.33.1 with the draft's proposals, none of them decided, and
-this entry is updated when they are answered.
+draws these out in `docs/api.md` §6.33; the points the scope left open
+were decided afterwards within it (entry 4f03f826, below).
 
 **Reason:** the scope is the maintainer's and recorded on the card, so
 the decision itself is confirmed; the reason was not stated with it,
@@ -667,3 +665,77 @@ was not stated, the reasons given are inferred):
   GitHub, where a milestone belongs to one repository; a project is
   also where membership and reading rights end, so a cross-project
   milestone would count cards some of its readers may not see.
+
+## Milestones: the points the scope left open, decided within it
+
+**Id:** 4f03f826-f4a4-4875-9e15-bfa3a2a33dad
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the lead's decision of 2026-11-22 on the fourteen open points of the milestones contract draft (card tsk-k6a4bnnc4wct), within the maintainer's scope of 2026-10-29; contract in `docs/api.md` §6.33, §6.7, §1.3 and §1.7
+**Revisit when:** the maintainer overrules one of these points in the review of the contract's pull request, or the 200 milestones per project are reached in practice
+**See:** cards.md#milestones-as-on-github-one-per-card-per-project-several-open-a-release-may-point-to-one — c50d8929-b996-4656-9755-f579272948b3 — as of 2026-11-22
+
+The contract draft for milestones listed fourteen points the
+maintainer's scope did not settle, each with a proposal and the other
+answers. The lead decided all of them within that scope ("like
+GitHub"); the maintainer reads the pull request and may overrule any
+point there. The decisions themselves are confirmed by that record.
+Their reasons stand differently, and each bullet says how: a reason the
+lead gave is confirmed; "like GitHub" is the stated frame for the points
+that follow GitHub; where no reason was given it says so, and the entry
+carries `unknown`, the weakest part.
+
+- **Who manages milestones:** `tasks:admin` (trust `owner`, `admin`)
+  creates, edits, closes, reopens and deletes them. Rejected:
+  `releases:write`, because a release only points to one milestone and
+  does not plan the board; every member with `tasks:write`. Reason
+  given with the rejections; why `tasks:admin` over a scope of its own,
+  the fourth answer offered, was not stated.
+- **Who sets a card's milestone:** whoever may edit the card, as for
+  `label`. Rejected: `tasks:admin` only; every member with
+  `tasks:write` on every card. Reason not stated.
+- **A release's milestone and its `depends_on`:** while the release is
+  open its cards are the milestone's cards, in place of `depends_on`;
+  at the close they are frozen into `release.shipped`; a release with
+  both is refused. Rejected: the union of the two; a one-time copy of
+  the milestone's cards into `depends_on`. Reason given: the
+  maintainer's own words, "a release may point to a milestone, and then
+  its cards are the milestone cards".
+- **Deleting:** allowed; the cards lose the milestone, each with a
+  history entry and an event; refused while a release names it.
+  Rejected: refused while any card names it; no delete, only close.
+  Reason: as on GitHub, where deleting a milestone clears it from its
+  issues; why a release blocks it is inferred: a closed release is the
+  record of what shipped and must keep the milestone it names.
+- **Progress:** `done` of the cards that are not `cancelled`; a
+  cancelled card is in neither number. Rejected: `done` and `cancelled`
+  of all cards, as GitHub counts closed issues; `done` of all cards.
+  Reason not stated; this point does not follow GitHub.
+- **`due_on`:** a calendar date with no time and no zone. Rejected: a
+  UTC date-time, as GitHub's API serves; a date in a project time zone.
+  Reason not stated.
+- **Title:** unique in the project, as a milestone's title is in a
+  GitHub repository. Rejected: not unique. Reason: GitHub's model.
+- **A cap:** 200 milestones per project, open and closed together,
+  refused as the other fixed project caps are (`milestone_quota`,
+  `details.max`, as `restricted_quota`). Rejected: no cap. Reason given:
+  scalability before features.
+- **The list's order:** open first, then `due_on` with no date last,
+  then creation. Rejected: creation order; title. Reason not stated.
+- **A closed milestone** takes new cards. Rejected: refusing them.
+  Reason: as on GitHub.
+- **A subtask** does not inherit its parent's milestone. Rejected: a
+  new child taking its parent's; a child always showing its parent's.
+  Reason not stated; the contract notes the precedent that children do
+  not follow their parent into a release.
+- **The milestone events** are readable by everyone and wake nobody.
+  Rejected: waking the holders and assignees of its cards on a change
+  of due date or state. Reason given: the milestone and due date in the
+  resume packet is the reminder.
+- **Mentions in the description** are not resolved. Rejected: resolving
+  them with `mentioned`, as in a card's body. Reason not stated.
+- **Closing:** only a member closes a milestone, never the hub.
+  Rejected: closing it when its last card closes, or when a release
+  that points to it is done. Reason: as on GitHub, where milestones are
+  closed by hand.
