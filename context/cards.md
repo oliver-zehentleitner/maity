@@ -702,9 +702,8 @@ carries `unknown`, the weakest part.
   `tasks:write` on every card. Reason not stated.
 - **A release's milestone and its `depends_on`:** while the release is
   open its cards are the milestone's cards that are not cancelled, in
-  place of `depends_on`;
-  at the close they are frozen into `release.shipped`; a release with
-  both is refused. Rejected: the union of the two; a one-time copy of
+  place of `depends_on`; when the release goes done they are frozen
+  into `release.shipped`; a release with both is refused. Rejected: the union of the two; a one-time copy of
   the milestone's cards into `depends_on`. Reason given: the
   maintainer's own words, "a release may point to a milestone, and then
   its cards are the milestone cards".

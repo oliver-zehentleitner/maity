@@ -14271,9 +14271,10 @@ cards reads its milestones. A signed-in outsider of a public project
 reads both `GET` routes, as it reads the board (§2.3, "Reading a public
 project from outside", where they are on the list of an outsider's
 reads); there `progress` and `cards` count no card the outsider may not
-read (an open `security` card, a card under a moderation hold), and the
-outsider receives no milestone event, as no project event (§8.2). Every
-write answers an outsider `not_found`, as every write of the project
+read: a card §2.3 hides from them, one labelled `security` (in any
+case) that is not `done`, and one under a moderation hold (§16.8)
+whatever its status. The outsider receives no milestone event, as no
+project event (§8.2). Every write answers an outsider `not_found`, as every write of the project
 does. For a project that is not public, a caller who is no member gets
 `not_found` on every milestone route, as on every resource there. In an
 archived project creating a milestone is `project_closed`, as creating
@@ -14305,8 +14306,12 @@ milestone waits for the milestone's cards as it would for its
 `depends_on` (§6.7). The rule that the dependency graph has no cycle
 (§6.4) therefore runs over each release's effective set: its
 `depends_on`, or while it is open and points to a milestone the
-milestone's cards that are not `cancelled` (§6.7), or once it is
-closed the set it froze. A card that
+milestone's cards that are not `cancelled` (§6.7). A `done` release
+that points to a milestone counts with the set it froze,
+`release.shipped`; a `cancelled` one froze none, and since it has
+no `depends_on` either its effective set is empty: it adds no edge
+through its milestone, so the graph is the same before and after
+the deletion of a cancelled release's milestone. A card that
 depends on the release, directly or through other cards or the
 parent→child gate, cannot also be among the cards the release waits
 for. Whichever write would close such a cycle is `invalid` with
