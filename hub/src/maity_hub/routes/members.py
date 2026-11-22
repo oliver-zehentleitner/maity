@@ -345,10 +345,17 @@ def _sees_own_attachment(conn: Connection, membership_id: str, caller: Caller) -
     not isolated, as the write itself needed. Another attachment that keeps the credential
     authenticated does not let it read a project it is detached from or isolated in. A
     credential revoked since it was authenticated refuses `unauthenticated`, as the write's own
-    `attached.recheck` would, not the `not_found` of a lost attachment."""
+    `attached.recheck` would, not the `not_found` of a lost attachment. The membership's
+    project is locked before that check and held through the answer (`attached.held`), so a
+    revocation cannot land between the two."""
     if caller.kind != "agent" or caller.credential_id is None or not membership_id.isdigit():
         return False
-    attached.still_live(conn, caller.credential_id)
+    project_id = conn.execute(
+        select(t.membership.c.project_id).where(t.membership.c.id == int(membership_id))
+    ).scalar_one_or_none()
+    if project_id is None:
+        return False
+    attached.held(conn, caller.credential_id, [project_id])
     a, m = t.instance_attachment, t.membership
     found = conn.execute(
         select(a.c.id)
@@ -368,8 +375,10 @@ idempotency.register("member_self", idempotency.plain(load_member), _sees_own_at
 
 def load_member_set(conn: Connection, credential_id: str) -> dict[str, Any]:
     """The replay of a write in every project: the credential's attachments as they are now,
-    and with none live and free left the refusal the request itself would get (§1.5)."""
-    free = attached.free(conn, credential_id)
+    and with none live and free left the refusal the request itself would get (§1.5). Their
+    projects are locked before the liveness check and held through the answer
+    (`attached.free_held`), as the request holds them through its write."""
+    free = attached.free_held(conn, credential_id)
     return {"projects": [load_member(conn, str(a.membership_id)) for a in free]}
 
 

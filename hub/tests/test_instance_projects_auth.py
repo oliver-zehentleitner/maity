@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, update
 from starlette.requests import Request
 
-from maity_hub import clock, idempotency, instances, namespace, read_limits
+from maity_hub import attached, clock, events, idempotency, instances, namespace, read_limits
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError
@@ -715,6 +715,40 @@ def test_a_replayed_write_in_every_project_with_no_live_attachment_is_unauthenti
     with w.engine.connect() as conn, pytest.raises(ApiError) as refused:
         idempotency.LOADERS["member_set"].load(conn, w.agent.credential_id, _REQUEST)
     assert (refused.value.status, refused.value.code) == (401, "unauthenticated")
+
+
+def test_a_replayed_self_write_locks_its_projects_before_it_asks_the_credential(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A revocation locks the projects it writes in, in the order of their ids, before it
+    writes the credential row. Each replay takes the same project locks before it reads
+    `revoked_at` and holds them through the answer, as the request holds them through its
+    write. On PostgreSQL and MariaDB under READ COMMITTED a revocation can then neither land
+    between the check and the member view nor wait on the replay in a cycle (d4kb on #2105).
+    `member_self` locks its membership's project, `member_set` those of every live
+    attachment."""
+    w = world
+    caller = _agent_caller(w)
+    real_project, real_live = events.lock_project, attached.still_live
+    taken: list[str] = []
+
+    def project(conn: Any, locked: str) -> Any:
+        taken.append(locked)
+        return real_project(conn, locked)
+
+    def live(conn: Any, credential_id: str) -> None:
+        taken.append("live")
+        real_live(conn, credential_id)
+
+    monkeypatch.setattr(events, "lock_project", project)
+    monkeypatch.setattr(attached, "still_live", live)
+    with events.transaction(w.engine) as conn:
+        assert idempotency.LOADERS["member_self"].may_see(conn, str(w.in_a), caller)
+    assert taken == [w.alpha, "live"]
+    taken.clear()
+    with events.transaction(w.engine) as conn:
+        idempotency.LOADERS["member_set"].load(conn, w.agent.credential_id, _REQUEST)
+    assert taken == [*sorted([w.alpha, w.beta]), "live"]
 
 
 def test_the_keep_the_why_ack_names_its_project_among_several(world: World) -> None:

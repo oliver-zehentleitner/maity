@@ -12,11 +12,12 @@ lookup that finds nothing refuses: `invalid` for a project the instance is not a
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import Connection, Select, select
 
-from maity_hub import namespace
+from maity_hub import events, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller, attachment_in, attachments
@@ -88,13 +89,37 @@ def free(conn: Connection, credential_id: str) -> list[Any]:
     as the request would, never answering an empty list or a credential revoked since it
     was authenticated."""
     still_live(conn, credential_id)
-    live = attachments(conn, credential_id)
+    return _free(attachments(conn, credential_id))
+
+
+def _free(live: list[Any]) -> list[Any]:
     if not live:  # detached from everything since the call was authenticated
         raise unauthenticated()
     found = [a for a in live if a.isolated_since is None]
     if not found:
         _refuse_isolated(live[0])
     return found
+
+
+def held(conn: Connection, credential_id: str, project_ids: Iterable[str]) -> None:
+    """For a replay (§1.5): lock `project_ids` in the order of their ids, then ask whether
+    the credential is live. A revocation locks the projects it writes in the same way before
+    it writes the credential row (`auth.revocation.revoke`), and the replay holds them to its
+    commit: one that committed before the lock is seen by `still_live`, one that had not yet
+    waits until the answer is out, as it waits for the request's own write (`recheck`). Only
+    project locks, never the credential row, so the two never wait on each other in a cycle."""
+    events.lock_projects(conn, project_ids)
+    still_live(conn, credential_id)
+
+
+def free_held(conn: Connection, credential_id: str) -> list[Any]:
+    """`free` for the replay of a write in every project, under `held`: the projects of the
+    credential's live attachments are locked first, and only attachments in those projects
+    are answered, as `recheck` keeps to `targets`, since one attached after the first read
+    is in a project not locked."""
+    locked = {a.project_id for a in attachments(conn, credential_id)}
+    held(conn, credential_id, locked)
+    return _free([a for a in attachments(conn, credential_id) if a.project_id in locked])
 
 
 def recheck(conn: Connection, caller: Caller, targets: list[Any], project: str | None) -> list[Any]:
