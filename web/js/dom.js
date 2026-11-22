@@ -120,11 +120,10 @@ window.Maity = window.Maity || {};
     return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
-  // Every child gone in one change where the browser has replaceChildren (tsk-3b2t7hwc352s: the
-  // board's columns emptied one removeChild at a time), one by one where it has not.
+  // Every child gone in one change (tsk-3b2t7hwc352s: the board's columns emptied one removeChild
+  // at a time).
   function clear(el) {
-    if (typeof el.replaceChildren === "function") { el.replaceChildren(); return el; }
-    while (el.firstChild) el.removeChild(el.firstChild);
+    el.replaceChildren();
     return el;
   }
 
@@ -139,18 +138,8 @@ window.Maity = window.Maity || {};
   function sameTree(a, b, loose) {
     if (a == null || b == null) return false;
     if (a.nodeType !== b.nodeType) return false;
-    const element = typeof a.getAttribute === "function";
-    if (element !== (typeof b.getAttribute === "function")) return false;
-    if (!element) return a.textContent === b.textContent;
-    if (a.tagName !== b.tagName) return false;
-    const an = typeof a.getAttributeNames === "function" ? a.getAttributeNames() : [];
-    const bn = typeof b.getAttributeNames === "function" ? b.getAttributeNames() : [];
-    if (an.length !== bn.length) return false;
-    for (let i = 0; i < an.length; i++) {
-      const av = a.getAttribute(an[i]);
-      const bv = b.getAttribute(an[i]);
-      if (av !== bv && !(loose && bv != null && loose(an[i], av, bv))) return false;
-    }
+    if (a.nodeType !== 1) return a.textContent === b.textContent; // text, a comment: no element
+    if (a.tagName !== b.tagName || !sameAttrs(a, b, null, loose)) return false;
     const ac = a.childNodes;
     const bc = b.childNodes;
     if (ac.length !== bc.length) return false;
@@ -168,21 +157,16 @@ window.Maity = window.Maity || {};
     return out;
   }
 
-  function attrNames(el) {
-    const names = typeof el.getAttributeNames === "function" ? el.getAttributeNames() : [];
-    const out = [];
-    for (let i = 0; i < names.length; i++) if (names[i] !== "src") out.push(names[i]);
-    return out;
-  }
-
-  // Every attribute other than src. A different alt, class, width or
-  // anything else means a different image: the fresh node stays.
-  function sameAttrs(a, b) {
-    const an = attrNames(a);
-    const bn = attrNames(b);
+  // Whether two elements have the same attributes, the one named `skip` left out of both (keepImages:
+  // src). loose(name, a, b), where given, says that two different values count as the same (sameTree).
+  function sameAttrs(a, b, skip, loose) {
+    const an = a.getAttributeNames().filter((name) => name !== skip);
+    const bn = b.getAttributeNames().filter((name) => name !== skip);
     if (an.length !== bn.length) return false;
     for (let i = 0; i < an.length; i++) {
-      if (b.getAttribute(an[i]) !== a.getAttribute(an[i])) return false;
+      const av = a.getAttribute(an[i]);
+      const bv = b.getAttribute(an[i]);
+      if (av !== bv && !(loose && bv != null && loose(an[i], av, bv))) return false;
     }
     return true;
   }
@@ -207,7 +191,9 @@ window.Maity = window.Maity || {};
       for (let k = 0; k < oldImgs.length; k++) {
         const candidate = oldImgs[k];
         if (used.has(candidate) || handledImgs.has(candidate)) continue;
-        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh)) continue;
+        // Every attribute other than src: a different alt, class, width or anything else means a
+        // different image, and the fresh node stays.
+        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh, "src")) continue;
         old = candidate;
         break;
       }
