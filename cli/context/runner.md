@@ -6378,7 +6378,14 @@ Where the contract left the choice open, it decided as follows.
   as the trigger's moment is, so one offset serves both; and since the
   hub's `server_time` has whole seconds and the offset can move by up to a
   second between two readings, a read counts as fresh only from one second
-  past the moment (`FRESH_MARGIN`, Gemini A2049). A dead session meanwhile goes to the exit handling. Reason: in
+  past the moment (`FRESH_MARGIN`, Gemini A2049). The read must also have
+  started after the runner's own last action on that session
+  (`watch_acted_at`: a nudge, the watch's or the own check's, or the
+  watch's TERM; cleared on a new run), plus the margin (ops' live check on
+  067c7e0e: a nudge answered by a new `maity wait` was restarted as
+  `wait_deaf` on facts read before the nudge). The facts carry no
+  acknowledged seq, so the episode shows as ended by `not_listening_since`
+  turning null or changing; either ends the spell with no restart. A dead session meanwhile goes to the exit handling. Reason: in
   ops' check the agent joined three seconds after its start, the runner had
   read placements only at the start (it re-reads every 10 minutes or on a
   wake), and no hub event reaches a runner on a session start, so it held a

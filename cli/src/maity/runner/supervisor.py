@@ -382,6 +382,9 @@ class Record:
     # does not act on every already-quiet session at once (the lead, seq 189230).
     watch_since: float | None = None
     watch_joined: bool = False  # a session of this run was seen: no never_joined for it
+    # When the watch last acted on this run's session (a nudge, a TERM): the next decision
+    # waits for facts read after it (ops' live check on 067c7e0e).
+    watch_acted_at: float | None = None
     # The finding the next report carries (§15.7), how many were filed (in the report's key,
     # so a finding alone makes a report), and whether the hub takes one (`session` carried).
     finding: dict[str, Any] | None = None
@@ -574,7 +577,9 @@ class Supervisor:
         """Whether the placements were read after `trigger_` began to hold (hub time): for
         `never_joined` the run's start plus `join_within_minutes`, for `not_listening` the
         later of the quiet spell's start and `watch_since`, plus the grace. Only such facts
-        can show a join or a renewed listen that happened after the trigger's moment.
+        can show a join or a renewed listen that happened after the trigger's moment. The read
+        must also have started after the watch's own last action on the session (a nudge, a
+        TERM, `watch_acted_at`): what the agent did about it shows only in facts read since.
 
         Both sides are put in hub time with the offset as it is now, so one offset is used for
         both (Gemini A2049); the read's stamp is kept on this supervisor's own clock. The hub's
@@ -599,6 +604,10 @@ class Supervisor:
             if watched is not None:
                 since = max(since, watched + self.hub_offset)
             began = since + settings.not_listening_grace_minutes * 60.0
+        if rec.watch_acted_at is not None:
+            # And after the watch's own last action on the session: facts read before a nudge
+            # cannot show the `maity wait` it brought back (ops' live check on 067c7e0e).
+            began = max(began, rec.watch_acted_at + self.hub_offset)
         return read >= began + FRESH_MARGIN
 
     def _abort_end(self, pid: str, rec: Record, verdict: dict[str, Any], why: str) -> bool:
@@ -837,6 +846,7 @@ class Supervisor:
             "at": now, "then": then, "trigger": verdict["trigger"],
             "finding": self._finding(pid, verdict), "verdict": verdict,
         }  # fmt: skip
+        rec.watch_acted_at = now  # an end called off later decides again on later facts only
         backend.terminate(session)
         return True
 
@@ -1403,7 +1413,7 @@ class Supervisor:
             rec.limits_unknown = 0
             # The watch counts over again, and nothing it found is the new generation's.
             rec.watch_restarts, rec.watch_end, rec.watch_verdict = [], None, None
-            rec.watch_looked_at = rec.watch_episode = None
+            rec.watch_looked_at = rec.watch_episode = rec.watch_acted_at = None
             rec.watch_seen, rec.finding = None, None
 
         if p.get("desired") == "stopped":
@@ -1437,7 +1447,7 @@ class Supervisor:
                 # Its start is unknown (no quick exit, no never_joined); the watch counts the
                 # not_listening grace from now, the adoption.
                 rec.enter(now, "running", "adopted", started_at=None, watch_since=now,
-                          watch_joined=False)  # fmt: skip
+                          watch_joined=False, watch_acted_at=None)  # fmt: skip
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
                 on = rec.sandbox  # the start's own view, not the tool in use now (§15.16)
                 if on is None:
@@ -1706,6 +1716,9 @@ class Supervisor:
             return False
         rec.nudged_at, rec.left_typed = now, False
         rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
+        # The watch's next decision waits for facts read after this, the watch's nudge or the
+        # own check's alike: the `maity wait` a nudge brings back shows only in those.
+        rec.watch_acted_at = now
         return True
 
     def _typed(self, backend: Tmux, name: str, before: str) -> str | None:
@@ -1961,7 +1974,7 @@ class Supervisor:
         rec.watch_looked_at, rec.watch_verdict, rec.watch_seen = None, None, None  # a new run
         rec.watch_end = None
         rec.enter(now, "starting", retry_at=None, started_at=now, watch_since=now,
-                  watch_joined=False)  # fmt: skip
+                  watch_joined=False, watch_acted_at=None)  # fmt: skip
         rec.sandbox = view.sandbox
         if retrying:
             rec.restarts += 1

@@ -1208,6 +1208,75 @@ def test_a_trigger_that_holds_after_the_reread_is_acted_on(world: Any) -> None:
     assert states(reports)[-1] == ("exited", "hung", "never_joined")
 
 
+# --- ops' live check on 067c7e0e: facts older than the watch's own action -------------------
+
+
+def nudged(sup: supervisor.Supervisor, backend: FakeTmux, clock: Clock) -> None:
+    """Not listening with nothing below: a fresh read, then the watch's nudge two seconds after
+    that read started."""
+    running(sup, clock, joined_then_quiet())
+    clock.now = QUIET_PAST_GRACE
+    reread(sup)  # started at QUIET_PAST_GRACE + the margin
+    clock.now += 2
+    two_passes(sup)
+    assert backend.typed == [(NAME, supervisor.NUDGE_LINE)]
+    assert sup.records[PID].watch_acted_at == clock.now
+
+
+def test_a_nudge_answered_by_a_new_wait_is_not_restarted(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    nudged(sup, backend, clock)
+    backend.below = tmux.WAITING  # the agent runs `maity wait` again
+    clock.now += supervisor.IDLE_EVERY  # the minute-later look of the not_waiting spell
+    two_passes(sup)  # no read since the nudge
+    assert backend.terminated == [] and sup.watching == {}
+    assert sup.wants_placements()  # no decision: it asks for a read
+    # The read after the nudge shows the episode over.
+    sup.update([watched(started_at=watch.stamp(T0 + 60))], read_at=clock.now)
+    clock.now += supervisor.IDLE_EVERY
+    drain(sup)
+    assert backend.terminated == []
+    assert [b["finding"]["cause"] for b in with_findings(reports)] == ["not_waiting"]
+
+
+def test_a_read_older_than_the_nudge_decides_nothing(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    nudged(sup, backend, clock)
+    backend.below = tmux.WAITING
+    clock.now += supervisor.IDLE_EVERY
+    # A read that started before the nudge, though after the trigger's moment.
+    sup.update(list(sup.desired), read_at=QUIET_PAST_GRACE + supervisor.FRESH_MARGIN)
+    two_passes(sup)
+    assert backend.terminated == [] and sup.watching == {} and sup.wants_placements()
+
+
+def test_after_a_nudge_a_fresh_read_that_still_says_deaf_restarts(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    nudged(sup, backend, clock)
+    backend.below = tmux.WAITING
+    clock.now += supervisor.IDLE_EVERY
+    two_passes(sup)
+    assert backend.terminated == []  # it waits for a read first ...
+    drain(sup)  # ... which still says not listening, with a `maity wait` below: deaf
+    assert backend.terminated == [NAME]
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
+    assert last(reports)["finding"]["cause"] == "wait_deaf"
+
+
+def test_the_watchs_last_action_is_forgotten_on_a_new_run(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    ended_by_term(sup, backend, clock)
+    assert sup.records[PID].watch_acted_at == QUIET_PAST_GRACE  # the TERM
+    backend.exit(NAME, 143)
+    sup.tick()
+    clock.now += 11
+    settle(sup)  # the restart
+    assert sup.records[PID].state == "starting"
+    assert sup.records[PID].watch_acted_at is None
+
+
 def test_a_read_that_started_before_the_trigger_is_not_fresh(world: Any) -> None:
     sup, backend, _, clock, _ = world
     running(sup, clock, joined_then_quiet())
