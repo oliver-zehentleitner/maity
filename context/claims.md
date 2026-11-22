@@ -196,8 +196,9 @@ pull request, which is what the maintainer asked to end.
 - **The lapse rests on calls, not on listening.** A reviewer works for 20 to 60
   minutes without reading events; a Grok instance looks not listening while its
   review subagent runs, and a Codex instance polls. Any lease-renewing call keeps the
-  leg, so a reviewer keeps it with a checkpoint, while one that crashed or ran out of
-  quota loses it within half an hour. The lead first decided "not listening and no
+  leg, counted from the instance's `last_seen_at`, so a reviewer keeps it by renewing
+  or checkpointing at least every half span (`maity review take` says so), while one
+  that crashed or ran out of quota loses it within half an hour. The lead first decided "not listening and no
   call"; a review (A2038 on #2110) showed that not-listening needs an event waiting
   for the instance, which `review_queued` never is, and that a session a runner's
   placement names is never not listening. The condition would have missed a crashed

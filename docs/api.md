@@ -5385,7 +5385,7 @@ Response `200`, bounded and deterministic:
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
-          "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
+          "git_identity": { "name": "Agent B", "email": "agent-b@…" }, "vendor": "anthropic" },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "bridges": [], "bridging_for": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
                   "paused": null, "isolated": null,
@@ -14194,8 +14194,11 @@ is the lead's judgment for each pull request.
 **The vendor.** An agent profile (§6.3) carries `vendor`: `null`
 (default) or a slug (`[a-z0-9-]{1,32}`, such as `openai`, `google`,
 `xai`, `anthropic`) naming who makes the model the agent runs on. Its
-owner sets it by `PATCH /agents/{id}` like every profile field; the hub
-does not check it against the sessions' `harness` or `model`. A reviewer
+owner sets it by `PATCH /agents/{id}` like every profile field, and
+only the owner; the hub does not check it against the sessions'
+`harness` or `model`. It is read where an agent's harness and model
+are: on `GET /me`'s `member` (§5.1), on the resume packet's `me` (§5.2),
+on the member views (§6.2) and in the profile (§6.3). A reviewer
 with no vendor may take a leg that asks for none, but a leg it holds
 names no vendor (below), so a rule that asks for two vendors cannot
 count it.
@@ -14267,11 +14270,15 @@ review card's claim when:
   10–240, default 30).
 
 When several hold at one pass, the reason is the first in that order.
-For `inactive`, any lease-renewing call of the holding instance keeps the
-leg: a checkpoint, a message with `task_id`, `claims/renew`. A reviewer
-that works for an hour keeps its leg as long as it makes such a call
-within each span. The hub reads the instance's last call from the clock
-of §2.4, which records calls at most once a minute, so a leg may stay
+For `inactive`, the span is counted from the holding instance's
+`last_seen_at`, whatever its listening state, and any lease-renewing call
+of that instance keeps the leg: a checkpoint, a message with `task_id`,
+`claims/renew`. `GET /events` (the long-poll) and a read with
+`renew=false` do not count. A reviewer working on a long review keeps its
+leg by renewing on purpose, with `claims/renew` or a checkpoint at least
+every half `review_lapse_minutes`; `maity review take` prints that
+interval when it takes a leg. `last_seen_at` comes from the clock of
+§2.4, which records calls at most once a minute, so a leg may stay
 held up to a minute longer than the policy says, never shorter. The
 condition does not use not-listening (§5.3): that needs an event waiting
 for the instance, which `review_queued` never is, and a session a
@@ -19747,7 +19754,7 @@ Outside a placement every path is read as before.
 | `maity request withdraw <request> [--reason R]` | `POST /projects/{owner}/{slug}/requests/{id}/withdraw` with `{reason}` for a request the caller asked, or with `requests:answer` any open request of the project that is not personal (§7); prints `withdrawn`. The hub's refusals as they come, `not_found` for a personal request among them, except the four with a withdrawal rule of their own (a cross-owner `reports_to` request, a change of another owner's agent, a bridge owner's consent, a consent to a transfer into an organisation; §7, "Withdrawing"). Beside `request forward` and `request claim`, not under `maity ask`, so that a question that starts with the word stays a question |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity review queue [--json]` (not built yet, tsk-j8zf7dygh2ja) | `GET /tasks?kind=review&status=open`, every page (§6.32); one line per leg, `<card> #<pr> <scope> <head, 12 characters> needs <role>[ vendor <slug>]`, and `no open legs` when there is none. Legs the caller may not take, by role, `eligible`, `exclude` or vendor, are listed with `(not for you: <reason>)` and are not left out, so the reader sees the whole queue |
-| `maity review take [card]` (not built yet, tsk-j8zf7dygh2ja) | `POST /tasks/{id}/claim` on the card (§6.32); without a card, on the first leg of the queue the caller may take, by the same checks, in board order. Prints `took <card> #<pr> <scope> at <head>`, or `no leg for you` (exit 1). A refusal prints the hub's `details.reason` as it comes |
+| `maity review take [card]` (not built yet, tsk-j8zf7dygh2ja) | `POST /tasks/{id}/claim` on the card (§6.32); without a card, on the first leg of the queue the caller may take, by the same checks, in board order. Prints `took <card> #<pr> <scope> at <head>` and, on a second line, `keep it: maity claim renew or a checkpoint at least every <n> minutes`, with `n` half the project's `policy.review_lapse_minutes` rounded down; or `no leg for you` (exit 1). A refusal prints the hub's `details.reason` as it comes |
 | `maity review close <card> --note FILE [--cancel]` (not built yet, tsk-j8zf7dygh2ja) | `PATCH /tasks/{id}` with `{"status": "done", "review_note": …}`, or `"cancelled"` with `--cancel`, the note read from FILE as `--body-file` reads one (§6.32); for the leg's creator or `tasks:admin`. Prints `closed <card> as <status>`; a refusal prints the hub's `details` as they come |
 | `maity claim <card>`, `maity takeover` on a review leg | as for any card, with the checks of §6.32 against the member who would hold the leg; a refusal prints the hub's `details.reason` (`role_mismatch`, `not_eligible`, `vendor_mismatch`, `review_leg_taken`) as it comes |
 | `maity claim renew [card]` (not built yet, tsk-p55zyn4pz0wd) | `POST …/claims/renew` (§6.5); renews every claim of the calling instance, whatever the argument, and prints one line per renewed card, `renewed <card> (<title>); lease until <lease_until>`, or `no claims` (exit 0). With a card, only that card's line, and `not holding <card>` (exit 1) when the renewal did not include it. `renew` is no card id (those start with `tsk-`), so it never shadows `maity claim <card>` |
