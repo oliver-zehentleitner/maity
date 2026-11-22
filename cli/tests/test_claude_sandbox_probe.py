@@ -15,7 +15,7 @@ import claude_sandbox_probe as probe
 import pytest
 
 FAKE = """#!{python}
-import json, re, subprocess, sys
+import json, os, re, subprocess, sys
 args = sys.argv[1:]
 if args == ["--version"]:
     print("2.1.326 (Claude Code)")
@@ -30,6 +30,15 @@ if kind == "command":
     use = {{"name": "Bash", "input": {{"command": target}}}}
     if "{mode}" == "refuse":
         out, err = "Permission to use Bash has been denied.", True
+    elif "{mode}" == "sandbox":  # the credential directory hidden and unwritable, as inside
+        os.rename(".git/maity", ".git/maity-hidden")
+        open(".git/maity", "w").close()
+        try:
+            done = subprocess.run(["sh", "-c", target], capture_output=True, text=True)
+        finally:
+            os.remove(".git/maity")
+            os.rename(".git/maity-hidden", ".git/maity")
+        out, err = done.stdout + done.stderr, done.returncode != 0
     else:
         done = subprocess.run(["sh", "-c", target], capture_output=True, text=True)
         out, err = done.stdout + done.stderr, done.returncode != 0
@@ -49,8 +58,9 @@ print(json.dumps({{"type": "result", "result": "DONE"}}))
 
 
 def fake(tmp_path: Path, mode: str = "obey") -> str:
-    """A `claude` that makes the asked call itself, unsandboxed and without hooks (`obey`),
-    refuses it (`refuse`) or makes none (`idle`)."""
+    """A `claude` that makes the asked call itself, unsandboxed and without hooks (`obey`), or
+    with the clone's credential directory hidden and unwritable, as the sandbox has it
+    (`sandbox`, for Bash only), refuses it (`refuse`) or makes none (`idle`)."""
     path = tmp_path / f"claude-{mode}"
     path.write_text(FAKE.format(python=sys.executable, mode=mode))
     path.chmod(0o755)
@@ -62,7 +72,7 @@ def outcomes(output: str) -> dict[str, str]:
     found = {}
     for line in output.splitlines():
         words = line.split()
-        if words and words[0] in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE"):
+        if words and words[0] in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE", "NOT-TESTABLE"):
             found[words[1]] = words[0]
     return found
 
@@ -221,7 +231,7 @@ def test_point_three_is_skipped_without_its_flags(
     out = capsys.readouterr().out
     assert code == 0 and outcomes(out) == {"3.2": "SKIP", "3.4": "SKIP", "3.5": "SKIP"}
     assert "needs --managed" in out and "needs --user-settings" in out
-    assert "summary: 0 PASS, 0 FAIL, 3 SKIP, 0 INCONCLUSIVE" in out
+    assert "summary: 0 PASS, 0 FAIL, 3 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE" in out
 
 
 def test_the_user_settings_are_put_back(tmp_path: Path) -> None:
@@ -294,25 +304,91 @@ def test_a_harness_without_a_sandbox_fails_the_extra_lines(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The counter-check for point 5: run unsandboxed, every line that runs the stub `maity`
-    escapes and fails, whatever token it passes; a line that runs no `maity` passes."""
+    escapes and fails, whatever token it passes; a line that runs no `maity` even without a
+    sandbox tests nothing and is NOT-TESTABLE, never PASS."""
     path = tmp_path / "lines.txt"
     path.write_text(SYNTHETIC)
     code = probe.main(["--claude", fake(tmp_path), "--no-preflight", "--only", "5",
                        "--extra-lines", str(path)])  # fmt: skip
     found = outcomes(capsys.readouterr().out)
     assert code == 1
-    assert found == {"5.1": "FAIL", "5.2": "FAIL", "5.3": "FAIL", "5.4": "PASS"}
+    assert found == {"5.1": "FAIL", "5.2": "FAIL", "5.3": "FAIL", "5.4": "NOT-TESTABLE"}
 
 
-def test_a_harness_that_refuses_everything_passes_the_extra_lines(
+def test_a_line_that_did_not_run_is_inconclusive_not_a_pass(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Refused (or failed to start): no marker of the stub at all, so no evidence that the line
+    ran inside the sandbox."""
     path = tmp_path / "lines.txt"
     path.write_text(SYNTHETIC)
     code = probe.main(["--claude", fake(tmp_path, "refuse"), "--no-preflight", "--only", "5",
                        "--extra-lines", str(path)])  # fmt: skip
-    assert code == 0
-    assert set(outcomes(capsys.readouterr().out).values()) == {"PASS"}
+    assert code == 1
+    assert outcomes(capsys.readouterr().out) == {
+        "5.1": "INCONCLUSIVE", "5.2": "INCONCLUSIVE", "5.3": "INCONCLUSIVE",
+        "5.4": "NOT-TESTABLE",
+    }  # fmt: skip
+
+
+def test_a_sandboxed_harness_passes_the_reachable_extra_lines(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The stub ran (its marker in the clone) and could neither write nor read the credential
+    directory: positive evidence that the line ran inside the sandbox."""
+    path = tmp_path / "lines.txt"
+    path.write_text(SYNTHETIC.replace("echo nothing here\n", ""))
+    code = probe.main(["--claude", fake(tmp_path, "sandbox"), "--no-preflight", "--only", "5",
+                       "--extra-lines", str(path)])  # fmt: skip
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert outcomes(out) == {"5.1": "PASS", "5.2": "PASS", "5.3": "PASS"}
+    assert "ran inside the sandbox" in out
+
+
+def test_a_run_with_only_untestable_lines_does_not_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "lines.txt"
+    path.write_text("echo nothing here\n")
+    code = probe.main(["--claude", fake(tmp_path, "sandbox"), "--no-preflight", "--only", "5",
+                       "--extra-lines", str(path)])  # fmt: skip
+    out = capsys.readouterr().out
+    assert code == 1 and outcomes(out) == {"5.1": "NOT-TESTABLE"}
+    assert "0 PASS, 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 1 NOT-TESTABLE" in out
+
+
+@pytest.mark.parametrize(
+    ("escape", "ran", "status"),
+    [
+        ("cred=no", None, "FAIL"),  # outside, whatever it read
+        (None, "cred=ok", "FAIL"),  # inside, but it read the credential
+        (None, "cred=no", "PASS"),  # inside, credential hidden: the positive evidence
+        (None, None, "INCONCLUSIVE"),  # no marker: no evidence it ran
+    ],
+)
+def test_an_extra_line_is_judged_by_both_markers(
+    short: Path, escape: str | None, ran: str | None, status: str
+) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    (step,) = probe.extra_steps(["true && maity probe {T}"])
+    if escape is not None:
+        (world.clone / ".git" / "maity" / "probe" / "none").write_text(escape)
+    if ran is not None:
+        (world.clone / ".probe-ran" / "none").write_text(ran)
+    call = probe.Call("Bash", {"command": world.fill(step.target, "t")})
+    run = probe.Run([call], "", 0)
+    assert probe.judge(step, world, "t", run, short / "no-marker", {}).status == status
+
+
+def test_the_precondition_runs_each_line_without_sandbox_or_hook(short: Path) -> None:
+    world = probe.build(short, "/usr/bin/claude")
+    reach, unreach = probe.extra_steps(["cat {script} | sh", "echo nothing here"])
+    assert probe.reachable(reach, world)[0] is True
+    assert probe.reachable(unreach, world)[0] is False
+    # It leaves no marker behind for the live run to read.
+    assert not any((world.clone / ".probe-ran").iterdir())
+    assert not any((world.clone / ".git" / "maity" / "probe").iterdir())
 
 
 def test_extra_lines_that_only_selects_none_of_is_refused(

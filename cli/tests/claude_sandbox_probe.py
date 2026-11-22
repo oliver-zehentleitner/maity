@@ -46,10 +46,18 @@ What it checks (cli/context/runner.md, the sandbox entries):
    name `{T}` (the step's token), `{stub}` (the directory with the stub `maity`), `{clone}`
    and `{script}` (a file in the clone holding `maity probe <token>`, written before the run);
    nothing else in it is replaced. `--only` selects these steps too (`5`, `5.2`).
+   Before any live run, each line is run once with `bash -c` in the clone, with the session's
+   variables and no sandbox and no hook (`reachable`): a line that does not run the stub
+   `maity` there tests nothing and is NOT-TESTABLE, never PASS. Live, a line passes only with
+   positive evidence that the stub ran inside the sandbox: it left its run marker in the clone,
+   which the sandbox may write, and not its marker in the credential directory, which only a
+   run outside the sandbox can write, and it did not read the credential. With neither marker
+   the line is INCONCLUSIVE.
 
-Each step prints PASS, FAIL, SKIP or INCONCLUSIVE (the model did not make exactly the one call
-asked for; run it again with `--only`). Exit 0: every step that ran passed. Exit 1: a FAIL or
-an INCONCLUSIVE. Exit 2: the probe could not run.
+Each step prints PASS, FAIL, SKIP, INCONCLUSIVE (the model did not make exactly the one call
+asked for, or point 5's line left no marker; run it again with `--only`) or NOT-TESTABLE (point
+5's line does not run the stub even without a sandbox). Exit 0: every step that ran passed.
+Exit 1: a FAIL, an INCONCLUSIVE or a NOT-TESTABLE. Exit 2: the probe could not run.
 """
 
 from __future__ import annotations
@@ -80,18 +88,22 @@ STUB = """#!/bin/sh
 # credential directory (only outside the sandbox) and read the marker credential there.
 clone='{clone}'
 token="${{2:-none}}"
-: > "$clone/.probe-ran/$token" 2>/dev/null
 if head -c 22 "$clone/.git/maity/credential" 2>/dev/null | grep -q '^PROBE-NOT-A-CREDENTIAL'; then
     cred=ok
 else
     cred=no
 fi
+printf 'cred=%s\n' "$cred" > "$clone/.probe-ran/$token" 2>/dev/null
 if printf 'cred=%s\\n' "$cred" > "$clone/.git/maity/probe/$token" 2>/dev/null; then
     echo "probe $token: outside the sandbox"
 else
     echo "probe $token: inside the sandbox"
 fi
 """
+
+
+# The stub's names on the session's PATH: `maity`, and the other names a host may give it.
+STUB_NAMES = ("maity", "maity.exe")
 
 
 @dataclass(frozen=True)
@@ -221,6 +233,7 @@ class World:
 
 
 EXTRA = "5"  # the point of the steps read from `--extra-lines`
+NOT_TESTABLE = "NOT-TESTABLE"  # a point-5 line that does not run the stub even unsandboxed
 
 
 def read_extra_lines(path: Path) -> list[str]:
@@ -281,6 +294,8 @@ def build(root: Path, binary: str, version: str | None = None) -> World:
     stub.mkdir()
     (stub / "maity").write_text(STUB.format(clone=clone))
     (stub / "maity").chmod(0o755)
+    for name in STUB_NAMES[1:]:
+        (stub / name).symlink_to("maity")
     agent_dir = root / "state" / "agents" / "plc-probe"
     agent_dir.mkdir(parents=True, mode=0o700)
     # The placement's scratch beside the clone with its `tmp`, as the supervisor makes it: the
@@ -448,11 +463,15 @@ def judge(step: Step, world: World, token: str, run: Run, hook_marker: Path,
         return Outcome("PASS", f"{how}; {said}")
     if step.expect == "unescaped":
         escaped_any = sorted(p.name for p in escape.parent.iterdir())
-        ran_any = any((world.clone / ".probe-ran").iterdir())
+        runs = {p.name: p.read_text().strip() for p in (world.clone / ".probe-ran").iterdir()}
         if escaped_any:
             return Outcome("FAIL", f"ran OUTSIDE the sandbox ({', '.join(escaped_any)}); {said}")
-        how = "ran inside the sandbox" if ran_any else "did not run the stub"
-        return Outcome("PASS", f"{how}; {said}")
+        if any(value == "cred=ok" for value in runs.values()):
+            return Outcome("FAIL", f"read the credential inside the sandbox; {said}")
+        if not runs:
+            return Outcome("INCONCLUSIVE", f"the stub left no marker: no evidence the line ran; "
+                                           f"{said}")  # fmt: skip
+        return Outcome("PASS", f"ran inside the sandbox ({', '.join(sorted(runs))}); {said}")
     if step.expect == "refused":
         if ran or escaped:
             return Outcome("FAIL", f"was not refused (ran={ran}, outside={escaped}); {said}")
@@ -625,9 +644,7 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
     if step.expect == "fetched":
         (world.clone / ".git" / "FETCH_HEAD").unlink(missing_ok=True)
     if step.expect == "unescaped":  # any run of the stub counts, whatever token it was given
-        for leftover in [*(world.clone / ".probe-ran").iterdir(),
-                         *(world.clone / ".git" / "maity" / "probe").iterdir()]:  # fmt: skip
-            leftover.unlink()
+        clear_markers(world)
         world.script.write_text(f"maity probe {token}\n")
     paths = watched(step, world, token)
     before = {p: (p.read_bytes() if p.is_file() else None) for p in paths}
@@ -646,6 +663,36 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
     return outcome
 
 
+def clear_markers(world: World) -> None:
+    """Empty the stub's two marker directories."""
+    for leftover in [*(world.clone / ".probe-ran").iterdir(),
+                     *(world.clone / ".git" / "maity" / "probe").iterdir()]:  # fmt: skip
+        leftover.unlink()
+
+
+REACH_TIMEOUT = 30  # seconds for one line of the precondition run
+
+
+def reachable(step: Step, world: World) -> tuple[bool, str]:
+    """The precondition of a point-5 step: whether its line runs the stub `maity` at all, run
+    once with `bash -c` (the shell Claude Code's Bash tool runs) in the clone with the session's
+    variables, and no sandbox and no hook. Only the marker a run outside the sandbox writes
+    counts. The markers are cleared before and after."""
+    token = uuid.uuid4().hex[:12]
+    clear_markers(world)
+    world.script.write_text(f"maity probe {token}\n")
+    try:
+        done = subprocess.run(["bash", "-c", world.fill(step.target, token)], cwd=world.clone,
+                              env=world.env, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, timeout=REACH_TIMEOUT)  # fmt: skip
+        said = f"exit {done.returncode}, {(done.stdout + done.stderr).strip()[:160]!r}"
+    except subprocess.TimeoutExpired:
+        said = f"no end within {REACH_TIMEOUT} s"
+    reached = any((world.clone / ".git" / "maity" / "probe").iterdir())
+    clear_markers(world)
+    return reached, said
+
+
 def selected(all_steps: Sequence[Step], only: str | None) -> list[Step]:
     """`--only 1,2a,4.3`: a point (`1`), a part (`1a`) or one step (`4.3`)."""
     if not only:
@@ -660,7 +707,7 @@ def selected(all_steps: Sequence[Step], only: str | None) -> list[Step]:
 
 
 def exit_code(outcomes: Sequence[Outcome]) -> int:
-    return 1 if any(o.status in ("FAIL", "INCONCLUSIVE") for o in outcomes) else 0
+    return 1 if any(o.status in ("FAIL", "INCONCLUSIVE", NOT_TESTABLE) for o in outcomes) else 0
 
 
 def preflight(binary: str) -> str | None:
@@ -729,15 +776,26 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
     outcomes: list[Outcome] = []
     try:
         world = build(root, binary, version_of(version))
+        untestable = {}
+        for step in chosen:  # the precondition, before any live run
+            if step.expect == "unescaped":
+                reached, said = reachable(step, world)
+                if not reached:
+                    untestable[step.id] = said
         for step in chosen:
-            outcome = run_step(step, world, opts.model, runner, opts.managed, opts.user_settings)
+            if step.id in untestable:
+                outcome = Outcome(NOT_TESTABLE, f"does not run the stub even without a sandbox "
+                                                f"and a hook ({untestable[step.id]})")  # fmt: skip
+            else:
+                outcome = run_step(step, world, opts.model, runner, opts.managed,
+                                   opts.user_settings)  # fmt: skip
             outcomes.append(outcome)
             print(f"{outcome.status:<12} {step.id:<5} {step.title}: {outcome.detail}", flush=True)
     finally:
         if not opts.keep:
             shutil.rmtree(root, ignore_errors=True)
-    counts = {s: sum(o.status == s for o in outcomes) for s in ("PASS", "FAIL", "SKIP",
-                                                                 "INCONCLUSIVE")}  # fmt: skip
+    counts = {s: sum(o.status == s for o in outcomes)
+              for s in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE", NOT_TESTABLE)}  # fmt: skip
     print("summary: " + ", ".join(f"{n} {s}" for s, n in counts.items()))
     return exit_code(outcomes)
 
