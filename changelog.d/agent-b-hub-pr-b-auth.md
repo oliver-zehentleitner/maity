@@ -36,7 +36,9 @@
   so refused is not counted against the read limit (§6.2, §1.7). A replayed one-project
   `PATCH /me` or `POST /me/limit` re-checks the attachment in that project and answers
   `not_found` once it is isolated or detached, so another attachment does not read its
-  member view and briefing (§1.5; tsk-w8wnar6nqqsp).
+  member view and briefing (§1.5; tsk-w8wnar6nqqsp). Their replay without `project`
+  answers the attachments that are live and not isolated then, and with none left refuses
+  as the request itself would, never with an empty `projects`.
 - hub: every agent credential revocation (a leak, a project's revoke, a runner's stop, a
   suspension) locks each project it writes in, in the order of their ids, before its first
   write, so two revocations over overlapping projects cannot deadlock on PostgreSQL or

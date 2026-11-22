@@ -17,6 +17,7 @@ from maity_hub import (
     access,
     admin_agents,
     agent_owners,
+    attached,
     attachments,
     availability,
     bridges,
@@ -363,18 +364,10 @@ idempotency.register("member_self", idempotency.plain(load_member), _sees_own_at
 
 
 def load_member_set(conn: Connection, credential_id: str) -> dict[str, Any]:
-    a, m = t.instance_attachment, t.membership
-    ids = conn.execute(
-        select(a.c.membership_id)
-        .join(m, m.c.id == a.c.membership_id)
-        .where(
-            a.c.credential_id == credential_id,
-            a.c.detached_at.is_(None),
-            m.c.isolated_since.is_(None),
-        )
-        .order_by(a.c.attached_at, a.c.id)
-    ).scalars()
-    return {"projects": [load_member(conn, str(i)) for i in ids]}
+    """The replay of a write in every project: the credential's attachments as they are now,
+    and with none live and free left the refusal the request itself would get (§1.5)."""
+    free = attached.free(conn, credential_id)
+    return {"projects": [load_member(conn, str(a.membership_id)) for a in free]}
 
 
 idempotency.register(

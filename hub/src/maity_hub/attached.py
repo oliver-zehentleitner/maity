@@ -67,11 +67,20 @@ def every(conn: Connection, caller: Caller, project: str | None) -> list[Any]:
     every live attachment that is not isolated; `isolated` when every one is."""
     if project is not None:
         return [named(conn, caller, project)]
-    live = _live(conn, caller)
-    free = [a for a in live if a.isolated_since is None]
-    if not free:
+    return free(conn, caller.credential_id or "")
+
+
+def free(conn: Connection, credential_id: str) -> list[Any]:
+    """Every live attachment of the credential that is not isolated, refused as `every` is
+    when there is none: also the replay of a write `every` answered (§1.5), which must refuse
+    as the request would and never answer an empty list."""
+    live = attachments(conn, credential_id)
+    if not live:  # detached from everything since the call was authenticated
+        raise unauthenticated()
+    found = [a for a in live if a.isolated_since is None]
+    if not found:
         _refuse_isolated(live[0])
-    return free
+    return found
 
 
 def recheck(conn: Connection, caller: Caller, targets: list[Any], project: str | None) -> list[Any]:

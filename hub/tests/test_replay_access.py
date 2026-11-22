@@ -483,7 +483,8 @@ EXPECTED = {
     # detached or isolated one gets not_found (test_instance_projects_auth).
     "member_self",
     # member_set: stored by the credential and replayed only to it; the answer re-reads that
-    # credential's live, not isolated attachments, so a project it has lost is left out.
+    # credential's live, not isolated attachments, so a project it has lost is left out, and
+    # with none left it refuses as the request would (attached.free).
     "member_set",
     "member_team",
     "memory",

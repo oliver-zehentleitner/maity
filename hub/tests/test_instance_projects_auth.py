@@ -29,6 +29,7 @@ from sqlalchemy import Engine, func, select, update
 from maity_hub import clock, idempotency, instances, namespace, read_limits
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
+from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 from tests import factory
 from tests.conftest import ClientFactory
@@ -616,6 +617,42 @@ def test_a_replayed_write_in_every_project_reads_only_the_attachments_left(
     with w.engine.connect() as conn:
         assert not check(conn, w.agent.credential_id, owner)
         assert not check(conn, w.agent.credential_id, stranger)
+
+
+@pytest.mark.parametrize("change", ["isolate", "detach"])
+@pytest.mark.parametrize(
+    "path, body",
+    [("/me", {"paused": {"reason": "a break"}}), ("/me/limit", {"until": None})],
+)
+def test_a_replayed_write_in_every_project_refuses_as_the_request_once_none_is_left(
+    world: World, change: str, path: str, body: dict[str, Any]
+) -> None:
+    """With no live attachment that is not isolated left, the replay answers as the request
+    it stands for would without the key (§1.5): the same status, error and details, never
+    `projects: []`. B is isolated in both cases; A goes the way `change` names.
+
+    Over HTTP authentication refuses such a credential before the replay is read; the
+    loader refuses too, for a change that lands between authentication and the replay's
+    own transaction."""
+    w = world
+    method = "PATCH" if path == "/me" else "POST"
+    key = f"key-{secrets.token_hex(12)}"
+    first = w.call(method, path, body=body, key=key)
+    assert first.status_code == 200, first.text
+    w.isolate(w.in_b)
+    getattr(w, change)(w.in_a)
+    fresh = w.call(method, path, body=body)
+    replayed = w.call(method, path, body=body, key=key)
+    assert fresh.status_code >= 400, fresh.text
+    assert (replayed.status_code, replayed.json()) == (fresh.status_code, fresh.json())
+    assert "Idempotent-Replayed" not in replayed.headers
+    load = idempotency.LOADERS["member_set"].load
+    with w.engine.connect() as conn, pytest.raises(ApiError) as refused:
+        load(conn, w.agent.credential_id, None)
+    error = fresh.json()["error"]
+    assert refused.value.status == fresh.status_code
+    assert refused.value.code == error["code"]
+    assert refused.value.details == error.get("details", {})
 
 
 def test_the_keep_the_why_ack_names_its_project_among_several(world: World) -> None:
