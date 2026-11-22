@@ -1068,8 +1068,8 @@ subject is the next place in the order, as it was before.
 **Id:** e55f1009-739e-445b-bb87-26f8c887493d
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-c7caka34dhkw, on the owner's go (seq 15956, point 1): messages for the lead had to be forwarded by hand; the lead's rulings of 2026-11-22 on the eighteen open points of the contract; the owner's answer to req-frzvt4kzpvsv, o1 ("A: Verweis mit Lesezugriff"), 2026-11-22, on point 3 (attachments of a forward); the first review round of the contract's pull request, 2026-11-22; contract `docs/api.md` §1.3, §1.7, §8.2, §8.4 ("Several recipients", "Forwarding a message"), §8.5, §8.6, §8.7, §8.8, §9.6, §12, §13
+**Evidence:** confirmed
+**Source:** card tsk-c7caka34dhkw, on the owner's go (seq 15956, point 1): messages for the lead had to be forwarded by hand; the lead's rulings of 2026-11-22 on the eighteen open points of the contract; the owner's answer to req-frzvt4kzpvsv, o1 ("A: Verweis mit Lesezugriff"), 2026-11-22, on point 3 (attachments of a forward); the first review round of the contract's pull request, 2026-11-22; the lead's decision of 2026-11-22 on card tsk-c7caka34dhkw, which settles that round's readings (points 1–8 of the round); contract `docs/api.md` §1.3, §1.7, §8.2, §8.4 ("Several recipients", "Forwarding a message"), §8.5, §8.6, §8.7, §8.8, §9.6, §12, §13
 **Revisit when:** the §9.6 gate on free work messages is revisited, or chat messages are to be forwardable
 **See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-22
 **See:** attachments.md#files-on-messages-stored-by-the-hub-images-re-encoded-and-shown-inline-everything-else-an-inert-download — 2ff6d336-5d04-41f9-b6b9-f2979233b915 — as of 2026-11-22
@@ -1080,11 +1080,11 @@ A message's `to` may be a list of up to 10 member ids and instance
 addresses, stored as one message; and `POST …/events/{seq}/forward`
 writes a new message that quotes an original in `forward_of`. Neither
 is built yet. The eighteen points and the clarifications of the first
-review round are the lead's rulings and the owner's answer (confirmed).
-The readings the review round asked for that no ruling settled are
-written fail closed and marked "conservative reading" below; they are
-inferred until the lead confirms them, and they set this entry's
-Evidence. Point by point, with what lost:
+review round are the lead's rulings and the owner's answer. The
+readings the review round asked for that no earlier ruling settled were
+written fail closed and are the lead's decisions of 2026-11-22, marked
+"the lead's decision on the review round" below. Point by point, with
+what lost:
 
 1. **The gate.** (a) A list is one message and each recipient is judged
    by §9.6 on its own, exactly as the agents of a `role:` token are,
@@ -1109,16 +1109,20 @@ Evidence. Point by point, with what lost:
    longer an active, non-isolated member, or its side cannot be resolved,
    the author party admits nobody and the recipient is held, as
    `review_delivery` leaves out a lead whose owner it cannot resolve
-   (61ec0486). Conservative readings on top: a lead forwarder's exemption
-   does not cover such an author (only the recipient's own owner's
-   forward passes), a suspended author or author's owner counts as not
-   current, and no request is filed for such an author's side. Rejected:
-   judging the author by the side recorded when the original was written
-   (it lets the text of a removed or suspended member through on a yes
-   that member can no longer give, and an owner change would leave the
-   gate asking the wrong human); letting the lead exemption cover it (a
-   lead could then relay a removed member's text past the gate). Also a
-   conservative reading: a bridge is a party, as it is a participant of
+   (61ec0486). The lead's decision on the review round, on top: a lead
+   forwarder's exemption does not cover such an author (only the
+   recipient's own owner's forward passes), a suspended author or
+   author's owner counts as not current, and no request is filed for
+   such an author's side. Rejected: judging the author by the side
+   recorded when the original was written (it lets the text of a removed
+   or suspended member through on a yes that member can no longer give,
+   and an owner change would leave the gate asking the wrong human);
+   letting the lead exemption cover it (a lead could then relay a
+   removed member's text past the gate); filing a consent request that
+   names the author's side as recorded on the original, the security
+   review's alternative (a request to a side that is gone or suspended
+   has nobody who can answer it). Also the lead's decision on the review
+   round: a bridge is a party, as it is a participant of
    a chat; the original's `via` is quoted, its bridge's owner's side is
    judged beside the author's, and a forward made with `Maity-For`
    judges the bridge's owner beside the forwarder and takes no lead
@@ -1151,7 +1155,8 @@ Evidence. Point by point, with what lost:
    on the content, as the original's reader does; a §8.8 read carries
    `deleted_at` in the quote and the event stream keeps it as written;
    redacting a forward ends its own grant only and deletes no byte; a
-   forward names no attachments of its own. Conservative readings: an
+   forward names no attachments of its own. The lead's decisions on the
+   review round: an
    attachment deleted before the forward is left out of the quote
    (rejected: quoting it as written, which shows a deleted file's name
    to new readers), and a forward whose quote names attachments counts
