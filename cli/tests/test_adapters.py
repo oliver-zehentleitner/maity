@@ -939,7 +939,7 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     assert env["TMPDIR"] == str(own) and env["CLAUDE_CODE_TMPDIR"] == str(leaf)
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
     assert str(parent) in filesystem["denyRead"] and str(parent) not in filesystem["denyWrite"]
-    assert filesystem["allowRead"] == [str(own)]
+    assert filesystem["allowRead"] == [str(deep), str(own)]  # the scratch too (tsk-07dwr3t80rg0)
     assert filesystem["allowWrite"] == [str(deep), str(own)]
     opened = [*filesystem["allowRead"], *filesystem["allowWrite"]]
     assert str(leaf) not in opened and not any(str(sibling) in path for path in opened)
@@ -950,14 +950,14 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     env = adapters.launch(ctx).env
     assert env["TMPDIR"] == str(room / "tmp") and "CLAUDE_CODE_TMPDIR" not in env
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
-    assert str(parent) in filesystem["denyWrite"] and "allowRead" not in filesystem
+    assert str(parent) in filesystem["denyWrite"] and filesystem["allowRead"] == [str(room)]
     assert filesystem["allowWrite"] == [str(room)]
     # Without a leaf (an ssh host, or none could be made): neither variable, the parent denied.
     ctx = context(tmp_path / "n", sandbox=True, scratch=deep, tmp_scratch_parent=parent)
     env = adapters.launch(ctx).env
     assert "TMPDIR" not in env and "CLAUDE_CODE_TMPDIR" not in env
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
-    assert str(parent) in filesystem["denyWrite"] and "allowRead" not in filesystem
+    assert str(parent) in filesystem["denyWrite"] and filesystem["allowRead"] == [str(deep)]
     # Codex: the leaf's `tmp` is its TMPDIR as before, with no CLAUDE_CODE_TMPDIR. Its launch
     # writes its CODEX_HOME into the scratch, so that scratch is made, still with no room for a
     # socket.
@@ -1769,6 +1769,38 @@ def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_pat
     launched = adapters.launch(context(tmp_path / "s", "stub", scratch=short))
     assert launched.env["MAITY_SCRATCH"] == str(short)
     assert launched.env["TMPDIR"] == str(short / "tmp")
+
+
+def test_the_own_projects_scratch_holder_is_denied_for_reading_and_only_the_scratch_reopened(
+    tmp_path: Path,
+) -> None:
+    """tsk-07dwr3t80rg0 (the #2032 residual): a sibling scratch made in the same project after
+    this session started must not be readable. The holder goes in denyRead only (a write deny
+    on it would mount the re-opened scratch read-only, as P3 showed for the leaf), and the
+    allows name exactly the own scratch, with nothing denied for reading inside it."""
+    ws = tmp_path / "ws"
+    holder = ws / "maity" / ".scratch"
+    room, sibling = holder / "plc-0003", holder / "plc-0004"
+    other = ws / "other" / ".scratch"  # another project's holder, named whole by the supervisor
+    pg = ws / ".maity-pg"
+    ctx = context(tmp_path / "c", sandbox=True, scratch=room, private=(sibling, other, pg))
+    filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert str(holder) in filesystem["denyRead"] and str(holder) not in filesystem["denyWrite"]
+    assert filesystem["allowRead"] == [str(room)] and filesystem["allowWrite"] == [str(room)]
+    # What the sandbox may not read stays outside what it opens again: the clone and its
+    # credential, the other scratches, the password holder.
+    denied = [*filesystem["denyRead"], *filesystem["denyWrite"]]
+    for path in denied:
+        if path != str(holder):
+            assert not Path(path).is_relative_to(room), path
+    assert not ctx.clone.is_relative_to(room) and not room.is_relative_to(ctx.clone)
+    assert {str(sibling), str(other), str(pg)} <= set(filesystem["denyRead"])
+    # A scratch elsewhere (agy's under `/tmp`) or none: no holder denied, nothing opened again.
+    agy = Path("/tmp/maity-scratch-1002") / ("a" * 32)  # noqa: S108 - a path only
+    assert adapters.scratch_holder(agy) is None and adapters.scratch_holder(None) is None
+    bare = adapters.claude_settings(context(tmp_path / "n", sandbox=True))["sandbox"]["filesystem"]
+    assert "allowRead" not in bare and "allowWrite" not in bare
+    assert not any(p.endswith("/.scratch") for p in bare["denyRead"])
 
 
 def test_a_scratch_too_deep_for_a_socket_keeps_the_hosts_tmpdir(tmp_path: Path) -> None:
