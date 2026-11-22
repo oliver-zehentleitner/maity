@@ -512,12 +512,11 @@ def test_a_failing_slot_diagnostic_still_answers_not_found(
     def broken(conn: Any, join_id: Any, now: Any) -> str:
         raise OperationalError("SELECT", {}, Exception("the read failed"))
 
-    real = joins.update
     monkeypatch.setattr(joins, "_no_slot", broken)
     created = flow.join(owner, "maity")
 
     def no_slot(table: Any) -> Any:  # the attempt slot's UPDATE then matches no row
-        statement = real(table)
+        statement = update(table)  # SQLAlchemy's own, imported above, not joins'
         return statement.where(false()) if table is t.join_link else statement
 
     monkeypatch.setattr(joins, "update", no_slot)

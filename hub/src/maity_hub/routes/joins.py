@@ -1648,7 +1648,7 @@ def _create_for_join(conn: Connection, row: Any) -> str:
             placement=True,
         )  # fmt: skip
     except IntegrityError:
-        raise _gone("pickup: its new profile's handle was taken meanwhile", row) from None
+        raise _gone("pickup: making its new profile hit an integrity error", row) from None
     except ApiError as error:
         if error.code == "invalid":
             raise _gone("pickup: its new profile is refused as invalid", row) from None
