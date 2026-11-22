@@ -12,8 +12,8 @@ session's PATH is a stub that records where it ran.
 The interpreter must import `maity` in isolated mode (`pip install -e cli` from this branch):
 the runner's hook starts `<python> -I -m maity.runner.plaincall`, and the probe uses the
 runner's own launch (`adapters.launch`, a supervised placement with the sandbox on, the
-installed version, a scratch beside the clone and its TMPDIR, as the supervisor starts one) for
-the settings, the argv and the session's variables. It does not run where the runner would not
+installed version, a scratch under the workspaces root's holder and its TMPDIR, as the
+supervisor starts one) for the settings, the argv and the session's variables. It does not run where the runner would not
 start a sandboxed Claude Code placement: off Linux, without the sandbox's tools, at a version
 the sandbox gate does not take, or where the host does not give Claude Code's seccomp step what
 it needs (`capabilities.claude_seccomp`).
@@ -317,8 +317,9 @@ def build(root: Path, binary: str, version: str | None = None) -> World:
         (stub / name).symlink_to("maity")
     agent_dir = root / "state" / "agents" / "plc-probe"
     agent_dir.mkdir(parents=True, mode=0o700)
-    # The placement's scratch beside the clone with its `tmp`, as the supervisor makes it: the
-    # session's TMPDIR, without which the runner does not start a sandboxed Claude Code.
+    # The placement's scratch under the workspaces root's holder with its `tmp`, as the
+    # supervisor makes it: the session's TMPDIR, without which, or without the holder, the
+    # runner does not start a sandboxed Claude Code.
     scratch = workspace.scratch_of(workspaces, "probe", "plc-probe")
     (scratch / "tmp").mkdir(parents=True, mode=0o700)
     ctx = adapters.Context(
@@ -330,7 +331,7 @@ def build(root: Path, binary: str, version: str | None = None) -> World:
                                          others=[other.parent]),
         workspaces=workspaces, scratch=scratch, version=version,
     )  # fmt: skip
-    refused = adapters.private_tmpdir_refusal(ctx)
+    refused = adapters.scratch_refusal(ctx) or adapters.private_tmpdir_refusal(ctx)
     if refused is not None:
         raise RuntimeError(refused)
     adapters.launch(ctx)

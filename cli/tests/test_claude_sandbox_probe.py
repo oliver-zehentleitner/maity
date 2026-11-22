@@ -127,10 +127,12 @@ def test_the_world_is_started_as_the_supervisor_starts_a_placement(short: Path) 
     settings carry the worktree hook that version takes, and the session's TMPDIR lies in the
     scratch the sandbox may write."""
     world = probe.build(short, "/usr/bin/claude", "2.1.330")
-    scratch = short / "ws" / "probe" / ".scratch" / "plc-probe"
+    scratch = short / "ws" / ".scratch" / "probe" / "plc-probe"
     assert world.env["TMPDIR"] == str(scratch.resolve() / "tmp")
     assert world.env["MAITY_SCRATCH"] == str(scratch.resolve())
     assert str(scratch.resolve()) in world.settings["sandbox"]["filesystem"]["allowWrite"]
+    holder = str(scratch.parent.parent.resolve())  # every scratch's holder, denied for reading
+    assert holder in world.settings["sandbox"]["filesystem"]["denyRead"]
     assert "WorktreeCreate" in world.settings["hooks"]
     (short / "old").mkdir()
     assert "WorktreeCreate" not in probe.build(short / "old", "/usr/bin/claude").settings["hooks"]
