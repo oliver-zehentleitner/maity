@@ -343,9 +343,12 @@ def members_outcome(
 def _sees_own_attachment(conn: Connection, membership_id: str, caller: Caller) -> bool:
     """A replayed `member_self`: the caller's own attachment in that membership, live and
     not isolated, as the write itself needed. Another attachment that keeps the credential
-    authenticated does not let it read a project it is detached from or isolated in."""
+    authenticated does not let it read a project it is detached from or isolated in. A
+    credential revoked since it was authenticated refuses `unauthenticated`, as the write's own
+    `attached.recheck` would, not the `not_found` of a lost attachment."""
     if caller.kind != "agent" or caller.credential_id is None or not membership_id.isdigit():
         return False
+    attached.still_live(conn, caller.credential_id)
     a, m = t.instance_attachment, t.membership
     found = conn.execute(
         select(a.c.id)

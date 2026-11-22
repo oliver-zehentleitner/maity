@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, update
+from starlette.requests import Request
 
 from maity_hub import clock, idempotency, instances, namespace, read_limits
 from maity_hub import tables as t
@@ -648,11 +649,72 @@ def test_a_replayed_write_in_every_project_refuses_as_the_request_once_none_is_l
     assert "Idempotent-Replayed" not in replayed.headers
     load = idempotency.LOADERS["member_set"].load
     with w.engine.connect() as conn, pytest.raises(ApiError) as refused:
-        load(conn, w.agent.credential_id, None)
+        load(conn, w.agent.credential_id, _REQUEST)
     error = fresh.json()["error"]
     assert refused.value.status == fresh.status_code
     assert refused.value.code == error["code"]
     assert refused.value.details == error.get("details", {})
+
+
+# A replay's loader is called here without a route: the `member_*` loaders read nothing
+# from the request, so an empty one stands in.
+_REQUEST = Request({"type": "http", "headers": []})
+
+
+def _agent_caller(w: World) -> Caller:
+    return Caller(
+        kind="agent",
+        via="bearer",
+        agent_id=w.agent.agent_id,
+        owner_id=w.agent.owner_id,
+        credential_id=w.agent.credential_id,
+    )
+
+
+def test_a_replayed_self_write_refuses_a_credential_revoked_since_it_authenticated(
+    world: World,
+) -> None:
+    """A revocation that lands between authentication and the replay's own transaction
+    keeps the attachment rows, so the replay asks the credential itself: `unauthenticated`,
+    as the write's `attached.recheck` answers, for the answer in one project (`member_self`,
+    not the `not_found` of a lost attachment) and in every project (`member_set`). Over HTTP
+    authentication refuses a revoked credential first, so the replay's read is called here."""
+    w = world
+    single = w.call("PATCH", "/me", body={"paused": None, "project": "maintainer/alpha"})
+    assert single.status_code == 200, single.text
+    caller = _agent_caller(w)
+    member_self = idempotency.LOADERS["member_self"]
+    member_set = idempotency.LOADERS["member_set"]
+    with w.engine.connect() as conn:  # live: both replay as before
+        assert member_self.may_see(conn, str(w.in_a), caller)
+        assert member_set.may_see(conn, w.agent.credential_id, caller)
+        member_set.load(conn, w.agent.credential_id, _REQUEST)
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == w.agent.credential_id)
+            .values(revoked_at=clock.now())
+        )
+    with w.engine.connect() as conn:
+        with pytest.raises(ApiError) as one:
+            member_self.may_see(conn, str(w.in_a), caller)
+        with pytest.raises(ApiError) as every:
+            member_set.load(conn, w.agent.credential_id, _REQUEST)
+    for refused in (one.value, every.value):
+        assert (refused.status, refused.code) == (401, "unauthenticated")
+
+
+def test_a_replayed_write_in_every_project_with_no_live_attachment_is_unauthenticated(
+    world: World,
+) -> None:
+    """Detached from every project since authentication, the `member_set` replay refuses
+    `unauthenticated`, as `attached.every` does for the request, never `projects: []`."""
+    w = world
+    w.detach(w.in_a)
+    w.detach(w.in_b)
+    with w.engine.connect() as conn, pytest.raises(ApiError) as refused:
+        idempotency.LOADERS["member_set"].load(conn, w.agent.credential_id, _REQUEST)
+    assert (refused.value.status, refused.value.code) == (401, "unauthenticated")
 
 
 def test_the_keep_the_why_ack_names_its_project_among_several(world: World) -> None:

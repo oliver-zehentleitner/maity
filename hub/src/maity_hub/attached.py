@@ -70,10 +70,24 @@ def every(conn: Connection, caller: Caller, project: str | None) -> list[Any]:
     return free(conn, caller.credential_id or "")
 
 
+def still_live(conn: Connection, credential_id: str) -> None:
+    """Refuse `unauthenticated` when the credential was revoked since the call was
+    authenticated. A revocation keeps the attachment rows, so a read of them alone would not
+    see it: `recheck` asks this before a write, and a replay before it loads anything, so the
+    replay refuses as the request it stands for would (§1.5)."""
+    revoked = conn.execute(
+        select(t.credential.c.revoked_at).where(t.credential.c.id == credential_id)
+    ).scalar_one_or_none()
+    if revoked is not None:
+        raise unauthenticated()
+
+
 def free(conn: Connection, credential_id: str) -> list[Any]:
     """Every live attachment of the credential that is not isolated, refused as `every` is
     when there is none: also the replay of a write `every` answered (§1.5), which must refuse
-    as the request would and never answer an empty list."""
+    as the request would, never answering an empty list or a credential revoked since it
+    was authenticated."""
+    still_live(conn, credential_id)
     live = attachments(conn, credential_id)
     if not live:  # detached from everything since the call was authenticated
         raise unauthenticated()
@@ -91,11 +105,7 @@ def recheck(conn: Connection, caller: Caller, targets: list[Any], project: str |
     the call refuses as `every` does. Never a target outside `targets`: those are the projects
     locked."""
     credential_id = caller.credential_id or ""
-    revoked = conn.execute(
-        select(t.credential.c.revoked_at).where(t.credential.c.id == credential_id)
-    ).scalar_one_or_none()
-    if revoked is not None:
-        raise unauthenticated()
+    still_live(conn, credential_id)
     fresh = {a.membership_id: a for a in attachments(conn, credential_id)}
     if project is not None:
         target = fresh.get(targets[0].membership_id)
