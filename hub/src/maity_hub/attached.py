@@ -74,6 +74,34 @@ def every(conn: Connection, caller: Caller, project: str | None) -> list[Any]:
     return free
 
 
+def recheck(conn: Connection, caller: Caller, targets: list[Any], project: str | None) -> list[Any]:
+    """`targets` read again once their projects are locked, before any write: an isolation, a
+    detach or a revocation takes the same project lock, so one that landed between `every`
+    and the lock is seen here. With `project` the one target refuses as `named` would have;
+    without it a target that is no longer live and free is left out, and when none is left
+    the call refuses as `every` does. Never a target outside `targets`: those are the projects
+    locked."""
+    credential_id = caller.credential_id or ""
+    revoked = conn.execute(
+        select(t.credential.c.revoked_at).where(t.credential.c.id == credential_id)
+    ).scalar_one_or_none()
+    if revoked is not None:
+        raise unauthenticated()
+    fresh = {a.membership_id: a for a in attachments(conn, credential_id)}
+    if project is not None:
+        target = fresh.get(targets[0].membership_id)
+        if target is None:
+            raise invalid({"project": "not_a_member"})
+        return [_refuse_isolated(target)]
+    live = [fresh[a.membership_id] for a in targets if a.membership_id in fresh]
+    if not live:
+        raise unauthenticated()
+    kept = [a for a in live if a.isolated_since is None]
+    if not kept:
+        _refuse_isolated(live[0])
+    return kept
+
+
 def one(conn: Connection, caller: Caller, project: str | None) -> Any:
     """The one attachment a call is about: the one `project` names, else the instance's only
     live attachment; with more than one, `project` is `required` (no implicit choice)."""

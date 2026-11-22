@@ -79,6 +79,8 @@ def _agent(
     # Every project up front, in id order, as a revocation takes them (§6.17): the loop below
     # goes by attach order, and a lock inside it would invert that order.
     events.lock_projects(conn, (a.project_id for a in targets))
+    # Read again under those locks: an isolation or a detach in between is not written past.
+    targets = attached.recheck(conn, caller, targets, body.project)
     ids: list[int] = []
     for attachment in targets:
         row = conn.execute(

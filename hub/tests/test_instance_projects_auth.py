@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, update
 
-from maity_hub import clock, instances, read_limits
+from maity_hub import clock, instances, namespace, read_limits
 from maity_hub import tables as t
 from maity_hub.ids import new_id
 from tests import factory
@@ -963,6 +963,68 @@ def test_a_write_in_every_attachment_locks_its_projects_in_order_first(
     assert done.status_code == 200, done.text
     assert len(done.json()["projects"]) == 2
     assert taken[:2] == [(ordered[0], False), (ordered[1], False)]
+
+
+@pytest.mark.parametrize("named", [True, False])
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/me", {"paused": {"reason": "a break"}}),
+        ("/me/limit", {"until": "later"}),
+    ],
+)
+def test_an_isolation_before_the_locks_is_not_written_past(
+    world: World, monkeypatch: pytest.MonkeyPatch, path: str, body: dict[str, Any], named: bool
+) -> None:
+    """`PATCH /me` and `POST /me/limit` choose their attachments, then lock their projects;
+    an isolation of A that commits in between (it takes A's lock too) is read under the lock:
+    with `project` naming A the write is refused as isolated, without it A is left out and B
+    alone is written. Nothing is written in A either way (d4kb on #2105)."""
+    from maity_hub import events
+
+    w = world
+    if body.get("until") == "later":
+        body = {"until": clock.rfc3339(clock.now() + timedelta(hours=1))}
+    if named:
+        with w.engine.connect() as conn:
+            body = {**body, "project": namespace.name_of(conn, w.alpha)}
+    real = events.lock_projects
+
+    def isolating_first(conn: Any, project_ids: Any) -> None:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == w.in_a)
+            .values(isolated_since=clock.now(), isolated_reason="a rewrite", isolated_by="hub")
+        )
+        real(conn, project_ids)
+
+    monkeypatch.setattr(events, "lock_projects", isolating_first)
+    method = "PATCH" if path == "/me" else "POST"
+    done = w.call(method, path, body=body)
+
+    def written(membership_id: int) -> bool:
+        with w.engine.connect() as conn:
+            if path == "/me":
+                found = conn.execute(
+                    select(t.instance_attachment.c.paused_since).where(
+                        instances.attachment_of(w.agent.credential_id, membership_id)
+                    )
+                ).scalar_one()
+            else:
+                found = conn.execute(
+                    select(t.membership.c.limit_until).where(t.membership.c.id == membership_id)
+                ).scalar_one()
+        return found is not None
+
+    if named:
+        assert done.status_code == 403, done.text
+        assert done.json()["error"]["details"]["reason"] == "isolated"
+        assert not written(w.in_b)
+    else:
+        assert done.status_code == 200, done.text
+        assert len(done.json()["projects"]) == 1
+        assert written(w.in_b)
+    assert not written(w.in_a)
 
 
 # --- the rest of the boundary, per route (review of #2105) ----------------------------------

@@ -47,4 +47,5 @@
   owner's revoke of the runner does, and only then the projects, so the two cannot wait on
   each other either. `PATCH /me` and `POST /me/limit` without `project` take the projects
   of every attachment they write in the same way, up front, so they cannot deadlock against
-  a revocation either.
+  a revocation either, and read their attachments again under those locks: one isolated or
+  detached in between is refused when named in `project`, else left out.
