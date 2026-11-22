@@ -362,6 +362,11 @@ class Record:
     clone_bytes: int | None = None
     scratch_bytes: int | None = None
     sized_at: float | None = None
+    # Where this start's scratch was made (tsk-c7zzd440x8pn): `holder` under `<root>/.scratch`,
+    # `former` in the project's own `.scratch`, None for none or a record from before the
+    # holder. A Claude Code session not started in the holder does not deny it
+    # (_note_former_layout).
+    scratch_layout: str | None = None
     # Codex's folder prompt at an interactive start: None while looked for, else `answered`,
     # `left` (a prompt the runner does not answer, until it is gone) or `none` (not seen in
     # time, or gone).
@@ -476,6 +481,12 @@ class Supervisor:
     # whose scratch is gone since this service started (§15.5).
     closed_placements: list[dict[str, Any]] = field(default_factory=list)
     scratch_cleared: set[str] = field(default_factory=set)
+    # target name -> the running Claude Code placements last logged as still on the former
+    # scratch layout there (`_note_former_layout`), so the line is written once per change.
+    former_noted: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Targets whose scratch layout could not be told, each logged once with its cause until an
+    # answer comes (_host_layout; review A2069).
+    layout_unknown: set[str] = field(default_factory=set)
     # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
     # placement id -> earlier leaves not yet removed (TMP_STALE_FILE).
@@ -1203,6 +1214,7 @@ class Supervisor:
         with self.lock:
             closed = [p for p in self.closed_placements
                       if p["id"] not in self.scratch_cleared and p["id"] not in live]  # fmt: skip
+        layouts: dict[str, str] = {}  # each target asked once per pass, not per placement
         for p in closed:
             done = True
             for target in self.targets.values():
@@ -1218,25 +1230,46 @@ class Supervisor:
                     if located is None:
                         continue  # no /tmp scratch on this target (an ssh host): none to remove
                     path, in_tmp = located
-                    removed = (
-                        scratch.tmp_remove(path, target.as_user)
-                        if in_tmp
-                        else scratch.remove(path, target.as_user)
-                    )
+                    # Beside the clone, the former per-project scratch goes too, wherever a start
+                    # before the holder made one (tsk-c7zzd440x8pn); the holder's project
+                    # directory stays, even empty (scratchop.remove). The holder's path is asked
+                    # for only where a holder is there and the host's `maity` has the holder op:
+                    # an older one keeps the former layout and cannot read that path (A2045).
+                    # Where the host does not answer (ssh unreachable), nothing is asked of it
+                    # this pass, and the placement stays uncleared to be tried again (A2068).
+                    paths = [path]
+                    if not in_tmp:
+                        old = workspace.scratch_of(
+                            target.workspaces, p["project_id"], p["id"], target.host, former=True
+                        )
+                        if target.name not in layouts:
+                            layouts[target.name] = self._host_layout(target)
+                        layout = layouts[target.name]
+                        if layout == "unknown":
+                            done = False
+                            continue
+                        paths = [*([path] if layout == "holder" else []), old]
                 except workspace.Refused:
                     break
-                except scratchop.OnTheWay as exc:  # a link, a foreign-owned or wrong-shaped
-                    self.log(f"{p['id']}: scratch left on {target.name}: "  # name; logged once
-                             f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
-                    continue
-                except (OSError, subprocess.SubprocessError) as exc:
-                    self.log(f"{p['id']}: scratch not removed on {target.name}: {exc}")
-                    done = False
-                    continue
-                if removed is not None:
-                    scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
-                    self.log(f"{p['id']}: scratch removed on {target.name} ({removed} bytes): "
-                             "the placement is closed")  # fmt: skip
+                for path in paths:
+                    try:
+                        removed = (
+                            scratch.tmp_remove(path, target.as_user)
+                            if in_tmp
+                            else scratch.remove(path, target.as_user)
+                        )
+                    except scratchop.OnTheWay as exc:  # a link, a foreign-owned or wrong-shaped
+                        self.log(f"{p['id']}: scratch left on {target.name}: "  # name; logged once
+                                 f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+                        continue
+                    except (OSError, subprocess.SubprocessError) as exc:
+                        self.log(f"{p['id']}: scratch not removed on {target.name}: {exc}")
+                        done = False
+                        continue
+                    if removed is not None:
+                        scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
+                        self.log(f"{p['id']}: scratch removed on {target.name} ({removed} bytes): "
+                                 "the placement is closed")  # fmt: skip
                 if not self._remove_pg_pass(p, target):
                     done = False
             if done:
@@ -1245,6 +1278,83 @@ class Supervisor:
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
+
+    def _host_layout(self, target: Target) -> str:
+        """Whether a scratch can be in the holder on `target`, for the close and the sizes,
+        changing nothing there (A2068):
+        - `none` when the host answers that the workspaces root or the holder `<root>/.scratch`
+          is not there: no scratch can be in it, whatever the host's `maity` supports;
+        - else from the host's answer to the holder op on that existing holder (A2055):
+          `holder` when it has the op, `former` when it answers it has none
+          (scratchop.Unsupported); a link or another user's holder is `holder`, since a removal
+          through it refuses itself (OnTheWay, scratchop.remove) and is logged;
+        - `unknown` when no answer came: the directory question got none (an ssh transport
+          failure, a timeout, a path the runner cannot look at), or the holder op on an
+          existing holder failed otherwise. Logged once per target with its cause, so an
+          operator sees why a closed placement stays uncleared."""
+        root = target.workspaces if target.host else target.workspaces.resolve()
+        holder = workspace.scratch_holder_of(root, target.host)
+        layout, cause = "holder", ""
+        for path, name_only in ((root, False), (holder, True)):
+            there = self._is_there_on(target, path, name_only)
+            if there is None:
+                layout, cause = "unknown", f"no answer whether {path} is there"
+                break
+            if not there:
+                layout = "none"
+                break
+        else:
+            try:
+                scratch.make_holder(root, holder, target.as_user)  # it exists: only checked
+            except scratchop.Unsupported:
+                layout = "former"
+            except scratchop.OnTheWay:
+                layout = "holder"
+            except (OSError, subprocess.SubprocessError) as exc:
+                layout, cause = "unknown", onboarding.inline(str(exc))[:200]
+        with self.lock:
+            first = layout == "unknown" and target.name not in self.layout_unknown
+            if layout == "unknown":
+                self.layout_unknown.add(target.name)
+            else:
+                self.layout_unknown.discard(target.name)
+        if first:
+            self.log(f"{target.name}: the scratch layout there cannot be told ({cause}); "
+                     "closed placements there stay uncleared until it answers")  # fmt: skip
+        return layout
+
+    def _is_there_on(self, target: Target, path: Path, name_only: bool = False) -> bool | None:
+        """Whether `path` is there on `target`'s agents' side, as an answer; None when none
+        came (an ssh transport failure, a timeout, a path the runner or the agents' user cannot
+        look at), never taken for "not there" (A2073). Plain: a directory, following a link
+        (the workspaces root may be a configured link). `name_only` (the holder): anything at
+        that name, never followed, so a link or a file there counts as there and the holder op
+        refuses it (OnTheWay). "Not there" is answered only where the nearest existing parent
+        can be searched, so a denied look is no answer."""
+        if target.as_user.direct:
+            try:
+                if name_only:
+                    os.lstat(path)
+                    return True
+                return present(path, "-d")
+            except FileNotFoundError:
+                return False
+            except OSError:
+                return None
+        probe = (
+            'p=$1; if [ "$2" = name ]; then [ -e "$p" ] || [ -L "$p" ] && { echo yes; exit 0; };'
+            ' else [ -d "$p" ] && { echo yes; exit 0; }; [ -e "$p" ] && { echo no; exit 0; }; fi;'
+            ' d=$(dirname -- "$p"); while [ ! -e "$d" ] && [ "$d" != / ]; do'
+            ' d=$(dirname -- "$d"); done; if [ -x "$d" ]; then echo no; else echo unknown; fi'
+        )
+        argv = ["sh", "-c", probe, "sh", str(path), "name" if name_only else "dir"]
+        try:
+            done = target.as_user.run(argv)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode != 0:
+            return None
+        return {"yes": True, "no": False}.get(done.stdout.strip())
 
     def _remove_tmpdir(self, p: dict[str, Any], target: Target) -> bool:
         """Remove the leaf of a closed placement's own TMPDIR (`_tmpdir`) under the per-user
@@ -1323,7 +1433,15 @@ class Supervisor:
             elif located[1]:
                 room = scratch.tmp_measure(located[0], target.as_user)
             else:
-                room = scratch.measure(located[0], target.as_user)
+                # Both while both are there (tsk-c7zzd440x8pn, A2046): a placement restarted
+                # into the holder keeps its former scratch until its close, as gc does.
+                former = workspace.scratch_of(target.workspaces, p["project_id"], p["id"],
+                                              target.host, former=True)  # fmt: skip
+                in_holder = self._host_layout(target) in ("holder", "unknown")  # unknown: tried
+                paths = [*([located[0]] if in_holder else []), former]
+                sizes = [s for s in (scratch.measure(q, target.as_user) for q in paths)
+                         if s is not None]  # fmt: skip
+                room = sum(sizes) if sizes else None
             with self.lock:
                 rec.clone_bytes, rec.scratch_bytes, rec.sized_at = clone, room, now
 
@@ -2079,6 +2197,8 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             scratch = self._scratch(p, harness, target)
+            with self.lock:  # the layout this session's sandbox is set up for
+                rec.scratch_layout = scratch_layout(scratch)
             skill = self._skill(p, target)
             if not self._wants(p["id"], p["generation"]):  # so may a fetch of the skill
                 with self.lock:
@@ -2096,7 +2216,9 @@ class Supervisor:
             # A sandboxed Claude Code placement with no TMPDIR of its own fails closed: its
             # commands would share /tmp/claude-<uid> (tsk-k7svzz2p4v7y). No detail: the list of
             # `harness_refused` details is a closed contract list (§15.7); the cause is logged.
-            why = adapters.private_tmpdir_refusal(context)
+            # Nor without a scratch under a holder its sandbox denies (tsk-c7zzd440x8pn, A2045):
+            # that deny keeps out every scratch made after the start.
+            why = adapters.scratch_refusal(context) or adapters.private_tmpdir_refusal(context)
             if why is not None:
                 raise workspace.Refused("harness_refused", why=why)
             launch = adapters.launch(context)
@@ -2437,13 +2559,39 @@ class Supervisor:
         with a fresh name at every start, so nothing in it survives a restart (`_tmp_scratch`).
         Through a link the agents made the runner makes nothing, and a scratch it cannot make
         (a host whose `maity` has no `scratchop` yet) is none either: the session then starts
-        without one, and the log says why. agy's scratch goes under `/tmp` instead of beside the
-        clone, its sandbox being unable to write there."""
+        without one, and the log says why (a sandboxed Claude Code start is then refused,
+        adapters.scratch_refusal). The holder `<root>/.scratch` is stricter: one that is a
+        link, another user's, or cannot be made refuses the start (workspace.Refused). agy's
+        scratch goes under `/tmp` instead of beside the clone, its sandbox being unable to
+        write there."""
         if harness.id not in workspace.SCRATCH_HARNESSES:
             return None
         if workspace.scratch_in_tmp(harness.id):
             return self._tmp_scratch(p, target)
-        path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
+        # Every scratch under the one holder `<root>/.scratch`, checked at each start: a real
+        # directory of the agents' user, reached without following a link, or no start at all,
+        # since a Claude Code sandbox denies that holder to keep every other scratch out
+        # (tsk-c7zzd440x8pn). An ssh host whose `maity` has no holder op keeps the former
+        # per-project layout and its per-project denies. A holder that cannot be made for any
+        # other reason refuses the start too: without it the session would start with no holder
+        # deny, so a later scratch would not be hidden from it (the security leg's P3, A2047).
+        root = target.workspaces if target.host else target.workspaces.resolve()
+        former = False
+        try:
+            holder = workspace.scratch_holder_of(root, target.host)
+            scratch.make_holder(root, holder, target.as_user)
+        except scratchop.Unsupported:
+            former = True
+        except (OSError, subprocess.SubprocessError) as exc:  # OnTheWay included
+            raise workspace.Refused(
+                "harness_refused",
+                why=f"the scratch holder on {target.name} is not usable: "
+                f"{onboarding.inline(str(exc))[:200]}",
+            ) from None
+        path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host,
+                                    former=former)  # fmt: skip
+        if not former:
+            self._note_former_layout(target, p["id"])
         try:
             scratch.make(path, target.as_user)
         except scratchop.OnTheWay:
@@ -2453,6 +2601,31 @@ class Supervisor:
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
         return path
+
+    def _note_former_layout(self, target: Target, starting: str) -> None:
+        """Log, once per change, the running Claude Code placements on `target` whose session
+        was not started in the holder (Record.scratch_layout): started before this runner made
+        scratches under `<root>/.scratch` (a record from before has none), or on the former
+        layout. Their sandboxes do not deny the holder, so a scratch made there stays readable
+        from them until they are restarted, which the upgrade procedure does (tsk-c7zzd440x8pn).
+        Taken from what each start recorded, not from the directories found (A2045): a restart
+        leaves its former scratch until the close, and an adopted older session may have none.
+        Named by id, so an operator can check the window is closed."""
+        with self.lock:
+            old = [p["id"] for p in self.desired
+                   if p["id"] != starting and p.get("harness") == "claude-code"
+                   and (rec := self.records.get(p["id"])) is not None
+                   and rec.state == "running" and rec.scratch_layout != "holder"
+                   and (rec.target or self._default_target()) == target.name]  # fmt: skip
+        found = tuple(sorted(old))
+        with self.lock:
+            if self.former_noted.get(target.name, ()) == found:
+                return
+            self.former_noted[target.name] = found
+        if found:
+            self.log(f"{target.name}: scratches are made under {workspace.SCRATCH} now, while "
+                     "these Claude Code placements still run on the former layout and can read "
+                     f"them until restarted: {', '.join(found)}")  # fmt: skip
 
     def _pg_holder(self, target: Target) -> Path | None:
         """The test clusters' password holder (scratchop.PG_HOLDER) under `target`'s workspaces
@@ -3019,6 +3192,10 @@ def _is_link(path: Path) -> bool:
     return present(path, "-L")
 
 
+def _is_present(path: Path) -> bool:
+    return present(path, "-e")
+
+
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
@@ -3052,26 +3229,55 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     return sorted(named - {own})
 
 
+def scratch_layout(scratch: Path | None) -> str | None:
+    """`holder` for a scratch at `<root>/.scratch/<project>/<id>`, `former` for one at
+    `<root>/<project>/.scratch/<id>`, None for none or one elsewhere (agy's under `/tmp`)."""
+    holder = adapters.scratch_holder(scratch)
+    if scratch is None or holder is None:
+        return None
+    return "former" if holder == scratch.parent else "holder"
+
+
 def other_scratches(
     workspaces: Path, own: Path | None, as_user: AsUser, host: str = ""
 ) -> list[Path]:
-    """The other placements' scratches under `workspaces` (`<root>/<project>/.scratch/<placement
-    id>`, workspace.scratch_of), so the sandbox hides them as it hides the other clones'
-    credentials (tsk-w7qtcbzcshn9, the security review of #2032). Another project's `.scratch`
-    is named whole, so a scratch made in it after the start is hidden too (tsk-07dwr3t80rg0).
-    In the own project's `.scratch` each other entry is named. Claude Code's settings also hide
-    that whole holder and open the own scratch again (adapters.claude_settings), which covers a
-    later sibling there. A project whose `.scratch` does not exist yet at the start is not
-    covered (tsk-rbys2j9q0m48, as for the other clones' credentials). Named as scratch_of names
-    them: below the root resolved here, as given on an ssh host. A listing that cannot be
-    completed refuses the start (`workspace.Refused`): an unreadable `.scratch` could hide one,
-    and the sandbox would start without its deny."""
+    """The other placements' scratches under `workspaces`, so the sandbox hides them as it hides
+    the other clones' credentials (tsk-w7qtcbzcshn9, the security review of #2032), in both
+    layouts while the former one lasts (tsk-c7zzd440x8pn):
+    - in the holder `<root>/.scratch/<project>/<placement id>` (workspace.scratch_of), another
+      project's directory is named whole, and in the own project's each other entry; Claude
+      Code's settings also deny the whole holder and open the own scratch again
+      (adapters.claude_settings), which covers a scratch of any project made after the start;
+    - in the former `<root>/<project>/.scratch/<placement id>`, another project's `.scratch` is
+      named whole (tsk-07dwr3t80rg0), and in the own project's each other entry; a start in the
+      holder names every one of them whole, so each stays private until none is left.
+    Named as scratch_of names them: below the root resolved here, as given on an ssh host. A
+    listing that cannot be completed refuses the start (`workspace.Refused`): an unreadable
+    directory could hide one, and the sandbox would start without its deny; so does a holder
+    that is a link or no directory."""
     root = workspaces if host else workspaces.resolve()
     refused = workspace.Refused("harness_refused")
     own_holder = own.parent if own is not None and own.parent.name == workspace.SCRATCH else None
+    own_project = (own.parent if own is not None and own_holder is None
+                   and own.parent.parent.name == workspace.SCRATCH else None)  # fmt: skip
+    new_holder = root / workspace.SCRATCH
     found: list[Path] = []
     if as_user.direct:
         try:
+            if _is_link(new_holder) or (_is_present(new_holder) and not _is_dir(new_holder)):
+                raise refused
+            if _is_dir(new_holder):
+                if not os.access(new_holder, os.R_OK | os.X_OK):
+                    raise refused
+                for project in new_holder.iterdir():
+                    named = new_holder / project.name
+                    if named != own_project or _is_link(project):
+                        if _is_dir(project) and not _is_link(project) and not os.access(
+                                project, os.R_OK | os.X_OK):  # fmt: skip
+                            raise refused
+                        found.append(named)
+                        continue
+                    found += [named / e.name for e in project.iterdir()]
             for project in root.iterdir() if _is_dir(root) else ():
                 holder = project / workspace.SCRATCH
                 if _is_link(project) or _is_link(holder) or not _is_dir(holder):
@@ -3099,17 +3305,30 @@ def other_scratches(
         if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
             raise refused
         for entry in listed.stdout.split("\0"):
-            # Told apart by depth below the root, never by a name the agents' user could pick:
-            # `<project>/.scratch` is a holder, `<project>/.scratch/<name>` an entry in one.
-            # Anything else (not below the root, another depth) means the script and this parser
-            # are out of step: refuse, never skip, since a skipped record shortens the denies.
+            # Told apart by depth below the root and the literal holder name at a fixed place,
+            # never by a name the agents' user could pick: `.scratch/<project>` is a project's
+            # directory in the holder and `.scratch/<project>/<name>` an entry in it;
+            # `<project>/.scratch` is a former holder and `<project>/.scratch/<name>` an entry
+            # in one. A project's name never starts with a dot (workspace.TOKEN), so the two
+            # cannot be confused. Anything else (not below the root, another depth) means the
+            # script and this parser are out of step: refuse, never skip, since a skipped
+            # record shortens the denies.
             if not entry:  # after the last NUL
                 continue
             try:
                 parts = Path(entry).relative_to(root).parts
             except ValueError as exc:
                 raise refused from exc
-            if len(parts) not in (2, 3) or parts[1] != workspace.SCRATCH:
+            if len(parts) not in (2, 3):
+                raise refused
+            if parts[0] == workspace.SCRATCH:
+                named = new_holder / parts[1]
+                if len(parts) == 2 and named != own_project:
+                    found.append(named)
+                elif len(parts) == 3 and named == own_project:
+                    found.append(named / parts[2])
+                continue
+            if parts[1] != workspace.SCRATCH:
                 raise refused
             named = root / parts[0] / workspace.SCRATCH
             if len(parts) == 2 and named != own_holder:
@@ -3119,12 +3338,29 @@ def other_scratches(
     return sorted(set(found) - ({own} if own is not None else set()))
 
 
-# Every project's `.scratch` under the root given (with a trailing slash) and every entry in it,
-# one NUL after each: the projects are the root's own entries (a project's name never starts with
-# a dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
-# side. A root, a project or a `.scratch` that cannot be read and searched ends with 3, as a
+# Under the root given (with a trailing slash), one NUL after each record:
+# - in the holder `.scratch`, every project's directory and every entry in it (a holder that is
+#   a link or no directory ends with 3, as on the direct side);
+# - every project's former `.scratch` and every entry in it: the projects are the root's own
+#   entries (a project's name never starts with a dot, workspace.TOKEN, so the glob never takes
+#   the holder), a project or a `.scratch` that is a link is skipped, as on the direct side.
+# A root, a project or a directory that cannot be read and searched ends with 3, as a
 # PermissionError does on the direct side: it could hide a scratch (the review of #2032).
 _SCRATCHES = r"""[ -r "$1" ] && [ -x "$1" ] || exit 3
+n=$1.scratch
+if [ -e "$n" ] || [ -L "$n" ]; then
+  [ -d "$n" ] && ! [ -L "$n" ] || exit 3
+  [ -r "$n" ] && [ -x "$n" ] || exit 3
+  for p in "$n"/*; do
+    [ -e "$p" ] || [ -L "$p" ] || continue
+    if [ -d "$p" ] && ! [ -L "$p" ]; then
+      [ -r "$p" ] && [ -x "$p" ] || exit 3
+      find "$p" -maxdepth 1 -print0 || exit 3
+    else
+      printf '%s\0' "$p"
+    fi
+  done
+fi
 for p in "$1"*; do
   [ -d "$p" ] && ! [ -L "$p" ] || continue
   [ -r "$p" ] && [ -x "$p" ] || exit 3
