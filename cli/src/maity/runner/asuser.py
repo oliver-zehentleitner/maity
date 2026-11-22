@@ -436,6 +436,36 @@ class AsUser:
         argv = [*self.runner_module("skillop"), "put", "--home", str(home)]
         return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "put", "")
 
+    def skill_codex(self, under: Path, home: Path, payload: str) -> dict[str, Any]:
+        """The skill's own files from the runner's checked copy (skillop.payload) as
+        `<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME in its scratch
+        (skillop.codex_put), reached from the workspaces root `under`. Errors as for
+        `skill_check`, scratchop.OnTheWay for a link on the way."""
+        if self.direct:
+            return dict(skillop.codex_put(str(under), str(home), json.loads(payload)))
+        argv = [*self.runner_module("skillop"), "codex", "--under", str(under), str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "codex", "")
+
+    def skill_codex_clear(self, under: Path, home: Path) -> dict[str, Any]:
+        """`<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME removed
+        (skillop.codex_clear), for a launch that writes no skill there. Errors as for
+        `skill_codex`."""
+        if self.direct:
+            return dict(skillop.codex_clear(str(under), str(home)))
+        argv = [*self.runner_module("skillop"), "codexclear", "--under", str(under), str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "codexclear", "")
+
+    def skill_remove(self, home: Path, keep: set[str]) -> list[str]:
+        """The delivered copies below the agents' `home` that are not in `keep` removed
+        (skillop.remove, `gc --skills`); their names. Errors as for `skill_check`."""
+        if self.direct:
+            answer = dict(skillop.remove(str(home), sorted(keep)))
+        else:
+            argv = [*self.runner_module("skillop"), "remove", "--home", str(home), *sorted(keep)]
+            answer = self._skill_answer(self.run(argv, env=self.module_env()), "remove", "")
+        names = answer.get("names")
+        return [n for n in names if isinstance(n, str)] if isinstance(names, list) else []
+
     @staticmethod
     def _skill_answer(done: subprocess.CompletedProcess[str], op: str, key: str) -> dict[str, Any]:
         """A skill op's one JSON line (skillop.main): LINK (4) for a link below the home, 2 for
@@ -576,7 +606,7 @@ class Ssh(AsUser):
         home = done.stdout.strip()
         # The remote account is the agents': its shell start-up files can set HOME to
         # anything, and the runner builds paths and the attach hint from it.
-        if done.returncode != 0 or not REMOTE_HOME.match(home) or ".." in home.split("/"):
+        if done.returncode != 0 or not REMOTE_HOME.fullmatch(home) or ".." in home.split("/"):
             raise OSError(
                 f"{self.name}: {self.login}'s home is not a plain absolute path "
                 f"({home[:80]!r}); the runner refuses the host"

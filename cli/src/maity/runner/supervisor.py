@@ -319,6 +319,9 @@ class Record:
     # The placement names a Keep the Why skill and this start went without it (skills.py):
     # reported with `running` as `keep_the_why_unavailable` (§15.7).
     skill_missing: bool = False
+    # The copy this start got (skills.key), so `gc --skills` keeps it while the session runs,
+    # even after the hub names another commit; None when it started without one.
+    skill_key: str | None = None
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     # Fresh sessions started in this generation (§15.7 `sessions`), and whether the hub reads
     # them: one whose placement carries `fresh_session` (§15.6) takes the field in a report.
@@ -415,6 +418,9 @@ class Supervisor:
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Held across a snapshot of the records and its write (save), so a `_start` worker's save
+    # before its session starts is never overwritten by an older snapshot (the review of #2093).
+    records_save_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -478,9 +484,10 @@ class Supervisor:
         }  # fmt: skip
 
     def save(self) -> None:
-        with self.lock:
-            data = {pid: asdict(r) for pid, r in self.records.items()}
-        state.save_state(self.cfg.state_dir, data, name=ACTUAL_FILE)
+        with self.records_save_lock:
+            with self.lock:
+                data = {pid: asdict(r) for pid, r in self.records.items()}
+            state.save_state(self.cfg.state_dir, data, name=ACTUAL_FILE)
         self._save_scratch_names()
 
     def _save_scratch_names(self) -> None:
@@ -1397,6 +1404,7 @@ class Supervisor:
             with self.lock:  # reported with `running` (keep_the_why_unavailable)
                 # Any value but null names a skill, a malformed one included (skills.named).
                 rec.skill_missing = skill is None and p.get("keep_the_why") is not None
+                rec.skill_key = skill.parent.name if skill is not None else None
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
@@ -1416,6 +1424,10 @@ class Supervisor:
                          f"{scratch / adapters.PG} would not fit a Unix socket path; "
                          "set a shorter workspaces root")  # fmt: skip
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
+            # The copy this session starts with is on disk before it runs: `gc --skills` reads
+            # it from the record, and a service stopped right after the start must not leave
+            # the previous run's key there (the review of #2093).
+            self.save()
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
             )
@@ -1614,7 +1626,19 @@ class Supervisor:
             tmpdir=tmpdir,
             pg_pass=pg_pass,
             skill=skill,
+            skill_source=self._skill_source(p) if skill is not None else None,
         )
+
+    def _skill_source(self, p: dict[str, Any]) -> Path | None:
+        """The runner's own checked copy of the skill the placement names, which `_skill`
+        made sure of before: what a Codex placement's skills directory is written from."""
+        try:
+            wanted = skills.named(p)
+        except skills.Unavailable:
+            return None
+        if wanted is None:
+            return None
+        return skills.plugin_root(self.cfg.skills_dir, *wanted).parent
 
     def _skill(self, p: dict[str, Any], target: Target) -> Path | None:
         """The Keep the Why skill the placement names (§15.5), as the plugin root of a checked

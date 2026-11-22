@@ -59,7 +59,7 @@ INSTALLERS: dict[str, Callable[[], Installer]] = {}
 
 def version_key(version: str) -> tuple[int, ...] | None:
     """A plain dotted version as numbers; None for anything else (never ordered)."""
-    return tuple(int(part) for part in version.split(".")) if _VERSION.match(version) else None
+    return tuple(int(part) for part in version.split(".")) if _VERSION.fullmatch(version) else None
 
 
 def newer(candidate: str, than: str | None) -> bool:
