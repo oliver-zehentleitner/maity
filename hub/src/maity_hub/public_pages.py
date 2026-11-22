@@ -339,6 +339,12 @@ def configure(hub: Settings | None) -> None:
     _hub = hub
 
 
+def serving() -> bool:
+    """Whether this process serves public pages (`MAITY_PUBLIC_PAGES`), as `touch` reads it:
+    false before any settings are configured, so a reader that asks fails closed."""
+    return _hub is not None and _hub.public_pages
+
+
 def refresh(
     conn: Connection, hub: Settings, kind: str, target_id: str, *, fresh: bool = False
 ) -> None:

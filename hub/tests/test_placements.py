@@ -14,6 +14,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import events, moderation
 from maity_hub import placements as pl
 from maity_hub import tables as t
+from maity_hub.config import KTW_SKILL_COMMIT, KTW_SKILL_SOURCE
 from maity_hub.routes import runner as runner_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -124,6 +125,7 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "harness",
         "mode",
         "model",
+        "effort",  # the reasoning effort, null: the harness's default (§15.5)
         "workspace",
         "desired",
         "generation",
@@ -185,23 +187,51 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
         "harness": "claude-code",
         "mode": "interactive",
         "model": None,
+        "effort": None,
         "target": None,
         "workspace": {"clone": body["agent"]["handle"], "branch": "main", "repository": REPOSITORY},
         "rejoin": False,
         "fresh_session": False,
+        "keep_the_why": {"source": KTW_SKILL_SOURCE, "commit": KTW_SKILL_COMMIT},
         "stop_grace_seconds": 120,
         "workspace_retention": "24h",
         "workspace_epoch": 1,
+        # The runner's owner owns the agent; no credential yet, so no session (§15.8).
+        "session": {
+            "started_at": None,
+            "not_listening_since": None,
+            "paused": False,
+            "dormant": False,
+        },
         "seq": 0,
     }
     packet = hello(setup.client, setup.runner).json()
     assert [p["id"] for p in packet["placements"]] == [body["id"]]
 
 
+def test_the_runner_reads_the_skill_only_for_a_project_that_uses_keep_the_why(
+    setup: Setup,
+) -> None:
+    # §15.5: `keep_the_why` names what the runner delivers to the session, the instance's
+    # source at its commit; `null` once the project's memory is off. Not part of the spec: no
+    # new generation, so a running placement takes the change at its next start.
+    body = placed(setup)
+    skill = {"source": KTW_SKILL_SOURCE, "commit": KTW_SKILL_COMMIT}
+    assert runner_view(setup, body["id"])["keep_the_why"] == skill
+    assert hello(setup.client, setup.runner).json()["placements"][0]["keep_the_why"] == skill
+    off = setup.owner.patch("/projects/maintainer/maity", {"memory": {"provider": "none"}})
+    assert off.status_code == 200, off.text
+    seen = runner_view(setup, body["id"])
+    assert (seen["keep_the_why"], seen["generation"]) == (None, 1)
+    assert "keep_the_why" not in get(setup, body["id"])  # the runner's alone
+
+
 @pytest.mark.parametrize(
     ("body", "code"),
     [
         ({"model": "gpt-9"}, "harness_not_offered"),
+        # A runner that advertises no efforts (one from before them) takes no named effort.
+        ({"effort": "medium"}, "harness_not_offered"),
         ({"mode": "supervised", "harness": "codex"}, "harness_not_offered"),
         ({"target": "build-1"}, "harness_not_offered"),
         ({"runner": "rnr-nope"}, "runner_not_attached"),
@@ -214,6 +244,78 @@ def test_what_the_runner_does_not_offer_is_refused(
     assert (response.status_code, error(response)) == (409, code)
     if code == "harness_not_offered":
         assert response.json()["error"]["details"]["offered"][0]["id"] == "claude-code"
+
+
+def advertise_efforts(s: Setup, efforts: list[str]) -> None:
+    claude = {**CAPABILITIES["harnesses"][0], "efforts": efforts}
+    capabilities = {**CAPABILITIES, "harnesses": [claude, *CAPABILITIES["harnesses"][1:]]}
+    assert hello(s.client, s.runner, capabilities=capabilities).status_code == 200
+
+
+def test_a_placement_names_an_effort_the_runner_offers(setup: Setup) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): `effort` is one of the harness's advertised efforts; the
+    owner, the runner and the request summary read it, and a change makes a new generation."""
+    advertise_efforts(setup, ["low", "medium"])
+    body = placed(setup, effort="medium")
+    assert body["effort"] == "medium"
+    assert runner_view(setup, body["id"])["effort"] == "medium"
+    one = f"/projects/maintainer/maity/placements/{body['id']}"
+    other = setup.owner.patch(one, {"effort": "high"})
+    assert (other.status_code, error(other)) == (409, "harness_not_offered")
+    assert other.json()["error"]["details"]["offered"][0]["efforts"] == ["low", "medium"]
+    changed = setup.owner.patch(one, {"effort": "low"}).json()
+    assert (changed["effort"], changed["generation"]) == ("low", 2)
+    # Null takes the harness's default again; a spec change like any other.
+    back = setup.owner.patch(one, {"effort": None})
+    assert back.status_code == 200, back.text
+    assert (back.json()["effort"], back.json()["generation"]) == (None, 3)
+
+
+def test_an_agents_proposed_effort_waits_for_consent(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    advertise_efforts(setup, ["medium"])
+    body = placed(setup)
+    admin = admin_agent(make_client, setup)
+    changed = admin.patch(
+        f"/projects/maintainer/maity/placements/{body['id']}",
+        {"effort": "medium", "reason": "reviews need it"},
+    ).json()
+    assert changed["approval"]["pending_change"] == {"effort": "medium"}
+    assert (changed["effort"], changed["generation"]) == (None, 1)
+    request = setup.owner.get(f"/requests/{changed['approval']['request_id']}").json()
+    assert request["placement"]["effort"] == "medium"
+    setup.owner.post(f"/requests/{changed['approval']['request_id']}/answer", {"reply_id": "go"})
+    after = get(setup, body["id"])
+    assert (after["effort"], after["generation"]) == ("medium", 2)
+
+
+@pytest.mark.parametrize("effort", ["High", "", "x" * 17, "me dium"])
+def test_an_effort_of_the_wrong_shape_is_invalid(setup: Setup, effort: str) -> None:
+    advertise_efforts(setup, ["medium"])
+    response = place(setup, effort=effort)
+    assert (response.status_code, error(response)) == (400, "invalid")
+
+
+def test_a_hello_without_efforts_is_taken_and_offers_none(setup: Setup) -> None:
+    """A runner from before `efforts` sends no key (§15.3): its hello is taken as it was."""
+    assert "efforts" not in CAPABILITIES["harnesses"][0]
+    assert hello(setup.client, setup.runner).status_code == 200
+    with setup.engine.begin() as conn:
+        stored = conn.execute(
+            select(t.runner.c.capabilities).where(t.runner.c.id == setup.runner.id)
+        ).scalar_one()
+    assert stored["harnesses"][0]["efforts"] == []
+
+
+def test_a_runner_refusing_an_effort_reports_effort_unsupported(setup: Setup) -> None:
+    advertise_efforts(setup, ["medium"])
+    body = placed(setup, effort="medium")
+    response = report(
+        setup, body, 1, state="failed", reason="harness_refused", detail="effort_unsupported"
+    )
+    assert response.status_code == 200, response.text
+    assert get(setup, body["id"])["reported"]["detail"] == "effort_unsupported"
 
 
 def test_a_runner_that_advertises_antigravity_takes_its_placements(setup: Setup) -> None:
@@ -1436,6 +1538,146 @@ def test_an_existing_member_of_another_owner_is_not_yours(
     assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
     with setup.engine.connect() as conn:
         assert conn.execute(select(t.placement.c.id)).first() is None
+
+
+# --- a profile that is not a member yet (§15.6) ---------------------------------------------
+
+
+def _own_profile(who: flow.Human, handle: str = "agent-own") -> str:
+    made = who.post("/agents", {"handle": handle, "display_name": "Own agent"})
+    assert made.status_code == 201, made.text
+    agent_id: str = made.json()["id"]
+    return agent_id
+
+
+def _stored(s: Setup, placement_id: str) -> Any:
+    with s.engine.connect() as conn:
+        return conn.execute(select(t.placement).where(t.placement.c.id == placement_id)).one()
+
+
+def _as_member_with_member_agents(s: Setup, **project: Any) -> None:
+    """The runner's owner as a member with trust `member` under "Bringing your own agent"
+    (§3.1); the runner stays attached, as an admin attached it before."""
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == s.owner.id).values(trust="member")
+        )
+        conn.execute(update(t.project).values(member_agents="on", **project))
+
+
+def test_a_profile_not_yet_a_member_is_placed_with_a_first_joins_fields(setup: Setup) -> None:
+    agent_id = _own_profile(setup.owner)
+    body = placed(
+        setup, agent={"id": agent_id}, role="reviewer", briefing="Review it.", subagents=True
+    )
+    assert body["agent"]["id"] == agent_id and body["agent"]["handle"] == "agent-own"
+    assert body["briefing"] == "Review it." and body["instance"] is None
+    row = _stored(setup, body["id"])
+    assert (row.agent_id, row.membership_id, row.new_handle) == (agent_id, None, None)
+    assert row.new_profile["trust"] == "member" and row.new_profile["role"] == "reviewer"
+    assert row.new_profile["subagents"] is True
+
+
+def test_an_agent_never_admits_a_profile(setup: Setup, make_client: ClientFactory) -> None:
+    agent_id = _own_profile(setup.owner)  # its own human's
+    response = place(setup, admin_agent(make_client, setup), agent={"id": agent_id}, reason="in")
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_a_member"}
+
+
+def test_another_owners_profile_that_is_not_a_member_is_not_yours(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other = flow.human(make_client, setup.engine, "someone")
+    response = place(setup, agent={"id": _own_profile(other, "theirs")})
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
+    with setup.engine.connect() as conn:
+        assert conn.execute(select(t.placement.c.id)).first() is None
+
+
+def test_only_an_owner_admits_a_profile_with_trust_admin(setup: Setup) -> None:
+    agent_id = _own_profile(setup.owner)
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == setup.owner.id)
+            .values(trust="admin")
+        )
+    refused = place(setup, agent={"id": agent_id}, trust="admin")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "owner_only"
+
+
+def test_a_member_admits_an_agent_of_their_own_within_the_member_rule(setup: Setup) -> None:
+    # §15.6 with §3.1 "Bringing your own agent": no members:admin needed, the join's limits.
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    over = place(setup, agent={"id": agent_id}, areas=["hub"])
+    assert over.status_code == 403, over.text
+    assert over.json()["error"]["details"] == {"reason": "member_join_limit", "field": "areas"}
+    assert (
+        place(setup, agent={"id": agent_id}, trust="admin").json()["error"]["details"]["field"]
+        == "trust"
+    )
+    body = placed(setup, agent={"id": agent_id})
+    row = _stored(setup, body["id"])
+    with setup.engine.connect() as conn:
+        mine = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == setup.owner.id)
+        ).scalar_one()
+    assert row.created_by == setup.owner.id and row.new_profile["reports_to"] == mine
+    assert body["approval"]["status"] == "approved"
+    # A member placed by id still needs members:admin.
+    refused = place(setup)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+
+
+def test_a_members_placement_counts_as_the_profiles_open_first_join(setup: Setup) -> None:
+    # The owner already holds setup.agent; with member_agents_max 2 one more profile fits,
+    # and the placement holds that slot as its open first join (§3.1, §15.6).
+    first, second = _own_profile(setup.owner, "first"), _own_profile(setup.owner, "second")
+    _as_member_with_member_agents(setup, member_agents_max=2)
+    placed(setup, agent={"id": first})
+    refused = place(setup, agent={"id": second})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "member_agents_max"
+    assert place(setup, agent={"id": first}).status_code == 201  # the same profile again
+
+
+def test_without_member_agents_a_member_admits_nothing(setup: Setup) -> None:
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    with setup.engine.begin() as conn:
+        conn.execute(update(t.project).values(member_agents="off"))
+    refused = place(setup, agent={"id": agent_id})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}  # as before
+
+
+def test_a_member_changes_an_admitting_placement_only_as_its_profiles_owner(setup: Setup) -> None:
+    # §15.6: "Bringing your own agent" covers creating the placement only. A spec change
+    # still needs members:admin and the runner; `desired` stays the profile owner's.
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    body = placed(setup, agent={"id": agent_id})
+    path = f"/projects/maintainer/maity/placements/{body['id']}"
+    refused = setup.owner.patch(path, {"stop_grace_seconds": 30})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+    assert _stored(setup, body["id"]).stop_grace_seconds != 30
+    for desired in ("stopped", "running"):
+        changed = setup.owner.patch(path, {"desired": desired})
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["desired"] == desired
+
+
+@pytest.mark.parametrize("field", [{"trust": "member"}, {"briefing": "x"}, {"subagents": True}])
+def test_a_member_by_id_takes_no_join_fields(setup: Setup, field: dict[str, Any]) -> None:
+    refused = place(setup, **field)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {next(iter(field)): "not_with_agent_id"}
 
 
 def test_a_replay_shows_a_placement_only_while_the_agent_still_sees_it(

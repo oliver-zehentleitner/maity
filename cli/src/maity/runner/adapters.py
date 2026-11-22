@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import config, scratch, stub, trust
+from . import capabilities, config, scratch, skills, stub, trust
 from .asuser import AsUser
-from .workspace import TMP_SCRATCH_HARNESSES
+from .workspace import SCRATCH, TMP_SCRATCH_HARNESSES
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -84,6 +84,17 @@ GIT_DENIED = (
     "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
 )  # fmt: skip
+# No worktree from the shell either, for the harnesses with a command allowlist (Claude Code,
+# opencode): `git worktree` is not among GIT_SUBCOMMANDS, but a repository's grant could allow
+# it, and a deny wins over an allow. A registered worktree stops maity's git in the clone, and
+# one outside `.claude/worktrees/` is not cleared at the next start (worktree.py). A guard
+# against accidents like the lists above, not a boundary. Kept apart from GIT_DENIED, which is
+# about git running programs or reading configuration, and which agy's rules mirror.
+# Only the subcommand itself: a pattern with a wildcard before `worktree` (`git * worktree *`,
+# also `git -C * worktree *`) would deny ordinary commands that only mention the word
+# (`git log --grep worktree`, a commit message), so it is not used. `git -C <dir> worktree …`
+# is not matched; no allow rule matches it either (cli/context/runner.md).
+GIT_WORKTREE_DENIED = ("git worktree", "git worktree *")
 # No session runs gh: the token is the operator's and reaches every repository it may, and no
 # glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests
 # with `maity gh`, which runs outside the sandbox with the repository fixed by the runner
@@ -101,6 +112,21 @@ PULL_REQUEST_PROMPT = (
 # harness itself, never through an agent's command tool (runner_own_file is the boundary).
 MAITY_RUNNER_DENIED = ("maity runner", "maity runner *")
 
+# A placed Claude Code session makes no git worktree in its clone: while one exists maity runs
+# no git there (clonecheck, "Worktrees are"), so `maity report` and `maity gh` fail, and the
+# session cannot remove it from its sandbox; only the next start clears it (worktree.py). The
+# bare name takes EnterWorktree out of the model's context, as for AskUserQuestion; the
+# WorktreeCreate hook replaces Claude Code's own worktree creation (subagents with
+# `isolation: worktree` included) and fails it (cli/context/runner.md).
+CLAUDE_WORKTREE_DENIED = ("EnterWorktree",)
+# Shell form, like the plain-call hook; no runner module, so it cannot fail to start in a way
+# that would let a worktree through. It prints no path, and exits 2. Written only for a version
+# with the event; the bare deny goes in every file (a deny of a name a binary does not know is
+# taken as harmless).
+CLAUDE_WORKTREE_HOOK = (
+    "echo 'git worktrees are off in a placement clone; work in the clone itself' >&2; exit 2"
+)
+
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
 # written by the agent. Not everything that can make git run something: a rebase state
@@ -115,15 +141,11 @@ MAITY_RUNNER_DENIED = ("maity runner", "maity runner *")
 # more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
-# An OS-made UUID v4 for an agent's Keep-the-Why entries (AGENTS.md, keepthewhy.com): the skill
-# makes every entry's `Id` with an OS command, never from memory. The harnesses with a
-# deny-by-default command allowlist (Claude Code, opencode) refuse the usual sources — `uuidgen`,
-# `node`, `od` on `/dev/urandom` — so a runner agent could record no reasoning (cli/context/
-# runner.md). The kernel's generator is the one allowed: it reads a fresh lowercase v4 (no `tr` to
-# lowercase, as the skill's `uuidgen` needs on macOS), needs no package installed (`uuidgen` is
-# util-linux), and runs read-only. Codex and agy have no command allowlist, so the command already
-# runs there inside their own sandbox (docs/runners.md).
-UUID_COMMAND = "cat /proc/sys/kernel/random/uuid"
+# No OS UUID command is allowed: an agent makes its Keep-the-Why Ids with `maity uuid`, which runs
+# wherever `maity` does. An exact `cat /proc/sys/kernel/random/uuid` allow was refused in every
+# placed Claude Code session anyway: the path check on a read outside the working directories
+# decides before the rule, and opencode's `external_directory: deny` gates the same path
+# (cli/context/runner.md).
 
 READY = ("stub", "claude-code", "codex", "opencode", "antigravity")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
@@ -229,10 +251,31 @@ class Context:
     # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
     # ssh host, no uid).
     tmp_scratch_parent: Path | None = None
+    # The placement's own short TMPDIR (`tmp` in a fresh leaf under that per-user `/tmp` parent),
+    # made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix socket
+    # (scratch_tmpdir) and re-opened for this placement alone in its sandbox: Codex's whole leaf
+    # (tsk-0zb9mgzmbwn4), and Claude Code's, its `tmp` re-opened and the leaf itself its
+    # CLAUDE_CODE_TMPDIR (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
+    tmpdir: Path | None = None
     # The placement's test cluster password file in the holder every sandbox is denied
     # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no
     # test cluster (run_env). The session never reads it: `pgenv` does, before the session runs.
     pg_pass: Path | None = None
+    # The harness's version as the runner probed it (capabilities.probe), for settings that a
+    # version needs: Claude Code's worktree hook. None: unknown, and nothing version-gated.
+    version: str | None = None
+    # The Keep the Why skill the placement names, as the runner's checked copy (skills.py): the
+    # plugin root Claude Code loads with `--plugin-dir`, read-only to the session. None when the
+    # placement names none or it could not be fetched.
+    skill: Path | None = None
+
+
+def skill_env(ctx: Context) -> dict[str, str]:
+    """MAITY_KTW_SKILL_DIR: where the delivered skill's `SKILL.md` lies, for every harness; the
+    resume block names it instead of "<skills directory>" (onboarding)."""
+    if ctx.skill is None:
+        return {}
+    return {"MAITY_KTW_SKILL_DIR": str(ctx.skill / "skills" / skills.NAME)}
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -276,9 +319,66 @@ def scratch_tmpdir(scratch: Path | None) -> Path | None:
     if scratch is None:
         return None
     tmp = scratch / "tmp"
-    if len(os.fsencode(tmp)) + 1 + SOCKET_NAME_ROOM > SOCKET_PATH_MAX:
+    return tmp if fits_socket(tmp) else None
+
+
+def fits_socket(tmp: Path, limit: int | None = None) -> bool:
+    """Whether a socket named like Claude Code's fits under `tmp` within `limit` bytes (this
+    platform's SOCKET_PATH_MAX by default)."""
+    room = SOCKET_PATH_MAX if limit is None else limit
+    return len(os.fsencode(tmp)) + 1 + SOCKET_NAME_ROOM <= room
+
+
+def session_tmpdir(ctx: Context) -> Path | None:
+    """The session's TMPDIR: `tmp` in its scratch where a socket fits under it, else the short
+    one of its own the supervisor made under the per-user `/tmp` parent (Context.tmpdir), else
+    none, and tools fall back to the system's (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
+    own = scratch_tmpdir(ctx.scratch)
+    if own is not None:
+        return own
+    return ctx.tmpdir if ctx.tmpdir is not None and fits_socket(ctx.tmpdir) else None
+
+
+def own_tmpdir_in_use(ctx: Context) -> Path | None:
+    """The placement's own TMPDIR under the per-user `/tmp` parent (Context.tmpdir) when it is
+    the one the session gets (session_tmpdir), else None: the sandbox opens it, and the parent's
+    write deny is lifted, only then."""
+    return ctx.tmpdir if ctx.tmpdir is not None and session_tmpdir(ctx) == ctx.tmpdir else None
+
+
+def private_tmpdir_refusal(ctx: Context) -> str | None:
+    """Why a sandboxed Claude Code placement must not start, or None: it starts only with a
+    TMPDIR of its own (session_tmpdir). Without one, Claude Code hands its sandboxed commands
+    `/tmp/claude-<uid>`, one directory every Claude Code session of the OS user shares and can
+    write, so the start fails closed instead (tsk-k7svzz2p4v7y; security's tsk-z5c3798r1ces). An
+    unsandboxed placement is not refused: its commands already reach every file of the user.
+    The text is for the runner's log only, with the cause and the remedy."""
+    if ctx.harness.id != "claude-code" or not ctx.sandbox or session_tmpdir(ctx) is not None:
         return None
-    return tmp
+    where = "there is no scratch"
+    if ctx.scratch is not None:
+        where = f"{ctx.scratch / 'tmp'} is too long for a Unix socket"
+    return (
+        f"no private TMPDIR for this sandboxed Claude Code placement: {where}, "
+        "and no short one could be made under the per-user /tmp parent (none is made on an ssh "
+        "host). Its commands would share /tmp/claude-<uid> with every Claude Code session of "
+        "this OS user, so it is not started. Set a short `workspaces` root on this host, such "
+        "as /srv/mw"
+    )
+
+
+def own_tmp_env(ctx: Context) -> dict[str, str]:
+    """Claude Code's CLAUDE_CODE_TMPDIR in the leaf itself where the session's TMPDIR is the
+    leaf's `tmp`: Claude Code's own temp files (`claude-<uid>/`) and its sandbox socket
+    (`cc-socks/`) then sit beside the `tmp` its sandbox writes, and go with the leaf
+    (tsk-k7svzz2p4v7y). Claude Code itself opens `claude-<uid>/` to the placement's sandbox
+    for reading and writing, while `cc-socks/` stays hidden (live, Claude Code 2.1.329): both
+    stay within the placement. Empty otherwise: where the scratch's `tmp` is the TMPDIR,
+    Claude Code's own files follow it, as before."""
+    own = own_tmpdir_in_use(ctx)
+    if ctx.harness.id != "claude-code" or own is None:
+        return {}
+    return {"CLAUDE_CODE_TMPDIR": str(own.parent)}
 
 
 # The test scripts' directories inside the placement's scratch (tsk-w7qtcbzcshn9): the run slots
@@ -372,10 +472,13 @@ def launch(ctx: Context) -> Launch:
         # Its scratch, and temporary files inside it, so a review's or a test's leftovers go
         # when the placement ends instead of piling up in the agents' home (§15.5).
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
-        **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
+        **({"TMPDIR": str(tmp)} if (tmp := session_tmpdir(ctx)) is not None else {}),
+        # Claude Code's own temp files and sandbox socket beside that `tmp` (own_tmp_env).
+        **own_tmp_env(ctx),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
         **run_env(ctx.scratch if beside else None),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
+        **skill_env(ctx),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.
@@ -403,6 +506,8 @@ def launch(ctx: Context) -> Launch:
     # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
     # (an empty record also clears one a former grant left).
     ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
+    # Whether `maity gh`'s lead commands are granted here; the role is checked per call.
+    ctx.as_user.write(records / ghpr.LEAD, lead_record(ctx))
     # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
     scratch_record = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
     ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch_record)
@@ -462,6 +567,24 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 # --- Claude Code ------------------------------------------------------------------------------
 
 
+def own_tmp_leaf(ctx: Context) -> Path | None:
+    """The leaf of the placement's own TMPDIR under the per-user `/tmp` parent, to open again
+    in its sandbox: only when that TMPDIR is the one the session gets (session_tmpdir), so the
+    sandbox never opens a leaf the session does not use. Codex's profile opens the whole leaf;
+    Claude Code's settings open its `tmp` (claude_settings); Claude Code keeps its own files in
+    the leaf beside it (own_tmp_env)."""
+    own = own_tmpdir_in_use(ctx)
+    return None if own is None else own.parent
+
+
+def scratch_holder(scratch: Path | None) -> Path | None:
+    """The project's `.scratch` that holds `scratch` beside the clone (workspace.scratch_of), or
+    None for no scratch or one elsewhere (agy's under `/tmp`)."""
+    if scratch is None or scratch.parent.name != SCRATCH:
+        return None
+    return scratch.parent
+
+
 def _shared_tmp(ctx: Context) -> list[str]:
     """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, as a list
     for a deny rule; empty for an agy placement (which owns it) or where there is none."""
@@ -476,11 +599,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
-    allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
         allow += [f"{tool}(/{ctx.scratch}/**)" for tool in ("Read", "Edit", "Write")]
+    if ctx.skill is not None:
+        # The delivered skill's references (skills.py), read only: the skill sends the agent to
+        # them, and without this rule a read outside the clone and the scratch is refused.
+        allow += [f"Read(/{ctx.skill}/**)"]
     # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
     # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
     # git could no longer fetch or commit. The credential is not readable through Read.
@@ -489,7 +615,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]
+    if ctx.skill is not None:  # never written from the session, whatever another rule allows
+        deny += [f"Edit(/{ctx.skill}/**)"]
+    deny += [f"Bash({rule})" for rule in
+             (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
+    deny += list(CLAUDE_WORKTREE_DENIED)  # every placement, with or without the sandbox
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -502,32 +632,65 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # whole file, grant included (cli/context/runner.md).
         "attribution": {"commit": "", "pr": "", "sessionUrl": False},
     }
+    hooks: dict[str, Any] = {}
+    # No git worktree in the clone, sandbox or not (CLAUDE_WORKTREE_HOOK): a hook that fails or
+    # gives no path fails the worktree's creation. Only for a version known to have the event
+    # (capabilities.CLAUDE_WORKTREE_HOOK_MIN); without it the two denies above stand alone.
+    if capabilities.worktree_hook_version_ok(ctx.version):
+        hooks["WorktreeCreate"] = [
+            {"hooks": [{"type": "command", "command": CLAUDE_WORKTREE_HOOK}]},
+        ]
     if ctx.sandbox:
+        # The placement's own TMPDIR in a leaf under the agy per-user `/tmp` parent, when it is
+        # the session's (tsk-k7svzz2p4v7y): its `tmp` is re-opened for reading and writing, and
+        # the parent is denied for reading only. A write deny on the parent mounts the re-opened
+        # `tmp` read-only (Claude Code 2.1.329), and is not what keeps a sibling leaf out: under
+        # the read deny's empty mount it does not exist in the sandbox, and a write there lands
+        # in that mount alone (the ops probe P4, 2026-11-21).
+        own = own_tmpdir_in_use(ctx)
+        writable = [str(p) for p in (ctx.scratch, own) if p is not None]
+        # The own project's `.scratch` the same way (tsk-07dwr3t80rg0): denied for reading only,
+        # its own scratch opened again, so a sibling scratch made there after this session
+        # started lies under the read deny's empty mount instead of staying readable. Never in
+        # denyWrite (it would mount the re-opened scratch read-only, as for the leaf); the
+        # holder is not writable from the sandbox anyway, since writes are allowed only where
+        # allowWrite says. The other projects' `.scratch` are hidden whole (ctx.private).
+        holder = scratch_holder(ctx.scratch)
+        readable = [*([str(ctx.scratch)] if holder is not None else []),
+                    *([str(own)] if own is not None else [])]  # fmt: skip
         settings["sandbox"] = {
             "enabled": True,
             "failIfUnavailable": True,  # never fall back to unsandboxed commands
             "allowUnsandboxedCommands": False,  # no dangerouslyDisableSandbox retry
             "autoAllowBashIfSandboxed": False,  # the allowlist above still decides
+            # Unix sockets stay blocked (the seccomp step), pinned here: this file wins over the
+            # agents' user's settings, which may not carry socket settings at all
+            # (capabilities.SOCKET_SETTINGS).
             "network": {"allowedDomains": sorted({*ctx.hosts, *ctx.grant.network}),
-                        "strictAllowlist": True},
+                        "strictAllowlist": True, "allowAllUnixSockets": False},
             # Repository code run by an allowed build or test command cannot read or replace
             # the clone's credential, other clones' or the runner's; `maity` alone, which
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            # The agy per-user `/tmp` scratch parent is hidden from read and write alike, so a
-            # placement that is not its owner cannot reach another placement's scratch there.
+            # The agy per-user `/tmp` scratch parent is hidden, so a placement that is not its
+            # owner cannot reach another placement's scratch there: from reading always, and from
+            # writing too unless the placement's own TMPDIR is re-opened under it (above).
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
-                                        *_shared_tmp(ctx)],
+                                        *_shared_tmp(ctx),
+                                        *([str(holder)] if holder is not None else [])],
                            # The private paths are not writable either: the runner's files
                            # (~/.maity-runner on an ssh host) are what `maity runner` takes.
                            "denyWrite": [f"{git}/maity",
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
                                          *(str(p) for p in ctx.private),
-                                         *_shared_tmp(ctx)],
-                           # Commands write the placement's scratch besides the clone (§15.5).
-                           **({"allowWrite": [str(ctx.scratch)]}
-                              if ctx.scratch is not None else {})},
+                                         *(_shared_tmp(ctx) if own is None else []),
+                                         # The delivered skill (skills.py): read, never written.
+                                         *([str(ctx.skill)] if ctx.skill is not None else [])],
+                           # Commands write the placement's scratch besides the clone (§15.5),
+                           # and its own TMPDIR; both are read again under their hidden parents.
+                           **({"allowWrite": writable} if writable else {}),
+                           **({"allowRead": readable} if readable else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -539,13 +702,15 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # when the hook cannot start or fails.
         module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
         hook = f"{module} || exit 2"
-        settings["hooks"] = {
-            "PreToolUse": [
-                {"hooks": [{"type": "command", "command": hook, "timeout": 30,
-                            "onFailure": "block"}]},
-            ],
-        }  # fmt: skip
-        settings["disableAllHooks"] = False  # over a `true` in the agents' user settings
+        hooks["PreToolUse"] = [
+            {"hooks": [{"type": "command", "command": hook, "timeout": 30,
+                        "onFailure": "block"}]},
+        ]  # fmt: skip
+    if hooks:
+        settings["hooks"] = hooks
+        # Over a `true` in the agents' user settings, which would leave the hooks unrun; it also
+        # turns on that user's own hooks (cli/context/runner.md).
+        settings["disableAllHooks"] = False
     return settings
 
 
@@ -587,6 +752,8 @@ def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
             "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
             "the runner sets up `maity gh` only for a `maity` outside it"
         )
+    if grant.lead:
+        left.append("lead is not given to codex, for the same reason as pull_requests")
     return left
 
 
@@ -602,6 +769,14 @@ def pull_requests_record(ctx: Context) -> str:
     if gh is None or not repository:
         return ""
     return f"{repository}\n{gh}\n"
+
+
+def lead_record(ctx: Context) -> str:
+    """The content of the runner's record `ghpr.LEAD`: `lead` when the grant has `lead` and
+    the pull-request record is written (`pull_requests_record`: never for Codex), else empty,
+    which also clears one a former grant left. The member's role is the hub's, read by
+    `maity gh` at each call, not decided here."""
+    return "lead\n" if ctx.grant.lead and pull_requests_record(ctx) else ""
 
 
 def _sandbox_prompt(ctx: Context) -> str:
@@ -695,6 +870,8 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         # prompt comes next, which Claude Code would read as a second configuration file.
         "--strict-mcp-config", f"--mcp-config={mcp}",
     ]  # fmt: skip
+    if ctx.skill is not None:  # the Keep the Why skill for this session only (skills.py)
+        base += [f"--plugin-dir={ctx.skill}"]
     model = ctx.placement.get("model")
     if model:
         base += ["--model", model]
@@ -766,16 +943,23 @@ def codex_config(ctx: Context) -> str:
     # the agents' home. The clone's own rules are more specific and win; its credential
     # stays readable, since the agent's `maity` runs inside the sandbox. Every directory
     # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
-    reopened = (ctx.clone, *((ctx.scratch,) if ctx.scratch is not None else ()))
+    # The placement's own TMPDIR leaf (Context.tmpdir) is opened again under the hidden per-user
+    # `/tmp` parent, as the scratch is under the hidden workspaces root (tsk-0zb9mgzmbwn4).
+    own_tmp = own_tmp_leaf(ctx)
+    reopened = (ctx.clone, *(p for p in (ctx.scratch, own_tmp) if p is not None))
     # The agy per-user `/tmp` scratch parent is hidden too (its own scratch sits beside the
     # clone, so Codex has no need to reach `/tmp`'s scratch of another placement of this user).
     shared = (ctx.tmp_scratch_parent,) if ctx.tmp_scratch_parent is not None else ()
     roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private, *shared),
                       opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
+    # The placement's effort, a top-level key before any table. In this file, not a `-c` flag:
+    # a resume reads the same home, so the first start and every resume run the same level.
+    effort = ctx.placement.get("effort")
     return (
         'approval_policy = "never"\n'
         'default_permissions = "maity"\n'
+        + (f"model_reasoning_effort = {json.dumps(effort)}\n" if effort else "")
         # A version the runner manages is never swapped by Codex itself (§15.16).
         + ("check_for_update_on_startup = false\n" if managed(ctx) else "") + "\n"
         # The clone's own .codex/config.toml would override this profile; an untrusted
@@ -792,6 +976,8 @@ def codex_config(ctx: Context) -> str:
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n"
         # The placement's scratch (§15.5), under the hidden workspaces root, opened again.
         + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "")
+        # Its own TMPDIR leaf, under the hidden per-user `/tmp` parent, opened again.
+        + (f'{json.dumps(str(own_tmp))} = "write"\n' if own_tmp is not None else "")
         # Codex's own CODEX_HOME sits inside that writable scratch (codex_home), so the profile
         # names it read, not write: a sandboxed command may read the home — its config.toml,
         # any rules file, the auth.json link, and the per-command helper under tmp, which it
@@ -853,7 +1039,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
 def opencode_config(ctx: Context) -> dict[str, Any]:
     """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
     project's configuration switched off, `AGENTS.md` is named as an instruction."""
-    bash = {"*": "deny", "maity *": "allow", UUID_COMMAND: "allow"}
+    bash = {"*": "deny", "maity *": "allow"}
     granted = [cmd for cmd in ctx.grant.allow if config.plain_command(cmd)]
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
@@ -861,7 +1047,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     # After the allows: the last match wins. The rules are meant to allow `maity` only as one
     # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
     # not a boundary, see cli/context/runner.md.
-    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)})
+    for rule in (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED):
+        bash.pop(rule, None)  # a grant's allow of the same pattern would keep its earlier place
+        bash[rule] = "deny"
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
@@ -885,15 +1073,12 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
 
 def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    path = _write(ctx, ctx.agent_dir / "opencode.json", opencode_config(ctx))
-    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
-    # .opencode/ directories bring agents, commands and plugins.
-    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
     # No model on the placement: fall back to the harness default (config validates it is one
     # of `models`). Fail closed when the effective model is empty or not among `models`: with
-    # no `--model`, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
+    # no model, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
     # so the clone's content would go to opencode's servers instead of the configured provider
-    # (cli/context/runner.md, the opencode model fail-closed). Both modes below share `chosen`.
+    # (cli/context/runner.md, the opencode model fail-closed). Checked before anything is
+    # written, for both modes.
     model = ctx.placement.get("model") or ctx.harness.default_model
     if not model or model not in ctx.harness.models:
         raise NotYet(
@@ -901,13 +1086,26 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
             f"{ctx.harness.models!r}: refusing the start rather than letting opencode run its "
             f"own default, which would send the conversation to opencode's servers"
         )
-    chosen = ["--model", model]
-    if ctx.placement.get("mode") == "interactive":
-        prompt = START_PROMPT + _sandbox_prompt(ctx)
-        return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", prompt], env)
+    # The model is the configuration's top-level `model` for both modes: opencode 2.3's TUI
+    # (no subcommand) has no `--model` and exits on it (tsk-daa6e0gfncg0). `opencode run`
+    # still takes `--model`, so a supervised run carries it twice, the same value.
+    path = _write(ctx, ctx.agent_dir / "opencode.json", {**opencode_config(ctx), "model": model})
+    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
+    # .opencode/ directories bring agents, commands and plugins.
+    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
     prompt = START_PROMPT + _sandbox_prompt(ctx)
-    first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, prompt]
-    again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", prompt]
+    # The flags here are the ones `maity runner check` probes for (capabilities.OPENCODE_FLAGS).
+    if ctx.placement.get("mode") == "interactive":
+        # `--standalone`: without it 2.3's TUI attaches to the user's shared background service
+        # (`opencode serve --service`), which has its own configuration, so neither
+        # OPENCODE_CONFIG (the model, the rules) nor OPENCODE_DISABLE_PROJECT_CONFIG reaches it
+        # (ops' live check, nte-mmnz3mk1247c).
+        return Launch([ctx.binary, "--standalone", str(ctx.clone), "--prompt", prompt], env)
+    # `opencode run` has no `--dir`: it works in its working directory, the clone, where the
+    # session starts (a workspace.Workspace's `path`; opencode has no workspace folder) and the
+    # loop's runs inherit it. `--continue` is that directory's last conversation.
+    first = [ctx.binary, "run", "--model", model, prompt]
+    again = [ctx.binary, "run", "--model", model, "--continue", prompt]
     return _supervised(ctx, first, again, env)
 
 
@@ -1000,6 +1198,8 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
+    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+        deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {
         "agentMode": "",
@@ -1020,6 +1220,11 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     model = ctx.placement.get("model")
     if model:
         base += ["--model", model]
+    # In `base`, so the first command and every continued one run the same level. A model id
+    # that carries an effort of its own is passed as it is beside it: agy decides (§15.5).
+    effort = ctx.placement.get("effort")
+    if effort:
+        base += ["--effort", effort]
     folder = AGY_FOLDER_PROMPT.format(repo=ctx.clone.name)
     extra = AGY_MAITY_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":

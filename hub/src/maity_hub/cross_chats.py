@@ -902,23 +902,29 @@ def _resolve(conn: Any, chat_id: str, text: str) -> list[dict[str, Any]]:
 def _known_instances(conn: Any, agent_ids: set[str], wanted: set[str]) -> set[tuple[str, str]]:
     if not agent_ids or not wanted:
         return set()
+    from maity_hub import instances  # instances imports what this module's imports import
+
+    a = t.instance_attachment
     successor = aliased(t.credential)
+    successor_in = aliased(a)
     replaced = (
         select(successor.c.id)
+        .join(successor_in, successor_in.c.credential_id == successor.c.id)
         .where(
-            successor.c.membership_id == t.credential.c.membership_id,
+            successor_in.c.membership_id == a.c.membership_id,
             successor.c.replaces == t.credential.c.instance,
         )
         .exists()
     )
     rows = conn.execute(
         select(t.membership.c.agent_id, t.credential.c.instance)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .select_from(instances.credential_join())
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
         .where(
             t.membership.c.agent_id.in_(agent_ids),
             t.membership.c.active.is_(True),
             t.credential.c.instance.in_(wanted),
-            or_(t.credential.c.revoked_at.is_(None), replaced),
+            or_(instances.attached_now(), replaced),
         )
     )
     return {(r.agent_id, r.instance) for r in rows}
@@ -966,7 +972,9 @@ def _author_actor(conn: Any, caller: Caller, project_id: str) -> Actor:
 
 
 def _mention_home(conn: Any, agent_id: str) -> Any:
-    """The one non-isolated membership that resumed most recently, or None."""
+    """The one non-isolated membership that resumed most recently, or None. An instance
+    detached from a membership's project resumes nothing for it (§6.17)."""
+    a = t.instance_attachment
     rows = conn.execute(
         select(
             t.membership.c.id,
@@ -974,7 +982,9 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
             func.max(t.credential.c.resumed_at).label("resumed"),
         )
         .select_from(
-            t.membership.outerjoin(t.credential, t.credential.c.membership_id == t.membership.c.id)
+            t.membership.outerjoin(
+                a, and_(a.c.membership_id == t.membership.c.id, a.c.detached_at.is_(None))
+            ).outerjoin(t.credential, t.credential.c.id == a.c.credential_id)
         )
         .where(
             t.membership.c.agent_id == agent_id,
@@ -994,21 +1004,36 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
 
 
 def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
-    """The active membership whose instance id is the one the mention wrote."""
+    """The active membership whose instance id is the one the mention wrote: where the
+    instance is attached now, else, for a revoked or detached one, where it was. None
+    when it is attached now only in isolated memberships: §9.5 makes that a mention of
+    the profile."""
+    from maity_hub import instances  # instances imports what this module's imports import
+
     rows = conn.execute(
-        select(t.membership.c.id, t.membership.c.project_id, t.credential.c.revoked_at)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        select(
+            t.membership.c.id,
+            t.membership.c.project_id,
+            t.membership.c.isolated_since,
+            t.credential.c.revoked_at,
+            t.instance_attachment.c.detached_at,
+        )
+        .select_from(instances.credential_join())
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .where(
             t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),
-            t.membership.c.isolated_since.is_(None),
             t.credential.c.instance == instance,
         )
     ).all()
-    if not rows:
-        return None
-    live = [r for r in rows if r.revoked_at is None]
-    return (live or rows)[0]
+    live = [r for r in rows if r.revoked_at is None and r.detached_at is None]
+    if live:
+        # Where it is attached now decides, isolated or not: a detached row elsewhere
+        # must not take the mention to a project the instance left.
+        return next((r for r in live if r.isolated_since is None), None)
+    # Without a live one a detached row is meant on purpose: the id was the instance's there.
+    past = [r for r in rows if r.isolated_since is None]
+    return past[0] if past else None
 
 
 def _mention_events(

@@ -126,9 +126,14 @@ window.Maity = window.Maity || {};
     try {
       mine = new Set((await M.api.getAll("/runners")).items.filter((r) => r.owner_id === ctx.me.id).map((r) => r.id));
     } catch (err) { /* no runner of one's own known */ }
+    // The agent profile's owner. A placement that admits a profile that is not a member yet
+    // (§15.6) runs no membership to name the owner until its first pickup; only that profile's
+    // owner creates such a placement, so its creator is the owner (§15.5 `created_by`).
     const owns = (p) => {
-      const m = p.agent && p.agent.id && ctx.memberById ? ctx.memberById[p.agent.id] : null;
-      return !!m && m.owner_id === ctx.me.id;
+      const id = p.agent && p.agent.id;
+      const m = id && ctx.memberById ? ctx.memberById[id] : null;
+      if (m) return m.owner_id === ctx.me.id;
+      return !!id && !p.proposed_by && p.created_by === ctx.me.id;
     };
     const listed = (list) => (opts.own ? list.filter(owns) : list);
     // `logs_hint` reaches the runner's owner only (§15.5): the hub's own word on it.
@@ -211,9 +216,9 @@ window.Maity = window.Maity || {};
         return b;
       };
       // Ended by the runner's owner or the profile's owner, who places it again on a
-      // runner of their own (§15.5, §15.14): the start form (`startForm`) offers an agent
-      // again only once its placement here is gone (`placed`), an own one as much as a
-      // foreign one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
+      // runner of their own (§15.5, §15.14): its instance stops counting toward the agent's
+      // max_instances, which the start form (`runnerPart`) counts, once its credential is
+      // revoked. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
       // owner with any trust, members:admin with the runner included, or the profile's
       // owner): `mayAct` above.
       const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),
@@ -235,7 +240,9 @@ window.Maity = window.Maity || {};
       }
       append(clear(list), items.map((p) => h("li", { class: "placement", "data-placement": p.id },
         h("div", { class: "placement-head" },
-          p.agent.id ? M.dom.memberRef(ctx, p.agent.id) : h("span", null, p.agent.display_name),
+          // The object, not the id: before its first pickup a profile is no member here and is
+          // named by the placement's display_name, not its id (review A1878 of #2085).
+          p.agent.id ? M.dom.memberRef(ctx, p.agent) : h("span", null, p.agent.display_name),
           h("span", { class: "muted" }, " ", p.target
             ? M.tn("placements.on_target", { runner: h("strong", null, p.runner.name), target: p.target })
             : M.tn("placements.on", { runner: h("strong", null, p.runner.name) })),
@@ -401,7 +408,9 @@ window.Maity = window.Maity || {};
 
   // Start on a runner instead of a join line: the section at the end of the one Join an agent
   // form (js/join.js, tsk-hdczmsq2r431; once a form of its own behind a menu). For a human with
-  // members:admin only (`startOffered`), over the runners of their own that are attached here
+  // members:admin, or a member who brings agents of their own (`startOffered`; hooks.member:
+  // then only a profile of their own that is not in the project yet, §15.6 "A profile that is
+  // not a member yet", tsk-at3gnzqd8svy), over the runners of their own that are attached here
   // with a live credential (§15.4, §15.6) and offer this project's repository (the hub's
   // `repository_not_offered`); none, and why, with the way to allow one, and the join line stays.
   // The form holds the agent and its place in the team; this part holds what the runner
@@ -423,6 +432,7 @@ window.Maity = window.Maity || {};
 
   function runnerPart(ctx, hooks) {
     if (!M.placements.startOffered(ctx)) return null;
+    const own = !!hooks.member && !ctx.canAdmin;
     const words = M.runnerWords;
     const id = (x) => "placement-new-" + x;
     const field = (key, label, control, hint) => h("div", { class: "field" },
@@ -433,17 +443,19 @@ window.Maity = window.Maity || {};
     const offer = h("input", { type: "checkbox", id: id("on"), "aria-describedby": id("on") + "-hint" });
     // What the read brought: the fields, or a line saying why there are none.
     const box = h("div", { class: "join-runner-box" });
-    // What the chosen agent means here: not in the project yet, or placed already.
+    // What the chosen agent means here: not in the project yet, or at its instance limit.
     const why = h("p", { class: "hint join-runner-why", role: "status", hidden: true });
+    // An agent that runs already and has room: the next one is another instance (§15.5).
+    const another = h("p", { class: "hint join-runner-another", role: "status", hidden: true });
     const el = h("fieldset", { class: "join-runner wide" },
       h("legend", null, M.t("placements.new.legend")),
       h("div", { class: "join-offer" }, offer, " ", h("label", { for: id("on") }, M.t("placements.new.offer"))),
       h("p", { class: "hint", id: id("on") + "-hint" }, M.t("placements.new.hint")),
-      why, box);
+      why, another, box);
     box.hidden = true;
 
     let fields = null;          // the controls, once one's runners were read and one offers the repository
-    let placed = new Set();     // the agents with an active placement here (§15.5)
+    let current = [];           // the project's active placements, read with the runners (§15.5)
     let chosen = { id: "", member: null, handle: "" };
     let round = 0;              // each turning on reads anew; an answer after it was turned off draws nothing
 
@@ -540,18 +552,32 @@ window.Maity = window.Maity || {};
       if (!repo) { say(h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository"))); return; }
       say(h("p", { class: "muted", role: "status" }, M.t("placements.new.reading")));
       let runners;
+      let placements;
       try {
-        const [attached, current] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements")]);
+        // With the closed ones too (§15.6 closed=true): a clone a closed placement still holds on a
+        // runner is one the hub will not give a start of another member (cloneFor).
+        const [attached, listed] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements?closed=true")]);
         if (mine !== round) return;
         runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
-        placed = new Set(current.items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
+        placements = listed.items;
+        // The project's list names a runner's capabilities to members:admin only (§15.4); a
+        // member reads what their own runners advertise from their own runner views (§15.3).
+        if (runners.some((a) => !a.runner.capabilities)) {
+          const views = new Map((await M.api.getAll("/runners")).items.map((r) => [r.id, r]));
+          if (mine !== round) return;
+          runners = runners.map((a) => (views.has(a.runner.id)
+            ? Object.assign({}, a, { runner: Object.assign({}, a.runner, { capabilities: views.get(a.runner.id).capabilities }) }) : a));
+        }
       } catch (err) {
         say(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
         return;
       }
       if (!runners.length) {
-        say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-          { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })));
+        // The project's Runners tab and attaching a runner are members:admin's (app.js, §15.4):
+        // a member is told to ask an admin, with no link to a tab they cannot open.
+        say(h("p", { class: "hint placement-new-none" }, ctx.canAdmin
+          ? M.tn("placements.new.none", { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })
+          : M.t("placements.new.none_member")));
         return;
       }
       const name = repositoryName(repo);
@@ -560,7 +586,11 @@ window.Maity = window.Maity || {};
         say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) })));
         return;
       }
+      current = placements;
       fields = build(runners);
+      fields.runner.addEventListener("change", () => follow(chosen.id, chosen.member, chosen.handle));
+      // The clone decides whether a start takes up a credential (carriesCredential): both lines again.
+      fields.clone.addEventListener("input", () => follow(chosen.id, chosen.member, chosen.handle));
       say(fields.set);
       follow(chosen.id, chosen.member, chosen.handle);
       hooks.changed();
@@ -569,26 +599,114 @@ window.Maity = window.Maity || {};
     offer.addEventListener("change", () => {
       box.hidden = !offer.checked;
       if (offer.checked) load();
-      else { round += 1; fields = null; clear(box); }
+      else { round += 1; fields = null; current = []; clear(box); }
       follow(chosen.id, chosen.member, chosen.handle);
       hooks.changed();
     });
 
-    // §15.6: an agent by id is an active member of the project; one placed here already has its
-    // placement (§15.5, one per membership).
+    // How many instances a member holds as the hub counts them for a new placement (§15.5): its
+    // active instances, plus its active placements that hold no instance yet (no credential
+    // before the first pickup), against its `max_instances` (1 when its view names none, §6.18).
+    // A placement holds no instance yet when it has no credential, or when the instance its
+    // credential made is not among the member's live ones (a revoked credential, waiting to
+    // rejoin): the hub counts both (`instances_held`, review A1746 of #2058).
+    function instancesOf(member) {
+      const liveInstances = (member.instances || []).filter((i) => !i.revoked_at);
+      const liveIds = new Set(liveInstances.map((i) => i.id));
+      // A members:admin view names each instance's credential (review A1745 of #2058): then a
+      // placement's credential among the live ones is what makes it hold a live instance; else
+      // its instance id among the live ones.
+      const byCredential = liveInstances.some((i) => i.credential_id);
+      const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
+      // Without credentials named, its instance id among the live ones; with no live instance at
+      // all, no placement holds one (review A1815 of #2058).
+      const holdsLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : liveIds.size > 0 && (!p.instance || liveIds.has(p.instance)));
+      const mine = current.filter((p) => p.active && p.agent && p.agent.id === member.id);
+      const waiting = mine.filter((p) => !p.credential_id || !holdsLive(p)).length;
+      const live = liveIds.size;
+      // The stored maximum, a hint: a ceiling or the owner's account override can hold the limit
+      // in effect lower (§6.31). The member view does not name that one, GET …/limits does
+      // (tsk-9zssa5a9fq34 reads it); until then the hub's instance_quota says it (review A1816).
+      const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
+      const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
+      // Its credential is live when a live instance names it, else when the instance it made is.
+      const isLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : !!p.instance && liveIds.has(p.instance));
+      const carried = carriesCredential(member, isLive);
+      return { count: live + waiting, max, where, carried, adding: carried ? 0 : 1 };
+    }
+    // Whether a start of `member` on the chosen runner and clone takes up a credential, as the
+    // hub does (`carried_credential`, §15.5 "Carried-over credential"): the latest closed
+    // placement of that (member, runner, clone) holds a credential that is live and that no
+    // active placement runs. Such a start is an instance already and adds none, so it passes at
+    // the limit: removing a placement and placing the agent there again (review A1815 of #2058).
+    // The hub orders by the stored closing time; the list gives closed_at to the second. Closes
+    // within the newest second cannot be told apart here, so when any of them would carry the
+    // check is unsure: the start is let through and the hub's answer decides. The form is a hint
+    // and never blocks what the hub would take (review A1816 of #2058, the lead's ruling).
+    function carriesCredential(member, isLive) {
+      if (!fields) return false;
+      const clone = fields.clone.value.trim() || cloneFor((member && member.handle) || chosen.handle);
+      const closed = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
+        && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone);
+      if (!closed.length) return false;
+      const at = (p) => Date.parse(p.closed_at || 0) || 0;
+      const newest = Math.max(...closed.map(at));
+      const carries = (p) => !!p.credential_id && isLive(p) && !current.some((q) => q.active && q.credential_id === p.credential_id);
+      return closed.filter((p) => at(p) === newest).some(carries);
+    }
+    // §15.6: an agent by id is an active member of the project with room under its instance
+    // limit for one more (§15.5: one placement per instance, several per membership), or a
+    // profile of the caller's own that is not a member yet, which the placement admits with a
+    // first join's fields (the join form offers only the caller's own profiles, GET /agents).
+    // A member without members:admin: only that profile of their own; an agent already here, or
+    // a new profile, needs members:admin.
     function blocked() {
-      if (!chosen.id) return null;
-      if (!chosen.member) return M.t("placements.new.not_member");
-      if (placed.has(chosen.id)) return M.t("placements.new.placed");
+      if (own) return chosen.id && !chosen.member ? null : M.t("placements.new.own_only");
+      // A member that lists no instances (null: the join line's member by the hub's word) gives
+      // nothing to count: the hub's instance_quota answers, as the join's quota line leaves it
+      // unsaid. The hub's member view of an agent always carries the list (views.py).
+      if (!chosen.id || !chosen.member || chosen.member.instances === null) return null;
+      const n = instancesOf(chosen.member);
+      if (n.count + n.adding > n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
       return null;
+    }
+    // An agent that runs already, with room: what the start adds and where the others run. A
+    // start that takes up a credential adds no instance, so nothing is said.
+    function anotherText() {
+      // Not before the placements are read: where the others run is not known until then.
+      if (!fields || !chosen.member || chosen.member.instances === null || blocked()) return null;
+      const n = instancesOf(chosen.member);
+      if (!n.count || n.carried) return null;
+      const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
+      return M.t("placements.new.instance_room", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max), where });
+    }
+    // The clone a start without one gets, as the hub picks it (§15.5 `workspace`): the handle,
+    // else the first `<handle>-N` that on the chosen runner no active placement names, nor a
+    // closed one of another member whose clone the runner has not reported removed (the member's
+    // own closed clone is taken up again; review A1746 of #2058).
+    function cloneFor(handle) {
+      if (!fields || !handle) return handle;
+      const holds = (p) => p.active || ((!p.agent || p.agent.id !== chosen.id)
+        && !(p.workspace_outcome && p.workspace_outcome.state === "removed"));
+      const taken = new Set(current.filter((p) => p.runner && p.runner.id === fields.runner.value && holds(p))
+        .map((p) => p.workspace && p.workspace.clone).filter(Boolean));
+      if (!taken.has(handle)) return handle;
+      let n = 2;
+      while (taken.has(handle + "-" + n)) n += 1;
+      return handle + "-" + n;
     }
     function follow(agentId, member, handle) {
       chosen = { id: agentId || "", member: member || null, handle: handle || "" };
       const text = offer.checked ? blocked() : null;
       why.hidden = !text;
       why.textContent = text || "";
+      const more = offer.checked ? anotherText() : null;
+      another.hidden = !more;
+      another.textContent = more || "";
       if (fields) fields.set.disabled = !offer.checked;
-      if (fields) fields.clone.setAttribute("placeholder", member ? member.handle : chosen.handle || M.t("placements.new.clone_placeholder"));
+      // The clone the hub would give: for an agent here or a new profile's handle alike.
+      const named = (member && member.handle) || chosen.handle;
+      if (fields) fields.clone.setAttribute("placeholder", named ? cloneFor(named) : M.t("placements.new.clone_placeholder"));
     }
 
     function body() {
@@ -613,11 +731,22 @@ window.Maity = window.Maity || {};
     // A refusal into the form's status line: the project's limit of placements reached by name,
     // with where a human admin raises it (§6.1 max_placements, tsk-6s5n7egy4e5r); else said(err).
     const refuse = (status, err) => {
+      // The agent at its instance limit, by the hub (a start that raced another, §15.5): the
+      // limit in effect and who raises it, as the form says before sending (blocked()).
+      if (err.code === "instance_quota") {
+        const n = chosen.member ? instancesOf(chosen.member) : { max: 1 };
+        const max = err.details && Number.isInteger(err.details.max) ? err.details.max : n.max;
+        status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.instance_quota", { max: String(max) }) });
+        return;
+      }
       if (err.code !== "placement_quota") { status.fail(M.t("placements.new.failed"), said(err)); return; }
       const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
       status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });
-      append(status.el, " ", M.tn("placements.new.quota_raise",
-        { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) }));
+      // Settings, Members and agents is an admin's tab (app.js): a member asks an admin instead.
+      append(status.el, " ", ctx.canAdmin
+        ? M.tn("placements.new.quota_raise",
+          { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) })
+        : M.t("placements.new.quota_ask"));
     };
     return {
       el,
@@ -635,6 +764,8 @@ window.Maity = window.Maity || {};
   // The sections drawn, each with its way to read the list again (`reread(box)`).
   const sections = new WeakMap();
   const reread = (box) => (sections.has(box) ? sections.get(box)() : Promise.resolve());
-  const startOffered = (ctx) => !!ctx.canAdmin && ctx.me.kind === "human";
+  // A human with members:admin, or a member who brings agents of their own here (§3.1, §15.6;
+  // M.bringing in js/page-head.js: trust member, the policy's member_agents not off).
+  const startOffered = (ctx) => ctx.me.kind === "human" && (!!ctx.canAdmin || (!!M.bringing && M.bringing(ctx).memberAdds));
   M.placements = { section, runnerPart, startOffered, reread, fnmatch };
 })(window.Maity);

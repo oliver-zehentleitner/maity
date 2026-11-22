@@ -13,6 +13,7 @@ there, and a harness setting an agent changes only widens what that same user co
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import state
-from . import limitread, scratchop
+from . import limitread, scratchop, skillop
 
 TIMEOUT = 60.0
 # A read on the agents' side: a few kilobytes, or a log's next chunk.
@@ -49,8 +50,52 @@ REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
 
+def shell_quote(word: str) -> str:
+    """`shlex.quote`, and a word that starts with `=` quoted too: `shlex.quote` leaves it bare
+    (`=` is safe in POSIX sh), but zsh expands a bare `=name` to the path of the command `name`
+    and fails when there is none, so an exact tmux target (`=maity_p_c`) would not reach tmux."""
+    if word.startswith("="):
+        return "'" + word.replace("'", "'\"'\"'") + "'"
+    return shlex.quote(word)
+
+
+def shell_join(words: Sequence[str]) -> str:
+    """`shlex.join` with `shell_quote`: one line for a POSIX shell or zsh."""
+    return " ".join(shell_quote(word) for word in words)
+
+
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
+
+
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+
+def stat_mode(path: Path, *, follow: bool = True) -> int | None:
+    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
+    other OSError raises. A check that must fail closed decides with this, never with
+    `is_dir()`/`exists()`/`is_symlink()`: from Python 3.14 those answer False for a path
+    below a directory that cannot be searched instead of raising, and the check would take
+    what it cannot see for absent (tsk-0tje3vzzedtx)."""
+    try:
+        return (os.stat if follow else os.lstat)(path).st_mode
+    except OSError as exc:
+        if exc.errno in ABSENT:
+            return None
+        raise
+
+
+def present(path: Path, kind: str = "-e") -> bool:
+    """`test -e` (`-f`, `-d`, `-L`) on the runner's own side, failing closed: absent is False,
+    any other error raises (stat_mode)."""
+    mode = stat_mode(path, follow=kind != "-L")
+    if mode is None:
+        return False
+    check = {"-e": lambda m: True, "-f": stat.S_ISREG, "-d": stat.S_ISDIR, "-L": stat.S_ISLNK}
+    return bool(check[kind](mode))
 
 
 @dataclass(frozen=True)
@@ -152,6 +197,26 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
+    def tighten(self, path: Path) -> None:
+        """The directory `path` made 0700, also when it exists already with looser bits:
+        `mkdir -p -m 700` and `Path.mkdir(mode=0o700, parents=True)` give the mode to the last
+        directory only, and a parent made under a umask of 002 is 0775, which `maity gh`'s lead
+        commands refuse (`ghpr.owned_layout`, review A1758 of #2054). Only a real directory:
+        chmod follows a link, so a link in its place is refused first (security leg on #2054;
+        owned_layout refuses one anyway, this keeps the chmod from touching what it names)."""
+        if self.direct:
+            if not stat.S_ISDIR(os.lstat(path).st_mode):
+                raise OSError(f"cannot make {path} private for the agents: not a directory")
+            os.chmod(path, 0o700)
+            return
+        # find's -type tests the entry itself, never what a link names.
+        seen = self.run(["find", str(path), "-maxdepth", "0", "-type", "d"])
+        if seen.returncode != 0 or seen.stdout.strip() != str(path):
+            raise OSError(f"cannot make {path} private for the agents: not a directory")
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot make {path} private for the agents: {done.stderr.strip()[:200]}")
+
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
         from `under` (the clone, the agents' files, their home) without following a link on
@@ -230,11 +295,11 @@ class AsUser:
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the
-        runner."""
+        runner. On the runner's own side with stat (`present`): absent is False, and a path it
+        cannot look at raises, as pathlib's predicates did up to Python 3.13, so no caller
+        takes what it cannot see for absent (tsk-0tje3vzzedtx)."""
         if self.direct:
-            checks = {"-e": path.exists, "-f": path.is_file, "-d": path.is_dir,
-                      "-L": path.is_symlink}  # fmt: skip
-            return checks[kind]()
+            return present(path, kind)
         return self.run(["test", kind, str(path)]).returncode == 0
 
     def link(self, target: Path, link: Path) -> None:
@@ -352,6 +417,44 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
 
+    def skill_check(self, home: Path, key: str, source: str, commit: str) -> dict[str, Any]:
+        """The delivered skill's copy `key` below the agents' `home` (skillop.check): `ok` with
+        its manifest's SHA-256, `missing` or `mismatch`. skillop.OnTheWay when a directory
+        below the home is a link; scratchop.Unsupported when an ssh host's `maity` has no skill
+        ops; OSError otherwise."""
+        if self.direct:
+            return dict(skillop.check(str(home), key, source, commit))
+        argv = [*self.runner_module("skillop"), "check", "--home", str(home), key, source, commit]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "check", key)
+
+    def skill_put(self, home: Path, payload: str) -> dict[str, Any]:
+        """The runner's checked copy (skillop.payload) put below the agents' `home`
+        (skillop.put): `put` with its manifest's SHA-256. The document goes on stdin, at most
+        the skill's own bound. Errors as for `skill_check`."""
+        if self.direct:
+            return dict(skillop.put(str(home), json.loads(payload)))
+        argv = [*self.runner_module("skillop"), "put", "--home", str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "put", "")
+
+    @staticmethod
+    def _skill_answer(done: subprocess.CompletedProcess[str], op: str, key: str) -> dict[str, Any]:
+        """A skill op's one JSON line (skillop.main): LINK (4) for a link below the home, 2 for
+        a host `maity` without the ops (older than this one), as with scratchop's `codex`."""
+        what = f"skill {op} {key}" if key else f"skill {op}"
+        if done.returncode == skillop.LINK:
+            raise skillop.OnTheWay(f"{what}: a link below the agents' home")
+        if done.returncode == 2:
+            raise scratchop.Unsupported(f"host maity has no skill ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"{what} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"{what}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"{what}: no answer")
+        return answer
+
     def worktree_prune(self, repo: Path) -> dict[str, Any]:
         """Clear a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
         on placement start (worktree.prune_orphans), by file operations only, never git: the
@@ -443,7 +546,7 @@ class Ssh(AsUser):
         """One remote command line: every word quoted, `env` set explicitly."""
         pairs = [f"{key}={value}" for key, value in (env or {}).items()]
         words = [*(["env", *pairs] if pairs else []), *argv]
-        return [*self.ssh(), "--", " ".join(shlex.quote(word) for word in words)]
+        return [*self.ssh(), "--", shell_join(words)]
 
     def run(
         self,
@@ -473,7 +576,7 @@ class Ssh(AsUser):
         home = done.stdout.strip()
         # The remote account is the agents': its shell start-up files can set HOME to
         # anything, and the runner builds paths and the attach hint from it.
-        if done.returncode != 0 or not REMOTE_HOME.match(home) or ".." in home.split("/"):
+        if done.returncode != 0 or not REMOTE_HOME.fullmatch(home) or ".." in home.split("/"):
             raise OSError(
                 f"{self.name}: {self.login}'s home is not a plain absolute path "
                 f"({home[:80]!r}); the runner refuses the host"

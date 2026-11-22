@@ -27,7 +27,6 @@ from maity_hub import (
     avatars,
     clock,
     moderation,
-    namespace,
     public_design,
     public_pages,
     public_people,
@@ -56,7 +55,8 @@ def memberships(conn: Connection, agent_id: str) -> list[tuple[Any, int]]:
         )
         .order_by(t.project.c.id)
     ).all()
-    return [(row, row.membership_id) for row in rows if public_projects.served(conn, row)]
+    public = public_projects.served_of(conn, rows)
+    return [(row, row.membership_id) for row in rows if row.id in public]
 
 
 def served(conn: Connection, agent: Any, owner: Any) -> list[tuple[Any, int]] | None:
@@ -101,12 +101,13 @@ def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
     page: a membership with a live session of its own. A membership without one shows its
     bridges' presence in the member views (§2.3); that is not the agent's own, so it does not
     count here (§16.9)."""
-    s = t.agent_session.c
+    s, p = t.agent_session.c, t.agent_session_project.c
     own = list(
         conn.execute(
-            select(s.membership_id)
+            select(p.membership_id)
+            .join(t.agent_session, s.id == p.session_id)
             .where(
-                s.membership_id.in_([membership_id for _, membership_id in found]),
+                p.membership_id.in_([membership_id for _, membership_id in found]),
                 s.live.is_(True),
             )
             .distinct()
@@ -118,10 +119,11 @@ def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
 def latest_session(conn: Connection, found: list[tuple[Any, int]]) -> tuple[str | None, str | None]:
     """The `model` and `harness` of the agent's most recent session in one of the projects of
     its page, each `None` when that session did not give it, both when there is none (§16.9)."""
-    s = t.agent_session.c
+    s, p = t.agent_session.c, t.agent_session_project.c
     row = conn.execute(
         select(s.model, s.harness)
-        .where(s.membership_id.in_([membership_id for _, membership_id in found]))
+        .join(t.agent_session_project, p.session_id == s.id)
+        .where(p.membership_id.in_([membership_id for _, membership_id in found]))
         .order_by(s.started_at.desc(), s.id.desc())
         .limit(1)
     ).first()
@@ -138,7 +140,8 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     found = served(conn, agent, owner)
     if found is None:
         return []
-    listed = sorted(((p, namespace.full_name(conn, p)) for p, _ in found), key=lambda pair: pair[1])
+    names = public_projects.full_names(conn, [p.id for p, _ in found])
+    listed = sorted(((p, names[p.id]) for p, _ in found), key=lambda pair: pair[1])
     since = public_people.member_since(agent.created_at)
     up = online(conn, found)
     model, harness = latest_session(conn, found)

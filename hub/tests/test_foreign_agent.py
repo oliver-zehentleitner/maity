@@ -386,7 +386,12 @@ def test_a_go_refuses_to_lift_the_pause_a_human_set_on_one_instance_meanwhile(
     lent_row = _row(migrated, lent)
     with migrated.begin() as conn:
         credential = conn.execute(
-            select(t.credential).where(t.credential.c.membership_id == lent_row.id)
+            select(t.credential)
+            .join(
+                t.instance_attachment,
+                t.instance_attachment.c.credential_id == t.credential.c.id,
+            )
+            .where(t.instance_attachment.c.membership_id == lent_row.id)
         ).first()
     assert credential is not None, "the factory agent has an instance"
     admin = flow.agent(make_client, owner, role="admin")
@@ -394,8 +399,11 @@ def test_a_go_refuses_to_lift_the_pause_a_human_set_on_one_instance_meanwhile(
     assert asked.status_code == 202, asked.text
     with migrated.begin() as conn:  # the agent's owner pauses that instance meanwhile
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == credential.id)
+            update(t.instance_attachment)
+            .where(
+                t.instance_attachment.c.credential_id == credential.id,
+                t.instance_attachment.c.membership_id == lent_row.id,
+            )
             .values(paused_reason="owner's call", paused_since=clock.now(), paused_by=friend.id)
         )
     refused = answer(friend, asked.json()["id"], "go")
@@ -604,7 +612,9 @@ def test_a_foreign_dormant_number_token_is_not_an_integer(
     assert _requests(migrated) == []
     with migrated.connect() as conn:
         since = conn.execute(
-            select(t.credential.c.dormant_since).where(t.credential.c.id == lent.credential_id)
+            select(t.instance_attachment.c.dormant_since).where(
+                t.instance_attachment.c.credential_id == lent.credential_id
+            )
         ).scalar_one()
     assert since is None
 

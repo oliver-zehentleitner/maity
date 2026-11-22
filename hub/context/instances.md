@@ -440,6 +440,12 @@ else is a read of what the hub keeps anyway.
 `acknowledged_seq`) — it moves with the long-poll's acknowledgements, so a lost first packet
 could shrink the window. Storing the items — a copy of events the log already has.
 
+**Updated 2026-11-21 (tsk-yzj829xdmqyy):** the three numbers moved from `credential` to the
+instance's row in `instance_attachment`, one row per project the instance is in, and the
+sessions' acknowledged seqs moved from `agent_session` to `agent_session_project`, one row per
+session and project (migration `20261121120000_inst_attach`). What the paragraphs above say of
+the credential and of the sessions now holds for those rows; the rule is unchanged.
+
 ## A dormant instance is a pair of columns on its credential, read at the wake filter and the choosers
 
 **Id:** 247eae87-3590-4be8-b92c-1a48f1e18cda
@@ -498,6 +504,11 @@ The jour fixe reads an agent's instances without the dormant ones (`dormant_sinc
 `jourfixe/rounds._instances`): a dormant instance is never chosen, as if it were not listening (§6.17); an agent
 with only dormant ones is `limited`, `source: dormant` anyway. Rejected: choosing it and not waking it, since the
 round would wait for an instance that only its own token wakes.
+
+**Updated 2026-11-21 (tsk-yzj829xdmqyy):** `dormant_since` and `dormant_by` moved from `credential` to the
+instance's row in `instance_attachment`, with the pause (migration `20261121120000_inst_attach`), since dormancy
+is per project under the contract of one instance in several projects (§6.17). The reason above holds for that
+row, which is the instance in one project: the rest is still the instance's, not the membership's.
 
 
 ## Instances are counted beside the agents, by one rule: not revoked, online or dormant, dormant a part of online
@@ -572,3 +583,61 @@ check keeps new copies out.
   place to look, when one import under `TYPE_CHECKING` already breaks the cycle.
 - Imports inside the functions, as `card_watches` was reached before: every new reader would
   have to know the cycle exists.
+
+## An instance's projects are rows of `instance_attachment`; pause, dormancy, the commitment and the handover numbers live on the row
+
+**Id:** 8d07cc82-f612-4e24-aebe-72683131671b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** lead ruling on the card tsk-yzj829xdmqyy (seq 185277); docs/api.md §6.17, §8.2; migration `20261121120000_inst_attach`
+**See:** instances.md#a-dormant-instance-is-a-pair-of-columns-on-its-credential-read-at-the-wake-filter-and-the-choosers — 247eae87-3590-4be8-b92c-1a48f1e18cda — as of 2026-11-21
+**See:** instances.md#the-handover-is-cut-from-three-numbers-on-the-credential-delivered-until-the-first-packet-is-acknowledged — 5ad49946-291f-48a9-bddd-01bedf2e873e — as of 2026-11-21
+**See:** keep-the-why.md#the-commitments-deadline-is-fixed-on-the-credential-a-minute-sweep-and-the-policy-change-reconcile-what-is-owed — 2ac9f413-eaad-4e40-9637-af4430cb0128 — as of 2026-11-21
+**See:** events.md#an-episode-of-not-listening-lives-on-the-session-checked-by-a-minute-worker — 0cbc3037-5834-4a6d-b518-ae640fb47046 — as of 2026-11-21
+**Revisit when:** hub PR B resolves the attachment of the route's project, or hub PR D builds the attach, the profile lock and the owner's account records
+
+`instance_attachment` holds one row per (credential, membership): the projects an instance is in, with
+`attached_at`, `attached_by`, `join_id` and the detach's columns (`detached_at`, `detached_project` …).
+What belongs to the instance in one project lives on that row: its pause, its dormancy, its Keep the Why
+commitment (`ktw_*`) and the handover numbers. `credential` keeps the instance's own data and names its
+profile in `agent_id`; its `membership_id` is gone. The keys are (membership_id, instance) and
+(credential_id, membership_id); (agent_id, instance) is an index only, since ids from before may repeat
+across one profile's memberships. A session's event position and its not-listening episode are rows of
+`agent_session_project`, one per (session, membership). The migration makes every credential one
+attachment, attached at its `created_at` through its join, and every session one position row; the
+downgrade refuses before its first DDL (MariaDB commits each step) while a credential has more or fewer
+than one attachment row or a session more or fewer than one position row, a detached row included, and
+names only a database restore, since detaching keeps the row. Every reader that speaks for the instance
+in a project reads live attachments only (`attached_now()` or `detached_at IS NULL`), as the lead ruled
+on review (seq 187927), though nothing writes `detached_at` before hub PR D; a reader that means a
+detached row on purpose (the 30-day credentials list, an id ever used) says why. A revoked credential is not
+marked detached by the migration, and `detached_project` exists now but is written only in hub PR D, both
+as the lead ruled. "Ever used" in the instance-id rule (§3.1) is per membership row, as the key is.
+
+**Reason:** under the contract of one instance in several projects, pause, dormancy, presence, not listening
+and the commitment are per project (§6.17), so they cannot stay one value on the credential or the session.
+Rejected alternatives of the table shape itself: unknown, none was argued on the card.
+
+Three questions the contract left open were ruled by the lead on the card:
+
+**A profile owner who is not a member of the project** gets an account record (§18.1) of
+`credential_revoked` with `reason: no_membership` and of `credential_in_payload`. PR A writes the rule into
+the contract (§2.2, §6.17, §8.2); hub PR D delivers it.
+Rejected alternatives:
+- An event in the project only: the owner is not a member and cannot read it.
+- No delivery at all: the owner would not learn that a credential of theirs leaked or was revoked.
+
+**Instance ids are unique across a profile** through a lock on the profile and a profile-wide `taken()`
+check, built in hub PR D.
+Rejected alternatives:
+- A database key on (agent_id, instance): impossible over the legacy ids that already repeat across one
+  profile's memberships.
+- A unique key over a marker column that is True or NULL.
+
+**Until hub PR B, a credential authenticates in its oldest attachment that is not detached**, by
+`attached_at` and then id (`auth.caller`, `TODO(hub PR B)`).
+Rejected alternatives:
+- Refusing a credential with two attachments: it would break every instance as soon as hub PR D attaches
+  one to a second project.
+- Any attachment, unordered: the choice would depend on the order the database returns rows in.

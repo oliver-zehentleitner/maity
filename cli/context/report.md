@@ -60,7 +60,12 @@ reported commit, as the merged pull request's head, so nothing in the
 report is unverified. The hub's probe already treats a branch it no
 longer has as no mismatch and compares only the pull request head. The
 pull request is found by branch name without extra input, so no new
-flag can be misused to report a head nobody pushed.
+flag can be misused to report a head nobody pushed. Since 2026-11-20 the
+missing branch is no mismatch still, but no longer enough for the hub to
+close a card on the merge by itself: under `merged_closes: auto` such a
+report, sent after the merge, waits for the done authority (the root's
+context/reports.md, d068e91d-bf97-44e3-ba98-0f1c7e5b3674, card
+tsk-yfv9rnxpcwjd).
 
 **Rejected alternatives:**
 - A `--pr N` flag naming the pull request: an agent could name a merged

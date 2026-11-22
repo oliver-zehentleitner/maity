@@ -13063,9 +13063,33 @@
     "en": "0f5300ecabf4f2b2",
     "text": "c26f906355ad7d08"
   },
+  "placements.new.instance_full": {
+    "en": "928d5705dbab404c",
+    "text": "acfccb4ac569cb4a"
+  },
+  "placements.new.instance_quota": {
+    "en": "b704e284c337b6ea",
+    "text": "2b6ba0803a2a6ee5"
+  },
+  "placements.new.instance_room": {
+    "en": "1e9ed15905932911",
+    "text": "ec0165bfd9d35a2b"
+  },
+  "placements.new.instance_where": {
+    "en": "3787cc7c2510f7a0",
+    "text": "e9d8673c643ec6ca"
+  },
+  "placements.new.instance_where_none": {
+    "en": "2ff3627caedcbf95",
+    "text": "cbfcd51318894190"
+  },
   "placements.new.legend": {
     "en": "87df56605ba0a822",
     "text": "c5cb530da02f9655"
+  },
+  "placements.new.members_unread": {
+    "en": "6a3ea55797a67932",
+    "text": "a7026ec3e93efd15"
   },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
@@ -13099,10 +13123,6 @@
     "en": "2585c200021d665e",
     "text": "fa1619bfe5fe23bd"
   },
-  "placements.new.not_member": {
-    "en": "55e42ae71f048f84",
-    "text": "f7bd92687cc92e51"
-  },
   "placements.new.not_ready": {
     "en": "43cf84b554dc3e1f",
     "text": "ff6cd606ded2f79a"
@@ -13111,9 +13131,9 @@
     "en": "78860a7edd225009",
     "text": "52707b263af4868a"
   },
-  "placements.new.placed": {
-    "en": "46eba681e2d58129",
-    "text": "a59f3e79e22b6ab3"
+  "placements.new.own_only": {
+    "en": "06c571aea4fa2ebe",
+    "text": "a4aa1f121a59a16f"
   },
   "placements.new.quota": {
     "en": "f64b09af35af4b42",

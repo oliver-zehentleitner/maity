@@ -479,32 +479,32 @@ def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any
     """Per membership: the newest live session, and the newest session of any kind."""
     if not membership_ids:
         return {}, {}
+    # A session is in a project through its row of `agent_session_project` (§6.17).
+    p = t.agent_session_project
+    in_project = p.c.session_id == t.agent_session.c.id
     live: dict[int, Any] = {}
     for row in conn.execute(
-        select(t.agent_session)
-        .where(
-            t.agent_session.c.membership_id.in_(membership_ids),
-            t.agent_session.c.live.is_(True),
-        )
+        select(t.agent_session, p.c.membership_id)
+        .join(p, in_project)
+        .where(p.c.membership_id.in_(membership_ids), t.agent_session.c.live.is_(True))
         .order_by(t.agent_session.c.started_at.desc(), t.agent_session.c.id.desc())
     ):
         live.setdefault(row.membership_id, row)
     newest = (
-        select(
-            t.agent_session.c.membership_id,
-            func.max(t.agent_session.c.started_at).label("started_at"),
-        )
-        .where(t.agent_session.c.membership_id.in_(membership_ids - live.keys()))
-        .group_by(t.agent_session.c.membership_id)
+        select(p.c.membership_id, func.max(t.agent_session.c.started_at).label("started_at"))
+        .join(t.agent_session, in_project)
+        .where(p.c.membership_id.in_(membership_ids - live.keys()))
+        .group_by(p.c.membership_id)
         .subquery()
     )
     latest: dict[int, Any] = dict(live)
     if membership_ids - live.keys():
         for row in conn.execute(
-            select(t.agent_session)
+            select(t.agent_session, p.c.membership_id)
+            .join(p, in_project)
             .join(
                 newest,
-                (newest.c.membership_id == t.agent_session.c.membership_id)
+                (newest.c.membership_id == p.c.membership_id)
                 & (newest.c.started_at == t.agent_session.c.started_at),
             )
             .order_by(t.agent_session.c.id.desc())
@@ -945,8 +945,14 @@ def _credential_counts(conn: Connection, membership_ids: set[int]) -> dict[int, 
         return {}
     recent = clock.now() - REVOKED_LISTED
     counted: dict[int, dict[str, Any]] = {}
+    from maity_hub import instances  # instances reads the tables views also reads
+
+    # Per project: an instance attached to several counts once in each (§6.17).
+    a = t.instance_attachment
     for c in conn.execute(
-        select(t.credential).where(t.credential.c.membership_id.in_(membership_ids))
+        instances.credential_rows().where(
+            a.c.membership_id.in_(membership_ids), a.c.detached_at.is_(None)
+        )
     ):
         found = counted.setdefault(c.membership_id, dict(NO_CREDENTIALS))
         revoked = c.revoked_at
@@ -1093,7 +1099,8 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
+    whose view may drop (`task_views`)."""
     return task_views(conn, [row], fg, viewer)[0]
 
 
@@ -1102,13 +1109,22 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
+    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
+    `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
+    from maity_hub import access, public_cards  # they read views; imported here, not at the top
+
+    outside = isinstance(viewer, access.OutsideReader)
+    if outside:
+        # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
+        views = public_cards.outside_views(conn, views)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
-    held = moderation.holds_of(conn, "card", [r.id for r in rows])
+    # An outsider reads no held card, so no hold: none read after `outside_views` decided.
+    held = {} if outside else moderation.holds_of(conn, "card", [r.id for r in rows])
     for view in views:
         if view["id"] in held:  # only while a hold stands (§16.8)
             view["moderation"] = held[view["id"]]

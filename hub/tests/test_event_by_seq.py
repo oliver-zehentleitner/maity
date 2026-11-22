@@ -318,7 +318,7 @@ def test_reading_one_event_acknowledges_and_delivers_nothing(
 
     def state() -> tuple[Any, Any, int]:
         with migrated.connect() as conn:
-            acknowledged = conn.execute(select(t.agent_session.c.acknowledged_seq)).all()
+            acknowledged = conn.execute(select(t.agent_session_project.c.acknowledged_seq)).all()
             delivered = conn.execute(
                 select(t.message_delivery.c.delivered_at).where(t.message_delivery.c.seq == seq)
             ).scalar()

@@ -180,22 +180,34 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
             conn.execute(
                 insert(t.credential).values(
                     id=credential_id,
-                    membership_id=membership_id,
+                    agent_id=agent_id,
                     instance=f"lt{k}a",
                     verifier=verifiers.stored("credential", credential_id, verifier),
                     created_at=now,
                 )
             )
             conn.execute(
-                insert(t.agent_session).values(
-                    id=new_id("session"),
+                insert(t.instance_attachment).values(
                     credential_id=credential_id,
                     membership_id=membership_id,
+                    instance=f"lt{k}a",
+                    attached_at=now,
+                )
+            )
+            session_id = new_id("session")
+            conn.execute(
+                insert(t.agent_session).values(
+                    id=session_id,
+                    credential_id=credential_id,
                     harness="k6",
                     started_at=now,
                     last_seen_at=now,
-                    acknowledged_seq=0,
                     live=True,
+                )
+            )
+            conn.execute(
+                insert(t.agent_session_project).values(
+                    session_id=session_id, membership_id=membership_id, acknowledged_seq=0
                 )
             )
             agents.append(

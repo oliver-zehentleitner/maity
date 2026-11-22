@@ -610,9 +610,9 @@ def _refusal(root: Path, finding: Finding) -> str:
 
         if finding.item == "worktrees" and worktree.clears_a_leftover(str(root)):
             message += (
-                ". A worktree left under .claude/worktrees/ (a Claude Code subagent's) is cleared"
-                " when the placement next starts, returning the clone to a plain state; restart"
-                " the placement"
+                ". The runner clears a worktree under .claude/worktrees/ (a Claude Code"
+                " subagent's) at the placement's next start, uncommitted work in it included:"
+                " stop and start the placement to clear it"
             )
         return message
     if finding.setting:
@@ -858,7 +858,9 @@ def runner_record(root: Path, top: int | None, name: str, limit: int) -> bytes:
             raise OSError(f"{name}: not a plain file")
         return path.read_bytes()
     try:
-        fd = os.open(name, os.O_RDONLY | NOFOLLOW, dir_fd=folder)
+        # Without blocking (security A1806 of #2054): a FIFO planted as a record would hold
+        # the open before the S_ISREG check below could refuse it.
+        fd = os.open(name, os.O_RDONLY | NOFOLLOW | getattr(os, "O_NONBLOCK", 0), dir_fd=folder)
     finally:
         os.close(folder)
     try:

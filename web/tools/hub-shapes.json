@@ -10,6 +10,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -203,6 +206,9 @@
      "public_stats": "boolean",
      "social": {
       "object": {}
+     },
+     "starred": {
+      "array": null
      },
      "start_tabs": "null",
      "terms": "null",
@@ -1441,6 +1447,9 @@
            "available": "boolean",
            "confinement": "string",
            "default_mode": "string",
+           "efforts": {
+            "array": null
+           },
            "id": "string",
            "models": {
             "array": "string"
@@ -1527,6 +1536,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"

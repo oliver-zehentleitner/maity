@@ -129,9 +129,12 @@ def _traces(engine: Engine, agent: flow.Agent) -> Any:
 
     with engine.connect() as conn:
         credential = conn.execute(
-            select(t.credential.c.last_used_at, t.credential.c.membership_id).where(
-                t.credential.c.id == agent.credential_id
+            select(t.credential.c.last_used_at, t.instance_attachment.c.membership_id)
+            .join(
+                t.instance_attachment,
+                t.instance_attachment.c.credential_id == t.credential.c.id,
             )
+            .where(t.credential.c.id == agent.credential_id)
         ).one()
         membership = credential.membership_id
         return (

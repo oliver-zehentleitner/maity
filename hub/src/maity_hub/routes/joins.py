@@ -15,6 +15,7 @@ import urllib.parse
 from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
@@ -166,7 +167,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         mine = membership(conn, caller, slug)
         member_rule = not mine.may("members:admin")
         if member_rule:
-            _require_member_rule(mine)
+            require_member_rule(mine)
         second_factor.require_step_up(conn, settings, caller)  # mints a credential (§2.8.4)
         agent_id = _agent_for_join(
             conn,
@@ -185,28 +186,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 t.membership.c.active.is_(True),
             )
         ).first()
-        reports_to = body.reports_to
-        if member_rule:
-            _check_member_limits(conn, body, mine, existing)
-            if existing is None and reports_to is None:
-                reports_to = mine.principal_id  # the agent reports to whoever brings it
-        values = validate_assignment(
-            conn,
-            mine.project.id,
-            kind="agent",
-            role=body.role,
-            reports_to=reports_to,
-            areas=body.areas,
-            capabilities=body.capabilities,
-            trust=body.trust,
-            current=(existing.trust, existing.role) if existing else ("member", "coder"),
-            # A member's own boss again is no move: no depth check for it (§2.3).
-            keeps_boss=existing.reports_to if existing else None,
-        )
-        # The base again as read under the project's lock: a project role created on `ops`,
-        # or moved there, since `_check_member_limits` read it is refused the same way.
-        if member_rule and "role_base" in values and values["role_base"] not in MEMBER_RULE_ROLES:
-            raise member_join_limit("role")
+        values = assignment(conn, mine, body, member_rule=member_rule, existing=existing)
         if existing is not None:
             # A second clone of a member: a new instance, the membership as it is.
             # A role change goes through PATCH …/members/{id}, never through a join.
@@ -249,20 +229,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             # A new instance carries the membership's instruction as it is (§3.1).
             told, language = bool(existing.subagents), existing.subagents_language
         else:
-            told = (
-                body.subagents
-                if body.subagents is not None
-                else subagents.default_for(values["role"])
-            )
-            # A language sent is checked even where the instruction is off and keeps none.
-            asked = (
-                subagents.language_of(conn, body.subagents_language, caller.principal_id)
-                if body.subagents_language is not None
-                else None
-            )
-            language = (
-                (asked or subagents.language_of(conn, None, caller.principal_id)) if told else None
-            )
+            told, language = subagents_of(conn, body, values["role"], caller.principal_id)
         token, code = new_token(), new_code()
         now = clock.now()
         join_id = new_id("join")
@@ -386,6 +353,84 @@ def _require_owner_for(mine: Any, values: dict[str, Any]) -> None:
         )
 
 
+def assignment(
+    conn: Connection, mine: Any, body: Any, *, member_rule: bool, existing: Any = None
+) -> dict[str, Any]:
+    """The trust, role, boss, areas and capabilities a join gives, or a placement that
+    brings an agent in (§3.1, §15.6): under "Bringing your own agent" its limits first and
+    the caller as the default boss, then `validate_assignment`. One check for every way in,
+    so a placement gives nothing a join could not. `body` carries the join fields."""
+    reports_to = body.reports_to
+    if member_rule:
+        _check_member_limits(conn, body, mine, existing)
+        if existing is None and reports_to is None:
+            reports_to = mine.principal_id  # the agent reports to whoever brings it
+    values = validate_assignment(
+        conn,
+        mine.project.id,
+        kind="agent",
+        role=body.role,
+        reports_to=reports_to,
+        areas=body.areas,
+        capabilities=body.capabilities,
+        trust=body.trust,
+        current=(existing.trust, existing.role) if existing else ("member", "coder"),
+        # A member's own boss again is no move: no depth check for it (§2.3).
+        keeps_boss=existing.reports_to if existing else None,
+    )
+    # The base again as read under the project's lock: a project role created on `ops`,
+    # or moved there, since `_check_member_limits` read it is refused the same way.
+    if member_rule and "role_base" in values and values["role_base"] not in MEMBER_RULE_ROLES:
+        raise member_join_limit("role")
+    return values
+
+
+def subagents_of(conn: Connection, body: Any, role: str, caller_id: str) -> tuple[bool, str | None]:
+    """A first join's subagent instruction and its language (§3.1): without `subagents` it
+    follows the role, and a language sent is checked even where the instruction is off and
+    keeps none."""
+    told = body.subagents if body.subagents is not None else subagents.default_for(role)
+    asked = (
+        subagents.language_of(conn, body.subagents_language, caller_id)
+        if body.subagents_language is not None
+        else None
+    )
+    language = (asked or subagents.language_of(conn, None, caller_id)) if told else None
+    return bool(told), language
+
+
+def first_join_fields(
+    conn: Connection,
+    mine: Any,
+    project: Any,
+    body: Any,
+    *,
+    member_rule: bool,
+    agent_id: str | None,
+) -> dict[str, Any]:
+    """The join fields a placement stores for the first join its pickup makes (§15.6): of a
+    profile it creates (`agent_id` None) or of one of the caller's own that is not a member
+    yet. The same checks and defaults as a first join (`create_join`), `owner_only` and,
+    under "Bringing your own agent", `member_agents_max` with the placement counted as the
+    profile's open first join; `project` is the row read under the project's lock."""
+    values = assignment(conn, mine, body, member_rule=member_rule)
+    trust, role = values.get("trust", "member"), values.get("role", "coder")
+    _require_owner_for(mine, {"trust": trust, "role": role})
+    if member_rule and agent_id is not None:
+        _require_slot(conn, project, mine.principal_id, agent_id)
+    told, language = subagents_of(conn, body, role, mine.principal_id)
+    return {
+        "trust": trust,
+        "role": role,
+        "reports_to": values.get("reports_to"),
+        "areas": values.get("areas", []),
+        "capabilities": values.get("capabilities", []),
+        "briefing": body.briefing or None,
+        "subagents": told,
+        "subagents_language": language,
+    }
+
+
 def _check_instance(conn: Connection, body: JoinCreate, existing: Any, caller_id: str) -> None:
     """A member's join says which instance it adds; a first join says neither (§3.1)."""
     if existing is None:
@@ -430,9 +475,10 @@ def _require_own_joins(mine: Any) -> None:
         raise forbidden("members:admin")
 
 
-def _require_member_rule(mine: Any) -> None:
+def require_member_rule(mine: Any) -> None:
     """Without `members:admin`, a join is a member's under `policy.member_agents`, or
-    the scope's `forbidden` as before the rule (§3.1)."""
+    the scope's `forbidden` as before the rule (§3.1); so is a placement that admits a
+    member's own agent (§15.6)."""
     if not may_bring(mine) or mine.project.member_agents != "on":
         raise forbidden("members:admin")
 
@@ -444,35 +490,44 @@ def within_limits(membership_row: Any) -> bool:
     )
 
 
-def _own_manager(conn: Connection, mine: Any, member_id: str) -> bool:
-    """`member_id` is an agent of the caller with the role `manager` in this project,
-    so a member brings a manager and the team below it (§3.1)."""
+def _own_manager(conn: Connection, project_id: str, creator_id: str, member_id: str) -> bool:
+    """`member_id` is an agent of `creator_id` with the role `manager` in the project, so
+    a member brings a manager and the team below it (§3.1)."""
     found = conn.execute(
         select(t.membership.c.id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(
-            t.membership.c.project_id == mine.project.id,
+            t.membership.c.project_id == project_id,
             t.membership.c.agent_id == member_id,
             t.membership.c.active.is_(True),
             t.membership.c.role == "manager",
-            t.agent_profile.c.owner_id == mine.principal_id,
+            t.agent_profile.c.owner_id == creator_id,
         )
     ).first()
     return found is not None
 
 
-def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing: Any) -> None:
-    """The limits of §3.1 a member's join stays within, the first broken one named."""
+def _reports_within_limits(
+    conn: Connection, project_id: str, creator_id: str, reports_to: str | None
+) -> bool:
+    """A member's first join reports to nobody named, to its creator, or to the creator's
+    own manager (§3.1)."""
+    return (
+        reports_to is None
+        or reports_to == creator_id
+        or _own_manager(conn, project_id, creator_id, reports_to)
+    )
+
+
+def _check_member_limits(conn: Connection, body: Any, mine: Any, existing: Any) -> None:
+    """The limits of §3.1 a member's join stays within, the first broken one named; a
+    placement that admits a member's own agent stays within them too (§15.6)."""
     if body.trust is not None and body.trust not in MEMBER_RULE_TRUSTS:
         raise member_join_limit("trust")
     base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
     if base is not None and base not in MEMBER_RULE_ROLES:
         raise member_join_limit("role")  # a role the project does not have is `invalid` below
-    if (
-        body.reports_to is not None
-        and body.reports_to != mine.principal_id
-        and not _own_manager(conn, mine, body.reports_to)
-    ):
+    if not _reports_within_limits(conn, mine.project.id, mine.principal_id, body.reports_to):
         raise member_join_limit("reports_to")
     if body.areas:
         raise member_join_limit("areas")
@@ -482,7 +537,7 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
         # A membership an admin raised beyond the limits gets new instances only
         # through `members:admin`.
         raise member_join_limit("agent")
-    if body.takes_over is not None:
+    if getattr(body, "takes_over", None) is not None:  # a placement carries none (§15.6)
         own = conn.execute(
             select(t.agent_profile.c.id).where(
                 t.agent_profile.c.id == body.takes_over,
@@ -518,7 +573,18 @@ def agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
             j.expires_at > clock.now(),
         )
     ).scalars()
-    return set(members) | set(open_joins)
+    # An active placement that admits a profile not a member yet is its open first join
+    # (§15.6); its pickups are the placement's, counted here, not as joins.
+    p = t.placement.c
+    admitting = conn.execute(
+        select(p.agent_id).where(
+            p.project_id == project_id,
+            p.agent_id.in_(owned),
+            p.membership_id.is_(None),
+            p.active.is_(True),
+        )
+    ).scalars()
+    return set(members) | set(open_joins) | set(admitting)
 
 
 def _require_slot(conn: Connection, project: Any, owner_id: str, agent_id: str) -> None:
@@ -591,6 +657,78 @@ def _recheck_creator(conn: Connection, row: Any) -> None:
     answers as a revoked join. A runner's pickup has its own check."""
     if not invitations.issuer_holds(conn, row):
         raise not_found()
+
+
+def admission_holds(conn: Connection, row: Any) -> bool:
+    """Whether the creator of a placement that admits a profile not a member yet (§15.6)
+    could still create this first join (§3.1), at the pickup and again at the exchange
+    (§15.9): still the profile's owner and an active member, and either with
+    `members:admin` and what an invitation's issuer needs for its trust and role (§3.4), or
+    with trust `member` and the join within "Bringing your own agent", its limits and
+    `member_agents_max` included. Unlike a member's join at its exchange, `member_agents`
+    turned `off` since the placement voids a member's, and so does a stored `reports_to`
+    that is no longer the creator or their own manager: a placement acts on its creator's
+    continuing authority, a join already handed out does not (§3.1). A profile that is a
+    member by now gets an instance instead, which the creator must be able to add to that
+    membership as a `new_instance` join would (§3.1, §15.9): the stored fields then count
+    for nothing. `row` is the join, or the placement's stored fields: its `project_id`,
+    `created_by`, `agent_id`, `trust`, `role`, `reports_to`, `areas` and `capabilities`."""
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == row.agent_id)
+    ).scalar()
+    if owner is None or owner != row.created_by:
+        return False
+    creator = conn.execute(
+        select(t.membership.c.trust, t.membership.c.role_base).where(
+            t.membership.c.project_id == row.project_id,
+            t.membership.c.human_id == row.created_by,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if creator is None:
+        return False
+    member = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == row.project_id,
+            t.membership.c.agent_id == row.agent_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if has_scope(creator.trust, creator.role_base, "human", "members:admin"):
+        if member is not None:
+            # A new instance of an admin or a proxy is the owner's to give (§3.1).
+            instance = SimpleNamespace(
+                project_id=row.project_id,
+                created_by=row.created_by,
+                trust=member.trust,
+                role=member.role,
+            )
+            return invitations.issuer_holds(conn, instance)
+        return invitations.issuer_holds(conn, row)
+    if creator.trust != "member":
+        return False
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    if project.member_agents != "on":
+        return False
+    if member is not None:
+        # A membership an admin raised beyond the limits gets new instances only through
+        # `members:admin`; an instance takes no slot of `member_agents_max` (§3.1).
+        return within_limits(member)
+    if (
+        row.trust not in MEMBER_RULE_TRUSTS
+        or project_roles.base_of(project, row.role) not in MEMBER_RULE_ROLES
+        # The stored reporting line as well (a membership row id): a manager that lost the
+        # role or left while the placement waited is no longer one the creator may name
+        # (§3.1).
+        or not _reports_within_limits(
+            conn, row.project_id, row.created_by, principal_id(conn, row.reports_to)
+        )
+        or row.areas
+        or row.capabilities
+    ):
+        return False
+    held = agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
+    return bool(len(held) <= _member_agents_limit(conn, project).limit)
 
 
 def live_profile(conn: Connection, agent_id: str) -> None:
@@ -1142,9 +1280,13 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             t.membership.c.active.is_(True),
         )
     ).first()
-    if member is None and (row.replaces is not None or (row.placement_id and row.agent_id)):
+    if member is None and (
+        row.replaces is not None or (row.placement_id and row.agent_id and not admits(row))
+    ):
         # A pickup for a member, or a rejoin, never brings back a member a human removed
-        # (§15.9): it answers as every join that no longer works (§1.1).
+        # (§15.9): it answers as every join that no longer works (§1.1). A pickup that
+        # admits a profile is its first join and makes the membership; one whose profile
+        # became a member meanwhile adds an instance, below.
         raise not_found()
     waiting_for: int | None = None  # a cross-owner boss: the edge waits for a human (§3.1)
     if member is None:
@@ -1189,14 +1331,25 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     conn.execute(
         insert(t.credential).values(
             id=credential_id,
-            membership_id=membership_id,
+            agent_id=agent_id,
             instance=instance,
             replaces=row.replaces,
-            exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
             verifier=verifiers.stored("credential", credential_id, verifier),
             join_id=row.id,
             client=client,
             created_at=now,
+        )
+    )
+    # Its first project (§6.17): attached at the exchange through this join.
+    conn.execute(
+        insert(t.instance_attachment).values(
+            credential_id=credential_id,
+            membership_id=membership_id,
+            instance=instance,
+            attached_at=now,
+            attached_by=row.created_by,
+            join_id=row.id,
+            exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
         )
     )
     conn.execute(update(t.join_link).where(t.join_link.c.id == row.id).values(instance=instance))
@@ -1337,8 +1490,23 @@ def _require_pickup_holds(conn: Connection, row: Any) -> None:
         or live is None
         # A profile the exchange creates: its creator still may give it (§3.4, §15.9).
         or (row.agent_id is None and not invitations.issuer_holds(conn, row))
+        # A profile placed while not a member: its creator could still create this first
+        # join, or, if another way made it a member meanwhile, add an instance to that
+        # membership, against the policy as it is now (§3.1, §15.9).
+        or (admits(row) and not admission_holds(conn, row))
     ):
         raise not_found()
+
+
+def admits(row: Any) -> bool:
+    """A runner's pickup for a profile that was not a member when placed (§15.6, §15.9):
+    a first join naming an existing profile, neither `new_instance` nor `replaces`."""
+    return bool(
+        row.placement_id is not None
+        and row.agent_id is not None
+        and not row.new_instance
+        and row.replaces is None
+    )
 
 
 def _recheck_instance(conn: Connection, row: Any, member: Any) -> None:
@@ -1354,7 +1522,8 @@ def _recheck_instance(conn: Connection, row: Any, member: Any) -> None:
     elif row.new_instance:
         instances.refuse_over_quota(conn, member)
     else:
-        # A join made before instances existed, for a member: it adds one.
+        # A join made before instances existed, for a member: it adds one. So does the
+        # pickup of a profile placed while not a member that is one by now (§15.9).
         instances.refuse_over_quota(conn, member)
 
 

@@ -391,6 +391,24 @@ def test_an_exact_placement_id_wins_over_a_handle(tmp_path: Path) -> None:
     assert operate._placement_id(cfg, "plc-0004") == "plc-0004"
 
 
+def test_a_placement_id_with_a_trailing_newline_is_not_taken(tmp_path: Path) -> None:
+    path = setup(tmp_path)
+    state.save_state(
+        tmp_path / "st",
+        {"placements": [{"id": "plc-0003\n", "agent": "agent-3"},
+                        {"id": "plc-0004", "agent": "agent-4"}]},
+        name=serve.STATUS_FILE,
+    )  # fmt: skip
+    cfg = config.load(path)
+    assert operate._placement_id(cfg, "plc-0004") == "plc-0004"
+    assert operate._placement_id(cfg, "agent-4") == "plc-0004"
+    assert operate._placement_id(cfg, "plc-0005") == "plc-0005"  # not seen, but an id
+    with pytest.raises(operate.Refused):  # the status entry with the newline is not read
+        operate._placement_id(cfg, "agent-3")
+    with pytest.raises(operate.Refused):
+        operate._placement_id(cfg, "plc-0005\n")
+
+
 def test_only_an_exact_credential_revoked_code_counts(monkeypatch: pytest.MonkeyPatch,
                                                        tmp_path: Path) -> None:  # fmt: skip
     place = workspace.Workspace(tmp_path, "maity", "c")
@@ -448,6 +466,27 @@ def test_gc_scratch_lists_then_removes_what_no_active_placement_names(
     (entry,) = scratch.removals(cfg.state_dir, 10)
     assert entry["placement"] == "plc-0001" and entry["why"] == "gc"
     assert entry["size_bytes"] >= 2000
+
+
+def test_gc_scratch_leaves_a_name_with_a_trailing_newline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_sessions(monkeypatch)
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    holder = cfg.local.workspaces / "maity" / workspace.SCRATCH
+    (holder / "plc-0001" / "tmp").mkdir(parents=True)
+    (holder / "plc-0002\n" / "tmp").mkdir(parents=True)
+    other = cfg.local.workspaces / "maity\n" / workspace.SCRATCH / "plc-0003"
+    (other / "tmp").mkdir(parents=True)
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set(), set()))
+    assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "plc-0002\\n: not a placement's; left as it is" in out
+    assert not (holder / "plc-0001").exists()  # the plain id is still taken
+    assert (holder / "plc-0002\n").is_dir() and other.is_dir()
+    assert [e["placement"] for e in scratch.removals(cfg.state_dir, 10)] == ["plc-0001"]
 
 
 def test_status_shows_the_sizes_and_the_removals(

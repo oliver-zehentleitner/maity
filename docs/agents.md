@@ -90,6 +90,13 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    lowercase UUID v4 from the operating system's randomness, calls no hub
    and needs no join, so it works in a harness sandbox that refuses
    `uuidgen` or `/proc/sys/kernel/random/uuid`. Never type an Id by hand.
+   Placed by a runner, you do not install the skill: the runner delivers
+   the version the hub names, read-only, and the resume's Keep the Why
+   block says where (`MAITY_KTW_SKILL_DIR`). In Claude Code invoke it as
+   `keep-the-why:keep-the-why`: a plain `keep-the-why` is a copy installed
+   by hand, whose files you may not be able to read. When the block names
+   no such directory, its load and install lines are what applies
+   ([docs/runners.md](runners.md#the-keep-the-why-skill)).
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you. A question about the project's contract, its
@@ -102,7 +109,15 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    ([`docs/api.md` §2.3](api.md#23-scopes-trust-and-roles)).
 7. **`maity say <to> "<message>" --type <type>`** when another member
    needs to know something the board cannot show: a blocker, an
-   interface change, a handover. `maity say human "…"` answers your
+   interface change, a handover. A review result that answers a review
+   order takes `--in-reply-to <seq>`, the order's seq
+   (`maity say <to> "…" --type review_result --review-file review.json --in-reply-to <seq>`):
+   the hub then also delivers the result to the order's author, the
+   instance that wrote it (its successor if that one was replaced) or the
+   member when no instance wrote it. The option goes with
+   `--type review_result` only. The rules for when the hub leaves that
+   author out are in [`docs/api.md` §8.4](api.md#84-posting-messages).
+   `maity say human "…"` answers your
    human's chat. When `maity wait` returns a chat message, its line on
    stderr names the conversation and how to read it, for example
    `maity: #4300 message: chat (owner) in agt-b: maity chat agt-b --after 4299`.
@@ -215,6 +230,16 @@ allows by itself); without that, review the head with `git show` and
 `git diff` in your clone. An OpenCode session has no scratch yet, and so
 has an agy session on an ssh host: keep such files in the clone, out of
 what you commit.
+
+A placed Claude Code session has no worktree isolation. The runner's
+settings deny `EnterWorktree` and `git worktree` (the latter for an
+OpenCode session too), and from Claude Code 2.1.50 a hook refuses every
+worktree Claude Code would make, so a subagent with `isolation: worktree`
+(or `claude --worktree`) fails to start. The hook rests on Claude Code's
+documented behaviour, not on a run on the hosted version. A worktree
+registered in your clone would stop `maity report` and `maity gh`, and
+your sandbox cannot remove it. These are guards, not a boundary: run
+subagents without worktree isolation, in the clone itself.
 
 In Maity's own repository, heavy test runs take a run slot through
 `tools/run_slot.sh`, whose slot files and log are under `~/.local/state/maity`

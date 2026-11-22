@@ -35,10 +35,33 @@ FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
 
 class ProjectRoute(APIRoute):
     """A route under `/projects/{owner}/{slug}`: its `slug` path parameter becomes the full
-    name `<owner>/<slug>` before the dependencies and the endpoint read it."""
+    name `<owner>/<slug>` before the dependencies and the endpoint read it.
+
+    A route under `/api/v1/projects/{owner}/{slug}` that is not one of `access.OUTSIDE_READS`
+    for the request's method first passes `access.gate`: a public project's outsider is
+    answered `not_found` there, before FastAPI reads the body or the query (§2.3), an owner of
+    an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3). One
+    of `access.PUBLIC_REPOSITORY_READS` passes the gate too, which opens it to an outsider only
+    while the project's stored `repository_public` is true, the instance's token serves the
+    project's namespace (the operator's own, §11.4), and the forge's answer on the repository,
+    asked live when the kept one is too old, says it is public, all before the query is read."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()
+        from maity_hub import access  # access resolves projects through this module
+
+        # The route's template as the app serves it. FastAPI keeps an included router behind
+        # its own object (hub/context/namespace.md), so `self.path` is the router's own path,
+        # below the prefix `access.API` the API's routers are included with; a FastAPI that
+        # copied the route on inclusion gave it the prefix. Both name one template here, so
+        # the gate holds on either: reading `self.path` alone left every project route
+        # ungated under FastAPI 0.159.
+        path = self.path if self.path.startswith(access.API + "/") else access.API + self.path
+        below = path.startswith(access.API_PROJECT + "/")
+        project_route = path == access.API_PROJECT or below
+        readable = frozenset(m for m, p in access.OUTSIDE_READS if p == path)
+        owned = frozenset(m for m, p in access.OWNER_CALLS if p == path)
+        conditional = frozenset(m for m, p in access.PUBLIC_REPOSITORY_READS if p == path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}
@@ -46,6 +69,10 @@ class ProjectRoute(APIRoute):
                 params = dict(params)
                 params["slug"] = f"{params.pop('owner')}/{params['slug']}"
                 request.scope["path_params"] = params
+            if project_route and request.method in conditional:
+                await access.gate(request, public_repository_read=True)
+            elif project_route and request.method not in readable:
+                await access.gate(request, request.method in owned)
             return await inner(request)
 
         return handler
