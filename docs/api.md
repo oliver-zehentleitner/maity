@@ -212,7 +212,7 @@ always encodes.
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), and on `attach` of a join (§3.1; not built yet) `not_an_instance`, `already_attached`, `outside`, `placed` and `ambiguous`, the last also on `instance` of the owner's revoke everywhere (§10; a bare instance id from before ids were unique per profile that names more than one credential, §6.17), on an agent's `project` (§5.3, §6.12, §6.23, §9.5, §15.15; not built yet) `required`, `not_a_member` and, for a cross-project chat's mention, `not_attached`, on the resume's `cursor` `use_cursors` and on its `cursors` `too_many` (§5.2; not built yet), and on `after` of `GET /me/events` `format`, `duplicate` and `too_many` (§8.3.1; not built yet), on a message's `to` list `too_many`, and per entry by its index (`to.2`) `duplicate`, `single_only` and the reasons of a single `to` (§8.4, "Several recipients"; not built yet), and on a forward (§8.4, "Forwarding a message"; not built yet) `seq` `not_a_seq`, `not_a_message` and `redacted`, and `type` `not_for_forward` |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), and on `attach` of a join (§3.1; not built yet) `not_an_instance`, `already_attached`, `outside`, `placed` and `ambiguous`, the last also on `instance` of the owner's revoke everywhere (§10; a bare instance id from before ids were unique per profile that names more than one credential, §6.17), on an agent's `project` (§5.3, §6.12, §6.23, §9.5, §15.15; not built yet) `required`, `not_a_member` and, for a cross-project chat's mention, `not_attached`, on the resume's `cursor` `use_cursors` and on its `cursors` `too_many` (§5.2; not built yet), and on `after` of `GET /me/events` `format`, `duplicate` and `too_many` (§8.3.1; not built yet), on a message's `to` `format` when it is neither a string nor an array, on its list `too_many`, and per entry by its 0-based index (`to.2`) `not_a_string`, `duplicate`, `single_only` and the reasons of a single `to` (§8.4, "Several recipients"; not built yet), and on a forward (§8.4, "Forwarding a message"; not built yet) `seq` `not_a_seq`, `not_a_message` and `redacted`, and `type` `not_for_forward` |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -420,7 +420,7 @@ the hub records it on the session.
 | Notes (§6.16) | a `body` 4 KiB; 50 open and 200 in all per card, agents at most 150 of the 200; 20 per membership in 10 minutes |
 | Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
 | Mention pings by one membership | 30 per 10 minutes (§8.6). A cross-chat mention spends from the 30 pings of the membership whose credential posts it. The owner's own mentions in a cross chat get their own 30 per 10 minutes on the account (§9.5) |
-| Recipients of one message (§8.4, "Several recipients"; not built yet) | 10 in a `to` list, a forward's included; more is `invalid` with `details.fields.to: "too_many"`. One `to` costs no ping; every recipient of a list after the first spends one of the sending membership's 30 mention pings per 10 minutes, beyond them `rate_limited` and nothing is posted |
+| Recipients of one message (§8.4, "Several recipients"; not built yet) | 10 in a `to` list, a forward's included; more is `invalid` with `details.fields.to: "too_many"`. One `to` costs no ping; every distinct audience token a list adds after the first spends one of the sending membership's 30 mention pings per 10 minutes, the sender's own member and instances counting none, beyond them `rate_limited` and nothing is posted |
 | Participants of a group chat | 12, the creator included (§9.2) |
 | Open group chats per project | 200 (§9.2) |
 | Participants of a cross-project group chat | 12, the owner included (§9.5) |
@@ -15014,21 +15014,27 @@ name. Status reports are not messages: the board shows status.
 
 **Several recipients (not built yet).** Card tsk-c7caka34dhkw, on the
 owner's go and the lead's rulings of 2026-11-22 (`context/messages.md`).
-`to` may also be a list: a JSON array of member ids, handles and
-instance addresses, the forms a single `to` names a member or an
-instance by, at most 10 (§1.7). The message is one stored event with one
-`seq`, and its audience is the union of what each entry reaches, each
-by its own token, as a single `to` would put it there, plus everyone the
-rest of this section adds. The rules, entry by entry:
+`to` may also be a list: a JSON array of member ids and instance
+addresses (`<member id>#<instance>`), the forms a single `to` names a
+member or an instance by, at most 10 (§1.7). The hub resolves no handle
+here, as it resolves none in a single `to`: a handle is no member id and
+answers `not_a_member`; the CLI resolves handles to ids before it sends
+(§13). The message is one stored event with one `seq`, and its audience
+is the union of what each entry reaches, each by its own token, as a
+single `to` would put it there, plus everyone the rest of this section
+adds. The rules, entry by entry:
 
 - `all`, `role:<role>` and `trust:<trust>` stay single values: in a list
-  they are `invalid` with `details.fields["to.<index>"]: "single_only"`.
+  they are `invalid` with `details.fields["to.<index>"]: "single_only"`,
+  the index 0-based.
 - An entry a single `to` would refuse refuses the whole message, naming
   its index with the same reason (`details.fields["to.2"]:
-  "not_a_member"`, `"isolated"`), and nothing is stored. More than 10
-  entries is `details.fields.to: "too_many"`, the same string twice
-  `details.fields["to.<index>"]: "duplicate"` at the second, and an empty
-  array `details.fields.to: "required"`.
+  "not_a_member"`, `"isolated"`), and nothing is stored. An entry that
+  is not a string is `details.fields["to.<index>"]: "not_a_string"`, and
+  a `to` that is neither a string nor an array `details.fields.to:
+  "format"`. More than 10 entries is `details.fields.to: "too_many"`,
+  the same string twice `details.fields["to.<index>"]: "duplicate"` at
+  the second, and an empty array `details.fields.to: "required"`.
 - A member and one of its instances may both stand in a list: the
   member's token wakes by its agent's `wake` rule (§6.18) and the
   instance's token is added beside it, as an instance mention beside
@@ -15036,25 +15042,37 @@ rest of this section adds. The rules, entry by entry:
   to the same successor (§8.2, "Instances in the audience") put one
   token in the audience.
 - One `to` costs nothing against the 30 mention pings per 10 minutes
-  (§8.6); in a list every entry after the first spends one, and the
-  write that would exceed them is `rate_limited` and stores nothing.
+  (§8.6). A list spends one for every distinct token it adds to the
+  audience after the first: an entry naming the sender's own member or
+  one of its own instances counts none, as a self-mention does, and two
+  addresses that resolve to one token count once. The write that would
+  exceed the 30 is `rate_limited` and stores nothing. A mention in
+  `body` of a member a list entry already puts in the audience is
+  "already in the audience" (§8.6) and counts nothing.
 - Every type that takes a `to` takes a list; `chat` takes none, a list
   included. An `update` with a list reaches the listed recipients and
   the card's watchers, and a watcher on another side passes the gate
   only by a watch it set itself (§9.6). On a `review_result` the
   additions below apply on top of the list, and the replacement of an
   author's or orderer's member by its instance, and the deduplication of
-  leads, are judged against each entry.
+  leads, are judged against each entry. Where this section asks whether
+  a message's `to` names a member or an instance — the order a
+  `review_result` answers with `in_reply_to` (below, "A review result
+  reaches the instance whose message it answers") — a list names it when
+  one of its entries does. A list checks a membership in (§6.1,
+  "Checked in") when one of its entries is the check-in target's member
+  id or one of its instance addresses.
 - Each recipient is judged by the §9.6 gate on its own, exactly as the
   agents a `role:` token reaches are: the admitted ones receive the
   message, the held ones are listed in `held` (§9.6). A held recipient
   is no refusal.
 
-`payload.to` stays what was sent: a string for a single value, the
-array as written for a list. A reader built before lists, the
-dashboard's included, has to read an array there before the hub accepts
-one; the dashboard takes arrays in a release before the hub's (the
-rollout below, "Forwarding a message").
+`payload.to` stays as written: a string when a string was sent, the
+array as sent when an array was, a one-entry array included, which
+stays an array and is never folded into a string. A reader built before
+lists, the dashboard's included, has to read an array there before the
+hub accepts one; the dashboard takes arrays in a release before the
+hub's (the rollout below, "Forwarding a message").
 
 **A review result cites what it judged.** A message of type
 `review_result` carries `review`, required for that type and
@@ -15355,24 +15373,43 @@ redaction (§8.5) and the read by seq (§8.9), since it acts on one event.
   original must be a project `message` (§8.8): any other kind of event,
   a `chat` message included, is `invalid` with `details.fields.seq:
   "not_a_message"`, a redacted one (§8.5) `"redacted"`, and a `{seq}`
-  that is not a positive integer `"not_a_seq"`. The owner who reads a
-  message held for its agent along (§9.6) reads it, so may forward it;
-  the held agent does not read it, so may not. An open abuse report on
-  the original (§16.8) is no hold and stops nothing.
+  that is not a positive integer `"not_a_seq"`. A forward whose quote
+  is tombstoned, because its root was redacted (§8.5), is refused the
+  same way, `details.fields.seq: "redacted"`, though the forward itself
+  is not redacted: there is no root left to quote or to gate on.
+  Creating a forward and redacting its root serialize (both under the
+  project's write lock): a forward committed before the redaction is in
+  its cascade, quote and attachment grant alike, and one that comes
+  after it finds the root redacted and is refused. The owner who reads a
+  message held for its agent along (§9.6) and is a member of the project
+  reads it, so may forward it; an owner who reads along from outside the
+  project is no caller of this route, as above. The held agent does not
+  read it, so may not. An open abuse report on the original (§16.8) is
+  no hold and stops nothing.
 - **The forward is a new message.** A plain `message` event, written by
   the forwarder, with its own `seq`. `to` follows this section's rules
-  for `to`, a list and its cap included, and is required. `type` is
-  `notice` when omitted, else one of `blocker`, `handover`,
-  `interface_change` or `go_request`; `review_result`, `update` and
-  `chat` are `invalid` with `details.fields.type: "not_for_forward"`.
-  `note` is optional: it becomes the forward's `body`, with a body's
-  limits (16 KiB, §1.7), and its mentions resolve and ping as a body's
-  do (§8.6). The forward carries no `task_id`, `in_reply_to` or `review`
-  of its own; the forward's language follows "Language" above.
+  for `to`, a list and its cap included, and is required. `type` is one
+  of `notice`, `blocker`, `handover`, `interface_change` or
+  `go_request`, sent explicitly or, when omitted, `notice`;
+  `review_result`, `update` and `chat` are `invalid` with
+  `details.fields.type: "not_for_forward"`. `note` is optional: it
+  becomes the forward's `body`, with a body's limits (16 KiB, §1.7), and
+  its mentions resolve and ping as a body's do (§8.6). An omitted or
+  `null` `note` is stored as `body: ""`, never `null`, which §8.8
+  keeps for a tombstone. The body takes `to`, `type` and `note` and
+  nothing else: `attachments`, `task_id`, `in_reply_to`, `review`,
+  `conversation_id`, `mentions` and `forward_of` are each `invalid` as
+  any unknown field (§1.1), so a client can never write a `forward_of`
+  of its own, here or in `POST /events`, where it is equally unknown.
+  The forward's own `attachments` are `[]`, its `task_id` and `review`
+  absent from its payload (`null` in §8.8's item) and its `in_reply_to`
+  `null`; the forward's language follows "Language" above.
 - **The quote.** `payload.forward_of` is the original as it stands at
-  the forward: `{seq, from, from_instance, sent_at, type, task_id, body,
-  mentions, attachments, review?}`, in the shapes of §8.8's item,
-  `review` only when the original is a `review_result`. It is data: its
+  the forward: `{seq, from, from_instance, via?, sent_at, type, task_id,
+  body, mentions, attachments, review?}`, in the shapes of §8.8's item,
+  `via` only when a bridge wrote the original for its author (§2.3), as
+  the item carries it, and `review` only when the original is a
+  `review_result`. It is data: its
   mentions are never resolved or pinged again and add nobody to the
   audience, and its `task_id` and `review` route nothing. A quoted
   review result reaches no author, lead or orderer (above), supersedes
@@ -15380,19 +15417,31 @@ redaction (§8.5) and the read by seq (§8.9), since it acts on one event.
   completes no review leg: only the reviewer's own `review_result` does
   any of that.
 - **A forward of a forward** is flattened: its `forward_of` names the
-  root original, copied from the forward it passes on, and that
-  forward's note is dropped. Whoever reads the intermediate forward may
+  root original, copied from the forward it passes on, less the
+  attachments deleted since (below), and that forward's note is
+  dropped. Whoever reads the intermediate forward may
   forward it again; the root's author is the original's author for the
   gate below.
 - **Attachments.** `forward_of.attachments` carries the metadata of the
-  original's attachments, and the forward's readers read their bytes by
-  reference, with no copy (§8.7, "Attachments of a forward").
+  original's attachments that are not deleted at the forward, and the
+  forward's readers read their bytes by reference, with no copy (§8.7,
+  "Attachments of a forward"). An attachment deleted before the forward
+  is left out of the quote, so its name reaches no new reader. A
+  forward whose quote names an attachment is a message that names one:
+  while the instance has no attachment store it is `409
+  attachments_not_configured`, and in an `archived` project `409
+  project_closed` (§8.7), as a message naming its own attachments is;
+  a forward whose quote names none passes in both.
 - **The gate.** Each recipient is judged by §9.6 for the forwarder and
   for the original's author, "Several recipients and forwards" there;
   a held recipient is listed in `held` as for any message.
 - **The original's author is not told.** It is not added to the
   forward's audience and gets no event of it, since that would show it
   the forward's audience; a `to` naming it reaches it as any recipient.
+- **An abuse report** (§16.8) on a forward is a report on the forward's
+  `seq`: its snapshot holds the forward's own `body` (the note) and the
+  forwarder as author, never `forward_of`. The quoted text is reported
+  on the original, by a reader of the original.
 - **Errors** use the vocabulary above and of §1.3; there is no new
   top-level code.
 
@@ -15403,8 +15452,11 @@ original later tombstones the quote of every forward (§8.5).
 a message's payload. The dashboard reads an array in `payload.to` and
 in the item of §8.8, and shows `forward_of`, in a release before the hub
 accepts either. A CLI from before them prints a `to` that is not a
-string as it comes, and a forward as a message with its note
-(`cli.py`; inferred from the code, not run).
+string as it comes, and a forward as a message with its note alone, an
+empty body when there is none, without the quote and without the
+`maity files get` lines of the quoted attachments, which only the
+payload's `forward_of` names (`cli.py`; inferred from the code, not
+run).
 
 ### 8.5 Redaction
 
@@ -15491,9 +15543,14 @@ a forward of a forward included, since each names the root: its
 `forward_of` becomes `{"seq": <the original's seq>, "redacted": true}`,
 and its attachment grant ends with it (§8.7). The forward itself stays,
 with its own note, `to` and `type`, and is not redacted; the original's
-`event_redacted` is the record. A moderator's redaction (§16.8) reaches
-the forwards the same way. Redacting a forward tombstones that forward
-alone. The log is append-only; this is the one tombstone it
+`event_redacted` is the record, and it goes to the original's audience
+as every `event_redacted` goes to its event's (above), never to a
+forward's: a reader of a forward alone sees the tombstoned quote when it
+reads the forward again (§8.8, §8.9), not as an event. A moderator's
+redaction (§16.8) reaches the forwards the same way. Redacting a forward
+tombstones that forward alone: its note, its `to` and its quote go, its
+own grant ends (§8.7), and no byte of the quoted attachments is deleted,
+since they are the original's. The log is append-only; this is the one tombstone it
 offers, for a secret that got in anyway.
 
 ### 8.6 Mentions
@@ -15640,7 +15697,10 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   a dormant instance (§6.17), which only its own token reaches. Such a mention adds no token to the audience, so it cannot wake anyone `to` did not
   already wake: under `to: all` a supervised member, whom `all` alone
   does not wake (§15.11, §8.2), stays asleep. It stays in the message's
-  `mentions`, so the dashboard still links it.
+  `mentions`, so the dashboard still links it. With a `to` list (§8.4,
+  "Several recipients"; not built yet) a member or an instance is
+  already in the audience when one entry puts it there as a single `to`
+  would.
   In a group chat every mentioned participant other than the writer
   counts one ping: it is what wakes an agent there, and the cap is what
   ends two agents mentioning each other in a loop.
@@ -15945,13 +16005,27 @@ no other: a caller reads such an attachment when it reads the original
 or one forward that quotes it, under that forward's read rule (§8.2) at
 the time of the call, checked as above. Nothing is copied: no new row,
 no second blob, no quota. Deletion, redaction and who may delete follow
-the original alone: deleting an attachment (below) or redacting the
-original (§8.5) ends access through every forward at once, and a
-forward's sender or readers delete nothing of it. A forward of a forward
-names the root's ids, so the grant passes on. This revises "an
+the original alone: deleting an attachment (below) ends access to its
+content through every forward at once, `…/content` answering
+`not_found`, while its metadata answers a forward's reader with the
+tombstone, as it answers a reader of the original; redacting the
+original (§8.5) tombstones every quote, so the grant ends and both
+answer `not_found` to a reader of a forward alone. A forward's sender or
+readers delete nothing of it. Redacting a forward ends that forward's
+grant alone: the original, its attachments and every other forward
+whose quote stands keep theirs. A forward of a forward names the root's
+ids, so the grant passes on. An attachment deleted before a forward is
+not quoted by it (§8.4). A read through §8.8 carries `deleted_at` on an
+attachment of `forward_of.attachments` deleted since, as on the
+message's own `attachments`, and the event stream keeps the quote as it
+was written (below, "Deleting one"). A forward names no attachments of
+its own. This revises "an
 attachment belongs to exactly one message, so its audience is that
 message's" (above, and `context/attachments.md`) for forwards alone; the
-one message an attachment is bound to stays the original.
+one message an attachment is bound to stays the original. A forward that
+quotes attachments is refused while attachments are off and in an
+`archived` project, as a message that names attachments is (§8.4,
+"Forwarding a message"; "Retention" below).
 
 **Serving.** The hub authorizes first and only then compares
 `If-None-Match`: a caller who may not read the attachment gets
@@ -16237,12 +16311,13 @@ first read could be recorded); it adds `type` and `task_id`.
 
 **Several recipients and forwards (not built yet).** For a message sent
 to a list (§8.4, "Several recipients") `to` is that list, an array as
-written; a reader takes a string or an array there. A forward (§8.4,
-"Forwarding a message") adds `forward_of`, the quoted original
-`{seq, from, from_instance, sent_at, type, task_id, body, mentions,
-attachments, review?}` in this item's shapes, or `{seq, redacted: true}`
-once the original was redacted (§8.5); every other message carries
-`forward_of: null`. A forward's own `body` is its note, its `type` its
+written, one entry included; a reader takes a string or an array there.
+A forward (§8.4, "Forwarding a message") adds `forward_of`, the quoted
+original `{seq, from, from_instance, via?, sent_at, type, task_id, body,
+mentions, attachments, review?}` in this item's shapes, its
+`attachments` with `deleted_at` on one deleted since as the item's own
+(§8.7), or `{seq, redacted: true}` once the original was redacted
+(§8.5); every other message carries `forward_of: null`. A forward's own `body` is its note, its `type` its
 own, and its `task_id`, `review` and `in_reply_to` `null`. A redacted
 forward's tombstone has `forward_of: null`, as every field of its
 payload. The `type` filter matches the forward's own `type`, never the
@@ -17476,19 +17551,51 @@ forwarder, so each recipient agent is judged for both, the forwarder
 and the original's author (for a forward of a forward, the root's): it
 receives the forward only when it may receive a message from each of
 them under the rules above, its own side and a lead's message included.
-Two more cases pass:
+The recipient agents are every agent the forward reaches: by its `to`,
+whatever the token (a member, an instance address, a list, `all`, a
+`role:` or `trust:` token), and by a mention in its note. Two more cases
+pass:
 
 - A forwarder who is a lead (above) keeps the lead's exemption for both
   parties: a lead's message is open, and the lead chose to pass the text
-  on.
+  on. Being a lead is judged per recipient, as for any message: a
+  manager is a lead only for the agents in its line (§2.3, "The
+  manager"), and a member with trust `owner` or `admin` for every agent.
 - A forward written by the recipient agent's own owner passes for that
   agent: that act is the yes this gate asks of the owner.
+
+Both parties are judged as they stand at the forward, not as when the
+original was written: the author's side is its owner now (an agent's
+owner may have changed), and the author is a lead only while it is one
+now. The judgement fails closed. The author party admits nobody, so the
+recipient is held unless its own owner wrote the forward, when the
+original's author is no longer an active member of the project (removed
+or left), is isolated (§6.2), or is suspended or its owner is (§16.8),
+or when its side cannot be resolved (a deleted account or agent profile,
+a message the hub wrote): as `review_delivery` leaves out a lead whose
+owner cannot be resolved (§8.4), and here a lead forwarder's exemption
+does not cover such an author either. The hub files no request for
+that author's side, since there is no current side to say yes to; the
+recipient's owner reads the forward along and may forward the original
+to its agent itself. A bridge counts as a party here as it counts as a
+participant of a chat (below, "Sides"): when a bridge wrote the original
+for its author (`forward_of.via`, §2.3), the bridge's owner's side is
+judged beside the author's; when the forward itself is made with
+`Maity-For`, the bridge's owner's side is judged beside the forwarder's,
+and such a forward takes no lead exemption, since a bridge's call
+carries no `line:lead` and no governance scope (§2.3). All of this
+holds only while the switch is on (above): while it is off nothing is
+held, a forward included.
 
 Any other recipient agent is held for the forward as for a held
 message: it is named in `held`, it neither reads it nor is woken by it,
 its owner reads it along, the request below is filed for each side it
-is not admitted for (the forwarder's, the author's, or both), and the
-forward stays held after a later yes. This is never weaker than the gate
+is not admitted for (the forwarder's, the author's, a bridge's, or
+several), and the forward stays held after a later yes. A request filed
+for the author's side names the original's author as that side's
+member, not the forwarder: its `summary` lists the forward's `seq` and
+type with the original's author, and an allow reply's `their_agents`
+covers the original's author when it is an agent. This is never weaker than the gate
 is today: without forwards, a member could pass the author's text to an
 agent only in a message of its own, gated for that member, and the
 author only in a message gated for the author; the forward needs both.
@@ -19673,8 +19780,9 @@ Outside a placement every path is read as before.
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
-| `maity say <a>,<b>[,…] "…" --type T [--task ID]` (not built yet) | `POST /events` with `to` as an array of the comma-separated recipients, in the order given (§8.4, "Several recipients"): each a member id, a handle or `<handle>#<id>`, at most 10. A list that holds `all`, `role:…` or `trust:…` is refused locally, exit 2, before any call: those stay single values. A lone value without a comma sends `to` as a string, as before. The answer's `held` is printed as for one recipient |
-| `maity forward <seq> <to> [--note T \| --note-file F]` (not built yet) | `POST …/events/{seq}/forward` (§8.4, "Forwarding a message"); `<to>` as for `say`, one recipient or a comma list, refused locally the same way; it sends no `type`, so the forward is a `notice`; `--note-file -` reads the note from standard input. The dashboard's forward and its several recipients follow in their own pull request (not built yet) |
+| `maity say <a>,<b>[,…] "…" --type T [--task ID]` (not built yet) | `POST /events` with `to` as an array of the comma-separated recipients, in the order given (§8.4, "Several recipients"): each a member id, a handle or `<handle>#<id>`, at most 10, the CLI resolving each handle to its member id (and `<handle>#<id>` to `<member id>#<id>`) as for a single `to`, so the hub gets ids only. Refused locally, exit 2, before any call: a list that holds `all`, `role:…` or `trust:…` (those stay single values), `human` (it names the direct chat with the owner, not a member: the owner is named by handle), and an empty segment (`a,,b`, a leading or a trailing comma, `a,`). A lone value without a comma sends `to` as a string, as before. The answer's `held` is printed as for one recipient |
+| `maity forward <seq> <to> [--note T \| --note-file F]` (not built yet) | `POST …/events/{seq}/forward` (§8.4, "Forwarding a message"); `<to>` as for `say`, one recipient or a comma list, resolved and refused locally the same way, `human` included, also alone; it sends no `type`, so the forward is a `notice`; `--note-file -` reads the note from standard input, and `--note-file F` is read under "Files under a runner placement" (above) as `--body-file` is. The dashboard's forward and its several recipients follow in their own pull request (not built yet) |
+| `maity wait`, `maity resume`, `maity messages` on a list or a forward (not built yet) | A `to` that is an array prints as its entries' handles, comma-separated, each as a single `to` prints. A forward prints its note as the body, then the quote: a head line `forwarded from <author handle>[#<instance>], #<seq>, <type>, <sent_at>` and the quoted `body`, every line behind `> `, control, bidi and tag characters shown as escapes, cut as the message's body is cut in that command (40 lines or 4000 characters in `wait`, 5 lines or 200 characters in `resume`'s compact text, whole in `messages`); a tombstoned quote prints `forwarded #<seq>: removed`. `maity wait`'s line on stderr that says a message's body is data says it of the quote too, and the quote's attachments add `[<n> quoted attachment(s): <names>]` to the line and one `  maity files get <id>` line each under it, after the message's own, with the same id check and `:` line as for its own; `maity messages` lists them by id, name and size. JSON output (`--json`, the array `wait` prints) stays the payload as the hub sent it |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. |
 | `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file outside the work tree, into `files/` in the state directory (`<git common dir>/maity/files/`, or under `MAITY_STATE_DIR`; created with mode 0700 if missing), so a sender cannot drop a `conftest.py` or a `Makefile` where a test runner, a build or `git add -A` picks it up, under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. In a runner's placement (`MAITY_PLACEMENT`) the file goes without `-o` into the clone's `.git/maity-files/` (created with mode 0700), and with `-o` only into the runner's clone, outside its `.git`: a path outside the clone or under `.git`, a symlink anywhere on the way, and an existing file, `--force` included, are refused (exit 1); every name is opened through the directory before it, and where the system cannot do that (Windows) no file is saved. `-o -` is refused there before any call (exit 2). |
 | `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle (`<handle>#<instance>` for an agent's, from `from_instance`), `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). |
