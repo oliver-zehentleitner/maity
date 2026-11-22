@@ -9,3 +9,10 @@
   repository. Each step is checked as testable first and passes only on
   positive evidence. The checked Claude Code version moves only after it
   passed for the new version.
+
+### Changed
+
+- cli: `maity runner check` and the runner's log take Claude Code 2.1.330
+  as the version whose sandbox was checked, after the probe's minimum run
+  passed for it; the run of the managed and user hook switches is still
+  to come.

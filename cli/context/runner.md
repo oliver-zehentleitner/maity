@@ -1977,7 +1977,8 @@ one version, not a contract.
 
 **Id:** 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 53782ad6-6178-4037-9760-a248de7eb122
 **Evidence:** inferred
 **Source:** card tsk-zjv2xyhyggnm (the owner/lead's approval of the bump); a static read of Claude Code 2.1.325's command matching, with no runtime session with the harness; the security detail of the read held to DM to the lead and the security lead; the runtime re-check on 2.1.325 and 2.1.329 of security round 5, S200, 2026-11-20 (996b6f48), its details with the lead; the order to correct this entry's claim and the README's, relayed by the lead from the author of the security record, 2026-11-20
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-16
@@ -2012,6 +2013,59 @@ bumping. No session able to run the harness was available, and the static
 read together with a downstream guard that catches the relevant case was
 judged enough to raise the recorded version then. The runtime check came
 later (S200) and is why the claim above was corrected.
+
+## The sandbox-checked Claude Code version is raised to 2.1.330
+
+**Id:** 53782ad6-6178-4037-9760-a248de7eb122
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n; the version installed by the managed update on a runner host and that host's `maity runner check` warning that 2.1.330 was not checked, reported by ops, 2026-11-22; the probe (`cli/tests/claude_sandbox_probe.py`) from head a7f86c94 with `--only 1,5 --extra-lines` on that host, Claude Code 2.1.330 (the runner's own binary, sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb`, the npm linux-x64 build), maity 0.1.0a18, 2026-11-22: 50 PASS (1a 13, 1b 13, 5 24), 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, exit 0, recorded in card note nte-q2gnj0ktxk03; `maity runner check` from the same checkout on that host, 2026-11-22; the lead's decision to raise the version on that minimum run, 2026-11-22
+**See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-22
+**See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
+**Revisit when:** the full run (`--managed --user-settings`) on 2.1.330 is done (card tsk-3dyptc98pejt) or fails; the runner's managed update installs a version other than 2.1.330; the probe or a review shows a line that runs `maity` outside the sandbox other than as one plain call
+
+`capabilities.CHECKED` for `claude-code` is raised from 2.1.325 to
+2.1.330, the version the runners' managed update installed, on the
+probe's minimum run. What ran: points 1 and 5, that is a call with
+something in front of `maity` with the runner's permission rules (1a)
+and with Bash allowed behind the runner's hook and sandbox (1b), and the
+prefixed lines probed live from the private list (`--extra-lines`). All
+50 steps passed on positive evidence and were testable; only the two
+plain-call controls ran outside the sandbox, as they should. On the same
+host `maity runner check` reported the seccomp step for blocking Unix
+sockets as supported (machine x64, kernel seccomp filtering present), its
+headless probe as applying Unix socket blocking, the OS sandbox (bwrap,
+socat) and a user namespace inside bubblewrap as there, and the expected
+warning that the sandbox was checked with 2.1.325.
+
+Not run on 2.1.330: the full run with `--managed --user-settings`, so
+point 3 (the hook switches `disableAllHooks` and `allowManagedHooksOnly`
+in managed and user settings) and the other steps of points 2 and 4. It
+needs sudo and a window with no placement running on the host; card
+tsk-3dyptc98pejt holds it. What holds for a call with something in front
+of `maity` is still the runner's hook (63492c65). The supported machines
+of Claude Code's seccomp step were read again from the 2.1.330 binaries
+(c774c132).
+
+The probe ran from a7f86c94. The main merged after it moved every scratch
+under one holder of the workspaces root (tsk-c7zzd440x8pn), and the
+probe's launch follows that move since. The moved scratch is not one of
+the things points 1 and 5 check; this reading is the author's, not
+reviewed.
+
+**Reason:** the version check warned on every runner that took 2.1.330.
+The minimum run covers what can change between Claude Code versions: its
+sandbox for 1a and 1b, and the Unix sockets the private lines would use
+(point 5), all 50 passed, and the binary's hash matched the build that was
+read. Point 3 checks a settings path, and `maity runner check` already
+refuses a start where those settings switch the hook off.
+
+**Rejected alternatives:**
+- Holding the bump until the full run has passed: the lead's reason
+  above; the full run follows on its own card.
+- Refusing or pinning 2.1.330 on the runners: the probe passed, so there
+  is nothing to refuse it for.
 
 ## A checked Claude Code version is raised only on the probe's output from a signed-in machine
 
@@ -3733,8 +3787,9 @@ passes `maity wait --timeout N` instead (63492c65). Not run:
 the probe's managed-settings and user-settings steps (they change the
 files the container's own Claude Code reads), and its step for another
 clone's credential twice ended without the one call it asks for (the
-call that ran found the file hidden). `capabilities.CHECKED` stays at
-2.1.325 until a person re-checks this entry. The claim of 2fa61a18 and
+call that ran found the file hidden). `capabilities.CHECKED` stayed at
+2.1.325 until the probe's run on 2.1.330 (53782ad6); whether that run
+settles this entry is left to a person's re-check. The claim of 2fa61a18 and
 the README's sentence on the checked behaviour were corrected on order
 (S200): the hook, not the exclusion, holds a call with something in
 front of `maity`.
@@ -5505,7 +5560,7 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 **Type:** constraint
 **Status:** open
 **Evidence:** inferred
-**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20; the security delta review of #2063 (the settings read only at a start), 2026-11-20; the code review of #2063 and the review lead's decision (an ssh target's kept preflight forgotten while unreachable, the settings read before the probe), 2026-11-21
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20; the security delta review of #2063 (the settings read only at a start), 2026-11-20; the code review of #2063 and the review lead's decision (an ssh target's kept preflight forgotten while unreachable, the settings read before the probe), 2026-11-21; a read-only reading of Claude Code 2.1.330's binaries from npm for the move of `capabilities.CHECKED` to 2.1.330, 2026-11-22 (`@anthropic-ai/claude-code-linux-x64` and `-linux-arm64`, binary sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb` and `6016f90cac783e367fb1aa97c768a2efb94a0128a5b46b70fb3d8fcbbd9dd444`): the same supported machines (x64, arm64; ia32 named unsupported) and the same two debug lines as in 2.1.329; the `check` probe on 2.1.330 on an x64 runner host, which saw the step applied (Unix socket blocking), 2026-11-22
 **See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-20
 **Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; it is verified whether Claude Code reloads user settings during a session; each placement runs as its own OS user
 
