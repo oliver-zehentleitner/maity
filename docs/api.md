@@ -14216,8 +14216,9 @@ names no vendor (below), so a rule that asks for two vendors cannot
 count it.
 
 **The queue.** `GET …/tasks?kind=review&status=open` lists the open
-legs in board order (§6.4). Creating a review card, and every return of
-a leg to `open` (below), emits `review_queued` (§8.2) to the card's
+legs in board order (§6.4). Whenever a review leg enters `open` —
+created `open`, moved from `proposed`, or back by a lapse or a
+`release` (below) — the hub emits `review_queued` (§8.2) to the card's
 `needs` role (`role:<needs>`) and to the leg's creator, with `{task, pr, head, scope, needs,
 vendor}`. It wakes the listening instances of that role under each
 agent's wake rule (§8.2), and it never *waits for* an instance (§5.3),
@@ -14305,8 +14306,14 @@ every attached project (§2.4) refreshes it too. It is its own field,
 never derived from `lease_until`: a limit that extends the lease (§6.12)
 or a change of `policy.lease_seconds` moves `lease_until` and leaves
 `review.active_at` as it is. Like `last_seen_at`, it is written at most once every
-60 seconds, so a leg may stay held up to a minute longer than the policy
-says, never shorter. The worker reads it again inside the lapse's
+60 seconds, so it may be up to 60 s older than the latest renewing call;
+as §2.4 has every reader do, the worker counts the span from 60 seconds
+after `review.active_at`, the latest call it may stand for. A leg lapses
+for `inactive` once `now ≥ review.active_at + 60 s +
+review_lapse_minutes`: never before `review_lapse_minutes` have passed
+since the last renewing call, and at most a minute and one worker pass
+after. `review.active_at` is part of the leg's `review` object and is
+`null` while the leg has no holder. The worker reads it again inside the lapse's
 transaction, so a renewing call that lands during the pass keeps the
 leg. A review that runs longer than `review_lapse_minutes` without a
 renewing call loses its leg, even while the reviewer's `maity wait`
@@ -14420,8 +14427,9 @@ reader only through a `role:` token, which `review_queued` does for every
 reader except the leg's creator, who is named in its audience. So a
 reviewer whose client predates the queue must not wait with `--related`
 while it takes legs. From the queue's CLI release on,
-`--related` counts `review_queued` for a reader whose role is the event's
-`needs`.
+`--related` counts `review_queued` for a reader whose `role` or
+`role_base` is the event's `needs`, the same readers `role:<needs>`
+reaches and the claim admits.
 
 ## 7. Requests to humans (the inbox)
 
@@ -14962,8 +14970,9 @@ instance wakes nobody, and the event waits in every instance's next
 resume. A token `instance:` and the broadcast set (`all`) are not
 narrowed: they wake their instance, and every instance — except the
 holder's `instance:` token on `holder_stalled` and `claim_expired`
-(§6.5), which is not wake-relevant, so such an event never waits for
-the holder (§5.3). `claim_lease_expiring` (not built yet,
+(§6.5), and the former holder's on `review_claim_lapsed` (§6.32; not
+built yet, tsk-j8zf7dygh2ja), which is not wake-relevant, so such an
+event never waits for the holder (§5.3). `claim_lease_expiring` (not built yet,
 tsk-p55zyn4pz0wd) is the opposite: it is meant for the holder and
 wakes it, and waits for nobody (§5.3).
 
