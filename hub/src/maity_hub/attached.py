@@ -20,7 +20,7 @@ from sqlalchemy import Connection, Select, select
 from maity_hub import events, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.auth.caller import Caller, attachment_in, attachments
+from maity_hub.auth.caller import Caller, attachment_in, attachments, refuse_if_isolated
 from maity_hub.errors import ApiError, invalid, unauthenticated
 
 PROJECT_MAX = 300  # an `<owner>/<slug>`; anything longer names no project
@@ -33,14 +33,6 @@ def _live(conn: Connection, caller: Caller) -> list[Any]:
     return found
 
 
-def _refuse_isolated(attachment: Any) -> Any:
-    if attachment.isolated_since is not None:
-        from maity_hub import isolation
-
-        raise isolation.refusal(attachment)
-    return attachment
-
-
 def named(conn: Connection, caller: Caller, project: str) -> Any:
     """The live attachment in the project `project` names: one the instance is not attached
     to, or none at all (a project id or any other form than `<owner>/<slug>` names none), is
@@ -51,7 +43,7 @@ def named(conn: Connection, caller: Caller, project: str) -> Any:
     attachment = attachment_in(conn, caller, found.id) if found is not None else None
     if attachment is None:
         raise invalid({"project": "not_a_member"})
-    return _refuse_isolated(attachment)
+    return refuse_if_isolated(attachment)
 
 
 def every(conn: Connection, caller: Caller, project: str | None) -> list[Any]:
@@ -88,7 +80,7 @@ def _free(live: list[Any]) -> list[Any]:
         raise unauthenticated()
     found = [a for a in live if a.isolated_since is None]
     if not found:
-        _refuse_isolated(live[0])
+        refuse_if_isolated(live[0])
     return found
 
 
@@ -110,6 +102,7 @@ def free_held(conn: Connection, credential_id: str) -> list[Any]:
     is in a project not locked."""
     locked = {a.project_id for a in attachments(conn, credential_id)}
     held(conn, credential_id, locked)
+    # read again under the locks: an isolation or a detach that committed before them shows
     return _free([a for a in attachments(conn, credential_id) if a.project_id in locked])
 
 
@@ -127,14 +120,8 @@ def recheck(conn: Connection, caller: Caller, targets: list[Any], project: str |
         target = fresh.get(targets[0].membership_id)
         if target is None:
             raise invalid({"project": "not_a_member"})
-        return [_refuse_isolated(target)]
-    live = [fresh[a.membership_id] for a in targets if a.membership_id in fresh]
-    if not live:
-        raise unauthenticated()
-    kept = [a for a in live if a.isolated_since is None]
-    if not kept:
-        _refuse_isolated(live[0])
-    return kept
+        return [refuse_if_isolated(target)]
+    return _free([fresh[a.membership_id] for a in targets if a.membership_id in fresh])
 
 
 def one(conn: Connection, caller: Caller, project: str | None) -> Any:
@@ -145,7 +132,7 @@ def one(conn: Connection, caller: Caller, project: str | None) -> Any:
     live = _live(conn, caller)
     if len(live) > 1:
         raise invalid({"project": "required"}, "name the project: the instance is in several")
-    return _refuse_isolated(live[0])
+    return refuse_if_isolated(live[0])
 
 
 def single(conn: Connection, caller: Caller, project: str | None) -> bool:

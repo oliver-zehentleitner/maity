@@ -30,6 +30,7 @@ from maity_hub.auth.caller import (
     Caller,
     attachment_in,
     in_attachment,
+    refuse_if_isolated,
     session_alive,
     session_id_hash,
 )
@@ -190,11 +191,7 @@ def _attached_in(conn: Connection, caller: Caller, project_id: str) -> Caller:
     attachment = attachment_in(conn, caller, project_id)
     if attachment is None:
         raise not_found()
-    if attachment.isolated_since is not None:
-        from maity_hub import isolation
-
-        raise isolation.refusal(attachment)
-    return in_attachment(caller, attachment)
+    return in_attachment(caller, refuse_if_isolated(attachment))
 
 
 # --- the outsider of a public project (§2.3) ------------------------------------------------
