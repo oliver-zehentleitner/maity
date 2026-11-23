@@ -293,6 +293,21 @@ Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`.
 
 **Known limits:** a script that starts a browser without `start_hub` does not wait. There is no timeout: a run that hangs, rather than dies, holds up every later one, and only the line each minute names its pid.
 
+## A round with a mail catcher starts the catcher before it picks the hub's port
+
+**Id:** 65a9e67e-f11f-4dac-8a90-65c613fb7608
+**Type:** incident
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-vfdn98vwa0ym (web-e2e job 137502570723 on #2131: `http.client.BadStatusLine: 220 e2e catcher` in the mail factor round), found in review A2188, 2026-11-23; PR #2133 and its reviews A2195, A2196, A2197 and A2199
+
+`free_port` binds port 0, reads the port and closes it; the hub binds it later. A `MailCatcher` that also bound port 0 in between could get that very port, and the hub's health check was answered by SMTP. The second hub, the mail factor and the password reset rounds now make the catcher first, which listens from its constructor on, and pick the hub's port with `free_port(avoid={catcher.port})`. A port with a listener is never handed out by bind(0), so the collision is impossible, not rarer. `test_e2e_harness.py` forces the old collision and holds every function of `e2e.py` that makes a catcher to that order: an AST check per function that names the round, sees a catcher the round makes by name, bound by assignment, annotation or `with`, and flags one bound to no name, charges a `free_port(` in a nested def, lambda or default argument of the round to the round, and checks that it still finds the three rounds.
+
+**Rejected alternatives:** `start_hub` keeping its socket open and handing it to `maity-hub serve`: the hub takes `MAITY_BIND`, not a descriptor, so that is hub code; one allocator holding both ports: more code for the same guarantee.
+
+**Known limits:** the hub's own pick-then-bind window against an unrelated process on the machine stays; it fails loudly (the hub exits, `start_hub` raises), it is not answered silently. The guard reads one function at a time: a pick or a catcher made through a module-level helper (a function that calls `free_port(` or returns a catcher it named) is not tied to the round that calls it, and the positive check catches that only for the three known rounds. A call graph over `e2e.py` was rejected as more code than three rounds need; the rule is to call `free_port(` and `MailCatcher(` in the round itself. A catcher made in a lambda or a class body inside the round, or through another name for `MailCatcher`, is not seen either; the positive check catches that only for the three known rounds.
+
 ## The browser test waits on the exact value each layout check reads, never on a sibling rule or a fixed time
 
 **Id:** d5670c22-9262-46a1-8b89-1aa38d55be3d
@@ -352,3 +367,40 @@ The Why view mounts Keep the Why's views (timeline, graph, family, search, thoug
 **Reason:** the views are classic scripts on one global, like the dashboard's own, so a copy loads with no build step and from `file://` (bbf733b2). Committed files are what the hub serves and what review sees: a change to the code that runs in Maity's pages shows up as a diff in a Maity pull request, with the release it came from. The wheel is the published, hashed artefact of a Keep the Why release; the `dashboard-v*` tags carry no release assets.
 
 **Rejected alternatives:** a dependency of the hub's package on `keep-the-why-dashboard`, served from its installed directory: it brings the dashboard's Python server along, ties the hub's lock file to it, and leaves the dashboard's page (fixture mode, `file://`) without the files. Loading the files from a CDN or Keep the Why's site at run time: a second origin in the policy, and code that changes without a Maity review. Raw files from the repository at a tag: no published hash to check against. A release asset made for Maity: not published today; a Keep the Why change and release first, for no gain over the wheel's hash.
+
+## The shell's script and style files are held to a committed budget: their count exactly, their bytes with about 5 % room
+
+**Id:** 8d987126-7a4e-45b8-a704-2eee75ea87c2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xdn21ph67js9 (item 15 of the list in `context/performance.md`, the lead's go of 2026-11-18: a check in the web part of CI on the number and total size of the files the shell loads, against a committed budget a pull request raises on purpose); implementation session, 2026-11-20 (what is counted, the room left); `web/tools/shell_budget.py`, `web/tools/shell-budget.json`
+**Revisit when:** the dashboard gets a build step (item 11 of the performance list), or the shell starts loading a file from another origin
+**See:** https://github.com/oliver-zehentleitner/maity — f81ab39d-1f35-40e2-bf25-aea0fa6fb102 — as of 2026-11-20
+
+`make check` runs `tools/shell_budget.py`: it reads `index.html`'s `<script src>` and
+`<link rel="stylesheet">`, follows the stylesheets' `@import`, and fails when the files, their
+bytes as stored or their bytes gzipped (level 9) are over `tools/shell-budget.json`. A file
+from another origin, or one the shell names that is missing, fails as well, since it cannot be
+measured. Files a script loads later by a name it builds (another language's catalog, the
+fixtures, the Keep the Why views) are not counted. `files` is today's count, 105, and fewer
+files fail as well, so a pull request that drops one lowers it (review of #2039); the byte
+budgets are the 2026-11-20 sizes (2,858,060 and 824,626 gzipped) with about 5 % on top. A
+pull request that needs more raises the number in the JSON file, so the raise is in its diff.
+
+**Reason:** the cold load's cost is mostly these files (100–106 of them, item 1 of the
+performance list), and nothing stopped a pull request from adding to them unseen. A new file is
+a deliberate act, so its count is held exactly. The bytes change in nearly every web pull
+request; a budget equal to today's size would fail all of them and be raised by reflex, which
+would make the raise mean nothing. About 5 % of room lets ordinary growth through and stops
+a large addition (a vendored library, a big new view) at the review. Gzipped bytes are near
+what a browser receives since the hub compresses its answers; the bytes as stored are what
+the browser parses. The check is in `make check` because CI's web job runs that, for every
+change under `web/`.
+
+**Rejected alternatives:**
+- Budgets equal to today's bytes: every web pull request would raise them.
+- Counting what a browser actually fetches, in the e2e run: closer to the truth, but it
+  needs the slower Playwright job, and the count would move with the page the run opens; the
+  shell's own list is what a pull request changes.
+- Only the file count: a single large file, as a bundle or a vendored library, would pass.

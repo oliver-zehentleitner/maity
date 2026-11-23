@@ -583,3 +583,32 @@ def test_under_a_placement_a_clone_its_git_refuses_sends_nothing(
     assert result == cli.EXIT_ERROR, err
     assert "not sent: the review's cites cannot be checked: maity runs no git here" in err
     assert not [s for s in fake.seen[before:] if s.method == "POST"]
+
+
+def test_in_reply_to_sends_the_seq_of_the_review_order(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """`--in-reply-to SEQ` sends `in_reply_to` (§8.4, §13); the hub then wakes the instance
+    that sent the order, and checks the seq itself."""
+    (tmp_path / "review.json").write_text(json.dumps(REVIEW))
+    argv = _say("Approve.", "--review-file", str(tmp_path / "review.json"), "--in-reply-to", "41")
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["in_reply_to"] == 41
+    # Without the flag the body carries no `in_reply_to`.
+    assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == 0
+    assert "in_reply_to" not in fake.signed()[-1].json()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["say", "agt-a", "Hi", "--type", "notice", "--in-reply-to", "41"],
+        ["say", "Hi", "--type", "update", "--task", "tsk-0001", "--in-reply-to", "41"],
+    ],
+)
+def test_in_reply_to_goes_with_review_result_only(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "--in-reply-to goes with --type review_result only" in capsys.readouterr().err
+    assert not fake.signed()

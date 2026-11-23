@@ -36,6 +36,7 @@ from . import config
 from .asuser import RUNNER, AsUser
 from .scratchop import SCRATCH as SCRATCH  # defined there: it runs with `-I`
 from .scratchop import SCRATCH_ID as SCRATCH_ID
+from .scratchop import TMP_LEAF as TMP_LEAF
 from .scratchop import TOKEN as TOKEN
 
 # A project as the hub names it since the namespace (§6.25): `<owner>/<slug>`.
@@ -49,9 +50,33 @@ FOLDER_HARNESSES = ("antigravity",)
 REPO = "repo"
 FOLDER, CLONE = "folder", "clone"  # the layouts, as the record names them
 # The harnesses whose session is told its scratch and whose sandbox the runner opens for it
-# (adapters). agy's sandbox is not shown to write there yet; opencode keeps its file tools
-# inside the clone.
-SCRATCH_HARNESSES = ("stub", "claude-code", "codex")
+# (adapters). opencode keeps its file tools inside the clone, so it gets none.
+SCRATCH_HARNESSES = ("stub", "claude-code", "codex", "antigravity")
+# agy's sandbox makes the workspace (and the beside-clone `.scratch`) read-only, so its scratch
+# cannot sit beside the clone as the others' do; it goes under `/tmp`, the host-shared writable
+# location, in a per-user parent `maity-scratch-<uid>` owned 0700 by the user agy runs as, with
+# a per-placement leaf inside it (scratchop.tmp_make, cli/context/runner.md).
+TMP_SCRATCH_HARNESSES = ("antigravity",)
+# The harnesses whose sandbox is told to hide the agy per-user `/tmp` scratch parent from a
+# placement that does not own it (claude-code's denyRead/denyWrite, codex's `none`), so one
+# placement of a user cannot reach another placement's scratch under that parent (adapters). Only
+# these placements are given the parent and have the runner pre-create it (supervisor): agy owns
+# it and makes its own, while opencode and stub open no such rule and are given nothing to hide.
+TMP_SCRATCH_PARENT_HIDERS = ("claude-code", "codex")
+# The hiders that get a short TMPDIR of their own, `tmp` in a leaf under that hidden parent,
+# where the scratch's `tmp` leaves no room for a socket (supervisor._tmpdir), the leaf's `tmp`
+# re-opened in their sandbox for them alone (adapters). Codex since tsk-0zb9mgzmbwn4 (Codex
+# 0.171.0 writes it, live 2026-11-20). Claude Code since tsk-k7svzz2p4v7y: its sandbox writes the
+# re-opened `tmp` once the parent is denied for reading only, and a sibling leaf stays out of
+# reach under the empty mount of that read deny (Claude Code 2.1.329, live 2026-11-21, probe P4);
+# Claude Code's own temp files and socket go in the leaf itself, beside the re-opened `tmp`
+# (adapters.own_tmp_env).
+OWN_TMPDIR_HARNESSES = ("codex", "claude-code")
+# Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`
+# carries against other host users is met in scratchop.tmp_make (a per-user parent owned 0700,
+# owner-checked, no-follow); it is not met against other placements of the same host user, a
+# residual the owner accepts until per-placement agent_user separation (cli/context/runner.md).
+TMP_SCRATCH_ROOT = Path("/tmp")  # noqa: S108
 _lock = threading.Lock()
 
 
@@ -113,14 +138,27 @@ class Workspace:
         return self.repo / ".git" / "maity" / state.CREDENTIAL_FILE
 
 
-def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> Path:
+def scratch_of(
+    root: Path, project: str, placement_id: str, host: str = "", former: bool = False
+) -> Path:
     """The placement's scratch under `root` (§15.5), built from validated tokens and kept
-    inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
-    to write, and the runner reaches it only from the root down (scratchop)."""
-    if not (TOKEN.match(project) and SCRATCH_ID.match(placement_id)):
+    inside `root` as a clone's path is (locate): `<root>/.scratch/<project>/<placement id>`,
+    under the one holder every Claude Code sandbox denies (scratch_holder_of,
+    tsk-c7zzd440x8pn). `former`: the shape before it, `<root>/<project>/.scratch/<placement id>`,
+    which a host whose `maity` has no holder op keeps, and which is still measured and removed
+    where a placement made it. Not resolved: what is there is the agents' to write, and the
+    runner reaches it only from the root down (scratchop)."""
+    if not (TOKEN.fullmatch(project) and SCRATCH_ID.fullmatch(placement_id)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     base = root if host else root.resolve()
-    return base / project / SCRATCH / placement_id
+    if former:
+        return base / project / SCRATCH / placement_id
+    return base / SCRATCH / project / placement_id
+
+
+def scratch_holder_of(root: Path, host: str = "") -> Path:
+    """The holder of every scratch under `root`, `<root>/.scratch` (scratch_of)."""
+    return (root if host else root.resolve()) / SCRATCH
 
 
 def uses_folder(harness_id: str) -> bool:
@@ -128,11 +166,41 @@ def uses_folder(harness_id: str) -> bool:
     return harness_id in FOLDER_HARNESSES
 
 
+def scratch_in_tmp(harness_id: str) -> bool:
+    """Whether a placement's scratch sits under `/tmp` (agy), not beside the clone: its sandbox
+    makes the beside-clone `.scratch` read-only, so the scratch goes to `/tmp` instead."""
+    return harness_id in TMP_SCRATCH_HARNESSES
+
+
+def hides_tmp_scratch_parent(harness_id: str) -> bool:
+    """Whether this harness's sandbox hides the agy per-user `/tmp` scratch parent (the deny/none
+    path, TMP_SCRATCH_PARENT_HIDERS). Only such a placement is given the parent to hide and has
+    the runner pre-create it; a harness that opens no such rule is given and pre-creates nothing."""
+    return harness_id in TMP_SCRATCH_PARENT_HIDERS
+
+
+def tmp_scratch_of(uid: int, leaf: str) -> Path:
+    """The placement's scratch under `/tmp` for a harness whose sandbox cannot write the
+    beside-clone `.scratch` (agy): `<TMP_SCRATCH_ROOT resolved>/maity-scratch-<uid>/<leaf>`,
+    owned by `uid`, the user the agents run as. `leaf` is a random name the runner chose for
+    this placement (not the placement id), recorded so the session and the supervisor find the
+    same scratch again; it keeps a user's own placements from colliding and is not a secret. The
+    per-user parent, owned 0700 by `uid`, keeps the scratch from other host users; the leaf is
+    made fresh per placement and checked owned by `uid` at every level (scratchop.tmp_make). The
+    root is resolved — unlike the beside-clone root, which the runner only ever reaches from the
+    root down, this path is also recorded for the session's own `--review-file` read, which walks
+    it from `/` refusing any symlink on the way, so a `/tmp` that is itself a link (macOS) must be
+    resolved before it is recorded."""
+    if not TMP_LEAF.fullmatch(leaf):
+        raise Refused("workspace_in_use", "workspace_unrecorded")
+    return TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{uid}" / leaf
+
+
 def locate(root: Path, project: str, clone: str, host: str = "", folder: bool = False) -> Workspace:
     """The clone's path under `root` (for `folder`, the workspace folder's). On an ssh host
     `root` is a remote path, validated by the configuration and never resolved here; the
     tokens cannot leave it either way."""
-    if not (TOKEN.match(project) and TOKEN.match(clone)):
+    if not (TOKEN.fullmatch(project) and TOKEN.fullmatch(clone)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     if host:
         return Workspace(root / project / clone, project, clone, host, folder)

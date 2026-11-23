@@ -204,6 +204,32 @@ table, `membership_area`, `request_option`. It would let the database
 filter audiences and areas, at the cost of a join on every read and a
 multi-row write for every event, for a volume where the scan is cheap.
 
+**2026-11-18, a human's stars (card tsk-kqn8zhptf06k, §5.1 "Stars"):** `human.starred` is
+one nullable JSON list of project ids in the order starred, as `human.start_tabs` is: the
+hub reads and writes it whole (`PATCH /me` sends the whole list) and no server query asks
+"who starred this project" — stars are private, with no count, event or notice. A star
+whose project is not public now stays in the list, hidden: `stars.visible` leaves it out
+of `GET /me` and the export, and `stars.checked` puts it back into every `PATCH` after the
+visible entry it followed; when the body drops that entry, after the nearest earlier
+visible entry the body keeps, first when it keeps none (a gap of the contract, filled in
+§5.1). `/me` is polled every 60 s per tab, so whether the stars are public is asked for
+all of them at once (`public_projects.served_among`, at most five statements, the same
+rule as `served`), never per project; `test_stars.py` counts the statements for two stars
+and for six. The points the contract left open, as the lead ruled them: an id that names
+no project is `not_public`, so the answer does not say whether a private one exists; a
+member is an active membership as `access` reads it, so a removed member may star the
+project again; the hub deletes no project, so a project gone is only filtered out on the
+read; and fail closed (the lead, 2026-11-18): with `MAITY_PUBLIC_PAGES` off nothing is
+public for an outsider, so `public_projects.public_for_outsiders` answers none, a star is
+`not_public` and a stored one is hidden, the rule the outsider read will share. A
+membership drops its star where it is made (`invitations.admit`, which every
+accepted invitation goes through, and `org_projects.keep_owner`); a project's creation
+needs no hook, since a new project cannot
+be starred yet. The export leaves hidden entries out: its full name is the current one,
+and it would name a project that is private now. Rejected: a `star` table (human,
+project, position) — it would let the database count and filter stars, which no server
+query needs, at the cost of a multi-row rewrite on every `PATCH` and a join on every poll.
+
 ## Timestamps: aware UTC in Python, naive UTC with microseconds in the database
 
 **Id:** f6041871-9416-4565-b3dc-c5af45c4528b
@@ -1085,6 +1111,60 @@ not show the mistake, and `hub-mariadb` runs only on `main`.
 **Rejected alternatives:** none in contention; the type has to come from somewhere other than the
 reflection.
 
+## A name MySQL or MariaDB reserve is quoted with `quote=True`, not renamed
+
+**Id:** e70b5933-72f5-4951-b024-b92fe22dc521
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); a check of the foreign-key forms on SQLAlchemy 2.0.36 and 2.1.6, 2026-11-20; the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
+**Revisit when:** SQLAlchemy's MySQL/MariaDB reserved lists gain `vector` (`test_sqlalchemy_still_lacks_vector` fails), or the hub starts writing raw SQL against `notification_position`
+
+MariaDB 11.7 made `vector` a reserved word, and `notification_position` has a column of that name.
+SQLAlchemy quotes an identifier only when its dialect's reserved list holds it, and 2.1.6 lacks
+`vector`: migration `0034` sent `vector JSON NOT NULL` unquoted, so a new install on MariaDB 11.7+
+stopped there, and on a server upgraded under an existing hub the `INSERT` of a stored position
+failed (the `SELECT` survives, a reserved word after a period needs no quotes). The column carries
+`quote=True` in `tables.py` and in `0034`; the edit to the shipped revision changes only how its DDL
+is spelled, not what it creates, so its id stays and existing databases are untouched. The schema
+already depended on SQLAlchemy's quoting for `before`, `body`, `by`, `limit`, `rank`, `role` and
+`trigger`; `vector` is one the dialect did not know yet. `test_reserved_words.py` keeps a list of the
+words the servers reserve newer than SQLAlchemy's lists and fails, on every engine and without a
+server, on such a name without the flag, in the tables and in the revisions.
+
+**Reason:** a rename still needs the same edit to `0034`, because a new install runs its `CREATE
+TABLE` before any rename could, so it is the quoting plus a migration chained on main's head, a
+`CHANGE COLUMN` on MariaDB where the JSON column's `json_valid` CHECK names the column, and the old
+name quoted again in both directions. What it would buy, SQL written by hand without quotes, matters
+little in a hub whose rule is `op.*` and Core only.
+
+**Rejected alternatives:**
+- Renaming the column with a migration that keeps the data: more steps for the same edit to `0034`
+  (above).
+- Waiting for SQLAlchemy to list the word: an operator on 11.7+ could not install the hub meanwhile,
+  and the next word would surprise the same way.
+- A line-based pattern over the revisions instead of the `ast` walk (the first version of the test):
+  it misread calls over several lines and missed renames; found in review.
+
+**Known limit:** a table read with `autoload_with` gets plain names without the flag, so a revision
+that reflects `notification_position` and writes `vector` names that column itself, as with the JSON
+type above (inferred from how reflection builds its columns; not tested). The list in the test is
+kept by hand from the vendors' reserved-word pages. The revisions are checked by an `ast` walk over
+the calls that name tables, columns, indexes and constraints; which calls, and what each quoted form
+looks like, are in `hub/tests/test_reserved_words.py` and in `hub/README.md`, Migrations. Not
+judged: a name that is no string literal (a `Column` object included), the column lists of a key or
+an index other than a foreign key's target (`ForeignKeyConstraint`'s `columns`, the positional
+columns of `PrimaryKeyConstraint`, `UniqueConstraint` and `Index`, `create_foreign_key`'s
+`local_cols`/`remote_cols`, `create_primary_key`'s columns), the schema part of a three-part
+foreign-key target, and raw SQL in `op.execute`. A foreign key's target carries no quote of its
+own: the reference takes the referenced column's flag (checked on SQLAlchemy 2.0.36 and 2.1.6,
+2026-11-20). A string target `"t.vector"` comes out quoted only when it resolves to a column with
+`quote=True`, `quoted_name` or not. A tuple of `quoted_name` parts aimed at a column without the flag
+comes out plain on 2.1.6, and 2.0.36, the floor in `pyproject.toml`, refuses the tuple with an
+`ArgumentError` (the review of #2025 had reported it written plain there). The `Column` object
+carries the flag on both versions, so `hub/README.md` names that one.
+
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
 **Id:** e7f302f4-ee65-49f6-bc75-849bacb94ba8
@@ -1536,3 +1616,62 @@ loop the statement's time, which the loop-lag guard watches only for the hot fam
 - A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
   busy timeout per run and shows only the families it calls; the scan covers every route at no
   cost.
+
+## An IN list over many ids is cut into chunks by one leaf module, `chunks`
+
+**Id:** 63ffb6dc-48cb-400d-8692-5466fb7de939
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jttknmqzghw9 (clean-up audit round 5, batch 1, finding 2, 2026-11-22): the bound written four times (`export.CHUNK`, `public_projects.BATCH`, `reports.PATHS_PER_QUERY`, `loadtest.CHUNK`), held together by "mirrored" comments; `maity_hub.chunks`
+**See:** public-pages.md#whether-a-project-has-a-page-is-one-rule-over-rows-served-judges-the-row-it-is-given — 1def6e81-4be2-4e03-8bd7-4426d59407e5 — as of 2026-11-22
+**Revisit when:** a read needs a bound of its own other than `CHUNK`, or an engine's limit on bound parameters falls near 500
+
+A read that names a list of ids or paths whose length nothing bounds asks in IN lists of at most
+`chunks.CHUNK` (500) values: `chunks.chunks(values)` yields them without repeats, sorted, in lists of
+that size. The export, the public lists, the reporter's pages (`reports._pages_at`), the load test's
+purge and `namespace.full_names` use it; `namespace.full_names` batches itself, so every list of full
+names is bounded and `public_projects.full_names`, which batched it for the public lists, is gone.
+`CHUNK` is read at each call, so a test lowers it once (`monkeypatch.setattr(chunks, "CHUNK", 2)`)
+for every read on the path it drives.
+
+**Reason:** `chunks` imports nothing of the hub, so every module may use it: the copies existed
+because `export` imports `reports`, which imports `moderation`, which imports `public_projects`, and
+each later module could not import the first one's bound. One value cannot drift apart from its
+mirrors.
+
+**Rejected alternatives:**
+- Keeping a bound per module, each pointing at the shared value, so a test could lower one read's
+  bound alone: the tests that lower it (`test_public_lists_cost`, `test_reports_public`) check the
+  answer and the statements of a whole list, which every read on that path should cut alike.
+- Moving the bound into `export` or `namespace`: both import modules that would then import them
+  back.
+
+## A revocation reads the instance's attachments once, under its project locks
+
+**Id:** 17af5e56-276a-4ad3-b7a7-2fa53d574611
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** audit R5 batch 2, finding 3 (card tsk-eb06q8ef852k, PR #2131); review A2188 checked the lock order and the reads on PostgreSQL 16
+**Revisit when:** a step between the read and its uses starts writing an attachment or a membership column the read keeps, or `revoke` stops locking its projects first
+
+`auth.revocation.revoke` locks every project it writes in (`projects_of`,
+sorted, `lock_projects`), then reads the instance's live attachments with
+their memberships once (`_attached`, built on `instances.live_attachments`),
+before its own UPDATE of the credential. The overlap refresh, the lead's end
+(`_lead_revoked`) and `holder_stalled.revoked` all take those rows.
+
+**Reason:** the writes between the read and its uses (the credential, its
+session, the overlaps in `environment_overlap`) change no attachment and no
+membership column the rows hold, so one read under the locks answers all
+three. `live_attachments` keeps revoked credentials because the lead's end
+runs for a credential that was revoked already, not because the read comes
+after the UPDATE: it no longer does.
+
+**Rejected alternatives:**
+- One read per step, as before: four reads of the same rows in one
+  transaction (`projects_of`, the refresh loop, `_lead_revoked`,
+  `holder_stalled`).
+- Leaving revoked credentials out of `live_attachments`, as `attached_now()`
+  does: the lead's end of a credential revoked already would find nothing.

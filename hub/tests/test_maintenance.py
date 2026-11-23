@@ -585,14 +585,15 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
     assert made_org.status_code == 201, made_org.text
     org_id = made_org.json()["id"]
     with migrated.begin() as conn:
+        attachment = t.instance_attachment
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == bot.credential_id)
+            update(attachment)
+            .where(attachment.c.credential_id == bot.credential_id)
             .values(ktw_acknowledge_by=inside)
         )
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == confirmed.credential_id)
+            update(attachment)
+            .where(attachment.c.credential_id == confirmed.credential_id)
             .values(ktw_acknowledge_by=inside, ktw_acknowledged_at=START)
         )
         for status, takeover_id in (("open", "tko-open"), ("released", "tko-closed")):
@@ -669,12 +670,10 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
             found: datetime = conn.execute(select(column).where(*where)).scalar_one()
             return found.astimezone(UTC)
 
-        assert one(t.credential.c.ktw_acknowledge_by, t.credential.c.id == bot.credential_id) == (
-            later
-        )
-        confirmed_by = one(
-            t.credential.c.ktw_acknowledge_by, t.credential.c.id == confirmed.credential_id
-        )
+        by = t.instance_attachment.c.ktw_acknowledge_by
+        of = t.instance_attachment.c.credential_id
+        assert one(by, of == bot.credential_id) == later
+        confirmed_by = one(by, of == confirmed.credential_id)
         assert confirmed_by == inside  # confirmed already: nothing to move
         assert one(t.takeover.c.window_ends_at, t.takeover.c.id == "tko-open") == later
         assert one(t.takeover.c.window_ends_at, t.takeover.c.id == "tko-closed") == inside

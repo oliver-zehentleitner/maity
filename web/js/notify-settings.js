@@ -772,7 +772,8 @@ window.Maity = window.Maity || {};
     const path = ctx.base + "/me/settings";
     let mine;
     try {
-      mine = await M.api.get(path);
+      // Started by the drawing beside the context where it is fresh (js/app.js, mineAhead).
+      mine = await ((ctx.ahead && ctx.ahead(path)) || M.api.get(path));
     } catch (err) {
       // The absence does not depend on this read: it stays.
       append(root, h("p", { class: "send-status failed" }, M.t("notify.read_failed", { reason: err.message })), extra || null);

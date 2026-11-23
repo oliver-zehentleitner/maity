@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import timedelta
 from typing import Any
@@ -264,6 +265,62 @@ def test_logout_ends_the_session(make_client: ClientFactory, owner: str) -> None
     assert stolen.get("/api/v1/me").headers["Maity-Error"] == "unauthenticated"
 
 
+# Raw bytes, since the client encodes a str header as ASCII. Starlette reads the cookie header as
+# latin-1, so both arrive as a non-ASCII `maity_session`: UTF-8 "é" as "Ã©", latin-1 "é" as "é".
+NON_ASCII_SESSIONS = [b"maity_session=s\xc3\xa9", b"maity_session=s\xe9"]
+
+
+@pytest.mark.parametrize("cookie", NON_ASCII_SESSIONS)
+@pytest.mark.parametrize(
+    ("method", "path"), [("GET", "/api/v1/me"), ("POST", "/api/v1/auth/logout")]
+)
+def test_a_non_ascii_session_cookie_is_unauthenticated(
+    make_client: ClientFactory, owner: str, cookie: bytes, method: str, path: str
+) -> None:
+    headers: Any = {"Cookie": cookie}
+    response = make_client().request(method, path, headers=headers)
+    assert response.status_code == 401, response.text
+    assert response.headers["Maity-Error"] == "unauthenticated"
+    assert response.json()["error"]["code"] == "unauthenticated"
+
+
+@pytest.mark.parametrize("cookie", NON_ASCII_SESSIONS)
+def test_a_non_ascii_session_cookie_does_not_stop_a_login(
+    make_client: ClientFactory, owner: str, cookie: bytes
+) -> None:
+    headers: Any = {"Cookie": cookie}  # the presented session a login ends first (§2.6.5)
+    response = factory.login_handle(make_client(), "maintainer", headers=headers)
+    assert response.status_code == 200, response.text
+
+
+# A device cookie value as `sessions.remember_device` makes it (`secrets.token_urlsafe`).
+DEVICE_VALUE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+KEPT_DEVICE = "Kept-device_1"
+# Raw bytes, as above. Starlette unquotes a quoted cookie: `\000` becomes NUL, `\012` LF.
+MALFORMED_DEVICES = [
+    b'maity_device="' + KEPT_DEVICE.encode() + b'.a\\000b"',
+    b'maity_device="' + KEPT_DEVICE.encode() + b'.a\\012b"',
+    b"maity_device=" + KEPT_DEVICE.encode() + b".a\tb",
+    b"maity_device=" + KEPT_DEVICE.encode() + b".d\xc3\xa9",
+    b'maity_device="' + KEPT_DEVICE.encode() + b'"',
+]
+
+
+@pytest.mark.parametrize("cookie", MALFORMED_DEVICES)
+def test_a_malformed_device_cookie_keeps_only_token_values(
+    make_client: ClientFactory, owner: str, cookie: bytes
+) -> None:
+    headers: Any = {"Cookie": cookie}
+    response = factory.login_handle(make_client(), "maintainer", headers=headers)
+    assert response.status_code == 200, response.text
+    device = next(
+        c for c in response.headers.get_list("set-cookie") if c.startswith("maity_device=")
+    )
+    values = device.split(";")[0].removeprefix("maity_device=").split(".")
+    assert all(DEVICE_VALUE.fullmatch(v) for v in values), device
+    assert values[0] == KEPT_DEVICE and len(values) == 2  # the bad one dropped, a new one added
+
+
 def test_a_session_expires_after_14_idle_days(make_client: ClientFactory, owner: str) -> None:
     client = make_client()
     _login(client)
@@ -303,6 +360,51 @@ def test_a_session_expires_30_days_after_login_whatever_the_activity(
         assert client.get("/api/v1/me").status_code == 200
     clock.set_source(lambda: start + timedelta(days=30, seconds=1))
     assert client.get("/api/v1/me").headers["Maity-Error"] == "unauthenticated"
+
+
+@pytest.mark.parametrize(
+    ("seen", "expires", "ended", "alive"),
+    [
+        (timedelta(0), timedelta(days=1), False, True),
+        (timedelta(0), timedelta(days=1), True, False),
+        (timedelta(0), timedelta(0), False, False),
+        (timedelta(0), timedelta(seconds=1), False, True),
+        # The idle time runs from the latest call the stored time may stand for (`SEEN_EVERY`).
+        (caller_module.SESSION_IDLE + timedelta(seconds=60), timedelta(days=1), False, False),
+        (caller_module.SESSION_IDLE + timedelta(seconds=59), timedelta(days=1), False, True),
+    ],
+)
+def test_the_live_session_clause_reads_as_session_alive(
+    make_client: ClientFactory,
+    owner: str,
+    migrated: Engine,
+    seen: timedelta,
+    expires: timedelta,
+    ended: bool,
+    alive: bool,
+) -> None:
+    # The SQL that selects live sessions (the presence write, the mailer's hold, the address
+    # sweep) and the Python check every call makes agree, at both edges (§2.4).
+    _login(make_client())
+    now = clock.now()
+    session = t.human_session.c
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(session.human_id == owner)
+            .values(
+                last_seen_at=now - seen,
+                expires_at=now + expires,
+                ended_at=now if ended else None,
+            )
+        )
+        row = conn.execute(select(t.human_session).where(session.human_id == owner)).one()
+        clause = caller_module.live_session_clause(now)
+        found = conn.execute(
+            select(session.id_hash).where(session.human_id == owner, clause)
+        ).first()
+    assert (row.ended_at is None and caller_module.session_alive(row, now)) is alive
+    assert (found is not None) is alive
 
 
 def test_every_login_issues_a_fresh_session(make_client: ClientFactory, owner: str) -> None:

@@ -327,9 +327,315 @@ window.Maity = window.Maity || {};
   function me() {
     return fixtures()["me.json"];
   }
+  // §5.1 "Stars": the public projects of others the fixture caller can star, besides any fixture
+  // project.json with its page on (none of the caller's own is starrable: they are memberships).
+  // `stranger/tool` is the smoke test's public non-member project (tools/smoke.js, the visitor).
+  // `stranger/gadget` is a second one, starred beside it by the smoke test (two stars at once);
+  // it is never opened, so it has no outsider read of its own.
+  const OUTSIDE_PUBLIC = [{ id: "prj-tool00000001", full_name: "stranger/tool", name: "Tool", public_page: "on", state: "build" },
+    { id: "prj-gadget000001", full_name: "stranger/gadget", name: "Gadget", public_page: "on", state: "build" }];
+  // The bound (`max_starred_per_human`, default 100), set lower by the smoke test for `too_many`.
+  const fixtureStarred = { max: 100 };
+  // The stored ids, hidden ones included, in the order starred; from me.json's view at first.
+  let starredIds = null;
+  const starredStored = () => starredIds || (starredIds = (me().member.starred || []).map((s) => s.id));
+  function starrable() {
+    const views = Object.keys(fixtures()).filter((k) => k.endsWith("/project.json")).map((k) => fixtures()[k]);
+    return OUTSIDE_PUBLIC.concat(views).filter((p) => p && p.id && p.public_page === "on" && p.state !== "archived");
+  }
+  // The entries a read shows: public now and no membership (hub/stars.py `visible`).
+  function starredShown(ids) {
+    const mine = me().projects.map((p) => p.id);
+    const open = new Map(starrable().map((p) => [p.id, p.full_name]));
+    return ids.filter((id) => !mine.includes(id) && open.has(id)).map((id) => ({ id, full_name: open.get(id) }));
+  }
+  function starredChecked(given, path) {
+    const refuse = (why, extra) => fail(400, "invalid", "the request does not validate", path, Object.assign({ fields: { starred: why } }, extra || {}));
+    if (given === null || given === undefined) refuse("required");
+    if (!Array.isArray(given) || given.some((id) => typeof id !== "string")) refuse("list_type");
+    if (new Set(given).size !== given.length) refuse("duplicate");
+    const stored = starredStored();
+    const shown = new Set(starredShown(stored).map((s) => s.id));
+    const hidden = stored.length - shown.size;
+    if (given.length > stored.length && given.length > fixtureStarred.max) refuse("too_many", { hidden });
+    if (given.some((id) => me().projects.some((p) => p.id === id))) refuse("member");
+    const open = new Set(starredShown(given).map((s) => s.id));
+    if (given.some((id) => !open.has(id))) refuse("not_public");
+    // Each hidden entry right after the visible entry it followed, or first (stars.py `_placed`).
+    const after = new Map();
+    let anchor = null;
+    stored.forEach((id) => {
+      if (shown.has(id)) { if (given.includes(id)) anchor = id; } else after.set(anchor, (after.get(anchor) || []).concat(id));
+    });
+    const placed = (after.get(null) || []).slice();
+    given.forEach((id) => { placed.push(id); placed.push(...(after.get(id) || [])); });
+    if (given.some((id) => !stored.includes(id)) && placed.length > fixtureStarred.max) refuse("too_many", { hidden });
+    return placed;
+  }
+
+  // ---- a public project read from outside (docs/api.md §2.3, the hub's #2001) ----------------
+  // `stranger/tool` (OUTSIDE_PUBLIC), read by the fixture caller, a signed-in human who is no
+  // member of it: the dashboard draws its member views from the member routes an outsider reads,
+  // and this fixture answers them as #2001 does (hub/src/maity_hub/access.py `OUTSIDE_READS`). Any
+  // other route of the project answers `not_found` before its body is read (access.py `gate`); an
+  // agent's call is `not_found` too, since only a dashboard session of a human reads from outside.
+  // The data is kept in the member shapes and cut on the way out, as the hub cuts them.
+  const OUTSIDE_TOOL = {
+    project: {
+      id: "prj-tool00000001", slug: "tool", owner: { id: "hum-sam", handle: "stranger" }, full_name: "stranger/tool", aliases: [], name: "Tool",
+      state: "build", released_at: null, state_note: "a member's note", state_changed_at: "2026-11-01T09:00:00Z",
+      repository: { url: "https://github.com/stranger/tool", default_branch: "main", forge: "github", probe_via: "instance" },
+      repository_public: false, public_page: "on", public_about: "A tool for tools.",
+      links: { issues: "https://github.com/stranger/tool/issues", wiki: null, discussions: null, chat: "https://chat.example/tool" },
+      memory: { provider: "keep-the-why" }, policy: { preset: "solo", done_authority: "reviewer", badge: "off" }, absence: null,
+      settings: { language: "en", restricted_access: null, release_checklist: ["a member's checklist"] },
+      rules_version: 3, created_at: "2026-10-01T09:00:00Z",
+      logo: { available: false, source: null, etag: null }, banner: { available: false, source: null, etag: null },
+    },
+    members: [
+      // `page_served`: the fixture's stand-in for whether Sam's own page at /sam is served (§16.9),
+      // which decides a stranger's report by handle (outsideReportTarget); never in a view.
+      { id: "hum-sam", kind: "human", handle: "sam", display_name: "Sam", page_served: true, trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [],
+        expert_for: null, expert_sources: [], last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-01T09:00:00Z", placements: [],
+        // §6.2's counts as a member reads them; an outsider gets `members` and `instances` alone.
+        manages: { direct: { members: 2, instances: 1, online: 1, dormant: 0 }, total: { members: 3, instances: 1, online: 1, dormant: 0 } } },
+      { id: "agt-tool-bot", kind: "agent", bridges: [], bridging_for: [], handle: "bot", name: "sam/bot", display_name: "Bot one", owner_id: "hum-sam",
+        owner: { handle: "sam", display_name: "Sam" }, trust: "member", role: "reviewer", reports_to: "hum-sam", areas: ["src/"], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Claude Code", model: "model-one",
+        session: { id: "ses-tool-1", harness: "Claude Code", model: "model-one", started_at: "2026-11-19T07:00:00Z", listening: true, not_listening_since: null },
+        instances: [{ id: "k7mq", label: "k7mq", presence: "online", last_seen_at: "2026-11-19T08:00:00Z", session: { id: "ses-tool-1", listening: true } }],
+        last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-02T09:00:00Z", placements: [],
+        isolated: null, isolation_windows: [{ from_seq: 10, to_seq: 20 }], briefing: "a member's briefing", owner_preferences: false, credentials: { active: 1 } },
+      // The reader's own agent here: the reader is still no member, and reads it as any outsider does
+      // (§2.3). It reports to the isolated agent below, an edge the outsider does not read.
+      { id: "agt-tool-mine", kind: "agent", bridges: [], bridging_for: [], handle: "helper", name: "maintainer/helper", display_name: "Helper", owner_id: "hum-maintainer",
+        owner: { handle: "maintainer", display_name: "Maintainer" }, trust: "member", role: "coder", reports_to: "agt-tool-quiet", cross_owner: true, areas: [], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Codex", model: "model-two", last_seen_at: "2026-11-18T08:00:00Z", presence: "offline", paused: null,
+        joined_at: "2026-10-03T09:00:00Z", placements: [], briefing: null, owner_preferences: true, credentials: { active: 1 } },
+      // An isolated agent: the public page does not name it, so no list an outsider reads has it,
+      // its own route is `not_found` to them, and no member names it in `reports_to` (§2.3).
+      { id: "agt-tool-quiet", kind: "agent", bridges: [], bridging_for: [], handle: "quiet", name: "sam/quiet", display_name: "A quiet agent", owner_id: "hum-sam",
+        owner: { handle: "sam", display_name: "Sam" }, trust: "member", role: "manager", reports_to: "hum-sam", areas: [], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Codex", model: "model-two", last_seen_at: "2026-11-18T08:00:00Z", presence: "offline", paused: null,
+        joined_at: "2026-10-04T09:00:00Z", placements: [], isolated: { since: "2026-11-18T09:00:00Z", reason: "a member's reason" }, credentials: { active: 1 } },
+    ],
+    // The cards under a moderation hold (§16.8): hidden from an outsider whatever their status.
+    held: ["tsk-t005"],
+    tasks: [
+      { id: "tsk-t001", watching: false, parent: null, related: [], kind: "task", title: "Parse the config file", body: "Read `tool.toml`; ask @bot.", mentions: [],
+        label: "feature", status: "open", area: "src/", created_by: "hum-sam", assigned_to: "agt-tool-bot", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, notes: { open: 1, total: 1 },
+        created_at: "2026-11-10T09:00:00Z", updated_at: "2026-11-18T09:00:00Z", closed_at: null },
+      { id: "tsk-t002", watching: false, parent: null, related: ["tsk-t005"], kind: "task", title: "Write the docs", body: "", mentions: [],
+        label: "chore", status: "in_progress", area: "docs/", created_by: "hum-sam", assigned_to: "hum-sam",
+        claim: { holder: "hum-sam", session_id: null, since: "2026-11-18T10:00:00Z", lease_until: "2026-11-30T10:00:00Z", expired: false },
+        checkpoint: null, depends_on: ["tsk-t001"], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-11T09:00:00Z", updated_at: "2026-11-18T10:00:00Z", closed_at: null },
+      { id: "tsk-t003", watching: false, parent: null, related: [], kind: "task", title: "Set up the repository", body: "", mentions: [],
+        label: "chore", status: "done", area: "/", created_by: "hum-sam", assigned_to: "hum-sam", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-01T09:00:00Z", updated_at: "2026-11-17T09:00:00Z", closed_at: "2026-11-17T09:00:00Z" },
+      // Not done and labelled security: in no list an outsider reads, `not_found` on its own routes (§2.3).
+      { id: "tsk-t004", watching: false, parent: null, related: [], kind: "task", title: "A hidden security fix", body: "the hole, in detail", mentions: [],
+        label: "Security", status: "in_progress", area: "src/", created_by: "hum-sam", assigned_to: "agt-tool-bot",
+        claim: { holder: "agt-tool-bot", session_id: "ses-tool-1", since: "2026-11-18T11:00:00Z", lease_until: "2026-11-19T11:00:00Z", expired: false },
+        checkpoint: null, depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-18T11:00:00Z", updated_at: "2026-11-18T11:00:00Z", closed_at: null },
+      // Done, under a moderation hold (`held` above): hidden from an outsider as the security card is.
+      { id: "tsk-t005", watching: false, parent: null, related: [], kind: "task", title: "A held card", body: "text under review", mentions: [],
+        label: "chore", status: "done", area: "/", created_by: "hum-sam", assigned_to: "hum-sam", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-02T09:00:00Z", updated_at: "2026-11-16T09:00:00Z", closed_at: "2026-11-16T09:00:00Z" },
+    ],
+    notes: { "tsk-t001": [{ id: "nte-t001", task_id: "tsk-t001", author: { member_id: "hum-sam", handle: "sam", kind: "human" }, body: "The format is TOML.", mentions: [],
+      state: "open", resolution: null, edited: null, version: 1, created_at: "2026-11-18T09:00:00Z" }] },
+    history: { "tsk-t001": [{ id: "hst-t001", at: "2026-11-10T09:00:00Z", actor: { member_id: "hum-sam", handle: "sam", kind: "human", session_id: null },
+      field: "created", before: null, after: { title: "Parse the config file" }, diff: null }] },
+  };
+  // routes/projects.py `OUTSIDE_PROJECT_KEYS`: the project view's keys an outsider reads, `settings`
+  // with `language` alone and `links` as the public page shows them (one into the repository's own
+  // path only while the repository was found public, `null` otherwise).
+  const OUTSIDE_PROJECT_KEYS = ["id", "owner", "full_name", "slug", "name", "state", "released_at", "state_changed_at", "public_page", "public_about",
+    "links", "logo", "banner", "settings", "created_at"];
+  function outsideProjectView() {
+    const p = OUTSIDE_TOOL.project;
+    const view = Object.fromEntries(OUTSIDE_PROJECT_KEYS.map((k) => [k, p[k]]));
+    const inRepo = (url) => !!url && url.startsWith(p.repository.url + "/");
+    view.links = Object.fromEntries(Object.entries(p.links).map(([k, v]) => [k, inRepo(v) && !p.repository_public ? null : v]));
+    view.settings = { language: p.settings.language };
+    return view;
+  }
+  // routes/members.py `OUTSIDE_MEMBER_KEYS`: the member view's keys an outsider reads, an allow-list
+  // (an agent of the reader's own too), `manages` with `members` and `instances` alone
+  // (`OUTSIDE_COUNT_KEYS`), and `avatar_url` the picture the public page shows
+  // (`outside_pictures`), never `/avatars/…`: `null` here, as for a person whose public profile is off.
+  const OUTSIDE_MEMBER_KEYS = ["id", "kind", "handle", "name", "display_name", "avatar_url", "deleted", "owner_id", "trust", "role", "role_base",
+    "reports_to", "cross_owner", "areas", "capabilities", "expert_for", "expert_sources", "org_owner", "website", "social", "joined_at", "manages"];
+  // `outside_shown`: the members the public page names, so never an isolated one (nor one under a
+  // moderation hold or with a suspended account, which this fixture has none of).
+  const outsideNamed = () => OUTSIDE_TOOL.members.filter((m) => !m.isolated);
+  function outsideMemberView(m) {
+    const named = new Set(outsideNamed().map((x) => x.id));
+    const shown = Object.fromEntries(OUTSIDE_MEMBER_KEYS.filter((k) => k in m).map((k) => [k, m[k]]));
+    shown.avatar_url = null;
+    // `manages` counted among the members the outsider reads (`instance_counts.for_member(...,
+    // among=named)`), cut to `members` and `instances` (`OUTSIDE_COUNT_KEYS`).
+    if (shown.manages && typeof shown.manages === "object") {
+      const below = (id) => outsideNamed().filter((x) => x.reports_to === id);
+      const direct = below(m.id);
+      const total = [];
+      const walk = (id) => below(id).forEach((x) => { if (!total.includes(x)) { total.push(x); walk(x.id); } });
+      walk(m.id);
+      const count = (list) => ({ members: list.length, instances: list.reduce((n, x) => n + (x.instances || []).length, 0) });
+      shown.manages = { direct: count(direct), total: count(total) };
+    }
+    // No edge to a member the outsider does not read.
+    if (m.reports_to && !named.has(m.reports_to)) { shown.reports_to = null; shown.cross_owner = false; }
+    return shown;
+  }
+  // public_cards.py `outside_shown`: a card labelled `security` (in any case) that is not done, and a
+  // card under a moderation hold whatever its status, are hidden from an outsider, and their ids
+  // from every other card's lists (`outside_views`).
+  const outsideShown = (c) => !(String(c.label || "").toLowerCase() === "security" && c.status !== "done") && !OUTSIDE_TOOL.held.includes(c.id);
+  // `outside_views`: the edges without a hidden card, `parent` null when it is one, `children`
+  // counted again from the children the outsider reads, and a release's pull requests, groups and
+  // blockers without the hidden cards (`_release_without`).
+  const CLOSED = ["done", "cancelled"];
+  function outsideCards() {
+    const hidden = new Set(OUTSIDE_TOOL.tasks.filter((c) => !outsideShown(c)).map((c) => c.id));
+    const keep = (ids) => (ids || []).filter((id) => !hidden.has(id));
+    const seen = OUTSIDE_TOOL.tasks.filter(outsideShown);
+    const children = (id) => {
+      const under = seen.filter((x) => x.parent === id);
+      return { open: under.filter((x) => !CLOSED.includes(x.status)).length, total: under.length };
+    };
+    // public_cards.py `_release_without`: a pull request only a hidden card reported (`task_id`) goes
+    // with its blockers (`pr`); a hidden card leaves the groups and the `tasks` of a blocker, and a
+    // group or a `group_incomplete` blocker left with fewer than two cards goes; a blocker naming a
+    // hidden `task` goes. `ready` stays as the hub computed it.
+    const release = (r) => {
+      if (!r || typeof r !== "object") return r;
+      const prs = r.pull_requests || [];
+      const dropped = new Set(prs.filter((p) => p.task_id && hidden.has(p.task_id)).map((p) => p.number));
+      const readiness = r.readiness || {};
+      const blocking = [];
+      (readiness.blocking || []).forEach((item) => {
+        if ((item.task && hidden.has(item.task)) || (item.pr !== undefined && dropped.has(item.pr))) return;
+        if ("tasks" in item) {
+          const rest = keep(item.tasks);
+          if (rest.length < 2) return;
+          blocking.push(Object.assign({}, item, { tasks: rest }));
+        } else blocking.push(item);
+      });
+      return Object.assign({}, r, {
+        pull_requests: prs.filter((p) => !dropped.has(p.number)),
+        groups: (r.groups || []).map(keep).filter((g) => g.length > 1),
+        readiness: Object.assign({}, readiness, { blocking }),
+      });
+    };
+    return seen.map((c) => Object.assign({}, c, { depends_on: keep(c.depends_on), related: keep(c.related),
+      ships_with: keep(c.ships_with), parent: hidden.has(c.parent) ? null : c.parent, children: children(c.id), release: release(c.release) }));
+  }
+  // POST /reports on what the fixture caller reads only from outside (`stranger/tool`, its
+  // members and cards), as hub/reports.py answers a stranger (§16.8 "The id a stranger sends"):
+  // an account or member id is `not_found` (no project shared), an agent by its global name
+  // `<owner>/<handle>` while a served page shows it, a person by their handle while their own page
+  // is served (`page_served` here; Sam's is, Helper's owner's is the caller), a card by an id the
+  // outsider reads with the project's full name. Any other target is left to the checks below.
+  function outsideReportTarget(t, path) {
+    const gone = () => fail(404, "not_found", "Not found", path);
+    const named = outsideNamed();
+    const hidden = OUTSIDE_TOOL.members.filter((x) => !named.includes(x));
+    if (t.type === "profile") {
+      // By id only one's own agent resolves (`_reads_member`: its owner reads it).
+      if (OUTSIDE_TOOL.members.some((x) => x.id === t.id && x.owner_id !== me().member.id)) gone();
+      if (hidden.some((x) => x.name === t.id || x.handle === t.id)) gone();
+      const human = named.find((x) => x.kind === "human" && x.handle === t.id);
+      if (human && !human.page_served) gone();
+    }
+    if (t.type === "card" && t.project === OUTSIDE_TOOL.project.full_name && !outsideCards().some((c) => c.id === t.id)) gone();
+  }
+  const outsideFull = (owner, slug) => {
+    try { return OUTSIDE_TOOL.project.full_name === decodeURIComponent(owner) + "/" + decodeURIComponent(slug); } catch (err) { return false; }
+  };
+  // The answer to a call under /projects/stranger/tool, or undefined for any other path.
+  function outsideRead(method, asked, query, fullPath) {
+    const m = /^\/projects\/([^/]+)\/([^/]+)(\/.*)?$/.exec(asked);
+    if (!m || !outsideFull(m[1], m[2])) return undefined;
+    const gone = () => fail(404, "not_found", "Not found", fullPath);
+    if (me().member.kind !== "human" || method !== "GET") gone();
+    const rest = m[3] || "";
+    // GET /projects/{owner}/{slug}
+    if (rest === "") return outsideProjectView();
+    // GET …/members and …/members/{member_id}
+    if (rest === "/members") return { items: outsideNamed().map(outsideMemberView), next_cursor: null };
+    let r = /^\/members\/([^/]+)$/.exec(rest);
+    if (r) { const x = outsideNamed().find((y) => y.id === decodeURIComponent(r[1])); return x ? outsideMemberView(x) : gone(); }
+    // GET …/tasks, the list and the board; GET …/tasks/{id}, …/history and …/notes
+    if (rest === "/tasks") {
+      // routes/tasks.py `list_tasks` for an outsider: the same filters as a member's, among the
+      // cards they read; a `parent` naming a hidden card lists nothing.
+      const keep = statusFilter(query, "all");
+      const q = query.get("q");
+      const norm = (value) => String(value || "").normalize("NFKC").toLowerCase();
+      const after = query.get("closed_after");
+      if (after !== null && (Number.isNaN(Date.parse(after)) || !/(Z|[+-]\d\d:?\d\d)$/.test(after))) {
+        fail(400, "invalid", "the request does not validate", fullPath, { fields: { closed_after: "needs_a_zone" } });
+      }
+      const all = outsideCards();
+      const parent = query.get("parent");
+      const items = all.filter(keep)
+        .filter((c) => ["kind", "label", "needs", "area"].every((k) => query.get(k) === null || c[k] === query.get(k)))
+        .filter((c) => parent === null || (c.parent === parent && all.some((x) => x.id === parent)))
+        .filter((c) => !query.get("holder") || (c.claim && c.claim.holder === query.get("holder")))
+        .filter((c) => !query.get("assigned_to") || c.assigned_to === query.get("assigned_to"))
+        .filter((c) => after === null || !c.closed_at || Date.parse(c.closed_at) > Date.parse(after))
+        .filter((c) => q === null || ["id", "title", "body"].some((k) => norm(c[k]).includes(norm(q))));
+      return { items, next_cursor: null };
+    }
+    r = /^\/tasks\/([^/]+)(\/history|\/notes)?$/.exec(rest);
+    if (r) {
+      const id = decodeURIComponent(r[1]);
+      const card = outsideCards().find((c) => c.id === id);
+      if (!card) gone();
+      if (r[2] === "/history") return { items: OUTSIDE_TOOL.history[id] || [], next_cursor: null };
+      if (r[2] === "/notes") {
+        const states = (query.get("state") || "open").split(",");
+        const all = OUTSIDE_TOOL.notes[id] || [];
+        return { items: states.includes("all") ? all : all.filter((n) => states.includes(n.state)), next_cursor: null };
+      }
+      return card;
+    }
+    // GET …/logo and …/banner: the project has neither here, as the hub answers then.
+    if (rest === "/logo" || rest === "/banner") gone();
+    // The Why view's reads (§2.3, #2078: access.py `PUBLIC_REPOSITORY_READS`): open to an outsider
+    // only while the hub last found the repository public (and the forge still says so, in the
+    // operator's own namespaces), `not_found` before the query is read otherwise. The smoke test
+    // turns `repository_public` on through `fixtureOutside`. The answer is the member shape: the
+    // export is the published state.json the public Why reads too (§11.5, §16.9).
+    const why = rest === "/keep-the-why" || rest.startsWith("/keep-the-why/");
+    if (why && OUTSIDE_TOOL.project.repository_public !== true) gone();
+    if (rest === "/keep-the-why/export") {
+      if (query.get("canonical") || query.get("root")) fail(404, "not_found", "not a repository of this project's family", fullPath, { reason: "not_in_family" });
+      return Object.assign(JSON.parse(JSON.stringify(file("maity", "keep-the-why-export.json", fullPath))),
+        { canonical: "https://github.com/stranger/tool", url: "https://stranger.example/keep-the-why-dashboard/state.json" });
+    }
+    if (rest === "/keep-the-why/bodies") fail(404, "not_found", "this export carries its bodies inline", fullPath, { reason: "no_bodies_file" });
+    // GET …/keep-the-why (§11.3): the root's summary, in the member shape, as for a member.
+    if (rest === "/keep-the-why") {
+      const answer = JSON.parse(JSON.stringify(file("maity", "keep-the-why.json", fullPath)));
+      answer.fresh = query.get("max_age") === "0" || answer.fresh;
+      return answer;
+    }
+    // Every other route of the project: `not_found`, before its body or query is read.
+    return gone();
+  }
+
   // GET /me as the hub sends it; PATCH /me answers the same (§5.1).
   function meView() {
     const data = me();
+    // §5.1 "Stars": a human's, as the read shows them.
+    if (data.member.kind === "human") data.member.starred = starredShown(starredStored());
     data.projects.forEach((p) => {
       p.open_requests = openFor(p.slug).length;
       p.state = project(p.slug, "").state;
@@ -1976,6 +2282,37 @@ window.Maity = window.Maity || {};
       by: me().member.id, since: "2026-11-11T16:00:00Z" }],
     deny: [{ id: "cha-0002", agents: "all", agent_id: "agt-s2", by: me().member.id, since: "2026-11-12T09:00:00Z" }],
   });
+  // §9.6 "History": the human's own history of the lists, newest first by `seq`. Seeded with the
+  // answer that made cha-0001 and a deny removed once its person had deleted the account (shown
+  // without a handle, as §2.9); every write of the lists below adds its items.
+  let chatAccessLog = null;
+  let chatAccessSeq = 3;
+  const historyNames = (ids) => Object.fromEntries(ids.map((id) => [id, id === "hum-gone" ? { handle: null, deleted: true }
+    : { handle: id === "hum-anna" ? "anna" : (fixtures()["agents.json"].items.find((a) => a.id === id) || { handle: id }).handle, deleted: false }]));
+  const chatAccessHistory = () => chatAccessLog || (chatAccessLog = [
+    { id: "chh-0003", seq: 3, at: "2026-11-11T16:00:00Z", kind: "answer", by: me().member.id, request_id: "req-0chatanna1", side: "hum-anna",
+      reply_id: "allow_always", withdrawn: false, agents: ["agt-a"], their_human: false, their_agents: null,
+      allowed: "the shop's frontend, may work on it", denied: "nothing about releases", entries: ["cha-0001"],
+      names: historyNames(["agt-a", "hum-anna"]) },
+    { id: "chh-0002", seq: 2, at: "2026-11-11T16:00:00Z", kind: "entry", change: "created", list: "allow", entry_id: "cha-0001", entry_exists: true,
+      by: me().member.id, cause: "request", request_id: "req-0chatanna1", deny_id: null, conversation: null,
+      entry: Object.assign({}, chatAccess().allow[0], { handle: "anna" }), before: null, fields: [], names: historyNames(["agt-a", "hum-anna"]) },
+    { id: "chh-0001", seq: 1, at: "2026-11-10T09:00:00Z", kind: "entry", change: "deleted", list: "deny", entry_id: "cha-0000", entry_exists: false,
+      by: null, cause: "gone", request_id: null, deny_id: null, conversation: null,
+      entry: { id: "cha-0000", agents: "all", human_id: "hum-gone", handle: null, by: me().member.id, since: "2026-11-01T09:00:00Z" },
+      before: null, fields: [], names: historyNames(["hum-gone"]) },
+  ]);
+  // `names` covers the entry and the entry before, as the hub's `_named`; `denyId` names the deny
+  // entry that removed or narrowed an allow (§9.6: its cause stays the deny's, `list` here).
+  function chatAccessRecord(change, list, entry, before, denyId) {
+    const ids = [entry, before].filter(Boolean).flatMap((e) => [].concat(Array.isArray(e.agents) ? e.agents : [],
+      Array.isArray(e.their_agents) ? e.their_agents : [], [e.owner_id, e.human_id, e.agent_id].filter(Boolean)));
+    const fields = before ? Object.keys(entry).filter((k) => JSON.stringify(entry[k]) !== JSON.stringify(before[k])).sort() : [];
+    chatAccessHistory().unshift({ id: localId("chh"), seq: ++chatAccessSeq, at: nowIso(), kind: "entry", change, list, entry_id: entry.id,
+      entry_exists: change !== "deleted", by: me().member.id, cause: "list", request_id: null, deny_id: denyId || null, conversation: null,
+      entry: JSON.parse(JSON.stringify(entry)), before: before ? JSON.parse(JSON.stringify(before)) : null, fields, names: historyNames(ids) });
+    if (change === "deleted") chatAccessHistory().forEach((i) => { if (i.entry_id === entry.id) i.entry_exists = false; });
+  }
   function chatAccessAgents(raw, path) {
     if (raw === "all") return "all";
     if (!Array.isArray(raw) || !raw.length || raw.some((a) => typeof a !== "string")) fail(400, "invalid", "agents is all or a list of ids", path, { fields: { agents: "format" } });
@@ -2638,12 +2975,15 @@ window.Maity = window.Maity || {};
         if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
         mm.start_tabs = list ? list.slice() : null;
       }
+      // §5.1 "Stars", as hub/stars.py `checked`: always the whole list; a hidden entry (a project
+      // not public now) keeps its place, a membership is `member`, an unknown id `not_public`.
+      if ("starred" in body) starredIds = starredChecked(body.starred, path);
       // §5.1 "Experiment notice": only `true`; the first confirmation's time is kept.
       if ("experiment_notice_understood" in body) {
         if (body.experiment_notice_understood !== true) fail(400, "invalid", "the request does not validate", path, { fields: { experiment_notice_understood: "must_be_true" } });
         if (!mm.experiment_notice_understood_at) mm.experiment_notice_understood_at = nowIso();
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "experiment_notice_understood"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "starred", "experiment_notice_understood"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -2996,6 +3336,7 @@ window.Maity = window.Maity || {};
       if (["message", "card"].includes(t.type) && typeof t.project !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { "target.project": "missing" } });
       if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
       if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
+      outsideReportTarget(t, path);
       const key = t.type + " " + t.id + " " + (t.project || "");
       if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "this target was reported 3 times already", path, {});
       const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };
@@ -3204,6 +3545,15 @@ window.Maity = window.Maity || {};
     }],
     // §9.6 "The lists": checked as the hub checks them (chat_access.py), the same details.fields.
     ["GET", /^\/me\/chat-access$/, () => JSON.parse(JSON.stringify(chatAccess()))],
+    ["GET", /^\/me\/chat-access\/history$/, (m, body, path, query) => {
+      const limit = Math.min(Number(query.get("limit") || 50), 200);
+      const all = chatAccessHistory();
+      const after = query.get("cursor");
+      const from = after ? all.findIndex((i) => String(i.seq) === after) + 1 : 0;
+      if (after && from === 0) fail(400, "invalid", "cursor", path, { fields: { cursor: "invalid" } });
+      const items = all.slice(from, from + limit);
+      return { items: JSON.parse(JSON.stringify(items)), next_cursor: from + limit < all.length ? String(items[items.length - 1].seq) : null };
+    }],
     ["POST", /^\/me\/chat-access\/(allow|deny)$/, (m, body, path) => {
       const allow = m[1] === "allow";
       const subjects = allow ? ["owner_id", "project"] : ["owner_id", "human_id", "agent_id", "project"];
@@ -3240,18 +3590,26 @@ window.Maity = window.Maity || {};
       const lists = chatAccess();
       if (lists.allow.length + lists.deny.length >= 1000) fail(400, "invalid", "too many entries", path, { reason: "too_many_entries" });
       // A deny removes the allows for the same agents and subject; an allow for all agents stays
-      // when the deny names some of them (a deny wins over it anyway).
+      // when the deny names some of them (a deny wins over it anyway). Each allow it removes or
+      // narrows gets its item after the deny's own, in the order of the ids, as the hub writes them.
+      const narrowed = [];
       if (!allow && (k === "owner_id" || k === "project")) {
         const same = (a) => (k === "owner_id" ? a.owner_id === entry.owner_id : a.project && JSON.stringify(a.project) === JSON.stringify(entry.project));
         lists.allow = lists.allow.flatMap((a) => {
           if (!same(a)) return [a];
-          if (entry.agents === "all") return [];
+          if (entry.agents === "all") { narrowed.push(["deleted", a, null]); return []; }
           if (a.agents === "all") return [a];
           const left = a.agents.filter((x) => !entry.agents.includes(x));
-          return left.length ? [Object.assign(a, { agents: left })] : [];
+          if (left.length === a.agents.length) return [a];
+          if (!left.length) { narrowed.push(["deleted", a, null]); return []; }
+          const was = JSON.parse(JSON.stringify(a));
+          narrowed.push(["changed", Object.assign(a, { agents: left }), was]);
+          return [a];
         });
       }
       lists[m[1]].unshift(entry);
+      chatAccessRecord("created", m[1], entry, null);
+      narrowed.sort((x, y) => (x[1].id < y[1].id ? -1 : 1)).forEach(([change, a, was]) => chatAccessRecord(change, "allow", a, was, entry.id));
       return JSON.parse(JSON.stringify(entry));
     }],
     ["PATCH", /^\/me\/chat-access\/allow\/([^/]+)$/, (m, body, path) => {
@@ -3273,12 +3631,16 @@ window.Maity = window.Maity || {};
       if (entry.owner_id && next.their_agents === "none" && !next.their_human) fail(400, "invalid", "names no one", path, { fields: { their_agents: "names_no_one" } });
       if ("duration" in body) Object.assign(next, chatAccessDuration(body.duration, path));
       ["allowed", "denied"].forEach((f) => { if (f in body) next[f] = chatAccessText(body[f], f, path); });
+      const was = JSON.parse(JSON.stringify(entry));
       Object.assign(entry, next);
+      if (JSON.stringify(was) !== JSON.stringify(entry)) chatAccessRecord("changed", "allow", entry, was);
       return JSON.parse(JSON.stringify(entry));
     }],
     ["DELETE", /^\/me\/chat-access\/(allow|deny)\/([^/]+)$/, (m) => {
       const lists = chatAccess();
+      const gone = lists[m[1]].find((e) => e.id === m[2]);
       lists[m[1]] = lists[m[1]].filter((e) => e.id !== m[2]);
+      if (gone) chatAccessRecord("deleted", m[1], gone, null);
       return null;
     }],
     ["GET", /^\/me\/broadcasts$/, () => Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() })],
@@ -3367,7 +3729,9 @@ window.Maity = window.Maity || {};
     // agent profile's owner).
     ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       project(m[1], path);
-      return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+      // §15.6: active ones; `closed=true` adds the closed ones (the fixture keeps no age).
+      const closed = new URLSearchParams(path.split("?")[1] || "").get("closed") === "true";
+      return { items: placementsOf(m[1]).filter((p) => closed || p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
     // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: the
@@ -3389,11 +3753,23 @@ window.Maity = window.Maity || {};
       if (live.length >= quota) fail(409, "placement_quota", "the project's placements are at its limit", path, { max: quota });
       const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
       let agent;
+      let room = null;
       if (body.agent && body.agent.id) {
         const a = members.find((x) => x.id === body.agent.id && !x.removed_at);
         if (!a || a.kind !== "agent") fail(400, "invalid", "not an agent of this project", path, { fields: { "agent.id": "not_a_member" } });
         if (a.owner_id !== caller.id) fail(400, "invalid", "name one of your own agents", path, { fields: { "agent.id": "not_yours" } });
-        if (live.some((x) => x.agent.id === a.id)) fail(409, "placement_exists", "an active placement holds this", path);
+        // §15.5: one placement per instance, within max_instances (1 when unset, §6.18): its live
+        // instances plus its active placements holding no live credential (hub instances_held),
+        // checked below once the clone is known, since a carried-over credential adds none.
+        const liveInstances = (a.instances || []).filter((i) => !i.revoked_at);
+        const liveIds = new Set(liveInstances.map((i) => i.id));
+        const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
+        // Without credentials named, an instance id among live ones; with no live instance at all,
+        // no placement holds one (review A1815 of #2058).
+        const holdsLive = (x) => (liveCredentials.size ? liveCredentials.has(x.credential_id) : liveIds.size > 0 && (!x.instance || liveIds.has(x.instance)));
+        const waiting = live.filter((x) => x.agent.id === a.id && (!x.credential_id || !holdsLive(x))).length;
+        const max = a.team && Number.isInteger(a.team.max_instances) ? a.team.max_instances : 1;
+        room = { member: a, held: liveIds.size + waiting, max, liveIds, liveCredentials };
         agent = { id: a.id, handle: a.handle, display_name: a.display_name, avatar_url: null };
       } else {
         const handle = body.agent && body.agent.handle, name = body.agent && body.agent.display_name;
@@ -3406,8 +3782,29 @@ window.Maity = window.Maity || {};
         if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
         agent = { id: null, handle, display_name: name, avatar_url: null };
       }
-      const clone = (body.workspace && body.workspace.clone) || agent.handle;
+      // Without a clone: the first of <handle>, <handle>-2, … that on this runner no active placement
+      // names, nor a closed one of another member whose clone was not reported removed (§15.5).
+      const holds = (x) => x.runner.id === r.id && (x.active || ((!agent.id || x.agent.id !== agent.id)
+        && !(x.workspace_outcome && x.workspace_outcome.state === "removed")));
+      const taken = new Set(placementsOf(m[1]).filter(holds).map((x) => x.workspace.clone));
+      let free = agent.handle;
+      for (let n = 2; taken.has(free); n += 1) free = agent.handle + "-" + n;
+      const clone = (body.workspace && body.workspace.clone) || free;
       if (live.some((x) => x.runner.id === r.id && x.workspace.clone === clone)) fail(409, "placement_exists", "an active placement holds this", path);
+      // The latest closed placement of (member, runner, clone) passes on a credential that is
+      // live and that no active placement runs (hub carried_credential, §15.5): an instance
+      // already, so the start adds none and passes at the limit (review A1815 of #2058).
+      // Its credential is live when a live instance names it, or, where the member's instances
+      // name no credentials, when the instance it made is a live one.
+      let carried = null;
+      if (room) {
+        const latest = placementsOf(m[1]).filter((x) => !x.active && x.agent.id === room.member.id && x.runner.id === r.id && x.workspace.clone === clone)
+          .sort((x, y) => Date.parse(y.closed_at || 0) - Date.parse(x.closed_at || 0))[0];
+        const cid = latest && latest.credential_id;
+        const liveOne = cid && (room.liveCredentials.size ? room.liveCredentials.has(cid) : !!latest.instance && room.liveIds.has(latest.instance));
+        if (liveOne && !live.some((x) => x.credential_id === cid)) carried = latest;
+        if (room.held + (carried ? 0 : 1) > room.max) fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: room.max });
+      }
       const c = r.capabilities || {};
       const tool = (c.harnesses || []).find((x) => x.id === body.harness && x.available !== false && (!body.target || (x.targets || []).includes(body.target)));
       const mode = body.mode || (tool && tool.default_mode);
@@ -3425,9 +3822,10 @@ window.Maity = window.Maity || {};
       const made = {
         id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
         runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
-        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
-        desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
-        approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
+        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: !!carried },
+        desired: body.desired || "running", generation: 1, rejoin: false, fresh_session: false, stop_grace_seconds: body.stop_grace_seconds || 120,
+        approval: { status: "approved", request_id: null, pending_change: null },
+        credential_id: carried ? carried.credential_id : null, instance: carried ? carried.instance || null : null, reported_current: false,
         session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
         created_by: caller.id, proposed_by: null, foreign: false, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
       };
@@ -3457,7 +3855,7 @@ window.Maity = window.Maity || {};
       if (body.rejoin && !(cred && cred.revoked_at)) {
         fail(400, "invalid", "the placement's credential is not revoked", path, { fields: { rejoin: "credential_not_revoked" } });
       }
-      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.reported_current = false;
+      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.fresh_session = !!body.fresh_session; p.reported_current = false;
       p.updated_by = me().member.id; p.updated_at = nowIso();
       return p;
     }],
@@ -3844,7 +4242,7 @@ window.Maity = window.Maity || {};
       // person_links.website_problem does (500 characters): too_long first, then the form.
       if ("links" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
-        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const KEYS = ["issues", "wiki", "discussions", "docs", "chat"];
         const merged = {};
         if (body.links !== null) {
           if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
@@ -4775,6 +5173,14 @@ window.Maity = window.Maity || {};
         const rest = after ? sorted.filter((c) => before(at(c), after) > 0) : sorted;
         const page = rest.slice(0, limit);
         return { items: page, next_cursor: rest.length > limit ? btoa(JSON.stringify(at(page[page.length - 1]))) : null };
+      }
+      // A test pages the open lists, window.MAITY_FIXTURE_TASK_PAGE cards a page, the cursor their
+      // offset (smoke: getAll's own cursor loop under the board, tsk-ywf14h6qd6kq); unset, a list
+      // comes whole as before.
+      const size = Number(window.MAITY_FIXTURE_TASK_PAGE) || 0;
+      if (size > 0 && q === null && !query.get("order") && !wanted.some((s) => s === "all" || s === "done" || s === "cancelled")) {
+        const from = Number(query.get("cursor") || 0);
+        return { items: items.slice(from, from + size), next_cursor: from + size < items.length ? String(from + size) : null };
       }
       return { items, next_cursor: null };
     }],
@@ -6050,9 +6456,9 @@ window.Maity = window.Maity || {};
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
-    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path) (smoke);
-    // unset, nothing waits for it.
-    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
+    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path,
+    // path with its query) (smoke); unset, nothing waits for it.
+    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked, fullPath);
     return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
       // §5.4: the bundle is each single route's own answer for this caller, errors included; the
       // route itself needs no session and stays open in a window. MAITY_FIXTURE_NO_BOOTSTRAP plays
@@ -6065,7 +6471,11 @@ window.Maity = window.Maity || {};
           const base = "/projects/" + project;
           ask.push(["head", base + "/events?after=latest&wait=0"], ["project", base], ["members", base + "/members"]);
         }
-        return Promise.all(ask.map(([key, p]) => fromFixtures("GET", p).then((answer) => [key, { status: 200, body: answer }],
+        // §5.4, §2.3: the bundle reads its project parts for members only; an outsider's are
+        // `not_found`, whatever the single routes answer them.
+        const [owner, slug] = (project || "").split("/");
+        const members = (p) => !(project && slug && outsideFull(owner, slug) && p.startsWith("/projects/"));
+        return Promise.all(ask.map(([key, p]) => (members(p) ? fromFixtures("GET", p) : Promise.reject(new ApiError("Not found", 404, p, "not_found"))).then((answer) => [key, { status: 200, body: answer }],
           (err) => [key, { status: err.status || 500, body: { error: { code: err.code || "internal", message: err.message, details: err.details || {} } } }])))
           .then((parts) => Object.fromEntries(parts));
       }
@@ -6086,6 +6496,9 @@ window.Maity = window.Maity || {};
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
       if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
       if (stepUpOwed(method, path, body)) fail(403, "forbidden", "this call needs your second factor first", fullPath, { reason: "step_up_required" });
+      // A public project read from outside (§2.3): its own routes, before any other.
+      const outside = outsideRead(method, path, query, fullPath);
+      if (outside !== undefined) return JSON.parse(JSON.stringify(outside));
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;
@@ -6248,9 +6661,13 @@ window.Maity = window.Maity || {};
   // refused before this) and no change of the zone was saved while it was on its way; a saved
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
-  function request(method, path, body, raw, signal, headers) {
+  // quiet: a read started before the drawing knows whether there is a session (the boot's
+  // notifications head, js/app.js): its 401, enrolment 403 or 503 maintenance tells the page
+  // nothing, since the drawing has not yet read the session and the window that would decide it
+  // (tsk-zf3wd9t5gjab).
+  function request(method, path, body, raw, signal, headers, quiet) {
     const saves = zoneSaves;
-    const answer = requestOnce(method, path, body, raw, signal, headers);
+    const answer = requestOnce(method, path, body, raw, signal, headers, quiet);
     const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
     if (method === "GET" && path === "/me") {
       return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
@@ -6260,15 +6677,18 @@ window.Maity = window.Maity || {};
     }
     return answer;
   }
-  function requestOnce(method, path, body, raw, signal, headers) {
+  function requestOnce(method, path, body, raw, signal, headers, quiet) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
     if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
-    // place (js/maintenance.js), and the caller gets the refusal as before.
-    const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
+    // place (js/maintenance.js), and the caller gets the refusal as before. Not by a quiet read:
+    // the boot's head is refused while /bootstrap, which a window lets through, still runs, and
+    // the redraw it would start asks the next quiet head, refused again, without end; the drawing
+    // learns the window from its own reads and asks the head again itself (tsk-zf3wd9t5gjab).
+    const told = (err) => { if (!quiet && err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const single = () => {
@@ -6304,6 +6724,7 @@ window.Maity = window.Maity || {};
         if (sessionBlocked || epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         return answer;
       }, (err) => {
+        if (quiet) throw err;
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
         // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
         if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
@@ -6319,11 +6740,16 @@ window.Maity = window.Maity || {};
   // route ends at the path, whatever query follows.
   const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
-  // Every page of a list, following next_cursor (docs/api.md §1.4).
-  async function getAll(path) {
+  // Every page of a list, following next_cursor (docs/api.md §1.4). first, where given, is called
+  // with the first page's items as soon as it is in, before the next is asked, and whether more
+  // pages follow (the board draws from its open columns' first pages, tsk-qw08c8ds214g, and keeps
+  // a column's count back while its later pages are read, tsk-ywf14h6qd6kq); the pages asked stay
+  // the same.
+  async function getAll(path, first) {
     const sep = path.includes("?") ? "&" : "?";
     let page = await request("GET", path + sep + "limit=200");
     const items = page.items.slice();
+    if (first) first(items.slice(), !!page.next_cursor);
     while (page.next_cursor) {
       page = await request("GET", path + sep + "limit=200&cursor=" + encodeURIComponent(page.next_cursor));
       items.push(...page.items);
@@ -6350,9 +6776,17 @@ window.Maity = window.Maity || {};
     fixtureManages,
     // The fixture hub's rule for the test mail's recipient (§16.3), for the smoke test.
     fixtureMailTestTo,
+    // The fixture hub's bound on stars (§5.1), lowered by the smoke test for `too_many`.
+    fixtureStarred,
+    // The outsider's public project (`stranger/tool`), its `repository_public` set by the smoke test.
+    fixtureOutside: OUTSIDE_TOOL.project,
+    // Its members as the fixture keeps them, `page_served` among them, set by the smoke test.
+    fixtureOutsideMembers: OUTSIDE_TOOL.members,
     source,
     ApiError,
-    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
+    // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,
+    // enrolment 403 or maintenance 503.
+    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal, undefined, !!(opts && opts.quiet)),
     getAll,
     // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
     prime,

@@ -28,8 +28,9 @@ ON_REQUEST_RE = re.compile(r"[A-Za-z0-9_-]{1,64}", re.ASCII)
 CREDENTIAL_RE = re.compile(r"^mty1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$")
 # The pattern the hub refuses in any body or query, and revokes a real credential for: with
 # no boundary in front, so a credential counts whatever stands right before it, the `n` of a
-# JSON `\n` included.
-CREDENTIAL_IN_TEXT_RE = re.compile(r"mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+# JSON `\n` included. ASCII, as the hub's bytes pattern: its `\b` ends a credential before a
+# non-ASCII letter (`é`, `ß`, `日`), where a Unicode `\b` would not and the hub would refuse.
+CREDENTIAL_IN_TEXT_RE = re.compile(r"mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", re.ASCII)
 
 
 class CredentialFormatError(Exception):
@@ -61,14 +62,17 @@ def signing_key(credential: Secret) -> SigningKey:
     return SigningKey(credential_id, hashlib.sha256(secret.encode("utf-8")).digest())
 
 
-def _enc(text: str) -> str:
+def encode(text: str) -> str:
+    """RFC 3986 encoding as the canonical string expects it: the unreserved characters kept,
+    every other byte of the UTF-8 form percent-encoded. For a query key or value here, and
+    for one path segment (`hub.segment`), so the path and query agree with what is signed."""
     return urllib.parse.quote(text, safe="-_.~")
 
 
 def canonical_query(pairs: Sequence[tuple[str, str]]) -> str:
     """Each key and value RFC 3986 encoded, pairs sorted bytewise by the encoded key, repeated
     keys kept in request order (sorted() is stable), `key=` for an empty value."""
-    encoded = [(_enc(k), _enc(v)) for k, v in pairs]
+    encoded = [(encode(k), encode(v)) for k, v in pairs]
     return "&".join(f"{k}={v}" for k, v in sorted(encoded, key=lambda kv: kv[0]))
 
 

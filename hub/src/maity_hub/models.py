@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from maity_hub.plain_text import plain_name
 
 HANDLE_PATTERN = r"^[a-z0-9][a-z0-9-]{1,30}$"
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
+
+Effort = Annotated[str, StringConstraints(pattern=r"^[a-z]{1,16}$")]
+"""A reasoning effort's shape (§15.3, §15.5), as a runner offers it and a placement names it;
+16 is `placement.effort`'s length. Which efforts a harness takes is the runner's list."""
 
 
 def title(**kwargs: Any) -> Any:

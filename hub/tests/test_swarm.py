@@ -17,6 +17,8 @@ from tests import factory, flow
 from tests.conftest import ClientFactory
 
 NOW = datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
+# A ticker merge's `merged_at`, from the test clock like the item's own time, never a calendar date.
+MERGED_AT = clock.rfc3339(NOW - timedelta(days=5))
 
 
 @pytest.fixture(autouse=True)
@@ -239,7 +241,7 @@ def test_a_merge_not_read_as_public_is_not_counted(
 def ticker_merge(
     engine: Engine, project_id: str, number: int, tasks: list[str], *, public: bool | None
 ) -> None:
-    merge: dict[str, Any] = {"pr": number, "merged_at": "2026-10-20T00:00:00Z"}
+    merge: dict[str, Any] = {"pr": number, "merged_at": MERGED_AT}
     if public is not None:
         merge["public"] = public
     url = f"https://github.com/oliver-zehentleitner/maity/pull/{number}"

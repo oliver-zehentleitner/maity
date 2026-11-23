@@ -34,5 +34,8 @@ const out = {};
 for (const [name, projects] of Object.entries(CASES)) {
   const config = generate("https://hub.example", projects);
   out[name] = { config, command: command(config) };
+  // The service way's file, which replaces the one `maity runner install` wrote.
+  const service = generate("https://hub.example", projects, "service");
+  out[name + "-service"] = { config: service, command: command(service, "service"), way: "service" };
 }
 process.stdout.write(JSON.stringify(out, null, 2) + "\n");

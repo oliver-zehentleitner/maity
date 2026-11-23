@@ -17,8 +17,9 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -162,6 +163,10 @@ class ForeignCache:
                 found = self._read(reader, repository)  # a spent budget raises, unmarked
         except ktw.MemberError:
             raise ktw.Busy from None
+        # `_read` asked the forge live whether the repository is public, before its walk: this
+        # request's answer on it, so a file of it fetched next asks no second time (seq 187245).
+        moved_or_private = found.error in ("not_public", "repository_moved")
+        _record(project_id, repository, found.error if moved_or_private else None)
         _mark_read("family", held)
         with self.guard:
             bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False)
@@ -223,6 +228,144 @@ def named_reader(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
     no project, so no source of §11.4 is chosen for it. Its reads count against that
     source's budget."""
     return forge.Forge(instance.token if own.via == "instance" else None)
+
+
+# --- an outsider's reads (§2.3) -----------------------------------------------------------------
+
+# The forge's own answer whether a project's repository is public, for its outsiders, per
+# (project, repository): asked again after `_refresh(max_age)`, so at least every
+# VISIBILITY_SECONDS and, with `max_age=0`, every FORCE_INTERVAL. A positive answer here only
+# lets `OUTSIDE_CACHE` serve what it holds; a read for it asks again (`_before_outside_read`).
+_outside_seen: OrderedDict[tuple[str, str], tuple[float, str | None]] = OrderedDict()
+_outside_guard = threading.Lock()
+# The (project, repository) pairs the forge was asked about live in this request (the gate's or
+# the endpoint's ask): a family read for an outsider in the same request needs no second ask.
+_asked_now: ContextVar[frozenset[tuple[str, str]]] = ContextVar(
+    "ktw_outside_asked", default=frozenset()
+)
+
+
+def _outside_key(project_id: str, repository_url: str | None) -> tuple[str, str] | None:
+    if repository_url is None or forge.kind_of(repository_url) != "github":
+        return None
+    return project_id, forge.repository_of(repository_url).lower()
+
+
+def _ask(reader: forge.Forge, key: tuple[str, str]) -> str | None:
+    """The forge's live answer (`_visibility`, uncached), kept in `_outside_seen`; a spent
+    budget raises `forge.ForgeUnavailableError` with `retry_at`."""
+    verdict = _visibility(reader, key[1])
+    with _outside_guard:
+        bounded.put(_outside_seen, key, (ktw.now(), verdict), FOREIGN_KEPT)
+    return verdict
+
+
+def asked_now(project_id: str, repository_url: str | None) -> None:
+    """Notes in this request's context that the forge was just asked about the repository."""
+    key = _outside_key(project_id, repository_url)
+    if key is not None:
+        _asked_now.set(_asked_now.get() | {key})
+
+
+def outside_visible(
+    token: str, project_id: str, repository_url: str | None, max_age: int
+) -> tuple[bool, bool]:
+    """(visible, asked): whether an outsider may read the project's Why now, by the forge's
+    answer on its repository with the instance's `token`, from `_outside_seen` while younger
+    than `_refresh(max_age)`, else asked live (`asked`). Not visible off GitHub, where the
+    forge cannot say. One function for `access.gate` (before the query is read) and the
+    endpoint (`outside_reader`), which then finds the answer the gate just kept."""
+    key = _outside_key(project_id, repository_url)
+    if key is None:
+        return False, False
+    with _outside_guard:
+        seen = _outside_seen.get(key)
+    if seen is not None and ktw.now() - seen[0] < _refresh(max_age):
+        return seen[1] is None, False
+    return _ask(forge.Forge(token), key) is None, True
+
+
+def outside_reader(
+    token: str, project_id: str, repository_url: str, max_age: int
+) -> forge.Forge | None:
+    """The reader of an outsider's Why reads (§2.3): `forge.Forge(token)`, bound to no project
+    and never a grant, `token` the instance's, for a project in the operator's own namespaces
+    only (the caller decides it as the public page does, without asking the project's source,
+    which may write its state; never anonymous); and only while `outside_visible` finds the
+    repository public. None otherwise, for the caller to answer `not_found`. A spent budget
+    raises `forge.ForgeUnavailableError` with `retry_at`. The stored `repository_public` lags
+    the forge (the probe updates it on its own round), and the members' cache may hold what a
+    grant read: neither decides here."""
+    visible, asked = outside_visible(token, project_id, repository_url, max_age)
+    if asked:
+        asked_now(project_id, repository_url)
+    return forge.Forge(token) if visible else None
+
+
+def _before_outside_read(reader: forge.Forge, project_id: str, repository: str) -> None:
+    """Before every family read `OUTSIDE_CACHE` makes: a visibility answer not older than the
+    read (the lead's rule, seq 186723). The forge is asked live unless it was asked in this
+    request already; the forge's own verdict (`Forge._require_public`, kept PUBLIC_SECONDS)
+    is dropped so the reads that follow ask again too. Not public, or no answer:
+    `forge.NotCoveredError`, nothing read and nothing stored; a spent budget raises
+    `forge.ForgeUnavailableError` with `retry_at`."""
+    reader.forget_visibility(repository)
+    _require_live(reader, (project_id, repository.lower()))
+
+
+def _require_live(reader: forge.Forge, key: tuple[str, str]) -> None:
+    """The forge's answer on the repository in this request: the one already asked, else a
+    live ask. `forge.NotCoveredError` unless it is public."""
+    if key in _asked_now.get():
+        with _outside_guard:
+            seen = _outside_seen.get(key)
+        verdict = seen[1] if seen is not None else "not_public"
+    else:
+        verdict = _ask(reader, key)
+        _asked_now.set(_asked_now.get() | {key})
+    if verdict is not None:
+        raise forge.NotCoveredError(verdict)
+
+
+def outside_before_fetch(reader: forge.Forge, project_id: str) -> Callable[[str], None]:
+    """For an outsider's export and bodies (`export`, `bodies`): before each published file
+    they fetch themselves (a miss or an expired file while the family is still kept), the
+    forge's answer in this request on the repository the file belongs to (`owner/repo`: the
+    project's own or a named one), as before a family read (`_require_live`; the lead, seq
+    187206 and seq 187245); a file served from the store needs none. Not public:
+    `forge.NotCoveredError`, nothing fetched or stored."""
+
+    def check(repository: str) -> None:
+        _require_live(reader, (project_id, repository.lower()))
+
+    return check
+
+
+def _record(project_id: str, repository: str, verdict: str | None) -> None:
+    """A live answer on `repository` made elsewhere (a named repository's family read,
+    `ForeignCache._read`): kept, and this request's answer, so no second ask follows."""
+    key = (project_id, repository.lower())
+    with _outside_guard:
+        bounded.put(_outside_seen, key, (ktw.now(), verdict), FOREIGN_KEPT)
+    _asked_now.set(_asked_now.get() | {key})
+
+
+def _checked(check: Callable[[str], None] | None, canonical_url: str) -> Callable[[], None] | None:
+    """`check` bound to the repository `canonical_url` names, for `_file`."""
+    if check is None:
+        return None
+    repository = canonical_url.removeprefix("https://github.com/")
+    return lambda: check(repository)
+
+
+# §11.3's answers for a public project's outsiders, apart from the members' `ktw.CACHE`, which a
+# project owner's grant may fill: filled only through `outside_reader`, which holds no grant
+# (hub/context/public-pages.md 3f9c2d71), each read after a live visibility answer
+# (`before_read`). It shares `ktw.CACHE`'s refresh decision (`link`): one forced read
+# (`max_age=0`) per FORCE_INTERVAL per project across the two, each serving only its own answers.
+# It never asks `Forge.for_project` (`bind=False`).
+OUTSIDE_CACHE = ktw.Cache(bind=False, before_read=_before_outside_read)
+ktw.CACHE.link(OUTSIDE_CACHE)
 
 
 @dataclass
@@ -369,16 +512,18 @@ def _member(
     canonical: str | None,
     root: str,
     max_age: int,
+    cache: ktw.Cache,
 ) -> tuple[str, ktw.Member]:
-    """(canonical URL, member) for the request, or the `ApiError` of §11.5's list."""
+    """(canonical URL, member) for the request, or the `ApiError` of §11.5's list. `cache`
+    holds the project's family: `ktw.CACHE` for a member, `OUTSIDE_CACHE` for an outsider."""
     own = forge.repository_of(repository_url).lower()
     try:
-        entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, max_age)
+        entry, _fresh = cache.get(reader, project_id, repository_url, max_age)
         held = entry.snapshot
         passed = [held.retry_at] + [m.retry_at for m in held.members] if held is not None else []
         if any(at is not None and at <= clock.now() for at in passed):
             # the budget is back: the read that found it spent stands for nothing now
-            entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, 0)
+            entry, _fresh = cache.get(reader, project_id, repository_url, 0)
     except ktw.Busy:
         raise _unavailable("forge_unavailable") from None
     snapshot = entry.snapshot
@@ -427,13 +572,21 @@ def _read(kind: str, url: str, cap: int) -> ktw.Raw:
 
 
 def _file(
-    project_id: str, kind: str, url: str, cap: int, max_age: int, start: float
+    project_id: str,
+    kind: str,
+    url: str,
+    cap: int,
+    max_age: int,
+    start: float,
+    before_fetch: Callable[[], None] | None = None,
 ) -> tuple[ktw.Raw, bool]:
     """(file, fresh): `fresh` when it was read since `start`, the request's beginning, by
     this call, by a call it waited for, or by §11.3's read of the family that the same call
     made. The call waits at most ktw.LOCK_WAIT in all, for a read of the same file under way
     and for the permits; past that it answers the file it holds (`fresh: false`), else
-    `ktw.MemberError("timeout")`."""
+    `ktw.MemberError("timeout")`. `before_fetch` runs before the file is fetched, never for an
+    answer from the store: an outsider's (`outside_before_fetch`) raises when the repository is
+    not public, and then nothing is fetched or marked."""
     until = time.monotonic() + ktw.LOCK_WAIT
     with _one_read((kind, url), until) as mine:  # after a read under way, which may answer
         if not mine:
@@ -441,6 +594,8 @@ def _file(
         answered = _answered(kind, url, max_age, start)
         if answered is not None:
             return answered
+        if before_fetch is not None:
+            before_fetch()
         try:
             with _permits(project_id, until):
                 _mark_read(kind, url)
@@ -490,10 +645,21 @@ def export(
     canonical: str | None,
     root: str,
     max_age: int,
+    cache: ktw.Cache | None = None,
+    before_fetch: Callable[[str], None] | None = None,
 ) -> Served:
+    """`before_fetch`: for an outsider, the check before a published file is fetched, given
+    the repository the file belongs to (`outside_before_fetch`); members pass none."""
     start = ktw.now()
     canonical_url, member = _member(
-        reader, others, project_id, repository_url, canonical, root, max_age
+        reader,
+        others,
+        project_id,
+        repository_url,
+        canonical,
+        root,
+        max_age,
+        ktw.CACHE if cache is None else cache,
     )
     _spent(member.retry_at)
     if member.error is not None or not member.state_url:
@@ -503,7 +669,15 @@ def export(
         last = Served(canonical_url, root, kept, False) if kept is not None else None
         raise _unavailable(error["reason"], last, **extra)
     try:
-        raw, fresh = _file(project_id, "state", member.state_url, ktw.STATE_CAP, max_age, start)
+        raw, fresh = _file(
+            project_id,
+            "state",
+            member.state_url,
+            ktw.STATE_CAP,
+            max_age,
+            start,
+            _checked(before_fetch, canonical_url),
+        )
     except ktw.MemberError as failed:
         kept = ktw.RAW.get("state", member.state_url)
         last = Served(canonical_url, root, kept, False) if kept is not None else None
@@ -526,16 +700,28 @@ def bodies(
     canonical: str | None,
     root: str,
     max_age: int,
+    cache: ktw.Cache | None = None,
+    before_fetch: Callable[[str], None] | None = None,
 ) -> Served:
     start = ktw.now()
-    state = export(reader, others, project_id, repository_url, canonical, root, max_age)
+    state = export(
+        reader, others, project_id, repository_url, canonical, root, max_age, cache, before_fetch
+    )
     if state.raw.bodies is None:
         raise _not_found("this export carries its bodies inline", "no_bodies_file")
     url = bodies_url(state.raw.url, state.raw.bodies)
     if url is None:
         raise _unavailable("bodies_url_invalid")
     try:
-        raw, fresh = _file(project_id, "bodies", url, BODIES_CAP, max_age, start)
+        raw, fresh = _file(
+            project_id,
+            "bodies",
+            url,
+            BODIES_CAP,
+            max_age,
+            start,
+            _checked(before_fetch, state.canonical),
+        )
     except ktw.MemberError as failed:
         raise _unavailable(failed.reason, **failed.details) from None
     return Served(state.canonical, root, raw, fresh)

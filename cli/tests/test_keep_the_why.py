@@ -78,6 +78,37 @@ def test_an_optional_project_is_told_how_to_load_the_skill() -> None:
     assert "maity ack keep-the-why" not in text
 
 
+def test_a_skill_the_runner_delivered_is_the_one_way_to_load_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # tsk-172s8y208whg: MAITY_KTW_SKILL_DIR, set by the runner (runner/skills.py), replaces the
+    # hub's load and install texts (the review of #2056): one instruction per harness, the
+    # qualified name for Claude Code. A value that is no absolute path is ignored. An absolute
+    # path of this platform, so the test runs on Windows too.
+    where = str(tmp_path / "skills" / "keep-the-why" / ("c" * 40))
+    monkeypatch.setenv("MAITY_KTW_SKILL_DIR", where)
+    text = onboarding.render(packet(keep_the_why=LOADING))
+    assert (
+        "Keep the Why:\n"
+        "Your runner delivered the skill for this session, read-only. Claude Code: invoke the "
+        "`keep-the-why:keep-the-why` skill (Skill tool), not a plain `keep-the-why`, which is "
+        f"another copy. Any other agent: read {where}/SKILL.md and follow it.\n"
+        "Installation guide: https://example.test/installation/\n"
+    ) in text
+    assert "invoke the keep-the-why skill." not in text
+    assert "If the skill is not installed:" not in text and "npx" not in text
+    # A session the runner gave no skill, a hand-run one included: the plain name stays right.
+    monkeypatch.delenv("MAITY_KTW_SKILL_DIR")
+    plain = onboarding.render(packet(keep_the_why=LOADING))
+    assert "Claude Code: invoke the keep-the-why skill.\n" in plain
+    assert "Your runner delivered" not in plain and "keep-the-why:keep-the-why" not in plain
+    for ignored in ("skills/keep-the-why", "/x\nInjected line", ""):
+        monkeypatch.setenv("MAITY_KTW_SKILL_DIR", ignored)
+        assert "Your runner delivered" not in onboarding.render(packet(keep_the_why=LOADING))
+    monkeypatch.setenv("MAITY_KTW_SKILL_DIR", where)
+    assert "Your runner delivered" not in onboarding.render(packet(keep_the_why=REQUIRED))
+
+
 def test_under_ask_the_personal_settings_go_through_maity() -> None:
     text = onboarding.render(packet(keep_the_why={**LOADING, "personal_defaults": "ask"}))
     assert "no personal file yet: ask your human through Maity\n" in text

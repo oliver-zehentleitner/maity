@@ -17,6 +17,7 @@ from sqlalchemy import Connection, and_, case, false, insert, or_, select, updat
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    access,
     availability,
     card_search,
     card_watches,
@@ -32,6 +33,7 @@ from maity_hub import (
     merged,
     moderation,
     namespace,
+    outsiders,
     paging,
     project_roles,
     ranks,
@@ -265,13 +267,30 @@ def _card(conn: Connection, card_id: str) -> Any:
     return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
 
 
-def _project_card(conn: Connection, mine: Membership, card_id: str) -> Any:
-    row = conn.execute(
-        select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-    ).first()
+def _project_card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
+    query = select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
+    if isinstance(mine, access.OutsideReader):
+        from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+        # A not-done `security` card or one under a hold, as on the Board (§2.3), decided in
+        # the statement that reads the row (`public_cards.outside_clause`).
+        query = query.where(public_cards.outside_clause())
+    row = conn.execute(query).first()
     if row is None:
         raise not_found()
     return row
+
+
+def of_read_card(query: Any, mine: Membership | access.OutsideReader, card_id: Any) -> Any:
+    """`query`, of what belongs to the card the column `card_id` names (its history, its
+    notes), for `mine`: for an outsider it reads nothing once the card is one the outsider
+    does not read, decided in that statement (`public_cards.outside_card`), not only when
+    `_project_card` read the card before it (READ COMMITTED)."""
+    if not isinstance(mine, access.OutsideReader):
+        return query
+    from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+    return query.where(public_cards.outside_card(card_id))
 
 
 def _member(row: Any) -> list[str]:
@@ -435,8 +454,9 @@ def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = 
     if instance is None:
         return
     held = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == membership_id, t.credential.c.instance == instance
+        instances.credential_rows().where(
+            t.instance_attachment.c.membership_id == membership_id,
+            t.credential.c.instance == instance,
         )
     ).first()
     if held is not None and instances.human_paused(row, held):
@@ -648,6 +668,7 @@ def _subtasks_proposed() -> ApiError:
 
 
 @router.get("/projects/{owner}/{slug}/tasks")
+@access.outside_read
 def list_tasks(
     slug: str,
     request: Request,
@@ -668,11 +689,26 @@ def list_tasks(
 ) -> JSONResponse:
     fg = reader_of(request)
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         # Keys first: the order's columns of every card the filters let through, the full
         # rows only for the page (tsk-ybc2ma72dzvq, hub/context/persistence.md).
         query = select(*KEYS).where(t.card.c.project_id == mine.project.id)
+        if isinstance(mine, access.OutsideReader):
+            from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+            # A not-done `security` card or one under a hold is in no list an outsider reads,
+            # as on the Board (§2.3), nor are the children filtered by such a card's id: here
+            # for the keys, and again in the statement that reads the page's full rows
+            # (`_views`) and in the one that shapes their views (`outside_views`).
+            query = query.where(public_cards.outside_clause())
+            if parent is not None:
+                above = t.card.alias("above")
+                query = query.where(
+                    select(above.c.id)
+                    .where(above.c.id == parent, public_cards.outside_clause(above))
+                    .exists()
+                )
         wanted: list[str] = []
         if status != "all":
             wanted = [s for s in status.split(",") if s]
@@ -894,14 +930,21 @@ def _views(
     keys: Sequence[Any],
     search: card_search.Search | None,
     fg: Forge,
-    mine: Membership,
+    mine: Membership | access.OutsideReader,
 ) -> list[dict[str, Any]]:
     """The page's cards in full, in the order of their keys. A card gone since its key was
-    read is left out."""
+    read is left out, and for an outsider a card it no longer reads (§2.3): decided on the
+    full rows, in the statement that reads them, not only on the keys read before (READ
+    COMMITTED; `task_views` decides it once more in its last statement)."""
     if not keys:
         return []
     ids = [row.id for row in keys]
-    found = {row.id: row for row in conn.execute(select(t.card).where(t.card.c.id.in_(ids)))}
+    full = select(t.card).where(t.card.c.id.in_(ids))
+    if isinstance(mine, access.OutsideReader):
+        from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+        full = full.where(public_cards.outside_clause())
+    found = {row.id: row for row in conn.execute(full)}
     rows = [found[card_id] for card_id in ids if card_id in found]
     shown = task_views(conn, rows, fg, mine)
     if search is not None:
@@ -959,12 +1002,16 @@ def _after(
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
+@access.outside_read
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
+        views = task_views(conn, [_project_card(conn, mine, card_id)], fg, mine)
+        if not views:  # an outsider's card hidden since it was read (`outside_views`)
+            raise not_found()
+        return JSONResponse(views[0])
 
 
 # A card's fields as its creation records them (§6.15).
@@ -1552,6 +1599,7 @@ def claim(
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
+        holder_row = mine.row
         instance = mine.instance
         session_id = caller.session_id
         if body.holder is not None and body.holder not in (
@@ -1565,9 +1613,15 @@ def claim(
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
+            # Before the holder's instance, as §6.5's interim orders it ("Until the claim
+            # request is built"): only a human with tasks:admin gives an outsider's agent a card.
+            outsiders.refuse_taking(holder_row, mine)
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
+        # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
+        # after the scope, the project's state and the card's existence, before its state.
+        outsiders.refuse_taking(holder_row, mine)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -1924,6 +1978,8 @@ def assign(
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
+            # Before the holder's instance is chosen (§6.5, "Until the claim request is built").
+            outsiders.refuse_taking(assignee_row, mine)
             instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
             _refuse_paused(conn, assignee, instance)
             values.update(

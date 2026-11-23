@@ -118,3 +118,5 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | Keep the Why, Meat Proxy, harness, resume | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged |
 
 `resume` stays as it is where it names the command or the agent's step; as an ordinary verb ("when they resume") it is translated.
+
+`token` is a sign-in or API token; a token in a name rule, such as the words a role name may not be (`roles.error.reserved`), reads as a reserved word.

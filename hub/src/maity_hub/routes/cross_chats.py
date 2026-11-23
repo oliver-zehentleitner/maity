@@ -10,7 +10,7 @@ from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import select
 
-from maity_hub import cross_chats, idempotency, paging
+from maity_hub import attached, cross_chats, idempotency, paging
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import humans_only, invalid, not_found
@@ -38,6 +38,8 @@ class MessageIn(Written):
     body: str = markdown(min_length=1)
     attachments: Any = None
     to_instance: Any = None
+    # The project an agent instance in several projects posts from (§9.5, "Wake").
+    project: str | None = Field(default=None, max_length=attached.PROJECT_MAX)
 
     @field_validator("attachments", mode="before")
     @classmethod
@@ -262,7 +264,7 @@ def post_message(
 ) -> JSONResponse:
     def action(conn: Any) -> idempotency.Outcome:
         chat = _chat(conn, chat_id)
-        shown = cross_chats.post(conn, caller, chat, body.body)
+        shown = cross_chats.post(conn, caller, chat, body.body, body.project)
         return idempotency.Outcome(201, "cross_message", shown["id"], shown)
 
     return idempotency.run(engine_of(request), request, caller, action)

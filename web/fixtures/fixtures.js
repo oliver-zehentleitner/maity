@@ -3816,9 +3816,11 @@ window.MAITY_FIXTURES = {
         "credential_id": "crd-b-0003",
         "desired": "running",
         "foreign": false,
+        "fresh_session": false,
         "generation": 4,
         "harness": "claude-code",
         "id": "plc-0001",
+        "instance": "wle2",
         "logs_hint": "maity runner logs plc-0001",
         "mode": "interactive",
         "model": "opus",
@@ -3876,6 +3878,7 @@ window.MAITY_FIXTURES = {
         "credential_id": "crd-c-0002",
         "desired": "stopped",
         "foreign": false,
+        "fresh_session": false,
         "generation": 2,
         "harness": "codex",
         "id": "plc-0002",
@@ -3935,6 +3938,7 @@ window.MAITY_FIXTURES = {
         "credential_id": "crd-d-0001",
         "desired": "running",
         "foreign": false,
+        "fresh_session": false,
         "generation": 3,
         "harness": "claude-code",
         "id": "plc-0003",
@@ -3994,6 +3998,7 @@ window.MAITY_FIXTURES = {
         "credential_id": null,
         "desired": "running",
         "foreign": false,
+        "fresh_session": false,
         "generation": 1,
         "harness": "claude-code",
         "id": "plc-0004",
@@ -4169,6 +4174,7 @@ window.MAITY_FIXTURES = {
     "links": {
       "chat": "https://discord.gg/maity",
       "discussions": null,
+      "docs": "https://maity.dev/",
       "issues": "https://github.com/oliver-zehentleitner/maity/issues",
       "wiki": null
     },
@@ -4201,6 +4207,8 @@ window.MAITY_FIXTURES = {
       "outside_roles": [
         "coder"
       ],
+      "own_agents": "members",
+      "own_approvals": 1,
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",
@@ -6435,6 +6443,7 @@ window.MAITY_FIXTURES = {
       "public_agents": "public_projects",
       "public_presence": true,
       "public_stats": false,
+      "starred": [],
       "start_tabs": null
     },
     "projects": [
@@ -7061,6 +7070,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "allowlist",
               "default_mode": "interactive",
+              "efforts": [],
               "id": "claude-code",
               "models": [
                 "opus",
@@ -7081,6 +7091,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "sandbox",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "codex",
               "models": [],
               "modes": [
@@ -7097,6 +7108,7 @@ window.MAITY_FIXTURES = {
               "available": false,
               "confinement": "allowlist",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "opencode",
               "models": [],
               "modes": [
@@ -7166,6 +7178,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "sandbox",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "codex",
               "models": [
                 "gpt-5.5"
@@ -7247,6 +7260,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "allowlist",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "claude-code",
               "models": [
                 "sonnet"
@@ -7265,6 +7279,7 @@ window.MAITY_FIXTURES = {
               "available": true,
               "confinement": "pod",
               "default_mode": "supervised",
+              "efforts": [],
               "id": "pi",
               "models": [
                 "sonnet"
