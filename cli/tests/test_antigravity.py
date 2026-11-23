@@ -29,6 +29,7 @@ from maity.runner import (
     config,
     loop,
     operate,
+    skills,
     supervisor,
     targets,
     workspace,
@@ -2015,6 +2016,36 @@ def settle(sup: supervisor.Supervisor) -> None:
     for task in list(sup.tasks.values()):
         task.join(10)
     sup.tick()
+
+
+def test_a_skill_store_behind_a_link_reaches_the_session_and_agy_resolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2147 (kduz, A2266): a link above the skills directory (a linked home)
+    gave MAITY_KTW_SKILL_DIR and agy's `read_file` allow a path other than the one agy's
+    sandbox mounts. On a local target the supervisor hands out the resolved copy, so the
+    session's directory and every rule name the same real path."""
+    sup, _, _ = started(tmp_path, monkeypatch)
+    real = tmp_path / "home-real"
+    real.mkdir()
+    (tmp_path / "home-link").symlink_to(real)
+    linked = dataclasses.replace(sup.cfg, skills_dir=tmp_path / "home-link" / "skills")
+    monkeypatch.setattr(sup, "cfg", linked)
+    commit = "c" * 40
+    monkeypatch.setattr(
+        skills, "ensure", lambda skills_dir, *_: skills_dir / "keep-the-why" / commit / "plugin"
+    )
+    source = "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
+    named = placement(keep_the_why={"source": source, "commit": commit})
+    skill = sup._skill(named, sup.targets["local"])
+    resolved = real.resolve() / "skills" / "keep-the-why" / commit / "plugin"
+    assert skill == resolved
+    ctx = context(tmp_path / "ctx", skill=skill)
+    assert adapters.skill_env(ctx) == {"MAITY_KTW_SKILL_DIR": str(skills.skill_in(resolved))}
+    permissions = adapters.antigravity_settings(ctx)["permissions"]
+    assert f"read_file({resolved})" in permissions["allow"]
+    assert f"write_file({resolved})" in permissions["deny"]
+    assert not [rule for rule in json.dumps(permissions).split('"') if "home-link" in rule]
 
 
 def test_an_antigravity_placement_starts_agy_in_its_workspace_folder(

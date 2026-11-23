@@ -1226,7 +1226,14 @@ Details of the settings §15.3 describes, chosen in the code:
   sandbox; a `read_file` allow mounts it read-only, and the deny still wins
   over any allow. Open: the docs do not say whether the `read_file` allow
   also removes the approval prompt for a sandboxed command reading the
-  skill, or only for agy's file tool.
+  skill, or only for agy's file tool. Open as well: whether agy matches a
+  `read_file` rule on path-segment boundaries is unverified, so a sibling
+  whose path starts with the rule's (`<key>/plugin` followed by more
+  characters) might be readable too. The exposure is small: it is read
+  only, and the copy's directory holds only what the runner made in its
+  own skill store (its manifest beside `plugin`). The live probe checks it. The path is the resolved one on a local
+  target (2026-11-23, the review of PR #2147), so the rule, the session's
+  `MAITY_KTW_SKILL_DIR` and the mount name the same directory.
 - The clone's `.git` gets no `write_file` allow (2026-11-23): agy gets no
   `write_file` allow at all. `.git` stays read-only as agy's sandbox
   mounts it (the probe recorded in 8ec06e26; reported again by two agy
@@ -1361,7 +1368,8 @@ and runs in agy's sandbox like every unlisted command. An entry with another
 `*` (`a *.py`, `npm run test:*`) is left out without a word, as before, since
 a rule word is matched on its own. So agy now gets no `command(...)` allow
 from a grant's command list at all: only `command(maity)`, the `read_url`
-hosts and the file and command denies stand. The same `allow` command list
+hosts, the delivered skill's `read_file` allow (added 2026-11-23, af2e96d9)
+and the file and command denies stand. The same `allow` command list
 reaches Claude Code unchanged, OpenCode takes it into its own rules, and
 Codex does not get it (79837674-493a-43dd-8670-e8b163309bca).
 
@@ -1456,7 +1464,9 @@ so a `runner.toml` naming `[harness.antigravity]` is accepted by
 `maity runner check` and `serve` instead of refused. agy is offered again.
 
 Re-offering does **not** widen agy's grants: agy still gets only
-`command(maity)` plus the `read_url` hosts, and the exact and ` *` prefix
+`command(maity)` plus the `read_url` hosts (and, since 2026-11-23, a
+`read_file` allow on the delivered skill, af2e96d9: a read of the runner's
+own copy, no command), and the exact and ` *` prefix
 command grants dropped in "agy command grants are dropped, exact and prefix"
 (f8a7b727) stay dropped. The only grant reaching outside agy's sandbox is the
 one `command(maity)` the runner cannot confine from its own settings — the

@@ -4929,7 +4929,8 @@ def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
     settle(sup)
     assert asked == [(sup.cfg.skills_dir, sup.cfg.state_dir, KTW["source"], KTW["commit"])]
     ((_, _, env),) = backend.started
-    assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
+    # Resolved on a local target, as the workspaces are (the review of #2147).
+    assert env["MAITY_KTW_SKILL_DIR"] == str(copy.resolve() / "skills" / "keep-the-why")
     assert sup.records["plc-0003"].skill_missing is False
     assert not any("Keep the Why" in line for line in logs)
 

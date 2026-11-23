@@ -316,7 +316,7 @@ The runner deletes nothing in the folder. The service's log names what it found,
 - the workspace folder trusted, so an interactive start asks nothing;
 - denied to the file tools: the clone's `.git/maity` (the agent's credential), writing `.git/config`, `.git/hooks` and the rest that makes git run something, the other clones' credentials, the runner's state and configuration, the secrets in the agents' home and agy's own sign-in;
 - allowed: `maity` and reading the hub's, the forge's and the grant's `network` hosts; the repository's `allow` command list is not applied to agy (see below);
-- allowed as well: reading the Keep the Why skill the runner delivers (`read_file`), which agy's documentation says its sandbox then mounts read-only; writing it stays denied. Not yet confirmed in a live session.
+- allowed as well: reading the Keep the Why skill the runner delivers (`read_file`), which agy's documentation says its sandbox then mounts read-only; writing it stays denied. Not yet confirmed in a live session. Whether agy matches the rule on path-segment boundaries is not verified either, so a sibling path that starts with the same characters might also be readable; that is a read only, and the only such siblings are files the runner made in its own skill store.
 
 An allowed command may leave agy's sandbox. `maity` has to, for its credential and the network, and outside the sandbox any allowed command can read the credential, as with Claude Code. A grant's `allow` command list is not applied to agy, though (see below), so for agy only `maity` runs outside the sandbox. Run every `maity` command alone; a line that chains it with another command is refused outside the sandbox.
 
@@ -325,7 +325,7 @@ An allowed command may leave agy's sandbox. `maity` has to, for its credential a
 - an entry without `*`, such as `make test`, and an entry ending in ` *`, such as `python3 -m pytest *`: no rule. Each is left out, named as a warning by `maity runner check`, and runs inside agy's sandbox like every unlisted command;
 - an entry with another `*` (`npm run test:*`): nothing either, and no warning. agy's rules cannot say it, since a rule word is matched on its own, so it runs inside the sandbox like every unlisted command.
 
-So agy is given only `command(maity)` and the `read_url` hosts; a repository's `allow` command list reaches Claude Code unchanged, but not agy or Codex.
+So agy is given only `command(maity)`, the `read_url` hosts and the `read_file` allow on the delivered Keep the Why skill; a repository's `allow` command list reaches Claude Code unchanged, but not agy or Codex.
 
 **This narrows what agy runs outside its sandbox.** Earlier runner versions gave agy a command grant as a rule — an exact entry, then also a ` *` prefix — so a `make test` or `python3 -m pytest *` grant ran outside agy's sandbox. It no longer does: a command grant now runs inside the sandbox, like an unlisted command. A placement cannot make a repository command run outside agy's sandbox through the `allow` list any more; arrange such work another way, or run it under Claude Code. The rules here come from agy's documentation and from reading agy 1.5.9's matching code.
 
