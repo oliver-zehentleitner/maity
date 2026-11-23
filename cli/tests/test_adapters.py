@@ -905,6 +905,26 @@ def test_codex_writes_the_placements_effort_into_its_own_config(
     assert "model_reasoning_effort" not in tomllib.loads(adapters.codex_config(plain))
 
 
+def test_codex_writes_the_background_terminal_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "operator-codex"))
+    workspaces = tmp_path / "ws"
+    place_scratch = workspaces / ".scratch" / "proj" / "plc-0003"
+    place_scratch.mkdir(parents=True)
+    ctx = context(
+        tmp_path,
+        harness_id="codex",
+        binary="/usr/bin/codex",
+        clone=workspaces / "proj" / "agent-3",
+        workspaces=workspaces,
+        scratch=place_scratch,
+    )
+    launch = adapters.launch(ctx)
+    written = tomllib.loads((Path(launch.env["CODEX_HOME"]) / "config.toml").read_text())
+    assert written["background_terminal_max_timeout"] == 660000
+
+
 def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
     supervised = {**PLACEMENT, "mode": "supervised"}
     claude = adapters.claude_settings(context(tmp_path / "c", placement=supervised))

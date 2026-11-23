@@ -3316,7 +3316,7 @@
   "observe.title": "Suivre en lecture dans {project}",
   "org.by_area": "(par zone)",
   "org.empty": "Aucun membre.",
-  "org.instance.label": "Sessions de {address}",
+  "org.instance.label": "Sessions de {address} : {state}",
   "org.intro": "Politique : {preset}. Calculée à partir de qui rend compte à qui et de qui possède quelle zone.",
   "org.reread_failed": "Impossible de relire les membres : {reason}",
   "org.face.label": "Afficher l'organisation comme",
@@ -3327,7 +3327,6 @@
     "other": "{count} prises en charge ouvertes"
   },
   "org.fleet.dormant": "en sommeil",
-  "org.fleet.dot": "{address} : {state}",
   "org.fleet.empty": "Vous n'avez aucun agent dans ce projet.",
   "org.fleet.lead": "instance responsable",
   "org.fleet.no_instances": "aucune instance active",

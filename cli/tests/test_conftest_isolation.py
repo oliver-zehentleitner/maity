@@ -9,11 +9,18 @@ from pathlib import Path
 import pytest
 from conftest import git, isolate_git
 
+from maity import clonecheck
+
 
 def test_no_test_sees_the_shells_git_variables() -> None:
     # In a runner placement this fails without isolate_git.
     names = sorted(n for n in os.environ if n.startswith("GIT_"))
     assert names == ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"]
+
+
+def test_no_test_sees_the_shells_proxy_variables() -> None:
+    # In a runner placement whose environment holds a proxy this fails without isolate_proxy.
+    assert [n for n in clonecheck.ENV_PROXY if n in os.environ] == []
 
 
 def test_a_tests_git_writes_into_its_own_repository_only(

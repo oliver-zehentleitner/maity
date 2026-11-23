@@ -3244,7 +3244,7 @@
   "observe.title": "{project}에서 함께 읽기",
   "org.by_area": "(영역별)",
   "org.empty": "멤버가 없어요.",
-  "org.instance.label": "{address}의 세션",
+  "org.instance.label": "{address}의 세션: {state}",
   "org.intro": "정책: {preset}. 누가 누구에게 보고하는지, 누가 어떤 영역을 소유하는지에 따라 계산돼요.",
   "org.reread_failed": "멤버를 다시 읽지 못했어요: {reason}",
   "org.face.label": "조직 표시 방식",
@@ -3254,7 +3254,6 @@
     "other": "열린 담당 {count}개"
   },
   "org.fleet.dormant": "휴면",
-  "org.fleet.dot": "{address}: {state}",
   "org.fleet.empty": "이 프로젝트에 내 에이전트가 없어요.",
   "org.fleet.lead": "리드 인스턴스",
   "org.fleet.no_instances": "활성 인스턴스 없음",
