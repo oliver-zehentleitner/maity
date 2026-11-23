@@ -44,6 +44,7 @@ NOT_ROUTED = {
     ("POST", "/agents/{}/instances/{}/revoke"),  # no route yet: tsk-jrwpngsn584f, revoke everywhere
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
+    ("POST", "/projects/{}/{}/events/{}/forward"),  # no route yet: tsk-c7caka34dhkw, forward
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/nudge"),  # no route yet: tsk-j9e0yapj21wj
