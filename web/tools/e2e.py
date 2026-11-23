@@ -312,10 +312,18 @@ def axe_source(cache: Path) -> str:
         return member.read().decode("utf-8")
 
 
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def free_port(avoid: frozenset[int] | set[int] = frozenset()) -> int:
+    """A port nothing listens on now, asked of the OS, and asked again while it is one in
+    `avoid`. The port is closed again before it is returned, so whatever binds it next binds
+    it: a round that starts a MailCatcher beside a hub starts the catcher first and avoids its
+    port, so the catcher never takes the hub's (tsk-vfdn98vwa0ym)."""
+    for _ in range(100):  # bounded: a wrong `avoid` fails the run instead of spinning
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        if port not in avoid:
+            return port
+    raise SystemExit(f"e2e: no free port outside {sorted(avoid)} in 100 tries")
 
 
 def port_taken(port: int) -> bool:
@@ -467,9 +475,11 @@ def start_hub(
 class MailCatcher:
     """A plain SMTP listener on 127.0.0.1 that keeps what it receives, so a round reads the
     mail the real hub sent. The standard library's has gone (`smtpd`, Python 3.12), and this
-    is little enough not to add a dependency to the e2e."""
+    is little enough not to add a dependency to the e2e. It listens from the moment it is
+    made, on a port the OS picks (or `port`, which test_e2e_harness uses to force a
+    collision), so a hub's port is chosen after it: `free_port(avoid={catcher.port})`."""
 
-    def __init__(self) -> None:
+    def __init__(self, port: int = 0) -> None:
         self.mails: list[tuple[list[str], EmailMessage]] = []
         catcher = self
 
@@ -499,7 +509,7 @@ class MailCatcher:
                 self.wfile.write(text.encode() + b"\r\n")
 
         socketserver.ThreadingTCPServer.allow_reuse_address = True
-        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Session)
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", port), Session)
         self.server.daemon_threads = True
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -2792,8 +2802,8 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     without either, as the forge step checks exactly that absence (`secret_key_missing`)."""
     second = work / "second-hub"
     second.mkdir()
-    port = free_port()
     catcher = MailCatcher()
+    port = free_port(avoid={catcher.port})
     extra = {
         "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
         "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
@@ -3210,8 +3220,8 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     and a session from before the switch is asked for a mailed code at its next sensitive call."""
     third = work / "mail-factor-hub"
     third.mkdir()
-    port = free_port()
     catcher = MailCatcher()
+    port = free_port(avoid={catcher.port})
     extra = {
         "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
         "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
@@ -3373,8 +3383,8 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
     code; the human's own switch stops the mail."""
     home = work / "password-reset-hub"
     home.mkdir()
-    port = free_port()
     catcher = MailCatcher()
+    port = free_port(avoid={catcher.port})
     extra = {
         "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
         "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
