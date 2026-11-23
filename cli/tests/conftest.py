@@ -122,11 +122,25 @@ def fake_opencode(
     path.chmod(0o755)
 
 
+def isolate_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop every GIT_* of the shell, and the developer's global and system git config.
+
+    A runner session's GIT_COMMON_DIR and GIT_CONFIG_* (and the sandbox's
+    GIT_CONFIG_PARAMETERS) would send every test's git to the session's own clone; any other
+    GIT_* (GIT_DIR, GIT_INDEX_FILE, ...) redirects it the same way. A test that needs one sets
+    it itself (`placed` sets GIT_COMMON_DIR)."""
+    for name in list(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test sees the developer's git config, a MAITY_STATE_DIR or a placement from the
-    shell, and none writes into the developer's home: an interactive Claude Code launch
-    records the clone's folder trust in ~/.claude.json (runner/trust.py)."""
+    """No test sees the developer's git config, the shell's git variables, a MAITY_STATE_DIR
+    or a placement from the shell, and none writes into the developer's home: an interactive
+    Claude Code launch records the clone's folder trust in ~/.claude.json (runner/trust.py)."""
     home = tmp_path / "isolated-home"  # not `home`: tests make their own
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -134,8 +148,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Nor a placement of the shell's: a test that wants one sets it (`placed`).
     monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
     monkeypatch.delenv("MAITY_GIT_PRIVATE", raising=False)
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    isolate_git(monkeypatch)
     # Nor the host's managed Claude Code settings (runner/capabilities.claude_hooks_off).
     from maity.runner import capabilities
 
