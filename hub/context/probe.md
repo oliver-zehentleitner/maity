@@ -172,6 +172,42 @@ went out for this report: a search over events on every observation. A
 flag inside the report JSON: the report is shown as stored, so the flag
 would leak into the card view.
 
+## A merge never closes outsiders' work on its own, ahead of the own-approvals gate
+
+**Id:** 35bf91b0-7944-448b-a876-0e549696d410
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-997vnv5efkw9 (2026-11-23), the lead's go on the plan (seq 201169) and the order to key it on the owner's membership until trust `outside` lands (seq 201228); docs/api.md §2.3 "Own approvals" and §6.6 "A merge closes the loop"
+**See:** probe.md#a-merge-closes-the-loop-remembered-on-the-card-per-report-told-by-whoever-sees-it-first — f89f3f4d-28b0-4bda-841a-ddafe87ad18f — as of 2026-11-23
+**Revisit when:** the own-approvals gate (tsk-3ggnhdmgmkf3) counts own approvals, or trust `outside` lands in the hub
+
+Under `merged_closes: auto` a merge does not close outsiders' work:
+`merged._blocked_by` adds `own_approvals` when an outside agent holds the
+card or filed its current report, judged as the members stand when the
+merge is seen, and `task_merged` then says `closed: false` and wakes the
+done authority as under `notify`. An outside agent here is one whose
+owner holds no active membership of the project; one whose profile the
+hub cannot find counts as outside too. The contract lets such a card
+close on a merge once it has its own approvals on the reported head; the
+hub counts none yet, so every such card counts as having none.
+
+**Reason:** the own-approvals gate is contracted (§2.3) but not built,
+and `auto` under `done_authority: holder` would otherwise let an outside
+holder's own merge close its own card, with no member of the project
+having approved what it delivered. Holding the close on this path fails
+closed, needs no counting, and leaves the decision with the done
+authority, which `task_merged` already wakes.
+
+**Rejected alternatives:**
+- Leave the merge path until the whole gate is built: until then an
+  outside holder under `auto` closes its own work on a merge.
+- Count own approvals here: that counting is the core of the gate card
+  and would exist twice; this check becomes one call into it there.
+- A `blocked_by` value of its own (`outside_work`): the gate refuses a
+  move to `done` with the reason `own_approvals`, and one name for the
+  same missing approval reads the same in both places.
+
 ## A spent forge budget stops reads until its reset; the worker waits and starts each round elsewhere
 
 **Id:** d4a944d2-5e48-45e4-a93b-f528f43705ed
