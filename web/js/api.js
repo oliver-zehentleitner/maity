@@ -330,7 +330,10 @@ window.Maity = window.Maity || {};
   // §5.1 "Stars": the public projects of others the fixture caller can star, besides any fixture
   // project.json with its page on (none of the caller's own is starrable: they are memberships).
   // `stranger/tool` is the smoke test's public non-member project (tools/smoke.js, the visitor).
-  const OUTSIDE_PUBLIC = [{ id: "prj-tool00000001", full_name: "stranger/tool", name: "Tool", public_page: "on", state: "build" }];
+  // `stranger/gadget` is a second one, starred beside it by the smoke test (two stars at once);
+  // it is never opened, so it has no outsider read of its own.
+  const OUTSIDE_PUBLIC = [{ id: "prj-tool00000001", full_name: "stranger/tool", name: "Tool", public_page: "on", state: "build" },
+    { id: "prj-gadget000001", full_name: "stranger/gadget", name: "Gadget", public_page: "on", state: "build" }];
   // The bound (`max_starred_per_human`, default 100), set lower by the smoke test for `too_many`.
   const fixtureStarred = { max: 100 };
   // The stored ids, hidden ones included, in the order starred; from me.json's view at first.

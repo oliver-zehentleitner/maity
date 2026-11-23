@@ -17515,6 +17515,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && starredTab() && !starredTab().classList.contains("starred") && starOf() && starOf().getAttribute("aria-pressed") === "false" && otSession() === "stranger/tool"
       && otSaid() === "stranger/tool is no longer starred; its tab stays until you close it",
       "starred: the star's button sends starred without the project and leaves an unstarred dashed tab for the session " + JSON.stringify(otPatches));
+    // Two starred tabs: while one star's PATCH is on its way, a click on the other's star sends
+    // nothing and says nothing (js/tabs.js `busy`, app.js); the first change ends as it would.
+    {
+      const GADGET = "prj-gadget000001";
+      await otRealPatch("/me", { starred: [TOOL, GADGET] });
+      await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+      const starIn = (full) => (otTab(full) && otTab(full).parentNode.querySelector(".tab-star")) || null;
+      expect(starIn("stranger/tool") && starIn("stranger/gadget") && starIn("stranger/gadget").getAttribute("aria-pressed") === "true",
+        "starred: two starred projects are two dashed tabs, each with its filled star");
+      let release;
+      const held = [];
+      M_.api.patch = (p, b) => { held.push([p, b]); return new Promise((resolve) => { release = () => resolve(otRealPatch(p, b)); }); };
+      starIn("stranger/tool").click(); await tick();
+      const before = otSaid();
+      starIn("stranger/gadget").click(); for (let k = 0; k < 3; k++) await tick();
+      expect(held.length === 1 && JSON.stringify(held[0][1]) === JSON.stringify({ starred: [GADGET] }) && otSaid() === before
+        && starIn("stranger/gadget").getAttribute("aria-pressed") === "true",
+        "starred: a click on another tab's star while one star's PATCH is on its way sends nothing and says nothing " + JSON.stringify([held, otSaid()]));
+      release(); for (let k = 0; k < 4; k++) await tick();
+      M_.api.patch = otRecord;
+      expect(held.length === 1 && starIn("stranger/gadget") && starIn("stranger/gadget").getAttribute("aria-pressed") === "true"
+        && !otSaid().includes("gadget") && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === GADGET,
+        "starred: the first change ends as it would, the other tab still starred " + otSaid());
+      await otRealPatch("/me", { starred: [] });
+      await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+      otPatches.length = 0;
+    }
     // The fixture hub's refusals, as hub/stars.py's.
     const otCode = (body) => otRealPatch("/me", body).then(() => "ok", (err) => (err.details.fields || {}).starred + (err.details.hidden !== undefined ? ":" + err.details.hidden : ""));
     const codes = [await otCode({ starred: null }), await otCode({ starred: "x" }), await otCode({ starred: [TOOL, TOOL] }),
