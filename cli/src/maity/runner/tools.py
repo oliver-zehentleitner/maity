@@ -69,6 +69,17 @@ def newer(candidate: str, than: str | None) -> bool:
     return a is not None and b is not None and a > b
 
 
+def hold(latest: str | None, cap: str | None) -> str | None:
+    """The version a cap holds the update at: `cap` when the vendor's newest (`latest`) is
+    later, or when either cannot be read (never a fall back to the newest); None without a
+    cap, before the first check, or when the newest is not later."""
+    if cap is None or latest is None:
+        return None
+    if version_key(cap) is None or version_key(latest) is None or newer(latest, cap):
+        return cap
+    return None
+
+
 @dataclass
 class ToolState:
     version: str | None = None
@@ -82,6 +93,11 @@ class ToolState:
     # Versions the runner does not take again on its own: the one a rollback left, and
     # ones that failed their version answer (§15.16 "Rollback").
     skipped: list[str] = field(default_factory=list)
+    # The version a cap (`track = "checked"`) held the last check at, when the vendor's newest
+    # (`latest`) was later; None otherwise. Local only (the keeper's log), never sent to the
+    # hub: `latest` keeps its meaning there (§15.16). `maity runner tools` and its rollback
+    # work it out again from the active `track` (`hold`), so a switch counts at once.
+    held: str | None = None
 
 
 BINARY_FILE = "binary.path"  # the binary's path inside its version directory
@@ -164,28 +180,33 @@ def inside(path: Path, folder: Path) -> bool:
     return path.is_relative_to(folder) and path.resolve().is_relative_to(folder.resolve())
 
 
-def rollback(tools_dir: Path, tool_id: str) -> ToolState:
+def rollback(tools_dir: Path, tool_id: str, *, cap: str | None = None) -> ToolState:
     """Swap the version in use with the kept one (§15.16); a second rollback swaps back.
-    The version it leaves is not taken again on its own; a newer one ends that. ValueError
-    while an install or update of the tool runs: it would overwrite the swap."""
+    The version it leaves is not taken again on its own; a newer one ends that, and under a
+    cap so does the held version when it is newer than the one in use, even below the left
+    one (checked means run the checked version). `cap` is the active one (keeper.cap), not
+    the last check's: `rolled_back` is measured against what
+    the runner would take now, right after a switch of `track` too. ValueError while an
+    install or update of the tool runs: it would overwrite the swap."""
     try:
         with locked(tools_dir, tool_id, wait=False):
-            return _rollback(tools_dir, tool_id)
+            return _rollback(tools_dir, tool_id, cap)
     except Busy as exc:
         raise ValueError(f"{exc}; try again when it is done") from None
 
 
-def _rollback(tools_dir: Path, tool_id: str) -> ToolState:
+def _rollback(tools_dir: Path, tool_id: str, cap: str | None) -> ToolState:
     state = load(tools_dir, tool_id)
     if state.previous_version is None or state.version is None:
         raise ValueError(f"{tool_id}: no kept version to go back to")
     left = state.version
     state.version, state.previous_version = state.previous_version, left
     state.skipped = [v for v in state.skipped if v != state.version] + [left]
+    # Against what the runner would take: the held target under a cap, else the newest.
+    state.held = hold(state.latest, cap)
+    target = state.held or state.latest
     state.state = (
-        "rolled_back"
-        if state.latest is not None and newer(state.latest, state.version)
-        else "current"
+        "rolled_back" if target is not None and newer(target, state.version) else "current"
     )
     state.reason = None
     save(tools_dir, tool_id, state)
@@ -224,13 +245,22 @@ def take(
     *,
     requested_at: str | None = None,
     started: Callable[[], None] = lambda: None,
+    cap: str | None = None,
 ) -> ToolState:
     """Look for a newer version and install it beside the one in use (§15.16). Used for the
     first install, the daily check and `Update now` alike. Holds the tool's lock throughout,
     so a rollback waits for it; `started` is called once `installing` or `updating` is
-    saved. Never removes a version: older ones go in `prune`, once no session uses them."""
+    saved. Never removes a version: older ones go in `prune`, once no session uses them.
+
+    With `cap` (the sandbox-checked version, `track = "checked"`), the version taken is the
+    vendor's newest when that is not later than `cap`, else `cap` itself: the newest version
+    at or below it, since the vendor lists no versions and `cap` is a release that was
+    checked. `latest` still records the vendor's newest, `held` the target. A runner at its
+    target reports `current`: nothing is pending, the cap is the operator's setting. A
+    version in use above `cap` stays: the update never goes back on its own
+    (docs/runners.md)."""
     with locked(tools_dir, tool_id):
-        return _take(tools_dir, tool_id, installer, now, requested_at, started)
+        return _take(tools_dir, tool_id, installer, now, requested_at, started, cap)
 
 
 def _take(
@@ -240,6 +270,7 @@ def _take(
     now: str,
     requested_at: str | None,
     started: Callable[[], None],
+    cap: str | None = None,
 ) -> ToolState:
     state = load(tools_dir, tool_id)
     if requested_at is not None:
@@ -255,8 +286,14 @@ def _take(
     except Exception:  # noqa: BLE001 - an installer's slip still ends the attempt as failed
         return _failed(tools_dir, tool_id, state, "installer_failed", now)
     state.latest, state.checked_at = latest, now
+    # An unreadable cap holds too: the installer then refuses it, never a fall back to newest.
+    state.held = hold(latest, cap)
+    latest = state.held or latest
     if latest == state.version or latest in state.skipped or not newer(latest, state.version):
-        state.state = "rolled_back" if latest in state.skipped and state.version else "current"
+        # Only a left version above the one in use: under a cap the held one can itself be in
+        # `skipped` after a rollback forward, with the version in use above it.
+        left = state.version is not None and newer(latest, state.version)
+        state.state = "rolled_back" if left and latest in state.skipped else "current"
         save(tools_dir, tool_id, state)
         return state
     target = version_dir(tools_dir, tool_id, latest)

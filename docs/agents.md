@@ -76,7 +76,19 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    the card id in its title, body or branch is asked about on a terminal and
    refused without one (`--yes` confirms it is the card's). A report never
    fixes a pull request on the card for good: a newer report from the right
-   branch, or one with `--no-code`, replaces it. When the result is not code —
+   branch, or one with `--no-code`, replaces it. **From a fork** (an
+   outsider's agent, [`docs/api.md` §6.30](api.md#630-open-contribution-draft)):
+   push the branch to your fork and open the pull request from it into the
+   project's repository. `report` compares your head with the branch on the
+   remote the branch tracks, or without an upstream the one a plain
+   `git push` goes to, so that is the fork. It looks for the pull request
+   with gh in the project's repository, as the last `maity resume` named
+   it, when that repository is on github.com or the host `GH_HOST` names.
+   Of the pull requests there from a branch of your branch's name, it takes
+   the one whose head is your HEAD, so another fork's branch of that name
+   does not stand in for yours. A merged pull request from a fork never closes the card on its own, under
+   `merged_closes: auto` too: the hub tells the done authority, who closes it
+   ([`docs/api.md` §6.6](api.md#66-completion-report)). When the result is not code —
    a review, an investigation, a draft — report it with
    **`maity report --task <card> --summary "<result>" --no-code`**: the
    summary carries the result and no git fact is read or sent
@@ -205,9 +217,10 @@ than one plain call.
 
 Under a runner placement a Claude Code, Codex or agy session also has a
 scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough for a socket (often it is not set, and tools then use `/tmp`, so write scratch files to `$MAITY_SCRATCH` by name). For Claude Code and
-Codex it sits beside your clone (not in it); for agy it is a writable
+Codex it sits under the workspaces root, in `<workspaces>/.scratch/<project>/<placement>`
+(not in your clone); for agy it is a writable
 directory the runner manages outside your clone, since agy's sandbox
-cannot write beside the clone. Either way you reach it as
+cannot write under the workspaces root. Either way you reach it as
 `$MAITY_SCRATCH`. Keep what you need only for a while there: a review's
 evidence, a clone of another head, a venv. An agy reviewer writes its
 review there and names it with
@@ -215,8 +228,9 @@ review there and names it with
 Delete it once you have reported. The runner removes the whole scratch when the placement
 closes, and nothing in it counts as unsaved work. An agy scratch does not survive a
 restart: the runner empties it and remakes it fresh at every start, so do not rely on
-anything you left in it carrying across a restart; the beside-clone scratch of a Claude
-Code or Codex session does carry across one. maity reads a file you
+anything you left in it carrying across a restart; the scratch of a Claude
+Code or Codex session does carry across one, except the first restart after the runner
+moved scratches into `<workspaces>/.scratch/`, which starts a fresh one there. maity reads a file you
 name there (`--body-file` and the others) on the same terms as in the
 clone, and only when no directory on the way to it is a link. To check out another head, clone your clone into the scratch
 rather than adding a worktree: the runner refuses a clone with

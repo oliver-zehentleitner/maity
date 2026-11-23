@@ -74,6 +74,21 @@ def credential_rows() -> Select[Any]:
     )
 
 
+def live_attachments(credential_ids: Iterable[str], *columns: Any) -> Select[Any]:
+    """`columns` of the credentials' attachments that have not ended, joined with their
+    memberships (`t.instance_attachment` as `a`, `t.membership`): one row per project an
+    instance is in (§6.17). Unlike `attached_now()` it does not leave out a revoked
+    credential: `auth.revocation.revoke` reads them under its project locks, before its own
+    UPDATE, and its lead's end (`_lead_revoked`) runs for a credential revoked already too."""
+    a, m = t.instance_attachment, t.membership
+    return (
+        select(*columns)
+        .select_from(a)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(a.c.credential_id.in_(sorted(set(credential_ids))), a.c.detached_at.is_(None))
+    )
+
+
 def attached_now() -> ColumnElement[bool]:
     """An active instance in the attachment's project: its credential not revoked and the
     attachment not ended (§6.17)."""

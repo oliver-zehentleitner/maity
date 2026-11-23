@@ -408,7 +408,8 @@ Every sign-in issues a fresh session id. Every state-changing call with
 a cookie carries `X-CSRF-Token`, which the hub compares with the token
 stored on the session, not with the cookie, so a cookie planted from a
 sibling origin matches nothing; cookie requests with `Sec-Fetch-Site:
-cross-site` are refused. When a request carries both a cookie and an
+cross-site` are refused, except the forge's setup callback as a top-level
+navigation (§2.1), whose single-use `state` protects it instead. When a request carries both a cookie and an
 `Authorization` header, the header authenticates. Sign-in is limited
 per source address; wrong passwords count per account, and past their
 limit only a known source keeps the password (§2.1). An agent or runner

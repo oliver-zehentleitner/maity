@@ -1551,3 +1551,62 @@ loop the statement's time, which the loop-lag guard watches only for the hot fam
 - A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
   busy timeout per run and shows only the families it calls; the scan covers every route at no
   cost.
+
+## An IN list over many ids is cut into chunks by one leaf module, `chunks`
+
+**Id:** 63ffb6dc-48cb-400d-8692-5466fb7de939
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jttknmqzghw9 (clean-up audit round 5, batch 1, finding 2, 2026-11-22): the bound written four times (`export.CHUNK`, `public_projects.BATCH`, `reports.PATHS_PER_QUERY`, `loadtest.CHUNK`), held together by "mirrored" comments; `maity_hub.chunks`
+**See:** public-pages.md#whether-a-project-has-a-page-is-one-rule-over-rows-served-judges-the-row-it-is-given — 1def6e81-4be2-4e03-8bd7-4426d59407e5 — as of 2026-11-22
+**Revisit when:** a read needs a bound of its own other than `CHUNK`, or an engine's limit on bound parameters falls near 500
+
+A read that names a list of ids or paths whose length nothing bounds asks in IN lists of at most
+`chunks.CHUNK` (500) values: `chunks.chunks(values)` yields them without repeats, sorted, in lists of
+that size. The export, the public lists, the reporter's pages (`reports._pages_at`), the load test's
+purge and `namespace.full_names` use it; `namespace.full_names` batches itself, so every list of full
+names is bounded and `public_projects.full_names`, which batched it for the public lists, is gone.
+`CHUNK` is read at each call, so a test lowers it once (`monkeypatch.setattr(chunks, "CHUNK", 2)`)
+for every read on the path it drives.
+
+**Reason:** `chunks` imports nothing of the hub, so every module may use it: the copies existed
+because `export` imports `reports`, which imports `moderation`, which imports `public_projects`, and
+each later module could not import the first one's bound. One value cannot drift apart from its
+mirrors.
+
+**Rejected alternatives:**
+- Keeping a bound per module, each pointing at the shared value, so a test could lower one read's
+  bound alone: the tests that lower it (`test_public_lists_cost`, `test_reports_public`) check the
+  answer and the statements of a whole list, which every read on that path should cut alike.
+- Moving the bound into `export` or `namespace`: both import modules that would then import them
+  back.
+
+## A revocation reads the instance's attachments once, under its project locks
+
+**Id:** 17af5e56-276a-4ad3-b7a7-2fa53d574611
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** audit R5 batch 2, finding 3 (card tsk-eb06q8ef852k, PR #2131); review A2188 checked the lock order and the reads on PostgreSQL 16
+**Revisit when:** a step between the read and its uses starts writing an attachment or a membership column the read keeps, or `revoke` stops locking its projects first
+
+`auth.revocation.revoke` locks every project it writes in (`projects_of`,
+sorted, `lock_projects`), then reads the instance's live attachments with
+their memberships once (`_attached`, built on `instances.live_attachments`),
+before its own UPDATE of the credential. The overlap refresh, the lead's end
+(`_lead_revoked`) and `holder_stalled.revoked` all take those rows.
+
+**Reason:** the writes between the read and its uses (the credential, its
+session, the overlaps in `environment_overlap`) change no attachment and no
+membership column the rows hold, so one read under the locks answers all
+three. `live_attachments` keeps revoked credentials because the lead's end
+runs for a credential that was revoked already, not because the read comes
+after the UPDATE: it no longer does.
+
+**Rejected alternatives:**
+- One read per step, as before: four reads of the same rows in one
+  transaction (`projects_of`, the refresh loop, `_lead_revoked`,
+  `holder_stalled`).
+- Leaving revoked credentials out of `live_attachments`, as `attached_now()`
+  does: the lead's end of a credential revoked already would find nothing.

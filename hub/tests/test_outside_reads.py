@@ -25,7 +25,7 @@ from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import access, avatars, clock, forge, images, ktw, ktw_reads, public_pages
+from maity_hub import access, avatars, clock, forge, images, ktw, ktw_reads, probe, public_pages
 from maity_hub import routes as route_package
 from maity_hub import tables as t
 from maity_hub import views as card_views
@@ -70,9 +70,20 @@ INSTANCE: dict[str, Any] = {
 
 
 @pytest.fixture
-def make_client(make_client: ClientFactory) -> ClientFactory:
+def make_client(make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch) -> ClientFactory:
     """Every hub here serves public pages: while it serves none, no project is public (§16.9).
-    It holds the instance's token for the maintainer's namespace (`INSTANCE`)."""
+    It holds the instance's token for the maintainer's namespace (`INSTANCE`).
+
+    No hub here starts its probe or public-pages worker (hub/context/testing.md, "Background
+    workers in test clients"): each runs at once on a thread of its own and reaches the fake
+    forge (`WhyForge`) beside the test. The probe's first sweep asks whether the repository is
+    public and stores the answer as `repository_public`; the public-pages worker's start reads
+    the Why for the project's pages through `Forge.for_project`. Landing after a test captured
+    its counts, they add an `asked`, a "repos", a `bound`, file reads and a grant; the sweep
+    landing after a test set `why.private` would turn the stored visibility false. These tests
+    read the forge themselves, and the pages they read come from the app's start and `touch`."""
+    monkeypatch.setattr(probe.Worker, "start", lambda self: None)
+    monkeypatch.setattr(public_pages.Worker, "start", lambda self: None)
     return lambda **kw: make_client(**{"public_pages": True, **INSTANCE, **kw})
 
 
@@ -1569,12 +1580,12 @@ def test_an_outsiders_file_fetch_asks_the_forge_first(
     # Past the files' 30 s hold, inside the kept answer's and the family's 600 s: the gate and
     # the endpoint use the kept answer, and only the file fetch would reach the forge.
     now[0] += ktw.FORCE_INTERVAL + 1
-    states = len(why.state_reads)
+    states, asked = len(why.state_reads), why.asked
     for path in WHY_READS[1:]:
         refused = world.outsider.get(path)
         assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
     assert len(why.state_reads) == states, "a published file fetched for an outsider"
-    assert why.asked >= 1
+    assert why.asked > asked  # asked live by these reads, not only by the reads above
 
 
 def test_an_outsiders_fetch_of_a_named_repositorys_file_asks_about_that_repository(

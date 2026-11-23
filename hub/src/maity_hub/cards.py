@@ -290,6 +290,24 @@ def merged_in_review(project: Any, card: Any) -> bool:
     )
 
 
+def pr_number(card: Any) -> Any:
+    """The number of the pull request the card's current report names (§6.6), None without
+    one."""
+    return ((card.report or {}).get("pr") or {}).get("number")
+
+
+def naming_pr(conn: Connection, project_id: str, number: int) -> list[Any]:
+    """The cards of the project whose current report names the pull request `number`, any
+    status. The report is JSON on the card and is compared in Python: `pr.number` is only
+    bounded below (`PullRequestIn`), so a cast to an integer column in SQL could fail on
+    PostgreSQL for one stored number and refuse every lookup of the project, and a text
+    comparison differs on SQLite, whose `json_extract` answers a number."""
+    rows = conn.execute(
+        select(t.card).where(t.card.c.project_id == project_id, t.card.c.report.is_not(None))
+    )
+    return [row for row in rows if pr_number(row) == number]
+
+
 def refuse_same_team_review(mine: Membership, card: Any) -> None:
     """Under `review_within_team: false` one instance does not judge another's work:
     the reporting team's other instances do not move it out of review (§6.18)."""

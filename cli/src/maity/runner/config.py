@@ -21,6 +21,9 @@ from typing import Any
 from ..hub import HubError, hub_base
 
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
+# The configuration `maity runner install` writes (install.CONFIG): named when the default is
+# missing, never read in its place.
+SERVICE_PATH = Path("/etc/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
@@ -87,6 +90,17 @@ class Restart:
 
 
 @dataclass(frozen=True)
+class Watch:
+    """The runner's watch (`[limits.watch]`, docs/api.md §15.14, docs/runners.md): when it
+    looks at a quiet or never-joined placement, and how often it restarts one by itself."""
+
+    not_listening_grace_minutes: int = 15  # 1 to 1440
+    join_within_minutes: int = 10  # 1 to 120
+    auto_restarts: int = 1  # 0 to 3
+    retry_window_minutes: int = 120  # 10 to 1440
+
+
+@dataclass(frozen=True)
 class Limits:
     projects: tuple[str, ...]
     repositories: tuple[str, ...]
@@ -95,6 +109,7 @@ class Limits:
     restart: Restart = field(default_factory=Restart)
     log_keep_bytes: int = 10 * 1024 * 1024
     require_local_approval: bool = False
+    watch: Watch = field(default_factory=Watch)
 
 
 @dataclass(frozen=True)
@@ -148,6 +163,10 @@ class Harness:
     # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
     install: bool = False
     update: str = "never"
+    # Which version the runner's update takes, for a harness with a sandbox-checked version
+    # (capabilities.CHECKED): "checked" at most that one, "newest" the vendor's newest. It also
+    # decides whether `check` warns about a newer version or only notes it (docs/runners.md).
+    track: str = "checked"
 
 
 @dataclass(frozen=True)
@@ -267,6 +286,11 @@ def _kind_name(kind: type | tuple[type, ...]) -> str:
 
 def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
+
+
+def _between(low: int, high: int) -> Callable[[Any], str | None]:
+    """An integer from `low` to `high`, both included."""
+    return lambda value: None if low <= value <= high else f"{low} to {high}"
 
 
 # A command allowed by a repository's grant: a program, then plain arguments, nothing else.
@@ -395,12 +419,29 @@ def _https_url(value: Any) -> str | None:
     return None
 
 
+def _missing(path: Path) -> str:
+    """Why `path` is no configuration. Where it is the default and the service of `maity runner
+    install` has its own, the message names that one: the service's commands read it only when
+    given, never in place of the default (cli/context/runner.md)."""
+    said = f"{path}: no such file; write it first (runner design §5.1)"
+    try:  # an /etc/maity-runner this user cannot search names nothing (review A2159 of #2125)
+        service = SERVICE_PATH.is_file()
+    except OSError:
+        service = False
+    if path == DEFAULT_PATH.expanduser() and service:
+        said += (
+            f"; the service of `maity runner install` reads {SERVICE_PATH}: pass "
+            f"--config {SERVICE_PATH}, as its user (sudo -u maity-runner -H)"
+        )
+    return said
+
+
 def load(path: Path) -> Config:
     """The configuration at `path`; ConfigError listing every problem otherwise."""
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ConfigError([f"{path}: no such file; write it first (runner design §5.1)"]) from None
+        raise ConfigError([_missing(path)]) from None
     except OSError as exc:
         raise ConfigError([f"{path}: cannot be read ({exc.strerror})"]) from None
     except tomllib.TOMLDecodeError as exc:
@@ -434,6 +475,26 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             quick_exit=restart_in.get("quick_exit", int, _RESTART.quick_exit, check=_positive),
         )
         restart_in.done()
+    watch = _WATCH
+    watch_in = limits_in.table("watch")
+    if watch_in is not None:
+        watch = Watch(
+            not_listening_grace_minutes=watch_in.get(
+                "not_listening_grace_minutes", int, _WATCH.not_listening_grace_minutes,
+                check=_between(1, 1440),
+            ),
+            join_within_minutes=watch_in.get(
+                "join_within_minutes", int, _WATCH.join_within_minutes, check=_between(1, 120)
+            ),
+            auto_restarts=watch_in.get(
+                "auto_restarts", int, _WATCH.auto_restarts, check=_between(0, 3)
+            ),
+            retry_window_minutes=watch_in.get(
+                "retry_window_minutes", int, _WATCH.retry_window_minutes,
+                check=_between(10, 1440),
+            ),
+        )  # fmt: skip
+        watch_in.done()
     limits = Limits(
         projects=tuple(projects),
         repositories=tuple(normalise_repository(r) for r in repositories),
@@ -444,6 +505,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             "log_keep_bytes", int, _LIMITS.log_keep_bytes, check=_positive
         ),
         require_local_approval=limits_in.get("require_local_approval", bool, False),
+        watch=watch,
     )
     limits_in.done()
 
@@ -562,6 +624,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
 
 
 _RESTART = Restart()
+_WATCH = Watch()
 _LIMITS = Limits(projects=(), repositories=())
 
 
@@ -764,6 +827,20 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    from maity.runner.capabilities import CHECKED
+
+    if name in CHECKED and not isinstance(table.data.get("track", ""), str):
+        # A Boolean, number, list or table names the choices too, not only "expected a string".
+        track = "checked"
+        table.used.add("track")
+        problems.append(f"{where}.track: expected a string, one of checked, newest")
+    elif name in CHECKED:
+        track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
+    else:  # one problem for any value: the key itself does not belong here
+        track = "checked"
+        table.used.add("track")
+        if "track" in table.data:
+            problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
     if install or update != "never":
         from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
         from maity.runner.tools import INSTALLERS
@@ -786,6 +863,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         env_file=Path(env_file).expanduser() if env_file else None,
         install=install,
         update=update,
+        track=track,
     )
     if name == "stub":
         return Harness(

@@ -31,7 +31,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from maity_hub import cross_owner, instances, restricted
+from maity_hub import cards, cross_owner, instances, restricted
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 
@@ -112,12 +112,7 @@ def _card(conn: Connection, project_id: str, task_id: str | None, review: dict[s
     match = PULL_REQUEST.fullmatch(review["subject"].strip())
     if match is None:
         return None
-    number = int(match.group(1))
-    # As `ticker.linked_cards` does: the reports live on the cards as JSON, read in Python.
-    rows = conn.execute(
-        select(t.card).where(t.card.c.project_id == project_id, t.card.c.report.is_not(None))
-    ).all()
-    named = [row for row in rows if (((row.report or {}).get("pr") or {}).get("number")) == number]
+    named = cards.naming_pr(conn, project_id, int(match.group(1)))
     if not named:
         return None
     return max(named, key=lambda row: ((row.report or {}).get("reported_at") or "", row.id))

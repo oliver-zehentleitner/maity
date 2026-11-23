@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, delete, select, update
 
-from maity_hub import public_pages, reports
+from maity_hub import chunks, public_pages, reports
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -279,7 +279,7 @@ def no_pages_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(public_pages.Worker, "start", lambda self: None)
 
 
-@pytest.mark.parametrize("per_query", [reports.PATHS_PER_QUERY, 2])
+@pytest.mark.parametrize("per_query", [chunks.CHUNK, 2])
 def test_an_agent_only_a_project_page_names_is_found_by_its_global_name(
     no_pages_worker: None,
     world: World,
@@ -291,7 +291,7 @@ def test_an_agent_only_a_project_page_names_is_found_by_its_global_name(
     """Neither its own page nor its owner's shows the agent; the page of one of its projects
     does, among others that do not: the filing finds it and the reporter's list names it, by
     its global name, also when the pages are read a few paths per statement."""
-    monkeypatch.setattr(reports, "PATHS_PER_QUERY", per_query)
+    monkeypatch.setattr(chunks, "CHUNK", per_query)
     agent = bot(world)
     name, own = f"maintainer/{agent['handle']}", f"/maintainer/agents/{agent['handle']}"
     for i in range(4):  # projects without a page, sorting around the one that names it
@@ -317,7 +317,7 @@ def test_an_agent_only_a_project_page_names_is_found_by_its_global_name(
 
 
 def test_the_pages_of_many_paths_are_read_a_bounded_number_per_statement(world: World) -> None:
-    """However many projects an agent is on, no statement binds more than `PATHS_PER_QUERY`
+    """However many projects an agent is on, no statement binds more than `chunks.CHUNK`
     paths: 1201 paths, three statements."""
     with world.migrated.connect() as conn:
         stored = conn.execute(select(t.public_page.c.path)).scalars().all()
@@ -328,7 +328,7 @@ def test_the_pages_of_many_paths_are_read_a_bounded_number_per_statement(world: 
         ):
             found = reports._pages_at(conn, True, paths)
     assert sorted(found) == sorted(stored)
-    assert len(sent) == 3 and max(sent) <= reports.PATHS_PER_QUERY, sent
+    assert len(sent) == 3 and max(sent) <= chunks.CHUNK, sent
 
 
 def test_filing_reads_the_agents_projects_only_when_its_own_and_its_owners_pages_do_not_show_it(

@@ -208,6 +208,19 @@ def _keep_hub(stored: str, given: str) -> None:
     )
 
 
+def hub_for(stored: object, given: str) -> str:
+    """The hub a command given `--hub given` talks to, by the hub the clone's state names
+    (`stored`): that one, when `given` has its origin (`_keep_hub`); refused under a
+    placement whose state names none (PLACED_NO_HUB); otherwise `given`'s base (before a
+    join, or a credential from the page-driven join without a state.json yet)."""
+    if isinstance(stored, str):
+        _keep_hub(stored, given)
+        return stored
+    if clonecheck.placed():
+        raise LocalRefusal(PLACED_NO_HUB)
+    return hub.hub_base(given)
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
@@ -229,14 +242,8 @@ class Session:
                 "this clone has not joined a project; run `maity join <url> --code <code>`"
             )
         self.data = state.load_state(self.dir)
-        if hub_url:
-            if isinstance(self.data.get("hub"), str):
-                # The clone's hub is fixed: the same origin passes and the stored URL stays.
-                _keep_hub(self.data["hub"], hub_url)
-            elif clonecheck.placed():
-                raise LocalRefusal(PLACED_NO_HUB)
-            else:  # a credential from the page-driven join has no state.json yet
-                self.data["hub"] = hub.hub_base(hub_url)
+        if hub_url:  # the clone's hub is fixed: the same origin passes and the stored URL stays
+            self.data["hub"] = hub_for(self.data.get("hub"), hub_url)
         stored = self.data.get("hub")
         if not isinstance(stored, str):
             if clonecheck.placed():  # --hub names only the clone's hub here (PLACED_NO_HUB)
@@ -434,6 +441,12 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     full_name = field(packet, "project", "full_name")  # refreshed every resume: renames (§6.25)
     if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
         session.data["full_name"] = full_name
+    # Where `report` asks gh for the pull request (a fork's clone, tsk-k0x4jn4y4ykg); each
+    # resume replaces it, and a project without a repository drops it.
+    if isinstance(expected, str) and expected:
+        session.data["repository"] = expected
+    else:
+        session.data.pop("repository", None)
     if isinstance(member_id, str):
         session.data["member_id"] = member_id
     owner_id = field(packet, "me", "owner", "id")
@@ -1770,7 +1783,8 @@ def cmd_report(args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     if retrack.note:
         _err(retrack.note)
-    facts = gitfacts.collect(Path.cwd())
+    repository = session.data.get("repository")
+    facts = gitfacts.collect(Path.cwd(), repository if isinstance(repository, str) else None)
     card: Any = None
     probed = False
     no_forge = facts.pr is None and bool(facts.pr_unknown_reason or facts.forge_error)
@@ -4927,7 +4941,7 @@ def cmd_api(args: argparse.Namespace) -> int:
 
 def cmd_help(args: argparse.Namespace) -> int:
     if args.hub:
-        base = hub.hub_base(args.hub)
+        hub.hub_base(args.hub)  # a --hub that is no hub URL is refused before the state is read
         stored: object = None
         try:
             stored = state.load_state(state.resolve_state_dir()).get("hub")
@@ -4939,11 +4953,7 @@ def cmd_help(args: argparse.Namespace) -> int:
                 "--hub is checked against the hub this clone is joined to, and its state "
                 f"cannot be read: {exc}. Nothing was fetched"
             ) from None
-        if isinstance(stored, str):
-            _keep_hub(stored, args.hub)
-            base = hub.hub_base(stored)
-        elif clonecheck.placed():
-            raise LocalRefusal(PLACED_NO_HUB)
+        base = hub.hub_base(hub_for(stored, args.hub))
     else:
         stored = state.load_state(state.resolve_state_dir()).get("hub")
         if not isinstance(stored, str):

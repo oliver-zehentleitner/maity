@@ -33,6 +33,7 @@ from maity_hub import (
     paths,
     public_pages,
     serving,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.app import (
@@ -391,6 +392,7 @@ def _owner_create(
                 conn.execute(insert(t.human).values(**values))
                 if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
                     raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
+            write_guard.make_row(conn, human_id)
             if not claim_verified(conn, normalized, human_id, secret_key=settings.secret_key):
                 raise _AddressTaken  # another account's address: the account rolls back
     except _HandleTaken:

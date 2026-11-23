@@ -13,7 +13,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, Engine, insert, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError, StatementError
 
-from maity_hub import namespace
+from maity_hub import namespace, write_guard
 from maity_hub import tables as t
 from maity_hub.db import metadata, migrate
 from maity_hub.events import newest_seq
@@ -45,6 +45,7 @@ def _human(conn: Connection) -> str:
             created_at=NOW,
         )
     )
+    write_guard.make_row(conn, human_id)
     return human_id
 
 

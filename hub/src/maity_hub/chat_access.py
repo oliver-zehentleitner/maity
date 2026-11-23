@@ -35,18 +35,6 @@ ALL, LIST, NONE = "all", "list", "none"
 UNSET: Any = object()  # a field the body did not send
 
 
-def lock_rows(engine: Any, me: str, owner_id: Any, human_id: Any = None) -> None:
-    """Make the `account_lock` rows of the caller and of the other humans an entry names, in a
-    transaction of their own that commits first, in the order of their ids, as
-    `contacts.lock_rows` does: two humans naming each other for the first time would otherwise
-    each insert their own row and wait for the other's uncommitted insert."""
-    others = {v for v in (owner_id, human_id) if isinstance(v, str) and v.startswith("hum-")}
-    with engine.begin() as conn:
-        write_guard.exempt(conn)
-        for each in sorted({me} | others):
-            write_guard.ensure_row(conn, each)
-
-
 # Checks of a body ----------------------------------------------------------------------------
 
 

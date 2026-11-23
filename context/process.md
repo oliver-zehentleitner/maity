@@ -2893,3 +2893,32 @@ section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
 but odd README costs one edit; a parser costs a review round each time; fail
 closed beats fail open. Rejected: following list items (their indent and
 where they end), built and dropped as round 4's option A.
+
+## The runner lab's state is a page in docs/, kept up to date by every runner change
+
+**Id:** 37546df5-acb8-4acd-a595-781e15e44079
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's order on the runner lab card, 2026-11-18 (tsk-sfs7kkrz7tk8, tsk-gw1e87ev707f)
+**Revisit when:** the lab's matrix moves into the runner itself (`maity runner check` reports what this page lists), or CI runs the harnesses on each OS
+
+`docs/runners-lab.md` holds where the runner and its harnesses are tested,
+how the test machines are set up, what `maity runner check`'s warnings
+mean, and the open gaps with their cards. A pull request that changes the
+runner updates that page in the same pull request. Environments are named
+by OS and version only, because the repository is public.
+
+**Reason:** the lab's findings lived in card notes and in the lab agents'
+heads. Someone setting up a runner, or a coder changing it, could not see
+which OS and harness combinations work today, or which host change a
+fix depends on.
+
+**Rejected alternatives:**
+- The card notes alone: they do not reach readers of the repository and
+  go stale without anyone noticing.
+- The matrix inside `maity runner check`: it can only report the host it
+  runs on, not what was seen on another OS or harness; it is the long-term
+  aim (see Revisit when), not a replacement for a cross-host record today.
+- CI per OS and harness: it needs signed-in harnesses and real hosts that
+  CI does not have yet.
