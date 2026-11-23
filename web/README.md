@@ -545,9 +545,11 @@ too.
    The tab row reads **Agents**, **Managed agents**
    (`/<owner>/<slug>/placements`, below) and **Organisation**
    (`/<owner>/<slug>/agents/organisation`, `js/org.js`), which draws one's own
-   agents here as the Team page's tree under oneself: each with its area,
-   its open claims and its instances as dots (presence, the lead ringed,
-   each a link to its sessions); an agent that reports to someone else's
+   agents here as the Team page's tree under oneself, with only those members
+   fed in (`M.org.drawTree(ctx, "own")`, tsk-zsbe48ty4ces): each member's row is
+   the Team tab's, an agent's instances `#abcd` after a status dot (presence, the
+   lead ringed, each a link to its sessions named with address and state) and its
+   open claims; an agent that reports to someone else's
    shows only "reports to @x", the handle as text (no name, link or
    tooltip of theirs; `owner/handle` where the short one is shared), or
    "reports to someone who is not yours" where the member list gives no
@@ -2020,7 +2022,7 @@ web/
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
-├── js/org.js         (5) the organisation tree, a section of the Overview
+├── js/org.js         (5) the organisation tree, on Team and (one's own agents) on Agents
 ├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
 ├── js/event.js       one event by its seq (§8.9): opens it where it lives, "not visible" otherwise
