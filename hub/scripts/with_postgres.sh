@@ -8,9 +8,17 @@
 # Several runs can share one server. The last run to end stops it, and only if a run of this
 # script started it: a server that was already up, or started with --start, keeps running.
 # MAITY_TEST_DATABASE_URL is set for the command. MAITY_PG_DIR is the data directory (created
-# when missing), MAITY_PG_BIN the directory of pg_ctl when it is not on the path. A run holds
+# when missing), MAITY_PG_BIN the directory of pg_ctl when it is not on the path; without it,
+# Debian's newest /usr/lib/postgresql/<version>/bin is taken when it has pg_ctl. A run holds
 # one of the account's run slots (tools/run_slot.sh) while it runs; MAITY_RUN_NAME names it,
 # and the run's database (maity_test_<name>_<pid>).
+#
+# MAITY_PG_PASSWORD, when set, is the password of the role `postgres`: the cluster is then made
+# with scram-sha-256 instead of trust (initdb reads it from a pipe, never from the command line),
+# and the run reaches it with that password (PGPASSWORD, which libpq reads; the URL stays without
+# it). A runner sets it for a placed session, together with MAITY_PG_DIR in the placement's
+# scratch (docs/runners.md). It must be letters, digits and ._~- only, or nothing starts; a cluster
+# whose pg_hba.conf lets anyone in without scram-sha-256 is not used with it.
 set -euo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -27,8 +35,35 @@ if [ "$mode" = run ] && [ -z "${MAITY_RUN_SLOT:-}" ]; then
 fi
 
 dir="${MAITY_PG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/maity/test-postgres}"
+# The data directory goes into pg_ctl's command lines, which pg_ctl hands to a shell: no quote,
+# `$`, backtick, backslash or control character in it, so nothing in it is read as shell.
+case "$dir" in
+  *"'"* | *'"'* | *'$'* | *'`'* | *'\'* | *[[:cntrl:]]*)
+    echo "$0: MAITY_PG_DIR must not hold a quote, \$, \`, a backslash or a control character" >&2
+    exit 2
+    ;;
+esac
 if [ -n "${MAITY_PG_BIN:-}" ]; then
   PATH="$MAITY_PG_BIN:$PATH"
+elif ! command -v pg_ctl >/dev/null; then
+  # Debian and Ubuntu keep the server's programs outside PATH, one directory per version
+  # (/usr/lib/postgresql/<version>/bin): the newest that has a pg_ctl, compared as numbers
+  # (16 after 9.6). MAITY_PG_LIB names another such directory (the tests).
+  lib="${MAITY_PG_LIB:-/usr/lib/postgresql}"
+  newest=""
+  for found in "$lib"/*/bin/pg_ctl; do
+    [ -f "$found" ] && [ -x "$found" ] || continue
+    version="${found#"$lib"/}"
+    version="${version%%/*}"
+    case "$version" in '' | *[!0-9.]* | .* | *. | *..*) continue ;; esac
+    if [ -z "$newest" ] ||
+      [ "$(printf '%s\n%s\n' "$newest" "$version" | sort -t. -k1,1n -k2,2n | tail -n 1)" = "$version" ]; then
+      newest="$version"
+    fi
+  done
+  if [ -n "$newest" ]; then
+    PATH="$lib/$newest/bin:$PATH"
+  fi
 fi
 for tool in pg_ctl initdb psql flock; do
   if ! command -v "$tool" >/dev/null; then
@@ -37,12 +72,55 @@ for tool in pg_ctl initdb psql flock; do
   fi
 done
 
+password=""
+if [ -n "${MAITY_PG_PASSWORD+set}" ]; then
+  password="$MAITY_PG_PASSWORD"
+  case "$password" in
+    '' | *[!A-Za-z0-9._~-]*)
+      echo "$0: MAITY_PG_PASSWORD must be a password of letters, digits and ._~- only" >&2
+      exit 2
+      ;;
+  esac
+  export PGPASSWORD="$password"
+fi
+
 # --stop on a directory without a cluster (a mistyped MAITY_PG_DIR) touches nothing and says so:
 # the server it meant may still be running.
 if [ "$mode" = stop ] && [ ! -f "$dir/PG_VERSION" ]; then
   echo "$0: no PostgreSQL in $dir; nothing stopped (MAITY_PG_DIR)" >&2
   exit 0
 fi
+# Whether every rule of the pg_hba.conf named lets in only with scram-sha-256 (or rejects): an
+# allowlist, so trust, peer, ident, md5 and anything else fail, as do an include directive, an
+# unknown connection type, a link and a file that cannot be read. PostgreSQL's own tokenizer
+# knows quoted fields (with spaces or `#` in them), comma lists and `@file` lists; this one does
+# not, so a rule with a quote, a backslash, a comma or an `@` field fails too rather than being
+# read wrongly. The method is the
+# 4th field of a `local` rule and the 5th of a host rule, the 6th with a separate mask.
+scram_only() {
+  [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || return 1
+  awk '
+    { sub(/\r$/, "") }
+    # PostgreSQL ends a line at a NUL and splits fields on a carriage return, which awk does not:
+    # any control character but the tab, on any line, fails rather than being read differently.
+    /[\001-\010\013-\037\177]/ || index($0, sprintf("%c", 0)) { bad = 1; exit }
+    /^[[:space:]]*(#|$)/ { next }
+    /["\047\\]/ { bad = 1; exit }
+    { sub(/#.*/, "") }
+    NF == 0 { next }
+    /,/ { bad = 1; exit }
+    /(^|[[:space:]])@/ { bad = 1; exit }
+    $1 !~ /^(local|host|hostssl|hostnossl|hostgssenc|hostnogssenc)$/ { bad = 1; exit }
+    {
+      if ($1 == "local") method = $4
+      else if ($5 ~ /^[0-9.]+$/ || $5 ~ /^[0-9a-fA-F]*:[0-9a-fA-F:]*$/) method = $6
+      else method = $5
+      if (method != "scram-sha-256" && method != "reject") { bad = 1; exit }
+    }
+    END { exit bad }
+  ' "$1"
+}
+
 locks="$dir.locks"
 mkdir -p "$locks"
 started="$locks/started-by-script" # the process id of a server this script started
@@ -70,17 +148,39 @@ if [ "$mode" = stop ]; then
   exit 0
 fi
 if [ ! -f "$dir/PG_VERSION" ]; then
-  initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
+  if [ -n "$password" ]; then
+    # The password reaches initdb through a pipe it opens by its /dev/fd name: no file, no argv.
+    initdb -D "$dir" -U postgres -A scram-sha-256 --pwfile=<(printf '%s\n' "$password") \
+      >/dev/null 7>&- 8>&- 9>&-
+  else
+    initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
+  fi
+elif [ -n "$password" ] && ! scram_only "$dir/pg_hba.conf"; then
+  # A cluster made before the password was set (or changed since) may let a caller in without it.
+  echo "$0: $dir does not take scram-sha-256 on every line of pg_hba.conf; stop it (--stop without MAITY_PG_PASSWORD) and remove it" >&2
+  exit 2
 fi
 if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
-  pg_ctl -D "$dir" -w -l "$dir/server.log" -o "-c listen_addresses='' -k '$dir'" start >/dev/null 7>&- 8>&- 9>&-
+  # hba_file and ident_file on the command line beat any postgresql.conf, postgresql.auto.conf or
+  # include in the data directory, so the server reads the pg_hba.conf checked above.
+  pg_ctl -D "$dir" -w -l "$dir/server.log" \
+    -o "-c listen_addresses='' -k '$dir' -c hba_file='$dir/pg_hba.conf' -c ident_file='$dir/pg_ident.conf'" \
+    start >/dev/null 7>&- 8>&- 9>&-
   if [ "$mode" = run ]; then
     head -n 1 "$dir/postmaster.pid" >"$started"
   fi
+elif [ -n "$password" ] && ! {
+  grep -qF "\"hba_file=$dir/pg_hba.conf\"" "$dir/postmaster.opts" &&
+    grep -qF "\"ident_file=$dir/pg_ident.conf\"" "$dir/postmaster.opts"
+} 2>/dev/null; then
+  # A server already up runs on the rules it loaded when it started: only one this script started
+  # with the checked files (postmaster.opts records its options) is used with a password.
+  echo "$0: the server running on $dir was not started with its checked pg_hba.conf; stop it (--stop) first" >&2
+  exit 2
 fi
 if [ "$mode" = start ]; then
   rm -f "$started" # a server started with --start outlives the runs, also one a run started
-  echo "PostgreSQL is up: postgresql://postgres@/<database>?host=$dir"
+  echo "PostgreSQL is up: postgresql://postgres@/<database>?host=$dir${password:+ (password: MAITY_PG_PASSWORD, as PGPASSWORD)}"
   exit 0
 fi
 flock -s 9
@@ -113,6 +213,8 @@ finish() {
 trap finish EXIT
 
 sql "create database \"$database\""
+# No password in the URL, which tests and their failures print: libpq (psycopg) reads the
+# exported PGPASSWORD, as psql does above.
 export MAITY_TEST_DATABASE_URL="postgresql://postgres@/$database?host=$dir"
 status=0
 # At a terminal the command stays in the foreground, so that it can read (--pdb, breakpoint())

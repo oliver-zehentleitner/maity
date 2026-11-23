@@ -1,13 +1,16 @@
 PYTHON ?= python3
 NODE ?= node
 
-.PHONY: check release-check fixtures shapes smoke smoke-run starter-configs e2e pseudo lock lock-check
+.PHONY: check release-check fixtures shapes skeletons smoke smoke-run starter-configs e2e pseudo lock lock-check
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers, and that ci.yml runs the web job for every file
-# check.py reads outside web/; Python standard library only.
+# check.py reads outside web/, and the shell's files within their budget
+# (tools/shell-budget.json); Python standard library only.
 check:
 	$(PYTHON) tools/check.py
+	$(PYTHON) tools/shell_budget.py
+	$(PYTHON) tools/test_shell_budget.py
 	$(PYTHON) tools/test_e2e_harness.py
 	$(PYTHON) tools/test_i18n_check.py
 	$(PYTHON) tools/test_step_up_check.py
@@ -29,9 +32,17 @@ HUB_PYTHON ?= python3
 shapes:
 	cd ../hub && MAITY_WRITE_SHAPES=1 $(HUB_PYTHON) -m pytest -q -p no:cacheprovider tests/test_web_shapes.py
 
+# Re-record tools/public-skeletons.json, the elements and classes of the public project pages
+# the hub stores (hub/src/maity_hub/public_design.py) for tools/public-pages-fixture.json, after
+# a change to their design; needs the hub installed, as `shapes`.
+skeletons:
+	cd ../hub && MAITY_WRITE_SKELETONS=1 $(HUB_PYTHON) -m pytest -q -p no:cacheprovider tests/test_public_skeletons.py
+
 # Behaviour smoke test against a DOM shim; needs a node binary, no packages.
 # It runs in one of the account's run slots (../tools/run_slot.sh, at most two
-# smoke or PostgreSQL runs at a time); `make smoke SLOT=` runs it without one.
+# smoke or PostgreSQL runs at a time). `make smoke SLOT=` runs it without one, only for a
+# machine where nothing else runs tests; where the slot directory cannot be written, the
+# script warns and runs it without a slot by itself.
 SLOT ?= ../tools/run_slot.sh
 
 smoke:

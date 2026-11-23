@@ -12,7 +12,7 @@ stages is in the root `context/notifications.md`.
 **Source:** card tsk-ya56x9gx986r, 2026-11-02; docs/api.md §6.2; review of #1111
 **Revisit when:** a language needs plural forms in a hub text, or a translation changes a placeholder
 
-`preferences.text_language` picks the language (chosen interface language, else `language` when it is one
+`text_language.text_language` picks the language (chosen interface language, else `language` when it is one
 of the ten, else `en`); `catalog.section` reads `words/<lang>.json`, English under any key without a
 translation. Mails, link pages, bell titles and the public pages' frame all go this way, so adding a
 language touches no module. Sentences are whole keys with placeholders; none is built from pieces, which
@@ -33,38 +33,114 @@ After a change of these words run `make -C web fixtures`, or the web job is red 
 - `language` as the unconditional fallback: it reads `en` for everyone who never set it.
 - Translating the API's messages too: §6.2 keeps them English, a client goes by `code`.
 
+## The text language is a module of its own, not part of `languages.py` or the notification settings
+
+**Id:** 0ea8c13c-857d-4155-b004-688023ec140d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xx108ajy287x item 16 (clean-up audit tsk-hgnbapyw7hnh, area 12); the lead's go on the design, 2026-11-18
+**Revisit when:** the language a human is written to is stored anywhere other than `human.interface_language` and the notification settings' `email.language`
+**See:** notifications.md#the-hubs-own-words-live-in-one-catalog-per-language-read-through-one-rule — 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46 — as of 2026-11-18
+
+`text_language(conn, human_id)` lives in `maity_hub/text_language.py`, beside `languages.py`, and
+imports only the tables and `languages`. It reads the two stored values directly: the interface
+language chosen, and `email.language` from the notification settings row, read as English when it
+is not stored, which is the settings' default. Every module that writes to a human in their
+language (the mail factor, the second-factor reset, sign-in and password-reset mail, mail-link
+pages, the bell, reports, the subagent instruction, the address mails) imports it from there.
+
+**Reason:** it used to be `notifications.preferences.text_language`, so every mail-sending module
+imported the notification settings only for the language, and the bell (`items.scope`) needed a
+function-local import against the cycle. The address lifecycle, which moves out of
+`preferences.py` next (item 16b), needs the language too, and would otherwise import
+`preferences` back.
+
+**Rejected alternatives:**
+- Into `languages.py`, as the audit proposed: `languages` is data with no hub imports, and
+  `preferences` imports it already. Reading the settings from there would turn it into a module
+  that depends on the notifications, and a cycle.
+- Keep it in `preferences.py` and read the merged settings (`_merged`): the defaults merge gives
+  the same answer for this one key, but it ties every caller to the whole settings module.
+- A function-local import in each caller: the workaround this card removes.
+
+## The address lifecycle is a module of its own, beside the settings it shares a row with
+
+**Id:** 5829e0a1-b0f5-4ce0-9452-e5402f2a9ef8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xx108ajy287x item 16 (clean-up audit tsk-hgnbapyw7hnh, area 12, finding 16); the lead's go on the design, 2026-11-18
+**Revisit when:** the address moves out of the `notification_settings` row, or the settings start to need something of the address beyond its row
+**See:** notifications.md#the-text-language-is-a-module-of-its-own-not-part-of-languagespy-or-the-notification-settings — 0ea8c13c-857d-4155-b004-688023ec140d — as of 2026-11-18
+
+`notifications/address.py` holds the settings row (`row_of`, `verified_row`) and the
+address's whole lifecycle: setting and removing it (`change_address`, `apply_address`), the
+verification link and its limits, the claim of one account per address (`verify`,
+`claim_verified`, `has_verified_address`), the change held for approval (`held`,
+`decide_held`), the notice to the old address, and voiding a pending address at a new
+password. `notifications/preferences.py` keeps the settings: the defaults and their merge,
+validation, `view`, `patch` and the unsubscribe link. `patch` hands an address to
+`address.change_address`. `address` never imports `preferences`, which
+`tests/test_mail_module_boundaries.py` checks for every import, a function-local one too.
+
+**Reason:** the verified address is account identity (a sign-in factor, §2.6.3, and where
+security mail goes), not a notification setting. The file had grown to about 900 lines,
+more than half of them the address. Sign-in, the second factor, registration, the CLI and
+password reset imported the notification settings only to reach the address.
+
+**Rejected alternatives:**
+- Keep `row_of` in `preferences` and import it from `address`: `preferences.patch` calls into
+  the address, so the two would import each other.
+- `auth/address.py` or `account_address.py`: the lead chose `notifications/address.py`. The
+  row is still the notification settings' row, and the name sits next to `preferences.py`.
+- One pull request with 16a: about 25 files moved without a local test run, so it went in two.
+
 ## Items are derived on every read from 30 days of the human's projects, with the relations as they are now
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23
-**Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or several hub replicas serve long-polls
+**Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23; body rewritten to the code of 2026-11-15 (card tsk-y5hkg2ztvwq9, item 11)
+**Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or a source of items gets a stored row per notification
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-23
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-11-15
+**See:** notifications.md#a-messages-possible-recipients-are-written-with-it-to-notification_recipient-the-bell-reads-them-by-index-instead-of-matching-json-text — fc79a4a6-4b27-40f3-abd9-e7edb7ddd066 — as of 2026-11-15
+**See:** notifications.md#a-membership-stores-where-its-notifications-begin-joined_seq-the-bell-no-longer-finds-it-in-the-event-log — ed1bae10-a417-4c3e-881e-617cf0b3b805 — as of 2026-11-15
 
-`maity_hub.notifications.items.derive` reads, for each project the human
-is an active member of, the events of the last 30 days since the
-membership began, of the kinds that can make an item. Since the
-maintainer's narrowing of 2026-10-26 (root context, notifications.md)
-those are only messages, `mentioned` and the request events. It
-classifies them (`inbox` over `mention` over `chat`), checks each
-against what the human may read now, and adds the human's account
-records. Counts, filters, the cursor and positions all work on that
-list in Python. A request's relation to the human (addressee, holder,
-asker) is the request's as it is when the bell is read. The only stored
-state is the read marks (`notification_read`, the chats' own marks,
-`read_at` on records). A held long-poll looks every 0.5 seconds, one per
-session, and checks the session again at every look; which long-poll is
-current is kept in the process, so a second replica would need it
-shared.
+A notification is not stored: every read derives it from the events of the last 30 days of
+the projects the human is an active member of, since the membership began, of the kinds that
+can make an item (since the maintainer's narrowing of 2026-10-26, root context,
+notifications.md: messages, `mentioned`, the request events and the jour fixe's), and from
+the human's account records. `_classify` decides each one (`inbox` over `mention` over
+`chat`) against what the human may read now. A request's relation to the human (addressee,
+holder, asker) is the request's as it is when the item is read.
+
+How much is derived depends on the reader:
+- The bell reads only what its answer needs: a page from `items.derive_page`, which derives
+  each source only as far as the page reaches (24ca001c); the counts from `items.count_items`,
+  the mentions and the security and open inbox records; the pinned alerts from
+  `items.pinned`, account records alone.
+- Message candidates come from `notification_recipient`, written with each message (fc79a4a6),
+  and where a membership's items begin from `membership.joined_seq` (ed1bae10). Both only pick
+  rows; whether a row is an item is still decided at read time.
+- The full `items.derive` is read only by the notification mailer, which needs every unread
+  item of the window, and by `POST /me/notifications/read`, which marks a choice among them.
+
+What is stored besides the events is bookkeeping, never an item: the read marks
+(`notification_read`, the chats' own marks, `read_at` on records), the candidate rows and the
+join position above, and what the mailer has sent. A held long-poll looks again every 0.5
+seconds and compares a stamp before it derives (06563fc8); which wait of a session is current
+crosses replicas through the wake-ups (replicas.md 7c2e91d4).
 
 **Reason:** §18.1 asks that an item never shows more than the human may
 read at the moment it is read or mailed. A view computed when read
 meets that by construction. Stored notifications would need every
 membership end, redaction and permission change to find and withdraw
-them. Thirty days of a few projects are small for V1, and the scan has
-one place to optimise later.
+them. The rows the bell reads by index now are candidates only, so they
+can be stale (a redaction, a membership ended) without showing anything:
+the exact test stays at read time.
 
 **Rejected alternatives:**
 - A notification row written per human and event at emit time: faster
@@ -161,7 +237,7 @@ log showed pool timeouts at a low request rate, with no lock wait found on these
 **Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
 **See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
 **See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
-**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
+**Revisit when:** `items.derive_page` reads rows its superset filters (`may_concern_member`, `names`, `addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
 
 The stamp's project heads count every event kind that can make an item, and `message` is one
 of them. So every message agents send each other moved the stamp of every human in the
@@ -261,6 +337,47 @@ personal requests grow.
 **Reason:** the smallest change that removes the per-event cost while keeping the rules in
 one place. Evidence is inferred: measured locally, production to confirm.
 
+## The bell's head reads every project's position in one statement, a correlated `max(seq)` per project
+
+**Id:** 1309e2d7-66a1-4faf-a779-cafc1d1371b7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-xx108ajy287x (clean-up audit tsk-hgnbapyw7hnh, item 15), PR #1952; reviews A1263 and A1264 of PR #1952 (query plans on test fixtures, a timing on synthetic data)
+**See:** notifications.md#deriving-items-reads-each-kind-of-lookup-once-per-batch-not-once-per-event — b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411 — as of 2026-11-18
+**Revisit when:** the head is to respect visibility or isolation, `ix_event_project_seq` changes, or the head query changes
+
+`listing.head` gives `GET /me/notifications` each project's highest `seq`. It ran one
+`max(event.seq)` statement per membership on every read. It now reads every membership's
+project in one statement: `select(project.id, (select coalesce(max(seq), 0) from event where
+event.project_id = project.id)) where project.id in (...)`, a project without events reading
+as 0, and no statement at all without memberships. A test keeps the count flat as
+memberships grow.
+
+**Reason:** each project's `max(seq)` stays a one-row lookup at the end of
+`ix_event_project_seq` (`project_id`, `seq`), however many events the project has, while a
+`GROUP BY project_id` over `event` reads every event row of the human's projects. The choice
+was made by reasoning from how the index serves the query; no EXPLAIN was run for the change.
+The reviews of PR #1952 then looked. Review A1263: on PostgreSQL 16.2 the plan was a SubPlan
+with a Limit over an Index Only Scan Backward using `ix_event_project_seq` (one row per
+project), the `GROUP BY` a Bitmap Heap Scan, a Sort and a GroupAggregate; on SQLite 3.46 with
+600,000 synthetic events over 3 projects the subquery took 0.16 ms and the `GROUP BY`
+51.21 ms, with the same maxima. Review A1264: on PostgreSQL, EXPLAIN ANALYZE showed a Limit 1
+over an Index Only Scan Backward using `ix_event_project_seq`, 0.090 ms on a fixture of 6,001
+events; the bell's head read 2 statements with 4 memberships (the projects and the account)
+where the loop read 5, and with no membership the account statement alone. These are plans
+and timings on test fixtures, not a production benchmark, and they support the reasoning on
+SQLite and PostgreSQL only: MariaDB was not measured, and its optimizer can serve a
+`GROUP BY … max()` by a loose index scan. So the evidence stays inferred, with measurement on
+test fixtures beside it.
+
+**Rejected alternatives:**
+- One `GROUP BY project_id` over `event` for the human's projects, as the card proposed: it
+  reads every event row of those projects on SQLite and PostgreSQL (above), and it gives no
+  row for a project without events, which then needs filling in.
+- The old loop of one statement per membership: the same index lookup, but a round trip per
+  project on every bell read.
+
 ## Notification settings store only what the human changed; the defaults fill the rest on read
 
 **Id:** 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500
@@ -332,7 +449,7 @@ in `address_lock` (inserted if absent, then `SELECT ... FOR UPDATE`), checks tha
 account holds it, and writes it. A link for an address another account claimed meanwhile is
 the dead-link page and changes nothing. Removing the address clears the column, which frees
 the address. Setting a pending address claims nothing. A registration's completion claims
-its address the same way (`preferences.claim_verified`, called by
+its address the same way (`address.claim_verified`, called by
 `registration_accounts.claim_address`), under the same lock; the loser makes no account.
 
 **Reason:** the contract asks for a unique constraint as the guard and a lock that
@@ -564,7 +681,7 @@ Now:
   (`count_items`) and the pinned alerts are derived as before.
 - `_chats` reads only messages of a conversation whose audience text holds the human's
   `member:` token.
-- Request events are read only where the request may concern the member (`_may_concern`):
+- Request events are read only where the request may concern the member (`may_concern_member`):
   - addressed to a role or the owner, or to the member;
   - held by the member or the admin pool;
   - covered by someone;
@@ -624,7 +741,7 @@ is no security item would be counted, and the counts would disagree with the ite
 **Source:** docs/api.md §2.8.4; the card tsk-9z1m4tcz1e98 (the follow-up of the review of #471), 2026-10-28
 **Revisit when:** another operation on the address becomes sensitive, or the held change moves to a place where `second_factor.require_step_up` cannot be given as a callable
 
-`preferences.patch` and `preferences.decide_held` take a `step_up` callable that the routes fill
+`preferences.patch` and `address.decide_held` take a `step_up` callable that the routes fill
 with `second_factor.require_step_up(conn, hub, caller)`. It is called where the change is known to
 move a verified address (`_change_address`: the address is verified, or disabled, and the wanted one
 differs, a removal included), and for the approval of a held change, first, so a refusal changes
@@ -742,7 +859,7 @@ store a guess the human never made, and a browser on a trip would set it.
 **Source:** a review note on the settings card (tsk-32jx98jzne6z) and the review of #581, 2026-10-29; `tests/test_settings_race.py`
 **Revisit when:** a settings write runs at `REPEATABLE READ`, or the row is made at account creation
 
-`preferences.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
+`address.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
 in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
 locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
 instead of the later one answering 500 on the primary key. The deadlock retry of
@@ -837,7 +954,8 @@ settings and a second error code that told a client what it had asked for in the
 
 **Id:** f1bba221-bde0-4988-96a5-6b55368693d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46
 **Evidence:** inferred
 **Source:** docs/api.md §6.2, §18.1, §18.4; the implementation of #329 (`Scope.say`, `items.WORDS`) and its review, 2026-10-29
 **Revisit when:** a third language is added, a human asks for another language in the bell than in their mail, or the titles of an item kind outgrow the table in `items.WORDS`
@@ -1322,3 +1440,171 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
 - A new module for the three functions: one more home for the instance
   key, beside the one that parses and uses it.
 - `instance_settings`: it stores the fallback, but knows nothing of keys.
+
+## A verification mail is limited per human and per recipient address, the latter in asking accounts
+
+**Id:** aedbf93a-563a-4753-9cdf-8a9bae72e43b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §18.4; tsk-q4zynccy5t0b and its review, counting in asking accounts decided by the maintainer on 2026-11-17, counting at request time on 2026-11-18; `hub/src/maity_hub/notifications/preferences.py` `apply_address`, `_recipient_over`; `hub/src/maity_hub/auth/email_links.py` `recipient_over`; `hub/tests/test_notification_address.py`, red when every mail counts
+**See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-14
+**See:** auth.md#anonymous-mail-requests-are-capped-per-recipient-in-source-networks-and-limits-per-source-address-count-an-ipv6-client-by-its-64 — ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2 — as of 2026-11-17
+
+Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (the normalised address's keyed fingerprint, auth.md 7d3f0a52) there are places for 3 asking accounts an hour and 10 a day: an account's first verification mail to the address in a window takes one, its further ones none; and at most 9 verification mails queued for the address in any hour and 100 in any day from all accounts together, counted as the sign-in link's (ad4dc104): when the mail is requested and queued, not when the outbox delivers it within `verification_max_per_hour`, so mails queued in different windows can arrive together after a delay. Past either the change is stored but no mail is queued, and the answer is the same.
+
+**Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. Counted in mails, the per-recipient limit equalled the per-human one, so one account asking three times spent the address's hour and the owner's own verification waited; counted in accounts, one or two cannot: one account's requests run one at a time under its settings row (taken for update; its first write waits on the row's primary key on PostgreSQL, and SQLite's `BEGIN IMMEDIATE` serialises every write), so an account never holds two places, unlike a network (ad4dc104). Three distinct accounts in an hour (ten in a day) still hold the address's places; where one source can make active accounts (open registration with automatic approval: 10 registrations an hour per source address, within the instance's new accounts per hour), one source can so hold them — an accepted limit for now, a further cap per address is a separate decision. The windows slide, so places alone let 15 mails through in one hour and 186 in one day (measured in review); the count of the mails bounds what is queued at 9 and 100, and two accounts at their own limits (at most 6 requested in any hour, 20 in any day) never reach it. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
+
+**Rejected alternatives:**
+- Counting mails per recipient from all accounts together (the first design): one account spends the address's hour.
+- Refuse over the per-recipient limit too: it would tell one account that others are trying the same address.
+- Only the per-human limit: many accounts could still each send a stranger three mails an hour.
+- A per-recipient check at delivery too, in the outbox: decided against by the maintainer on 2026-11-18 (review of PR #1797); these limits apply at request time, as for the anonymous paths (ad4dc104).
+
+## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
+
+**Id:** 64c0fbdf-0e1d-443e-af22-6bbc9c95df04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (maity-review-team-antigravity#na6z, seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change; card tsk-xx108ajy287x item 12 moved `subject_line` with `defang` and `quoted` unchanged to `mail/text.py` (2026-11-18), re-checked against this entry then
+**Revisit when:** `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
+
+A subject that carries text the hub did not write (a project's name, an item's title with a
+display name or a card's title in it, the inviter and project of an invitation) goes through
+`mail.text.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
+one space, the result is defanged with the same `defang` as the body, and it is cut at
+`SUBJECT_MAX` (120) with `…`. The body was defanged already; the subject only lost its line
+breaks. Cleaning comes before defanging, so a control character between a name and its dot cannot
+hide a host from `defang`; cutting comes after, so a cut can shorten `[.]` but never undo it.
+
+A notification mail is built with the items readable at that moment, then may wait in the outbox
+for the hour's budget. The mailer marks the row with `_memberships` (a mark, never a header): the
+ids of the membership rows its items were read through, taken from the `items.scope` that derived
+them (items with a project and `member`), with no query of their own. Before delivery the outbox
+checks that each of those rows is still `active`; if one is not, or is gone, the whole row is
+`dropped`, as a row to a disabled address is. Items of a project the human is no member of (an
+invitation) or of no project add nothing to the mark.
+
+The mark holds rows, not projects, for two cases: a human who leaves and joins again gets a new
+row whose history begins at the new join (`joined_seq`), so the old mail is not theirs to read
+any more; and on READ COMMITTED a removal can commit between the scope's read and a second query
+for the mark, which would leave the project out and let the mail go. Taking the ids from the scope
+ties the mark to exactly what the items were read through.
+
+**Reason:** the subject is read before the mail is opened, from the hub's trusted sender, so text
+there needs the same treatment as in the body. A mail that waited should not take a project's
+items to someone removed from that project in the meantime.
+
+**Rejected alternatives:**
+- Defang only the project name and title separately before formatting: same result, two places
+  to forget; one helper on the whole line also covers the second-factor subject's display name.
+- Delete waiting rows when a membership is removed: every removal path would need it, the row
+  has no project column to find them by, and a send-time check also covers leaving and any path
+  added later.
+- Drop only the items of the ended project and rebuild the mail: the outbox holds built text; a
+  rebuild belongs to the mailer. The items stay in the bell.
+- A `project_id` column on `mail_outbox`: a migration for a mark only notification mail needs,
+  and a digest spans several projects.
+- Mark the projects and check for any active membership in them (the first version of #1807):
+  a join after a leave passes with its new row, and a second query for the mark races a removal
+  on READ COMMITTED.
+
+## Account records and the mail's bookkeeping are deleted by an hourly sweep; an open inbox record stays until its matter closes
+
+**Id:** c28a0dba-829b-4476-a422-9eadcca9337a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ar6h2s0kff5, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); docs/api.md §2.6.5 and §18.1 ("kept 90 days"), §18.2 (open inbox items "stay listed while their matter is open, however old"; a stored position "kept at least 30 days after its last use"); `notifications/retention.py`, `mail/outbox.py` `Worker._prune`; tests in `tests/test_notification_retention.py`
+**See:** https://github.com/oliver-zehentleitner/maity — b735056d-fb73-458b-8a85-d656dc7e218b — as of 2026-11-14
+**Revisit when:** an index is built for the sweep (`mail_item_sent.mailed_at`, `notification_position.last_used_at`; card tsk-3ar6h2s0kff5 leaves it as a follow-up), the bell lists an open record past `records.KEPT` (TODO #280 for `mail_disabled`), or a new inbox record type is added to `records.INBOX`
+
+Nothing deleted `account_record`, `mail_item_sent`, `mail_delivery` or `notification_position`
+but an account's deletion, though the contract keeps records 90 days and stored positions 30 days
+after their last use; a `session_created` record holds the IP, browser and system of a sign-in.
+`outbox.Worker` now runs `retention.prune` once an hour (one pod per hour through `worker_runs`,
+name `mail-retention`; the first sweep an hour after the process starts). It deletes:
+
+- account records older than `records.KEPT` plus a day (`MARGIN`), so a reader that filters by
+  `>= now - KEPT` never races the sweep for a row at the edge;
+- `mail_item_sent` rows mailed more than `records.KEPT` plus a day ago, and the mailer reads only
+  that span of them;
+- `mail_delivery` rows older than a day: the counters (`mail.settings.counters`) and the
+  instance budget (`mailer._instance_full`) read the last hour;
+- stored positions unused for 30 days.
+
+An inbox record whose matter is still open is kept past 90 days and goes on the first sweep
+after the matter closed, judged as the bell judges it: `registration_pending` while the
+registration it names is `pending`; `mail_disabled` while the human's `address_status` is
+`disabled`; `agents_not_listening` when it is the owner's newest of the type and its count is not 0.
+
+Each table goes in batches of 500 rows chosen by key and deleted by key in a short transaction of
+their own; the DELETE checks the condition again, so a position used in between stays. Account
+records are walked by number (`n > last`), so a batch that holds only open records is passed, not
+read again. A sweep stops after 30 seconds or when the worker stops and leaves the rest to the
+next hour; the mail worker's thread runs it between two looks at the outbox.
+
+**Reason:** the contract's "kept 90 days" and "kept at least 30 days after its last use" were
+true only as filters on read; a copy of the database kept every sign-in's address for good.
+Keeping open records follows §18.2, which lists them while their matter is open, however old:
+deleting one would end that promise for good, while keeping it costs one row per matter. In
+practice none stays long: a pending registration expires after 30 days
+(`registration_accounts.PENDING_ACCOUNT_FOR`), the digest writes a new `agents_not_listening`
+record once the open one left the window (`not_listening_digest.latest`), after which the old one
+is no longer the newest; only `mail_disabled` stays as long as the address stays disabled.
+`mail_item_sent` is kept as long as records, not the 30 days of events: an item from a record (a
+sign-in's alert, a security item) is derived for 90 days, so a row deleted after 30 would mail an
+unread one again; the test fails with a 31-day window.
+
+**Rejected alternatives:**
+- Deleting `mail_item_sent` after the 30-day item window and a margin, as the card proposed: the
+  record items above would be mailed a second time.
+- Reissuing an open inbox record past 90 days instead of keeping it: a new number and `at` for an
+  old matter, so the bell would show it as new and a position would not cover it.
+- Deleting open records past 90 days: §18.2 keeps their items listed while the matter is open.
+- A worker of its own, as `known_sources.Worker`: one more thread for a pass an hour; the mail
+  worker already holds the outbox's sweep.
+- One DELETE per table without a batch (`known_sources.forget_old`): the first sweep on a hub that
+  never pruned would delete every old row in one statement and hold their locks to its end.
+- An index for the sweep in the same change: a migration needs a slot, and the sweep runs once an
+  hour, the account records' walk on their primary key.
+
+## The notice to the old address names where a change was asked from, kept with the pending address until it is verified or expires
+
+**Id:** 569a1661-3a51-45bb-b7e3-47a3f4368354
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-y5hkg2ztvwq9, item 10, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); the lead's decision for variant (a), 2026-11-15; docs/api.md §2.6.3 and §18.4 ("When the new address is verified ... from which browser, operating system and IP address"); `notifications/preferences.py` (`apply_address`, `verify`, `void_pending_address`, `NO_PENDING_ORIGIN`), `notifications/retention.py` (`_pending_origin`), migration `20261115000000_address_where`; tests in `tests/test_notification_address.py`, `tests/test_notification_retention.py`, `tests/test_export.py`, `tests/test_per_human_tables.py`
+**Revisit when:** the old-address notice gets a channel other than mail, an address change can be asked without a session (an admin's or an API key's), or the session list starts keeping where every sensitive call came from
+
+`verify` sent the notice to the old address without the "From: <browser> on <os>, <ip>" line:
+only a removal passed the session to `_tell_old_address`, while the link that confirms a change
+carries no session. `apply_address` now writes the requesting session's browser, operating system
+and IP address beside `pending_nonce` (`pending_browser`, `pending_os`, `pending_ip`), and
+`verify` names them in the notice, in the same `address_from` line, with the same fallbacks, as a
+removal does. For an approved held change the session is the approving one, as for an approved
+removal.
+
+The three columns are never kept for good. They are cleared wherever the pending address is: at
+the verification, when a new request replaces them with its own, at a removal, and when a new
+password voids the pending address (`void_pending_address`). A link that expired leaves its
+pending address in the settings, so the hourly retention sweep clears the three columns of every
+row whose `pending_expires_at` has passed. A row pending at the upgrade has none, and its notice
+leaves the line out, as before. They go with the settings row at an account's deletion, and the
+export leaves them out: a copy of the session's data for one mail, while the export's session
+list holds the browser and system.
+
+**Reason:** the notice to the old address is the account's protection against a takeover through
+its address: the person who lost the account learns when and from where it happened. Narrowing
+the contract to name the "where" only on removal would take that from the common case, a change
+confirmed by its link.
+
+**Rejected alternatives:**
+- Variant (b), changing §2.6.3 and §18.4 to give the "where" on removal only: smaller (no
+  migration), but it weakens the takeover warning where it matters most.
+- Reading the session at verify time from a stored session id: the session may have ended (its
+  `ip` is cleared then) or be another device's; the request's own data is what the notice names.
+- Keeping the columns until the next request instead of clearing them at expiry: an IP address
+  would stay for as long as nobody touches the address.

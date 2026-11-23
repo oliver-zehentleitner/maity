@@ -31,7 +31,9 @@ class Pins(unittest.TestCase):
                 '"git clone --depth 1 --branch v1.2.3 https://github.com/oliver-zehentleitner/keep-the-why <tmp>"\n'
             ),
             "hub/README.md": "the skill's `v1.2.3` release tree\n",
-            "hub/src/maity_hub/config.py": f'KTW_SKILL_SOURCE = (\n    "{SOURCE}"\n)\n',
+            "hub/src/maity_hub/config.py": (
+                f'KTW_SKILL_SOURCE = (\n    "{SOURCE}"\n)\nKTW_SKILL_COMMIT = "{SHA}"  # v1.2.3\n'
+            ),
             "hub/src/maity_hub/ktw_skill.py": 'SKILLS_INSTALLER = "skills@9.9.9"\n"install": [f"npx {SKILLS_INSTALLER} add"]\n',
             "hub/tests/test_keep_the_why_policy.py": f'SOURCE = "{SOURCE}"\n',
             ".github/workflows/ktw-lint.yml": f"      - uses: oliver-zehentleitner/keep-the-why@{SHA} # lint-v1.2.3.1\n",
@@ -76,6 +78,27 @@ class Pins(unittest.TestCase):
                 "AGENTS.md:2: `npx skills@9.9.8`, hub/src/maity_hub/ktw_skill.py pins skills@9.9.9",
             ],
         )
+
+    def test_the_delivered_commit_is_a_commit_named_with_its_release(self) -> None:
+        # §15.5: what a runner fetches. A tag, a short id or another release's comment fails.
+        head = f'KTW_SKILL_SOURCE = (\n    "{SOURCE}"\n)\n'
+        config = "hub/src/maity_hub/config.py"
+        cases = {
+            'KTW_SKILL_COMMIT = "v1.2.3"  # v1.2.3\n': [f"{config}: KTW_SKILL_COMMIT 'v1.2.3' is no commit"],
+            f'KTW_SKILL_COMMIT = "{SHA[:12]}"  # v1.2.3\n': [
+                f"{config}: KTW_SKILL_COMMIT '{SHA[:12]}' is no commit"
+            ],
+            f'KTW_SKILL_COMMIT = "{SHA}"  # v1.2.2\n': [
+                f"{config}: KTW_SKILL_COMMIT's tag is v1.2.2, context-schema is 1.2.3"
+            ],
+            f'KTW_SKILL_COMMIT = "{SHA}"\n': [
+                f"{config}: KTW_SKILL_COMMIT's tag is unnamed, context-schema is 1.2.3"
+            ],
+            "": [f'{config}: no KTW_SKILL_COMMIT = "<commit>"  # v<release>'],
+        }
+        for line, expected in cases.items():
+            with self.subTest(line=line):
+                self.assertEqual(ktw_pin.check(self.tree(**{config: head + line})), expected)
 
     def test_the_linter_action_by_tag_fails(self) -> None:
         line = "      - uses: oliver-zehentleitner/keep-the-why@lint-latest\n"

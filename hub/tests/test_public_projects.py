@@ -129,6 +129,15 @@ def test_a_text_the_markdown_rules_refuse_is_invalid(
     assert refused.json()["error"]["details"]["fields"] == {"public_about": problem}
 
 
+def test_a_lone_surrogate_is_a_control_character_and_an_emoji_is_text(owner: flow.Human) -> None:
+    refused = owner.raw("PATCH", "/projects/maintainer/maity", b'{"public_about": "a \\ud800 b"}')
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"public_about": "control_character"}
+    kept = owner.raw("PATCH", "/projects/maintainer/maity", b'{"public_about": "\\ud83d\\ude42"}')
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["public_about"] == "🙂"
+
+
 def test_a_text_of_4_kib_is_fine(owner: flow.Human) -> None:
     assert (
         owner.patch("/projects/maintainer/maity", {"public_about": "x" * 4096}).status_code == 200
@@ -316,8 +325,22 @@ def test_any_owner_of_an_organisation_sets_the_page_of_its_project_and_a_suspens
     factory.membership(migrated, project_id, "member", human_id=pat.id)
     made = report(pat, {"type": "project", "id": "oz-team/shop"}, "spam")
     assert made.status_code == 201, made.text
+    assert "<loc>https://hub.example/oz-team/shop</loc>" in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" in str(shown(anyone, "/second"))
     assert (
         admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "suspend"}).status_code
         == 200
     )
     assert shown(anyone, "/oz-team/shop") is None
+    # not served and not listed while the organisation is suspended; the owners' switch is kept
+    # (§16.8), so the page needs nobody to turn it on again once the project is back
+    assert "oz-team/shop" not in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" not in str(shown(anyone, "/second"))
+    assert second.get("/projects/oz-team/shop").json()["public_page"] == "on"
+    lifted = admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "dismiss"})
+    assert lifted.status_code == 200, lifted.text
+    back = second.patch("/projects/oz-team/shop", {"state": "build", "reason": "back again"})
+    assert back.status_code == 200, back.text
+    assert shown(anyone, "/oz-team/shop") is not None
+    assert "<loc>https://hub.example/oz-team/shop</loc>" in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" in str(shown(anyone, "/second"))

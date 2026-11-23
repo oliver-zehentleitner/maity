@@ -23,7 +23,7 @@ CACHE = "public, max-age=60"
 
 def limit_source(request: Request) -> None:
     """The caller's budget, taken before anything is read."""
-    wait = BY_ADDRESS.hit(origin_of(request).address)
+    wait = BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
 

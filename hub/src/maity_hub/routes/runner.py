@@ -12,7 +12,8 @@ import asyncio
 import contextlib
 import time
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal
+from types import SimpleNamespace
+from typing import Annotated, Any, Literal, get_args
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -28,6 +29,8 @@ from maity_hub import (
     handles,
     idempotency,
     instances,
+    invitations,
+    ktw_skill,
     longpoll,
     namespace,
     wakeups,
@@ -36,16 +39,18 @@ from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.codes import digest, new_code, new_token, normalise_code
+from maity_hub.db import retrying
 from maity_hub.deps import RunnerCaller, engine_of, settings_of, wait_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
-from maity_hub.models import Strict
+from maity_hub.models import Effort, Strict
 from maity_hub.routes.events import FALLBACK_SECONDS, answer, parse_after, parse_limit
-from maity_hub.routes.joins import join_link
+from maity_hub.routes.joins import admission_holds, join_link
 from maity_hub.runners import (
     event_project_ids,
     listening_key,
     load_runner,
+    open_requests,
 )
 from maity_hub.views import event_views
 
@@ -55,9 +60,20 @@ router = APIRouter()
 Text = Annotated[str, StringConstraints(max_length=200, pattern=r"^[\x20-\x7e]*$")]
 Name = Annotated[str, StringConstraints(min_length=1, max_length=200, pattern=r"^[\x20-\x7e]+$")]
 Harness = Literal[
-    "claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub"
+    "claude-code",
+    "codex",
+    "opencode",
+    "antigravity",
+    "pi",
+    "hermes",
+    "kimi",
+    "cline",
+    "omp",
+    "stub",
 ]
 Mode = Literal["interactive", "supervised"]
+# What bounds a harness's commands (§15.3); the CLI advertises these, test_runner_confinement.
+Confinement = Literal["allowlist", "sandbox", "pod", "none"]
 REPORTED_STATES = Literal[
     "pending", "starting", "running", "stopping", "stopped", "exited", "failed", "rate_limited"
 ]
@@ -82,12 +98,15 @@ class HarnessOffer(Strict):
     id: Harness
     version: Text | None = None
     available: bool
-    reason: Literal["binary_not_found", "version_failed"] | None = None
+    reason: Literal["binary_not_found", "version_failed", "login_needed"] | None = None
     modes: list[Mode] = Field(max_length=2)
     default_mode: Mode
     models: list[Name] = Field(max_length=50)
+    # The reasoning efforts a placement may name (§15.3); a runner from before them, or one
+    # with none configured, sends no key and offers none.
+    efforts: list[Effort] = Field(default_factory=list, max_length=16)
     targets: list[Name] = Field(max_length=50)
-    confinement: Literal["allowlist", "pod", "none"]
+    confinement: Confinement
     sandbox: Literal["on", "off", "n/a"]
 
     @model_validator(mode="after")
@@ -95,6 +114,55 @@ class HarnessOffer(Strict):
         """`available: false` comes with its reason, and only then (§15.3)."""
         if (self.reason is None) != self.available:
             raise ValueError("reason goes with available: false, and only with it")
+        return self
+
+
+ToolId = Literal[
+    "claude-code",
+    "codex",
+    "opencode",
+    "antigravity",
+    "pi",
+    "hermes",
+    "kimi",
+    "cline",
+    "omp",
+    "stub",
+    "maity",
+]
+# What a tool's version check may end in (§15.16); the lists are closed, as in §15.7.
+ToolState = Literal[
+    "current", "rolled_back", "missing", "installing", "updating", "login_needed", "failed"
+]
+ToolReason = Literal["installer_failed", "version_failed", "network", "no_space"]
+BUSY = ("installing", "updating")  # an `Update now` attempt that has not ended yet
+
+
+class Tool(Strict):
+    """One harness tool, or `maity`, as the runner manages it (§15.16)."""
+
+    id: ToolId
+    install: bool
+    update: Literal["daily", "never"]
+    version: Text | None = None
+    previous_version: Text | None = None
+    latest: Text | None = None
+    state: ToolState
+    reason: ToolReason | None = None
+    checked_at: AwareDatetime | None = None
+    updated_at: AwareDatetime | None = None
+    sessions_on_older: int = Field(ge=0, le=10_000)
+    # The request's `requested_at` exactly as the runner read it: a string, never parsed,
+    # so no clock of the runner's is compared with the hub's.
+    update_requested_at: Text | None = None
+
+    @model_validator(mode="after")
+    def _reason_with_failed(self) -> Tool:
+        """`reason` with `failed` only, and always with it; `maity` is never installed."""
+        if (self.reason is None) != (self.state != "failed"):
+            raise ValueError("reason goes with state failed, and only with it")
+        if self.id == "maity" and self.install:
+            raise ValueError("maity is never installed by the runner")
         return self
 
 
@@ -107,6 +175,9 @@ class Capabilities(Strict):
     projects: list[Name] = Field(max_length=200)
     repositories: list[Name] = Field(max_length=200)
     require_local_approval: bool
+    # Absent from a runner that does not manage its tools (§15.16).
+    # One entry per tool id at most (duplicates are refused below).
+    tools: list[Tool] | None = Field(default=None, max_length=len(get_args(ToolId)))
     # Set by the hub (§15.8); a value the runner sends is replaced.
     reported_at: datetime | None = None
 
@@ -115,6 +186,9 @@ class Capabilities(Strict):
         ids = [h.id for h in self.harnesses]
         if len(ids) != len(set(ids)):
             raise ValueError("each harness is offered once")
+        tools = [tool.id for tool in self.tools or []]
+        if len(tools) != len(set(tools)):
+            raise ValueError("each tool is listed once")
         return self
 
 
@@ -138,8 +212,46 @@ class Advertise(Strict):
 
 def _stored(capabilities: Capabilities) -> dict[str, Any]:
     data = capabilities.model_dump(mode="json")
+    if data["tools"] is None:  # a runner that does not report them (§15.3)
+        del data["tools"]
     data["reported_at"] = clock.rfc3339(clock.now())
     return data
+
+
+def _settle_requests(conn: Connection, runner_id: str, capabilities: Capabilities) -> None:
+    """Drop each `Update now` request the report says was carried out: the tool names that
+    request's `requested_at`, exactly as stored, and is no longer installing or updating;
+    and each request for a tool the report no longer lists as updated.
+    A report decided before the runner read a newer request names the older one and leaves
+    the newer standing (§15.16). Called under the runner's row lock."""
+    stored = conn.execute(
+        select(t.runner.c.update_requests).where(t.runner.c.id == runner_id)
+    ).scalar()
+    if not stored:
+        return
+    done = {
+        (tool.id, tool.update_requested_at)
+        for tool in capabilities.tools or []
+        if tool.update_requested_at is not None and tool.state not in BUSY
+    }
+    # A tool the runner no longer updates (`update: "never"`, gone, or no `tools` at all)
+    # will never carry its request out: dropped, so the owner sees none standing.
+    updated = {tool.id for tool in capabilities.tools or [] if tool.update != "never"}
+    # Settled or dropped, an entry stays marked `done`: the hub's own floor for the tool's
+    # next request (runners.open_requests), never shown as standing.
+    kept = [
+        (
+            r
+            if r.get("done")
+            or ((r["tool"], r["requested_at"]) not in done and r["tool"] in updated)
+            else {**r, "done": True}
+        )
+        for r in stored
+    ]
+    if kept != stored:
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=kept)
+        )
 
 
 def _projects(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
@@ -191,55 +303,68 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
     `resume` (§15.8)."""
     runner_id = caller.runner_id
     assert runner_id is not None
-    with events.transaction(engine_of(request)) as conn:
-        now = clock.now()
-        # Rows in the order every authenticated runner call touches them (credential,
-        # runner, session), so that two calls never wait on each other in a cycle; the
-        # credential row also serialises two hellos of one credential (one live session).
-        conn.execute(
-            update(t.runner_credential)
-            .where(t.runner_credential.c.id == caller.credential_id)
-            .values(last_used_at=now)
-        )
-        conn.execute(
-            update(t.runner)
-            .where(t.runner.c.id == runner_id)
-            .values(
-                version=body.client,
-                capabilities=_stored(body.capabilities),
-                capabilities_at=now,
+    skill = ktw_skill.for_runner(settings_of(request))
+
+    def run() -> dict[str, Any]:
+        with events.transaction(engine_of(request)) as conn:
+            now = clock.now()
+            # Rows in the order every authenticated runner call touches them (credential,
+            # runner, session), so that two calls never wait on each other in a cycle; the
+            # credential row also serialises two hellos of one credential (one live session).
+            conn.execute(
+                update(t.runner_credential)
+                .where(t.runner_credential.c.id == caller.credential_id)
+                .values(last_used_at=now)
             )
-        )
-        conn.execute(
-            update(t.runner_session)
-            .where(
-                t.runner_session.c.credential_id == caller.credential_id,
-                t.runner_session.c.live.is_(True),
+            conn.execute(
+                update(t.runner)
+                .where(t.runner.c.id == runner_id)
+                .values(
+                    version=body.client,
+                    capabilities=_stored(body.capabilities),
+                    capabilities_at=now,
+                )
             )
-            .values(live=None, ended_at=now)
-        )
-        session_id = new_id("runner_session")
-        conn.execute(
-            insert(t.runner_session).values(
-                id=session_id,
-                credential_id=caller.credential_id,
-                client=body.client,
-                started_at=now,
-                last_seen_at=now,
-                live=True,
+            _settle_requests(conn, runner_id, body.capabilities)
+            conn.execute(
+                update(t.runner_session)
+                .where(
+                    t.runner_session.c.credential_id == caller.credential_id,
+                    t.runner_session.c.live.is_(True),
+                )
+                .values(live=None, ended_at=now)
             )
-        )
-        name = conn.execute(select(t.runner.c.name).where(t.runner.c.id == runner_id)).scalar()
-        packet = {
-            "server_time": clock.rfc3339(now),
-            "runner": {"id": runner_id, "name": name, "session_id": session_id},
-            "projects": _projects(conn, runner_id),
-            "placements": [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)],
-            "cursor": events.highest_for_runner(
-                conn, event_project_ids(conn, runner_id), runner_id
-            ),
-        }
-    return JSONResponse(packet)
+            session_id = new_id("runner_session")
+            conn.execute(
+                insert(t.runner_session).values(
+                    id=session_id,
+                    credential_id=caller.credential_id,
+                    client=body.client,
+                    started_at=now,
+                    last_seen_at=now,
+                    live=True,
+                )
+            )
+            name = conn.execute(select(t.runner.c.name).where(t.runner.c.id == runner_id)).scalar()
+            rows = pl.runner_reads(conn, runner_id)
+            sessions = pl.runner_sessions(conn, rows)
+            packet = {
+                "server_time": clock.rfc3339(now),
+                "runner": {"id": runner_id, "name": name, "session_id": session_id},
+                "projects": _projects(conn, runner_id),
+                "placements": [pl.for_runner(conn, p, skill, sessions) for p in rows],
+                "cursor": events.highest_for_runner(
+                    conn, event_project_ids(conn, runner_id), runner_id
+                ),
+            }
+        return packet
+
+    # Every change of a runner takes its live credential before its row (`runners.lock`), but a
+    # credential that turned live between those two locks (a re-pair committed in between) is
+    # rewritten under the row lock. Such a change and this call can still wait on each other in
+    # a cycle; the database aborts one side, and the hello runs again, as the authentication
+    # before it does (`db.retrying`).
+    return JSONResponse(retrying(run))
 
 
 @router.patch("/runner")
@@ -253,9 +378,22 @@ def advertise(body: Advertise, request: Request, caller: RunnerCaller) -> JSONRe
             .where(t.runner.c.id == runner_id)
             .values(capabilities=_stored(body.capabilities), capabilities_at=clock.now())
         )
+        _settle_requests(conn, runner_id, body.capabilities)
         return idempotency.Outcome(200, "runner", runner_id, load_runner(conn, runner_id, None))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.get("/runner")
+def runner_requests(request: Request, caller: RunnerCaller) -> JSONResponse:
+    """The owner's open `Update now` requests (§15.16), read after every wake."""
+    runner_id = caller.runner_id
+    assert runner_id is not None
+    with engine_of(request).connect() as conn:
+        stored = conn.execute(
+            select(t.runner.c.update_requests).where(t.runner.c.id == runner_id)
+        ).scalar()
+    return JSONResponse({"update_requests": open_requests(stored)})
 
 
 @router.get("/runner/events")
@@ -334,6 +472,21 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
 # --- placements and reports (§15.7, §15.8) ---------------------------------------------------
 
 
+class Quota(Strict):
+    """Which limit holds a start with `capacity` (§15.7): the runner's or one target's."""
+
+    scope: Literal["runner", "target"]
+    target: Name | None = None
+    count: int = Field(ge=0, le=10_000)
+    max: int = Field(ge=0, le=10_000)
+
+    @model_validator(mode="after")
+    def _target_with_target(self) -> Quota:
+        if (self.target is not None) != (self.scope == "target"):
+            raise ValueError("target goes with scope target, and only with it")
+        return self
+
+
 class Status(Strict):
     seq: int = Field(ge=1, le=2**31 - 1)
     observed_generation: int = Field(ge=0, le=2**31 - 1)
@@ -342,6 +495,8 @@ class Status(Strict):
     detail: str | None = None
     exit_code: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
     restarts: int = Field(ge=0, le=2**31 - 1)
+    # Fresh sessions of the generation (§15.7); a runner from before it sends none.
+    sessions: int | None = Field(default=None, ge=0, le=2**31 - 1)
     retry_at: AwareDatetime | None = None
     crash_count: int | None = Field(default=None, ge=0, le=2**31 - 1)
     crash_window_seconds: int | None = Field(default=None, ge=0, le=2**31 - 1)
@@ -349,11 +504,16 @@ class Status(Strict):
     target: Name
     since: AwareDatetime
     session_hint: Text | None = None
+    # With `capacity` only; a runner from before it sends none (§15.7).
+    quota: Quota | None = None
+    # What the runner's watch found (§15.7), checked by `pl.check_finding` so that a refusal
+    # names the contract's codes; a runner from before it sends none.
+    finding: Any = None
 
 
 def _check_codes(body: Status) -> None:
     """The closed lists of §15.7, and which reason and detail go with which state."""
-    errors: dict[str, str] = {}
+    errors: dict[str, str] = pl.check_finding(body.finding)
     if body.reason is None:
         if body.state == "pending":
             errors["reason"] = "required_with_pending"
@@ -361,6 +521,8 @@ def _check_codes(body: Status) -> None:
         errors["reason"] = "unknown"
     elif body.state not in pl.REASONS[body.reason]:
         errors["reason"] = "not_with_state"
+    if body.quota is not None and body.reason != "capacity":
+        errors["quota"] = "only_with_capacity"
     if body.reason == "join_failed" and body.detail is not None:
         # Any hub error code (§15.7), also one that names a detail of another reason.
         if not pl.JOIN_DETAIL_CODE.fullmatch(body.detail):
@@ -398,11 +560,12 @@ def _own_placement(conn: Connection, runner_id: str, placement_id: str) -> Any:
     return found
 
 
-def _runner_answer(conn: Connection, placement: Any) -> dict[str, Any]:
+def _runner_answer(conn: Connection, placement: Any, skill: dict[str, str]) -> dict[str, Any]:
+    """The runner gets its own finding back with its log lines (§15.7)."""
     return {
-        **pl.for_runner(conn, placement),
+        **pl.for_runner(conn, placement, skill),
         "active": placement.active is True,
-        "reported": pl.view(conn, placement, viewer_id="", briefing=False)["reported"],
+        "reported": pl.shown_report(placement.reported, logs=True),
     }
 
 
@@ -412,18 +575,23 @@ def runner_placements(request: Request, caller: RunnerCaller, closed: bool = Fal
     has not reported removed, wherever they are (§15.5, §15.8)."""
     runner_id = caller.runner_id
     assert runner_id is not None
+    skill = ktw_skill.for_runner(settings_of(request))
     with engine_of(request).begin() as conn:
         if closed:
+            rows = pl.runner_reads_closed(conn, runner_id)
+            sessions = pl.runner_sessions(conn, rows)
             items = [
                 {
-                    **pl.for_runner(conn, p),
+                    **pl.for_runner(conn, p, skill, sessions),
                     "active": False,
                     "closed_reason": p.closed_reason,
                 }
-                for p in pl.runner_reads_closed(conn, runner_id)
+                for p in rows
             ]
         else:
-            items = [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)]
+            rows = pl.runner_reads(conn, runner_id)
+            sessions = pl.runner_sessions(conn, rows)
+            items = [pl.for_runner(conn, p, skill, sessions) for p in rows]
         return JSONResponse({"items": items, "next_cursor": None})
 
 
@@ -444,7 +612,8 @@ def report_status(
             after = pl.report(conn, placement, body.model_dump(), caller.runner_actor())
         except pl.Refusal as refusal:
             raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
-        return JSONResponse(_runner_answer(conn, after))
+        skill = ktw_skill.for_runner(settings_of(request))
+        return JSONResponse(_runner_answer(conn, after, skill))
 
 
 class WorkspaceReport(Strict):
@@ -496,7 +665,10 @@ def report_workspace(
         except pl.Refusal as refusal:
             raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
         return JSONResponse(
-            {**_runner_answer(conn, after), "workspace_outcome": pl.workspace_outcome(after)}
+            {
+                **_runner_answer(conn, after, ktw_skill.for_runner(settings_of(request))),
+                "workspace_outcome": pl.workspace_outcome(after),
+            }
         )
 
 
@@ -539,8 +711,11 @@ def pick_up(
         project = conn.execute(
             select(t.project).where(t.project.c.id == placement.project_id)
         ).one()
-        if not allowed_projects.admits_membership(conn, placement.membership_id, project):
-            # a rejoin included: a member its owner unticked keeps its membership (§6.3)
+        if not allowed_projects.admits(
+            conn, allowed_projects.of_profile(conn, pl.agent_of(conn, placement)), project
+        ):
+            # a rejoin included: a member its owner unticked keeps its membership (§6.3);
+            # and a profile placed while not a member, whose list may have changed since
             raise _pickup_refused("project_not_allowed")
         j = t.join_link.c
         earlier = conn.execute(
@@ -608,8 +783,9 @@ def pick_up(
 def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]:
     """The join's agent, assignment and instance: for a member, a new instance within
     the team's `max_instances`, or for a rejoin one that replaces the instance of the
-    revoked credential (§6.17, §15.9); for a profile the exchange creates, its stored
-    fields (§3.1). Also what the credential will bind."""
+    revoked credential (§6.17, §15.9); for a profile the exchange creates, or one placed
+    while not a member, its stored fields (§3.1, §15.6). Also what the credential will
+    bind: the member id, else the handle."""
     if placement.membership_id is not None:
         member = conn.execute(
             select(t.membership).where(t.membership.c.id == placement.membership_id)
@@ -635,6 +811,17 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
             "new_instance": replaces is None,
             "replaces": replaces,
         }, str(member.agent_id)
+    profile = placement.new_profile or {}
+    # The subagent instruction as the placement took it (§3.1, §15.6); a placement stored
+    # before it took one has none.
+    told: dict[str, Any] = {
+        "subagents": bool(profile.get("subagents")),
+        "subagents_language": (
+            profile.get("subagents_language") if profile.get("subagents") else None
+        ),
+    }
+    if placement.agent_id is not None:
+        return _admission_fields(conn, placement, profile, told)
     taken = conn.execute(
         select(t.agent_profile.c.id).where(
             t.agent_profile.c.owner_id == placement.created_by,
@@ -645,7 +832,16 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
     if taken is not None or aliased not in (None, "placement"):
         # the exchange would refuse it: no code that can never work
         raise _pickup_refused("handle_taken")
-    profile = placement.new_profile or {}
+    creator = SimpleNamespace(
+        project_id=placement.project_id,
+        created_by=placement.created_by,
+        trust=profile.get("trust") or "member",
+        role=profile.get("role") or "coder",
+    )
+    if not invitations.issuer_holds(conn, creator):
+        # The profile is what its creator may give now, as an invitation's (§3.4): one
+        # whose creator lost that authority since the placement is never handed out.
+        raise _pickup_refused("creator_lacks_authority")
     return {
         "new_agent_handle": placement.new_handle,
         "new_agent_display_name": profile.get("display_name") or placement.new_handle,
@@ -655,17 +851,52 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
         "areas": profile.get("areas") or [],
         "capabilities": profile.get("capabilities") or [],
         "briefing": profile.get("briefing"),
+        **told,
     }, str(placement.new_handle)
+
+
+def _admission_fields(
+    conn: Connection, placement: Any, profile: dict[str, Any], told: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
+    """A profile placed while it was not a member (§15.6): a first join with the stored
+    fields, neither `new_instance` nor `replaces` (§15.9), whose creator could still create
+    it now, against the policy as it is now (`member_agents` included). A profile that is a
+    member by now gets an instance at the exchange, which its creator must be able to add
+    to that membership, within `max_instances`: a pickup beyond it is refused here, as a
+    member's is."""
+    fields = {
+        "agent_id": placement.agent_id,
+        "trust": profile.get("trust") or "member",
+        "role": profile.get("role") or "coder",
+        "reports_to": profile.get("reports_to"),
+        "areas": profile.get("areas") or [],
+        "capabilities": profile.get("capabilities") or [],
+        "briefing": profile.get("briefing"),
+        **told,
+        "new_instance": False,
+        "replaces": None,
+    }
+    stored = SimpleNamespace(
+        project_id=placement.project_id, created_by=placement.created_by, **fields
+    )
+    if not admission_holds(conn, stored):
+        raise _pickup_refused("creator_lacks_authority")
+    member = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == placement.project_id,
+            t.membership.c.agent_id == placement.agent_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if member is not None:
+        instances.refuse_over_quota(conn, member)
+    handle: str = conn.execute(
+        select(t.agent_profile.c.handle).where(t.agent_profile.c.id == placement.agent_id)
+    ).scalar_one()
+    return fields, handle
 
 
 def _owner_audience(conn: Connection, placement: Any) -> list[str]:
     """`join_picked_up` goes to the agent profile's owner and `trust:owner` (§8.2). A
     profile the exchange will create is the placement creator's."""
-    owner = placement.created_by
-    if placement.membership_id is not None:
-        owner = conn.execute(
-            select(t.agent_profile.c.owner_id)
-            .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-            .where(t.membership.c.id == placement.membership_id)
-        ).scalar_one()
-    return [f"member:{owner}", "trust:owner"]
+    return [f"member:{pl.profile_owner(conn, placement)}", "trust:owner"]

@@ -19,12 +19,13 @@ from sqlalchemy import Connection, select
 
 from maity_hub import account_deletion, catalog, clock, events, link_frame
 from maity_hub import tables as t
-from maity_hub.auth import second_factor_reset
+from maity_hub.auth import second_factor, second_factor_reset
 from maity_hub.db import retrying
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences, tokens
+from maity_hub.notifications import address, preferences, tokens
 from maity_hub.notifications.preferences import KINDS
+from maity_hub.text_language import text_language
 
 page_router = APIRouter()
 
@@ -65,7 +66,7 @@ def _language(conn: Connection, request: Request, token: str) -> str:
     payload = tokens.read(settings_of(request).mail.signing_key, token)
     if payload is None:
         return "en"
-    return preferences.text_language(conn, str(payload.get("h")))
+    return text_language(conn, str(payload.get("h")))
 
 
 def _dead(conn: Connection, request: Request, words: dict[str, str], language: str) -> HTMLResponse:
@@ -114,7 +115,7 @@ def verify_confirm(token: str, request: Request) -> HTMLResponse:
     with engine_of(request).begin() as conn:
         language = _language(conn, request, token)
         words = catalog.section("mail_links", language)
-        if not preferences.verify(
+        if not address.verify(
             conn, token, hub.mail.signing_key, hub.public_url, secret_key=hub.secret_key
         ):
             return _dead(conn, request, words, language)
@@ -203,6 +204,38 @@ def reset_confirm(token: str, request: Request) -> HTMLResponse:
         if not second_factor_reset.take_effect(conn, hub, token):
             return _dead(conn, request, words, language)
         return _page(conn, request, words["reset_title"], words["reset_done"], language=language)
+
+
+@page_router.get("/mail/second-factor-unlock/{token}")
+def unlock_page(token: str, request: Request) -> HTMLResponse:
+    """Asks before the day's cap of wrong second-factor codes is lifted (§2.8.6); writes
+    nothing."""
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        language = second_factor.unlock_page(conn, hub, token)
+        if language is None:
+            language = _language(conn, request, token)
+            return _dead(conn, request, catalog.section("mail_links", language), language)
+        words = catalog.section("mail_links", language)
+        return _page(
+            conn,
+            request,
+            words["unlock_title"],
+            words["unlock_text"],
+            button=words["unlock_button"],
+            language=language,
+        )
+
+
+@page_router.post("/mail/second-factor-unlock/{token}")
+def unlock_confirm(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
+        if not second_factor.unlock(conn, hub, token):
+            return _dead(conn, request, words, language)
+        return _page(conn, request, words["unlock_title"], words["unlock_done"], language=language)
 
 
 @page_router.get("/mail/account-deletion/{token}")

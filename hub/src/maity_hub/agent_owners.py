@@ -13,16 +13,30 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, select
 
-from maity_hub import clock, isolation, policy, project_roles, public_projects
+from maity_hub import isolation, policy, project_roles, public_projects
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.events import Actor
+from maity_hub.scopes import OUTSIDE
 
 OWNER_LEFT = "The agent's owner is no longer a member of this project."
 HUB = Actor(None)  # the events name no actor: the hub's own change
 OUTSIDE_TRUST = ("member", "guest")
+# The roles an agent with trust `outside` may hold (§6.1 `outside_roles`, B.1 of §6.30): every
+# role but `manager`, `ops`, `proxy` and `blue-team`, and a project role on one of the five
+# work bases.
+OUTSIDE_ROLE_BASES = (
+    "coder",
+    "reviewer",
+    "tester",
+    "designer",
+    "writer",
+    "red-team",
+    "purple-team",
+    "expert",
+)
 
 
 def effective(conn: Connection, project: Any) -> str:
@@ -64,14 +78,39 @@ def is_outside(conn: Connection, project: Any, row: Any) -> bool:
     )
 
 
+def bound_by_outside_roles(conn: Connection, project: Any, row: Any) -> bool:
+    """Whether the membership `row` is held to `outside_roles` (§6.2, §2.3 "Outside"): its own
+    trust is `outside`, whoever its owner is now, or its owner is no member. `check_policy` and
+    `refuse_lift` ask it; `check_assignment` applies the same rule inline, its trust-`outside`
+    branch first, then the owner's. It reads the membership's own trust, so a rejoin as a
+    member's agent, §2.3's one way out of `outside`, leaves it."""
+    return bool(row.trust == OUTSIDE or is_outside(conn, project, row))
+
+
 def within_limits(project: Any, trust: str, role: str, role_base: str | None) -> bool:
     """What `outside_roles` lets an outsider's agent hold: trust `member` or `guest`, a role on
     the list, and one built on a base that works (never one that reviews, tests, manages,
-    deploys or relays decisions, whatever the list says)."""
+    deploys or relays decisions, whatever the list says); for trust `outside`, which only an
+    outsider's join gives (§2.3 "Outside"), a role `outside_role_allowed` gives."""
+    if trust == OUTSIDE:
+        return outside_role_allowed(project, role, role_base)
     return (
         trust in OUTSIDE_TRUST
         and role in policy.outside_roles(project)
         and (role_base or project_roles.base_of(project, role)) in policy.OUTSIDE_BASES
+    )
+
+
+def outside_role_allowed(project: Any, role: str, base: str | None) -> bool:
+    """A role an agent with trust `outside` may hold in `project` (§6.1 `outside_roles`, B.1
+    of §6.30): on the project's list, on one of `policy.OUTSIDE_BASES` as the list is checked
+    when it is set, and on one of the contract's `OUTSIDE_ROLE_BASES`, so that a stored list
+    that still names `blue-team`, or a wider `OUTSIDE_BASES`, never lets more in."""
+    base = base or project_roles.base_of(project, role)
+    return (
+        role in policy.outside_roles(project)
+        and base in policy.OUTSIDE_BASES
+        and base in OUTSIDE_ROLE_BASES
     )
 
 
@@ -125,19 +164,20 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
     """A human's membership ended (§6.2): the joins they created and nobody used are revoked,
     the placements they proposed that made no membership yet are closed, and what the
     project's setting does not let stay without its owner is isolated. Under both settings."""
-    from maity_hub import bridges, placements
+    from maity_hub import bridges, join_revocation, placements
 
     j = t.join_link.c
-    conn.execute(
-        update(t.join_link)
-        .where(
-            j.project_id == project.id,
-            j.created_by == human_id,
-            j.used_at.is_(None),
-            j.burned_at.is_(None),
-            j.revoked_at.is_(None),
-        )
-        .values(revoked_at=clock.now())
+    # Attributed to whoever ended the membership, and told (§3.1); an end the hub carries out
+    # with its `HUB` actor (an account's deletion, §2.9; an organisation owner's seat it kept,
+    # released, §6.26) names nobody and tells nobody.
+    join_revocation.revoke(
+        conn,
+        j.project_id == project.id,
+        j.created_by == human_id,
+        j.used_at.is_(None),
+        j.burned_at.is_(None),
+        by=None if actor == HUB else by,
+        actor_in=lambda _project_id: actor,
     )
     placements.creator_left(conn, project.id, human_id, actor, by)
     bridges.owner_left(conn, project.id, human_id, actor)  # §2.3, "Ending on its own"
@@ -146,11 +186,12 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
 
 def refuse_lift(conn: Connection, project: Any, row: Any) -> None:
     """No lift while the owner is no member and the agent may not stay (§6.2): `owner_not_member`
-    under `members`, `outside_owner` under `anyone` while it is beyond the limits."""
-    if not is_outside(conn, project, row):
+    under `members`, `outside_owner` under `anyone` while it is beyond the limits; and for an
+    agent with trust `outside` whose owner is a member by now, `outside_owner` while its role
+    is beyond `outside_roles` (`bound_by_outside_roles`)."""
+    if not bound_by_outside_roles(conn, project, row):
         return
-    mode = effective(conn, project)
-    if mode == "members":
+    if is_outside(conn, project, row) and effective(conn, project) == "members":
         raise invalid({"member": "owner_not_member"}, "the agent's owner is no member")
     if not within_limits(project, row.trust, row.role, row.role_base):
         raise invalid(
@@ -166,6 +207,16 @@ def check_assignment(conn: Connection, project: Any, row: Any, values: dict[str,
     isolated or not, gives it trust `admin` or a role that reviews. A project that reads
     `members` holds no limits."""
     if row.agent_id is None or not ({"trust", "role"} & values.keys()):
+        return
+    if row.trust == OUTSIDE:  # `bound_by_outside_roles`, whatever the setting and the owner
+        # Trust `outside` holds only a role `outside_roles` gives (§2.3 "Outside"); the trust
+        # itself never changes (`members.validate_assignment`).
+        if "role" in values and not outside_role_allowed(
+            project, values["role"], values.get("role_base")
+        ):
+            raise invalid(
+                {"role": "outside_owner"}, "an outsider's agent stays within outside_roles"
+            )
         return
     if effective(conn, project) != "anyone" or not is_outside(conn, project, row):
         return
@@ -191,6 +242,6 @@ def check_policy(conn: Connection, project: Any, roles: list[str]) -> str | None
             t.membership.c.isolated_since.is_(None),
         )
     ):
-        if is_outside(conn, project, row) and row.role not in roles:
+        if bound_by_outside_roles(conn, project, row) and row.role not in roles:
             return "outside_owner"
     return None

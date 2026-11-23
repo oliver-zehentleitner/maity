@@ -120,9 +120,31 @@ window.Maity = window.Maity || {};
     return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
+  // Every child gone in one change (tsk-3b2t7hwc352s: the board's columns emptied one removeChild
+  // at a time).
   function clear(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
+    el.replaceChildren();
     return el;
+  }
+
+  // Whether two trees draw the same: the same elements with the same attributes and the same text,
+  // in the same order. Listeners and properties (a value typed, a box ticked) are not compared, so
+  // only the caller knows whether the older tree's listeners still act on the right data. loose(name,
+  // a, b), where given, says that two different values of an attribute count as the same (an id
+  // made up anew for every draw). A view keeps the older tree where it would draw the same, and the
+  // browser has nothing to lay out or style again (tsk-3b2t7hwc352s). A missing tree (null or
+  // undefined) is never the same as any, another missing one included: there is nothing to keep.
+  // Nodes of different kinds (an element, text, a comment) are never the same, whatever their text.
+  function sameTree(a, b, loose) {
+    if (a == null || b == null) return false;
+    if (a.nodeType !== b.nodeType) return false;
+    if (a.nodeType !== 1) return a.textContent === b.textContent; // text, a comment: no element
+    if (a.tagName !== b.tagName || !sameAttrs(a, b, null, loose)) return false;
+    const ac = a.childNodes;
+    const bc = b.childNodes;
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) if (!sameTree(ac[i], bc[i], loose)) return false;
+    return true;
   }
 
   // Every <img> under root, the root itself included, in document order.
@@ -135,21 +157,16 @@ window.Maity = window.Maity || {};
     return out;
   }
 
-  function attrNames(el) {
-    const names = typeof el.getAttributeNames === "function" ? el.getAttributeNames() : [];
-    const out = [];
-    for (let i = 0; i < names.length; i++) if (names[i] !== "src") out.push(names[i]);
-    return out;
-  }
-
-  // Every attribute other than src. A different alt, class, width or
-  // anything else means a different image: the fresh node stays.
-  function sameAttrs(a, b) {
-    const an = attrNames(a);
-    const bn = attrNames(b);
+  // Whether two elements have the same attributes, the one named `skip` left out of both (keepImages:
+  // src). loose(name, a, b), where given, says that two different values count as the same (sameTree).
+  function sameAttrs(a, b, skip, loose) {
+    const an = a.getAttributeNames().filter((name) => name !== skip);
+    const bn = b.getAttributeNames().filter((name) => name !== skip);
     if (an.length !== bn.length) return false;
     for (let i = 0; i < an.length; i++) {
-      if (b.getAttribute(an[i]) !== a.getAttribute(an[i])) return false;
+      const av = a.getAttribute(an[i]);
+      const bv = b.getAttribute(an[i]);
+      if (av !== bv && !(loose && bv != null && loose(an[i], av, bv))) return false;
     }
     return true;
   }
@@ -174,7 +191,9 @@ window.Maity = window.Maity || {};
       for (let k = 0; k < oldImgs.length; k++) {
         const candidate = oldImgs[k];
         if (used.has(candidate) || handledImgs.has(candidate)) continue;
-        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh)) continue;
+        // Every attribute other than src: a different alt, class, width or anything else means a
+        // different image, and the fresh node stays.
+        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh, "src")) continue;
         old = candidate;
         break;
       }
@@ -384,7 +403,8 @@ window.Maity = window.Maity || {};
     const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
     // Without a handle (a reference read across projects carries none) the
     // name stands before the #id: the instance is said all the same.
-    const linkable = !!m && !ctx.outsider && typeof ctx.link === "function";
+    // A member's page opens for a member and for an outsider in the dashed tab, not read along (/observe).
+    const linkable = !!m && opensViews(ctx) && typeof ctx.link === "function";
     const suffix = inst && agent
       ? (linkable
         ? h("a", { class: "member-instance muted", href: instanceHref(ctx, id, inst.id), title: instanceTitle(inst) }, "#" + inst.id)
@@ -399,6 +419,9 @@ window.Maity = window.Maity || {};
     // The #id is a link of its own beside the handle's, never inside it.
     return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
+  // Whether the project's views open for this reader (js/trust.js `opensViews`), so a name links
+  // into them; where trust.js is not loaded, a reader from outside gets no link, as before.
+  const opensViews = (ctx) => (M.trust ? M.trust.opensViews(ctx) : !ctx.outsider);
   // Where an instance's #id leads: its member's page, Sessions, with it chosen.
   const instanceHref = (ctx, memberId, instanceId) => ctx.link("team", memberId, "sessions", instanceId);
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
@@ -426,14 +449,18 @@ window.Maity = window.Maity || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = (id && ctx.memberById && ctx.memberById[id]) || (typeof who === "object" ? who : null) || { id };
     const handle = handleOf(ctx, m) || m.handle || id;
-    const presence = m.presence || "offline";
-    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind, Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence].filter(Boolean).join(" · ");
+    // An outsider reads no presence (§2.3): where none came, no dot and no presence word, never
+    // "offline" (a read-along's own agents, /observe, still carry theirs).
+    const outside = M.trust ? M.trust.outsider(ctx) : !!ctx.outsider;
+    const presence = m.presence || (outside ? null : "offline");
+    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind,
+      presence ? (Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence) : null].filter(Boolean).join(" · ");
     const face = [
       h("span", { class: "chip-avatar " + (m.kind === "agent" ? "agent" : "human") }, M.avatar ? M.avatar(m, 22) : null,
-        h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
+        presence ? h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" }) : null),
       h("span", { class: "chip-handle" }, "@" + handle),
     ];
-    const linkable = ctx.memberById && ctx.memberById[id] && !ctx.outsider && typeof ctx.link === "function";
+    const linkable = ctx.memberById && ctx.memberById[id] && opensViews(ctx) && typeof ctx.link === "function";
     return linkable
       ? h("a", { class: "member-chip", href: ctx.link("team", id), title: said, "aria-label": said, "data-member": id }, face)
       : h("span", { class: "member-chip plain", title: said }, face);
@@ -480,9 +507,12 @@ window.Maity = window.Maity || {};
   const managesText = (manages, half) => {
     const c = manages && manages[half];
     if (!c || !c.members) return null;
-    const live = [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ");
-    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
+    // An outsider's `manages` holds `members` and `instances` alone (§2.3, routes/members.py
+    // OUTSIDE_COUNT_KEYS): no "(… online)" then, rather than a count the hub did not send.
+    const live = typeof c.online === "number"
+      ? " (" + [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ") + ")" : "";
+    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + live : null].filter(Boolean).join(" · ");
   };
 
-  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, sameTree, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

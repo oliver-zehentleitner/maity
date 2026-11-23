@@ -252,8 +252,8 @@ own, read-only: the hub reads the file a project setting names
 the default branch's commit and answers it whole, with a table of
 contents and an anchor per heading, under an `ETag` over the
 repository, the path and the file's bytes. The setting names a Markdown
-file only (`not_markdown` otherwise; the extension is checked in any
-case, while every path segment must match byte for byte), which
+file only (`not_markdown` otherwise; the extension alone is compared
+regardless of case, every path segment byte for byte), which
 keeps it from exposing arbitrary repository files to every
 `project:read` holder, guests included; a symlink is refused too, since
 the name says nothing about the file it points to: the hub reads the
@@ -456,16 +456,18 @@ reading and saving. The precondition itself is the arbiter's ruling
 (confirmed); the shape below was settled in the contract pull request
 (inferred): a body field named `base_version` and `conflict` with
 `current_version` are how the contract already guards a soul and a
-human's preferences against the same lost update (§19.1, §19.4), so
-clients and the CLI handle one pattern. Required, because the overwrite
+human's preferences against the same lost update (§19.1, §19.4; a
+soul's write requires it, a human's own `PUT /me/preferences` takes it
+optionally), so clients and the CLI handle one pattern. Required, because the overwrite
 happens exactly in the client that sends nothing; no client on main
 edits notes yet, so nothing breaks. The redaction takes it too, so that
 an admin never removes a text it has not seen.
 
 **Rejected alternatives:**
-- `If-Match` with an ETag and `412 Precondition Failed`: the API uses no
-  conditional headers anywhere, and a second way to say the same thing
-  would serve no client better.
+- `If-Match` with an ETag and `412 Precondition Failed`: the API takes
+  no conditional header on a write (its ETags only let some reads
+  answer `304`), and a second way to say the same thing would serve no
+  client better.
 - An optional `base_version`: a client that leaves it out is exactly
   the one that overwrites; the hub could not tell a careful client from
   a careless one.
@@ -492,6 +494,13 @@ when and `reason: null`. That holds for the note in the API and for the
 note inside the `note_added` and `note_edited` events that carried it,
 which the hub shapes per reader when it serves them. The public card
 page already shows a redacted note as removed, without a reason.
+
+A redacted card history entry follows the same rule (tsk-dd14yts44h1f):
+in the history, in the redaction's answer, in the field values of the
+`task_created` or `task_updated` event of its write, and in a link the
+hub answers from the entry. A replayed `Idempotency-Key` loads the entry
+with the caller's membership as it is at the replay, so it shows what
+the caller's own read of the history shows then.
 
 **Reason:** a reason often names exactly what was sensitive ("contained
 a password"), and notes of a public project are public; one rule for

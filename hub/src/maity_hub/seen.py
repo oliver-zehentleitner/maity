@@ -17,7 +17,22 @@ from datetime import datetime, timedelta
 # per request.
 SEEN_EVERY = timedelta(seconds=60)
 
+# The presence windows of §5.3, for members, instances, runners and the landing's counts.
+ONLINE = timedelta(seconds=120)
+AWAY = timedelta(hours=2)
+
 
 def latest_call(last_seen: datetime) -> datetime:
     """The latest moment a caller whose stored `last_seen_at` is `last_seen` may have called."""
     return last_seen + SEEN_EVERY
+
+
+def presence_by_age(age: timedelta) -> str:
+    """`online`, `away` or `offline` by the time since the latest call (§5.3). The caller picks
+    that call: `latest_call` of a throttled `last_seen_at` (a member's, a human's), the stored
+    time itself where every call writes it (a credential's `last_used_at`, a runner's)."""
+    if age <= ONLINE:
+        return "online"
+    if age <= AWAY:
+        return "away"
+    return "offline"

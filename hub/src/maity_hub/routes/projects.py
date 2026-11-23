@@ -16,10 +16,12 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    access,
     agent_owners,
     attachments,
     availability,
     bridges,
+    ceilings,
     clock,
     commitment,
     contract_text,
@@ -54,6 +56,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import attachments as live_attachments
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project, newest_seq
@@ -62,7 +65,7 @@ from maity_hub.models import SLUG_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.scopes import in_admin_team
-from maity_hub.views import confirmed_by_of, forge_of, member_view, principal_id, project_view
+from maity_hub.views import confirmed_by_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -71,14 +74,17 @@ ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover o
 
 
 class RepositoryIn(Strict):
-    url: str = Field(min_length=1, max_length=255)
+    # No length here: an empty or over-long URL is `not_a_repository_url` (§6.1).
+    # The request body cap is the outer bound.
+    url: str
     default_branch: str = Field(default="main", min_length=1, max_length=255)
     # §6.1: left out, it keeps the current value on the same `url` (`_repository_columns`).
     required_check: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RepositoryConfirmIn(Strict):
-    url: str = Field(min_length=1, max_length=255)
+    # The owner sends the URL they saw. Length is the body cap's, not this field's.
+    url: str
 
 
 class PolicyIn(Strict):
@@ -106,6 +112,10 @@ class PolicyIn(Strict):
     member_agents_max: int | None = None
     agent_owners: str | None = None  # `members` or `anyone`; never null again once set (§6.1)
     outside_roles: list[str] | None = Field(default=None, max_length=50)
+    # §6.1: an integer ≥ 1 (`0` and anything else `invalid`), and `owners`, `members` or
+    # `{"owners_of": [handle, …]}`, checked in `_apply_policy` so each refusal is named.
+    own_approvals: Any = None
+    own_agents: Any = None
 
 
 class AbsenceIn(Strict):
@@ -271,6 +281,73 @@ def _checked_restricted(
     return {"mode": given.mode, "members": list(members)}
 
 
+MAX_OWNERS_OF = 200
+
+
+def _checked_own_agents(conn: Connection, project: Any, given: Any) -> Any:
+    """`policy.own_agents` as stored (§6.1): `owners`, `members`, or `{"owners_of": [human
+    ids]}`; otherwise the refusal's code, which `_apply_policy` names under `own_agents`.
+    The value is sent whole. A handle (current or an alias, §6.24) that resolves to a person
+    the stored list holds already is accepted as it is, member or not, so a list read and
+    sent back passes after a member has left; a new one must name a human member."""
+    if given in policy.OWN_AGENTS:
+        return given
+    if (
+        not isinstance(given, dict)
+        or set(given) != {policy.OWNERS_OF}
+        or not isinstance(given[policy.OWNERS_OF], list)
+        or not all(isinstance(h, str) for h in given[policy.OWNERS_OF])
+    ):
+        return "unknown"
+    named: list[str] = given[policy.OWNERS_OF]
+    if len(named) > MAX_OWNERS_OF:
+        return "too_many"
+    current = policy.own_agents(project)
+    held = set(current[policy.OWNERS_OF]) if isinstance(current, dict) else set()
+    picked: list[str] = []
+    for handle in named:
+        human_id = handles.human_id_of(conn, handle)
+        if human_id is None:
+            return "unknown_handle"
+        if human_id not in held:
+            # A pending, suspended or deleted account answers as a name nobody has, as
+            # elsewhere, so the refusal tells nothing about the account (review of #2135).
+            if not _active_account(conn, human_id):
+                return "unknown_handle"
+            if not _human_member(conn, project.id, human_id):
+                return "not_a_member"
+        if human_id not in picked:
+            picked.append(human_id)
+    return {policy.OWNERS_OF: picked}
+
+
+def _active_account(conn: Connection, human_id: str) -> bool:
+    row = conn.execute(
+        select(t.human.c.account_status, t.human.c.deleted_at, t.human.c.suspended_at).where(
+            t.human.c.id == human_id
+        )
+    ).first()
+    return (
+        row is not None
+        and row.account_status == "active"
+        and row.deleted_at is None
+        and row.suspended_at is None
+    )
+
+
+def _human_member(conn: Connection, project_id: str, human_id: str) -> bool:
+    return (
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.human_id == human_id,
+                t.membership.c.active.is_(True),
+            )
+        ).first()
+        is not None
+    )
+
+
 def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode: str) -> str | None:
     found = conn.execute(
         select(t.membership.c.trust, t.membership.c.agent_id).where(
@@ -283,6 +360,8 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
         return "not_a_member"
     if found.trust == restricted.GUEST:
         return "guest"
+    if found.trust not in restricted.SEATED_TRUSTS:  # an outsider's agent (§2.3 "Outside")
+        return "outside"
     if found.agent_id is not None and mode == "nobody_except":
         owner = conn.execute(
             select(t.membership.c.trust)
@@ -293,7 +372,7 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
                 t.membership.c.active.is_(True),
             )
         ).first()
-        if owner is None or owner.trust == restricted.GUEST:
+        if owner is None or owner.trust not in restricted.SEATED_TRUSTS:
             return "owner_not_a_member"
     return None
 
@@ -406,7 +485,11 @@ def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Ac
         project,
         "policy_changed",
         BROADCAST,
-        {"old": current, "new": new, "reason": reason},
+        {
+            "old": policy.shown(conn, current),
+            "new": policy.shown(conn, new),
+            "reason": reason,
+        },
         actor=actor,
     )
 
@@ -444,12 +527,13 @@ def _repository_columns(repository: RepositoryIn | None, current: Any = None) ->
             "repository_default_branch": None,
             "repository_required_check": None,
         }
-    url = repository.url.rstrip("/")
-    if not url.startswith("https://") or forge_of(url) is None or url.count("/") != 4:
+    try:
+        url = forge.stored_repository_url(repository.url)
+    except forge.RepositoryURLError:
         raise invalid(
-            {"repository.url": "not_a_configured_forge"},
-            "the repository must be https://<forge host>/<owner>/<name> on a configured forge",
-        )
+            {"repository.url": "not_a_repository_url"},
+            "the repository must be an https URL on a DNS host",
+        ) from None
     required = repository.required_check
     if (
         "required_check" not in repository.model_fields_set
@@ -474,6 +558,9 @@ def _looks_public(request: Request, repository: RepositoryIn | None, served: boo
     if not served:
         return False  # nothing reads it before the owner confirms it (§11.4)
     url = _repository_columns(repository)["repository_url"]
+    # The first look is a forge read. Off GitHub nothing is asked (§11).
+    if forge.kind_of(url) != "github":
+        return False
     return reader_of(request).repository_public(forge.repository_of(url))
 
 
@@ -584,18 +671,23 @@ def _apply_policy(
         if not policy.LEASE_MIN <= change.lease_seconds <= policy.LEASE_MAX:
             errors["policy.lease_seconds"] = "out_of_range"
         proposed["lease_seconds"] = change.lease_seconds
+    ceiling_hit: list[int] = []
     if change.max_placements is not None:
-        if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
-            errors["policy.max_placements"] = "out_of_range"
+        _check_bound(conn, project_id, "max_placements", change.max_placements, errors, ceiling_hit)
         proposed["max_placements"] = change.max_placements
     if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
         # Only `required` or `optional` (§6.1): a null would clear the human's value.
         errors["policy.keep_the_why"] = "unknown"
+    if "agent_owners" in change.model_fields_set and change.agent_owners is None:
+        # Never null again once set (§6.1): a stored `anyone` is the outsiders' opt-in, and
+        # `members` closes it; a null would quietly fall back to the unset reading.
+        errors["policy.agent_owners"] = "unknown"
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
-        if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
-            errors["policy.member_agents_max"] = "out_of_range"
+        _check_bound(
+            conn, project_id, "member_agents_max", change.member_agents_max, errors, ceiling_hit
+        )
         proposed["member_agents_max"] = change.member_agents_max
     if change.outside_roles is not None:
         roles = list(dict.fromkeys(change.outside_roles))
@@ -605,6 +697,24 @@ def _apply_policy(
         if problem is not None:
             errors["outside_roles"] = problem
         proposed["outside_roles"] = roles
+    if "own_approvals" in change.model_fields_set:
+        count = change.own_approvals
+        # An integer from 1 to the column's width; a bool is no number here (§6.1).
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 1 <= count <= policy.OWN_APPROVALS_MAX
+        ):
+            errors["own_approvals"] = "out_of_range"  # named plain, as outside_roles (§6.1)
+        else:
+            proposed["own_approvals"] = count
+    if "own_agents" in change.model_fields_set:
+        found = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        checked = _checked_own_agents(conn, found, change.own_agents)
+        if isinstance(checked, str) and checked not in policy.OWN_AGENTS:
+            errors["own_agents"] = checked
+        else:
+            proposed["own_agents"] = checked
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -633,8 +743,35 @@ def _apply_policy(
             errors["policy.coordinator_substitute"] = "not_an_agent_admin"
         proposed["coordinator_substitute"] = stand_in
     if errors:
+        if ceiling_hit:  # §6.31: the ceiling in effect beside the field
+            raise ApiError(
+                400,
+                "invalid",
+                "the request does not validate",
+                {"fields": errors, "ceiling": ceiling_hit[0]},
+            )
         raise invalid(errors)
     return proposed
+
+
+def _check_bound(
+    conn: Connection,
+    project_id: str,
+    name: str,
+    value: int,
+    errors: dict[str, str],
+    ceiling_hit: list[int],
+) -> None:
+    """A project value within the hub's bound (`out_of_range`) and within its ceiling
+    (`above_ceiling`, §6.31)."""
+    if not 0 <= value <= ceilings.BOUND:
+        errors[f"policy.{name}"] = "out_of_range"
+        return
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    cap = ceilings.ceiling(conn, name, project)
+    if value > cap.value:
+        errors[f"policy.{name}"] = "above_ceiling"
+        ceiling_hit.append(cap.value)
 
 
 def _set_keep_the_why(change: PolicyIn | None) -> dict[str, Any]:
@@ -699,7 +836,7 @@ def _stored(
         return None
     return {
         "used": attachments.used(conn, project.id),
-        "quota": limits.of(conn, settings_of(request), limits.PROJECT_STORAGE),
+        "quota": limits.project_storage(conn, settings_of(request), project.id),
     }
 
 
@@ -761,6 +898,8 @@ def _serve_restricted(
     view["settings"]["restricted_access"] = restricted.served(
         conn, project, _reader(conn, project, request) if isinstance(mine, _Unread) else mine
     )
+    # Every member read passes here: `own_agents` names the picked people by handle (§6.1).
+    view["policy"] = policy.shown(conn, view["policy"])
     return view
 
 
@@ -775,41 +914,60 @@ idempotency.register("project", load_project, idempotency.in_project(idempotency
 def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
     settings = settings_of(request)
     with engine_of(request).begin() as conn:
-        query = select(t.project).join(t.membership, t.membership.c.project_id == t.project.c.id)
-        if caller.kind == "agent":
-            query = query.where(t.membership.c.id == caller.membership_id)
+        agent = caller.kind == "agent"
+        isolated_in: set[str] = set()
+        if agent:
+            # Every project the instance is attached to, an isolated one included (§6.1,
+            # §6.17); never a project its profile is in without this instance.
+            attached_rows = live_attachments(conn, caller.credential_id or "")
+            query = select(t.project).where(
+                t.project.c.id.in_([r.project_id for r in attached_rows])
+            )
+            isolated_in = {r.project_id for r in attached_rows if r.isolated_since is not None}
         else:
-            query = query.where(
-                t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True)
+            query = (
+                select(t.project)
+                .join(t.membership, t.membership.c.project_id == t.project.c.id)
+                .where(t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True))
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
-        shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
-        aliases = namespace.aliases_by(conn, [r.id for r in rows])
-        confirmed = confirmed_by_of(conn, rows)
-        return JSONResponse(
-            {
-                "items": [
-                    _serve_restricted(
-                        conn,
-                        r,
-                        request,
-                        project_view(
-                            r,
-                            settings,
-                            names[r.id].split("/")[0],
-                            shown[r.id],
-                            _export(r, request),
-                            aliases[r.id],
-                            _stored(conn, r, request),
-                            confirmed[r.id],
-                        ),
-                    )
-                    for r in rows
-                ],
-                "next_cursor": None,
-            }
-        )
+        full = [r for r in rows if r.id not in isolated_in]
+        shown = images.views(conn, [r.id for r in full])
+        aliases = namespace.aliases_by(conn, [r.id for r in full])
+        confirmed = confirmed_by_of(conn, full)
+        items = []
+        for r in rows:
+            if r.id in isolated_in:
+                # The isolated entry (§6.1): what `GET /me` already shows of the project.
+                items.append(
+                    {
+                        "id": r.id,
+                        "slug": r.slug,
+                        "full_name": names[r.id],
+                        "name": r.name,
+                        "state": r.state,
+                        "isolated": True,
+                    }
+                )
+                continue
+            view = _serve_restricted(
+                conn,
+                r,
+                request,
+                project_view(
+                    r,
+                    settings,
+                    names[r.id].split("/")[0],
+                    shown[r.id],
+                    _export(r, request),
+                    aliases[r.id],
+                    _stored(conn, r, request),
+                    confirmed[r.id],
+                ),
+            )
+            items.append({**view, "isolated": False} if agent else view)
+        return JSONResponse({"items": items, "next_cursor": None})
 
 
 def _creation_owner(
@@ -985,17 +1143,70 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 
 
 @router.get("/projects/{owner}/{slug}")
+@access.outside_read
 def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        return JSONResponse(project_body(conn, request, caller, slug))
+        mine = access.reader(conn, caller, slug)
+        return JSONResponse(project_body(conn, request, caller, slug, mine))
 
 
-def project_body(conn: Connection, request: Request, caller: Caller, slug: str) -> dict[str, Any]:
+def project_body(
+    conn: Connection,
+    request: Request,
+    caller: Caller,
+    slug: str,
+    mine: Membership | access.OutsideReader | None = None,
+) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
-    `GET /bootstrap` (§5.4)."""
-    mine = membership(conn, caller, slug)
+    `GET /bootstrap` (§5.4), which passes no `mine`: the caller's membership is read here, so
+    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`."""
+    if mine is None:
+        mine = membership(conn, caller, slug)
     mine.require("project:read")
+    if isinstance(mine, access.OutsideReader):
+        return _outside_view(conn, mine.project, request)
     return _view(conn, mine.project, request, mine)
+
+
+# The project view's keys an outsider reads (§2.3): an allow-list, so that a key the view gains
+# later stays hidden from outside until it is named here (hub/context/public-pages.md 3f9c2d71).
+# Never `repository` (`probe_via` with it), `settings` beyond `language` (`role_rules` among
+# them, §6.1), `memory` or `setup`. `links` as the public page shows them (§16.9).
+OUTSIDE_PROJECT_KEYS = (
+    "id",
+    "owner",
+    "full_name",
+    "slug",
+    "name",
+    "state",
+    "released_at",
+    "state_changed_at",
+    "public_page",
+    "public_about",
+    "links",
+    "logo",
+    "banner",
+    "settings",
+    "created_at",
+)
+
+
+def _outside_view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
+    """The project as an outsider reads it (§2.3): `OUTSIDE_PROJECT_KEYS` of the view, its
+    `settings` only `language`, and its `links` as the public page shows them: one into the
+    repository's own path only while the hub's last look found the repository public
+    (`project_links.public`, §16.9), `null` otherwise."""
+    shown = images.views(conn, [project.id])[project.id]
+    owner = namespace.owner_of(conn, project)["handle"]
+    whole = project_view(project, settings_of(request), owner, shown)
+    view = {key: whole[key] for key in OUTSIDE_PROJECT_KEYS}
+    links = project.links
+    public = set(project_links.public(links, project.repository_url, project.repository_public))
+    view["links"] = {
+        key: value if value in public else None for key, value in whole["links"].items()
+    }
+    view["settings"] = {"language": whole["settings"]["language"]}
+    return view
 
 
 @router.patch("/projects/{owner}/{slug}")
@@ -1054,6 +1265,8 @@ def patch_project(
             if body.public_page != project.public_page:
                 if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
                     moderation.refuse_held(conn, "project", project.id)
+                    if project.owner_org_id is not None:  # and so does a suspended org's
+                        moderation.refuse_held(conn, "org", project.owner_org_id, "suspend")
                 values["public_page"] = body.public_page
                 # What the forge said belongs to the time the page was on: asked again.
                 values["repository_public"] = None
@@ -1187,10 +1400,12 @@ def patch_project(
         if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         _refuse_against_a_hold(conn, project, state_changes, new_policy)
-        if (
+        roles_changed = (
             new_policy is not None
             and new_policy["outside_roles"] != policy.of(project)["outside_roles"]
-        ):
+        )
+        if roles_changed:
+            assert new_policy is not None
             _refuse_outside_roles(conn, project, new_policy, values)
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
@@ -1277,8 +1492,11 @@ def patch_project(
                 "policy_changed",
                 BROADCAST,
                 {
-                    "old": policy.of(project),
-                    "new": {**policy.of(project), "keep_the_why": explicit["keep_the_why_policy"]},
+                    "old": policy.shown(conn, policy.of(project)),
+                    "new": {
+                        **policy.shown(conn, policy.of(project)),
+                        "keep_the_why": explicit["keep_the_why_policy"],
+                    },
                     "reason": body.reason,
                 },
                 actor=actor,
@@ -1291,12 +1509,19 @@ def patch_project(
                 .where(t.project.c.id == project.id)
                 .values(**policy.columns(new_policy), **_set_keep_the_why(body.policy))
             )
+            if roles_changed:
+                # A connection across owners a new request would now refuse ends (§2.3).
+                bridges.after_policy_change(conn, project.id, actor)
             rules.bump(
                 conn,
                 project,
                 "policy_changed",
                 BROADCAST,
-                {"old": policy.of(project), "new": new_policy, "reason": body.reason},
+                {
+                    "old": policy.shown(conn, policy.of(project)),
+                    "new": policy.shown(conn, new_policy),
+                    "reason": body.reason,
+                },
                 actor=actor,
                 again=bumped,
             )
@@ -1477,10 +1702,13 @@ HUMANS_ONLY_POLICY = {
     "on_runner_revoke",
     "spawn_requests",
     "merged_closes",  # set by a human with project:admin (§6.1)
+    "max_placements",  # set by a human with project:admin (§6.1, §6.31)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
     "agent_owners",  # whether an agent's owner must be a member (§6.1, §6.2)
     "outside_roles",
+    "own_approvals",  # set by a human with project:admin (§6.1)
+    "own_agents",  # set by a human with trust owner (§6.1, checked in `_authorise_patch`)
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
@@ -1566,6 +1794,10 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
         raise forbidden(message="the absence is set by the owner only")
     if given - {"absence", "reason"}:
         mine.require("project:admin")
+    # Whose agents count as the project's own is the owners' call (§6.1 `own_agents`).
+    named = body.policy.model_fields_set if "policy" in given and body.policy else set()
+    if "own_agents" in named and (mine.trust != "owner" or mine.kind != "human"):
+        raise ApiError(403, "forbidden", "own_agents is set by an owner", {"reason": "owner_only"})
     # Launch is the owner's go (§6.1): an admin human is refused too.
     moves_to_launch = body.state == "launch" and mine.project.state != "launch"
     if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):

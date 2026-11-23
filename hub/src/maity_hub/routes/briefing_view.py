@@ -126,10 +126,11 @@ def _me(conn: Connection, agent: Any, owner: Any, credential: Any) -> dict[str, 
 def _credential(conn: Connection, membership_id: int, instance: str | None) -> Any:
     if instance is None:
         return None
-    c = t.credential.c
     found = conn.execute(
-        select(t.credential).where(
-            c.membership_id == membership_id, c.instance == instance, c.revoked_at.is_(None)
+        instances.credential_rows().where(
+            t.instance_attachment.c.membership_id == membership_id,
+            t.credential.c.instance == instance,
+            instances.attached_now(),
         )
     ).first()
     if found is None:

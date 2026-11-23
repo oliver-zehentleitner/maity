@@ -45,6 +45,65 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return clone
 
 
+PLACEMENT_VALUES = [None, "", " ", "plc-0003", "plc-0003\n", "PLC-0003", "../plc-0003"]
+
+
+@pytest.mark.parametrize("value", PLACEMENT_VALUES)
+def test_placed_and_placement_id(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    """Set, even empty, is placed; only a value that is a placement id is one."""
+    if value is None:
+        monkeypatch.delenv(clonecheck.PLACEMENT_ENV, raising=False)
+    else:
+        monkeypatch.setenv(clonecheck.PLACEMENT_ENV, value)
+    assert clonecheck.placed() is (value is not None)
+    assert clonecheck.placement_id() == (value if value == "plc-0003" else None)
+
+
+@pytest.mark.parametrize("value", PLACEMENT_VALUES)
+def test_a_placement_that_is_not_an_id_is_refused_not_unplaced(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """MAITY_PLACEMENT set but not a placement id, empty included, is a placed session of
+    unknown identity: refused, never maity's git in the current directory as if unplaced."""
+    if value is None:
+        monkeypatch.delenv(clonecheck.PLACEMENT_ENV)
+        assert clonecheck.placement_root(placed) is None  # no marker: unplaced, as before
+        return
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, value)
+    if value == "plc-0003":
+        assert clonecheck.placement_root(placed) == placed.resolve()
+        return
+    with pytest.raises(clonecheck.Refused, match="is set but not a placement id"):
+        clonecheck.placement_root(placed)
+
+
+def test_an_empty_placement_outside_any_clone_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty and without GIT_COMMON_DIR, in a directory no marker reaches: refused, where
+    reading "" as unplaced ran maity's git there with no placement root."""
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "")
+    monkeypatch.delenv("GIT_COMMON_DIR", raising=False)
+    with pytest.raises(clonecheck.Refused, match="is set but not a placement id"):
+        clonecheck.placement_root(tmp_path)
+
+
+def test_supervisor_takes_the_placement_id_pattern_from_clonecheck() -> None:
+    from maity.runner import supervisor
+
+    assert supervisor.PLACEMENT_ID is clonecheck.PLACEMENT_ID
+
+
+def test_the_scratch_takes_the_placement_id_pattern_from_clonecheck() -> None:
+    from maity.runner import scratchop, workspace
+
+    # By name, not only by identity: re.compile caches, so an equal pattern compiled again
+    # would be the same object.
+    assert scratchop.PLACEMENT_ID is clonecheck.PLACEMENT_ID
+    assert scratchop.SCRATCH_ID is clonecheck.PLACEMENT_ID
+    assert workspace.SCRATCH_ID is clonecheck.PLACEMENT_ID
+
+
 def test_a_plain_clone_reads_as_before(placed: Path) -> None:
     facts = gitfacts.collect(placed)
     assert facts.remote_head == facts.head
@@ -172,6 +231,42 @@ def test_what_the_sandbox_leaves_empty_reads_as_before(placed: Path) -> None:
     session ran sandboxed refused its own clone (tsk-2zz5tjpbt28n)."""
     _leave(placed, SANDBOX_LEFT)
     assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+
+
+def test_the_empty_config_lock_the_sandbox_holds_reads_as_before(placed: Path) -> None:
+    """Claude Code's sandbox holds an empty, read-only `.git/config.lock` to keep
+    `.git/config` unwritable; empty it is inert, so a placement's clone is not refused its own
+    report/checkpoint over it (tsk-estwtzbae972). The sandbox leaves it: see
+    test_adapters.py and test_session_identity.py."""
+    (placed / ".git" / "config.lock").write_text("")
+    assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+
+
+def test_a_non_empty_config_lock_is_refused(placed: Path) -> None:
+    """Only the empty lock is tolerated, as a fail-safe default: the check accepts only the
+    sandbox's known-inert placeholder shape (an empty regular file at that path), not because
+    git would apply the content -- git never reads, adopts or commits a pre-existing
+    `config.lock` -- so a non-empty `config.lock` stays refused as before."""
+    (placed / ".git" / "config.lock").write_text('[core]\n\tsshCommand = "touch ran"\n')
+    with pytest.raises(gitfacts.FactsError, match="not a plain clone's"):
+        gitfacts.collect(placed)
+
+
+def test_an_empty_config_lock_mode_0444_reads_as_before(placed: Path) -> None:
+    """The sandbox holds `config.lock` read-only (mode 0o444); empty it is accepted whatever
+    its mode, since size 0, not the mode, is what makes it the sandbox's inert placeholder. A
+    non-empty lock at the same mode is still refused, so the gate is on content, not mode
+    (tsk-estwtzbae972)."""
+    lock = placed / ".git" / "config.lock"
+    lock.write_text("")
+    lock.chmod(0o444)
+    assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+    lock.chmod(0o644)
+    lock.write_text('[core]\n\tsshCommand = "touch ran"\n')
+    lock.chmod(0o444)
+    with pytest.raises(gitfacts.FactsError, match="not a plain clone's"):
+        gitfacts.collect(placed)
+    lock.chmod(0o644)
 
 
 @pytest.mark.parametrize(
@@ -325,8 +420,10 @@ def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     read = clonecheck.Local.read
     rewritten: list[bool] = []
 
-    def then_rewrite(self: clonecheck.Local, path: Path, offset: int = 0) -> bytes:
-        data = read(self, path, offset)
+    def then_rewrite(
+        self: clonecheck.Local, path: Path, offset: int = 0, *, limit: int, under: Path
+    ) -> bytes:
+        data = read(self, path, offset, limit=limit, under=under)
         if path.name == "config" and not rewritten:  # once the check has its copy
             rewritten.append(True)
             with path.open("a") as config:
@@ -340,6 +437,41 @@ def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     assert "refs/heads/work" in listed.stdout
     with pytest.raises(proc.ToolError, match="uploadpack"):
         proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+
+
+@pytest.mark.skipif(os.open not in os.supports_dir_fd, reason="POSIX: openat")
+def test_a_git_dir_swapped_for_a_link_after_the_listing_is_never_read_through(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent swaps its listed `.git` for a link to a directory outside the clone before
+    the configuration is read: the read walks down from the clone without following a link,
+    so the inspection refuses and the outside configuration is never taken."""
+    from maity.runner import limitread, workspace
+
+    outside = placed.parent / "outside"
+    shutil.copytree(placed / ".git", outside)
+    text = (outside / "config").read_text()
+    url = re.search(r"^\s*url = .*$", text, re.M)
+    assert url is not None
+    (outside / "config").write_text(text.replace(url[0], "\turl = https://example.invalid/outside"))
+    listed = clonecheck.Local.tree
+
+    def then_swap(self: clonecheck.Local, path: Path) -> list[tuple[str, str, int]]:
+        found = listed(self, path)
+        if path == placed / ".git":  # listed as a plain directory; swapped before the read
+            (placed / ".git").rename(placed.parent / "moved")
+            (placed / ".git").symlink_to(outside)
+        return found
+
+    monkeypatch.setattr(clonecheck.Local, "tree", then_swap)
+    assert clonecheck.not_inspectable(placed) == "its .git/config cannot be read"
+    assert workspace.origin(placed) is None  # never https://example.invalid/outside
+    with pytest.raises(OSError):
+        limitread.take(str(placed / ".git" / "config"), limit=1024, under=str(placed))
+    # The same file reached without a link on the way is read.
+    assert b"example.invalid" in limitread.take(
+        str(outside / "config"), limit=4096, under=str(outside.parent)
+    )
 
 
 def test_git_runs_on_a_repository_maity_writes_in_the_runners_directory(

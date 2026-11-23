@@ -40,9 +40,22 @@ class ApiError(Exception):
         self.headers = headers or {}
 
 
+def _encodable(value: Any) -> Any:
+    """`value` with each lone surrogate in a string or key shown as its escape text (`\\ud800`):
+    JSON accepts one, UTF-8 does not encode it, and a details path can echo a client's key."""
+    if isinstance(value, str):
+        return "".join(f"\\u{ord(c):04x}" if 0xD800 <= ord(c) <= 0xDFFF else c for c in value)
+    if isinstance(value, dict):
+        return {_encodable(key): _encodable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_encodable(item) for item in value]
+    return value
+
+
 def envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
-    """The error body of §1.3, without the headers that go with it."""
-    return {"error": {"code": code, "message": message, "details": details or {}}}
+    """The error body of §1.3, without the headers that go with it. The details always encode
+    (§1.3): a client's key in a field path never makes the answer a 500."""
+    return {"error": {"code": code, "message": message, "details": _encodable(details or {})}}
 
 
 def error_response(
@@ -91,6 +104,22 @@ def probe_not_configured(reason: str | None) -> ApiError:
         "no forge access covers this repository",
         {"reason": reason} if reason is not None else None,
     )
+
+
+def ktw_not_configured() -> ApiError:
+    """The project's repository names no Keep the Why export (§11.3, §11.5)."""
+    return ApiError(
+        409,
+        "ktw_not_configured",
+        "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
+    )
+
+
+def ktw_unavailable(
+    reason: str, message: str = "the Keep the Why export could not be read", **details: Any
+) -> ApiError:
+    """A Keep the Why read that failed (§11.3, §11.5): `reason` first, then the details."""
+    return ApiError(503, "ktw_unavailable", message, {"reason": reason, **details})
 
 
 def rate_limited(retry_after: int) -> ApiError:

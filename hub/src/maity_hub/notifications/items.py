@@ -18,10 +18,11 @@ from maity_hub import avatars, catalog, clock, events, inbox, invitations, names
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
+from maity_hub.plain_text import plain_line
+from maity_hub.text_language import text_language
 from maity_hub.views import deleted, deleted_person
 
 WINDOW = timedelta(days=30)
-KINDS = ("inbox", "chat", "mention", "security", "invitation")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (
@@ -34,8 +35,6 @@ EVENT_KINDS = (
 NOT_MESSAGES = tuple(kind for kind in EVENT_KINDS if kind != "message")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
-
-# The texts the hub itself composes for a human, in that human's language (§6.2, §18.4).
 
 
 @dataclass
@@ -91,9 +90,7 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
         )
     ).all()
     found = Scope(human_id, public_url)
-    from maity_hub.notifications import preferences  # preferences reads what this module shows
-
-    found.language = preferences.text_language(conn, human_id)
+    found.language = text_language(conn, human_id)
     if not members:
         return found
     projects = {
@@ -231,7 +228,7 @@ def derive_page(
         # A personal request's events never make an item (`_classify`: it is one item,
         # from its record), nor do a request's that is another member's alone, so both
         # are left out in SQL, not read and dropped one by one.
-        concerned = _may_concern(mine)
+        concerned = may_concern_member(mine.id)
         # One item per request, the latest addressed one (`ADDRESSED`): `_items_of` keeps
         # it only among the rows it is given, so a page read in chunks takes only the
         # newest such event of each request. Every one of them is classified alike, since
@@ -296,18 +293,13 @@ def derive_page(
     return found
 
 
-def _may_concern(mine: Membership) -> Any:
+def may_concern_member(member_id: int) -> Any:
     """A request event's request is not personal and may concern the member: a superset of
     `_request_concerns` (the exact test, in `_classify`). Left out is a request filed to
     another member that no admin pool holds, nobody covers, and the member neither holds
     nor asked: agents asking each other, which make no item of the human's
-    (tsk-spa1tad26vs1)."""
-    return may_concern_member(mine.id)
-
-
-def may_concern_member(member_id: int) -> Any:
-    """`_may_concern` by the membership's id, for the held long-poll's look
-    (`listing.quietly_moved`), which reads the stamp's memberships, not a `Scope`."""
+    (tsk-spa1tad26vs1). By the membership's id, so the held long-poll's look
+    (`listing.quietly_moved`) can use it on the stamp's memberships."""
     r = t.request.c
     return (
         select(r.id)
@@ -329,16 +321,6 @@ def may_concern_member(member_id: int) -> Any:
 
 
 def names(human_id: str) -> Any:
-    """`_names`, for the held long-poll's look (`listing.quietly_moved`)."""
-    return _names(human_id)
-
-
-def addressed(human_id: str) -> Any:
-    """`_addressed`, for the held long-poll's look (`listing.quietly_moved`)."""
-    return _addressed(human_id)
-
-
-def _names(human_id: str) -> Any:
     """A message row whose payload text has a `member_id` and the human's id: a superset
     of the rows that mention them (the exact test is `_classify`). The id alone would not
     do, a chat message names its addressee in `to`."""
@@ -348,7 +330,7 @@ def _names(human_id: str) -> Any:
     )
 
 
-def _addressed(human_id: str) -> Any:
+def addressed(human_id: str) -> Any:
     """A row whose audience text holds the human's `member:` token: a superset of the rows
     whose audience lists it (the exact test is `_classify`)."""
     return cast(t.event.c.audience, String).contains(f'"member:{human_id}"', autoescape=True)
@@ -394,29 +376,46 @@ def _paged(
     `wanted` accept, read in chunks of the order the listing uses (`at`, then `seq`) until
     they are found: a page costs the page, not every row of the window. `first` is the
     first chunk's size, by default as many as are wanted."""
-    taken: list[Item] = []
-    last: tuple[datetime, int] | None = None
+
+    def read(beyond: tuple[Any, ...], sort: tuple[Any, ...], size: int) -> Sequence[Any]:
+        query = select(t.event).where(*window, *condition, *beyond)
+        return conn.execute(query.order_by(*sort).limit(size)).all()
+
+    def take(rows: Sequence[Any]) -> list[Item]:
+        found = _items_of(conn, where, mine, sorted(rows, key=lambda r: r.seq))
+        return [item for item in found if keep(item) and wanted(item)]
+
     size = first or max(count, 1)  # then more while a filter rejects them
-    sort = (
-        (t.event.c.at.desc(), t.event.c.seq.desc())
-        if newest_first
-        else (t.event.c.at, t.event.c.seq)
-    )
+    return _chunked(t.event.c.at, t.event.c.seq, read, take, count, newest_first, size)
+
+
+def _chunked(
+    at: Any,
+    tie: Any,
+    read: Callable[[tuple[Any, ...], tuple[Any, ...], int], Sequence[Any]],
+    take: Callable[[Sequence[Any]], list[Item]],
+    count: int,
+    newest_first: bool,
+    size: int,
+) -> list[Item]:
+    """The first `count` items `take` makes of the rows `read` gives, in the order of `at`,
+    then `tie`, read in chunks after the last row read (a keyset) until they are found,
+    each chunk up to four times the one before, at most `CHUNK`. `read` gets the
+    condition to continue after the last row, the order and the chunk's size."""
+    taken: list[Item] = []
+    last: tuple[Any, Any] | None = None
+    sort = (at.desc(), tie.desc()) if newest_first else (at, tie)
     while len(taken) < count:
         beyond: tuple[Any, ...] = ()
         if last is not None:
-            before = (t.event.c.at < last[0]) if newest_first else (t.event.c.at > last[0])
-            tie = (t.event.c.seq < last[1]) if newest_first else (t.event.c.seq > last[1])
-            beyond = (or_(before, and_(t.event.c.at == last[0], tie)),)
-        rows = conn.execute(
-            select(t.event).where(*window, *condition, *beyond).order_by(*sort).limit(size)
-        ).all()
+            before = (at < last[0]) if newest_first else (at > last[0])
+            later = (tie < last[1]) if newest_first else (tie > last[1])
+            beyond = (or_(before, and_(at == last[0], later)),)
+        rows = read(beyond, sort, size)
         if not rows:
             break
-        last = (rows[-1].at, rows[-1].seq)
-        for item in _items_of(conn, where, mine, sorted(rows, key=lambda r: r.seq)):
-            if keep(item) and wanted(item):
-                taken.append(item)
+        last = (getattr(rows[-1], at.key), getattr(rows[-1], tie.key))
+        taken += take(rows)
         if len(rows) < size:
             break
         size = min(size * 4, CHUNK)
@@ -458,29 +457,19 @@ def _records_paged(
 ) -> list[Item]:
     """The first `count` record items that `wanted` accepts, read as `_paged` reads rows;
     with `after_record`, only the records after a position's record number."""
-    taken: list[Item] = []
-    last: tuple[datetime, int] | None = None
-    size = CHUNK  # a whole chunk first, as for the events: one statement for most pages
     c = t.account_record.c
-    sort = (c.at.desc(), c.n.desc()) if newest_first else (c.at, c.n)
-    while len(taken) < count:
+
+    def read(beyond: tuple[Any, ...], sort: tuple[Any, ...], size: int) -> Sequence[Any]:
         query = _record_rows(where, now)
         if after_record is not None:
             query = query.where(c.n > after_record)
-        if last is not None:
-            before = (c.at < last[0]) if newest_first else (c.at > last[0])
-            tie = (c.n < last[1]) if newest_first else (c.n > last[1])
-            query = query.where(or_(before, and_(c.at == last[0], tie)))
-        rows = conn.execute(query.order_by(*sort).limit(size)).all()
-        if not rows:
-            break
-        last = (rows[-1].at, rows[-1].n)
-        taken += [item for item in _record_items(conn, where, now, rows) if wanted(item)]
-        if len(rows) < size:
-            break
-        size = min(size * 4, CHUNK)
-    taken.sort(key=lambda item: item.order, reverse=newest_first)
-    return taken[:count]
+        return conn.execute(query.where(*beyond).order_by(*sort).limit(size)).all()
+
+    def take(rows: Sequence[Any]) -> list[Item]:
+        return [item for item in _record_items(conn, where, now, rows) if wanted(item)]
+
+    # A whole chunk first, as for the events: one statement for most pages.
+    return _chunked(c.at, c.n, read, take, count, newest_first, CHUNK)
 
 
 def count_items(conn: Connection, where: Scope) -> list[Item]:
@@ -656,13 +645,18 @@ def _classify(
         )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):
         task = payload.get("task") or {}
+        copied = task.get("title")
+        if isinstance(copied, dict):  # redacted since (§20.8): the card's own title now
+            from maity_hub.jourfixe.redaction import REDACTED_TITLE
+
+            copied = REDACTED_TITLE
         return Item(
             kind="mention",
             title=_cut(
                 where.say(
                     "mentioned",
                     who=look.name(row.actor_membership),
-                    chat=f"{task.get('id')} {task.get('title')}",
+                    chat=f"{task.get('id')} {copied}",
                 )
             ),
             target={"type": "task", "id": str(task.get("id"))},
@@ -688,7 +682,8 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    alarms = ("tf_changed", "tf_failed", "tf_failed_reset")  # not changes; other placeholders
+    # Not changes; other placeholders.
+    alarms = ("tf_changed", "tf_failed", "tf_failed_reset", "tf_failed_daily")
     if change not in catalog.section("notify", "en") or change in alarms:
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
@@ -822,12 +817,12 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     title=_cut(
                         where.say(
                             # The reset's alarm says so: the mailbox, not the app, is
-                            # in other hands (§2.10, §18.1).
-                            (
-                                "tf_failed_reset"
-                                if data.get("method") == "password_reset"
-                                else "tf_failed"
-                            ),
+                            # in other hands (§2.10, §18.1); the daily cap says what
+                            # stopped (§2.8.6).
+                            {
+                                "password_reset": "tf_failed_reset",
+                                "daily_limit": "tf_failed_daily",
+                            }.get(str(data.get("method")), "tf_failed"),
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",
@@ -839,7 +834,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record_type=row.type,
                 )
             )
-        elif row.type == "password_reset":
+        elif row.type in ("password_reset", "password_changed"):
             items.append(
                 Item(
                     kind="security",
@@ -847,7 +842,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "password_reset",
+                            row.type,
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",
@@ -1365,6 +1360,9 @@ def _url(where: Scope, route: str) -> str:
 
 
 def _cut(text: str) -> str:
-    """Text only, at most 200 characters (§18.2)."""
-    flat = " ".join(text.split())
+    """Text only, at most 200 characters (§18.2), on one line: every title is built through
+    here from the catalog's words and stored names and titles (a display name, a project's
+    name, a request's or card's title), so `plain_line` folds each stored part that holds a
+    character the plain-text rule refuses (§1.7.1); the catalog's words hold none."""
+    flat = " ".join(plain_line(text).split())
     return flat if len(flat) <= TITLE_MAX else flat[: TITLE_MAX - 1] + "…"

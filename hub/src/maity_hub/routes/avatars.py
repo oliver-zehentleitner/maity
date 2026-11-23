@@ -96,8 +96,18 @@ def get_avatar(member_id: str, request: Request, caller: AnyCaller) -> Response:
     if found is None:  # whether it exists is not told: authorized first, then compared
         raise not_found()
     side = _side(request)
+    # The version is the digest of the stored image these bytes come from, whatever `s`.
+    headers = avatars.VERSIONED_HEADERS if _current(request, found[1]) else avatars.HEADERS
     data, tag = avatars.at_size(engine, settings_of(request), member_id, found, side)
-    return _image(request, data, tag, avatars.HEADERS)
+    return _image(request, data, tag, headers)
+
+
+def _current(request: Request, stored_tag: str) -> bool:
+    """Whether the request names the picture it gets (§6.10): exactly one `v`, equal to the
+    stored image's `ETag` without quotes, as `avatars.url_of` writes it. A size's own `ETag`,
+    an old digest or none at all is not the current version."""
+    given = request.query_params.getlist("v")
+    return len(given) == 1 and given[0] == stored_tag.strip('"')
 
 
 def _me(caller: Caller) -> str:

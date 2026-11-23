@@ -183,7 +183,7 @@ def statistics(conn: Connection, days: int = DEFAULT_DAYS) -> dict[str, Any]:
     setting = landing.stored(conn)
     rows = [
         {
-            "date": row.day.isoformat() if isinstance(row.day, date) else str(row.day)[:10],
+            "date": row.day.isoformat(),  # a `Date` column: a `date` on every driver
             "variant": row.variant,
             "campaign": row.campaign or None,
             "views": row.views,

@@ -7,14 +7,17 @@ once and revokes the agent credentials they named: at once under the override,
 otherwise `stop_grace_seconds` later, so that an agent can park its work first. A
 credential due is refused from then on (`credential_revoked`, `runner_revoked`) and
 shown as revoked; its revocation is written the first time it is used after that.
+The owner's override also revokes, at once, the credential of every placement of the
+runner whose clone may still be on the machine, closed or not, in any project.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, or_, select, update
 
 from maity_hub import clock, events, namespace, placements, policy
 from maity_hub import tables as t
@@ -41,27 +44,39 @@ def due(row: Any) -> bool:
     return row.revoked_at is None and when is not None and when <= clock.now()
 
 
-def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
+def revoke_agent(
+    conn: Connection,
+    credential_id: str,
+    by: str | None,
+    project_ids: Collection[str] | None = None,
+) -> None:
     """Revoke an agent credential a runner's stop names, and say so to the agent and the
-    owners (`credential_revoked`, §15.10), once: only the revocation that wins says it."""
-    from maity_hub.auth.leaks import revoke
+    owners (`credential_revoked`, §15.10), once: only the revocation that wins says it. The
+    event is written in each project the instance is attached to (§6.17), and in each of
+    `project_ids`, the projects of the placements the revocation is about (a closed
+    placement's project the instance may have left), in the order of their ids. Never one
+    project chosen for the others. Those and every project the revocation writes in are
+    locked first, in the order of their ids, before any write."""
+    from maity_hub.auth.revocation import attached_projects, placement_projects, revoke
 
+    told = {*attached_projects(conn, [credential_id]), *(project_ids or ())}
+    # `told` holds the projects `revocation.projects_of` reads but its placements' (§15.5)
+    events.lock_projects(conn, {*told, *placement_projects(conn, [credential_id])})
     if not revoke(conn, credential_id, REASON, by):
         return
-    member = conn.execute(
-        select(t.membership.c.project_id, t.membership.c.agent_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == credential_id)
-    ).one()
-    events.emit(
-        conn,
-        member.project_id,
-        "credential_revoked",
-        [f"member:{member.agent_id}", "trust:owner"],
-        {"credential_id": credential_id, "reason": REASON},
-        actor=human_actor(conn, member.project_id, by),
-        subject=("credential", credential_id),
-    )
+    agent_id = conn.execute(
+        select(t.credential.c.agent_id).where(t.credential.c.id == credential_id)
+    ).scalar_one()
+    for project_id in sorted(told):
+        events.emit(
+            conn,
+            project_id,
+            "credential_revoked",
+            [f"member:{agent_id}", "trust:owner"],
+            {"credential_id": credential_id, "reason": REASON},
+            actor=human_actor(conn, project_id, by),
+            subject=("credential", credential_id),
+        )
 
 
 def revoke_due(conn: Connection, credential_id: str, by: str | None) -> None:
@@ -78,15 +93,25 @@ def apply(
     agents: str,
     instance_rule: str,
     removing: bool,
-    by: str,
+    by: str | None,
 ) -> list[dict[str, Any]]:
     """Apply each attached project's rule; returns `[{project_id, rule, stopped}]`.
+    `by` is the human who revoked, None for the hub (a suspension, §16.8).
     Under `DELETE` the placements close as `runner_removed`, under a revoke as
     `runner_revoked`; under `keep` nothing here changes."""
     now = clock.now()
     reason = "runner_removed" if removing else REASON
+    attached = attached_project_ids(conn, runner_id)
+    # The caller holds the runner's row; the projects' locks follow, in the order of their
+    # ids, before any placement is read: a pickup's exchange (§15.9) takes its project's
+    # lock first, so it either committed its credential, which is read here, or waits and
+    # then finds its placement closed or the runner without its credential.
+    # A caller that already holds project locks took this set's, in the same order, first
+    # (`projects_to_lock`, the account's deletion).
+    for project_id in _to_lock(conn, runner_id, attached, everywhere=agents == "stop"):
+        events.lock_project(conn, project_id)
     results = []
-    for project_id in attached_project_ids(conn, runner_id):
+    for project_id in attached:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
         rule = "stop" if agents == "stop" else policy.runner_revoke_rule(project, instance_rule)
         stopped: list[str] = []
@@ -103,7 +128,7 @@ def apply(
                 if placement.credential_id is None:
                     continue
                 if agents == "stop":  # the machine is in doubt: no grace (§15.3)
-                    revoke_agent(conn, placement.credential_id, by)
+                    revoke_agent(conn, placement.credential_id, by, [project_id])
                 else:
                     grace = timedelta(seconds=placement.stop_grace_seconds)
                     conn.execute(
@@ -117,10 +142,77 @@ def apply(
         if agents == "stop":
             _due_now(conn, runner_id, project_id, by)
         results.append({"project_id": project_id, "rule": rule, "stopped": stopped})
+    if agents == "stop":
+        _on_the_machine(conn, runner_id, by)
     return results
 
 
-def _due_now(conn: Connection, runner_id: str, project_id: str, by: str) -> None:
+def projects_to_lock(conn: Connection, runner_id: str) -> list[str]:
+    """What `apply` locks under the owner's stop, and the runner's removal after it, in the
+    order of their ids: for a caller that must take them together with other project locks
+    of its own, all in one ordered pass, before it calls `apply`."""
+    return _to_lock(conn, runner_id, attached_project_ids(conn, runner_id), everywhere=True)
+
+
+def _to_lock(
+    conn: Connection, runner_id: str, attached: list[str], *, everywhere: bool
+) -> list[str]:
+    """The projects `apply` locks, in the order of their ids: the attached ones, and under
+    the owner's stop also every project where a placement of the runner is active or kept
+    its clone, and every project the revocation of an agent credential a placement of the
+    runner names writes in (`auth.revocation.projects_of`: an instance may be attached to
+    projects the runner is not). Another project gains no placement of the runner
+    meanwhile: that needs an attachment, and attaching takes the runner's row, which the
+    caller holds."""
+    from maity_hub.auth.revocation import projects_of
+
+    found = set(attached)
+    if everywhere:
+        found.update(
+            conn.execute(
+                select(t.placement.c.project_id).where(_on_disk(runner_id)).distinct()
+            ).scalars()
+        )
+        named = conn.execute(
+            select(t.credential.c.id)
+            .join(t.placement, t.placement.c.credential_id == t.credential.c.id)
+            .where(t.placement.c.runner_id == runner_id, t.credential.c.revoked_at.is_(None))
+            .distinct()
+        ).scalars()
+        found.update(projects_of(conn, list(named)))
+    return sorted(found)
+
+
+def _on_disk(runner_id: str) -> Any:
+    """A placement of the runner whose clone may still be on its machine, with the agent
+    credential in it: active, or stopped or closed for any reason while the runner has not
+    reported the clone removed (§15.5)."""
+    p = t.placement.c
+    return (p.runner_id == runner_id) & or_(
+        p.active.is_(True), p.workspace_state.is_(None), p.workspace_state != "removed"
+    )
+
+
+def _on_the_machine(conn: Connection, runner_id: str, by: str | None) -> None:
+    """The owner's stop revokes at once every agent credential that may still be on the
+    machine (§15.3): the one each placement of the runner names whose clone was not
+    reported removed, in every project, attached or not. A placement closed for another
+    reason (a `DELETE`, a detach, a member's removal) keeps its clone for its retention,
+    and a runner without its credential can never report that clone removed."""
+    named: dict[str, set[str]] = {}
+    for row in conn.execute(
+        select(t.credential.c.id, t.placement.c.project_id)
+        .join(t.placement, t.placement.c.credential_id == t.credential.c.id)
+        .where(_on_disk(runner_id), t.credential.c.revoked_at.is_(None))
+        .distinct()
+        .order_by(t.credential.c.id)
+    ):
+        named.setdefault(row.id, set()).add(row.project_id)
+    for credential_id, project_ids in named.items():
+        revoke_agent(conn, credential_id, by, project_ids)
+
+
+def _due_now(conn: Connection, runner_id: str, project_id: str, by: str | None) -> None:
     """The owner's override revokes at once what an earlier `stop` left to its grace:
     the credentials named by this runner's placements in the project, closed by that
     revocation, and still waiting (§15.3) — never another agent's."""
@@ -138,7 +230,7 @@ def _due_now(conn: Connection, runner_id: str, project_id: str, by: str) -> None
         .order_by(t.credential.c.id)
     ).scalars()
     for credential_id in list(waiting):
-        revoke_agent(conn, credential_id, by)
+        revoke_agent(conn, credential_id, by, [project_id])
 
 
 def answer(

@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 
-from maity_hub import events
+from maity_hub import events, listening
 from maity_hub import tables as t
 from maity_hub.events import Actor
 from tests import factory, flow
@@ -282,6 +282,18 @@ def test_hello_validates_what_a_runner_advertises(
     assert (response.status_code, error(response)) == (400, "invalid")
 
 
+def test_hello_takes_codex_whose_sandbox_is_its_confinement(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """What the CLI advertises for codex (§15.3): refused before 0.1.0a8, so the runner stopped."""
+    runner = paired(make_client, owner)
+    codex = {**CAPABILITIES["harnesses"][0], "id": "codex", "confinement": "sandbox"}
+    response = hello(make_client(), runner, capabilities={**CAPABILITIES, "harnesses": [codex]})
+    assert response.status_code == 200, response.text
+    shown = owner.get(f"/runners/{runner.id}").json()["capabilities"]["harnesses"]
+    assert [(h["id"], h["confinement"]) for h in shown] == [("codex", "sandbox")]
+
+
 def test_patch_runner_replaces_the_capabilities_with_a_key(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
@@ -359,14 +371,23 @@ def test_the_long_poll_wakes_on_an_attachment_and_shows_listening(
     attach(owner, runner)
     cursor = hello(client, runner).json()["cursor"]
     with ThreadPoolExecutor(max_workers=1) as pool:
-        start = time.monotonic()
         waiting = pool.submit(stream, client, runner, f"after={cursor}&wait=20")
-        time.sleep(0.5)
-        assert owner.get(f"/runners/{runner.id}").json()["listening"] is True
+        # The wait counts once the route has registered it (`longpoll.registry.enter`), after
+        # its own database round trips; under load that is later than any fixed sleep.
+        deadline = time.monotonic() + 10
+        while True:
+            view = owner.get(f"/runners/{runner.id}").json()
+            if view["listening"] is True:
+                break
+            assert not waiting.done(), f"the long poll ended before it showed: {view}"
+            assert time.monotonic() < deadline, f"no listening within 10 s of the wait: {view}"
+            time.sleep(0.05)
+        start = time.monotonic()
         attach(owner, runner, "sample")
         body = waiting.result(timeout=10).json()
     assert time.monotonic() - start < 8
     assert [e["kind"] for e in body["items"]] == ["runner_attached"]
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     assert owner.get(f"/runners/{runner.id}").json()["listening"] is False
 
 

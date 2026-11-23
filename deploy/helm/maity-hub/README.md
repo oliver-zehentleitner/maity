@@ -60,28 +60,40 @@ example; any cluster with the same pieces works.
 2. **Image.** Releases are published as `ghcr.io/oliver-zehentleitner/maity-hub`,
    tagged with the version and the full commit SHA and never `latest`. The
    workflow `publish-image` builds them; until its first release you build
-   the image yourself. Pin it by digest (`image.digest`) when you can; the
-   workflow's run summary prints it. Each published digest is signed with
-   cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
-   signature before you pin a digest:
+   the image yourself. The chart pulls the image by digest: `image.digest` is
+   required, and the workflow's run summary prints it. A tag can be moved to
+   other bytes, so pulling by tag is an explicit opt-in (`image.allowTag: true`
+   with `image.tag`, see Values). A release is the image a `v*` tag built,
+   after the release gate (ci and the MariaDB suite passed on that commit),
+   and that run signs its digest with cosign, keyless; check the signature
+   before you pin a digest:
 
    ```sh
    cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$'
    ```
 
    This needs cosign v3 or later: the workflow stores the signature in the
    newer bundle format, which cosign 2.x does not find.
+   `deploy/scripts/helm-upgrade.sh` runs this same check on every image the
+   upgrade would deploy before it changes anything, and stops when the image
+   is not pinned by digest, the signature does not match, or cosign is not
+   installed. For an image you built yourself, set `NO_SIGNATURE_CHECK=1`.
 
-   An image whose signature names another workflow or another ref did not
-   come from a release or from `main`; don't run it. To build your own from
+   An image whose signature names another workflow or another ref is not a
+   release; don't run it. The workflow builds only for a `v*` tag; an image
+   signed from `main` by an earlier version of it has `refs/heads/main` in
+   its certificate, which this check refuses. To build your own from
    the repository root:
 
    ```sh
    docker build -f deploy/Dockerfile -t registry.example.org/maity-hub:<commit> .
    docker push registry.example.org/maity-hub:<commit>
    ```
+
+   `docker push` prints the pushed digest (`digest: sha256:…`); set it as
+   `image.digest`.
 
    For a private registry, create the pull Secret in the namespace:
    `kubectl -n maity create secret docker-registry registry-credentials …`.
@@ -96,8 +108,18 @@ example; any cluster with the same pieces works.
    rm database-url
    ```
 
-   `sslmode=require` encrypts but does not check the server's certificate.
-   To check it, put the provider's CA into a Secret, mount it with
+   That URL is the hub's, and on PostgreSQL its role may only read and
+   write rows: the hub refuses to start as a superuser or as the owner of
+   its schema or tables. Give the migrate Job the owner's URL in a Secret of
+   its own (`database.migrate.existingSecret`); the roles are in
+   [Database roles](../../../docs/install/README.md#database-roles). Until
+   they are set up, `extraEnv: [{name: MAITY_DB_ALLOW_PRIVILEGED, value: "1"}]`
+   lets the hub start on one URL, with a warning.
+
+   `sslmode=require` makes encryption required. libpq checks the server's
+   certificate with it only when a root CA file is present (then as
+   `verify-ca`, without the host name); `verify-full` also checks the
+   host name. To check both, put the provider's CA into a Secret, mount it with
    `extraVolumes` and `extraVolumeMounts` (the hub and the migrate Job both
    get them), and use
    `?sslmode=verify-full&sslrootcert=/etc/maity/db-ca/ca.crt`:
@@ -118,9 +140,12 @@ example; any cluster with the same pieces works.
    ```
 
    The instance key for secrets the hub stores (`MAITY_SECRET_KEY`: the
-   forge webhook's secret, a stored SMTP password, second-factor secrets;
-   docs/api.md §16.2, §17.4) is optional: without it none of those can be
-   stored, and the second factor `required_admins` refuses to start. 32
+   forge webhook's secret, a stored SMTP password, second-factor secrets,
+   the verifiers of agent and runner credentials; docs/api.md §2.2, §16.2,
+   §17.4) is optional: without it none of the first three can be stored,
+   the verifiers cannot be sealed, and the second factor
+   `required_admins` refuses to start. Sealing the verifiers is opt-in,
+   default off (`secretKey.sealVerifiers`, below). 32
    random bytes, base64:
 
    ```sh
@@ -131,7 +156,8 @@ example; any cluster with the same pieces works.
    A value that is not exactly 32 bytes of base64 stops the hub and the
    migrate Job from starting, so a typo shows at once. Keep a copy outside
    the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
-   needs a new secret). In the values it is `secretKey.existingSecret`
+   needs a new secret). With sealed credential verifiers it also means that every agent and runner
+   must join again. In the values it is `secretKey.existingSecret`
    (below); the Secret's key defaults to `secret-key`, set `secretKey.key` if you named it differently.
 
 4. **Values.** A `values.yaml` behind an ingress controller with
@@ -140,7 +166,7 @@ example; any cluster with the same pieces works.
    ```yaml
    image:
      repository: registry.example.org/maity-hub
-     tag: "<commit>"
+     digest: sha256:<the image digest>  # a digest, not a tag: the one the publish-image run summary prints
    imagePullSecrets:
      - name: registry-credentials
    database:
@@ -194,7 +220,14 @@ Upgrades are the same command with `helm upgrade`, also with
 `--timeout 10m`. Use `deploy/scripts/helm-upgrade.sh -f values.yaml` instead
 when the release brings a migration: it stops the hub while the migration
 runs and starts it again on any exit (see "The migration and the running
-pod" below).
+pod" below). It also checks the image's signature first, as in step 2.
+Before upgrading to chart 0.2.0, set `image.digest`, or
+`image.allowTag: true` with `image.tag`: without either the chart does not
+render, and the script stops at its signature check before it changes
+anything (with `NO_SIGNATURE_CHECK=1`, only after it has stopped the hub).
+With `image.allowTag`, the script runs only with `NO_SIGNATURE_CHECK=1`,
+since its check refuses an image by tag (see "The migration and the running
+pod").
 
 ## Values
 
@@ -205,9 +238,11 @@ silently ignored. These are the values that matter:
 | Value | Default | Meaning |
 |---|---|---|
 | `image.repository` | required | the hub image |
-| `image.tag` / `image.digest` | appVersion / none | a digest wins over the tag |
+| `image.digest` | required | `sha256:…`; the chart pulls by digest, which always wins over a tag |
+| `image.allowTag`, `image.tag` | `false`, none | pull by tag instead: both must be set and the digest empty (an opt-in; there is no default tag) |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
+| `database.migrate.existingSecret`, `.key` | empty, `database-url` | the migrate Job's own `MAITY_DATABASE_URL`: the role that owns the schema, while the hub's Secret names one that only reads and writes rows ([`docs/install/README.md`, "Database roles"](../../../docs/install/README.md#database-roles)); empty, the Job uses the hub's |
 | `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |
 | `replicas` | `1` | hub pods and `MAITY_REPLICAS`; above 1 only with PostgreSQL and without `attachments.existingClaim` (see Several pods) |
 | `config.workers` | `1` | `MAITY_WORKERS`, serving processes per pod; above 1 only with PostgreSQL |
@@ -219,6 +254,8 @@ silently ignored. These are the values that matter:
 | `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
 | `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
+| `secretKey.sealVerifiers` | `false` | `MAITY_SEAL_VERIFIERS=1`: the hub seals the verifiers of agent and runner credentials with the instance key (docs/api.md §2.2); needs `secretKey.existingSecret`. Opt-in, default off; sealed verifiers are read either way. After switching it on, run `maity-hub seal-verifiers` once in a hub pod to seal the verifiers stored before (idempotent, prints a count); the migrate Job seals nothing |
+| `secretKey.sealedVerifiersOnly` | `false` | `MAITY_SEALED_VERIFIERS_ONLY=1`: a plain verifier verifies nothing, and a hub pod does not start while a live one is left (docs/api.md §2.2); needs `secretKey.sealVerifiers`. Default off. Switch it on in a rollout of its own, after `maity-hub seal-verifiers` printed `plain left 0` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
@@ -233,6 +270,12 @@ silently ignored. These are the values that matter:
 | `ingress.annotations` | ingress-nginx long-poll settings and `proxy-body-size: 11m` | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |
+| `networkPolicy.egress.enabled` | `false` | a second policy for the hub's outbound connections: DNS, the database, HTTPS and SMTP, nothing else |
+| `networkPolicy.egress.dns` | CoreDNS / kube-dns in `kube-system` | the peers answering DNS (UDP and TCP 53) |
+| `networkPolicy.egress.database.to`, `.port` | any address, `5432` | the database's peers (a `podSelector` in the cluster, an `ipBlock` outside) and port |
+| `networkPolicy.egress.https` | `true` | TCP 443 to any address: the forge, Keep the Why reads, an S3 store, images |
+| `networkPolicy.egress.smtpPorts` | `mail.port` with `mail.host` set, else 587 and 465 | the SMTP ports |
+| `networkPolicy.egress.extra` | none | more `egress` rules as given, e.g. a plain-HTTP MinIO in the cluster |
 | `service.type`, `.annotations` | `ClusterIP`, none | |
 | `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | for the hub and the migrate Job; a `ReadWriteOnce` claim here must land both on one node |
 | `resources` | 50m / 128Mi requested, 512Mi limit | |
@@ -246,7 +289,8 @@ The chart refuses to render:
 - with `allowPlainHttp` together with the Ingress or a NodePort or
   LoadBalancer Service.
 
-The registration, terms, second-factor, limit and public-page settings have no
+The registration, terms, second-factor, limit, public-page and agent-firewall
+(`MAITY_AGENT_FIREWALL`) settings have no
 value of their own here. Set them in `extraEnv`, or as instance admin where the
 dashboard offers them; what each does is in
 [`hub/README.md`](../../../hub/README.md#settings-for-a-public-instance), the
@@ -258,6 +302,7 @@ extraEnv:
   - {name: MAITY_REGISTRATION, value: open}
   - {name: MAITY_SIGN_IN_SECOND_FACTOR, value: required_admins}
   - {name: MAITY_PUBLIC_PAGES, value: "on"}
+  - {name: MAITY_AGENT_FIREWALL, value: "on"}
 ```
 
 ## Client addresses
@@ -295,10 +340,12 @@ unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
 k3s's Traefik, `deploy/k3s-single/uploads.yaml` gives the upload its own
 route, which buffers the body before it reaches the hub.
 
-The hub has no general request budget. Its own limits are per route,
-among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
-reads. The general limit belongs to the controller: one limit
-per client address for every request. `ingress.requestLimit` sets it for
+The hub has no general request budget per client address. Its own limits
+are per route, among them sign-ins, codes, sign-ups, mail, uploads and the
+public pages' reads, and per credential for a signed-in caller's reads
+(`MAITY_MAX_READS_PER_MINUTE`, default 1000 a minute, counted in each pod;
+past it a read is `429 rate_limited` with `Retry-After`). The general limit
+belongs to the controller: one limit per client address for every request. `ingress.requestLimit` sets it for
 ingress-nginx (`limit-rps`, `limit-burst-multiplier`, `limit-connections`).
 It is off by default. Switch it on only once every agent runs a `maity`
 whose `maity wait` retries a 429. An older one ends its wait on the first
@@ -414,9 +461,19 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   `dump ok:` line (`DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment
   tar in it). Without that CronJob the script stops before it changes
   anything; `NO_DUMP=1` skips the dump, for a cluster where you take it
-  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob. And
+  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob.
+  Before the dump and before it looks for the CronJob, it renders the upgrade
+  (`helm upgrade --dry-run=client` with the same arguments) and checks each
+  image's signature with `cosign verify` and the identity in step 2 of the
+  install; a `--dry-run` among its arguments is refused before anything runs;
+  an image by tag, a failed check or a missing cosign stops it with nothing
+  changed, unless `NO_SIGNATURE_CHECK=1` (your own build). Helm fetches a
+  remote chart or a `-f` URL once for that render and again for the upgrade,
+  so pin it (`--version`, or a local copy) to deploy what was checked.
+  `COSIGN=<path>` names the cosign binary when it is not `cosign` on the
+  `PATH`. And
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
-  `kubectl` and `helm`. A release whose migration touches no busy table can
+  `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
   use plain `helm upgrade`.
 - **Rollback.** There is no schema downgrade: `maity-hub` has `serve`,
   `migrate` and `owner`, and the hook runs only on install and upgrade.

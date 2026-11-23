@@ -56,12 +56,18 @@ imagePullSecrets:
 {{- end -}}
 {{- end -}}
 
+{{/*
+The hub image, pulled by digest. A tag only with image.allowTag: true and an
+explicit image.tag; there is no default tag (the chart's appVersion is not used).
+*/}}
 {{- define "maity-hub.image" -}}
 {{- $repository := required "image.repository is required: the hub image built from deploy/Dockerfile" .Values.image.repository -}}
 {{- if .Values.image.digest -}}
 {{- printf "%s@%s" $repository .Values.image.digest -}}
+{{- else if .Values.image.allowTag -}}
+{{- printf "%s:%s" $repository (required "image.tag is required with image.allowTag: the tag to pull" .Values.image.tag) -}}
 {{- else -}}
-{{- printf "%s:%s" $repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- fail "image.digest is required: the chart pulls the image by digest (sha256:…, printed in the publish-image run summary). To pull by tag instead, set image.allowTag: true and image.tag" -}}
 {{- end -}}
 {{- end -}}
 
@@ -109,6 +115,12 @@ the cluster.
 {{- else if .Values.ingress.joinHost -}}
 {{- fail "ingress.joinHost needs the Ingress enabled; with your own Ingress, set MAITY_JOIN_URL through extraEnv" -}}
 {{- end -}}
+{{- if and .Values.secretKey.sealVerifiers (not .Values.secretKey.existingSecret) -}}
+{{- fail "secretKey.sealVerifiers needs secretKey.existingSecret: the verifiers are sealed with the instance key" -}}
+{{- end -}}
+{{- if and .Values.secretKey.sealedVerifiersOnly (not .Values.secretKey.sealVerifiers) -}}
+{{- fail "secretKey.sealedVerifiersOnly needs secretKey.sealVerifiers: without sealing every new verifier is plain and refused" -}}
+{{- end -}}
 {{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
 {{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}
 {{- end -}}
@@ -125,6 +137,31 @@ the chart.
     secretKeyRef:
       name: {{ required "database.existingSecret is required: a Secret holding MAITY_DATABASE_URL" .Values.database.existingSecret }}
       key: {{ .Values.database.key }}
+{{- include "maity-hub.sharedEnv" . }}
+{{- end -}}
+
+{{/*
+The migrate Job's database URL: database.migrate's Secret when one is named (the role that owns the schema,
+docs/install/README.md "Database roles"), else the hub's own.
+*/}}
+{{- define "maity-hub.migrateEnv" -}}
+- name: MAITY_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      {{- if .Values.database.migrate.existingSecret }}
+      name: {{ .Values.database.migrate.existingSecret }}
+      key: {{ .Values.database.migrate.key }}
+      {{- else }}
+      name: {{ required "database.existingSecret is required: a Secret holding MAITY_DATABASE_URL" .Values.database.existingSecret }}
+      key: {{ .Values.database.key }}
+      {{- end }}
+{{- include "maity-hub.sharedEnv" . }}
+{{- end -}}
+
+{{/*
+Everything in the environment but the database URL; it begins with a newline, so it follows a list entry.
+*/}}
+{{- define "maity-hub.sharedEnv" -}}
 {{- with .Values.forge.github.existingSecret }}
 - name: MAITY_FORGE_GITHUB_TOKEN
   valueFrom:
@@ -142,6 +179,14 @@ the chart.
     secretKeyRef:
       name: {{ . }}
       key: {{ $.Values.secretKey.key }}
+{{- end }}
+{{- if .Values.secretKey.sealVerifiers }}
+- name: MAITY_SEAL_VERIFIERS
+  value: "1"
+{{- end }}
+{{- if .Values.secretKey.sealedVerifiersOnly }}
+- name: MAITY_SEALED_VERIFIERS_ONLY
+  value: "1"
 {{- end }}
 {{- with .Values.mail.signingKeySecret.existingSecret }}
 - name: MAITY_MAIL_SIGNING_KEY

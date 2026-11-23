@@ -19,7 +19,6 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Collection
 from datetime import timedelta
-from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, select
@@ -29,6 +28,7 @@ from maity_hub import (
     clock,
     moderation,
     namespace,
+    public_design,
     public_pages,
     public_people,
     public_projects,
@@ -56,7 +56,8 @@ def memberships(conn: Connection, agent_id: str) -> list[tuple[Any, int]]:
         )
         .order_by(t.project.c.id)
     ).all()
-    return [(row, row.membership_id) for row in rows if public_projects.served(conn, row)]
+    public = public_projects.served_of(conn, rows)
+    return [(row, row.membership_id) for row in rows if row.id in public]
 
 
 def served(conn: Connection, agent: Any, owner: Any) -> list[tuple[Any, int]] | None:
@@ -101,12 +102,13 @@ def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
     page: a membership with a live session of its own. A membership without one shows its
     bridges' presence in the member views (§2.3); that is not the agent's own, so it does not
     count here (§16.9)."""
-    s = t.agent_session.c
+    s, p = t.agent_session.c, t.agent_session_project.c
     own = list(
         conn.execute(
-            select(s.membership_id)
+            select(p.membership_id)
+            .join(t.agent_session, s.id == p.session_id)
             .where(
-                s.membership_id.in_([membership_id for _, membership_id in found]),
+                p.membership_id.in_([membership_id for _, membership_id in found]),
                 s.live.is_(True),
             )
             .distinct()
@@ -118,10 +120,11 @@ def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
 def latest_session(conn: Connection, found: list[tuple[Any, int]]) -> tuple[str | None, str | None]:
     """The `model` and `harness` of the agent's most recent session in one of the projects of
     its page, each `None` when that session did not give it, both when there is none (§16.9)."""
-    s = t.agent_session.c
+    s, p = t.agent_session.c, t.agent_session_project.c
     row = conn.execute(
         select(s.model, s.harness)
-        .where(s.membership_id.in_([membership_id for _, membership_id in found]))
+        .join(t.agent_session_project, p.session_id == s.id)
+        .where(p.membership_id.in_([membership_id for _, membership_id in found]))
         .order_by(s.started_at.desc(), s.id.desc())
         .limit(1)
     ).first()
@@ -138,55 +141,27 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     found = served(conn, agent, owner)
     if found is None:
         return []
-    listed = sorted(((p, namespace.full_name(conn, p)) for p, _ in found), key=lambda pair: pair[1])
-    projects = "".join(
-        f'<li><a href="/{escape(full, quote=True)}">{escape(project.name)}</a> '
-        f'<span class="tag">{escape(full)}</span> <span class="tag">{escape(project.member_role)}'
-        "</span></li>"
-        for project, full in listed
-    )
+    names = namespace.full_names(conn, [p.id for p, _ in found])
+    listed = sorted(((p, names[p.id]) for p, _ in found), key=lambda pair: pair[1])
     since = public_people.member_since(agent.created_at)
     up = online(conn, found)
     model, harness = latest_session(conn, found)
-    facts = [f"<li>Member since {escape(since)}</li>"]
-    if up:
-        facts.append("<li>Online</li>")
-    if model:
-        facts.append(f"<li>Model: {escape(model)}</li>")
-    if harness:
-        facts.append(f"<li>Harness: {escape(harness)}</li>")
     totals = statistics(conn, found)
-    counters = (
-        f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>"
-        + "".join(
-            f"<li>{escape(label)}: {escape(public_projects.stat_value(key, totals[key]))}</li>"
-            for key, label in public_projects.stat_labels(totals)
-        )
-        + "</ul>"
-    )
-    owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
     # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
-    picture = avatars.public_urls(conn, [agent.id])[agent.id]
+    # The owner's picture as their own page shows it: only while their `public_profile` is on.
+    pictures = avatars.public_urls(conn, [agent.id, *([owner.id] if owner.public_profile else [])])
+    picture = pictures[agent.id]
     path = f"/{owner.handle}/agents/{agent.handle}"
-    content = (
-        f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
-        f"{public_people.picture_html(picture, 128)}"
-        f"<h1>{escape(agent.display_name)}</h1>{render.report_link(path)}"
-        f'<p>An agent of {owner_link}</p><ul class="facts">{"".join(facts)}</ul>'
-        f"<h2>Projects</h2><ul>{projects}</ul>{counters}"
-    )
-    body = render.page_document(
-        lang="en",
-        title=f"{agent.display_name} ({agent.handle})",
-        canonical=f"{hub.public_url.rstrip('/')}{path}",
-        content=content,
-    )
-    digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
     data = {
         "name": agent.display_name,
         "handle": agent.handle,
         "picture": picture,
-        "owner": {"name": owner.display_name, "handle": owner.handle, "page": f"/{owner.handle}"},
+        "owner": {
+            "name": owner.display_name,
+            "handle": owner.handle,
+            "page": f"/{owner.handle}",
+            "picture": pictures.get(owner.id),
+        },
         "projects": [
             {"name": p.name, "full_name": full, "role": p.member_role} for p, full in listed
         ],
@@ -196,13 +171,23 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         "model": model,
         "harness": harness,
     }
+    # The HTML in the dashboard's design as a pure function of `data` (`public_design.profile`).
+    content = public_design.profile(KIND, data, path)
+    body = render.page_document(
+        lang="en",
+        title=f"{agent.display_name} ({agent.handle})",
+        canonical=f"{hub.public_url.rstrip('/')}{path}",
+        content=content,
+        styled=False,
+    )
+    digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
     return [
         public_pages.Page(
             path=path,
             body=body,
             inputs=digest.hexdigest(),
             lastmod=clock.now(),
-            view="agent",
+            view=KIND,
             data=data,
         )
     ]

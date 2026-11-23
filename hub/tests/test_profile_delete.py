@@ -56,10 +56,18 @@ def test_the_handle_is_free_at_once_however_often(owner: flow.Human) -> None:
     assert taken.json()["error"]["details"]["fields"] == {"handle": "taken"}
 
 
-def test_live_joins_are_revoked_first(owner: flow.Human, make_client: ClientFactory) -> None:
+def test_live_joins_are_revoked_first(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
     agent_id = new_profile(owner, "joinable")
     pending = flow.join(owner, "maity", agent={"id": agent_id})
     assert delete(owner, agent_id).status_code == 200
+    # Revoked on its owner's word: named, and told as a `DELETE` of the join is (§3.1).
+    with migrated.connect() as conn:
+        join = conn.execute(select(t.join_link).where(t.join_link.c.id == pending["id"])).one()
+        told = conn.execute(select(t.event).where(t.event.c.kind == "join_revoked")).all()
+    assert join.revoked_at is not None and join.revoked_by == owner.id
+    assert [(e.subject_id, e.payload["revoked_by"]) for e in told] == [(pending["id"], owner.id)]
     late = flow.exchange(make_client(), pending)
     assert late.status_code == 404  # no membership for a deleted profile
     named = owner.post("/projects/maintainer/maity/joins", {"agent": {"id": agent_id}})

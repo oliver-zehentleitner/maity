@@ -3,6 +3,13 @@
 Callers check current account, address and method eligibility in the same transaction
 before consuming a flow. A human row lock serialises issuance, guesses and use on all
 three engines; a conditional update remains the final single-use check.
+
+The single-use rows themselves, the human row lock and the request limits are implemented
+once, for this table and `password_reset` alike, in auth/single_use.py; the names here
+(`issue`, `use`, `void_human`, `void_open`, `RequestLimits`, `lock_human`, `digest`,
+`recipient_over` and the recipient's limits) are thin wrappers over it or re-exports of it.
+This module holds what only the sign-in link has: the code, its MAC, the per-day count of
+wrong codes, the reading of a row by nonce or browser (`live`) and the mail.
 """
 
 from __future__ import annotations
@@ -18,19 +25,23 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import catalog, clock
 from maity_hub import tables as t
-from maity_hub.auth import totp
-from maity_hub.codes import digest as digest  # auth/password_resets.py imports it from here
-from maity_hub.ratelimit import Limiter
+from maity_hub.auth import single_use, totp
+from maity_hub.auth.single_use import RECIPIENT_MAILS_PER_DAY as RECIPIENT_MAILS_PER_DAY
+from maity_hub.auth.single_use import RECIPIENT_MAILS_PER_HOUR as RECIPIENT_MAILS_PER_HOUR
+from maity_hub.auth.single_use import RECIPIENT_PER_DAY as RECIPIENT_PER_DAY
+from maity_hub.auth.single_use import RECIPIENT_PER_HOUR as RECIPIENT_PER_HOUR
+from maity_hub.auth.single_use import Recipient as Recipient
+from maity_hub.auth.single_use import digest as digest
+from maity_hub.auth.single_use import lock_human as lock_human
+from maity_hub.auth.single_use import recipient_over as recipient_over
 
 LIFETIME = timedelta(minutes=15)
+# A spent row's code dies with it.
+KIND = single_use.Kind(t.email_sign_in, LIFETIME, cleared=("code_mac",))
 
 
 def code_mac(key: bytes, nonce_hash: str, code: str) -> str:
     return hmac.new(key, f"sign-in-code:{nonce_hash}:{code}".encode(), hashlib.sha256).hexdigest()
-
-
-def lock_human(conn: Connection, human_id: str) -> None:
-    conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update()).one()
 
 
 def _daily(conn: Connection, human_id: str) -> Any:
@@ -69,47 +80,27 @@ def issue(
     requested_at: datetime | None = None,
 ) -> Issued | None:
     """Issue only after lookup. Unknown addresses never get a row or an account lookup
-    on the response path. The pending value was already generated for every request."""
-    lock_human(conn, human_id)
-    now = clock.now()
-    requested_at = requested_at or now
-    newer = conn.execute(
-        select(t.email_sign_in.c.nonce_hash)
-        .where(
-            t.email_sign_in.c.human_id == human_id,
-            t.email_sign_in.c.source == source,
-            t.email_sign_in.c.created_at > requested_at,
-        )
-        .limit(1)
-    ).first()
-    if newer is not None or requested_at + LIFETIME <= now:
+    on the response path. The pending value was already generated for every request.
+    The shared steps are `single_use.start` and `single_use.add`; the code is drawn between
+    them, after the earlier row is voided and before the new one is written."""
+    at = single_use.start(conn, KIND, human_id=human_id, source=source, requested_at=requested_at)
+    if at is None:
         return None
-    conn.execute(
-        update(t.email_sign_in)
-        .where(
-            t.email_sign_in.c.human_id == human_id,
-            t.email_sign_in.c.source == source,
-            t.email_sign_in.c.used_at.is_(None),
-        )
-        .values(used_at=now, code_mac=None)
-    )
     nonce = secrets.token_urlsafe(32)
     hashed = digest(nonce)
     code = totp.new_six() if _daily(conn, human_id).wrong_codes < 20 else None
-    expires = requested_at + LIFETIME
-    conn.execute(
-        insert(t.email_sign_in).values(
-            nonce_hash=hashed,
-            pending_hash=digest(pending),
-            human_id=human_id,
-            address_epoch=address_epoch,
-            source=source,
-            next_path=next_path,
-            code_mac=code_mac(signing_key, hashed, code) if code is not None else None,
-            wrong_codes=0,
-            created_at=requested_at,
-            expires_at=expires,
-        )
+    expires = single_use.add(
+        conn,
+        KIND,
+        nonce_hash=hashed,
+        human_id=human_id,
+        source=source,
+        requested_at=at,
+        pending_hash=digest(pending),
+        address_epoch=address_epoch,
+        next_path=next_path,
+        code_mac=code_mac(signing_key, hashed, code) if code is not None else None,
+        wrong_codes=0,
     )
     return Issued(nonce, code, expires)
 
@@ -131,16 +122,7 @@ def live(conn: Connection, *, nonce_hash: str | None = None, pending: str | None
 
 
 def use(conn: Connection, row: Any) -> bool:
-    result = conn.execute(
-        update(t.email_sign_in)
-        .where(
-            t.email_sign_in.c.nonce_hash == row.nonce_hash,
-            t.email_sign_in.c.used_at.is_(None),
-            t.email_sign_in.c.expires_at > clock.now(),
-        )
-        .values(used_at=clock.now(), code_mac=None)
-    )
-    return result.rowcount == 1
+    return single_use.use(conn, KIND, row)
 
 
 def try_code(conn: Connection, row: Any, value: str, signing_key: bytes) -> bool:
@@ -182,20 +164,12 @@ def try_code(conn: Connection, row: Any, value: str, signing_key: bytes) -> bool
 
 
 def void_human(conn: Connection, human_id: str) -> None:
-    conn.execute(
-        update(t.email_sign_in)
-        .where(t.email_sign_in.c.human_id == human_id, t.email_sign_in.c.used_at.is_(None))
-        .values(used_at=clock.now(), code_mac=None)
-    )
+    single_use.void_human(conn, KIND, human_id)
 
 
 def void_open(conn: Connection) -> None:
     """Invalidate existing grants when the instance disables mail sign-in."""
-    conn.execute(
-        update(t.email_sign_in)
-        .where(t.email_sign_in.c.used_at.is_(None))
-        .values(used_at=clock.now(), code_mac=None)
-    )
+    single_use.void_open(conn, KIND)
 
 
 def mail_body(
@@ -226,21 +200,13 @@ def mail_body(
     )
 
 
-class RequestLimits:
-    """Only the source limit is observable; pair limits silently suppress delivery.
-    Keys contain hashes, and existing and unknown addresses take the same path."""
+PREFIX = "auth.email_links"  # the limiters' names: keys of the shared counts, never renamed
+
+
+class RequestLimits(single_use.RequestLimits):
+    """`POST /auth/email-link` (§2.6.4), in buckets named under `auth.email_links`: only the
+    source limit is observable; the pair limits and the recipient's silently suppress
+    delivery (auth/single_use.py)."""
 
     def __init__(self) -> None:
-        self.by_source = Limiter(10, 3600, name="auth.email_links.by_source")
-        self.pair_quarter = Limiter(3, 900, name="auth.email_links.pair_quarter")
-        self.pair_day = Limiter(10, 86400, name="auth.email_links.pair_day")
-
-    def take(self, address: str, source: str) -> tuple[int, bool]:
-        wait = self.by_source.hit(source)
-        if wait:
-            return wait, False
-        normalised = address.strip().casefold()
-        key = digest(f"{source}\0{normalised}")
-        quarter = self.pair_quarter.hit(key)
-        day = self.pair_day.hit(key)
-        return 0, not (quarter or day)
+        super().__init__(PREFIX)

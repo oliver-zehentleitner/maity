@@ -25,18 +25,14 @@ from maity_hub import (
 from maity_hub import handles as handle_book
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
+from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
 from maity_hub.languages import known as known_language
-from maity_hub.seen import latest_call
+from maity_hub.seen import latest_call, presence_by_age
 
-ONLINE = timedelta(seconds=120)
-AWAY = timedelta(hours=2)
-
-
-def ts(moment: datetime | None) -> str | None:
-    return clock.rfc3339(moment) if moment is not None else None
+ts = clock.rfc3339_or_none
 
 
 DELETED_NAME = "Deleted account"
@@ -167,13 +163,23 @@ def meat_proxy_view(lead: bool, hands: bool) -> dict[str, Any]:
     }
 
 
+def handles_of(conn: Connection, principal_ids: Iterable[str | None]) -> dict[str, str]:
+    """principal id → handle, an agent profile's (`agt-…`) or a human's, in one query per
+    kind and `chunks.CHUNK` ids. An id that names neither, or one without a handle, is left
+    out: the caller decides what stands in for it."""
+    wanted = {p for p in principal_ids if p}
+    agents = {p for p in wanted if p.startswith("agt-")}
+    found: dict[str, str] = {}
+    for table, ids in ((t.agent_profile, agents), (t.human, wanted - agents)):
+        for part in chunks(ids):
+            rows = conn.execute(select(table.c.id, table.c.handle).where(table.c.id.in_(part)))
+            found.update({row.id: str(row.handle) for row in rows if row.handle is not None})
+    return found
+
+
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
     """Per human id its handle: the first half of an agent's global name (§6.3)."""
-    ids = set(owner_ids)
-    if not ids:
-        return {}
-    rows = conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids)))
-    return {row.id: row.handle for row in rows}
+    return handles_of(conn, owner_ids)
 
 
 def agent_member(row: Any, *, avatar_url: str | None, owner_handle: str) -> dict[str, Any]:
@@ -296,7 +302,7 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, owner_handle, confirmed_by),
-        # The project's own links (§6.11), all four keys, null where none is set.
+        # The project's own links (§6.11), all five keys, null where none is set.
         "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
@@ -386,12 +392,7 @@ def presence(row: Any, session: Any, listening: bool) -> str:
         return "offline"
     # From the latest call the stored time may stand for (§2.4, `seen`): a member that calls
     # is never shown away.
-    age = clock.now() - latest_call(seen)
-    if age <= ONLINE:
-        return "online"
-    if age <= AWAY:
-        return "away"
-    return "offline"
+    return presence_by_age(clock.now() - latest_call(seen))
 
 
 def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
@@ -445,8 +446,9 @@ def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
     return best
 
 
-def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
-    """Per agent membership its active placement, as the Agents list needs it (§15.11)."""
+def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, list[dict[str, Any]]]:
+    """Per agent membership its active placements, oldest first, one per instance, as the
+    Agents list needs them (§15.11): `placements`, and `placement` the first of them."""
     if not membership_ids:
         return {}
     rows = conn.execute(
@@ -456,51 +458,64 @@ def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[st
             t.placement.c.desired,
             t.placement.c.reported,
             t.runner.c.name,
+            t.credential.c.instance,
         )
         .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
+        .outerjoin(t.credential, t.credential.c.id == t.placement.c.credential_id)
         .where(t.placement.c.membership_id.in_(membership_ids), t.placement.c.active.is_(True))
+        .order_by(t.placement.c.created_at, t.placement.c.id)
     ).all()
-    return {
-        r.membership_id: {
-            "id": r.id,
-            "state": (r.reported or {}).get("state"),
-            "desired": r.desired,
-            "runner_name": r.name,
-        }
-        for r in rows
-    }
+    found: dict[int, list[dict[str, Any]]] = {}
+    for r in rows:
+        found.setdefault(r.membership_id, []).append(
+            {
+                "id": r.id,
+                "instance": r.instance,
+                "state": (r.reported or {}).get("state"),
+                "desired": r.desired,
+                "runner_name": r.name,
+            }
+        )
+    return found
+
+
+def _first_placement(placements: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """`placement` of the member view: the oldest active placement in its v1 shape."""
+    if not placements:
+        return None
+    return {k: v for k, v in placements[0].items() if k != "instance"}
 
 
 def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any], dict[int, Any]]:
     """Per membership: the newest live session, and the newest session of any kind."""
     if not membership_ids:
         return {}, {}
+    # A session is in a project through its row of `agent_session_project` (§6.17).
+    p = t.agent_session_project
+    in_project = p.c.session_id == t.agent_session.c.id
     live: dict[int, Any] = {}
     for row in conn.execute(
-        select(t.agent_session)
-        .where(
-            t.agent_session.c.membership_id.in_(membership_ids),
-            t.agent_session.c.live.is_(True),
-        )
+        select(t.agent_session, p.c.membership_id)
+        .join(p, in_project)
+        .where(p.c.membership_id.in_(membership_ids), t.agent_session.c.live.is_(True))
         .order_by(t.agent_session.c.started_at.desc(), t.agent_session.c.id.desc())
     ):
         live.setdefault(row.membership_id, row)
     newest = (
-        select(
-            t.agent_session.c.membership_id,
-            func.max(t.agent_session.c.started_at).label("started_at"),
-        )
-        .where(t.agent_session.c.membership_id.in_(membership_ids - live.keys()))
-        .group_by(t.agent_session.c.membership_id)
+        select(p.c.membership_id, func.max(t.agent_session.c.started_at).label("started_at"))
+        .join(t.agent_session, in_project)
+        .where(p.c.membership_id.in_(membership_ids - live.keys()))
+        .group_by(p.c.membership_id)
         .subquery()
     )
     latest: dict[int, Any] = dict(live)
     if membership_ids - live.keys():
         for row in conn.execute(
-            select(t.agent_session)
+            select(t.agent_session, p.c.membership_id)
+            .join(p, in_project)
             .join(
                 newest,
-                (newest.c.membership_id == t.agent_session.c.membership_id)
+                (newest.c.membership_id == p.c.membership_id)
                 & (newest.c.started_at == t.agent_session.c.started_at),
             )
             .order_by(t.agent_session.c.id.desc())
@@ -771,7 +786,10 @@ def member_views(
                 "covered_by": covered_by.get(row.id),
                 "covering": covering.get(row.id, []),
                 "joined_at": ts(row.joined_at),
-                "placement": placed.get(row.id),  # always null for a human
+                # The first placement, without `instance` as before, and every one (§15.11);
+                # null and empty for a human.
+                "placement": _first_placement(placed.get(row.id)),
+                "placements": placed.get(row.id, []),
             }
         )
         if row.agent_id is not None:
@@ -938,8 +956,14 @@ def _credential_counts(conn: Connection, membership_ids: set[int]) -> dict[int, 
         return {}
     recent = clock.now() - REVOKED_LISTED
     counted: dict[int, dict[str, Any]] = {}
+    from maity_hub import instances  # instances reads the tables views also reads
+
+    # Per project: an instance attached to several counts once in each (§6.17).
+    a = t.instance_attachment
     for c in conn.execute(
-        select(t.credential).where(t.credential.c.membership_id.in_(membership_ids))
+        instances.credential_rows().where(
+            a.c.membership_id.in_(membership_ids), a.c.detached_at.is_(None)
+        )
     ):
         found = counted.setdefault(c.membership_id, dict(NO_CREDENTIALS))
         revoked = c.revoked_at
@@ -1063,6 +1087,7 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "used_at": ts(row.used_at),
         "burned": row.burned_at is not None,
         "revoked_at": ts(row.revoked_at),
+        "revoked_by": row.revoked_by,
         "via": row.via,
         "new_instance": bool(row.new_instance),
         "replaces": row.replaces,
@@ -1085,7 +1110,8 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
+    whose view may drop (`task_views`)."""
     return task_views(conn, [row], fg, viewer)[0]
 
 
@@ -1094,13 +1120,22 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
+    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
+    `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
+    from maity_hub import access, public_cards  # they read views; imported here, not at the top
+
+    outside = isinstance(viewer, access.OutsideReader)
+    if outside:
+        # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
+        views = public_cards.outside_views(conn, views)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
-    held = moderation.holds_of(conn, "card", [r.id for r in rows])
+    # An outsider reads no held card, so no hold: none read after `outside_views` decided.
+    held = {} if outside else moderation.holds_of(conn, "card", [r.id for r in rows])
     for view in views:
         if view["id"] in held:  # only while a hold stands (§16.8)
             view["moderation"] = held[view["id"]]
@@ -1241,6 +1276,10 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
     payload = row.payload
+    if isinstance(payload, dict) and not row.redacted:
+        # A redacted card field copied into an event (`task.title` of `mentioned`,
+        # `note_added`, `note_edited`, §20.8) shows its reason as the card's history does.
+        payload = _task_copy_for(payload, reader)
     if row.kind in ("note_added", "note_edited") and isinstance(payload, dict) and not row.redacted:
         # A redacted note's tombstone sits inside the event that carried it (§6.16).
         note = payload.get("note")
@@ -1250,6 +1289,11 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
 
             return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
         return payload
+    task_event = row.kind in ("task_created", "task_updated")
+    if task_event and isinstance(payload, dict) and not row.redacted:
+        # A redacted history entry's tombstone sits in the field values of the event its
+        # write emitted (§6.15).
+        return _field_tombstones_for(payload, reader)
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict):
         return payload
@@ -1261,6 +1305,35 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     if reader is not None and row.redacted and payload.get("by") == reader.principal_id:
         return payload  # the redactor's own tombstone
     return {**payload, "reason": None}  # no reader known: hidden, never shown by default
+
+
+def is_tombstone(value: Any) -> bool:
+    """A redaction's tombstone (§8.5): `redacted: true` with who and when, so a field whose
+    value happens to be a dict is never taken for one."""
+    return (
+        isinstance(value, dict)
+        and value.get("redacted") is True
+        and "by" in value
+        and "at" in value
+    )
+
+
+def _field_tombstones_for(payload: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """A task event's field values with each tombstone's reason as `reader` may read it."""
+    from maity_hub.board import notes
+
+    if not any(is_tombstone(v) for v in payload.values()):
+        return payload
+    return {k: notes.tombstone_for(v, reader) if is_tombstone(v) else v for k, v in payload.items()}
+
+
+def _task_copy_for(payload: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """An event's copy of a card (`task`) with each redacted field's reason as `reader` may
+    read it."""
+    task = payload.get("task")
+    if not isinstance(task, dict) or not any(is_tombstone(v) for v in task.values()):
+        return payload
+    return {**payload, "task": _field_tombstones_for(task, reader)}
 
 
 def _standing_of(conn: Connection, events: Sequence[Any], reader: Any) -> dict[int, dict[str, Any]]:

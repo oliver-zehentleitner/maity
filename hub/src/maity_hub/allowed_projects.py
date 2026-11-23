@@ -31,7 +31,7 @@ def parse(raw: Any) -> list[str] | None:
         raise invalid({"allowed_projects": "format"}, "allowed_projects is null or a list of names")
     if len(raw) > MAX_NAMES:
         raise invalid({"allowed_projects": "too_many"}, "at most 200 projects")
-    if any(namespace.FULL_NAME.match(name) is None for name in raw):
+    if any(namespace.FULL_NAME.fullmatch(name) is None for name in raw):
         raise invalid({"allowed_projects": "format"}, "a name is <owner>/<slug>")
     if len(set(raw)) != len(raw):
         raise invalid({"allowed_projects": "duplicate"}, "a name twice")
