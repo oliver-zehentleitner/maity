@@ -197,11 +197,17 @@ def session_id_hash(session_id: str) -> str:
 
 
 def authenticate(
-    conn: Connection, facts: RequestFacts, *, renew_leases: bool = True, seen: bool = True
+    conn: Connection,
+    facts: RequestFacts,
+    *,
+    renew_leases: bool = True,
+    seen: bool = True,
+    counted: bool = True,
 ) -> Caller:
     """The caller of the request. `seen=False` (a dashboard tab's presence, §18.4) checks a
     cookie session as any call does but writes no `last_seen_at`: that call shows nobody as
-    online and keeps no session alive (§2.4)."""
+    online and keeps no session alive (§2.4). `counted=False` (the forge's setup, §11.4)
+    counts no read of a cookie session either (§1.7)."""
     authorization = facts.headers.get("authorization")
     if authorization:  # the header authenticates; a cookie alongside is ignored
         scheme, _, value = authorization.partition(" ")
@@ -211,7 +217,7 @@ def authenticate(
             return _signed(conn, facts, value.strip())
         raise unauthenticated("unsupported authorization scheme")
     if SESSION_COOKIE in facts.cookies:
-        return _cookie(conn, facts, renew_leases, seen)
+        return _cookie(conn, facts, renew_leases, seen, counted)
     raise unauthenticated()
 
 
@@ -272,7 +278,9 @@ def _cookie_headers(facts: RequestFacts) -> None:
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
 
 
-def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True) -> Caller:
+def _cookie(
+    conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True, counted: bool = True
+) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     presented = facts.cookies[SESSION_COOKIE]
@@ -287,7 +295,8 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
         token = facts.headers.get(CSRF_HEADER, "")
         if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
             raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
-    _count_read(conn, facts, id_hash)
+    if counted:
+        _count_read(conn, facts, id_hash)
     # Presence at most once every `SEEN_EVERY` (§2.4), sent only when the read says it is due;
     # its update checks the session again, so a session ended meanwhile matches nothing. A
     # dashboard tab's presence (`seen=False`, §18.4) writes none of it.

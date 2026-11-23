@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -23,9 +23,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, forge, forge_links, github_app, secretbox
+from maity_hub import clock, forge, forge_links, github_app, read_limits, secretbox
 from maity_hub import tables as t
+from maity_hub.auth.caller import SESSION_COOKIE, session_id_hash
 from maity_hub.config import ConfigError, Settings
+from maity_hub.seen import SEEN_EVERY
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_two_factor import Clock, code_now, enrol
@@ -336,6 +338,46 @@ def test_a_missing_or_malformed_state_is_link_state_in_both_forms(
 
 
 @pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        ({"code": "c0de"}, "installation_id"),
+        ({"installation_id": "seven", "code": "c0de"}, "installation_id"),
+        ({"installation_id": 0, "code": "c0de"}, "installation_id"),
+        ({"installation_id": 7}, "code"),
+        ({"installation_id": 7, "code": ""}, "code"),
+        ({"installation_id": 7, "code": "c" * 513}, "code"),
+    ],
+)
+def test_a_query_the_setup_cannot_read_is_invalid_before_the_route_runs(
+    human: flow.Human, fake: Forge, params: dict[str, Any], field: str
+) -> None:
+    """No or a malformed `installation_id` or `code` is the framework's `400 invalid` like any
+    malformed request (§1.3), no 303: the route never runs, so the state is not taken."""
+    fake.install(7)
+    state = start(human)
+    answer = human.client.get(
+        "/api/v1/forge/github/setup", params={**params, "state": state}, follow_redirects=False
+    )
+    assert answer.status_code == 400
+    error = answer.json()["error"]
+    assert error["code"] == "invalid" and field in error["details"]["fields"]
+    assert fake.codes == [] and links(human) == []
+    assert setup(human, 7, state) == DONE  # the state was not taken
+
+
+def test_a_malformed_setup_without_a_session_is_unauthenticated(
+    make_client: ClientFactory, fake: Forge
+) -> None:
+    """Authentication comes before the query is read: no session is `unauthenticated`, not
+    `invalid` (§11.4)."""
+    answer = make_client().get(
+        "/api/v1/forge/github/setup", params={"code": "c0de"}, follow_redirects=False
+    )
+    assert answer.status_code == 401
+    assert answer.json()["error"]["code"] == "unauthenticated"
+
+
+@pytest.mark.parametrize(
     ("account_id", "kind", "reason"),
     [
         (43, "User", "installation_not_yours"),
@@ -627,6 +669,65 @@ def test_a_cross_site_setup_with_another_sessions_state_goes_back_with_link_stat
     own = cross_site(second, {**params, "state": start(human)})
     assert (own.status_code, own.headers["location"]) == (303, DONE + "?error=link_state")
     assert fake.codes == [] and links(human) == []
+
+
+def traces(engine: Engine, who: flow.Human) -> tuple[Any, ...]:
+    """What an authenticated call may change for its human (§2.4, §6.5, §1.7): the session's,
+    the human's and the memberships' presence, the leases of its claims, its read count."""
+    id_hash = session_id_hash(who.client.cookies[SESSION_COOKIE])
+    with engine.connect() as conn:
+        found = (
+            conn.execute(
+                select(t.human_session.c.last_seen_at).where(t.human_session.c.id_hash == id_hash)
+            ).scalar_one(),
+            conn.execute(select(t.human.c.last_seen_at).where(t.human.c.id == who.id)).scalar(),
+            conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.human_id == who.id)
+            ).all(),
+            conn.execute(
+                select(t.card.c.lease_until).where(t.card.c.lease_until.is_not(None))
+            ).all(),
+        )
+    counted = read_limits.COUNTER._counts.get(id_hash)
+    window = clock.now().timestamp() // read_limits.WINDOW_SECONDS
+    return (*found, counted.current if counted and counted.window == window else 0)
+
+
+@pytest.mark.parametrize("which", ["foreign", "used"])
+def test_a_cross_site_setup_with_a_bad_state_changes_nothing(
+    human: flow.Human, fake: Forge, make_client: ClientFactory, migrated: Engine, which: str
+) -> None:
+    """A navigation another site forces writes no presence, renews no lease and counts no read
+    before its `state` refuses it (§2.1, §11.4); an ordinary call at the same moment does."""
+    # One window of the read count (§1.7) for the whole test, so its count only grows.
+    window = read_limits.WINDOW_SECONDS
+    now = [datetime.fromtimestamp((time.time() // window + 1) * window + 1, UTC)]
+    clock.set_source(lambda: now[0])
+    fake.install(7)
+    flow.project(human, "alpha")
+    card = human.post("/projects/maintainer/alpha/tasks", {"title": "held"}).json()
+    claimed = human.post(f"/projects/maintainer/alpha/tasks/{card['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    if which == "foreign":
+        state = start(flow.human(make_client, migrated, "anna"))
+    else:
+        state = start(human)
+        assert setup(human, 7, state) == DONE
+    # Presence due again (§2.4), and a renewal now would move the lease (§6.5).
+    with migrated.begin() as conn:
+        aged = now[0] - 2 * SEEN_EVERY
+        conn.execute(update(t.human_session).values(last_seen_at=aged))
+        conn.execute(update(t.human).values(last_seen_at=aged))
+        conn.execute(update(t.membership).values(last_seen_at=aged))
+    now[0] += timedelta(seconds=20)
+    before = traces(migrated, human)
+    answer = cross_site(human, {"installation_id": 7, "code": "c0de", "state": state})
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE + "?error=link_state")
+    assert traces(migrated, human) == before
+    # The same moment, an ordinary read: every one of them changes.
+    assert human.client.get("/api/v1/me").status_code == 200
+    after = traces(migrated, human)
+    assert all(a != b for a, b in zip(after, before, strict=True)), (before, after)
 
 
 # --- the human's own token -------------------------------------------------------------------
