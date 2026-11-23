@@ -63,6 +63,7 @@ def test_a_new_repository_is_unconfirmed_until_the_owner_confirms_it(owner: flow
         URL + ".git/",
         "HTTPS://GitHub.com/acme/maity",
         "https://GITHUB.COM/acme/maity.git",
+        URL + "//",  # as before: the stored spelling with its trailing slashes (A2220 P3-1)
     ],
 )
 def test_a_url_creation_would_store_the_same_confirms(owner: flow.Human, sent: str) -> None:
@@ -80,6 +81,15 @@ def test_a_url_creation_would_store_the_same_confirms(owner: flow.Human, sent: s
         "https://github.com/acme/maity.GIT",  # only a lower-case `.git` is dropped
         "http://github.com/acme/maity",  # creation refuses it: no repository at all
         "not a url",
+        # Guards against a later loosening (A2220 P3-1): none names the stored repository.
+        URL + "/tree/main",
+        "https://www.github.com/acme/maity",
+        "https://github.com:443/acme/maity",
+        URL + "?x=1",
+        URL + "#readme",
+        "https://github.com/acme/ma%69ty",
+        URL + " ",
+        "https://github.com/acme/mait",
     ],
 )
 def test_another_url_or_one_creation_refuses_is_not_confirmed(owner: flow.Human, sent: str) -> None:
