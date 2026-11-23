@@ -472,7 +472,7 @@ prefix, a public id, and 32 random bytes as base64url. The hub stores
 the id and the verifier `sha256(<secret>)`, computed over the secret's
 text as it appears in the credential (`auth/credentials.py`). An event
 a member's or runner's credential caused records that credential, and
-for a member the event's view names the instance from it (§7).
+for a member the event's view names the instance from it (section 7; §8.1).
 
 - **Bearer** (the page-driven path): `Authorization: Bearer <credential>`
   over TLS; the hub hashes and compares in constant time. State-changing
