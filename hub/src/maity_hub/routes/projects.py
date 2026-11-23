@@ -1542,7 +1542,7 @@ def transfer_project(
 
 def _as_stored(url: str) -> str | None:
     """A URL as creation stores one (§6.1: the scheme and host in lower case, one trailing slash
-    and a `.git` dropped); None for one creation would refuse."""
+    and a lower-case `.git` dropped); None for one creation would refuse."""
     try:
         return forge.stored_repository_url(url)
     except forge.RepositoryURLError:
