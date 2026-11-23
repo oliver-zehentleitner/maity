@@ -134,7 +134,8 @@ def _in_own_right(request: Any, mine: Membership) -> bool:
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
-        return mine.trust == "owner"
+        # A proxy relays what is addressed to the owner while it is open (§2.3, §7).
+        return mine.trust == "owner" or (mine.role_base == "proxy" and request.status == "open")
     return request.to_role in tokens_of(mine.trust, mine.role, mine.role_base)
 
 

@@ -1039,14 +1039,20 @@ def relayed(rows: Sequence[Any], mine: Membership) -> list[Any]:
 
 def listed_to_all(conn: Connection, mine: Membership, rows: list[Any]) -> list[Any]:
     """`to=all` (§7): a holder of `requests:answer` sees every request but one from an
-    owner's round it may not read; anyone else what it asked and what is addressed to it.
+    owner's round it may not read and one held for it (§9.6: no scope opens that); anyone
+    else what it asked and what is addressed to it.
 
     `routes/overview.py` `request_counts` restates this in SQL for the requests without
     `held`, `cover`, `jour_fixe` (and, for a proxy, `proposal`), and hands the others to
     this function: a change here is a change there."""
     if mine.may("requests:answer"):
         alone = inbox.owners_alone(conn, rows)
-        return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
+        return [
+            r
+            for r in rows
+            if (r.id not in alone and not inbox.held_back(r, mine.principal_id))
+            or inbox.may_read(conn, r, mine)
+        ]
     return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
 
 

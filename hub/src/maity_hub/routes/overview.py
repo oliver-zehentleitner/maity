@@ -55,6 +55,8 @@ def _addressed_sql(mine: Membership) -> ColumnElement[bool]:
     ]
     if mine.trust == "owner":
         own_right.append(r.to_kind == "owner")
+    elif mine.role_base == "proxy":  # it relays what is addressed to the owner (§2.3, §7)
+        own_right.append(and_(r.to_kind == "owner", r.status == "open"))
     not_forwarded = and_(
         r.holder_member.is_(None), or_(r.holder_pool.is_(None), r.holder_pool.is_(False))
     )
@@ -68,7 +70,7 @@ def _addressed_sql(mine: Membership) -> ColumnElement[bool]:
 _DECIDED_BY = (
     "id", "priority", "created_at", "personal", "to_kind", "to_member", "to_role",
     "holder_member", "holder_pool", "held", "cover", "jour_fixe", "proposal", "filed_by",
-    "asked_by", "on_behalf_of",
+    "asked_by", "on_behalf_of", "status",
 )  # fmt: skip
 
 
@@ -80,9 +82,10 @@ def request_counts(conn: Connection, mine: Membership) -> dict[str, Any]:
     matter, no `jour_fixe` (for a holder of `requests:answer`: an owner's round opens to no
     scope) and no `proposal` (for a proxy: it never lists a bridge consent). Its `where`
     restates `routes/requests.py` `listed_to_all` and `_addressed_sql` restates
-    `inbox.addressed_to`. The others, a few, are read with only the columns the Python rule
-    needs and decided by it, unchanged: a JSON list or another table decides them, and
-    each database reads JSON in its own syntax."""
+    `inbox.addressed_to`; a request `held` for the caller is one of the others, so
+    `listed_to_all` leaves it out of both counts (§9.6). The others, a few, are read with
+    only the columns the Python rule needs and decided by it, unchanged: a JSON list or
+    another table decides them, and each database reads JSON in its own syntax."""
     r = t.request.c
     answers = mine.may("requests:answer")
     open_here = [r.project_id == mine.project.id, r.personal.is_(False), r.status == "open"]
