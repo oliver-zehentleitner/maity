@@ -851,6 +851,20 @@ def test_an_admin_expert_without_tasks_write_removes_a_link_it_did_not_add(
     assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"] == []
 
 
+def test_the_cards_creator_a_writer_without_tasks_admin_removes_a_link_it_did_not_add(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    creator = flow.agent(make_client, owner, trust="member", role="coder")  # no tasks:admin
+    card = task(creator)  # unclaimed: the creator is neither the adder nor the holder
+    added = link(owner, card, kind="url", url="https://example.com/a").json()
+    path = _link_path(card, added["id"])
+    removed = creator.client.delete(path, headers=creator.auth)
+    assert (removed.status_code, removed.json()) == (200, added)
+    again = creator.client.delete(path, headers=creator.auth)
+    assert (again.status_code, again.json()) == (200, added)
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"] == []
+
+
 def test_a_removed_link_answers_whom_the_rule_lets_remove_it_and_no_one_else(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
