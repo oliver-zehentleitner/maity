@@ -1254,7 +1254,11 @@ call is a `Calls` list of one entry (`CROSS_SITE_NAVIGATIONS`), matched on the r
 path as the isolated agent's gate is, so a percent-encoded spelling the router would still
 route there stays refused. The route authenticates its caller without side effects
 (`deps.forge_setup_caller`: `seen=False`, `renew_leases=False`, `counted=False`): no presence
-is written, no lease renewed and no read counted, on any path to it. Its `state` (256 bits,
+is written, no lease renewed and no read counted, on any path to it. Those flags reach only the
+cookie path, so `forge_setup_caller` first refuses an `Authorization` or `Maity-For` header
+(`humans_only`, as `presence_caller` does) before any credential is looked up: an agent's,
+runner's or bridge's credential would otherwise have its read counted and its presence settled
+before the route refused it. Its `state` (256 bits,
 stored as a hash, bound to the session, 15 minutes, used once) is checked before any forge read
 or write; the route's outcomes, and the refusals before it runs, are listed in §11.4.
 
@@ -1297,6 +1301,7 @@ human's next dashboard call writes presence and renews leases as always.
   on a forced navigation before the `state` refuses it: a navigation another site forces should
   leave no trace on the victim's session, and the route, only reached by the forge's redirect,
   loses nothing without them.
-- Also requiring `Sec-Fetch-User: ?1`: a redirect chain drops it. The browser arrives at the
-  setup by the forge's redirect after the user's action on github.com, so the header may be
-  absent, and requiring it would refuse real links.
+- Also requiring `Sec-Fetch-User: ?1`: not every browser sends it, and the forge's return need
+  not be user-activated (the forge may redirect back without a fresh user gesture), so
+  requiring it would refuse real links; it would add nothing the single-use, session-bound
+  `state` does not already protect.

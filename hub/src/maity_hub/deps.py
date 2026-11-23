@@ -318,11 +318,17 @@ async def presence_caller(request: Request) -> Caller:
 
 
 async def forge_setup_caller(request: Request) -> Caller:
-    """`GET /forge/github/setup` (§11.4): checked as any call, but writing no presence,
-    renewing no lease and counting no read. It is the one call another site may start with
-    the cookie (§2.1): a navigation another site forces leaves no trace before its `state`
-    refuses it, and the forge's redirect, the only way the route is reached, loses nothing
-    by it (hub/context/auth.md e3a7c1d5)."""
+    """`GET /forge/github/setup` (§11.4): a human's cookie session only, checked as any call,
+    but writing no presence, renewing no lease and counting no read. It is the one call
+    another site may start with the cookie (§2.1): a navigation another site forces leaves
+    no trace before its `state` refuses it, and the forge's redirect, the only way the route
+    is reached, loses nothing by it (hub/context/auth.md e3a7c1d5). An `Authorization`
+    header (an agent, a runner, a bridge) or `Maity-For` is refused before any credential
+    is looked up, as for `presence_caller`, so no caller's presence, lease or read count is
+    touched either."""
+    headers = request.headers
+    if "authorization" in headers or "maity-for" in headers:
+        raise humans_only("forge access is a human's own")
     return await _resolve(request, renew_leases=False, seen=False, counted=False)
 
 

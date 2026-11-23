@@ -8,5 +8,7 @@
   session and used once, protects the link, and a missing, expired, used or foreign one is a
   `303` to `/settings/forge?error=link_state`. A link another site opens to the setup changes
   nothing before its `state` is checked: no presence, no lease renewed, no read counted. A
+  call with an `Authorization` or `Maity-For` header is `403 forbidden` (`humans_only`) before
+  its credential is read, so it leaves no trace either. A
   cross-site `fetch` or frame to the setup, and every other cross-site cookie call, stay
   `csrf_mismatch` (docs/api.md §2.1, §11.4; tsk-2vtm39ykr7k4).

@@ -730,6 +730,67 @@ def test_a_cross_site_setup_with_a_bad_state_changes_nothing(
     assert all(a != b for a, b in zip(after, before, strict=True)), (before, after)
 
 
+def agent_traces(engine: Engine, agent: flow.Agent) -> tuple[Any, ...]:
+    """What an agent's call may change (§2.4, §1.7): its credential's last use, its
+    membership's presence, its read count."""
+    with engine.connect() as conn:
+        found = (
+            conn.execute(
+                select(t.credential.c.last_used_at).where(t.credential.c.id == agent.credential_id)
+            ).scalar_one(),
+            conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.agent_id == agent.id)
+            ).scalar_one(),
+        )
+    counted = read_limits.COUNTER._counts.get(agent.credential_id)
+    window = clock.now().timestamp() // read_limits.WINDOW_SECONDS
+    return (*found, counted.current if counted and counted.window == window else 0)
+
+
+@pytest.mark.parametrize("bridged", [False, True])
+def test_a_credential_header_on_the_setup_is_refused_before_it_is_read(
+    human: flow.Human, fake: Forge, make_client: ClientFactory, migrated: Engine, bridged: bool
+) -> None:
+    """An `Authorization` or `Maity-For` header on the setup is `humans_only` before any
+    credential is looked up (§11.4): the agent's presence and read count stay as they were,
+    and the query is not read either; an ordinary read at the same moment moves them."""
+    window = read_limits.WINDOW_SECONDS
+    now = [datetime.fromtimestamp((time.time() // window + 1) * window + 1, UTC)]
+    clock.set_source(lambda: now[0])
+    fake.install(7)
+    flow.project(human, "maity")
+    agent = flow.agent(make_client, human)
+    with migrated.begin() as conn:
+        aged = now[0] - 2 * SEEN_EVERY
+        conn.execute(update(t.membership).values(last_seen_at=aged))
+        conn.execute(update(t.credential).values(last_used_at=aged))
+    now[0] += timedelta(seconds=20)
+    before = agent_traces(migrated, agent)
+    headers = agent.auth | ({"Maity-For": human.id} if bridged else {})
+    queries: list[dict[str, Any]] = [
+        {"installation_id": 7, "code": "c0de", "state": "x"},
+        {"code": "c0de"},  # malformed: the header refusal comes before the query is read
+    ]
+    for query in queries:
+        answer = agent.client.get(SETUP, params=query, headers=headers, follow_redirects=False)
+        assert agent_traces(migrated, agent) == before
+        assert answer.status_code == 403, answer.text
+        assert answer.json()["error"]["details"] == {"reason": "humans_only"}
+    assert fake.codes == [] and links(human) == []
+    # A cookie with `Maity-For` is refused alike, before its session is read: even a
+    # cross-site `fetch`, so the header comes before `csrf_mismatch` (§11.4's order).
+    state = start(human)
+    params = {"installation_id": 7, "code": "c0de", "state": state}
+    for extra in ({}, {"Sec_Fetch_Mode": "cors"}):
+        cookie = cross_site(human, params, Maity_For=agent.id, **extra)
+        assert cookie.json()["error"]["details"] == {"reason": "humans_only"}
+    assert setup(human, 7, state) == DONE  # the state was not taken
+    # The same moment, an ordinary read: every one of them changes.
+    assert agent.get("/me").status_code == 200
+    after = agent_traces(migrated, agent)
+    assert all(a != b for a, b in zip(after, before, strict=True)), (before, after)
+
+
 # --- the human's own token -------------------------------------------------------------------
 
 FINE = "github_pat_11AAAA_secret_value_never_printed"
