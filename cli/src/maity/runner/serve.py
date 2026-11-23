@@ -92,7 +92,8 @@ class Service:
     cfg: config.Config
     client: hub.Client
     advertised: dict[str, Any]
-    reconcile: Callable[[list[dict[str, Any]]], None] = lambda placements: None
+    # Takes the placements and `read_at`, the supervisor's clock when the read started.
+    reconcile: Callable[..., None] = lambda placements, read_at=None: None
     # The hub's closed placements of this runner (§15.8 `closed=true`), for their scratch.
     closed: Callable[[list[dict[str, Any]]], None] = lambda placements: None
     actual: Callable[[], list[dict[str, Any]]] = lambda: []
@@ -118,6 +119,7 @@ class Service:
             if self.supervisor is None
             else self.supervisor.advertised_capabilities()
         )
+        started = self._started()
         packet = self.client.call(
             "POST",
             "/runner/hello",
@@ -128,8 +130,10 @@ class Service:
         cursor = packet.get("cursor")
         self.cursor = cursor if isinstance(cursor, int) else 0
         self.connected = True
+        if self.supervisor is not None and isinstance(packet, dict):  # the watch's hub time
+            self.supervisor.clock(packet.get("server_time"))
         log(f"connected as {self._name(runner)}; session {onboarding.inline(self.session_id)}")
-        self._take(packet.get("placements"))
+        self._take(packet.get("placements"), started)
 
     def poll(self) -> bool:
         """One long-poll; True when it returned events (a wake-up)."""
@@ -149,13 +153,22 @@ class Service:
         cursor = answer.get("cursor")
         if isinstance(cursor, int):
             self.cursor = cursor
+        if self.supervisor is not None:  # the watch measures in hub time (§15.8, §15.14)
+            self.supervisor.clock(answer.get("server_time"))
         items = answer.get("items")
         return bool(items)
 
     def read_placements(self) -> None:
+        started = self._started()
         answer = self.client.call("GET", "/runner/placements")
-        self._take(answer.get("items") if isinstance(answer, dict) else None)
+        self._take(answer.get("items") if isinstance(answer, dict) else None, started)
         self.read_closed()
+
+    def _started(self) -> float | None:
+        """The supervisor's clock (the watch's) as a read of the placements starts: the hub
+        sampled each placement's `session` after it, never before, so the watch counts the
+        facts as read at this moment, not when the answer came (Codex A2048)."""
+        return self.supervisor.now() if self.supervisor is not None else None
 
     def read_closed(self) -> None:
         """The closed placements whose scratch the supervisor removes (§15.5). A hub that
@@ -170,11 +183,11 @@ class Service:
         items = answer.get("items") if isinstance(answer, dict) else None
         self.closed([p for p in items or [] if isinstance(p, dict)])
 
-    def _take(self, placements: Any) -> None:
+    def _take(self, placements: Any, read_at: float | None = None) -> None:
         self.placements = [p for p in placements or [] if isinstance(p, dict)]
         self.last_read = self.monotonic()
         self.write_status()
-        self.reconcile(self.placements)
+        self.reconcile(self.placements, read_at=read_at)
 
     @staticmethod
     def _name(runner: Any) -> str:
@@ -204,7 +217,11 @@ class Service:
                     if held < POLL_FLOOR and (not woken or self.cursor == before):
                         # An answer that neither held nor moved the cursor: never spin.
                         self.sleep(POLL_FLOOR - held)
-                    if woken or self.monotonic() - self.last_read >= REREAD_INTERVAL:
+                    # Also when the watch asks for facts newer than its trigger: an agent's join
+                    # or a renewed listen wakes no runner. At most one read per poll round, so
+                    # never more often than a long-poll allows (§15.14, ops' live check).
+                    wants = self.supervisor is not None and self.supervisor.wants_placements()
+                    if woken or wants or self.monotonic() - self.last_read >= REREAD_INTERVAL:
                         self.read_placements()
             except Fatal as exc:
                 return self._fatal(str(exc))

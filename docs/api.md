@@ -20693,7 +20693,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`) and a report changing only `last_activity_at` keep the open run's id and time, and a report for an older generation opens nothing. After a new generation, the first report of that generation with `run: open` opens a run, whatever `run` the stored report holds. Any accepted report that does not keep a run open ends it, whatever its generation |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
 | `handover` | `{transcript: "received"}` or absent | on the new placement of a `full` replacement: the transcript is in the clone (§15.14); anywhere else `invalid`. Not built yet, as the replacement is not |
-| `finding` | `{cause, seen_at, signals, log?}`, `null` or absent | what the runner found when it diagnosed the placement, fixed codes only, beside the runner's own log lines (below, "A finding"); stored in `reported` as sent, `null` when the report has none. The hub takes it; the runner does not send it yet (tsk-twmms66p1ww4) |
+| `finding` | `{cause, seen_at, signals, log?}`, `null` or absent | what the runner found when it diagnosed the placement, fixed codes only, beside the runner's own log lines (below, "A finding"); stored in `reported` as sent, `null` when the report has none. The hub takes it, and the runner sends it (tsk-bzmd0avm4yhb) |
 | `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
 | `crash_count`, `crash_window_seconds` | integers or `null` | quick exits within the window, for `crash_loop` and while counting toward it |
 | `deadline_at` | timestamp or `null` | with `stopping`: when the process is ended if it has not exited |
@@ -20718,7 +20718,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `crash_loop` | `failed` | the restart cap was reached |
 | `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
 | `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
-| `hung` | `exited`, `failed` | the runner ended a run that produced nothing: after a nudge (`detail: idle`) or past `tool_call_max_minutes` (`detail: tool`); `exited` when it resumes the session, `failed` at the crash cap (§15.14). With the runner's watch (§15.14; the hub takes it, the runner does not report it yet, tsk-twmms66p1ww4) also for a session that stopped listening or never joined (`detail: not_listening`, `never_joined`) |
+| `hung` | `exited`, `failed` | the runner ended a run that produced nothing: after a nudge (`detail: idle`) or past `tool_call_max_minutes` (`detail: tool`); `exited` when it resumes the session, `failed` at the crash cap (§15.14). With the runner's watch (§15.14; the hub takes it, and the runner reports it, tsk-bzmd0avm4yhb) also for a session that stopped listening or never joined (`detail: not_listening`, `never_joined`) |
 | `network` | `exited` | the harness could not reach its provider; restarted with the policy's backoff, outside the crash cap (§15.14) |
 | `context_full` | `exited`, `failed` | the session's context is full: `exited` when the runner starts a fresh session, once per generation; `failed` the second time (§15.14) |
 | `auth` | `failed` | the harness's login is missing or expired; never retried (§15.14) |
@@ -20743,7 +20743,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `keep_the_why_unavailable` | `running`: the placement names a Keep the Why skill (`keep_the_why`, §15.5) and the runner could not fetch or check that commit, or cannot deliver it where this session runs yet (docs/runners.md), so the session started without the delivered skill; the resume packet's install text (§6.23) is its only way to it. The runner's log says why; the next report after a start with the skill clears it. Never for a placement whose `keep_the_why` is `null`, and `sandbox_unavailable` goes first when both hold. A runner sends it only to a hub whose placements carry `keep_the_why` (req-b3q6ttwgrp1v) |
 | `hot_loop` | `crash_loop` in `supervised` mode |
 | `idle`, `tool` | `hung`: ended after a nudge found it silent, or a tool call stayed open past `tool_call_max_minutes` |
-| `not_listening`, `never_joined` | `hung`: from the runner's watch (§15.14), the placement's session stayed not listening (§5.3) past the runner's grace, or no session of the placement's credential started within the runner's time for a join after it started the harness; `exited` when the runner resumes the session, `failed` when it stops retrying. The hub takes both; the runner does not report them yet (tsk-twmms66p1ww4) |
+| `not_listening`, `never_joined` | `hung`: from the runner's watch (§15.14), the placement's session stayed not listening (§5.3) past the runner's grace, or no session of the placement's credential started within the runner's time for a join after it started the harness; `exited` when the runner resumes the session, `failed` when it stops retrying. The hub takes both, and the runner reports them (tsk-bzmd0avm4yhb) |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
 | `mode_unsupported`, `model_unsupported`, `effort_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `effort_unsupported`: the placement names an effort its harness no longer offers on the runner (§15.5); `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
 
@@ -20776,7 +20776,7 @@ than this writes no such line, so with it the detail is `null`. A
 pickup's `404` carries no detail.
 
 **A finding.** The hub takes and keeps it (tsk-n50ez67he2pz); the
-runner does not send one yet (tsk-twmms66p1ww4). When the runner's
+runner sends it (tsk-bzmd0avm4yhb). When the runner's
 watch (§15.14) diagnoses a placement, or the hub refuses its pickup or
 join, the report it sends next carries
 what it found as `finding`, so the owner and the lead can see why the
@@ -20858,8 +20858,8 @@ way.
 
 **The runner's log lines.** The owner's decision of 2026-11-20 (note
 on tsk-twmms66p1ww4, 20:42Z). The hub takes them, keeps them in
-`reported` and shows them there to their readers (below); the runner does
-not send them yet (tsk-twmms66p1ww4), and the hub does not keep them in
+`reported` and shows them there to their readers (below); the runner
+sends them (tsk-bzmd0avm4yhb), and the hub does not keep them in
 the history yet: a `placement_reported` event's finding has no `log`
 for any reader, `/reports` included, until the lines have their place
 beside the event's row (tsk-n50ez67he2pz). With
@@ -21016,7 +21016,7 @@ every limit a crash.
   placement's state alone. If an interactive harness does exit and the
   adapter recognises the exit as its limit, the runner reports
   `rate_limited` as in `supervised` mode. The runner's watch (§15.14,
-  not built yet, tsk-twmms66p1ww4) does not change this: the limit's
+  tsk-bzmd0avm4yhb) does not change this: the limit's
   signature in the pane (`pane_match: usage_limit`, above) is recorded
   in a finding, but alone it never makes the runner report
   `rate_limited` or end the session.
@@ -21090,7 +21090,7 @@ Runner credential, signed (§15.1).
 | POST | `/runner/hello` | `{client, capabilities, actual: [{placement_id, generation, state, target}]}` | `200`, the runner packet below. Opens a runner session and ends the previous one. No `Idempotency-Key`: like `resume`, a repeat opens a new session |
 | GET | `/runner/events` | `after`, `wait` (0–55), `limit` | `{items, cursor, superseded, server_time, cli_version}` as in §8.3, over every project the runner reads |
 | GET | `/runner/placements` | `closed` | `{items}`: every active, approved placement of this runner, the full desired spec as below, with `workspace_epoch`; one under `desired: stopped` also carries its `workspace_outcome` (with `remove_requested` and `remove_requested_at`, §15.5). `closed=true` lists instead the placements of this runner, closed at any time, whose clone it has not reported removed (`workspace_outcome` `null`, `retained` or `kept`), but none closed with the runner's own end (`runner_revoked`, `runner_removed`: those clones are the operator's, §15.5), each with `active: false`, its `closed_reason`, `workspace_retention`, `workspace_epoch` and `workspace_outcome` (§15.5) |
-| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?, finding?}` (`handover` not built yet, as the replacement is not, §15.14; `finding` as in §15.7, which the runner does not send yet, tsk-twmms66p1ww4) | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
+| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?, finding?}` (`handover` not built yet, as the replacement is not, §15.14; `finding` as in §15.7, which the runner sends, tsk-bzmd0avm4yhb) | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
 | POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. When the placement's credential was revoked before, by a revocation only the agent profile's owner may undo (§15.6, the restart row), `removed` also sets `desired: stopped` on the placement if it runs, without a new `generation`: its rejoin waits for the owner's start (§15.5). Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
 | PUT | `/runner/placements/{id}/handover` (not built yet, §15.14) | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
@@ -21144,7 +21144,7 @@ A placement as the runner reads it:
 
 - **`session`**: what the hub knows of the agent behind the placement,
   so the runner's watch (§15.14) can act on it. The hub carries it
-  (tsk-n50ez67he2pz); the runner does not read it yet (tsk-twmms66p1ww4).
+  (tsk-n50ez67he2pz); the runner reads it (tsk-bzmd0avm4yhb).
   - `started_at`: when the newest session (§5.3) of the credential the
     placement names (`credential_id`, §15.5) started, open or ended;
     `null` when the placement names no credential yet or the credential
@@ -22352,8 +22352,8 @@ without the hub's ask, at most once a minute:
   reads (§15.8), the runner uses the defaults, 30 and 10 minutes.
 
 **The runner's watch: a session that stopped listening or never
-joined.** Not built yet on the runner (tsk-twmms66p1ww4); the hub's
-part, `session` and `finding`, is (tsk-n50ez67he2pz). The owner's direction of
+joined.** Built on the runner (tsk-bzmd0avm4yhb) and on the hub, its
+part being `session` and `finding` (tsk-n50ez67he2pz). The owner's direction of
 2026-11-20 (chat seq 179583): look at the cause first, react to it, and
 keep what was found; a blind restart does nothing for a failed login.
 The hub knows when a session stops listening (§5.3) and whether one

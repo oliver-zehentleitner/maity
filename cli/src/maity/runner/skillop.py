@@ -45,11 +45,12 @@ from typing import Any
 
 from maity.runner import scratchop
 
+# The skill's names and bounds, here once for the runner's copy (skills.py) and the agents'.
 NAME = "keep-the-why"
 MANIFEST = "manifest.json"
 PLUGIN = "plugin"
 MAX_FILES = 200  # the skill's own files; plugin.json comes on top
-MAX_BYTES = 4 * 1024 * 1024
+MAX_BYTES = 4 * 1024 * 1024  # the whole skill; 0.20.3 is well under 1 MiB
 MANIFEST_MAX = 64 * 1024
 KEY = re.compile(r"[0-9a-f]{40}-[0-9a-f]{16}")
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -58,9 +59,9 @@ COMMIT = re.compile(r"[0-9a-f]{40}")
 # denied, so the session's existing read rule reaches it without a wider allow.
 AGENT_SKILLS = (".local", "share", "maity-runner", "skills")
 STAGING = ".put-"
-_FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
-_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-_FILE = os.O_RDONLY | _NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
+NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_FILE = os.O_RDONLY | NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
 
 
 class Mismatch(Exception):
@@ -91,7 +92,7 @@ def verify_path(
     """`verify` on the copy at `copy`, the directory itself opened without following a link;
     the manifest's SHA-256."""
     try:
-        fd = os.open(copy, _FOLDER | _NOFOLLOW)
+        fd = os.open(copy, FOLDER | NOFOLLOW)
     except OSError:
         raise Mismatch(f"{copy} in the skill's copy is not a plain directory") from None
     try:
@@ -153,7 +154,7 @@ def verify(
 
 def _dir_at(fd: int, name: str, path: Path) -> int:
     try:
-        return os.open(name, _FOLDER | _NOFOLLOW, dir_fd=fd)
+        return os.open(name, FOLDER | NOFOLLOW, dir_fd=fd)
     except FileNotFoundError:
         raise Mismatch(f"{path} is missing from the skill's copy") from None
     except OSError:
@@ -169,9 +170,16 @@ def _kind_at(fd: int, name: str, test: Any, what: str, path: Path) -> None:
         raise Mismatch(f"{path} in the skill's copy is not a plain {what}")
 
 
-def _read_at(fd: int, name: str, limit: int, path: Path, max_bytes: int) -> bytes:
+def read_path(path: Path, limit: int) -> bytes:
+    """`_read_at` for the file at `path`, its last part opened without following a link: the
+    runner's own reads of its copy (skills.py)."""
+    return _read_at(None, str(path), limit, path, MAX_BYTES)
+
+
+def _read_at(fd: int | None, name: str, limit: int, path: Path, max_bytes: int) -> bytes:
     """A regular file's bytes, at most `limit`; refused rather than followed or waited on. The
-    type is checked on the descriptor, so nothing swapped in between counts."""
+    type is checked on the descriptor, so nothing swapped in between counts. `name` in the open
+    directory `fd`, or as a path when `fd` is None."""
     try:
         file_fd = os.open(name, _FILE, dir_fd=fd)
     except OSError:
@@ -205,7 +213,7 @@ def payload(copy: Path, key: str) -> str:
     `verify` reads them; the caller checked the copy just before. Mismatch for a copy that
     changed since into something that is no copy (the review of #2089)."""
     try:
-        fd = os.open(copy, _FOLDER | _NOFOLLOW)
+        fd = os.open(copy, FOLDER | NOFOLLOW)
     except OSError:
         raise Mismatch(f"{copy} in the skill's copy is not a plain directory") from None
     try:
@@ -256,7 +264,7 @@ def _decoded(document: Mapping[str, Any]) -> tuple[str, bytes, dict[str, Any], d
     commit, source = manifest.get("commit"), manifest.get("source")
     if not (isinstance(commit, str) and COMMIT.fullmatch(commit) and isinstance(source, str)):
         raise Mismatch("the skill's manifest names no source and commit")
-    if not key.startswith(f"{commit}-") or key != _key(source, commit):
+    if not key.startswith(f"{commit}-") or key != copy_key(source, commit):
         raise Mismatch("the skill's key is not the one of its source and commit")
     if set(named) != set(sent):
         raise Mismatch("the skill's payload does not hold exactly the files its manifest names")
@@ -285,8 +293,9 @@ def _decoded(document: Mapping[str, Any]) -> tuple[str, bytes, dict[str, Any], d
     return key, raw, manifest, files
 
 
-def _key(source: str, commit: str) -> str:
-    """skills.key, here without importing it (standard library only)."""
+def copy_key(source: str, commit: str) -> str:
+    """A copy's directory name (KEY, skills.key): the commit and the source together, so one
+    commit at another path of a tree is another copy (the review of #2056)."""
     return f"{commit}-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:16]}"
 
 
@@ -298,14 +307,14 @@ def _holder(home: str, make: bool) -> Iterator[int]:
     """The open `keep-the-why` directory below the agents' `home`, each level opened from the
     one before without following a link; made 0755 where missing when `make`. FileNotFoundError
     when it is missing and not made; OnTheWay for a link or no directory on the way."""
-    fd = os.open(home, _FOLDER)  # the agents' home, as the runner read it
+    fd = os.open(home, FOLDER)  # the agents' home, as the runner read it
     try:
         for name in (*AGENT_SKILLS, NAME):
             if make:
                 with contextlib.suppress(FileExistsError):
                     os.mkdir(name, 0o755, dir_fd=fd)
             try:
-                inner = os.open(name, _FOLDER | _NOFOLLOW, dir_fd=fd)
+                inner = os.open(name, FOLDER | NOFOLLOW, dir_fd=fd)
             except OSError as exc:
                 if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EMLINK):
                     raise OnTheWay(f"{name} below {home} is a link or no directory") from None
@@ -325,7 +334,7 @@ def check(home: str, key: str, source: str, commit: str) -> dict[str, object]:
     try:
         with _holder(home, make=False) as holder:
             try:
-                copy_fd = os.open(key, _FOLDER | _NOFOLLOW, dir_fd=holder)
+                copy_fd = os.open(key, FOLDER | NOFOLLOW, dir_fd=holder)
             except FileNotFoundError:
                 return {"result": "missing"}
             except OSError:
@@ -354,17 +363,12 @@ def put(home: str, document: Mapping[str, Any]) -> dict[str, object]:
     with _holder(home, make=True) as holder:
         os.mkdir(staging, 0o700, dir_fd=holder)
         try:
-            staged = os.open(staging, _FOLDER | _NOFOLLOW, dir_fd=holder)
+            staged = os.open(staging, FOLDER | NOFOLLOW, dir_fd=holder)
             try:
                 for name, data in files.items():
                     _write_into(staged, PurePosixPath(name).parts, data)
                 _write_file(staged, MANIFEST, raw)
-                # Each directory 0755 through its own descriptor: no chmod by name, which would
-                # need follow_symlinks=False, not supported for chmod on Linux.
-                for _top, _dirs, _names, top_fd in os.fwalk(".", dir_fd=staged,
-                                                            follow_symlinks=False):  # fmt: skip
-                    os.fchmod(top_fd, 0o755)  # noqa: S103 - read by the session only
-                os.fchmod(staged, 0o755)  # noqa: S103 - read by the session, written by nobody
+                _open_up(staged)
                 try:
                     digest = verify(staged, Path(staging), str(manifest["source"]),
                                     str(manifest["commit"]))  # fmt: skip
@@ -389,7 +393,7 @@ def _write_into(root_fd: int, parts: Sequence[str], data: bytes) -> None:
         for part in parts[:-1]:
             with contextlib.suppress(FileExistsError):
                 os.mkdir(part, 0o700, dir_fd=fd)
-            fd = os.open(part, _FOLDER | _NOFOLLOW, dir_fd=fd)
+            fd = os.open(part, FOLDER | NOFOLLOW, dir_fd=fd)
             opened.append(fd)
         _write_file(fd, parts[-1], data)
     finally:
@@ -398,7 +402,7 @@ def _write_into(root_fd: int, parts: Sequence[str], data: bytes) -> None:
 
 
 def _write_file(dir_fd: int, name: str, data: bytes) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     fd = os.open(name, flags, 0o644, dir_fd=dir_fd)
     with os.fdopen(fd, "wb") as out:
         os.fchmod(out.fileno(), 0o644)  # whatever the umask
@@ -534,7 +538,7 @@ def _stage_and_replace(parent: int, name: str, wanted: Mapping[tuple[str, ...], 
     staging = f"{STAGING}{secrets.token_hex(8)}"
     os.mkdir(staging, 0o700, dir_fd=parent)
     try:
-        staged = os.open(staging, _FOLDER | _NOFOLLOW, dir_fd=parent)
+        staged = os.open(staging, FOLDER | NOFOLLOW, dir_fd=parent)
         try:
             for parts, data in wanted.items():
                 _write_into(staged, parts, data)
@@ -556,7 +560,8 @@ def _unreadable(exc: OSError) -> None:
 
 def _open_up(fd: int) -> None:
     """Every directory below the open `fd`, and `fd` itself, 0755: read by the session,
-    written by nobody but the runner's op."""
+    written by nobody but the runner's op. A directory that cannot be opened fails the put
+    (`_unreadable`), for `put` and `_stage_and_replace` alike."""
     # Through each directory's own descriptor: chmod by name would need follow_symlinks=False,
     # which chmod does not support on Linux (the review of #2089).
     for _top, _dirs, _names, top_fd in os.fwalk(
