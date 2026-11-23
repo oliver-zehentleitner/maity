@@ -2,10 +2,12 @@
 `own_agents`): who is an outside agent, which cards are outsiders' work, how many own approvals
 such a card has on its reported head, and the gate in front of every move to `done`.
 
-Everything is judged as the card and its members stand at the check, never stored. An outside
-agent has trust `outside`, or joined while its owner held no membership (`joined_outside`), on
-its current membership row, or its owner holds none now; an agent whose profile the hub cannot
-find counts as outside too.
+The count is judged as the card and its members stand at the check and stored nowhere; what a
+review result's author was when the hub stored it is recorded with the event
+(`event.review_signer`, `signer_when_posted`) and read, never reconstructed. An outside agent has
+trust `outside`, or joined while its owner held no membership (`joined_outside`), on its current
+membership row, or its owner holds none now or has no live account; an agent whose profile the
+hub cannot find counts as outside too.
 """
 
 from __future__ import annotations
@@ -22,12 +24,22 @@ OUTSIDE_TRUST = "outside"
 REASON = "own_approvals"
 # The scopes whose holder may approve a card's head (§6.4, the signatures).
 SIGNING_SCOPES = ("tasks:review", "tasks:test")
+# `event.review_pr` is a 32-bit integer: a pull request number outside it is never stored and
+# never looked up (a report may name any number from 1).
+REVIEW_PR_MAX = 2_147_483_647
+
+
+def pr_in_range(number: Any) -> int | None:
+    """A pull request number as `event.review_pr` holds it, or None outside the column."""
+    if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= REVIEW_PR_MAX:
+        return number
+    return None
 
 
 def outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
     """§2.3: trust `outside`, or joined while its owner was no member, on the membership the
-    check is about, or its owner is no member now. Nothing that shows the agent is the
-    project's own counts as outside.
+    check is about, or its owner is no member now or has no live account. Nothing that shows
+    the agent is the project's own counts as outside.
 
     The membership is the active row, else the most recent (a reporter who has left). Trust
     and mark belong to their row: §2.3's one way out of `outside` is removal and a member's
@@ -49,7 +61,11 @@ def outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
     ).first()
     if row is not None and (row.trust == OUTSIDE_TRUST or row.joined_outside):
         return True
-    return not agent_owners.owner_is_member(conn, project.id, str(owner))
+    # An owner whose account is suspended or deleted makes no agent the project's own (the
+    # lead's ruling of 2026-11-23): its agent's work is gated, failing closed.
+    return not agent_owners.owner_is_member(conn, project.id, str(owner)) or not _live_account(
+        conn, str(owner)
+    )
 
 
 def _workers(conn: Connection, card: Any) -> list[str]:
@@ -219,17 +235,25 @@ def _review_approvers(conn: Connection, card: Any, project: Any, head: str) -> d
     author as a signer when it stored it (`review_signer`; none recorded is no), and it came
     from the author's current active membership, so a removal and a rejoin leave none."""
     e = t.event.c
-    pr = ((card.report or {}).get("pr") or {}).get("number")
+    pr = pr_in_range(((card.report or {}).get("pr") or {}).get("number"))
     tied = e.subject_id == card.id
-    if isinstance(pr, int) and not isinstance(pr, bool):
+    if pr is not None:
         tied = tied | (e.subject_id.is_(None) & (e.review_pr == pr))
     rows = conn.execute(
         select(
-            e.payload, e.actor_membership, e.actor_bridge, e.review_signer, e.redacted, e.subject_id
+            e.payload,
+            e.actor_membership,
+            e.actor_bridge,
+            e.review_signer,
+            e.review_pr,
+            e.redacted,
+            e.subject_id,
         )
         .where(
             e.project_id == card.project_id,
             e.kind == "message",
+            # Only a `review_result` gets the record: the row's own columns say what it is,
+            # never its payload, which a redaction replaces (the lead's ruling of 2026-11-23).
             e.review_signer.is_not(None),
             e.actor_membership.is_not(None),
             tied,
@@ -239,14 +263,12 @@ def _review_approvers(conn: Connection, card: Any, project: Any, head: str) -> d
     principals: dict[int, Any] = {}
     latest: dict[str, Any] = {}
     for row in rows:
-        payload = row.payload or {}
-        if payload.get("type") != "review_result":
-            continue
         if row.subject_id is None:  # named by its pull request alone: is it this card's?
-            review = payload.get("review")
-            if not isinstance(review, dict) or not isinstance(review.get("subject"), str):
+            if row.review_pr is None:
                 continue
-            resolved = review_delivery._card(conn, card.project_id, None, review)
+            resolved = review_delivery._card(
+                conn, card.project_id, None, {"subject": f"#{row.review_pr}"}
+            )
             if resolved is None or resolved.id != card.id:
                 continue
         membership_id = int(row.actor_membership)
@@ -264,7 +286,8 @@ def _review_approvers(conn: Connection, card: Any, project: Any, head: str) -> d
             latest[str(principal)] = (row, member)
     approvers: dict[str, str] = {}
     for principal, (row, member) in latest.items():
-        review = (row.payload or {}).get("review") or {}
+        # A redacted row withdraws whatever it was, and has no verdict to approve with.
+        review = {} if row.redacted else ((row.payload or {}).get("review") or {})
         if (
             row.redacted
             or review.get("verdict") != "approve"

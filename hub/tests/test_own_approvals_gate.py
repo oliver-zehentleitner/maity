@@ -360,6 +360,44 @@ def test_an_approve_sent_through_a_bridge_counts_nothing(
     assert _count(migrated, card_id) == 0
 
 
+def test_a_review_result_posted_through_a_bridge_is_recorded_as_no_signers(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A reviewer agent's `approve` sent for it by a bridge (`Maity-For`, §2.3): stored, read
+    as the served agent's, and recorded as no signer's, so it counts nothing."""
+    from tests.test_bridge_calls import Calls
+
+    card_id = _outsiders_card(owner, make_client, migrated)
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    served = factory.agent(migrated, project_id, owner.id, "reviewer")
+    bridge = factory.agent(migrated, project_id, owner.id, "coder", instance="brg1")
+    made = owner.post(
+        f"{PROJECT}/members/{served.agent_id}/bridges",
+        {"bridge": bridge.agent_id, "purpose": "reviews for the reviewer"},
+    )
+    assert made.status_code == 201, made.text
+    sent = Calls(make_client(), bridge).post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": "all",
+            "body": "Reviewed.",
+            "task_id": card_id,
+            "review": {"subject": "#7", "head": SHA, "verdict": "approve", "cites": [CITE]},
+        },
+        served.agent_id,
+    )
+    assert sent.status_code == 201, sent.text
+    with migrated.connect() as conn:
+        signer = conn.execute(
+            select(t.event.c.review_signer).where(t.event.c.seq == int(sent.json()["seq"]))
+        ).scalar_one()
+    assert signer is False
+    assert _count(migrated, card_id) == 0
+
+
 def test_a_removal_and_rejoin_leave_no_earlier_approve(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -371,6 +409,12 @@ def test_a_removal_and_rejoin_leave_no_earlier_approve(
     assert _count(migrated, card_id) == 0
 
 
+def _redact(owner: flow.Human, seq: int) -> None:
+    """Through the route (§8.5): the tombstone replaces the payload."""
+    done = owner.post(f"{PROJECT}/events/{seq}/redact", {"reason": "said too much"})
+    assert done.status_code == 200, done.text
+
+
 def test_a_redacted_later_result_still_withdraws_the_approve(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -378,8 +422,52 @@ def test_a_redacted_later_result_still_withdraws_the_approve(
     judge = flow.agent(make_client, owner, role="reviewer")
     _review(judge, card_id)
     _review(judge, card_id, verdict="changes")
-    _set_event(migrated, _last_result(migrated, card_id), redacted=True)
+    _redact(owner, _last_result(migrated, card_id))
     assert _count(migrated, card_id) == 0
+
+
+def test_a_redacted_later_result_named_by_its_pull_request_alone_withdraws_too(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    _subject_only(judge)
+    assert _count(migrated, card_id) == 1
+    _subject_only(judge, verdict="changes")
+    with migrated.connect() as conn:
+        last = conn.execute(
+            select(t.event.c.seq)
+            .where(t.event.c.kind == "message", t.event.c.review_pr == 7)
+            .order_by(t.event.c.seq.desc())
+            .limit(1)
+        ).scalar_one()
+    _redact(owner, int(last))
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_redacted_approve_counts_nothing_however_it_was_tied(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    _redact(owner, _last_result(migrated, card_id))
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_report_naming_a_pull_request_beyond_the_column_still_counts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A report may name any pull request number from 1; one wider than the recorded column
+    is no result's, and the count still answers instead of failing."""
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    huge = 2_147_483_648
+    pr = {"number": huge, "url": f"https://github.com/acme/maity/pull/{huge}", "head": SHA}
+    _reported(outsider, card_id, pr={**pr, "state": "open"})
+    _refused(_done(outsider, card_id))
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    assert _done(outsider, card_id).status_code == 200
 
 
 def test_a_suspended_human_neither_approves_nor_makes_its_agents_own(
