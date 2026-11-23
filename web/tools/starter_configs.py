@@ -5,7 +5,9 @@ For each case of tools/starter-configs.js, in a throwaway HOME and under
 umask 002: the page's "copy as a command" writes
 ~/.config/maity-runner/runner.toml (owner-only, exactly the configuration),
 a second run refuses to overwrite it, and `maity runner check --offline`
-loads it without a word about the file. What check says about the machine
+loads it without a word about the file. The service way's command runs
+without sudo on a stand-in for install's 0644 file and must leave it 0644,
+with install's own kept beside it. What check says about the machine
 (no state_dir before pairing, no tmux) is not this test's business.
 
 Needs node, bash and `maity` (Python 3.11+, from cli/) on PATH.
@@ -52,8 +54,9 @@ def checked_by_runner(name: str, path: Path, home: Path, extra: list[str]) -> li
 
 
 def check_service_case(name: str, case: dict, root: Path) -> list[str]:
-    """The service way's file: its command writes the fixed path with sudo, which this test
-    does not run; the file is checked by the runner from a copy, and against install's paths."""
+    """The service way's file: its command writes the fixed path with sudo. The test runs
+    it without sudo against a stand-in for install's file (0644, as install writes it), so
+    under umask 002 the file it leaves is what the runner checks, with install's paths."""
     home = root / name
     home.mkdir()
     failures = []
@@ -69,7 +72,25 @@ def check_service_case(name: str, case: dict, root: Path) -> list[str]:
     ):
         failures.append(f"{name}: state_dir or workspaces is not install's")
     path = home / "runner.toml"
-    path.write_text(case["config"], encoding="utf-8")
+    installed = "# install's own file\n"
+    # install.py _write: a new file, 0644 whatever the umask.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        os.fchmod(handle.fileno(), 0o644)
+        handle.write(installed)
+    # Only the command line itself; the heredoc's text names the real path too.
+    line, heredoc = case["command"].split("\n", 1)
+    command = line.replace("sudo ", "").replace(SERVICE_CONFIG, str(path)) + "\n" + heredoc
+    wrote = run(["bash", "-c", command], home)
+    kept = home / "runner.toml.install"
+    if wrote.returncode != 0 or path.read_text(encoding="utf-8") != case["config"]:
+        failures.append(f"{name}: the command did not write the file: {wrote.stderr.strip()}")
+    if not kept.exists() or kept.read_text(encoding="utf-8") != installed:
+        failures.append(f"{name}: the command did not keep install's file beside it")
+    for each in (path, kept):
+        mode = stat.S_IMODE(each.stat().st_mode) if each.exists() else 0
+        if mode != 0o644:
+            failures.append(f"{name}: {each.name} is {oct(mode)}, not install's 0644")
     failures += checked_by_runner(name, path, home, ["--config", str(path)])
     print(f"{'FAIL' if failures else 'ok  '} {name}", flush=True)
     return failures

@@ -221,7 +221,9 @@ window.Maity = window.Maity || {};
   // never overwritten, the shell says so; umask 077: the file decides what
   // agents may touch, so only its owner may change it.
   // The service way replaces the file install wrote, a copy of it kept beside it; root's
-  // file, 0644 as install has it, since the service's user must read it.
+  // file, 0644 as install has it, since the service's user must read it. tee writes into
+  // install's existing file, so that mode stays under any umask; without install's file,
+  // cp -p fails and nothing is written (tools/starter_configs.py runs it under umask 002).
   const writeCommand = (config, way) => (way === "service"
     ? "sudo cp -p " + SERVICE.config + " " + SERVICE.config + ".install && sudo tee " + SERVICE.config + " > /dev/null <<'EOF'\n" + config + "EOF"
     : "mkdir -p ~/.config/maity-runner && (set -C; umask 077; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF");
