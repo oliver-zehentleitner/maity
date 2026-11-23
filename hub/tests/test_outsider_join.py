@@ -563,6 +563,39 @@ def test_a_plain_assign_names_it_and_gives_no_claim(
     assert _reason(refused) == "not_open_to_outsiders"
 
 
+def test_cover_hands_it_no_card(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Cover (§6.12) is no way round the interim: `role:coder` reaches the outsider's coder,
+    and the walk skips it, so with nobody else to take the card it stays with the covered
+    member (§6.5, "Until the claim request is built")."""
+    moment = [clock.now().replace(microsecond=0)]
+    clock.set_source(lambda: moment[0])
+    agent = _outside_agent(make_client, owner, outsider)
+    covered = flow.agent(make_client, owner)
+    for who in (agent, covered):
+        who.resume()
+    card = _card(owner)
+    assert covered.post(f"{P}/tasks/{card}/claim", {}).status_code == 200
+    set_policy = owner.patch(
+        f"{P}/members/{covered.id}",
+        {
+            "availability_policy": {
+                "on_unavailable": "substitute",
+                "substitutes": ["role:coder"],
+                "grace_minutes": 0,
+            }
+        },
+    )
+    assert set_policy.status_code == 200, set_policy.text
+    limited = covered.post("/me/limit", {"until": clock.rfc3339(moment[0] + timedelta(hours=2))})
+    assert limited.status_code == 200, limited.text
+    assert owner.get(f"{P}/tasks/{card}").json()["claim"]["holder"] == covered.id
+    with migrated.connect() as conn:
+        started = conn.execute(select(t.event).where(t.event.c.kind == "cover_started")).all()
+    assert started == []
+
+
 def test_no_takeover_leaves_it_holding_a_card(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
 ) -> None:
