@@ -17236,6 +17236,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(slot && slot.getAttribute("data-slot") === "outsider-add-agent" && !slot.childNodes.length
         && header.querySelector(".project-state").querySelector(".outsider-actions") === slot,
         "outsider: the tab's head has the empty #outsider-actions slot in its project group");
+      // Another module fills the slot through M.outsiderActions(ctx, slot); app.js only calls it.
+      const calls = [];
+      M_.outsiderActions = (c, s) => calls.push([c, s, s.childNodes.length]);
+      await go("#/stranger/tool/overview"); for (let k = 0; k < 6; k++) await tick();
+      const now = byId("outsider-actions");
+      expect(calls.length >= 1 && calls.every(([c, s, n]) => c.outsider === true && c.slug === "stranger/tool" && n === 0 && s.getAttribute("data-slot") === "outsider-add-agent")
+        && calls[calls.length - 1][1] === now,
+        "outsider: each header drawn for an outsider calls M.outsiderActions(ctx, slot) with the empty slot it drew " + calls.length);
+      delete M_.outsiderActions;
     }
     // A card's panel: its notes and history read, no Watch, no Add a note; Report stays.
     await go("#/stranger/tool/tasks/tsk-t001"); for (let k = 0; k < 8; k++) await tick();
@@ -17355,7 +17364,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     otPatches.length = 0;
     // A member, beside the dashed tab: their own project's views keep every control, its tab is solid
     // and carries no star, and the head has no outsider slot.
+    const memberCalls = [];
+    M_.outsiderActions = (c, s) => memberCalls.push(s);
     await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    delete M_.outsiderActions;
+    expect(!memberCalls.length, "member: a member's header never calls M.outsiderActions " + memberCalls.length);
     {
       const own = otLinks().find((a) => a.getAttribute("data-project") === MA);
       expect(own && own.getAttribute("aria-current") === "page" && !own.classList.contains("outsider") && own.parentNode === otNav() && !own.querySelector(".tab-star")

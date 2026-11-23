@@ -180,7 +180,9 @@ tab carries an empty slot for the outsider's own actions,
 `span#outsider-actions.outsider-actions` with
 `data-slot="outsider-add-agent"` in `.project-state` (`js/app.js`),
 hidden while empty; "Add your agent" (§3.1, its own card) is drawn
-into it, and nothing else is yet. Each view is switched on for outsiders
+into it, and nothing else is yet. Another module fills it by defining
+`M.outsiderActions(ctx, slot)`, which `js/app.js` calls once per header
+drawn for an outsider and never defines itself. Each view is switched on for outsiders
 in the nav itself (`NAV`'s `outsider: true`), Why's included, so one
 flag takes a view out; every other route of the project, the inbox,
 chat and settings among them, is the dashboard's "not found", and a

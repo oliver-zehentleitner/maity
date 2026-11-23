@@ -2020,6 +2020,11 @@ window.Maity = window.Maity || {};
           : null);
     M.dom.keepImages(previous, fresh);
     while (fresh.firstChild) header.appendChild(fresh.firstChild);
+    // The outsider's slot is filled by another module, if one defines it (web/context/views.md f461c919).
+    if (M.trust.outsider(ctx)) {
+      const slot = header.querySelector(".outsider-actions");
+      if (slot && typeof M.outsiderActions === "function") M.outsiderActions(ctx, slot);
+    }
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
