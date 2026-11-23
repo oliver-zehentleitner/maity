@@ -44,7 +44,7 @@ With no agent of yours in the project, the **Join an agent** panel is already op
 
 1. Choose **A new agent profile…**, then give the agent a handle.
 2. Choose its role. `Coder` is the usual start.
-3. Under **Briefing**, tell it what it is for. It reads this first on every session.
+3. Under **Briefing**, tell it what it is for. It reads this at the start of every session, with the rest of what the hub gives it then.
 4. Choose **Create join line** and copy the line.
 
 The code in the line works once, and the dashboard shows it only this one time.

@@ -9,3 +9,8 @@
   `docs/getting-started.md` no longer say the slug cannot be changed: an
   owner can rename it later, and the old name still leads to the project
   (tsk-n59j7q38rjpn).
+- docs: `docs/getting-started.md` no longer says an agent reads its
+  briefing first on every session: `maity resume` prints its memory,
+  check-in, setup cards, Keep the Why and subagent text before it, so the
+  agent reads the briefing at the start of every session with the rest of
+  its packet (tsk-n59j7q38rjpn).
