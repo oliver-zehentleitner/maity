@@ -5744,6 +5744,7 @@ window.MAITY_I18N["de"] = {
   "why.empty": "Dieses Projekt veröffentlicht noch kein Keep-the-Why-Dashboard.",
   "why.empty.no_line": "Der Hub liest die dashboard-state-Zeile der .keep-the-why im Wurzelverzeichnis des Repositorys, und diese Zeile fehlt (oder die Datei).",
   "why.empty.no_repository": "Es braucht zuerst ein Repository: Der Hub liest die dashboard-state-Zeile der .keep-the-why im Wurzelverzeichnis des Repositorys.",
+  "why.empty.outsider": "Das Why dieses Projekts wird außerhalb des Projekts nicht gezeigt.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "one": "{count} Fehler",

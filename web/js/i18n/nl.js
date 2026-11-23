@@ -5744,6 +5744,7 @@ window.MAITY_I18N["nl"] = {
   "why.empty": "Dit project publiceert nog geen Keep the Why-dashboard.",
   "why.empty.no_line": "De hub leest de regel dashboard-state van de .keep-the-why in de root van de repository, en die regel ontbreekt (of het bestand).",
   "why.empty.no_repository": "Het heeft eerst een repository nodig: de hub leest de regel dashboard-state van de .keep-the-why in de root van de repository.",
+  "why.empty.outsider": "De Why van dit project wordt buiten het project niet getoond.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "one": "{count} fout",

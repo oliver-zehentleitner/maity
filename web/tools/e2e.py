@@ -5530,14 +5530,12 @@ def report_pages_round(run: Run, browser) -> None:
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
     # A project the reader is no member of never shows its public page signed in (the owner,
     # 2026-11-19, web/context/views.md f461c919): its address goes to its Overview, a member view
-    # read through the hub's outsider read (#2001). outsider_tab_round says what holds with and
-    # without that read; here only what holds on either hub.
+    # read through the hub's outsider read (#2001); outsider_tab_round goes on from there.
     page.goto(run.base + "/owner/e2e-alpha")
     expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
-    expect(page.locator("#main .page-failed, #main section.view-overview")).to_have_count(1)
+    expect(page.locator("#main section.view-overview")).to_have_count(1)
     expect(page.locator("section.view-visitor")).to_have_count(0)
     run.shot(page, "outsider-project-signed-in")
-    drop_outsider_refusals(run)
     no_problems(run, "report pages")
     context.close()
 
@@ -5547,33 +5545,22 @@ DASHED = ("(s) => { const e = document.querySelector(s);"
           " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
 
 
-def drop_outsider_refusals(run: Run) -> None:
-    """A hub without the outsider read (#2001) answers a non-member's read of a public project's
-    project view and member list 404, which the dashboard says as "not a member" (the normal
-    error page): asked for, no problem. With #2001 these reads answer 200 and nothing is dropped."""
-    refused = {f"GET /api/v1/projects/owner/e2e-alpha{tail} answered 404" for tail in ("", "/members")}
-    run.problems[:] = [p for p in run.problems if p not in refused]
-
-
 def outsider_tab_round(run: Run, browser) -> None:
     """The outsider's dashed tab and a starred tab (docs/api.md §2.3, §5.1 "Stars", §6.30 Q2;
-    tsk-kqn8zhptf06k A1; web/context/views.md f461c919), on the hub, for REPORTER, who is no member
+    tsk-2fxc53xqf922; web/context/views.md f461c919), on the hub, for REPORTER, who is no member
     of e2e-alpha (report_pages_round made them).
 
-    This hub is main's, without the outsider read (#2001), so the round asserts only what holds
-    there (the owner, 2026-11-19: the dashed tab opens the member views, never the public page):
-    a signed-in non-member at the project's address is taken to its Overview and never gets the
-    public page (no `section.view-visitor`, no `GET /public/pages/…`); without the read the
-    Overview is the normal "not a member" page and no tab is made, so the tab's own looks are
-    checked on the starred tab, which `/me` alone gives. Where the hub answers the outsider read
-    (#2001 merged), the Overview is drawn with the dashed tab current, and that is checked
-    instead; the member views themselves are the smoke test's, against the fixture hub.
+    The hub reads a public project to an outsider (#2001, #2078): a signed-in non-member at the
+    project's address is taken to its Overview, drawn with the dashed tab current, and never gets
+    the public page (no `section.view-visitor`, no `GET /public/pages/…`); the Board has no New
+    card, the head's `#outsider-actions` slot is there and takes no room, and Why draws either the
+    project's Why or the outsider's one sentence, whichever the hub's answer is. Every control
+    the views leave out is the smoke test's, against the fixture hub.
     Starred through `PATCH /me`, the project is a dashed tab with a filled star linking to its
     Overview, at 1280 and 390 px in both schemes, axe clean; its button takes the star off, `/me`
     then lists none, and the tab stays for that browser tab's session with an empty star, through
-    a reload, not into another browser tab (sessionStorage). The star part needs the hub's
-    `starred` (#1986)."""
-    run.step("outsider tab: a non-member is never shown the public page signed in; a starred tab is dashed with a star that unstars")
+    a reload, not into another browser tab (sessionStorage)."""
+    run.step("outsider tab: the member views in a dashed tab, never the public page; a starred tab is dashed with a star that unstars")
     handle, name, address, password = REPORTER
     context, page = new_page(run, browser)
     public_reads: list[str] = []
@@ -5584,18 +5571,26 @@ def outsider_tab_round(run: Run, browser) -> None:
     tab = page.locator(OUTSIDER_TAB)
     page.goto(run.base + "/owner/e2e-alpha")
     expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
-    expect(page.locator("#main .page-failed, #main section.view-overview")).to_have_count(1)
+    expect(page.locator("#main section.view-overview")).to_have_count(1)
     expect(page.locator("section.view-visitor")).to_have_count(0)
-    if page.locator("#main section.view-overview").count():
-        # The hub reads a public project to an outsider (#2001): the member Overview, the dashed tab current.
-        expect(tab).to_have_attribute("aria-current", "page")
-        expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
-    else:
-        # main's hub: the read is refused as for any project one is no member of, said so; no tab.
-        expect(page.locator("#main .page-failed")).to_contain_text("You are not a member of the project owner/e2e-alpha")
-        expect(tab).to_have_count(0)
+    expect(tab).to_have_attribute("aria-current", "page")
+    expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
+    settle(page, DASHED, OUTSIDER_TAB)
+    assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the outsider's tab is not dashed"
+    # The slot for the outsider's own actions: in the head, empty, taking no room.
+    slot = page.locator("header .project-state #outsider-actions")
+    expect(slot).to_have_count(1)
+    expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
+    expect(slot).to_be_hidden()
+    run.shot(page, "outsider-tab-overview")
+    run.a11y(page, "an outsider's Overview in the dashed tab")
+    page.goto(run.base + "/owner/e2e-alpha/board")
+    expect(page.locator("#main section.view-board")).to_have_count(1)
+    expect(page.get_by_role("button", name="New card", exact=True)).to_have_count(0)
+    page.goto(run.base + "/owner/e2e-alpha/why")
+    # The outsider's sentence (.why-outside, a .why-empty), the member empty state, or the Why itself.
+    expect(page.locator("#main section.view-why .why-empty, #main section.view-why .why-main").first).to_be_visible()
     assert not public_reads, f"a signed-in non-member read the public page: {public_reads}"
-    drop_outsider_refusals(run)
 
     # Starred (#1986's `starred` on /me): the project's id from its agent's clone.
     project_id = run.api(run.work / "clone-alpha", "GET", "/projects/owner/e2e-alpha")["id"]

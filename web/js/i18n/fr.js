@@ -5744,6 +5744,7 @@ window.MAITY_I18N["fr"] = {
   "why.empty": "Ce projet ne publie pas encore de tableau de bord Keep the Why.",
   "why.empty.no_line": "Le hub lit la ligne dashboard-state du .keep-the-why à la racine du dépôt, et cette ligne est absente (ou le fichier).",
   "why.empty.no_repository": "Il faut d'abord un dépôt : le hub lit la ligne dashboard-state du .keep-the-why à la racine du dépôt.",
+  "why.empty.outsider": "Le Why de ce projet n'est pas montré en dehors de celui-ci.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "one": "{count} erreur",

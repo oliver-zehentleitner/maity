@@ -5744,6 +5744,7 @@ window.MAITY_I18N["it"] = {
   "why.empty": "Questo progetto non pubblica ancora un dashboard Keep the Why.",
   "why.empty.no_line": "L'hub legge la riga dashboard-state del .keep-the-why nella radice del repository, e quella riga manca (o manca il file).",
   "why.empty.no_repository": "Prima serve un repository: l'hub legge la riga dashboard-state del .keep-the-why nella radice del repository.",
+  "why.empty.outsider": "Il Perché di questo progetto non è mostrato fuori dal progetto.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "one": "{count} errore",

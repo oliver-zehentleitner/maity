@@ -470,6 +470,10 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The tabs menu marks the dashed tabs as such: the same dashed edge, small, after the name. */
 .tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
   color: var(--muted); font-size: 0.8rem; }
+/* The outsider's actions in the project's head (js/app.js, `#outsider-actions`): a slot that takes no
+   room while nothing is drawn into it. */
+.project-state .outsider-actions { display: inline-flex; align-items: center; gap: 6px; }
+.project-state .outsider-actions:empty { display: none; }
 
 .dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }

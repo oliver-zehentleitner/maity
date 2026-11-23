@@ -17129,12 +17129,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(productLine.querySelectorAll("a").length === 5, "product line: back with the next view");
   delete main.hasAttribute;
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
-  // The outsider's dashed tab and the starred tabs (tsk-kqn8zhptf06k A1; docs/api.md §2.3, §5.1 "Stars", §6.30 Q2;
+  // The outsider's dashed tab and the starred tabs (tsk-2fxc53xqf922; docs/api.md §2.3, §5.1 "Stars", §6.30 Q2;
   // web/context/views.md f461c919): a public project one is no member of is a dashed tab for the browser
   // session, kept in sessionStorage; a starred one is a dashed tab among one's tabs, after start_tabs. The tab
   // opens the project's member views, Overview, Board, Team and Why, with what an outsider may not do left out,
-  // read from the member routes the hub opens to an outsider (#2001; Why's routes pending a contract addition
-  // there), which the fixture hub answers as it does; never the stored public page (the owner, 2026-11-19).
+  // read from the member routes the hub opens to an outsider (#2001, #2078), which the fixture hub answers as
+  // it does; never the stored public page (the owner, 2026-11-19). Three readers: an outsider, a starred
+  // outsider, and a member beside them.
   {
     const M_ = win.Maity;
     const ssStore = {}, lsStore = {};
@@ -17166,8 +17167,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     M_.api.del = (...a) => { otWrote("DELETE", a[0]); return otDel(...a); };
     const otRecord = (path, body) => { otWrote("PATCH", path); otPatches.push([path, body]); return otRealPatch(path, body); };
     M_.api.patch = otRecord;
-    // The member routes an outsider reads (#2001's `OUTSIDE_READS`), and Why's two, pending a contract addition there.
-    const OT_READS = /^\/projects\/stranger\/tool(\/members(\/[^/?]+)?|\/tasks(\/[^/?]+(\/history|\/notes)?)?|\/logo|\/banner|\/keep-the-why\/(export|bodies))?(\?.*)?$/;
+    // The member routes an outsider reads (hub access.py `OUTSIDE_READS`, #2001 and #2078's three Why reads).
+    const OT_READS = /^\/projects\/stranger\/tool(\/members(\/[^/?]+)?|\/tasks(\/[^/?]+(\/history|\/notes)?)?|\/logo|\/banner|\/keep-the-why(\/export|\/bodies)?)?(\?.*)?$/;
     const otFrom = viAll.length, otPublicFrom = viAsked.length;
     const otViews = () => (header.querySelector("nav.views") ? header.querySelector("nav.views").querySelectorAll("a") : []);
     const otShown = () => otViews().map((a) => [text(a), (a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current") === "page"]);
@@ -17218,10 +17219,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const bd = main.querySelector("section.view-board");
       const cards = bd ? bd.querySelectorAll("article").map((a) => a.getAttribute("data-card")).filter(Boolean) : [];
       expect(bd && cards.includes("tsk-t001") && cards.includes("tsk-t002") && !cards.includes("tsk-t004") && !text(main).includes("A hidden security fix")
+        && !cards.includes("tsk-t005") && !text(main).includes("A held card")
         && otShown()[1][2] && otTab("stranger/tool").getAttribute("aria-current") === "page" && !viView(),
-        "outsider: the Board draws the cards they read, its tab and the dashed tab current, the not-done security card absent " + JSON.stringify(cards));
+        "outsider: the Board draws the cards they read, its tab and the dashed tab current, the not-done security card and the held card absent " + JSON.stringify(cards));
       expect(!btn(main, "New card") && !bd.querySelector(".card-actions") && !bd.querySelector("article.movable") && !bd.querySelectorAll("article").some((a) => a.attrs.draggable),
         "outsider: the Board has no write control: no New card, no .card-actions (Move, Assign, Order), no draggable card");
+      const t2 = await M_.api.get("/projects/stranger/tool/tasks/tsk-t002");
+      const held = await M_.api.get("/projects/stranger/tool/tasks/tsk-t005").then(() => "read", (err) => err.code);
+      expect(JSON.stringify(t2.related) === "[]" && held === "not_found",
+        "fixture hub: a held card is not_found to an outsider and no card they read names it " + JSON.stringify([t2.related, held]));
+    }
+    // The slot in the tab's head for the outsider's own actions ("Add your agent", its own card):
+    // there, empty, in the project's head group; no control in it yet.
+    {
+      const slot = byId("outsider-actions");
+      expect(slot && slot.getAttribute("data-slot") === "outsider-add-agent" && !slot.childNodes.length
+        && header.querySelector(".project-state").querySelector(".outsider-actions") === slot,
+        "outsider: the tab's head has the empty #outsider-actions slot in its project group");
     }
     // A card's panel: its notes and history read, no Watch, no Add a note; Report stays.
     await go("#/stranger/tool/tasks/tsk-t001"); for (let k = 0; k < 8; k++) await tick();
@@ -17245,8 +17259,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     {
       const rows = main.querySelectorAll("tr.member").map((tr) => tr.getAttribute("data-member"));
       const heads = main.querySelectorAll("th").map(text);
-      expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView(),
-        "outsider: the Team lists the members they read, its tab current, no presence column " + JSON.stringify([rows, heads]));
+      expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView() && !text(main).includes("A quiet agent"),
+        "outsider: the Team lists the members they read, the isolated agent not among them, its tab current, no presence column " + JSON.stringify([rows, heads]));
+      // The fixture hub as routes/members.py answers an outsider: its allow-list of keys, the public
+      // page's picture (null here, never /avatars/…), no edge to a member they do not read.
+      const read = (await M_.api.get("/projects/stranger/tool/members")).items;
+      const mine = read.find((m) => m.id === "agt-tool-mine");
+      const extra = read.flatMap((m) => Object.keys(m)).filter((k) => !["id", "kind", "handle", "name", "display_name", "avatar_url", "deleted", "owner_id", "trust", "role",
+        "role_base", "reports_to", "cross_owner", "areas", "capabilities", "expert_for", "expert_sources", "org_owner", "website", "social", "joined_at", "manages"].includes(k));
+      expect(!extra.length && read.every((m) => m.avatar_url === null) && mine.reports_to === null && mine.cross_owner === false
+        && (await M_.api.get("/projects/stranger/tool/members/agt-tool-quiet").then(() => "read", (err) => err.code)) === "not_found",
+        "fixture hub: an outsider's member views carry the allow-listed keys alone, no picture of /avatars, no edge to the isolated agent, whose own read is not_found " + JSON.stringify(extra));
       expect(!main.querySelector("a.members-invite-user") && !byId("members-mine") && !main.querySelector("a.member-chat") && !btn(main, "Manage")
         && !main.querySelector("nav.team-tabs") && !main.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/agents")),
         "outsider: the Team has no write control: no Invite user, no Only my agents, no Chat, no Manage (their own agent's neither), no Organisation tab, no way to join an agent");
@@ -17257,7 +17280,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(JSON.stringify(tabs) === '["Cards"]' && !main.querySelector("a.member-chat") && !main.querySelector(".member-actions-menu") && text(main).includes("Helper"),
         "outsider: a member's page offers Cards alone, no Chat and no Actions, their own agent's too " + JSON.stringify(tabs));
     }
-    // Why: the project's export (its routes pending a contract addition in #2001), and nothing to write.
+    // Why while the hub does not open it to an outsider (#2078: the repository not public, none, or
+    // not in the operator's namespaces, all `not_found`): one sentence, nothing to set up or read again.
+    await go("#/stranger/tool/why"); for (let k = 0; k < 15; k++) await tick();
+    {
+      const why = main.querySelector("section.view-why");
+      const empty = why && why.querySelector(".why-outside");
+      expect(empty && text(empty) === "The Why of this project is not shown outside it." && !btn(why, "Read again") && !why.querySelector(".flag")
+        && !text(why).includes(".keep-the-why") && otShown()[3][2] && !viView(),
+        "outsider: Why answered not_found says it is not shown outside the project, no setup step, no Read again " + JSON.stringify(why && text(why)));
+    }
+    // Why once the repository is public: the project's export, and nothing to write.
+    M_.api.fixtureOutside.repository_public = true;
+    await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
     await go("#/stranger/tool/why"); for (let k = 0; k < 15; k++) await tick();
     {
       const why = main.querySelector("section.view-why");
@@ -17267,6 +17302,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         "outsider: Why draws the project's export, its tab and the dashed tab current " + JSON.stringify([!!why, why && text(why).slice(0, 80)]));
       expect(JSON.stringify(pressed) === JSON.stringify(["BUTTON:Read again"]), "outsider: Why has no write control, Read again (a read in this page) alone " + JSON.stringify(pressed));
     }
+    M_.api.fixtureOutside.repository_public = false;
     // A view an outsider does not read is not found, never the public page; Overview's other tabs are its Summary.
     {
       const before = viAsked.length, wrong = [];
@@ -17315,6 +17351,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && !otTab("stranger/tool").classList.contains("starred") && otSession() === "stranger/tool",
       "outsider: unstarred again, the tab is this session's own with its empty star");
     otPatches.length = 0;
+    // A member, beside the dashed tab: their own project's views keep every control, its tab is solid
+    // and carries no star, and the head has no outsider slot.
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const own = otLinks().find((a) => a.getAttribute("data-project") === MA);
+      expect(own && own.getAttribute("aria-current") === "page" && !own.classList.contains("outsider") && own.parentNode === otNav() && !own.querySelector(".tab-star")
+        && btn(main, "New card") && !byId("outsider-actions") && otTab("stranger/tool") && !otTab("stranger/tool").getAttribute("aria-current")
+        && JSON.stringify(otShown().map((v) => v[0])) !== JSON.stringify(["Overview", "Board", "Team", "Why"]),
+        "member: their project's tab is solid and current with no star, its Board keeps New card, its views are a member's, no outsider slot");
+    }
     // A move to All projects keeps it for the session; a fresh browser session has none.
     await go("#/all"); for (let k = 0; k < 3; k++) await tick();
     expect(otTab("stranger/tool") && !otTab("stranger/tool").getAttribute("aria-current")

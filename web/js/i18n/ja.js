@@ -5598,6 +5598,7 @@ window.MAITY_I18N["ja"] = {
   "why.empty": "このプロジェクトは、Keep the Why のダッシュボードをまだ公開していません。",
   "why.empty.no_line": "ハブは、リポジトリのルートの .keep-the-why にある dashboard-state の行を読み取りますが、その行がありません (またはファイルがありません)。",
   "why.empty.no_repository": "先にリポジトリが必要です: ハブは、リポジトリのルートの .keep-the-why にある dashboard-state の行を読み取ります。",
+  "why.empty.outsider": "このプロジェクトの Why は、プロジェクトの外には表示されません。",
   "why.findings": "{errors}、{warnings}",
   "why.findings.errors": {
     "other": "エラー {count} 件"

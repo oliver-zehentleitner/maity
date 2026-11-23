@@ -462,6 +462,13 @@ window.Maity = window.Maity || {};
         append(clear(root), M.why.emptyState(ctx));
         return;
       }
+      // An outsider's `not_found` (§2.3): the Why reads are closed to them for this project, for
+      // whichever of the hub's reasons (its repository not public, no repository, or not in the
+      // operator's own namespaces); said as such, with nothing to set up and nothing to read again.
+      if (made.code === "not_found" && ctx.outsider) {
+        append(clear(root), M.why.outsideState());
+        return;
+      }
       if (made.error) {
         append(clear(root), h("h2", null, M.t("why.title")), h("p", { class: "flag" }, made.error), readAgain(ctx));
         return;

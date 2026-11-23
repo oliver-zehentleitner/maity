@@ -399,18 +399,27 @@ window.Maity = window.Maity || {};
         instances: [{ id: "k7mq", label: "k7mq", presence: "online", last_seen_at: "2026-11-19T08:00:00Z", session: { id: "ses-tool-1", listening: true } }],
         last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-02T09:00:00Z", placements: [],
         isolated: null, isolation_windows: [{ from_seq: 10, to_seq: 20 }], briefing: "a member's briefing", owner_preferences: false, credentials: { active: 1 } },
-      // The reader's own agent here: the reader is still no member, and reads it as any outsider does (§2.3).
+      // The reader's own agent here: the reader is still no member, and reads it as any outsider does
+      // (§2.3). It reports to the isolated agent below, an edge the outsider does not read.
       { id: "agt-tool-mine", kind: "agent", bridges: [], bridging_for: [], handle: "helper", name: "maintainer/helper", display_name: "Helper", owner_id: "hum-maintainer",
-        owner: { handle: "maintainer", display_name: "Maintainer" }, trust: "member", role: "coder", reports_to: "hum-sam", areas: [], capabilities: [],
+        owner: { handle: "maintainer", display_name: "Maintainer" }, trust: "member", role: "coder", reports_to: "agt-tool-quiet", cross_owner: true, areas: [], capabilities: [],
         expert_for: null, expert_sources: [], harness: "Codex", model: "model-two", last_seen_at: "2026-11-18T08:00:00Z", presence: "offline", paused: null,
         joined_at: "2026-10-03T09:00:00Z", placements: [], briefing: null, owner_preferences: true, credentials: { active: 1 } },
+      // An isolated agent: the public page does not name it, so no list an outsider reads has it,
+      // its own route is `not_found` to them, and no member names it in `reports_to` (§2.3).
+      { id: "agt-tool-quiet", kind: "agent", bridges: [], bridging_for: [], handle: "quiet", name: "sam/quiet", display_name: "A quiet agent", owner_id: "hum-sam",
+        owner: { handle: "sam", display_name: "Sam" }, trust: "member", role: "manager", reports_to: "hum-sam", areas: [], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Codex", model: "model-two", last_seen_at: "2026-11-18T08:00:00Z", presence: "offline", paused: null,
+        joined_at: "2026-10-04T09:00:00Z", placements: [], isolated: { since: "2026-11-18T09:00:00Z", reason: "a member's reason" }, credentials: { active: 1 } },
     ],
+    // The cards under a moderation hold (§16.8): hidden from an outsider whatever their status.
+    held: ["tsk-t005"],
     tasks: [
       { id: "tsk-t001", watching: false, parent: null, related: [], kind: "task", title: "Parse the config file", body: "Read `tool.toml`; ask @bot.", mentions: [],
         label: "feature", status: "open", area: "src/", created_by: "hum-sam", assigned_to: "agt-tool-bot", claim: null, checkpoint: null, depends_on: [], ships_with: [],
         blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, notes: { open: 1, total: 1 },
         created_at: "2026-11-10T09:00:00Z", updated_at: "2026-11-18T09:00:00Z", closed_at: null },
-      { id: "tsk-t002", watching: false, parent: null, related: [], kind: "task", title: "Write the docs", body: "", mentions: [],
+      { id: "tsk-t002", watching: false, parent: null, related: ["tsk-t005"], kind: "task", title: "Write the docs", body: "", mentions: [],
         label: "chore", status: "in_progress", area: "docs/", created_by: "hum-sam", assigned_to: "hum-sam",
         claim: { holder: "hum-sam", session_id: null, since: "2026-11-18T10:00:00Z", lease_until: "2026-11-30T10:00:00Z", expired: false },
         checkpoint: null, depends_on: ["tsk-t001"], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
@@ -425,6 +434,11 @@ window.Maity = window.Maity || {};
         claim: { holder: "agt-tool-bot", session_id: "ses-tool-1", since: "2026-11-18T11:00:00Z", lease_until: "2026-11-19T11:00:00Z", expired: false },
         checkpoint: null, depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
         created_at: "2026-11-18T11:00:00Z", updated_at: "2026-11-18T11:00:00Z", closed_at: null },
+      // Done, under a moderation hold (`held` above): hidden from an outsider as the security card is.
+      { id: "tsk-t005", watching: false, parent: null, related: [], kind: "task", title: "A held card", body: "text under review", mentions: [],
+        label: "chore", status: "done", area: "/", created_by: "hum-sam", assigned_to: "hum-sam", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-02T09:00:00Z", updated_at: "2026-11-16T09:00:00Z", closed_at: "2026-11-16T09:00:00Z" },
     ],
     notes: { "tsk-t001": [{ id: "nte-t001", task_id: "tsk-t001", author: { member_id: "hum-sam", handle: "sam", kind: "human" }, body: "The format is TOML.", mentions: [],
       state: "open", resolution: null, edited: null, version: 1, created_at: "2026-11-18T09:00:00Z" }] },
@@ -444,25 +458,31 @@ window.Maity = window.Maity || {};
     view.settings = { language: p.settings.language };
     return view;
   }
-  // routes/members.py `OUTSIDE_HIDDEN_MEMBER`, `_INSTANCE` and `_SESSION`: what a member view never
-  // shows an outsider, for an agent of the reader's own too.
-  const OUTSIDE_HIDDEN_MEMBER = ["isolation_windows", "isolated", "last_seen_at", "presence", "briefing", "owner", "credentials", "shared_environment", "owner_preferences"];
-  const without = (value, hidden) => (value && typeof value === "object" ? Object.fromEntries(Object.entries(value).filter(([k]) => !hidden.includes(k))) : value);
+  // routes/members.py `OUTSIDE_MEMBER_KEYS`: the member view's keys an outsider reads, an allow-list
+  // (an agent of the reader's own too), `manages` with `members` and `instances` alone
+  // (`OUTSIDE_COUNT_KEYS`), and `avatar_url` the picture the public page shows
+  // (`outside_pictures`), never `/avatars/…`: `null` here, as for a person whose public profile is off.
+  const OUTSIDE_MEMBER_KEYS = ["id", "kind", "handle", "name", "display_name", "avatar_url", "deleted", "owner_id", "trust", "role", "role_base",
+    "reports_to", "cross_owner", "areas", "capabilities", "expert_for", "expert_sources", "org_owner", "website", "social", "joined_at", "manages"];
+  // `outside_shown`: the members the public page names, so never an isolated one (nor one under a
+  // moderation hold or with a suspended account, which this fixture has none of).
+  const outsideNamed = () => OUTSIDE_TOOL.members.filter((m) => !m.isolated);
   function outsideMemberView(m) {
-    const shown = without(m, OUTSIDE_HIDDEN_MEMBER);
-    if (shown.session) shown.session = without(shown.session, ["listening", "not_listening_since"]);
-    if (Array.isArray(shown.instances)) {
-      shown.instances = shown.instances.map((i) => {
-        const x = without(i, ["presence", "last_seen_at"]);
-        if (x.session) x.session = without(x.session, ["listening", "not_listening_since"]);
-        return x;
-      });
+    const named = new Set(outsideNamed().map((x) => x.id));
+    const shown = Object.fromEntries(OUTSIDE_MEMBER_KEYS.filter((k) => k in m).map((k) => [k, m[k]]));
+    shown.avatar_url = null;
+    if (shown.manages && typeof shown.manages === "object") {
+      shown.manages = Object.fromEntries(["direct", "total"].filter((part) => shown.manages[part])
+        .map((part) => [part, { members: shown.manages[part].members, instances: shown.manages[part].instances }]));
     }
+    // No edge to a member the outsider does not read.
+    if (m.reports_to && !named.has(m.reports_to)) { shown.reports_to = null; shown.cross_owner = false; }
     return shown;
   }
-  // public_cards.py `outside_shown`: a card labelled `security` (in any case) that is not done is
-  // hidden from an outsider, and its id from every other card's lists (`outside_views`).
-  const outsideShown = (c) => !(String(c.label || "").toLowerCase() === "security" && c.status !== "done");
+  // public_cards.py `outside_shown`: a card labelled `security` (in any case) that is not done, and a
+  // card under a moderation hold whatever its status, are hidden from an outsider, and their ids
+  // from every other card's lists (`outside_views`).
+  const outsideShown = (c) => !(String(c.label || "").toLowerCase() === "security" && c.status !== "done") && !OUTSIDE_TOOL.held.includes(c.id);
   function outsideCards() {
     const hidden = new Set(OUTSIDE_TOOL.tasks.filter((c) => !outsideShown(c)).map((c) => c.id));
     const keep = (ids) => (ids || []).filter((id) => !hidden.has(id));
@@ -482,9 +502,9 @@ window.Maity = window.Maity || {};
     // GET /projects/{owner}/{slug}
     if (rest === "") return outsideProjectView();
     // GET …/members and …/members/{member_id}
-    if (rest === "/members") return { items: OUTSIDE_TOOL.members.map(outsideMemberView), next_cursor: null };
+    if (rest === "/members") return { items: outsideNamed().map(outsideMemberView), next_cursor: null };
     let r = /^\/members\/([^/]+)$/.exec(rest);
-    if (r) { const x = OUTSIDE_TOOL.members.find((y) => y.id === decodeURIComponent(r[1])); return x ? outsideMemberView(x) : gone(); }
+    if (r) { const x = outsideNamed().find((y) => y.id === decodeURIComponent(r[1])); return x ? outsideMemberView(x) : gone(); }
     // GET …/tasks, the list and the board; GET …/tasks/{id}, …/history and …/notes
     if (rest === "/tasks") {
       const keep = statusFilter(query, "all");
@@ -511,11 +531,13 @@ window.Maity = window.Maity || {};
     }
     // GET …/logo and …/banner: the project has neither here, as the hub answers then.
     if (rest === "/logo" || rest === "/banner") gone();
-    // PENDING A #2001 CONTRACT ADDITION (the owner, 2026-11-19: outsiders see Why too): the Why
-    // view's reads, …/keep-the-why/export and …/keep-the-why/bodies, are not among #2001's routes
-    // yet. Until the contract names them, this fixture answers them with the member shapes: the
-    // export is the published state.json the project's public Why reads too (§11.5, §16.9), so
-    // nothing in it is a member's alone to cut. Revisit with the contract addition.
+    // The Why view's reads (§2.3, #2078: access.py `PUBLIC_REPOSITORY_READS`): open to an outsider
+    // only while the hub last found the repository public (and the forge still says so, in the
+    // operator's own namespaces), `not_found` before the query is read otherwise. The smoke test
+    // turns `repository_public` on through `fixtureOutside`. The answer is the member shape: the
+    // export is the published state.json the public Why reads too (§11.5, §16.9).
+    const why = rest === "/keep-the-why" || rest.startsWith("/keep-the-why/");
+    if (why && OUTSIDE_TOOL.project.repository_public !== true) gone();
     if (rest === "/keep-the-why/export") {
       if (query.get("canonical") || query.get("root")) fail(404, "not_found", "not a repository of this project's family", fullPath, { reason: "not_in_family" });
       return Object.assign(JSON.parse(JSON.stringify(file("maity", "keep-the-why-export.json", fullPath))),
@@ -6672,6 +6694,8 @@ window.Maity = window.Maity || {};
     fixtureMailTestTo,
     // The fixture hub's bound on stars (§5.1), lowered by the smoke test for `too_many`.
     fixtureStarred,
+    // The outsider's public project (`stranger/tool`), its `repository_public` set by the smoke test.
+    fixtureOutside: OUTSIDE_TOOL.project,
     source,
     ApiError,
     // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,

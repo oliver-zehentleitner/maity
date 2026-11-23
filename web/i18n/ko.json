@@ -5494,6 +5494,7 @@
   "why.empty": "이 프로젝트는 아직 Keep the Why 대시보드를 게시하지 않았어요.",
   "why.empty.no_line": "허브는 저장소 루트의 .keep-the-why에 있는 dashboard-state 줄을 읽는데, 그 줄이 없어요 (또는 파일이 없어요).",
   "why.empty.no_repository": "먼저 저장소가 필요해요. 허브는 저장소 루트의 .keep-the-why에 있는 dashboard-state 줄을 읽어요.",
+  "why.empty.outsider": "이 프로젝트의 Why는 프로젝트 밖에서는 보이지 않아요.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "other": "오류 {count}개"

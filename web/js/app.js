@@ -1997,7 +1997,11 @@ window.Maity = window.Maity || {};
             projectLinkRow(ctx.project),
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
-            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null)
+            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null,
+            // The outsider's own actions in the tab's head, on every view of it (web/context/views.md
+            // f461c919): empty here, and hidden while empty. "Add your agent" (§3.1 "An outsider's
+            // agent", its own card) is drawn into it; nothing else is.
+            ctx.outsider ? h("span", { class: "outsider-actions", id: "outsider-actions", "data-slot": "outsider-add-agent" }) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block above; what holds meanwhile, here.

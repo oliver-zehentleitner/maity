@@ -136,6 +136,15 @@ window.Maity = window.Maity || {};
       ctx.outsider ? null : h("p", { class: "muted" }, ctx.project && ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository")))];
   }
 
-  M.why = { statusWord, summaryBox, attentionList, unavailable, reasonText, emptyState };
+  // The Why reads answered an outsider `not_found` (§2.3; card note nte-n3vef4qz1838): one sentence
+  // that holds for each of the hub's reasons (routes/keep_the_why.py: the repository not public
+  // or none, the project not in the operator's own namespaces, the forge's live answer not public),
+  // so it names none of them.
+  function outsideState() {
+    return [h("h2", null, M.t("why.title")), h("div", { class: "empty-state why-empty why-outside" },
+      h("p", null, M.t("why.empty.outsider")))];
+  }
+
+  M.why = { statusWord, summaryBox, attentionList, unavailable, reasonText, emptyState, outsideState };
 
 })(window.Maity);

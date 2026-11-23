@@ -5635,6 +5635,7 @@
   "why.empty": "Este proyecto aún no publica ningún panel de Keep the Why.",
   "why.empty.no_line": "El hub lee la línea dashboard-state del .keep-the-why de la raíz del repositorio, y esa línea falta (o falta el archivo).",
   "why.empty.no_repository": "Primero necesita un repositorio: el hub lee la línea dashboard-state del .keep-the-why de la raíz del repositorio.",
+  "why.empty.outsider": "El Why de este proyecto no se muestra fuera de él.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "one": "{count} error",

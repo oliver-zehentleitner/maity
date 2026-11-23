@@ -5650,6 +5650,7 @@
   "why.empty": "This project publishes no Keep the Why dashboard yet.",
   "why.empty.no_line": "The hub reads the dashboard-state line of the repository's root .keep-the-why, and that line is missing (or the file is).",
   "why.empty.no_repository": "It needs a repository first: the hub reads the dashboard-state line of the repository's root .keep-the-why.",
+  "why.empty.outsider": "The Why of this project is not shown outside it.",
   "why.findings": "{errors}, {warnings}",
   "why.findings.errors": {
     "one": "{count} error",
