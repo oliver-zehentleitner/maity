@@ -584,29 +584,43 @@ project"), so the exchange re-checks no block and the quota is `member_agents_ma
 the contribution fields of settings not built (`looking_for_coders`, `outside_claims`,
 `sponsor_url`, the reason `blocked`); and the claim request of §6.5. Each is a later card.
 
-## Accepting an invitation asks for good standing right after the pending account, before the token
+## Accepting an invitation, by token or by a `go`, asks for good standing before the invitation is looked at
 
 **Id:** f4b665b4-06fd-4cd2-9ed0-477a6f9ef560
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-j9sq38x3zvym, 2026-11-23; docs/api.md §3.4 "Accepting" and "Limits and secrecy", §2.6.5, §1.3; `routes/invitations.py` `accept_invitation`; `auth/sessions.py` `good_standing`
-**Revisit when:** §3.4 names an order for the accept's refusals, or a `go` on an invitation by handle (§3.4 "By handle") is held to good standing as well
+**Evidence:** confirmed
+**Source:** card tsk-j9sq38x3zvym, 2026-11-23, and the maintainer's ruling relayed by the lead in round 2 of #2161 (both ways to accept); the review A2362 of #2161; docs/api.md §3.4 "Accepting", "By handle" and "Limits and secrecy", §2.6.5, §1.3; `invitations.py` `standing_refusal` and `settle`; `routes/invitations.py` `accept_invitation`; `auth/sessions.py` `good_standing`
+**Revisit when:** §3.4 names an order for these refusals
 
-`POST /invitations/{token}/accept` reads the calling session and refuses one that is not in good
-standing (`forbidden`, `details.reason: not_in_good_standing`) right after the pending account
-(`account_pending`) and before the token is looked up. The test is `auth.sessions.good_standing`,
-the one every other call of §1.3's `not_in_good_standing` list asks; the route has none of its own.
+Both ways to accept an invitation ask the same question, `invitations.standing_refusal`, which
+reads the calling session and refuses one that is not in good standing (`forbidden`,
+`details.reason: not_in_good_standing`) by `auth.sessions.good_standing`, the test every other
+call of §1.3's `not_in_good_standing` list asks:
 
-**Reason:** §3.4 says accepting needs a session in good standing, but names no order. Checked
-first, the refusal is the same for every token, so such a session learns nothing about the token,
-as a pending account learns nothing (§2.7.5); and none of the later refusals that change the
-invitation (an address-bound one used up by a member, one voided for its issuer) runs for it.
-§3.4 keeps its named refusals for "a valid token by a signed-in person"; this one is about the
-session, not the token.
+- `POST /invitations/{token}/accept` asks right after the pending account (`account_pending`)
+  and before the token is looked up.
+- A `go` on the request of an invitation by handle (`POST /requests/{id}/answer`) asks first in
+  `invitations.settle`, after the answer route's own checks on the request and the answerer
+  and before the invitation is read. The refusal is an `ApiError`, not a `proposals.Stale`: the
+  answer's transaction rolls back, so the request stays open and nothing is written. A `no`
+  asks nothing, as declining grants nothing. An answer without a session (none reaches an
+  invitation today) is refused too.
+
+**Reason:** §3.4 says accepting needs a session in good standing and that a `go` accepts with
+the same checks, but names no order. Checked first, the token's refusal is the same for every
+token, so such a session learns nothing about the token, as a pending account learns nothing
+(§2.7.5); and none of the later refusals that change the invitation or its request (an
+address-bound one used up by a member, one voided for its issuer, a stale `go` withdrawing the
+request) runs for it. §3.4 keeps its named refusals for "a valid token by a signed-in person";
+this one is about the session, not the token.
 
 **Rejected alternatives:**
 - Checking in `_accept`, beside the other named refusals: a session not in good standing would
   then learn whether a token is open, and an accept from it could still use up or void the
   invitation before it is refused.
-- A test of its own for the invitation: two tests of the same rule could drift apart.
+- Checking the `go` after the stale, closed, member and issuer checks of `settle`: a `go` from
+  such a session could then withdraw the request or use up or void the invitation.
+- Raising `proposals.Stale` for it: that withdraws the request, and the person could not say
+  `go` again once the session is confirmed.
+- A test of its own in each path: two tests of the same rule could drift apart.
