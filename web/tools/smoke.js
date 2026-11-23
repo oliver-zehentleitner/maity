@@ -17507,6 +17507,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         // H1's `_check_instance`: a join for an agent already here names new_instance or replaces.
         const bare = await ojPost("/projects/stranger/tool/joins", { agent: { id: mine.id }, ttl_seconds: 900 }).then(() => "made", (err) => (err.details.fields || {}).instance);
         expect(bare === "required", "fixture hub: an outsider's join for an agent already here without new_instance or replaces is invalid, instance: required " + bare);
+        // H1 at 39497bfb: an instance re-checks the membership's role against outside_roles now.
+        OJ.outside_roles = ["coder"];
+        const roleGone = await ojPost("/projects/stranger/tool/joins", { agent: { id: mine.id }, new_instance: true, ttl_seconds: 900 })
+          .then(() => "made", (err) => err.details.reason + ":" + err.details.field);
+        OJ.outside_roles = ["coder", "writer"];
+        expect(roleGone === "member_join_limit:role",
+          "fixture hub: an instance of an outside agent whose role left outside_roles is member_join_limit, field role " + roleGone);
+        // A hand-over: a card the outsider reads only; a hidden card answers as a missing one, a message is card_only.
+        const hand = (value) => ojPost("/projects/stranger/tool/joins", { agent: { handle: "handbot", display_name: "handbot" }, handover: value, ttl_seconds: 900 })
+          .then(() => "made", (err) => (err.details.fields || {}).handover);
+        const hands = [await hand(6001), await hand("tsk-t004"), await hand("tsk-nowhere")];
+        expect(JSON.stringify(hands) === '["card_only","not_found","not_found"]' && !byId("join-handover"),
+          "fixture hub: an outsider's hand-over is a card it reads only (a message card_only, a hidden card as a missing one); the form offers no hand-over field " + JSON.stringify(hands));
         outMembers.splice(outMembers.findIndex((x) => x.id === mine.id), 1);
       }
       M_.api.post = ojPost;

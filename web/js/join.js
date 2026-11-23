@@ -842,7 +842,9 @@ window.Maity = window.Maity || {};
           : membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas)),
         membershipField(subagentsField),
         membershipField(takeOverField),
-        handoverField,
+        // An outsider's join hands over a card it reads only, never a message (§3.1, H1 at
+        // 39497bfb): the field, which takes both, is left out for it.
+        outside ? null : handoverField,
         ttlField),
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,

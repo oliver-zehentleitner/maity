@@ -522,7 +522,8 @@ window.Maity = window.Maity || {};
     if ((body.capabilities || []).length) limit("capabilities");
     const member = body.agent && body.agent.id ? OUTSIDE_TOOL.members.find((x) => x.id === body.agent.id && !x.removed_at) : null;
     if (member && member.trust !== "outside") limit("agent");
-    if (!member && !j.outside_roles.includes(body.role || "coder")) limit("role");
+    // H1 at 39497bfb: an instance re-checks the membership's role against `outside_roles` now.
+    if (!j.outside_roles.includes(member ? member.role : body.role || "coder")) limit("role");
     // `_check_instance`: a member's join says which instance it adds, a first join neither.
     if (!member && (body.new_instance != null || body.replaces != null)) {
       fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
@@ -537,6 +538,15 @@ window.Maity = window.Maity || {};
       } else if (active.length >= ((member.team && member.team.max_instances) || 1)) {
         fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
       }
+    }
+    // H1's `_check_handover` for an outsider: a card it reads only, one it does not read answered as
+    // a missing one; a message (an integer) is `card_only` whatever its seq.
+    let handover = null;
+    if (body.handover != null) {
+      if (typeof body.handover === "boolean") fail(400, "invalid", "a card id or the seq of a message", path, { fields: { handover: "not_found" } });
+      if (typeof body.handover === "number") fail(400, "invalid", "an outsider's join hands over a card", path, { fields: { handover: "card_only" } });
+      if (!outsideCards().some((c) => c.id === body.handover)) fail(400, "invalid", "no such card in this project", path, { fields: { handover: "not_found" } });
+      handover = { kind: "task", id: body.handover };
     }
     // The count of `outsideAgentCount`: a profile held by an open first join takes no new slot.
     const held = body.agent && body.agent.id && j.items.some((x) => x.agent_id === body.agent.id && x.created_by === me().member.id && !x.used_at && !x.revoked_at
@@ -558,7 +568,7 @@ window.Maity = window.Maity || {};
     // to nobody here (§6.2; H1's routes/joins.py `_outside_values`).
     j.items.unshift({ id, agent_id: agentId, trust: "outside", role: member ? member.role : body.role || "coder", reports_to: null, created_by: me().member.id,
       created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
-      new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null, takes_over: null, handover: null });
+      new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null, takes_over: null, handover });
     return joinAnswer(id, agentId, OUTSIDE_TOOL.project.full_name, expires);
   }
   // routes/projects.py `OUTSIDE_PROJECT_KEYS`: the project view's keys an outsider reads, `settings`
