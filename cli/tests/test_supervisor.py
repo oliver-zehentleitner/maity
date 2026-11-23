@@ -1781,7 +1781,7 @@ def connected(
     sup.client = cast(Any, fake)
     svc = serve.Service(
         sup.cfg, cast(Any, fake), sup.capabilities,
-        reconcile=lambda _p: None, actual=sup.actual, supervisor=sup,
+        reconcile=lambda _p, read_at=None: None, actual=sup.actual, supervisor=sup,
         sleep=lambda _s: None, monotonic=clock, rand=lambda: 0.5,
     )  # fmt: skip
     return sup, backend, clock, fake, svc

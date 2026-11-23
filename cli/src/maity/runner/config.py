@@ -90,6 +90,17 @@ class Restart:
 
 
 @dataclass(frozen=True)
+class Watch:
+    """The runner's watch (`[limits.watch]`, docs/api.md §15.14, docs/runners.md): when it
+    looks at a quiet or never-joined placement, and how often it restarts one by itself."""
+
+    not_listening_grace_minutes: int = 15  # 1 to 1440
+    join_within_minutes: int = 10  # 1 to 120
+    auto_restarts: int = 1  # 0 to 3
+    retry_window_minutes: int = 120  # 10 to 1440
+
+
+@dataclass(frozen=True)
 class Limits:
     projects: tuple[str, ...]
     repositories: tuple[str, ...]
@@ -98,6 +109,7 @@ class Limits:
     restart: Restart = field(default_factory=Restart)
     log_keep_bytes: int = 10 * 1024 * 1024
     require_local_approval: bool = False
+    watch: Watch = field(default_factory=Watch)
 
 
 @dataclass(frozen=True)
@@ -270,6 +282,11 @@ def _kind_name(kind: type | tuple[type, ...]) -> str:
 
 def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
+
+
+def _between(low: int, high: int) -> Callable[[Any], str | None]:
+    """An integer from `low` to `high`, both included."""
+    return lambda value: None if low <= value <= high else f"{low} to {high}"
 
 
 # A command allowed by a repository's grant: a program, then plain arguments, nothing else.
@@ -450,6 +467,26 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             quick_exit=restart_in.get("quick_exit", int, _RESTART.quick_exit, check=_positive),
         )
         restart_in.done()
+    watch = _WATCH
+    watch_in = limits_in.table("watch")
+    if watch_in is not None:
+        watch = Watch(
+            not_listening_grace_minutes=watch_in.get(
+                "not_listening_grace_minutes", int, _WATCH.not_listening_grace_minutes,
+                check=_between(1, 1440),
+            ),
+            join_within_minutes=watch_in.get(
+                "join_within_minutes", int, _WATCH.join_within_minutes, check=_between(1, 120)
+            ),
+            auto_restarts=watch_in.get(
+                "auto_restarts", int, _WATCH.auto_restarts, check=_between(0, 3)
+            ),
+            retry_window_minutes=watch_in.get(
+                "retry_window_minutes", int, _WATCH.retry_window_minutes,
+                check=_between(10, 1440),
+            ),
+        )  # fmt: skip
+        watch_in.done()
     limits = Limits(
         projects=tuple(projects),
         repositories=tuple(normalise_repository(r) for r in repositories),
@@ -460,6 +497,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             "log_keep_bytes", int, _LIMITS.log_keep_bytes, check=_positive
         ),
         require_local_approval=limits_in.get("require_local_approval", bool, False),
+        watch=watch,
     )
     limits_in.done()
 
@@ -578,6 +616,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
 
 
 _RESTART = Restart()
+_WATCH = Watch()
 _LIMITS = Limits(projects=(), repositories=())
 
 

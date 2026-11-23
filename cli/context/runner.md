@@ -6239,7 +6239,8 @@ left out until it is verified.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); the hub's part built in card tsk-n50ez67he2pz (2026-11-21), the runner's not yet
+**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); the hub's part built in card tsk-n50ez67he2pz (2026-11-21), the runner's in card tsk-bzmd0avm4yhb (2026-11-21)
+**See:** runner.md — 3f9c2b71-8d4e-4a6f-b1c7-5e20d9a8f463 — as of 2026-11-21
 **Revisit when:** the hub builds §15.14's `health` (the grace becomes `hang_after_minutes`) or flapping; the hub gains an actor with a restart right that could resume a session; a recurring `unknown` cause asks for a class of its own
 
 The hub tells the runner, on each placement it reads, what it knows of the
@@ -6283,8 +6284,9 @@ page, and takes `finding` with its closed lists and the log's bounds. The
 log lines are shown in `reported` to their three readers only; the
 `placement_reported` event keeps the finding without them, and the history
 holds no lines yet, since keeping them beside the event's row needs a
-column of its own (a migration the plan left out). The runner's side is
-still to build.
+column of its own (a migration the plan left out). The runner's side
+followed in tsk-bzmd0avm4yhb; the decisions it took beyond the contract are
+entry 3f9c2b71-8d4e-4a6f-b1c7-5e20d9a8f463.
 The hub checks `finding` by hand (`placements.check_finding`), not with a
 pydantic model. The contract names the answers (`unknown`, `required`,
 `duplicate`, `too_many`, `format`, `empty`, `too_long`, `too_large`), and
@@ -6320,6 +6322,295 @@ makes, with no new event and no new right.
   to learn from. A health view of its own: not built.
 - Restart for not listening on a fresh session: the agent's context is the
   work; a fresh start stays a person's reset.
+
+## The runner's watch: what the runner decided where the contract left it the choice
+
+**Id:** 3f9c2b71-8d4e-4a6f-b1c7-5e20d9a8f463
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bzmd0avm4yhb, 2026-11-21: the contract in docs/api.md §15.7, §15.8 and §15.14 as merged in #2059; the lead's go on the plan with its rulings (seq 188562); security review A1838 (note nte-46y7xkgz9njk) for the scrub; `cli/src/maity/runner/watch.py`, `supervisor.py` (`_watch`, `_react`, `_pickup_finding`), `keeper.py` (`login_state`). Tested with fakes for tmux, the clock and the hub, not yet on a live runner
+**See:** runner.md — e6a12eff-5d04-476e-8239-22970a139c7b — as of 2026-11-21
+**Revisit when:** the hub carries `health.settings` (the grace becomes `hang_after_minutes`); a pane signature is verified on a real run; an interactive harness's limit exit is recognised; Claude Code gives a logged-out answer an unreadable configuration cannot give (it then gets a `needed` entry); the runner restarts often enough that losing its notes hides a cause; a secret kind the scrub does not know shows up in a log line
+
+The runner builds the watch exactly as the contract says (entry e6a12eff).
+Where the contract left the choice open, it decided as follows.
+
+- **The grace counts from this run's start at the earliest.** The trigger
+  `not_listening` holds once `not_listening_grace_minutes` have passed since
+  the later of `session.not_listening_since` and the start of this run, in
+  hub time (the lead's ruling, seq 188562). Right after a watch restart the
+  hub may still report the earlier session's quiet spell. Read literally,
+  the trigger would fire again at once, and the second finding would hold
+  the placement at the cap.
+- **For a session adopted after the runner's own restart, the grace counts
+  from the adoption** (the lead, seq 189230). Such a session's start is
+  unknown (`started_at` stays `None`, so its exit is no quick one and it
+  never gets `never_joined`), so the runner keeps `watch_since`: the run's
+  start for a run it started, the adoption for one it found, and counts
+  the `not_listening` grace from the later of the quiet spell's start and
+  `watch_since`. Reason: no upgrade wave. Counted from the quiet spell
+  alone, a runner upgrade would act at once on every placement already
+  quiet for longer than the grace and restart them all together. Rejected:
+  counting from the quiet spell alone, for that reason.
+- **A verdict is acted on only while its facts still hold** (Codex review
+  A1940). The worker's verdict is applied in a later tick, so that tick
+  reads the facts again: not paused or dormant, the same trigger and quiet
+  spell, and the same answer on attachment. If any changed, the verdict is
+  dropped without acting, and a new diagnosis follows if a trigger holds
+  again. Nobody may be attached right before each step that ends a session,
+  the TERM and the kill alike (unknown counts as attached); someone who
+  attached meanwhile keeps it, and the finding is reported once instead.
+  Rejected: acting on the worker's snapshot, which can be seconds old and
+  could end a session a person has just attached to.
+- **A person at the pane uses up nothing of the quiet spell** (ops' live
+  check on 1ffc5553). Every refusal for someone attached goes through
+  `watch_seen` alone: the finding is reported once, the watch skips its
+  looks while that person stays, and looks again once the last client has
+  left, acting within the same spell. For `not_waiting` this means: with
+  someone attached nothing is typed and the finding ("someone is attached:
+  no line typed") is reported once; the spell's one nudge (`watch_episode`)
+  waits until the last person has left, and is then typed and filed as a
+  finding of its own, since it is a different action and the hub would
+  otherwise never learn the nudge happened. While still attached, no
+  further finding. Reason: the attached look had set `watch_episode`, so
+  after the detach the spell was spent and no nudge ever came. The other
+  refusals spend nothing either: an end called off for a person, a pause or
+  a cleared trigger leaves `watch_restarts` untouched (counted only once
+  the session is gone) and only moves `watch_acted_at`, so the next
+  decision waits for a fresh read; a paused or dormant agent has no
+  trigger, which clears `watch_seen`.
+- **A session that just exited is never throttled, and the quiet span is
+  clamped** (Gemini review A1941). The watch looks at most once a minute,
+  but not for a dead session: one that exits within a minute of an earlier
+  look would otherwise be reaped as a plain exit, losing its finding, the
+  watch's count and the resume. The verdict's re-check includes whether the
+  process still runs, so a pane that died is taken to the exit, never
+  nudged. The quiet span that `tool_call_max_minutes` is measured against
+  counts from the later of the quiet spell's start and `watch_since`, as the
+  grace does: a stale spell from before a restart would otherwise make a
+  working run look two hours quiet at its first look. A session that
+  vanished after the watch's TERM enters that end (auth, held or a
+  restart) instead of a fresh start; one that vanished before it is a gone
+  session as without the watch.
+- **Final exits stay with the exit handling; the watch takes only a
+  plain exit** (A1940; narrowed in Gemini review A1958). A supervised loop's
+  revoked credential, hot loop or folder refusal is decided as without the
+  watch (`agent_credential_revoked`, `crash_loop`/`hot_loop`,
+  `workspace_in_use`), with the finding on that report. The loop's limit
+  exits (22, 23) are not among them: they go through the cause order, so a
+  limit exit while the login is gone is `failed`/`auth`, not a retry at every
+  reset, and otherwise `usage_limit` gives exactly the exit handling's
+  `rate_limited` report through the same helper (`_limit_exit`, 23 starting
+  the row of limits over). An interactive harness's exit code is no loop
+  sentinel. Only an exit the restart
+  policy would restart becomes a watch restart. For such a dead harness the
+  crash cap is checked before the watch's cap and wins (the lead's ruling).
+- **A join is compared at whole seconds and, once seen, stays seen** (A1940).
+  The hub's times have whole seconds, so a session that started in the
+  run's own second counts as joined; and once a session of this run has
+  been seen, `never_joined` stays off for the rest of the run.
+- **A finding stays until a report carrying it is taken** (A1940). A body
+  that replaces an unsent one, after a failed write, carries the finding on;
+  a newer finding replaces it. Rejected: clearing it when the body is
+  built, which lost it whenever the state changed before the retry.
+- **Only a confirmed "not logged in" is `needed`** (security review A1942,
+  the lead, seq 189308 and 189704): `codex login status` exiting 1 with the
+  line `Not logged in` (it also exits 1 on an error, with another line).
+  Claude Code stays out of `LOGIN_NEEDED`, because its logged-out answer is
+  the same as an unreadable configuration's (below): every non-zero exit of
+  `claude auth status` is `unknown`, exit 1 included.
+  Any other exit, a timeout or an error is `unknown`, since `needed` ends
+  the placement as `failed`/`auth` with no restart. A real Claude Code
+  logout meanwhile shows as a restart and then `failed`/`hung` at the cap,
+  which costs availability only. Evidence: ops checked both live on
+  2026-11-21 (note on tsk-bzmd0avm4yhb, Claude Code 2.1.329, Codex 0.171.0,
+  a throwaway HOME). Codex logged out exits 1 with exactly `Not logged in`
+  on stderr; its errors also exit 1 with other lines, so the line decides.
+  Claude Code logged out exits 1 with JSON `"loggedIn": false`, and so does
+  an unreadable configuration (a file as `CLAUDE_CONFIG_DIR`, a home at mode
+  000), while an unknown option also exits 1: a logout cannot be told from
+  an unreadable configuration, so `unknown` is right. Revisit when Claude
+  Code gives a logged-out answer an unreadable configuration cannot give.
+- **A pending end is called off before the kill when its facts changed**
+  (Codex delta review A1957). Before the kill that follows a TERM the
+  harness survived, the runner reads the facts again. A pause or dormancy
+  calls off any end, since a paused or dormant agent is never acted on. A
+  trigger that no longer holds calls off a restart end only. An end for a
+  login that needs a person or at the cap is decided and goes on. Called
+  off, the session stays and the finding is reported once. If the TERM
+  itself ends the session after a pause or dormancy, a restart end is not
+  carried out either: no watch restart is counted and the watch relaunches
+  nothing; the finding is reported once, and the gone session is handled as
+  any other exit (the restart policy), its next start resuming the session.
+  An auth or held end is a stop already and stays as it is.
+- **A trigger is acted on only on facts read after it began to hold**
+  (ops' live check of tsk-bzmd0avm4yhb, point 1; bcr2 seq 193802, lotse
+  193798). The moment is the run's start plus `join_within_minutes` for
+  `never_joined`, the later of the quiet spell's start and `watch_since`
+  plus the grace for `not_listening`. If the placements were read before
+  it, the watch decides nothing, neither a diagnosis nor a verdict's acting:
+  it asks serve for a fresh `GET /runner/placements`, which serve makes
+  after its next poll (at most one read per poll round), and looks again
+  after it. A read counts from the moment its request started, the hello's
+  and every placements read alike, not from when the answer arrived (Codex
+  A2048): the hub sampled each `session` while the request was in flight,
+  so an answer that arrives after the moment cannot show a join or a renewed
+  listen at it if the request started before. Placements given without a
+  start time count as not fresh. The read's start is kept on the runner's
+  own clock and put in hub time with the current offset at the comparison,
+  as the trigger's moment is, so one offset serves both; and since the
+  hub's `server_time` has whole seconds and the offset can move by up to a
+  second between two readings, a read counts as fresh only from one second
+  past the moment (`FRESH_MARGIN`, Gemini A2049). The read must also have
+  started after the runner's own last action on that session
+  (`watch_acted_at`: a nudge, the watch's or the own check's, its delayed
+  Enter when the line showed late, the watch's decision to end and its
+  TERM; cleared on a new run and on an adoption; kept in actual.json),
+  plus the margin (ops' live check on
+  067c7e0e: a nudge answered by a new `maity wait` was restarted as
+  `wait_deaf` on facts read before the nudge). The facts carry no
+  acknowledged seq, so the episode shows as ended by `not_listening_since`
+  turning null or changing; either ends the spell with no restart. A
+  decided end (a restart, the cap's hold, a login that needs a person) is
+  not sent its TERM at once either: the TERM waits for a read started after
+  the decision, and if that read shows the agent paused or dormant, or for
+  a restart its trigger gone (listening again, another quiet spell, or for
+  `never_joined` a join), the end is called off (bcr2), so a pause the
+  runner had not read yet never races the watch's TERM (the own idle
+  check still sends its TERM at once, unchanged). A session that exits or
+  vanishes before the TERM ended on its own: the end is dropped with no
+  finding and the session goes to the exit handling as if the watch had
+  never decided (final exits, and a plain exit as without the watch).
+  After a runner restart, an end not yet sent its TERM is dropped on
+  adoption, with no finding; one whose TERM went out keeps its kill. A read
+  asked for is answered only by a read whose request started at or after
+  the ask (`wants_read_after`); one that started earlier, or at no known
+  time, leaves the request standing. Reason: in
+  ops' check the agent joined three seconds after its start, the runner had
+  read placements only at the start (it re-reads every 10 minutes or on a
+  wake), and no hub event reaches a runner on a session start, so it held a
+  healthy agent as `never_joined`; a stale `not_listening_since` could
+  likewise restart an agent that listens again. Rejected: a shorter
+  `REREAD_INTERVAL` for every runner (more load everywhere, and the race
+  stays); a hub event on every session start (a hub change, a follow-up
+  card at most). The cost, seen live by ops: a quiet spell is seen only
+  at the next read, so the first look, and with it a nudge, can come up
+  to `REREAD_INTERVAL` (10 minutes) after the grace ran out.
+- **A watch restart counts only once the session is gone** (A1957): when
+  the relaunch is decided, not when the TERM is sent, so an end that is
+  called off (someone attached, a pause, a trigger that cleared) spends
+  nothing of `auto_restarts`.
+- **A report carrying a finding goes again with its own `seq` until it is
+  settled** (A1957). The hub knows a report by its `seq` alone; a lost reply
+  followed by a copy in a new `seq` would give the finding twice. So that
+  body is sent again as it is until the hub takes it or answers definitively;
+  the next state is reported right after it, delayed, never lost. A
+  definitive refusal of the body (400 `invalid`, the hub's validation)
+  follows #2080's rule (entry b68a2e8b-8472-4cfe-88b1-8531d7275949): never
+  sent again as it was (Gemini review A2033). When `details.fields` names
+  only the finding, the report goes once more at once without it, with the
+  same `seq`, and the finding is dropped, as #2080 strips a refused detail;
+  a failed state still reaches the owner. Any other `invalid` settles the
+  report as dropped, and the next state change carries the finding on once;
+  a second refusal drops it, since the finding may be what the hub refuses
+  and must not hold every later report back. Any other answer, an
+  authentication refusal such as `timestamp_skew` included, says nothing
+  about the body or about an earlier try, so the same `seq` goes again
+  (A1965). Rejected: any 4xx as definitive, which dropped a valid finding
+  after two clock-skew refusals; and leaving a refused state unacked, which
+  sent the refused body again on the next tick with a new `seq` and lost a
+  valid finding during the restart's backoff (Gemini A2033).
+- **The scrub also takes a URL's userinfo and underscore key prefixes**
+  (A1942): `scheme://user:pass@host` and `scheme://token@host` keep the
+  scheme and the host and lose the userinfo; Stripe `sk_live_`, `sk_test_`,
+  `rk_live_`, `rk_test_` (16 characters or more after the prefix), Hugging
+  Face `hf_` and npm `npm_` (20 or more) become `<secret>`, behind the same
+  left word boundary, so `tsk_…` or `hf_hub_download` stay.
+- **`never_joined` goes first when both triggers hold.** If no session
+  started since this run began, a quiet spell the hub reports belongs to an
+  earlier session, so "never joined" is the truer finding.
+- **Contradictory signals are normalised, not refused.** A process that is
+  `alive` gets `exit_code: null`, and one that is `gone` gets
+  `below: unknown`, as the contract's field meanings say. A value outside
+  the hub's closed lists is a bug in the runner and raises before anything
+  is sent, so the hub never refuses a report for it.
+- **The diagnosis runs in a thread of its own, outside `tasks`.** The login
+  probe can take 30 seconds, and the tick holds the supervisor's lock. The
+  signals tmux and `ps` give are read in the tick at the trigger; a worker
+  per placement runs the probe and the cause order and leaves a verdict,
+  which the next tick acts on. So the reaction comes one tick (about 5
+  seconds) after the trigger. Kept out of `tasks` so that a diagnosis never
+  counts as a running session toward capacity.
+- **During a `not_waiting` spell the watch looks again at most once a
+  minute.** The nudge and its report stay once per value of
+  `not_listening_since`, as the contract says. The diagnosis still runs, so
+  a `maity wait` that starts in the same spell but does not hear the hub is
+  still found as `wait_deaf`. The cost is one login probe a minute while
+  the spell lasts.
+- **`never_joined` counts from the moment the runner begins the start**
+  (`started_at`, set before the clone and the join), not from the harness's
+  first output. An adopted session has no known start, so it never gets
+  `never_joined`.
+- **`pickup_refused` only for a hub answer that names a code**: a pickup
+  refused with a code other than a 404 (a `forbidden` names its reason), or
+  an exchange whose machine line carries a code other than `network` (the
+  lead's ruling). No finding for `network`, a bare 404 (the placement is
+  gone), a refusal without a code or `credential_missing`, because
+  `pickup_code: null` would contradict the cause. The login is probed for
+  it too, in the start thread.
+- **The scrub (A1838).** The hub's guard knows only the hub's credential
+  format, so before a finding leaves, each log line is scrubbed as written,
+  then written as printable ASCII, then cut and bounded (scrub first since
+  Gemini review A1958: written as ASCII first, a tab became `?` and hid
+  `Authorization:<tab>Bearer …` from the scrub; a token's tail also runs on
+  through a non-ASCII character, so one does not split it). The scrub replaces forge
+  tokens (GitHub `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`,
+  GitLab `glpat-`), provider keys (`sk-` with `sk-ant-` and `sk-proj-`,
+  `xai-`, Google `AIza` and `ya29.`, AWS `AKIA`/`ASIA` with 16 more
+  characters), Slack `xox[abprs]-` tokens and `Authorization:` and `Bearer`
+  values with `<secret>`, keeping the line (the lead's ruling). It replaces
+  a whole path under `/home/<user>`, `/Users/<user>`, `C:\Users\<user>`,
+  `C:/Users/<user>` or `/root` with `<path>`. A line in the hub's credential
+  format is still dropped (`sign.contains_credential`). Every pattern starts
+  at a word boundary of its own, no letter, digit, `_` or `-` before it, so
+  a card id such as `tsk-…` is no `sk-` key. The trade-off: a secret glued
+  right after `_` or `-` is not caught. The scrub runs before the cut, so a
+  cut never leaves a fragment it would have caught. It is a second line:
+  the notes are runner-written with placeholders in the first place.
+- **The log lines are the runner's notes, in memory only.** Only lines the
+  runner writes through `Supervisor.note`, each starting with the
+  placement's id, can reach `finding.log`, never a line merely filtered
+  from the service log (the lead's ruling). The newest 200 per placement
+  are kept until the placement closes, and they are lost when the runner
+  restarts.
+- **Pane signatures ship as an empty table.** The contract matches a pane
+  code only on a signature verified on a real run of that harness and
+  version, and none is verified yet (the lead's ruling). So `pane_match` is
+  always `[]` for now. The mechanism (`watch.PaneSignature`, `pane_texts`,
+  `pane_match`) is there for the first verified one.
+
+**Reason:** each of these keeps the watch from acting on a fact that no
+longer holds, or from sending something the contract forbids, at the
+smallest cost to what it can find. The scrub is there because a
+runner-written line can still carry a value that came through a path the
+placeholders missed, and the hub cannot tell such a value from text.
+
+**Rejected alternatives:**
+- The grace counted from the quiet spell alone, as the contract's words
+  read: it trips the cap right after a restart (above).
+- The diagnosis in the start `tasks`, or in the tick: the first counts
+  toward capacity and blocks a start's slot; the second holds the lock for
+  up to 30 seconds of a login probe.
+- Selecting `finding.log` from the service log by the placement id prefix:
+  several existing lines carry exception text and paths from the agents'
+  side.
+- Dropping a line with a secret instead of scrubbing it: it loses the
+  context the finding is for (the lead's ruling).
+- Persisting the notes in the state directory: lines about the agents' side
+  on disk, for little gain over the lines a restart writes again.
+- A `pickup_refused` finding with `pickup_code: null` for a refusal without
+  a code: the contract says `null` means no refusal.
 
 ## Claude Code's sandbox hides the own project's `.scratch` for reading and opens only its own scratch again
 

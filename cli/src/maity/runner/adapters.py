@@ -281,7 +281,7 @@ def skill_env(ctx: Context) -> dict[str, str]:
     resume block names it instead of "<skills directory>" (onboarding)."""
     if ctx.skill is None:
         return {}
-    return {"MAITY_KTW_SKILL_DIR": str(ctx.skill / "skills" / skills.NAME)}
+    return {"MAITY_KTW_SKILL_DIR": str(skills.skill_in(ctx.skill))}
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -1049,17 +1049,16 @@ def codex_skill(ctx: Context, home: Path) -> bool:
     copy stays, one the runner wrote from a checked copy."""
     if ctx.scratch is None:
         return False
-    under = ctx.scratch.parents[2]
     errors = (OSError, ValueError, KeyError, subprocess.SubprocessError, skillop.Mismatch)
     if ctx.skill_source is not None:
         try:
             payload = skillop.payload(ctx.skill_source, ctx.skill_source.name)
-            ctx.as_user.skill_codex(under, home, payload)
+            scratch.write_codex_skill(home, payload, ctx.as_user)
             return True
         except errors:
             pass
     with contextlib.suppress(*errors):
-        ctx.as_user.skill_codex_clear(under, home)
+        scratch.clear_codex_skill(home, ctx.as_user)
     return False
 
 

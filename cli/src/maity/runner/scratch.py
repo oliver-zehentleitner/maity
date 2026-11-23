@@ -74,6 +74,20 @@ def write_codex_home(
     as_user.codex(_under(home.parent), home, config_text, auth_target)
 
 
+def write_codex_skill(home: Path, payload: str, as_user: AsUser = RUNNER) -> None:
+    """The skill's document (skillop.payload) as `skills/keep-the-why/` in `home`
+    (`<scratch>/codex-home`), by skillop.codex_put on the agents' side, anchored at the
+    workspaces root as write_codex_home is. OSError (scratchop.OnTheWay for a link on the way)
+    when it fails."""
+    as_user.skill_codex(_under(home.parent), home, payload)
+
+
+def clear_codex_skill(home: Path, as_user: AsUser = RUNNER) -> None:
+    """`skills/keep-the-why/` in `home` removed (skillop.codex_clear), anchored as
+    write_codex_skill is."""
+    as_user.skill_codex_clear(_under(home.parent), home)
+
+
 def tmp_make(path: Path, as_user: AsUser = RUNNER) -> None:
     """The agy scratch at `path` under `/tmp`, with `tmp` in it, owned by the user the agents
     run as, under a per-user parent owned 0700 by that user (scratchop.tmp_make). scratchop.OnTheWay
