@@ -541,7 +541,15 @@ reported name in the project's repository is not compared with the report's
 Before, a fork report beside a project branch of the same name was a
 `mismatch`: the admins were woken, and the merge was never told to the done
 authority. A report without a pull request read yet is still compared as
-before, since nothing then says where its branch is.
+before, since nothing then says where its branch is. A renamed or
+transferred project repository does not make its own pull request look like
+a fork: `head_repo` is compared by name with the project's URL, reads at the
+old URL stop at the forge's redirect until an admin sets the new URL
+(`forge._SameHostOnly`), and setting it deletes the project's stored
+observations (`routes/projects.py`). At most a read already under way then
+is stored afterwards and, until it ages out, hides the branch comparison:
+a missing signal, never a close, since `merged._not_its_own` counts such a
+pull request as not the card's own.
 
 **Reason:** the head repository the forge names on the pull request is the
 one fact the hub already reads that says the branch is not the project's;
