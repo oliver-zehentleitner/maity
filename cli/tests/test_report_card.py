@@ -703,6 +703,39 @@ def test_gh_is_asked_in_the_repository_named(tmp_path: Path, bin_dir: Path) -> N
     assert gitfacts._pull_request(tmp_path, "work") is None
 
 
+def test_of_two_forks_branches_of_one_name_the_head_s_pull_request_is_taken(
+    tmp_path: Path, bin_dir: Path
+) -> None:
+    """In the project's repository gh's `--head work` lists every fork's `work`: the one whose
+    head is the local HEAD is taken, wherever gh lists it; without a match, the first, as
+    before (tsk-6yq56cm6k01j)."""
+    mine, other = "a" * 40, "b" * 40
+    rows = [
+        {"number": 5, "headRefOid": other, "state": "OPEN", "url": f"{REPO}/pull/5"},
+        {"number": 9, "headRefOid": mine, "state": "OPEN", "url": f"{REPO}/pull/9"},
+    ]
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps(rows))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", mine)
+    assert found is not None and (found.number, found.head) == (9, mine)
+    first = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "c" * 40)
+    assert first is not None and first.number == 5
+    unknown = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget")
+    assert unknown is not None and unknown.number == 5
+
+
+def test_a_row_that_is_no_object_is_gh_s_odd_answer_not_a_crash(
+    tmp_path: Path, bin_dir: Path
+) -> None:
+    """A list row that is no JSON object, ahead of the head's: the head match passes over it,
+    and the answer stays a FactsError instead of an AttributeError (A2271)."""
+    rows = ["oops", {"number": 9, "headRefOid": "a" * 40, "state": "OPEN", "url": f"{REPO}/pull/9"}]
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps(rows))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "a" * 40)
+    assert found is not None and found.number == 9
+    with pytest.raises(gitfacts.FactsError):
+        gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "c" * 40)
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [

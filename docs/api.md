@@ -400,7 +400,7 @@ the hub records it on the session.
 | Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7), a replacement's sealed transcript 64 MiB (§15.14, not built yet). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB on a route that takes a caller is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread. The forge webhook takes no caller: it has its own limit and is checked by its signature (§17.4) |
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3). A replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet) has 30 minutes, about 300 kbit/s for 64 MiB |
 | Requests to one route | none beyond the route's own limits by default; the general limit per client address is the ingress's, and a signed-in caller's reads have the limit per credential below. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
-| Reads per credential | `max_reads_per_minute` per credential, default 1000: the instance's value (§16.5), or for an agent's credential its project's if that is lower (§6.1; the project's value is not built yet, tsk-ybc2ma72dzvq: today every credential takes the instance's). A read is a `GET` or `HEAD` of the API (`/api/v1/…`, the path as the hub routes it, its percent-escapes decoded) by a caller with a credential: an agent's credential (§2.2), a runner's (§15.1) or a human's session (§2.1); a bridge's call with `Maity-For` (§2.3) counts against the bridge's own credential. An agent's credential takes its project's value, every other credential the instance's. For an agent instance attached to several projects (§6.17; not built yet) the reads under `/projects/{owner}/{slug}/` count per (credential, project), each project's count against that project's value, so reads in one project never use up another's; its project-less reads (`/me`, `/me/events`, `/me/…`, `/bootstrap`) count once per credential, the agent instance, in a count of their own against the instance's value, which no project's value lowers. The events long-poll counts once per call, when it arrives, however long it is held and however often the hub looks again while it waits (§8.3): a `maity wait` loop asks once per answer, at most once a second while every poll answers at once, and its `Retry-After` is kept (§13). `GET /bootstrap` counts once for all its parts (§5.4). The window is one minute, sliding: the count of the current minute plus the previous minute's, weighted by how much of it the window still covers. Counted per credential in each hub process, as `MAITY_ROUTE_LIMITS`; the instance's value is read again at most every 30 seconds, at once in the process that changes it. The check runs once the credential is known and before the side effects of §2.4, so a refused read renews nothing and writes no presence; past the limit the read is `rate_limited` with `Retry-After`, the seconds until the window has room for one more, and the hub writes one line to its log naming the route and a short tag of the credential, never the credential, its id or the session. Writes do not count; a call without a credential keeps the limits of the rows around this one and the ingress's |
+| Reads per credential | `max_reads_per_minute` per credential, default 1000: the instance's value (§16.5), or for an agent's credential its project's if that is lower (§6.1; the project's value is not built yet, tsk-ybc2ma72dzvq: today every credential takes the instance's). A read is a `GET` or `HEAD` of the API (`/api/v1/…`, the path as the hub routes it, its percent-escapes decoded) by a caller with a credential: an agent's credential (§2.2), a runner's (§15.1) or a human's session (§2.1); a bridge's call with `Maity-For` (§2.3) counts against the bridge's own credential. `GET /forge/github/setup` counts no read (§11.4). An agent's credential takes its project's value, every other credential the instance's. For an agent instance attached to several projects (§6.17; not built yet) the reads under `/projects/{owner}/{slug}/` count per (credential, project), each project's count against that project's value, so reads in one project never use up another's; its project-less reads (`/me`, `/me/events`, `/me/…`, `/bootstrap`) count once per credential, the agent instance, in a count of their own against the instance's value, which no project's value lowers. The events long-poll counts once per call, when it arrives, however long it is held and however often the hub looks again while it waits (§8.3): a `maity wait` loop asks once per answer, at most once a second while every poll answers at once, and its `Retry-After` is kept (§13). `GET /bootstrap` counts once for all its parts (§5.4). The window is one minute, sliding: the count of the current minute plus the previous minute's, weighted by how much of it the window still covers. Counted per credential in each hub process, as `MAITY_ROUTE_LIMITS`; the instance's value is read again at most every 30 seconds, at once in the process that changes it. The check runs once the credential is known and before the side effects of §2.4, so a refused read renews nothing and writes no presence; past the limit the read is `rate_limited` with `Retry-After`, the seconds until the window has room for one more, and the hub writes one line to its log naming the route and a short tag of the credential, never the credential, its id or the session. Writes do not count; a call without a credential keeps the limits of the rows around this one and the ingress's |
 | Open claims per caller | `max_open_claims` per member and project, default `null`, no cap (§6.1, §6.5); then `claim_limit`; not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
@@ -556,7 +556,17 @@ only when the hub runs with `MAITY_ALLOW_PLAIN_HTTP` (§2.5). Every `POST`,
 `PATCH`, `PUT` and `DELETE` made with a cookie session must carry `X-CSRF-Token`;
 the hub compares it with the token stored on the session, not with the
 cookie the request happens to carry, otherwise `csrf_mismatch`. The hub
-also refuses cookie requests whose `Sec-Fetch-Site` is `cross-site`. When
+also refuses cookie requests whose `Sec-Fetch-Site` is `cross-site`
+(`csrf_mismatch`), with one exception: `GET /forge/github/setup`, its
+path sent exactly so (no percent-encoded or other spelling), when the
+request is the browser's top-level navigation (`Sec-Fetch-Mode:
+navigate` and `Sec-Fetch-Dest: document`). The forge sends the browser
+there from its own site, and the route's `state`, bound to the session
+and used once, protects it instead (§11.4); the call writes no presence,
+renews no lease and counts no read, so a navigation another site starts
+changes nothing before the `state` is checked. A cross-site `fetch` or
+frame to it, and every other cross-site cookie request, is refused as
+before. When
 a request carries both a cookie and an `Authorization` header, the header
 authenticates and the cookie is ignored; the CSRF rule applies whenever
 the cookie authenticated the call.
@@ -2105,7 +2115,8 @@ before its leases run out (`claim_lease_expiring`) and renews them on
 purpose with `POST …/claims/renew` (§6.5; not built yet,
 tsk-p55zyn4pz0wd). `POST /me/presence` (§18.4) is no heartbeat of this
 kind: a dashboard tab's signal for the mail hold of §18.5, it writes no
-`last_seen_at`, renews no lease and shows nobody as online. A runner's calls update the runner's own
+`last_seen_at`, renews no lease and shows nobody as online. Nor does
+`GET /forge/github/setup` (§11.4), which also counts no read (§1.7). A runner's calls update the runner's own
 `last_seen_at` and nothing on any membership (§15.3).
 
 An instance attached to several projects (§6.17) is present and renews
@@ -18857,6 +18868,15 @@ repository it includes.
   `code`.
 - `GET /forge/github/setup?installation_id=…&code=…&state=…` (cookie
   session, the same human whose session the `state` names) completes it.
+  The browser arrives from the forge's site, so this is the one call
+  whose cookie session §2.1 accepts with `Sec-Fetch-Site: cross-site`,
+  and only as a top-level navigation; the `state` stands in for that
+  check here. The call writes no presence, renews no lease (§2.4) and
+  counts no read (§1.7), so a navigation another site starts changes
+  nothing before its `state` is checked. A request with an
+  `Authorization` or `Maity-For` header is refused before any credential
+  is looked up, as for `POST /me/presence` (§18.4), so no other caller
+  leaves a trace either.
   The hub exchanges `code` for a user token, reads that user
   (`GET /user`) and the installation (with the App's key), and links the
   installation only when its account is that user: `account.type` is
@@ -18871,18 +18891,25 @@ repository it includes.
   never stored. An installation of another account is refused (`403
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
-  refused with `details.reason: link_state`. Since the browser arrives
-  here by the forge's redirect, every outcome is a `303` to the
-  dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11): on
-  success without a query, otherwise with `?error=<reason>`, the reason
-  one of `link_state`, `installation_not_yours`,
+  refused with `details.reason: link_state`. Its outcomes:
+
+  | Case | Answer |
+  |---|---|
+  | an `Authorization` or `Maity-For` header (an agent, a runner, a bridge) | `403 forbidden` with `details.reason: humans_only`, before any credential is looked up |
+  | a cross-site request that is no top-level navigation (§2.1) | `403 csrf_mismatch`, before the route runs |
+  | no live session | `401 unauthenticated`, before the route runs |
+  | any other refusal every call meets before its route (§2) | as there |
+  | `installation_id` or `code` missing or malformed | `400 invalid` (§1.3) |
+  | linked | `303` to the dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11), without a query |
+  | refused by the route | `303` to the same page with `?error=<reason>` |
+  | linked, with `Accept: application/json` | `200` with the new link in the form `GET /me/forge` lists it, `repositories_shown` empty |
+  | refused by the route, with `Accept: application/json` | `403 forbidden` for `link_state`, `installation_not_yours` and `organisation_installation` (in `details.reason`), `409 conflict` for `installation_linked`, `409 forge_app_missing`, `503 forge_unavailable` |
+
+  The route's reasons are `link_state`, `installation_not_yours`,
   `organisation_installation`, `installation_linked` (below),
-  `forge_app_missing`, or `forge_unavailable` when the forge did not
-  answer; never with a forge token, code or state in the URL. To a
-  client that sends `Accept: application/json` the same reasons answer
-  as JSON: `403 forbidden` for the first three, `409 conflict` for
-  `installation_linked`, `409 forge_app_missing`, and `503
-  forge_unavailable`.
+  `forge_app_missing`, and `forge_unavailable` when the forge did not
+  answer. No answer puts a forge token, code or state in the URL, and
+  the first five rows never take the `state`.
 - An installation is linked to one human at a time. Linking one that is
   linked to another human is refused (`409 conflict`, `details.reason:
   installation_linked`); the other human unlinks it first, or the
