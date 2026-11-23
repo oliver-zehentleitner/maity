@@ -42,7 +42,11 @@ def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) 
             project,
             "policy_changed",
             ["all", *deciders],
-            {"old": policy.of(project), "new": new, "reason": REASON},
+            {
+                "old": policy.shown(conn, policy.of(project)),
+                "new": policy.shown(conn, new),
+                "reason": REASON,
+            },
             actor=actor,
         )
     _reset_card_arbiters(conn, project, principal, removed, new, deciders, actor)
