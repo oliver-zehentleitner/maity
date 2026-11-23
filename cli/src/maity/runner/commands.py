@@ -583,26 +583,29 @@ def _check_session_shell(report: Report, as_user: AsUser, where: str = "") -> No
     """The SHELL every session gets, looked up as a start does (tmux.Tmux.session_shell). A
     harness runs its commands through it (OpenCode does), so one that is or links to nologin
     or false fails every command, as the service account's nologin did (tsk-fjq2k0sx1n3r)."""
-    if as_user.here:
-        shell = tmux.BASH if os.access(tmux.BASH, os.X_OK) else tmux.SH
-        runs, resolved = os.access(shell, os.X_OK), os.path.realpath(shell)
-    else:
-        try:
-            bash = as_user.run(["test", "-x", tmux.BASH]).returncode == 0
-            shell = tmux.BASH if bash else tmux.SH
-            runs = bash or as_user.run(["test", "-x", shell]).returncode == 0
-            done = as_user.run(["readlink", "-f", shell])
-        except (OSError, subprocess.TimeoutExpired):
-            report.warn(f"{where}the sessions' SHELL is not checked: the host did not answer")
-            return
-        resolved = done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else shell
-    if not runs or os.path.basename(resolved) in tmux.NOT_A_SHELL:
+    probe = tmux.probe_shell(as_user, lambda argv: as_user.run(argv))
+    if probe.shell is None:
+        who = "the host" if not as_user.here else f"sudo to {as_user.user}"
+        report.warn(f"{where}the sessions' SHELL is not checked: {who} gave no answer")
+    elif not probe.runs:
         report.error(
-            f"{where}sessions would get SHELL={shell} ({resolved}), which runs no command: "
-            "every command a harness runs through it fails; install bash or a POSIX sh there"
+            f"{where}sessions would get SHELL={probe.shell}, which the agents' user cannot "
+            "run: every command a harness runs through it fails; install bash or a POSIX sh "
+            "there"
+        )
+    elif probe.resolved is None:
+        report.warn(
+            f"{where}sessions get SHELL={probe.shell}, not checked further: where it leads "
+            "could not be read (`readlink -f` failed), so nologin or false is not ruled out"
+        )
+    elif os.path.basename(probe.resolved) in tmux.NOT_A_SHELL:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell} ({probe.resolved}), which runs no "
+            "command: every command a harness runs through it fails; install bash or a POSIX "
+            "sh there"
         )
     else:
-        report.ok(f"{where}sessions get SHELL={shell}, not the account's login shell")
+        report.ok(f"{where}sessions get SHELL={probe.shell}, not the account's login shell")
 
 
 def _check_local(report: Report, local: config.Local) -> None:

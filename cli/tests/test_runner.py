@@ -1813,23 +1813,61 @@ def test_check_names_the_sessions_shell_and_refuses_one_that_runs_no_command(
     ((level, text),) = report.lines
     assert level == "error" and f"SHELL={shell} ({target})" in text
 
-    import subprocess
-
-    class Remote(AsUser):
-        @property
-        def here(self) -> bool:
-            return False
-
-        def run(self, argv: Any, *args: Any, **kwargs: Any) -> Any:
-            answer = {"/bin/bash": 1, "/bin/sh": 0}.get(argv[-1], 0)
-            out = f"{target}\n" if argv[0] == "readlink" else ""
-            return subprocess.CompletedProcess(list(argv), answer, out, "")
-
     report = commands.Report()
-    commands._check_session_shell(report, Remote(), "host-a: ")
+    side = _ProbedSide("agents", 0, f"shell\t/bin/sh\t{target}\n")
+    commands._check_session_shell(report, side, "h: ")
     ((level, text),) = report.lines
     assert level == "error"
-    assert text.startswith(f"host-a: sessions would get SHELL=/bin/sh ({target})")
+    assert text.startswith(f"h: sessions would get SHELL=/bin/sh ({target})")
+
+
+@dataclasses.dataclass(frozen=True)
+class _ProbedSide(AsUser):
+    """An agents' side the runner reaches through sudo or ssh, whose shell probe answers
+    (`code`, `out`); `remote` False: the agent_user layout, on the runner's own host."""
+
+    code: int = 0
+    out: str = ""
+    remote: bool = True
+
+    @property
+    def here(self) -> bool:
+        return not self.remote
+
+    def run(self, argv: Any, *args: Any, **kwargs: Any) -> Any:
+        import subprocess
+
+        return subprocess.CompletedProcess(list(argv), self.code, self.out, "")
+
+
+@pytest.mark.parametrize(
+    ("code", "out", "level", "said"),
+    [
+        # A2352: the shell runs, but where it leads cannot be read: not checked, never ok.
+        (0, "shell\t/bin/bash\t\n", "warn", "not checked further"),
+        # No answer (ssh's 255, a refused sudo) is not a shell that cannot run.
+        (255, "", "warn", "gave no answer"),
+        (1, "", "warn", "gave no answer"),
+        (0, "none\n", "error", "which the agents' user cannot run"),
+        (0, "shell\t/bin/bash\t/usr/bin/bash\n", "ok", "sessions get SHELL=/bin/bash"),
+    ],
+)
+def test_check_tells_an_unchecked_shell_from_a_failed_look_and_from_one_that_cannot_run(
+    code: int, out: str, level: str, said: str
+) -> None:
+    report = commands.Report()
+    commands._check_session_shell(report, _ProbedSide("agents", code, out), "host-a: ")
+    ((found, text),) = report.lines
+    assert found == level and text.startswith("host-a: ") and said in text, text
+
+
+def test_check_probes_the_shell_as_the_agents_user_in_the_agent_user_layout() -> None:
+    """A2352: on the runner's own host, but for another user, the shell is probed as that
+    user (through sudo), so an ACL that shuts the agents' user out is not taken for ok."""
+    report = commands.Report()
+    commands._check_session_shell(report, _ProbedSide("agents", 0, "none\n", remote=False))
+    ((level, text),) = report.lines
+    assert level == "error" and "which the agents' user cannot run" in text, text
 
 
 GRANT_RAW = {

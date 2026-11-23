@@ -2360,34 +2360,85 @@ def test_every_session_gets_a_shell_not_the_accounts_nologin(tmp_path: Path) -> 
     assert "nologin" not in " ".join(new)
 
 
-@pytest.mark.parametrize(
-    ("answer", "shell", "kept"),
-    [(0, "/bin/bash", True), (1, "/bin/sh", True), (255, "/bin/sh", False)],
-)
-def test_on_an_ssh_host_the_sessions_shell_is_looked_up_there(
-    tmp_path: Path, answer: int, shell: str, kept: bool
-) -> None:
-    """On an ssh host `/bin/bash` is looked for on that host; without it, `/bin/sh`. A host
-    that does not answer (ssh's 255) gives `/bin/sh` for now and is asked again."""
+def _remote_side(probes: list[tuple[int, str]]) -> tuple[Any, Any, list[list[str]]]:
+    """An agents' side that is not the runner's own user (sudo or ssh), whose shell probes
+    answer `probes` in turn (exit code, stdout); every other command succeeds."""
     from maity.runner.asuser import AsUser as Direct
 
     asked: list[list[str]] = []
+    answers = list(probes)
 
     class Remote(Direct):
+        @property
+        def direct(self) -> bool:
+            return False
+
         @property
         def here(self) -> bool:
             return False
 
+        def argv(self, argv: Sequence[str], env: dict[str, str] | None = None) -> list[str]:
+            return list(argv)
+
+        def exists(self, path: Path, kind: str = "-e") -> bool:
+            return True
+
+        def write(self, path: Path, text: str) -> Path:
+            return path
+
+        def mkdir(self, path: Path) -> None:
+            return None
+
     def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         asked.append(list(argv))
-        return subprocess.CompletedProcess(list(argv), answer, "", "")
+        if tmux.SHELL_PROBE in argv:
+            code, out = answers.pop(0)
+            return subprocess.CompletedProcess(list(argv), code, out, "")
+        return subprocess.CompletedProcess(list(argv), 0, "", "")
 
+    return Remote(), run, asked
+
+
+@pytest.mark.parametrize(
+    ("code", "out", "shell", "kept"),
+    [
+        (0, "shell\t/bin/bash\t/usr/bin/bash\n", "/bin/bash", True),
+        (0, "shell\t/bin/sh\t/usr/bin/dash\n", "/bin/sh", True),
+        (0, "none\n", "/bin/sh", True),
+        (255, "", "/bin/sh", False),  # ssh's own failure: no answer
+        (1, "", "/bin/sh", False),  # sudo refused: no answer either
+    ],
+)
+def test_on_another_users_side_the_sessions_shell_is_looked_up_there(
+    tmp_path: Path, code: int, out: str, shell: str, kept: bool
+) -> None:
+    """Over ssh, and through sudo in the agent_user layout, the shell is probed as the agents'
+    user (A2352). An answer is kept; no answer gives `/bin/sh` for now and is asked again."""
+    remote, run, asked = _remote_side([(code, out), (0, "shell\t/bin/bash\t/bin/bash\n")])
     backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
-                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=Remote())  # fmt: skip
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=remote)  # fmt: skip
     assert backend.session_shell() == shell
-    assert asked == [["test", "-x", "/bin/bash"]]
-    backend.session_shell()
+    assert asked == [["sh", "-c", tmux.SHELL_PROBE, "sh", "/bin/bash", "/bin/sh"]]
+    assert backend.session_shell() == (shell if kept else "/bin/bash")
     assert len(asked) == (1 if kept else 2)
+
+
+def test_one_start_gives_the_environment_and_default_shell_the_same_shell(
+    tmp_path: Path,
+) -> None:
+    """A2352: a first probe that gets no answer and a second that does must not give the
+    server's SHELL one value and `default-shell` another; the next start asks again."""
+    remote, run, asked = _remote_side([(255, ""), (0, "shell\t/bin/bash\t/bin/bash\n")] * 2)
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=remote)  # fmt: skip
+    backend.start("maity_p_c", tmp_path, ["opencode"], {}, "plc-0003", 1)
+    new = next(call for call in asked if "new-session" in call)
+    default = new[new.index("default-shell") + 1]
+    assert f"SHELL={default}" in new[: new.index("tmux")] and default == "/bin/sh"
+    assert sum(tmux.SHELL_PROBE in call for call in asked) == 1
+    backend.start("maity_p_d", tmp_path, ["opencode"], {}, "plc-0004", 1)
+    new = [call for call in asked if "new-session" in call][-1]
+    assert "SHELL=/bin/bash" in new and new[new.index("default-shell") + 1] == "/bin/bash"
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")

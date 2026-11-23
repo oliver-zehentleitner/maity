@@ -3,7 +3,7 @@
 
 A tmux server hands its own environment to every session, and `new-session -e` only adds to
 it, so the server is started under `env -i` with a fixed environment: HOME, PATH =
-`agent_path`, SHELL, LANG, TERM. SHELL is `/bin/bash` where the agents' host has it, else
+`agent_path`, SHELL, LANG, TERM. SHELL is `/bin/bash` where the agents' user can run it, else
 `/bin/sh` (`Tmux.session_shell`): tmux gives each pane `SHELL` = its `default-shell`, which it
 takes from the SHELL it started with and otherwise from the account's passwd shell, and the
 service account's is `/usr/sbin/nologin` (install.py), so OpenCode, which runs its commands
@@ -45,8 +45,46 @@ TIMEOUT = 15.0
 # account's own shell (nologin for the service account, so nobody can log in as it).
 BASH, SH = "/bin/bash", "/bin/sh"
 NOT_A_SHELL = frozenset(("nologin", "false"))  # what `runner check` refuses as SHELL
+# Run as the agents' user, where that is not the runner's own (sudo, ssh): the first of
+# "$1" "$2" that user can run, and where it leads; `none` when it can run neither. A probe
+# that prints neither line (sudo or ssh failed) is no answer.
+SHELL_PROBE = (
+    'if [ -x "$1" ]; then s=$1; elif [ -x "$2" ]; then s=$2; else echo none; exit 0; fi; '
+    'r=$(readlink -f -- "$s" 2>/dev/null); printf "shell\\t%s\\t%s\\n" "$s" "$r"'
+)
 
 Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
+
+
+@dataclass(frozen=True)
+class ShellProbe:
+    """What the agents' side says about the sessions' SHELL. `shell` None: no answer (sudo or
+    ssh failed). `runs`: the agents' user can run it. `resolved` None: where it leads could
+    not be read (no `readlink -f` there), so nologin or false is not ruled out."""
+
+    shell: str | None
+    runs: bool = False
+    resolved: str | None = None
+
+
+def probe_shell(as_user: AsUser, run: Runner) -> ShellProbe:
+    """`/bin/bash` where the agents' user can run it, else `/bin/sh`, looked at as that user:
+    by stat for the runner's own user, otherwise with `SHELL_PROBE` through `run` (sudo to the
+    agents' user, or ssh), so an ACL that shuts the agents' user out counts (A2352)."""
+    if as_user.direct:
+        shell = BASH if os.access(BASH, os.X_OK) else SH
+        return ShellProbe(shell, os.access(shell, os.X_OK), os.path.realpath(shell))
+    try:
+        done = run(["sh", "-c", SHELL_PROBE, "sh", BASH, SH])
+    except (OSError, subprocess.TimeoutExpired):
+        return ShellProbe(None)
+    lines = done.stdout.splitlines() if done.returncode == 0 else []
+    if lines == ["none"]:
+        return ShellProbe(SH)
+    parts = lines[0].split("\t") if len(lines) == 1 else []
+    if len(parts) != 3 or parts[0] != "shell" or parts[1] not in (BASH, SH):
+        return ShellProbe(None)
+    return ShellProbe(parts[1], True, parts[2] or None)
 
 
 def _run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -232,29 +270,25 @@ class Tmux:
         return done.stdout
 
     def session_shell(self) -> str:
-        """The SHELL every session gets: `/bin/bash` where the agents' host can run it, else
-        `/bin/sh`. Looked up where the sessions run (over ssh on an ssh host) and kept once
-        the host answered; a look that fails gives `/bin/sh` this time and is tried again."""
+        """The SHELL every session gets: `/bin/bash` where the agents' user can run it, else
+        `/bin/sh` (`probe_shell`, as that user: through sudo in the agent_user layout, over
+        ssh on an ssh host). Kept once the agents' side answered; no answer gives `/bin/sh`
+        for this start and is asked again at the next."""
         if self.shell is not None:
             return self.shell
-        if self.as_user.here:
-            self.shell = BASH if os.access(BASH, os.X_OK) else SH
-            return self.shell
-        try:
-            done = self._exec(["test", "-x", BASH])
-        except (OSError, subprocess.TimeoutExpired):
+        probe = probe_shell(self.as_user, self._exec)
+        if probe.shell is None:
             return SH
-        if done.returncode == SSH_UNREACHABLE:
-            return SH
-        self.shell = BASH if done.returncode == 0 else SH
+        self.shell = probe.shell
         return self.shell
 
-    def environment(self) -> list[str]:
-        """The server's whole environment: what every agent session starts with."""
+    def environment(self, shell: str | None = None) -> list[str]:
+        """The server's whole environment: what every agent session starts with. `shell`:
+        the one this start resolved, so the environment and `default-shell` agree."""
         return [
             f"HOME={self.home}",
             f"PATH={self.agent_path}",
-            f"SHELL={self.session_shell()}",
+            f"SHELL={shell or self.session_shell()}",
             "LANG=C.UTF-8",
             "TERM=xterm-256color",
         ]
@@ -311,11 +345,13 @@ class Tmux:
         extra = [arg for key, value in env.items() for arg in ("-e", f"{key}={value}")]
         # A pane's SHELL is tmux's `default-shell`, not the -e or server value: set it in the
         # same call, so a server an older runner started without SHELL (and so with the
-        # account's nologin) gives this session the right one too.
+        # account's nologin) gives this session the right one too. Resolved once per start:
+        # a probe that fails and then answers must not give the two different values (A2352).
+        shell = self.session_shell()
         command = [
-            "env", "-i", *self.environment(),
+            "env", "-i", *self.environment(shell),
             "tmux", "-S", str(self.socket), "-f", str(self.conf),
-            "set-option", "-g", "default-shell", self.session_shell(), ";",
+            "set-option", "-g", "default-shell", shell, ";",
             "new-session", "-d", "-s", name, "-c", str(cwd),
             *extra, "--", *argv,
         ]  # fmt: skip

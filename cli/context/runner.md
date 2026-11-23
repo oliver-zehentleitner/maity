@@ -7409,10 +7409,26 @@ login it opens.
 
 `Tmux.environment` (the one environment every session of every harness
 starts with, local, agent_user and ssh) carries `SHELL=/bin/bash` where the
-agents' host can run it, else `SHELL=/bin/sh`, looked up on that host (over
-ssh for an ssh target), and every start sets tmux's `default-shell` to the
-same value in the same tmux call. `runner check` names the value and calls
-it an error when it is or links to nologin or false.
+agents' user can run it, else `SHELL=/bin/sh`, and every start sets tmux's
+`default-shell` to the same value in the same tmux call. The value is
+resolved once per start, so the two never differ. `runner check` names the
+value and calls it an error when it is or links to nologin or false.
+
+After review A2352 of #2160, three refinements:
+- The probe (`tmux.probe_shell`) runs as the agents' user wherever that is
+  not the runner's own user: through sudo in the agent_user layout, over ssh
+  on an ssh host, with the same command run through `AsUser.argv`. A check by
+  the runner's own `os.access` would miss an ACL that shuts the agents' user
+  out, so the check would pass while starts fail.
+- The probe prints its answer, so a probe that prints nothing (sudo refused,
+  ssh's 255) is "no answer", never "cannot run". A start without an answer
+  takes `/bin/sh` for that start and asks again at the next; an answer is
+  kept.
+- `check` has an outcome of its own, a warning and no ok, for a shell that
+  runs but whose target `readlink -f` could not read: nologin or false is
+  not ruled out then, so an ok would claim more than was checked. The same
+  warning covers no answer, which differs from the error for a shell the
+  agents' user cannot run.
 
 What is confirmed and what is derived: the symptom and the nologin account
 are from the card. That OpenCode's commands go through the session's shell
