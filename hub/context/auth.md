@@ -793,7 +793,7 @@ that a member that calls is never shown away.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); review of #1756 by maity-review-team-grok#axvg, 2026-11-13 (the link outlived a password change; a lowered cap refused without an alert); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; `auth/password_resets.py` `password_changed`; docs/api.md §2.8.6, §18.6
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); review of #1756 by a reviewer, 2026-11-13 (the link outlived a password change; a lowered cap refused without an alert); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; `auth/password_resets.py` `password_changed`; docs/api.md §2.8.6, §18.6
 **Revisit when:** the 15-minute window or the per-session limit changes, a human asks for the cap per instance in the admin settings rather than the environment, or the hub keeps a sliding day for another limit
 **See:** auth.md#two-factor-sign-in-whether-a-session-must-enrol-is-worked-out-per-call-and-the-second-step-re-keys-the-session-in-place — ff8b8099-8384-4d68-906a-1b4d7b17bc47 — as of 2026-11-13
 

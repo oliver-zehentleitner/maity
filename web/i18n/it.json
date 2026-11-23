@@ -3316,7 +3316,7 @@
   "observe.title": "Segui in lettura in {project}",
   "org.by_area": "(per area)",
   "org.empty": "Nessun membro.",
-  "org.instance.label": "Sessioni di {address}",
+  "org.instance.label": "Sessioni di {address}: {state}",
   "org.intro": "Criteri: {preset}. Calcolati da chi risponde a chi e da chi possiede quale area.",
   "org.reread_failed": "Impossibile rileggere i membri: {reason}",
   "org.face.label": "Mostra l'organizzazione come",
@@ -3327,7 +3327,6 @@
     "other": "{count} prese in carico aperte"
   },
   "org.fleet.dormant": "a riposo",
-  "org.fleet.dot": "{address}: {state}",
   "org.fleet.empty": "Non hai agenti in questo progetto.",
   "org.fleet.lead": "istanza responsabile",
   "org.fleet.no_instances": "nessuna istanza attiva",

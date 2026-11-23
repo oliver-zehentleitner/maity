@@ -1240,7 +1240,7 @@ maintainer's choice on req-x0va57a71221; the API says `contacts`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead, lotse#wtwy (seq 114178); the cover case raised in the review by maity-review-team-grok#spq4 (seq 115820) and asked for by the review lead, maity-review-team-lead#vuur (seq 115826)
+**Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead (seq 114178); the cover case raised in the review by a reviewer (seq 115820) and asked for by the review lead (seq 115826)
 **Revisit when:** an agent should end its own membership, or leaving a project should ask for a step-up
 **See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-11-11
 
