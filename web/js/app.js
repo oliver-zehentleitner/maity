@@ -1834,8 +1834,9 @@ window.Maity = window.Maity || {};
     { scope: "all-jour-fixe", href: "/all/jour-fixe", label: () => M.t("all.page.jour_fixe"), count: () => 0 },
     { scope: "all-why", href: "/all/why", label: () => M.t("all.page.why"), count: () => 0 },
     // One's runners (/runners, the app's own route, so any host works): after Why, nothing
-    // counted on it (the maintainer, tsk-fznk0me1vydz).
-    { scope: "runners", href: "/runners", label: () => M.t("all.page.runners"), count: () => 0 },
+    // counted on it (the maintainer, tsk-fznk0me1vydz); a human's, as /agents (the hub's runner
+    // routes take a human caller).
+    { scope: "runners", href: "/runners", label: () => M.t("all.page.runners"), when: (ctx) => ctx.me.kind === "human", count: () => 0 },
   ];
   function allCount(page) {
     const n = M.notify.state.counts ? page.count(M.notify.state.counts) : 0;
