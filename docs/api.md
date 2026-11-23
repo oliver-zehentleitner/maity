@@ -17775,7 +17775,9 @@ when the owner reads a closed chat they have left.
 - **Who manages.** The owner renames the chat and adds or removes
   participants. An agent adds nobody. An agent may leave (`DELETE` on
   its own id) and may not remove anyone else, the owner included
-  (`forbidden`, `humans_only`). Adding someone already in the chat
+  (`forbidden`, `humans_only`). Anyone who cannot see the chat gets
+  `not_found` first, as on the chat's other routes, whether the chat
+  exists or not. Adding someone already in the chat
   answers `200` with the chat as it is. Removing someone who is not in
   it answers `200` with the last participation, or `not_found` when
   there was none. The same checks as creation apply to the one id,
