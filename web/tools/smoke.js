@@ -3791,8 +3791,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const t = win.Maity.org && win.Maity.org.drawTree ? win.Maity.org.drawTree(orgCtx) : null;
     const orgLinks = t ? t.querySelectorAll(".org-instances a.member-instance") : [];
     expect(JSON.stringify(orgLinks.map((a) => a.textContent)) === JSON.stringify(["#live", "#rest"])
-      && orgLinks[0].getAttribute("href").includes("team/ag1/sessions/live") && orgLinks[0].getAttribute("aria-label") === "Sessions of @ag#live",
-      "org: an agent's live instances are links to their Sessions, a revoked one is not listed " + orgLinks.map((a) => a.getAttribute("href")));
+      && orgLinks[0].getAttribute("href").includes("team/ag1/sessions/live") && orgLinks[0].getAttribute("aria-label") === "Sessions of @ag#live: offline"
+      && orgLinks[1].getAttribute("aria-label") === "Sessions of @ag#rest: dormant",
+      "org: an agent's live instances are links to their Sessions named with address and state, a revoked one is not listed "
+        + orgLinks.map((a) => a.getAttribute("href") + " " + a.getAttribute("aria-label")));
     const orgAsleep = t ? t.querySelectorAll(".org-instance") : [];
     expect(orgAsleep.length === 2 && !orgAsleep[0].querySelector(".member-dormant") && orgAsleep[1].querySelector(".member-dormant"),
       "org: only the dormant instance says it is dormant");
@@ -3823,7 +3825,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Organisation"),
     "org tree by areas, policy preset, on the Team page's Organisation tab; the Team tab marked in the header, no tab of its own there");
   // One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): the tree of one's own agents alone under
-  // oneself; someone else's boss a stub and nothing more; instances as dots with presence, the lead ringed.
+  // oneself; someone else's boss a stub and nothing more. Since tsk-zsbe48ty4ces it is the Team page's
+  // tree with only these members fed in: the same row, each instance `#abcd` with its status dot.
   {
     const fleetMembers = [
       { id: "me", kind: "human", display_name: "Me Myself", trust: "owner", role: "manager", areas: [] },
@@ -3843,23 +3846,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       members.forEach((m) => { c.memberById[m.id] = m; });
       return c;
     };
-    const F = win.Maity.org && win.Maity.org.drawFleet ? win.Maity.org.drawFleet(fleetCtx(fleetMembers)) : null;
-    const fNodes = F ? F.querySelectorAll("li.fleet-member") : [];
+    const draw = (members, scope) => (win.Maity.org && win.Maity.org.drawTree ? win.Maity.org.drawTree(fleetCtx(members), scope) : null);
+    const F = draw(fleetMembers, "own");
+    const fNodes = F ? F.querySelectorAll("li.org-member") : [];
     const fDepth = (id) => { let d = 0; let n = fNodes.find((x) => x.getAttribute("data-member") === id); while (n && n !== F) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return n ? d : -1; };
     expect(F && JSON.stringify(fNodes.map((n) => n.getAttribute("data-member")).sort()) === JSON.stringify(["a1", "a2", "a3", "a4", "a5", "a6", "me"])
       && fDepth("me") === 0 && fDepth("a1") === 1 && fDepth("a4") === 1 && fDepth("a5") === 1 && fDepth("a6") === 1 && fDepth("a2") === 2 && fDepth("a3") === 2,
       "fleet: one's own agents alone under oneself, by reports_to and by area among them; someone else's area or report places nobody "
         + fNodes.map((n) => n.getAttribute("data-member") + ":" + fDepth(n.getAttribute("data-member"))).join(" "));
-    const fNode = (id) => fNodes.find((x) => x.getAttribute("data-member") === id).querySelector(".fleet-node");
-    const dots = F ? fNode("a1").querySelectorAll("a.fleet-dot") : [];
-    expect(dots.length === 3 && dots.map((a) => a.className).join("|") === "fleet-dot online lead|fleet-dot away|fleet-dot dormant"
-      && dots[0].getAttribute("href").endsWith("/owner/project/team/a1/sessions/x") && dots[0].getAttribute("aria-label") === "@a1h#x: online, lead instance"
-      && dots[2].getAttribute("aria-label") === "@a1h#z: dormant",
-      "fleet: the live instances as dots with their presence, the lead marked, dormant its own, each a link to its sessions " + dots.map((a) => a.className + " " + a.getAttribute("aria-label") + " " + a.getAttribute("href")).join(" | "));
+    const fNode = (id) => fNodes.find((x) => x.getAttribute("data-member") === id).querySelector(".org-node");
+    const dots = F ? fNode("a1").querySelectorAll("a.member-instance") : [];
+    expect(dots.length === 3 && dots.map((a) => a.className).join("|") === "member-instance org-dot online lead|member-instance org-dot away|member-instance org-dot dormant"
+      && dots.map((a) => a.textContent).join(" ") === "#x #y #z"
+      && dots[0].getAttribute("href").endsWith("/owner/project/team/a1/sessions/x") && dots[0].getAttribute("aria-label") === "Sessions of @a1h#x: online, lead instance"
+      && dots[2].getAttribute("aria-label") === "Sessions of @a1h#z: dormant" && dots[2].parentNode.querySelector(".member-dormant"),
+      "one tree: the live instances as #abcd with a dot in their presence, the lead ringed, dormant its own, each a link to its sessions "
+        + dots.map((a) => a.className + " " + a.textContent + " " + a.getAttribute("aria-label") + " " + a.getAttribute("href")).join(" | "));
     expect(F && text(fNode("a1")).includes("web/") && text(fNode("a1")).includes("3 open claims") && text(fNode("a2")).includes("0 open claims")
-      && text(fNode("a4")).includes("no active instance"),
-      "fleet: an agent's area and its open claims, the revoked instance's not counted; none active said");
-    const stubs = F ? F.querySelectorAll(".fleet-stub") : [];
+      && text(fNode("a4")).includes("no active instance") && !fNode("me").querySelector(".org-claims, .org-none, .org-instances")
+      && fNode("me").querySelector("span.dot.human") && text(fNode("me").querySelector("span.role")) === win.Maity.trust.words(fleetMembers[0]),
+      "one tree: an agent's area and its open claims, the revoked instance's not counted; none active said; the caller's row a human's, with dot and role");
+    // Both tabs draw the same row for the same member: Team (every member) and Agents (one's own) differ only in who is fed in.
+    const T = draw(fleetMembers, "team");
+    const tNode = (id) => (T ? T.querySelectorAll("li.org-member").find((x) => x.getAttribute("data-member") === id) : null);
+    const dumpEl = (n) => (n instanceof El ? "<" + n.tagName + " " + n.className + " " + JSON.stringify(n.attrs) + ">" + n.childNodes.map(dumpEl).join("") + "</>" : String(n.textContent));
+    const differ = ["me", "a1", "a2", "a3", "a4", "a5", "a6"].filter((id) => !tNode(id) || dumpEl(tNode(id).querySelector(".org-node")) !== dumpEl(fNode(id)));
+    expect(F && T && !differ.length && tNode("f1") && !T.querySelector(".org-stub") && !win.Maity.org.drawFleet,
+      "one tree: Team and Agents draw the same row for each member both show, Team all members and no stub; no drawFleet left " + differ.join(","));
+    const stubs = F ? F.querySelectorAll(".org-stub") : [];
     // Nothing of the other side but the handle: not its name, in text or in any attribute, and no link to it.
     const attrsOf = (root) => [root].concat(root.all ? root.all() : []).map((e) => JSON.stringify(e.attrs || {}) + " " + (e.className || "")).join(" ");
     const stubOf = (id) => stubs.filter((p) => p.parentNode.getAttribute("data-member") === id).map(text).join("|");
@@ -3869,15 +3883,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && !attrsOf(F).includes("f1\"") && !attrsOf(F).includes("o2\""),
       "fleet: a boss of someone else's, agent or human, is its handle as text and nothing else of theirs, in text or attributes; one the list lacks is said neutrally "
         + stubs.map(text).join(" | "));
-    const E = win.Maity.org && win.Maity.org.drawFleet ? win.Maity.org.drawFleet(fleetCtx(fleetMembers.filter((m) => m.owner_id !== "me"))) : null;
-    expect(E && E.classList.contains("fleet-empty") && text(E) === "You have no agents in this project." && !E.querySelector("ul"),
+    const E = draw(fleetMembers.filter((m) => m.owner_id !== "me"), "own");
+    expect(E && E.classList.contains("org-empty") && text(E) === "You have no agents in this project." && !E.querySelector("ul"),
       "fleet: without agents of one's own here one sentence, no tree");
   }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/organisation"); for (let k = 0; k < 6; k++) await tick();
   const agentsTabs = agentsTabRow;
   expect(JSON.stringify(agentsTabs()) === JSON.stringify([["Agents", "#/maintainer/maity/agents", null], ["Managed agents", "#/maintainer/maity/placements", null],
     ["Organisation", "#/maintainer/maity/agents/organisation", "page"]])
-    && (main.querySelector(".fleet-tree") || main.querySelector(".fleet-empty")) && !main.querySelector("table.agents-list")
+    && (main.querySelector(".org-tree") || main.querySelector(".org-empty")) && !main.querySelector("table.agents-list")
     && header.querySelectorAll("nav.views a").find((a) => /^Agents/.test(a.textContent)).getAttribute("aria-current") === "page",
     "fleet: the Agents page's Organisation tab draws the fleet, the Agents tab in the header marked " + JSON.stringify(agentsTabs()));
   await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
