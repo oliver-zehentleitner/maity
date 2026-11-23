@@ -29,7 +29,7 @@ from maity_hub import agent_owners, cards, clock, forge, takeovers
 from maity_hub import tables as t
 from maity_hub.events import emit
 from maity_hub.instances import token
-from maity_hub.scopes import role_tokens
+from maity_hub.scopes import OUTSIDE, role_tokens
 from maity_hub.views import principal_id
 
 # Who moves a card to done (§6.4) as audience terms; `holder` is the holding instance.
@@ -225,8 +225,7 @@ def _blocked_by(conn: Connection, card: Any, project: Any) -> list[str]:
 
 def outsiders_work(conn: Connection, card: Any, project: Any) -> bool:
     """§2.3 "Own approvals": an outside agent holds the card, or filed its current report,
-    judged as the card and its members stand now. An outside agent is one whose owner holds
-    no active membership of the project (trust `outside` is not built yet)."""
+    judged as the card and its members stand now (`_outside_agent`)."""
     agents: list[str] = []
     if card.claim_holder is not None:
         held = conn.execute(
@@ -241,8 +240,18 @@ def outsiders_work(conn: Connection, card: Any, project: Any) -> bool:
 
 
 def _outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
-    """An agent whose owner is no member of the project; one whose profile the hub cannot
-    find counts as outside, since nothing then shows it is the project's own."""
+    """An outside agent (§2.3 "Own approvals"): one with trust `outside` in the project (its
+    active membership, else its most recent one), which stays outside when its owner later
+    becomes a member, or one whose owner is no member of the project. One whose profile the
+    hub cannot find counts as outside, since nothing then shows it is the project's own."""
+    trust = conn.execute(
+        select(t.membership.c.trust)
+        .where(t.membership.c.project_id == project.id, t.membership.c.agent_id == agent_id)
+        .order_by(t.membership.c.active.is_(True).desc(), t.membership.c.joined_at.desc())
+        .limit(1)
+    ).scalar()
+    if trust == OUTSIDE:
+        return True
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar()

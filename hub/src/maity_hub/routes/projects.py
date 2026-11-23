@@ -289,6 +289,8 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
         return "not_a_member"
     if found.trust == restricted.GUEST:
         return "guest"
+    if found.trust not in restricted.SEATED_TRUSTS:  # an outsider's agent (§2.3 "Outside")
+        return "outside"
     if found.agent_id is not None and mode == "nobody_except":
         owner = conn.execute(
             select(t.membership.c.trust)
@@ -299,7 +301,7 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
                 t.membership.c.active.is_(True),
             )
         ).first()
-        if owner is None or owner.trust == restricted.GUEST:
+        if owner is None or owner.trust not in restricted.SEATED_TRUSTS:
             return "owner_not_a_member"
     return None
 

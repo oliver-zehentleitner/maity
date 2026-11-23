@@ -164,10 +164,10 @@ def still_holds(conn: Connection, row: Any, project: Any, member: Any) -> str | 
     changed since it was issued. The fixed text of the first check that fails, for the log,
     or None. The creator is still no member, `joins_open` still holds, and the creator still
     owns the profile. A first join's role is still one `agent_owners.outside_role_allowed`
-    gives, and the
-    creator's agents, this join's own included, still fit `member_agents_max`. A join for an
-    agent that is a member by now adds an instance only to a membership with trust
-    `outside`. The profile's `allowed_projects` is checked by the exchange for every join."""
+    gives, and the creator's agents, this join's own included, still fit `member_agents_max`.
+    A join for an agent that is a member by now adds an instance only to a membership with
+    trust `outside` whose role `agent_owners.outside_role_allowed` still gives. The profile's
+    `allowed_projects` is checked by the exchange for every join."""
     from maity_hub.routes import joins  # the member rule's count, one rule for both
 
     if agent_owners.owner_is_member(conn, row.project_id, row.created_by):
@@ -180,7 +180,11 @@ def still_holds(conn: Connection, row: Any, project: Any, member: Any) -> str | 
     if owner != row.created_by:
         return "outsider: its creator no longer owns the profile"
     if member is not None:
-        return None if member.trust == OUTSIDE else "outsider: the agent is a member's"
+        if member.trust != OUTSIDE:
+            return "outsider: the agent is a member's"
+        if not agent_owners.outside_role_allowed(project, member.role, member.role_base):
+            return "outsider: the member's role is beyond outside_roles"
+        return None
     if not agent_owners.outside_role_allowed(project, row.role, None):
         return "outsider: its role is beyond outside_roles"
     held = joins.agents_held(conn, row.project_id, row.created_by) | {row.agent_id}

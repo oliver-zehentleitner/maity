@@ -78,6 +78,14 @@ def is_outside(conn: Connection, project: Any, row: Any) -> bool:
     )
 
 
+def bound_by_outside_roles(conn: Connection, project: Any, row: Any) -> bool:
+    """Whether the membership `row` is held to `outside_roles` (§6.2, §2.3 "Outside"): its own
+    trust is `outside`, whoever its owner is now, or its owner is no member. The one rule
+    `check_assignment`, `check_policy` and `refuse_lift` share; it reads the membership's own
+    trust, so a rejoin as a member's agent, §2.3's one way out of `outside`, leaves it."""
+    return bool(row.trust == OUTSIDE or is_outside(conn, project, row))
+
+
 def within_limits(project: Any, trust: str, role: str, role_base: str | None) -> bool:
     """What `outside_roles` lets an outsider's agent hold: trust `member` or `guest`, a role on
     the list, and one built on a base that works (never one that reviews, tests, manages,
@@ -177,11 +185,12 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
 
 def refuse_lift(conn: Connection, project: Any, row: Any) -> None:
     """No lift while the owner is no member and the agent may not stay (§6.2): `owner_not_member`
-    under `members`, `outside_owner` under `anyone` while it is beyond the limits."""
-    if not is_outside(conn, project, row):
+    under `members`, `outside_owner` under `anyone` while it is beyond the limits; and for an
+    agent with trust `outside` whose owner is a member by now, `outside_owner` while its role
+    is beyond `outside_roles` (`bound_by_outside_roles`)."""
+    if not bound_by_outside_roles(conn, project, row):
         return
-    mode = effective(conn, project)
-    if mode == "members":
+    if is_outside(conn, project, row) and effective(conn, project) == "members":
         raise invalid({"member": "owner_not_member"}, "the agent's owner is no member")
     if not within_limits(project, row.trust, row.role, row.role_base):
         raise invalid(
@@ -198,10 +207,9 @@ def check_assignment(conn: Connection, project: Any, row: Any, values: dict[str,
     `members` holds no limits."""
     if row.agent_id is None or not ({"trust", "role"} & values.keys()):
         return
-    if row.trust == OUTSIDE:
-        # Whatever the setting and wherever its owner is now: trust `outside` holds only a
-        # role `outside_roles` gives (§2.3 "Outside"); the trust itself never changes
-        # (`members.validate_assignment`).
+    if row.trust == OUTSIDE:  # `bound_by_outside_roles`, whatever the setting and the owner
+        # Trust `outside` holds only a role `outside_roles` gives (§2.3 "Outside"); the trust
+        # itself never changes (`members.validate_assignment`).
         if "role" in values and not outside_role_allowed(
             project, values["role"], values.get("role_base")
         ):
@@ -233,6 +241,6 @@ def check_policy(conn: Connection, project: Any, roles: list[str]) -> str | None
             t.membership.c.isolated_since.is_(None),
         )
     ):
-        if is_outside(conn, project, row) and row.role not in roles:
+        if bound_by_outside_roles(conn, project, row) and row.role not in roles:
             return "outside_owner"
     return None

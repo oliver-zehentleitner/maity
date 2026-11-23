@@ -56,6 +56,7 @@ from maity_hub import (
     outsiders,
     product_line,
     project_roles,
+    public_cards,
     render,
     restricted,
     subagents,
@@ -318,7 +319,7 @@ def _outsider_join(
         raise member_join_limit("takes_over")
     _check_takes_over(conn, body, project.id, agent_id, existing)
     _check_instance(conn, body, existing, outsider.principal_id)
-    handed = _check_handover(conn, body.handover, project.id)
+    handed = _check_handover(conn, body.handover, project.id, outsider=True)
     if existing is None:
         _require_slot(conn, project, outsider.principal_id, agent_id)
     return _issue(
@@ -353,6 +354,10 @@ def _outside_values(
     if existing is not None:
         if existing.trust != OUTSIDE:  # a membership an admin or a member's join made
             raise member_join_limit("agent")
+        # Within the same limits now (§3.1): a role the admins took off `outside_roles` since
+        # the first join gets no new instance, as a first join would get no membership.
+        if not agent_owners.outside_role_allowed(project, existing.role, existing.role_base):
+            raise member_join_limit("role")
         asked = {} if body.role is None else {"role": body.role}
         return _as_member(body, asked, existing)
     role = body.role or "coder"
@@ -478,14 +483,21 @@ def _check_takes_over(
 
 
 def _check_handover(
-    conn: Connection, value: str | int | None, project_id: str
+    conn: Connection, value: str | int | None, project_id: str, *, outsider: bool = False
 ) -> dict[str, Any] | None:
     """`handover` (§3.1) as the `{kind, id}` the membership keeps: a card of this project,
-    or a message of it that is addressed to everyone. Nothing of either is stored."""
+    or a message of it that is addressed to everyone. Nothing of either is stored.
+
+    An outsider's join (§3.1, "An outsider's agent") names a card only, one the outsider
+    reads (`public_cards.outside_clause`): a card it does not read answers exactly as one
+    that does not exist, and a message is `invalid` (`card_only`) whatever its `seq`, so the
+    answer tells an outsider nothing about what it cannot read."""
     if value is None:
         return None
     if isinstance(value, bool):
         raise invalid({"handover": "not_found"}, "a card id or the seq of a message")
+    if outsider and isinstance(value, int):
+        raise invalid({"handover": "card_only"}, "an outsider's join hands over a card")
     if isinstance(value, int):
         row = conn.execute(
             select(t.event.c.audience, t.event.c.redacted).where(
@@ -499,8 +511,11 @@ def _check_handover(
         if row.redacted or "all" not in (row.audience or []):
             raise invalid({"handover": "not_readable"}, "the message is not addressed to all")
         return {"kind": "message", "id": value}
+    readable = [public_cards.outside_clause()] if outsider else []
     found = conn.execute(
-        select(t.card.c.id).where(t.card.c.id == value, t.card.c.project_id == project_id)
+        select(t.card.c.id).where(
+            t.card.c.id == value, t.card.c.project_id == project_id, *readable
+        )
     ).first()
     if found is None:
         raise invalid({"handover": "not_found"}, "no such card in this project")

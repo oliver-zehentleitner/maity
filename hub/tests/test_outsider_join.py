@@ -578,6 +578,176 @@ def test_a_plain_assign_names_it_and_gives_no_claim(
     assert _reason(refused) == "not_open_to_outsiders"
 
 
+def _member_now(engine: Engine, human: flow.Human) -> None:
+    factory.membership(engine, _project(engine).id, "member", human_id=human.id)
+
+
+def _card_row(engine: Engine, card_id: str) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+
+
+def _outsiders_work(engine: Engine, card_id: str) -> bool:
+    from maity_hub import merged
+
+    with engine.connect() as conn:
+        return merged.outsiders_work(conn, _card_row(engine, card_id), _project(engine))
+
+
+def test_an_instance_join_rechecks_the_role_against_outside_roles_now(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.1: a new instance's join is within the same limits now. A role the admins took off
+    `outside_roles` since the first join gets no new instance, at creation and, for a join
+    issued before, at the exchange."""
+    _policy(owner, agent_owners="anyone", outside_roles=["coder", "designer"])
+    agent = _exchange(make_client, _join(outsider, role="designer").json())
+    issued = _join(outsider, agent={"id": agent.id}, replaces=agent.instance)
+    assert issued.status_code == 201, issued.text
+    with migrated.begin() as conn:  # narrowed while the agent is at work (as after an isolation)
+        conn.execute(
+            update(t.project).where(t.project.c.slug == "maity").values(outside_roles=["coder"])
+        )
+    refused = _join(outsider, agent={"id": agent.id}, replaces=agent.instance)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "member_join_limit", "field": "role"}
+    _refused_at_exchange(make_client, issued.json())
+
+
+def test_a_card_the_outsider_does_not_read_answers_as_a_missing_one(
+    on: None, owner: flow.Human, outsider: flow.Human, migrated: Engine
+) -> None:
+    """An outsider's `handover` names a card it reads: one it does not read (a `security`
+    card not done) answers exactly as one that does not exist, status, code and body."""
+    _opt_in(owner)
+    project_id = _project(migrated).id
+    with migrated.connect() as conn:
+        writer = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id, t.membership.c.human_id == owner.id
+            )
+        ).scalar_one()
+    hidden = factory.card(migrated, project_id, writer, title="Hidden", label="security")
+    shown = _card(owner, "Shown")
+    on_hidden = _join(outsider, handover=hidden)
+    on_missing = _join(outsider, handover="tsk-000000000000")
+    assert on_hidden.status_code == 400, on_hidden.text
+    assert (on_hidden.status_code, on_hidden.json()) == (on_missing.status_code, on_missing.json())
+    assert on_hidden.json()["error"]["details"]["fields"] == {"handover": "not_found"}
+    assert _join(outsider, handover=shown).status_code == 201
+
+
+def test_an_outsiders_join_hands_over_no_message(
+    on: None, owner: flow.Human, outsider: flow.Human
+) -> None:
+    """A message `seq` is `invalid` (`card_only`) for an outsider, whatever the seq names."""
+    _opt_in(owner)
+    for seq in (1, 999999):
+        refused = _join(outsider, handover=seq)
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"handover": "card_only"}
+
+
+def test_an_outsiders_agent_is_never_in_the_restricted_set(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The restricted set names its trusts (§6.1): an agent with trust `outside` is not in it,
+    even under `all_except` with its owner a member by now."""
+    from maity_hub import restricted
+
+    agent = _outside_agent(make_client, owner, outsider)
+    _member_now(migrated, outsider)
+    project = _project(migrated)  # read before the write: SQLite has one writer
+    settings = {**(project.settings or {}), "restricted_access": {"mode": "all_except"}}
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project.id).values(settings=settings)
+        )
+    with migrated.connect() as conn:
+        found = restricted.resolve(conn, _project(migrated))
+    assert _row(migrated, agent.id).id not in found
+    assert found  # the counter-check of the setup: the set holds the project's own members
+
+
+def test_merged_closes_counts_an_outsiders_agent_as_outside_after_its_owner_joins(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3: trust `outside` stays outside when its owner becomes a member, so its card is
+    still outsiders' work for `merged_closes` (merged.py)."""
+    agent = _outside_agent(make_client, owner, outsider)
+    card = _card(owner)
+    assert owner.post(f"{P}/tasks/{card}/claim", {"holder": agent.id}).status_code == 200
+    assert _outsiders_work(migrated, card) is True
+    _member_now(migrated, outsider)
+    assert _outsiders_work(migrated, card) is True
+
+
+def test_a_rejoin_as_an_outsiders_agent_stays_outside(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    assert owner.delete(f"{P}/members/{agent.id}").status_code == 200
+    again = _exchange(make_client, _join(outsider, agent={"id": agent.id}).json())
+    assert _row(migrated, again.id).trust == "outside"
+    card = _card(owner)
+    assert _reason(again.post(f"{P}/tasks/{card}/claim", {})) == "not_open_to_outsiders"
+
+
+def test_a_rejoin_as_a_members_agent_is_the_one_way_out(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3: removed, then joined again by its owner, a member now, as a member's agent, it
+    is a member's agent: trust `member`, its claim taken, its card not outsiders' work."""
+    agent = _outside_agent(make_client, owner, outsider)
+    _member_now(migrated, outsider)
+    assert owner.delete(f"{P}/members/{agent.id}").status_code == 200
+    again = _exchange(make_client, flow.join(outsider, "maity", agent={"id": agent.id}))
+    assert _row(migrated, again.id).trust == "member"
+    card = _card(owner)
+    assert again.post(f"{P}/tasks/{card}/claim", {}).status_code == 200
+    assert _outsiders_work(migrated, card) is False
+
+
+def test_narrowing_outside_roles_counts_an_outsiders_agent_whose_owner_joined(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """One rule for check_assignment, check_policy and refuse_lift (§6.2): the membership's
+    own trust `outside` binds it to `outside_roles` whoever its owner is now, so a list that
+    leaves its role off is refused while it works."""
+    _policy(owner, agent_owners="anyone", outside_roles=["coder", "designer"])
+    _exchange(make_client, _join(outsider, role="designer").json())
+    _member_now(migrated, outsider)
+    narrowed = owner.patch(P, {"policy": {"outside_roles": ["coder"]}, "reason": "narrow"})
+    assert narrowed.status_code == 400, narrowed.text
+    assert narrowed.json()["error"]["details"]["fields"] == {"outside_roles": "outside_owner"}
+
+
+def test_an_agents_assign_of_its_owners_expired_card_to_it_is_humans_only(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Same owner on every side, so §6.19's `cross_owner` does not answer first: the interim's
+    `humans_only` does, before the holder's instance is chosen (§6.5)."""
+    holder = _outside_agent(make_client, owner, outsider)
+    receiver = _exchange(make_client, _join(outsider).json())
+    admin = flow.agent(make_client, owner, trust="admin", role="coder")
+    with migrated.begin() as conn:  # an admin agent of the same owner, as the setup needs
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == admin.id)
+            .values(owner_id=outsider.id)
+        )
+    card = _card(owner)
+    assert owner.post(f"{P}/tasks/{card}/claim", {"holder": holder.id}).status_code == 200
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card)
+            .values(lease_until=clock.now() - timedelta(minutes=1))
+        )
+    refused = admin.post(f"{P}/tasks/{card}/assign", {"assignee": receiver.id})
+    assert (refused.status_code, _reason(refused)) == (403, "humans_only"), refused.text
+
+
 def test_its_own_claim_is_refused_before_the_cards_state(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
 ) -> None:
