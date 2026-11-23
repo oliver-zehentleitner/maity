@@ -873,25 +873,28 @@ commands, `loadtest`, `attachments copy-to-s3` and its bucket clean-up) says of 
 only the URL with its password masked and its query string left out (`config.redact_database_url`),
 the original exception's class, the cause category and the driver's codes (`errors.driver_reason`,
 `errors.driver_fields`). The driver's own message is never printed or logged, not even its first
-line. Not covered: PyMySQL refuses a query option it does not take with a plain `TypeError` or
-`AttributeError`, not a database error, and the command ends with that traceback.
+line. Not covered: on MariaDB, a query option that PyMySQL or SQLAlchemy's MySQL dialect does not
+take, or a value it cannot use, ends in a plain Python error (`TypeError`, `ValueError`,
+`AttributeError`, `FileNotFoundError`), not a database error, and the command ends with its
+traceback, which can quote that value.
 
 **Reason:** the server and the CLI followed opposite rules for the same text. A malformed URL makes
 the driver quote the whole connection string, the password included, and `migrate` usually runs as
 a Kubernetes job or init container whose stderr ends up in the cluster's log store, which is the
 case the log's rule guards against. `serve` runs under a supervisor too. The query string is left
 out whole because the drivers take a password there as well (`password`, `passwd`, `sslpassword`,
-in any case and percent-encoding).
+also in percent-encoded forms), and any other key can carry a secret too.
 
 **Rejected alternatives:**
 - The driver's first line on the operator's own terminal, since the operator holds the URL anyway:
   the same command's output is a stored log as soon as it runs as a job, and the CLI cannot tell.
 - A `--verbose` flag that prints the text with a warning: not built; the operator who needs the
   text can connect with the database's own client.
-- Masking the query parameters that carry a secret by name: each driver accepts its own names,
-  cases and encodings, and a list would miss the next one; `?***` still shows that a query was set.
-- Catching `TypeError` and `AttributeError` around every command's database work for the one-line
-  form: it would also turn the hub's own bugs into one line without a traceback.
+- Masking the query parameters that carry a secret by name: each driver accepts its own names and
+  percent-encoded forms, any other key can carry a secret too, and a list would miss the next one;
+  `?***` still shows that a query was set.
+- Catching those plain Python errors around every command's database work for the one-line form:
+  it would also turn the hub's own bugs into one line without a traceback.
 
 ## The pool keeps connections warm, and a host name that does not resolve is tried once more
 

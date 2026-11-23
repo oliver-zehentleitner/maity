@@ -130,8 +130,9 @@ def test_redaction_masks_the_password() -> None:
     ],
 )
 def test_redaction_leaves_the_query_string_out(url: str) -> None:
-    """The drivers take a password in the query string too, under several names, cases and
-    encodings; the redaction shows none of the query, only that there was one."""
+    """The drivers take a password in the query string too, under several names and in
+    percent-encoded forms, and any other key can carry a secret; the redaction shows none of the
+    query, only that there was one."""
     shown = redact_database_url(normalize_database_url(url))
     assert shown.endswith("@db/maity?***"), shown
     assert "s3cret" not in shown and "pass" not in shown.lower()

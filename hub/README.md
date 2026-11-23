@@ -141,9 +141,10 @@ else `unclassified`) and the driver's codes, as the hub's log names it; a
 missing driver is named by its module. The driver's own message is never
 printed: it can quote the connection string with the password. For the
 full text, connect with the database's own client. Not covered: on MariaDB,
-PyMySQL refuses an option in the URL's query string that it does not take
-with a plain Python error, not a database error, and the command ends with
-its traceback.
+an option in the URL's query string that PyMySQL or SQLAlchemy's MySQL
+dialect does not take, or a value it cannot use, ends in a plain Python
+error, not a database error, and the command ends with its traceback, which
+can quote that value.
 
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is
