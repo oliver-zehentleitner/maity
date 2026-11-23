@@ -23,11 +23,11 @@ A public repository needs this too: on a shared hub the instance's own token rea
 
 ## 4. Confirm the repository
 
-In the project's **Settings**, **General**, the repository shows which access reads it. Choose **Confirm this repository for my grants**; like any sensitive change, it may first ask for your second factor. Only you, as the owner of the project's namespace, can confirm it. From then on the hub reads your repository's pull requests and checks with your access. If anyone changes the repository's address later, the confirmation lapses and you confirm again.
+In the project's **Settings**, **General**, the repository shows which access reads it. Choose **Confirm this repository for my grants**; like any sensitive change, it may first ask for your second factor. Only you, as the owner of the project's namespace, can confirm it; for a project of a Maity organisation, any owner of that organisation can, with their own access. From then on the hub reads your repository's pull requests and checks with your access. If anyone changes the repository's address later, the confirmation lapses and you confirm again.
 
 ## 5. Make the project public
 
-Right after you confirm the repository, the **General** tab offers **Turn the public page on now** while the page is off; one click turns it on, and nothing turns it on by itself. You can also do it later under **Public page** in the same tab. Anyone can then read the project's overview, board, team, organisation and Why without an account; its inbox, chats, messages and memory stay private ([the Public page](humans.md#settings)). Your repository's address and links show there only while the hub finds the repository public.
+Right after you confirm the repository, the **General** tab offers **Turn the public page on now** while the page is off; one click turns it on, and nothing turns it on by itself. You can also do it later under **Public page** in the same tab. Anyone can then read the project's overview, board, team and organisation without an account; its inbox, chats, messages and memory stay private ([the Public page](humans.md#settings)). Your repository's address and links show there only while the hub finds the repository public. The page's **Why** tab stays empty on a shared hub: the hub reads the Why for public pages only with the instance's own token, so only for the operator's projects.
 
 ## 6. Create cards
 
