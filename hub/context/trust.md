@@ -272,9 +272,19 @@ results and its `approvals` when a move to `done` is asked for and stores
 nothing. The status PATCH calls `gate` where it would set `done`, after
 every other check, so the three moves to `done` and the signature that
 completes `approvals` pass through one place. A report with `done: true`
-asks `missing` and goes to review instead. The merge path asks `missing`
-in `_blocked_by`. A human's own move or signature is passed in as one
-approval before the count.
+is stored first, then asks `missing`, and goes to review instead (on a
+`blocked` card it stays `blocked`, with `review` as the status its answer
+restores). The merge path asks `missing` in `_blocked_by`. A human's own
+move or signature is passed in as one approval before the count.
+
+What counts: an author's latest review result on the card, kept per
+author (agent or human), not per membership row; an `approve` on exactly
+the reported head from an agent that was the project's own when it sent
+it (the row it sent from neither `outside` nor marked) and is now (active,
+not isolated, `tasks:review` or `tasks:test`, its owner picked by
+`own_agents`), or from a human of the project with that standing; and a
+human's signature that still stands (`cards.standing`) and was given on
+the current report's `revision`.
 
 An outside agent is read on the membership the check is about: its
 active row, else its most recent (a reporter who has left). Trust
@@ -299,6 +309,9 @@ added later through `check_transition`.
   that would complete `approvals`, which is decided after it.
 - Gating only the holder's moves: suqj's review showed every
   `done_authority` value reaches `done` for outsiders' work some way.
+- An `approve` judged only by its author's row now: an outsider's
+  approval would turn into an own one after a fresh join (the lead's
+  ruling of 2026-11-23: own when sent, and own now).
 - Trust `outside` or the mark on any of the agent's rows: fails closed,
   but closes the way out §2.3 names (docs/api.md, "Outside": the owner
   removes the agent and joins it again); briefly ruled so and taken back

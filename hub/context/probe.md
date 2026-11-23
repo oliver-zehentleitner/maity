@@ -180,7 +180,7 @@ would leak into the card view.
 **Evidence:** confirmed
 **Source:** card tsk-997vnv5efkw9 (2026-11-23), the lead's go on the plan (seq 201169) and the order to key it on the owner's membership until trust `outside` lands (seq 201228); docs/api.md §2.3 "Own approvals" and §6.6 "A merge closes the loop"
 **See:** probe.md#a-merge-closes-the-loop-remembered-on-the-card-per-report-told-by-whoever-sees-it-first — f89f3f4d-28b0-4bda-841a-ddafe87ad18f — as of 2026-11-23
-**Revisit when:** trust `outside` lands in the hub (the outside-agent rule in `own_approvals` then reads it)
+**Revisit when:** a merge can close a card by a path that does not pass `merged._blocked_by`
 
 Under `merged_closes: auto` a merge does not close outsiders' work
 without its own approvals: `merged._blocked_by` adds `own_approvals` when
@@ -204,7 +204,9 @@ which `task_merged` already wakes.
 - Leave the merge path until the whole gate is built: until then an
   outside holder under `auto` closes its own work on a merge.
 - Count own approvals here: that counting is the core of the gate card
-  and would exist twice; this check becomes one call into it there.
+  and would exist twice; this check is one call into it
+  (`own_approvals.missing`), which reads trust `outside`, the
+  `joined_outside` mark and the owner's membership.
 - A `blocked_by` value of its own (`outside_work`): the gate refuses a
   move to `done` with the reason `own_approvals`, and one name for the
   same missing approval reads the same in both places.

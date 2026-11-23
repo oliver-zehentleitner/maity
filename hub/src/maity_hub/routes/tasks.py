@@ -2267,10 +2267,15 @@ def report(
         if closing:
             # §2.3, §6.6: on outsiders' work short of its own approvals, a `done` from the
             # done authority is stored and moves the card to review, not done. Judged on the
-            # card as this report leaves it; a human's own move counts as one approval.
-            reported = SimpleNamespace(
-                **{**card._mapping, "report": stored, "approvals": signatures}
+            # card as this report leaves it, stored first, so a review result that names the
+            # card only by its pull request (`#<n>`) finds it; a human's own move counts as
+            # one approval.
+            conn.execute(
+                update(t.card)
+                .where(t.card.c.id == card.id)
+                .values(report=stored, approvals=signatures)
             )
+            reported = _card(conn, card.id)
             mover = mine.principal_id if mine.kind == "human" else None
             if own_approvals.missing(conn, reported, mine.project, mover)[0]:
                 closing = False

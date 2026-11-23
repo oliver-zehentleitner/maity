@@ -128,6 +128,33 @@ def test_a_done_report_from_an_outside_holder_is_stored_and_goes_to_review(
     assert stored.json()["report"]["head"] == SHA
 
 
+def test_a_done_report_finds_an_approval_that_names_only_its_new_pull_request(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A review result tied to the card only by its subject `#<n>` is matched against the
+    report the `done` brings, not the one it replaces."""
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)  # pull request 7
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    sent = reviewer.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": "all",
+            "body": "Reviewed.",
+            "review": {"subject": "#8", "head": SHA, "verdict": "approve", "cites": [CITE]},
+        },
+    )
+    assert sent.status_code == 201, sent.text
+    pr = {"number": 8, "url": "https://github.com/acme/maity/pull/8", "head": SHA, "state": "open"}
+    again = outsider.post(f"{PROJECT}/tasks/{card_id}/report", _report(pr=pr, done=True))
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "done"
+
+
 # --- the done authority is a role, a human or an admin --------------------------------------
 
 
@@ -287,7 +314,9 @@ def test_a_later_result_withdraws_an_approve_across_a_rejoin(
             .order_by(t.event.c.seq.desc())
         ).first()
         assert last is not None
-        conn.execute(update(t.event).where(t.event.c.seq == last.seq).values(actor_membership=later))
+        conn.execute(
+            update(t.event).where(t.event.c.seq == last.seq).values(actor_membership=later)
+        )
     assert _count(migrated, card_id) == 0
 
 
@@ -424,6 +453,149 @@ def test_the_mark_belongs_to_its_row_and_a_members_rejoin_makes_the_agent_its_ow
     assert outside()  # a reporter who left: its most recent row is still the marked one
     factory.membership(migrated, project_id, "coder", agent_id=agent_id)  # a member's join
     assert not outside()
+
+
+def _subject_only(who: Any, subject: str = "#7", verdict: str = "approve") -> None:
+    """A review result tied to the card only by its pull request (§8.4), no `task_id`."""
+    sent = who.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": "all",
+            "body": "Reviewed.",
+            "review": {"subject": subject, "head": SHA, "verdict": verdict, "cites": [CITE]},
+        },
+    )
+    assert sent.status_code == 201, sent.text
+
+
+def _human_member(make_client: ClientFactory, engine: Engine, handle: str, role: str) -> Any:
+    human = flow.human(make_client, engine, handle)
+    with engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(engine, project_id, role, human_id=human.id)
+    return human
+
+
+def test_an_approval_named_by_its_pull_request_alone_counts_on_a_move(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    _subject_only(flow.agent(make_client, owner, role="reviewer"))
+    assert _done(outsider, card_id).status_code == 200
+
+
+def test_without_done_authority_the_scope_refusal_comes_first(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The gate decides only for a caller that has done authority: anyone else is refused
+    for that, as on any card, and learns nothing about the approvals."""
+    _policy(owner, done_authority="reviewer")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    refused = _done(outsider, card_id)
+    assert refused.status_code == 403, refused.text
+    details = refused.json()["error"]["details"]
+    assert "scope" in details and details.get("reason") != "own_approvals"
+
+
+def test_a_human_counts_once_whatever_the_ways_it_approved(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="admin", own_approvals=2)
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    _review(owner, card_id)  # a review result, and then its own move
+    _refused(_done(owner, card_id), needed=2, counted=1)
+
+
+def test_a_human_who_neither_reviews_nor_tests_gives_no_own_approval(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    _review(_human_member(make_client, migrated, "a-coder", "coder"), card_id)
+    assert _count(migrated, card_id) == 0
+    _review(_human_member(make_client, migrated, "a-reviewer", "reviewer"), card_id)
+    assert _count(migrated, card_id) == 1
+
+
+def test_a_redacted_approve_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    assert _count(migrated, card_id) == 1
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.event)
+            .where(t.event.c.kind == "message", t.event.c.subject_id == card_id)
+            .values(redacted=True)
+        )
+    assert _count(migrated, card_id) == 0
+
+
+def test_an_agent_with_trust_outside_is_outside_and_its_approve_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Trust `outside` on the agent's own row, its owner a member (here the project's
+    owner): outside all the same (§2.3)."""
+    _policy(owner, done_authority="admin")
+    holder = flow.agent(make_client, owner)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    card_id = _card(owner)
+    _reported(holder, card_id)
+    _review(judge, card_id)
+    row = _row(migrated, judge.id)
+    with migrated.begin() as conn:
+        conn.execute(update(t.membership).where(t.membership.c.id == row).values(trust="outside"))
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        assert own_approvals.outside_agent(conn, project, judge.id)
+    assert _count(migrated, card_id) == 0
+
+
+def test_moves_other_than_to_done_are_not_gated(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    back = outsider.patch(f"{PROJECT}/tasks/{card_id}", {"status": "in_progress"})
+    assert back.status_code == 200, back.text
+    cancelled = owner.patch(f"{PROJECT}/tasks/{card_id}", {"status": "cancelled"})
+    assert cancelled.status_code == 200, cancelled.text
+
+
+def test_own_agents_owners_of_counts_only_the_picked_members_agents(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    picked = _human_member(make_client, migrated, "picked", "coder")
+    other = _human_member(make_client, migrated, "unpicked", "coder")
+    _policy(owner, done_authority="admin", own_agents={"owners_of": ["picked"]})
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    others = factory.agent(migrated, project_id, other.id, "reviewer").agent_id
+    pickeds = factory.agent(migrated, project_id, picked.id, "reviewer").agent_id
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        assert not own_approvals._own_agent(conn, project, others, set())
+        assert own_approvals._own_agent(conn, project, pickeds, set())
 
 
 def test_own_agents_owners_counts_only_the_agents_of_owners(

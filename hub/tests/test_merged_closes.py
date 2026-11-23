@@ -842,7 +842,7 @@ def test_auto_never_closes_outsiders_work_on_a_merge(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
     """§6.6: `auto` acts as `notify` on outsiders' work without its own approvals on the
-    reported head; the hub counts none yet, so the done authority closes it."""
+    reported head: with none given, the merge leaves the card for its done authority."""
     _policy(owner, done_authority="holder", merged_closes="auto")
     github.pull(7, merged=True)
     agent, card_id = _reported(github, owner, make_client)
