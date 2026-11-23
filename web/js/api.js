@@ -475,18 +475,19 @@ window.Maity = window.Maity || {};
   // §3.1: the caller's distinct agent profiles in the project, a membership's or an open first join's.
   function outsideAgentCount() {
     const mine = new Set(OUTSIDE_TOOL.members.filter((x) => x.kind === "agent" && x.owner_id === me().member.id).map((x) => x.id));
-    OUTSIDE_TOOL.joins.items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.new_instance && !j.replaces
+    OUTSIDE_TOOL.joins.items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && !j.new_instance && !j.replaces
       && Date.parse(j.expires_at) > Date.now()).forEach((j) => mine.add(j.agent_id));
     return mine.size;
   }
   const outsideQuota = () => (OUTSIDE_TOOL.joins.agents_max === null ? OUTSIDE_TOOL.joins.member_agents_max : OUTSIDE_TOOL.joins.agents_max);
   // GET …/contribution (§6.1): the reasons in the contract's order, `member` never for an outsider;
-  // `open_cards` 0 while the interim of §6.5 holds.
+  // `open_cards` 0 while the interim of §6.5 holds. The six keys H1 builds (outsiders.py
+  // `contribution`); `looking_for_coders`, `outside_claims` and `sponsor_url` are not built yet
+  // there. `blocked` is the contract's reason, which H1 does not give yet either.
   function outsideContribution() {
     const j = OUTSIDE_TOOL.joins;
     const reason = j.agent_owners !== "anyone" ? "members_only" : j.blocked ? "blocked" : outsideAgentCount() >= outsideQuota() ? "limit" : null;
-    return { agent_owners: j.agent_owners, outside_roles: j.outside_roles.slice(), looking_for_coders: "per_card", outside_claims: "human",
-      sponsor_url: null, open_cards: 0, agents_max: outsideQuota(), can_join: reason === null, reason };
+    return { agent_owners: j.agent_owners, outside_roles: j.outside_roles.slice(), open_cards: 0, agents_max: outsideQuota(), can_join: reason === null, reason };
   }
   // The joins routes for an agent of the outsider's own (§3.1 "An outsider's agent"): `not_found`
   // without the opt-in; otherwise the limits of "Bringing your own agent", trust `outside` the only
@@ -513,18 +514,35 @@ window.Maity = window.Maity || {};
     const limit = (field) => fail(403, "forbidden", "not within the limits of an outsider's agent", path, { reason: "member_join_limit", field });
     const profiles = fixtures()["agents.json"].items;
     if (body.agent && body.agent.id && !profiles.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
+    // H1's `_outside_values`: trust, boss, areas, capabilities; then an agent already here adds
+    // an instance to a membership with trust `outside` only, keeping its role; then the role.
     if (body.trust !== undefined && body.trust !== "outside") limit("trust");
-    if (!j.outside_roles.includes(body.role || "coder")) limit("role");
     if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
     if ((body.areas || []).length) limit("areas");
     if ((body.capabilities || []).length) limit("capabilities");
-    const member = body.agent && body.agent.id ? OUTSIDE_TOOL.members.find((x) => x.id === body.agent.id) : null;
-    const held = body.agent && body.agent.id && j.items.some((x) => x.agent_id === body.agent.id && x.created_by === me().member.id && !x.used_at && !x.revoked_at);
-    if (!member && !held && outsideAgentCount() >= outsideQuota()) {
-      fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max: outsideQuota() });
-    }
+    const member = body.agent && body.agent.id ? OUTSIDE_TOOL.members.find((x) => x.id === body.agent.id && !x.removed_at) : null;
+    if (member && member.trust !== "outside") limit("agent");
+    if (!member && !j.outside_roles.includes(body.role || "coder")) limit("role");
+    // `_check_instance`: a member's join says which instance it adds, a first join neither.
     if (!member && (body.new_instance != null || body.replaces != null)) {
       fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
+    }
+    if (member) {
+      const active = (member.instances || []).filter((i) => !i.revoked_at);
+      if (body.new_instance && body.replaces != null) fail(400, "invalid", "new_instance or replaces, not both", path, { fields: { instance: "one_of" } });
+      if (body.replaces != null) {
+        if (!active.some((i) => i.id === body.replaces)) fail(400, "invalid", "replaces names no active instance", path, { fields: { replaces: "not_an_instance" } });
+      } else if (!body.new_instance) {
+        fail(400, "invalid", "the agent is a member: new_instance or replaces", path, { fields: { instance: "required" } });
+      } else if (active.length >= ((member.team && member.team.max_instances) || 1)) {
+        fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
+      }
+    }
+    // The count of `outsideAgentCount`: a profile held by an open first join takes no new slot.
+    const held = body.agent && body.agent.id && j.items.some((x) => x.agent_id === body.agent.id && x.created_by === me().member.id && !x.used_at && !x.revoked_at
+      && !x.burned && !x.new_instance && !x.replaces && Date.parse(x.expires_at) > Date.now());
+    if (!member && !held && outsideAgentCount() >= outsideQuota()) {
+      fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max: outsideQuota() });
     }
     let agentId = body.agent && body.agent.id;
     if (!agentId) {
@@ -538,7 +556,7 @@ window.Maity = window.Maity || {};
     const expires = new Date(Date.now() + Math.min(body.ttl_seconds || 900, 3600) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
     // reports_to: the body may name the caller, but the owner is no member, so the agent reports
     // to nobody here (§6.2; H1's routes/joins.py `_outside_values`).
-    j.items.unshift({ id, agent_id: agentId, trust: "outside", role: body.role || "coder", reports_to: null, created_by: me().member.id,
+    j.items.unshift({ id, agent_id: agentId, trust: "outside", role: member ? member.role : body.role || "coder", reports_to: null, created_by: me().member.id,
       created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
       new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null, takes_over: null, handover: null });
     return joinAnswer(id, agentId, OUTSIDE_TOOL.project.full_name, expires);
@@ -5553,12 +5571,18 @@ window.Maity = window.Maity || {};
     // (`humans_only`); then the card's state.
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/claim$/, (m, body, path) => {
       const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      // `holder` naming the caller itself (or one of its instances) is its own claim.
+      if (body.holder != null && String(body.holder).split("#")[0] === me().member.id) body = Object.assign({}, body, { holder: null });
       if (body.holder == null && trustIn(m[1]) === "outside") {
         if (!card) fail(404, "not_found", "no such card", path);
         fail(403, "forbidden", "an outsider's agent takes no card itself for now", path, { reason: "not_open_to_outsiders" });
       }
       if (body.holder != null && !tasksAdmin(m[1])) fail(403, "forbidden", "claiming for another needs tasks:admin", path, { scope: "tasks:admin" });
       if (!card) fail(404, "not_found", "no such card", path);
+      // tasks.py `_require_open_project`: archived is closed, plan and review need a reason.
+      const state = project(m[1], path).state;
+      if (state === "archived") fail(409, "project_closed", "the project is " + state, path);
+      if (["plan", "review"].includes(state) && !body.reason) fail(400, "invalid", "the project is in " + state + ": say why", path, { fields: { reason: "required" } });
       const [holderId, instance] = String(body.holder == null ? me().member.id : body.holder).split("#");
       const holder = file(m[1], "members.json", path).items.find((x) => x.id === holderId && !x.removed_at);
       if (!holder || holder.trust === "guest") fail(400, "invalid", "the holder is no member who may hold a card", path, { fields: { holder: holder ? "guest" : "not_a_member" } });

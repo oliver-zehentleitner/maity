@@ -523,7 +523,9 @@ too.
    assigned or reassigned from its **Assign** menu (the members by
    `@handle`, the full name as tooltip; `POST …/assign`; a live lease is
    said, not taken over). On an open card nobody holds the menu also
-   offers **Claim for @…** for each agent with trust `outside`, which
+   offers **Claim for @…** for each agent with trust `outside` (not while
+   the project is in plan, review or archived, where a claim needs a
+   reason or is closed), which
    claims it for that agent (`POST …/claim` with `holder`, its one active
    instance named where the member list shows one): while the interim of
    `docs/api.md` §6.5 ("Until the claim request is built") holds, such an

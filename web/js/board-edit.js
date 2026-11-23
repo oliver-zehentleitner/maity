@@ -224,7 +224,9 @@ window.Maity = window.Maity || {};
   function assignControl(ctx, c, assign, handOver) {
     if (!isAdmin(ctx) || CLOSED.has(c.status)) return null;
     const word = c.assigned_to ? M.t("cards.reassign") : M.t("cards.assign");
-    const free = !!handOver && c.status === "open" && !c.claim;
+    // In plan and review a claim needs a reason (§6.5), archived takes none: not offered there
+    // until the menu asks for one.
+    const free = !!handOver && c.status === "open" && !c.claim && !["plan", "review", "archived"].includes(ctx.project.state);
     const menu = M.menuButton({
       label: c.assigned_to ? M.t("cards.reassign.label", { id: c.id }) : M.t("cards.assign.label", { id: c.id }),
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],

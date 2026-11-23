@@ -756,7 +756,8 @@ window.Maity = window.Maity || {};
           sayBoss();
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (takeover || d.field === "takes_over") (takeover === "handover" ? handover : takesOver).focus();
-          if (err.code === "instance_quota" && agent.id) {
+          // An outsider has no Agents view: no link that would be not found.
+          if (err.code === "instance_quota" && agent.id && !outside) {
             append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("agents", agent.id, "rulebook") },
               M.t("join.quota.raise")));
           }
@@ -1037,8 +1038,10 @@ window.Maity = window.Maity || {};
         impl = build(ctx, hooks, panel, listStatus, profiles, joins);
         listStatus.done();
         return true;
-      } catch (err) {
+      } catch (failed) {
         impl = null;
+        // An outsider's joins read answers not_found once the opt-in closed: said in words.
+        const err = (hooks.outsider && outsiderRefusal(failed)) || failed;
         const retry = h("button", {
           type: "button",
           onclick: async () => {

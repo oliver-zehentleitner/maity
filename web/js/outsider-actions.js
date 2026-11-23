@@ -54,6 +54,8 @@ window.Maity = window.Maity || {};
         try { await mounting; } catch (err) { return; }
         if (!J) return;
       }
+      // A drawing of the head meanwhile took this slot and box away: nothing to open there.
+      if (!header.contains(slot) || !header.contains(box)) return;
       J.open(button, null);
     });
     append(slot, button);
