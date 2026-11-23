@@ -8,8 +8,10 @@ start, so every sandboxed command fails. The runner stops it at every Codex star
 old leaf is removed and before the new session starts.
 
 The stop is `codex app-server daemon stop` with that CODEX_HOME, as the agents' user, on every
-target. A stop that fails, times out or cannot run is logged, never refused: the start goes on,
-and the next start tries again. Nothing is signalled by the runner: a fallback by signal is
+target, within one deadline shared with the check that the home is there. A stop that fails,
+times out, cannot run or is skipped is logged, never refused: the start goes on, and the next
+start tries again. Such a stop leaves the old daemon running, so the new session may still
+reach it, as before this stop existed. Nothing is signalled by the runner: a fallback by signal is
 left to slice 2, where it uses an identity Codex records, checked with a pidfd before any
 signal (the review of #2175).
 """
@@ -21,17 +23,16 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .asuser import AsUser, present
+from .asuser import AsUser
 
-# The check that the codex-home is there, on the agents' side.
+# The check that the codex-home is there, as the agents' user.
 CHECK_TIMEOUT = 5.0
 # `codex app-server daemon stop`: a daemon that has not stopped within this is left running,
 # and the start goes on.
 STOP_TIMEOUT = 15.0
 # The most the stop adds to a start: the check and the stop share it, the stop getting what
-# the check left (never below MIN_STOP).
+# the check left, and no stop at all once the check has used it up.
 DEADLINE = CHECK_TIMEOUT + STOP_TIMEOUT
-MIN_STOP = 1.0
 STOP = ("app-server", "daemon", "stop")
 
 
@@ -43,11 +44,10 @@ def stop_argv(binary: str, home: Path, agents_home: Path, agent_path: str) -> li
 
 
 def check_home(as_user: AsUser, home: Path, timeout: float) -> bool:
-    """Whether the codex-home is a directory: a stat on the runner's own side, `test -d` within
-    `timeout` elsewhere (AsUser.exists takes no timeout). OSError when it cannot be told,
-    subprocess.TimeoutExpired when the agents' side does not answer in time."""
-    if as_user.direct:
-        return present(home, "-d")
+    """Whether the codex-home is a directory: `test -d` within `timeout` on every layout, the
+    runner's own included, since a stat in this process cannot be bounded (a stuck mount) and
+    AsUser.exists takes no timeout. OSError when it cannot be told, subprocess.TimeoutExpired
+    when the check does not answer in time."""
     done = as_user.run(["test", "-d", str(home)], timeout=timeout)
     if done.returncode not in (0, 1):  # `test`'s own error, or ssh's unreachable 255
         raise OSError(f"exit {done.returncode}")
@@ -63,9 +63,11 @@ def stop_codex_daemon(
     log: Callable[[str], None],
 ) -> None:
     """Stop the Codex app-server daemon that holds `home`, before a start, within DEADLINE. A
-    home that is not there yet has no daemon to stop; a home that cannot be checked is not
-    stopped. A stop that exits non-zero, does not answer in time or cannot run is logged. One
-    log line for anything but a clean stop; nothing raises."""
+    home that is not there yet has no daemon to stop; a home that cannot be checked, or whose
+    check used the whole deadline, is not stopped. A stop that exits non-zero, does not answer
+    in time or cannot run is logged. A stop that fails or is skipped leaves the old daemon
+    running, and the new session may still reach it. One log line for anything but a clean
+    stop; nothing raises."""
     began = time.monotonic()
     try:
         there = check_home(as_user, home, CHECK_TIMEOUT)
@@ -80,11 +82,15 @@ def stop_codex_daemon(
     if not there:
         log("no codex-home yet, so no Codex app-server daemon to stop")
         return
-    timeout = max(MIN_STOP, DEADLINE - (time.monotonic() - began))
+    left = DEADLINE - (time.monotonic() - began)
+    if left <= 0:
+        log("the codex-home check used the whole deadline; "
+            "no Codex app-server daemon stopped, the start goes on")  # fmt: skip
+        return
     try:
-        done = as_user.run(stop_argv(binary, home, agents_home, agent_path), timeout=timeout)
+        done = as_user.run(stop_argv(binary, home, agents_home, agent_path), timeout=left)
     except subprocess.TimeoutExpired:
-        failed = f"did not answer within {timeout:.0f} s"
+        failed = f"did not answer within {left:.0f} s"
     except (OSError, subprocess.SubprocessError) as exc:
         failed = f"could not run ({type(exc).__name__})"
     else:

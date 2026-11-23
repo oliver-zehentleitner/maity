@@ -720,11 +720,17 @@ after the skill and before `_context`, which removes the old TMPDIR leaf,
 and before the launch writes the new `config.toml`. The stop is
 `codex app-server daemon stop` with the probed binary, run as the agents'
 user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment, on
-every target. One deadline of 20 s covers it: up to 5 s to check that the
-home is there, and the stop gets what is left, at least 1 s. A home not
-there yet has no daemon to stop; a home that cannot be checked is not
-stopped. A stop that exits non-zero, does not answer or cannot run is one
-log line, and the start goes on. The runner signals no process itself.
+every target. One deadline of 20 s covers it: up to 5 s for a `test -d`
+of the home as the agents' user (a subprocess on every layout, so a stuck
+mount cannot hold the start), and the stop gets what is left; none runs
+once the check has used it up. A home not there yet has no daemon to stop;
+a home that cannot be checked is not stopped. A stop that exits non-zero,
+does not answer, cannot run or is skipped is one log line, and the start
+goes on. The runner signals no process itself.
+
+A stop that fails, does not answer or is skipped leaves the
+old daemon running, so the new session may still reach it and fail as it
+did before this change; the next start tries again.
 
 **Reason:** Codex 0.171 runs its turns in a managed daemon per `CODEX_HOME` that it
 detaches from the TUI's process group. The runner ends a session with a

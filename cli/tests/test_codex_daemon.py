@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +24,7 @@ from test_supervisor import (
 )
 
 from maity.runner import capabilities, codexd, supervisor
+from maity.runner.asuser import AsUser
 
 
 def fake_codex(path: Path, calls: Path, stop_exit: int = 0) -> None:
@@ -199,12 +201,11 @@ class FakeClock:
         return self.now
 
 
-@pytest.mark.parametrize("took", [codexd.CHECK_TIMEOUT - 0.5, codexd.DEADLINE + 30.0])
-def test_the_stop_gets_what_is_left_of_the_deadline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, took: float
-) -> None:
-    """The check and the stop share DEADLINE: a check that took `took` leaves the stop
-    DEADLINE - took, and never less than MIN_STOP (1 s)."""
+def stop_after_a_check_of(
+    took: float, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[AgentsSide, list[str]]:
+    """`stop_codex_daemon` on the agents' side, its home check taking `took` seconds on a fake
+    clock; the calls it made and its log."""
     clock = FakeClock()
     monkeypatch.setattr(codexd, "time", clock)
 
@@ -217,8 +218,51 @@ def test_the_stop_gets_what_is_left_of_the_deadline(
     binary = tmp_path / "codex"  # under tmp_path: conftest's guard lets it through
     codexd.stop_codex_daemon(cast(Any, agents), str(binary), tmp_path / "h", tmp_path,
                              "/usr/bin", logs.append)  # fmt: skip
+    return agents, logs
+
+
+def test_the_stop_gets_what_is_left_of_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The check and the stop share DEADLINE: a check that took 4.5 s leaves the stop 15.5 s."""
+    took = codexd.CHECK_TIMEOUT - 0.5
+    agents, logs = stop_after_a_check_of(took, tmp_path, monkeypatch)
     (check_argv, check_timeout), (stop_argv, stop_timeout) = agents.runs
     assert check_argv[:2] == ["test", "-d"] and check_timeout == codexd.CHECK_TIMEOUT
-    assert stop_argv[-4:] == [str(binary), "app-server", "daemon", "stop"]
-    assert stop_timeout == max(codexd.MIN_STOP, codexd.DEADLINE - took)
-    assert stop_timeout >= 1.0 and logs == []
+    assert stop_argv[-4:] == [str(tmp_path / "codex"), "app-server", "daemon", "stop"]
+    assert stop_timeout == codexd.DEADLINE - took == 15.5
+    assert logs == []
+
+
+def test_no_stop_runs_once_the_check_used_the_whole_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A check that took longer than DEADLINE leaves nothing for the stop: none runs, and the
+    log says the deadline was used up."""
+    agents, logs = stop_after_a_check_of(codexd.DEADLINE + 30.0, tmp_path, monkeypatch)
+    assert [argv[:2] for argv, _ in agents.runs] == [["test", "-d"]]  # the check alone
+    assert logs == ["the codex-home check used the whole deadline; no Codex app-server daemon "
+                    "stopped, the start goes on"]  # fmt: skip
+
+
+@dataclass(frozen=True)
+class RecordingUser(AsUser):
+    """The runner's own user (direct, `AsUser(None)`), each `run` recorded instead of run."""
+
+    runs: list[tuple[list[str], float]] = field(default_factory=list)
+
+    def run(
+        self, argv: Sequence[str], env: dict[str, str] | None = None, input: str | None = None,
+        cwd: Path | None = None, timeout: float = 60.0,
+    ) -> subprocess.CompletedProcess[str]:  # fmt: skip
+        self.runs.append((list(argv), timeout))
+        return subprocess.CompletedProcess(list(argv), 1, "", "")
+
+
+def test_the_direct_layout_home_check_is_bounded_too(tmp_path: Path) -> None:
+    """In the `single` layout the check is a `test -d` with CHECK_TIMEOUT too, never a stat in
+    the runner's own process, which a stuck mount could hold without a bound."""
+    user = RecordingUser()
+    assert user.direct
+    assert codexd.check_home(user, tmp_path, codexd.CHECK_TIMEOUT) is False  # exit 1: absent
+    assert user.runs == [(["test", "-d", str(tmp_path)], codexd.CHECK_TIMEOUT)]
