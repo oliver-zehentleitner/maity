@@ -554,8 +554,9 @@ public pages.
 Which part stands how: both races are reproduced. With the probe's sweep
 delayed 0.1 s and 0.2 s by a test plugin, the whole file fails with that first
 assert; with the probe off and the sweep delayed 0.5 s, the public-pages
-worker failed the bound check once; with its preparation delayed 1 s, the
-four-file-reads assert fails both cases of that test. With both workers off
+worker failed the bound check once; a delay of the order of a second before
+its preparation (how much depends on the machine) failed the four-file-reads
+assert in both cases of that test. With both workers off
 the file passes under each delay. That a late sweep would also turn the stored
 visibility false after a test sets `why.private` is read from
 `observe_visibility`, not seen in a run. That no third worker reaches the forge
