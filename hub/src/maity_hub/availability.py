@@ -261,12 +261,12 @@ def _owner_member(conn: Connection, row: Any) -> str | None:
 
 
 def changed_audience(conn: Connection, row: Any, project: Any) -> list[str]:
-    """`member_availability_changed` (§8.2): the member's boss, its human, the admins, the
-    coordinator; the owners too when the member is the coordinator."""
-    from maity_hub.views import routing_boss  # views reads this module for its fields
+    """`member_availability_changed` (§8.2): the member's boss unless of another owner (§6.2),
+    its human, the admins, the coordinator; the owners too when the member is the coordinator."""
+    from maity_hub import cross_owner  # cross_owner reads views, which reads this module
 
     audience: list[str] = []
-    boss = routing_boss(conn, row.reports_to)
+    boss = cross_owner.notice_boss(conn, row)
     if boss is not None:
         audience.append(f"member:{boss}")
     owner = _owner_member(conn, row)

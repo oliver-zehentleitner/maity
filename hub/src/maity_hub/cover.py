@@ -385,10 +385,10 @@ def _announce_card(conn: Connection, project: Any, card_id: str, actor: Actor | 
 
 
 def _audience(conn: Connection, covered: Any, sub: Any) -> list[str]:
-    from maity_hub.views import routing_boss
+    from maity_hub import cross_owner
 
     audience = [f"member:{_principal(covered)}", f"member:{_principal(sub)}"]
-    boss = routing_boss(conn, covered.reports_to)
+    boss = cross_owner.notice_boss(conn, covered)  # none of another owner (§6.2)
     if boss is not None:
         audience.append(f"member:{boss}")
     audience.append("trust:admin")
