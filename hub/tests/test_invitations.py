@@ -6,16 +6,17 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
-from starlette.testclient import TestClient
 
 from maity_hub import clock, events, invitation_mail, invitations, registration, registration_mail
 from maity_hub import tables as t
 from maity_hub.auth import email_links
+from maity_hub.auth.caller import SESSION_COOKIE, session_id_hash
 from maity_hub.middleware import _logged_path
 from maity_hub.routes import email_sign_in, joins
 from maity_hub.routes import registration as registration_routes
@@ -570,6 +571,71 @@ def _by_mail(client: Any, engine: Engine, human_id: str, how: str) -> flow.Human
     return ada
 
 
+@dataclass
+class Ada:
+    """`ada` with two sessions on one client (one app, one portal: a second client on the
+    same app would cross event loops on MariaDB's async pool): an earlier password session
+    and a session fresh from her mailbox. The client presents the mailbox session; the
+    password session's cookie is swapped in only for the confirm."""
+
+    client: Any
+    id: str
+    by_mail: flow.Human
+    mail_cookie: str
+    password_cookie: str
+    password_csrf: str
+
+    def present(self, cookie: str) -> None:
+        self.client.cookies.delete(SESSION)
+        self.client.cookies.set(SESSION, cookie)
+
+    def confirm_from_password(self) -> Any:
+        """The "This was me" on the mailbox session, from her password session (§2.6.5)."""
+        mine = [s for s in self.by_mail.get("/auth/sessions").json()["items"] if s["current"]]
+        self.present(self.password_cookie)
+        try:
+            return flow.Human(self.client, self.password_csrf, self.id, "ada").post(
+                f"/auth/sessions/{mine[0]['id']}/confirm"
+            )
+        finally:
+            self.present(self.mail_cookie)
+
+    def mail_session(self, **values: Any) -> None:
+        """Set columns of the mailbox session's row (a way into good standing, §2.6.5)."""
+        with self.client.app.state.engine.begin() as conn:
+            conn.execute(
+                update(t.human_session)
+                .where(t.human_session.c.id_hash == session_id_hash(self.mail_cookie))
+                .values(**values)
+            )
+
+
+SESSION = SESSION_COOKIE
+
+
+def ada_by_mail(
+    make_client: ClientFactory, engine: Engine, monkeypatch: pytest.MonkeyPatch, how: str
+) -> Ada:
+    """`ada` signed in by password first (the earlier session, which may confirm the later
+    one), then on the same client by a link or a code from her mailbox."""
+    monkeypatch.setattr(email_sign_in, "LIMITS", email_links.RequestLimits())
+    client, ada_id = mail_setup(make_client, engine)
+    assert factory.login(client, ada_id, engine=engine).status_code == 200
+    password_cookie = str(client.cookies.get(SESSION))
+    password_csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
+    with engine.begin() as conn:  # strictly earlier than the mailbox session
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.human_id == ada_id)
+            .values(created_at=clock.now() - timedelta(minutes=1))
+        )
+    client.cookies.delete(SESSION)  # else the mail sign-in ends the session it is shown
+    by_mail = _by_mail(client, engine, ada_id, how)
+    return Ada(
+        client, ada_id, by_mail, str(client.cookies.get(SESSION)), password_cookie, password_csrf
+    )
+
+
 @pytest.mark.parametrize("how", ["email_link", "email_code"])
 def test_a_session_fresh_from_the_mailbox_accepts_nothing(
     owner: flow.Human,
@@ -580,22 +646,9 @@ def test_a_session_fresh_from_the_mailbox_accepts_nothing(
 ) -> None:
     """§3.4, §2.6.5: accepting needs a session in good standing; one signed in from the
     mailbox is not, until an allowed session confirms it."""
-    monkeypatch.setattr(email_sign_in, "LIMITS", email_links.RequestLimits())
     made = issue(owner)
-    client, ada_id = mail_setup(make_client, migrated)
-    # Her password session, earlier than the mailbox one: the one that may confirm it; another
-    # browser on the same hub, whose mail settings a second app would not share.
-    other = TestClient(client.app, base_url="https://hub.example", client=("203.0.113.8", 50000))
-    by_password = flow.Human(other, "", ada_id, "ada")
-    assert factory.login(by_password.client, ada_id, engine=migrated).status_code == 200
-    by_password.csrf = by_password.client.get("/api/v1/auth/session").json()["csrf_token"]
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.human_session)
-            .where(t.human_session.c.human_id == ada_id)
-            .values(created_at=clock.now() - timedelta(minutes=1))
-        )
-    ada = _by_mail(client, migrated, ada_id, how)
+    two = ada_by_mail(make_client, migrated, monkeypatch, how)
+    ada = two.by_mail
     refused = accept(ada, token_of(made))
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["code"] == "forbidden"
@@ -610,12 +663,38 @@ def test_a_session_fresh_from_the_mailbox_accepts_nothing(
     assert owner.get(PATH).json()["items"][0]["used_at"] is None  # it stays open
     assert [e.kind for e in kinds(migrated)] == ["invitation_created"]
     # "This was me" from her password session puts the mailbox session in good standing.
-    mine = [s for s in ada.get("/auth/sessions").json()["items"] if s["current"]][0]
-    confirmed = by_password.post(f"/auth/sessions/{mine['id']}/confirm")
+    confirmed = two.confirm_from_password()
     assert confirmed.status_code == 200, confirmed.text
     joined = accept(ada, token_of(made))
     assert joined.status_code == 201, joined.text
     assert owner.get(PATH).json()["items"][0]["used_by"] == ada.id
+
+
+# Every way into good standing (§2.6.5, §2.8.2) on the mailbox session's row: the method a
+# password or a registration gives, or the second factor TOTP or a recovery code gives.
+STANDING = {
+    "password": {"method": "password"},
+    "register": {"method": "register"},
+    "totp": {"second_factor": "totp"},
+    "recovery_code": {"second_factor": "recovery_code"},
+}
+
+
+@pytest.mark.parametrize("way", sorted(STANDING))
+def test_every_way_into_good_standing_accepts(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    way: str,
+) -> None:
+    made = issue(owner)
+    two = ada_by_mail(make_client, migrated, monkeypatch, "email_link")
+    two.mail_session(**STANDING[way])
+    current = [s for s in two.by_mail.get("/auth/sessions").json()["items"] if s["current"]]
+    assert current[0]["good_standing"] is True
+    joined = accept(two.by_mail, token_of(made))
+    assert joined.status_code == 201, joined.text
 
 
 def test_a_password_session_accepts(

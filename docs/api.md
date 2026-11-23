@@ -2622,7 +2622,7 @@ shows it (`good_standing`, and `confirmed_at` and `confirmed_by`, the
 confirming session's id, on a confirmed one; both `null` otherwise).
 Good standing is what lets a session end others, confirm sign-ins,
 mark address-change alerts read and act on a held address change
-(§2.6.3).
+(§2.6.3), and accept an invitation (§3.4).
 The maintainer's decision of 2026-11-02 (`context/notifications.md`)
 separated confirming from reading, so that the bell can be tidied
 without the protection going with it. A session whose alert an allowed
@@ -5139,8 +5139,11 @@ accepts nothing.
 
 **By handle.** The person's `go` on the request (`POST
 /requests/{id}/answer`, §7) accepts with the same checks, in the
-answer's transaction under the project's lock. A `project_closed`
-refusal leaves the request open with the invitation. A `go` that no
+answer's transaction under the project's lock. A `go` from a session
+not in good standing (`forbidden`, `details.reason:
+not_in_good_standing`, checked before the invitation is looked at) and
+a `project_closed` refusal leave the request open with the invitation;
+a `no` needs no standing. A `go` that no
 longer applies withdraws the request: for an invitation no longer open
 (`409 invalid_transition`, `details.reason: invitation_stale`; an
 expired one stays `expired`), for a person who is a member already
