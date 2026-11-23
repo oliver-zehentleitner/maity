@@ -887,8 +887,13 @@ def normalize_database_url(url: str, name: str = "MAITY_DATABASE_URL") -> str:
 
 
 def redact_database_url(url: str) -> str:
-    """The URL with its password masked, for messages and logs."""
+    """The URL with its password masked and its query string left out (`?***` in its place), for
+    messages and logs. The query is dropped whole rather than masked by name: the drivers take a
+    password there too (`password`, `passwd`, `sslpassword`, also percent-encoded), any other key
+    can carry a secret as well, and a list of names would miss the next one."""
     try:
-        return make_url(url).render_as_string(hide_password=True)
+        parsed = make_url(url)
+        shown = parsed.set(query={}).render_as_string(hide_password=True)
+        return f"{shown}?***" if parsed.query else shown
     except (ArgumentError, ValueError):
         return "<unparseable MAITY_DATABASE_URL>"
