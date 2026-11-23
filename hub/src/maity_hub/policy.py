@@ -98,8 +98,8 @@ DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
 OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team", "expert")
 OUTSIDE_DEFAULT = ["coder"]
 
-# Own approvals for outsiders' work (§6.1, §2.3 "Own approvals"): at least one, no upper
-# bound; whose agents count as the project's own.
+# Own approvals for outsiders' work (§6.1, §2.3 "Own approvals"): from one up to
+# OWN_APPROVALS_MAX; whose agents count as the project's own.
 OWN_APPROVALS_DEFAULT = 1
 # The column's width on PostgreSQL and MariaDB (a 32-bit integer): any count a project can
 # reach, and a larger one is `out_of_range`, not a database error.

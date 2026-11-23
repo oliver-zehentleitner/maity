@@ -2368,10 +2368,11 @@ def test_acct_lock_rows_backfills_every_human_without_one_and_its_downgrade_keep
 def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_defaults(
     engine: Engine,
 ) -> None:
-    """§2.3 "Own approvals": an agent membership whose owner holds no active membership of its
-    project is marked `joined_outside`; one whose owner is a member is not, nor is a human.
-    The two policy columns stay null, which reads as 1 and `members`; the downgrade drops all
-    three columns."""
+    """§2.3 "Own approvals": an agent membership whose owner held no membership of its project
+    when the agent joined (by the rows' joined_at and removed_at) is marked `joined_outside`;
+    one whose owner was a member then is not, whatever came after, nor is a human. The two
+    policy columns stay null, which reads as 1 and `members`; the downgrade drops all three
+    columns."""
     from sqlalchemy import inspect, select
 
     from maity_hub import policy
@@ -2392,14 +2393,43 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
     later = factory.human(engine, "later")
     removed = factory.membership(engine, project_id, "coder", human_id=gone)
     joined_later = factory.membership(engine, project_id, "coder", human_id=later)
+    early, back = factory.human(engine, "early"), factory.human(engine, "back")
+    left_first = factory.membership(engine, project_id, "coder", human_id=early)
+    first_stay = factory.membership(engine, project_id, "coder", human_id=back)
+    with engine.begin() as conn:  # a removed row first, so the rejoin's row can be inserted
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == first_stay)
+            .values(active=None, removed_at=factory.at("2026-10-20T10:00:00Z"))
+        )
+    second_stay = factory.membership(engine, project_id, "coder", human_id=back)
     own = factory.agent(engine, project_id, member, "coder", picture=False).agent_id
     outside = factory.agent(engine, project_id, stranger, "coder", picture=False).agent_id
     other_project = factory.agent(engine, project_id, elsewhere, "coder", picture=False).agent_id
     left = factory.agent(engine, project_id, gone, "coder", picture=False).agent_id
     came_in_outside = factory.agent(engine, project_id, later, "coder", picture=False).agent_id
+    owner_left_first = factory.agent(engine, project_id, early, "coder", picture=False).agent_id
+    owner_rejoined = factory.agent(engine, project_id, back, "coder", picture=False).agent_id
     t0 = factory.at("2026-11-01T10:00:00Z")
     with engine.begin() as conn:
         conn.execute(update(t.membership).values(joined_at=t0))  # everyone joined together
+        # Removed the moment its agent joined: no membership at the agent's join.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == left_first)
+            .values(active=None, removed_at=t0)
+        )
+        # Left before, came back before its agent joined: the second row counts.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == first_stay)
+            .values(joined_at=factory.at("2026-10-01T10:00:00Z"))
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == second_stay)
+            .values(joined_at=factory.at("2026-10-25T10:00:00Z"))
+        )
         # Left after its agent joined (review A2211, case D): the row stays (§6.2).
         conn.execute(
             update(t.membership)
@@ -2432,6 +2462,8 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
         other_project: True,
         left: False,  # a member when it joined: never outside, whatever came after
         came_in_outside: True,  # its owner joined after it: outside for good (§2.3)
+        owner_left_first: True,  # removed at the agent's join: held nothing then
+        owner_rejoined: False,  # an earlier removed row does not hide the rejoin
     }
     assert set(humans) == {False}
     assert (project.own_approvals, project.own_agents) == (None, None)

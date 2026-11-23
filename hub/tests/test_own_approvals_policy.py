@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, handles
+from maity_hub import clock, events, handles
 from maity_hub import tables as t
 from maity_hub.events import Actor
 from maity_hub.routes import joins, projects
@@ -57,7 +57,7 @@ def test_own_approvals_is_a_number_of_at_least_one(owner: flow.Human) -> None:
     done = _set(owner, own_approvals=3)
     assert done.status_code == 200, done.text
     assert done.json()["policy"]["own_approvals"] == 3
-    assert _set(owner, own_approvals=1000).status_code == 200  # no upper bound (§6.1)
+    assert _set(owner, own_approvals=1000).status_code == 200  # any count up to the bound (§6.1)
 
 
 def test_a_preset_change_keeps_both_fields(
@@ -236,11 +236,12 @@ def test_own_agents_edge_cases(
     assert _fields(missing) == {"reason": "required"}
 
 
-def test_a_suspended_or_pending_account_answers_as_an_unknown_handle(
+def test_a_suspended_pending_or_deleted_account_answers_as_an_unknown_handle(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     gone = _member(make_client, migrated, "gone")
     waiting = _member(make_client, migrated, "waiting")
+    deleted = _member(make_client, migrated, "deleted")
     with migrated.begin() as conn:
         conn.execute(
             update(t.human).where(t.human.c.id == gone.id).values(suspended_at=clock.now())
@@ -248,7 +249,10 @@ def test_a_suspended_or_pending_account_answers_as_an_unknown_handle(
         conn.execute(
             update(t.human).where(t.human.c.id == waiting.id).values(account_status="pending")
         )
-    for handle in ("gone", "waiting", "nobody-at-all"):
+        conn.execute(
+            update(t.human).where(t.human.c.id == deleted.id).values(deleted_at=clock.now())
+        )
+    for handle in ("gone", "waiting", "deleted", "nobody-at-all"):
         assert _fields(_set(owner, own_agents={"owners_of": [handle]})) == {
             "own_agents": "unknown_handle"
         }
@@ -266,15 +270,21 @@ def test_every_way_out_names_the_picked_people_by_handle(
     assert packet["project"]["policy"]["own_agents"] == {"owners_of": ["picked"]}
     assert _set(owner, coordinator=agent.id).status_code == 200
     assert owner.delete(f"{PROJECT}/members/{agent.id}").status_code == 200
+    # A hide writes only when it turns something off: the badge must be on first (A2234).
+    assert _set(owner, badge="members").status_code == 200
     project_id = _project(migrated)
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:
         projects.hide_by_moderation(conn, project_id, "hidden", Actor(None))
     with migrated.connect() as conn:
-        changes = conn.execute(
-            select(t.event.c.payload)
-            .where(t.event.c.kind == "policy_changed")
-            .order_by(t.event.c.seq)
-        ).scalars()
-        seen = [(c["old"]["own_agents"], c["new"]["own_agents"]) for c in changes]
-    assert seen[-2:] == [({"owners_of": ["picked"]},) * 2] * 2
-    assert all("hum-" not in str(pair) for pair in seen)
+        changes = list(
+            conn.execute(
+                select(t.event.c.payload)
+                .where(t.event.c.kind == "policy_changed")
+                .order_by(t.event.c.seq)
+            ).scalars()
+        )
+    by_reason = {c.get("reason"): (c["old"]["own_agents"], c["new"]["own_agents"]) for c in changes}
+    picked = ({"owners_of": ["picked"]},) * 2
+    assert by_reason["member_removed"] == picked
+    assert by_reason["hidden"] == picked
+    assert all("hum-" not in str(c) for c in changes)

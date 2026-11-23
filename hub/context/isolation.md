@@ -248,7 +248,10 @@ the upgrade, and needs no history table.
 
 **Lost by the migration:** nothing the rows keep. An owner who was a
 member when the agent joined and left since does not make the agent
-outside; one who joined only after the agent does. (The first version of
+outside; one who joined only after the agent does. An owner row counts
+for the half-open span [`joined_at`, `removed_at`): an owner removed at
+the very instant the agent joined does not make it the project's own,
+as at the exchange, which runs under the project lock. (The first version of
 this entry and of the migration read only the owners' current
 memberships and called the history lost; corrected on the review of
 #2135, A2211 and A2212.)
