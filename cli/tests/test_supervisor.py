@@ -4931,6 +4931,19 @@ def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
     assert not any("Keep the Why" in line for line in logs)
 
 
+def test_a_hub_that_names_no_skill_field_is_said_at_the_start(world: Any) -> None:
+    """tsk-2k0jcaxfd0ja: a hub of 0.1.0a10 or older sends no `keep_the_why` on a placement, and
+    the runner delivered nothing without a word, also for a project that uses Keep the Why.
+    A hub that sends the field, null for a project without it, is not mentioned."""
+    sup, _, _, _, logs = world
+    local = sup.targets["local"]
+    assert sup._skill(placement(), local) is None
+    assert logs[-1] == f"plc-0003: {supervisor.NO_SKILL_FIELD}"
+    said = len(logs)
+    assert sup._skill(placement(keep_the_why=None), local) is None
+    assert len(logs) == said
+
+
 def test_a_host_maity_without_the_skill_ops_starts_without_the_skill(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

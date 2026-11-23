@@ -464,6 +464,52 @@ def _check_agent_path(report: Report, local: config.Local) -> None:
         report.warn(said)
 
 
+def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -> None:
+    """What a grant lets the agents run, or open, that this host does not have (local
+    backend; tsk-2k0jcaxfd0ja, a fresh host): a granted command whose program is not on
+    agent_path, gh missing for `pull_requests = true`, and gh without a login stored where
+    `maity gh` finds it (only HOME reaches gh: `~/.config/gh/hosts.yml` of the agents' user).
+    Warnings: the grant is not wrong, the host is not ready for it."""
+    local = cfg.local
+    if local is None:
+        return
+    agents_home = (
+        config.home_of(local.agent_user)
+        if local.layout == "agent_user" and local.agent_user
+        else Path(os.path.expanduser("~"))
+    )
+    agents = local.agent_user if local.layout == "agent_user" and local.agent_user else None
+    who = agents or getpass.getuser()
+    for name, grant in cfg.repositories.items():
+        for rule in grant.allow:
+            program = rule.split(" ")[0]
+            if not config.plain_command(rule) or "/" in program:
+                continue
+            if shutil.which(program, path=agent_path) is None:
+                report.warn(
+                    f"repositories.{name}: allow {rule!r}: `{program}` is not on agent_path "
+                    f"({agent_path}); install it, or the command fails in every session"
+                )
+        if not grant.pull_requests:
+            continue
+        if proc.program("gh") is None:
+            # adapters.pull_requests_record: the record names the gh found when a session
+            # starts; without one it is empty and `maity gh` says the grant has none.
+            report.warn(
+                f"repositories.{name}: pull_requests = true, but gh is not on the runner's PATH, "
+                "so no session gets `maity gh` (it says the repository grants no pull "
+                "requests); install gh, then restart the placements: a session takes gh as it "
+                "was when it started"
+            )
+        elif not (agents_home / ".config" / "gh" / "hosts.yml").is_file():
+            report.warn(
+                f"repositories.{name}: pull_requests = true, but gh has no login for {who} "
+                f"(no {agents_home}/.config/gh/hosts.yml); as that user: gh auth login, then "
+                "gh auth setup-git (an agent's git push uses that login too: without it, "
+                "\"could not read Username\")"
+            )
+
+
 def _check_local(report: Report, local: config.Local) -> None:
     _check_agent_path(report, local)
     if shutil.which("tmux") is None:
@@ -1256,6 +1302,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
         else:
             report.ok("maity found on agent_path")
+        _check_grant_programs(report, cfg, agent_path)
         for harness in cfg.harnesses.values():
             _check_harness(
                 report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,

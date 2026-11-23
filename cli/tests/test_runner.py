@@ -1657,6 +1657,36 @@ def test_missing_default_config_names_the_services(
     assert "--config" not in given.value.problems[0]
 
 
+def test_check_warns_on_an_agent_path_entry_under_a_home_that_is_not_there(
+    home: Path, tmp_path: Path
+) -> None:
+    # tsk-2k0jcaxfd0ja: a service's agent_path named /home/maity-runner/.local/bin, while
+    # `maity runner install` gives that user /var/lib/maity-runner; nothing said so.
+    there = tmp_path / "bin"
+    there.mkdir()
+    gone = "/home/maity-no-such-user-2k0j/.local/bin"
+    local = config.Local(
+        workspaces=tmp_path / "ws",
+        tmux_socket=tmp_path / "tmux.sock",
+        agent_path=os.pathsep.join([str(there), gone, str(tmp_path / "missing")]),
+    )
+    report = commands.Report()
+    commands._check_agent_path(report, local)
+    assert report.lines == [
+        (
+            "warn",
+            f"agent_path entry {gone} does not exist; /home/maity-no-such-user-2k0j is no "
+            f"home here, the agents' home is {home}",
+        ),
+        ("warn", f"agent_path entry {tmp_path / 'missing'} does not exist"),
+    ]
+    assert not report.failed
+    # Without agent_path (the service's own PATH) there is nothing to say.
+    quiet = commands.Report()
+    commands._check_agent_path(quiet, dataclasses.replace(local, agent_path=None))
+    assert quiet.lines == []
+
+
 def test_opencode_is_offered() -> None:
     # Offered (req-g4d2cskx6zxv): a configuration naming opencode is accepted, no longer refused
     # as "not offered yet" (cli/context/runner.md). Its modes and the Grok model are read, and

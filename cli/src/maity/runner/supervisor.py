@@ -52,6 +52,12 @@ from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
 PICKUP_RETRY = 15.0
+# Logged at the start of a placement whose hub sends no `keep_the_why` field (§15.5).
+NO_SKILL_FIELD = (
+    "the hub names no Keep the Why skill on placements (a hub of 0.1.0a10 or older), so this "
+    "runner delivers none; where the project uses Keep the Why, install the skill by hand for "
+    "the agents' user (docs/runners.md, \"The Keep the Why skill\") or update the hub"
+)
 JOIN_TIMEOUT = 120.0
 # `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.
 DETAIL_CODE = hub.ERROR_CODE  # fullmatch only
@@ -1769,6 +1775,12 @@ class Supervisor:
         `single` layout), the runner's own copy; elsewhere (the agent_user layout, an ssh host)
         the agents' user may not read the runner's directory, so the checked copy is put below
         that user's home and checked there at every start (skills.deliver, tsk-7casfxb7cn49)."""
+        if "keep_the_why" not in p:
+            # A hub that sends the field sends it on every placement, null for a project
+            # without Keep the Why; one that does not (0.1.0a10 and older) names no skill even
+            # where the project uses it, and the runner would deliver nothing without a word
+            # (tsk-2k0jcaxfd0ja). Said at each start, as the placement's other start lines.
+            self.log(f"{p['id']}: {NO_SKILL_FIELD}")
         try:
             wanted = skills.named(p)
         except skills.Unavailable as exc:
