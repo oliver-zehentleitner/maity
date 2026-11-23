@@ -39,7 +39,8 @@ def _limits(monkeypatch: pytest.MonkeyPatch) -> None:
     expect the 61st refused; on PostgreSQL the counts sit in fixed 60-s windows of the wall
     clock, and requests that straddle a window's edge let the 61st through (it counts the
     sixty only by weight). The limiter's clock and the windows' clock stand still instead,
-    the windows' at the start of one, as in test_mentions and test_device_codes."""
+    the windows' at the start of one, as in test_mentions (at a window start) and
+    test_device_codes."""
     for limiter in (forge_webhook.VERIFIED, forge_webhook.UNVERIFIED, forge_webhook.NOBODY):
         limiter.reset()
     frozen = time.monotonic()
