@@ -35,7 +35,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.models import HANDLE_PATTERN, Name, Strict, markdown, title
+from maity_hub.models import HANDLE_PATTERN, Effort, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes import joins
@@ -46,8 +46,6 @@ from maity_hub.views import event_views
 router = APIRouter(route_class=ProjectRoute)
 
 CLONE_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
-# The shape only: which efforts a harness takes is the runner's advertised list (§15.5).
-EFFORT_PATTERN = r"^[a-z]{1,16}$"
 NOT_NULLABLE = frozenset(
     {"desired", "harness", "mode", "stop_grace_seconds", "workspace_retention"}
 )
@@ -82,7 +80,7 @@ class PlacementCreate(Strict):
     harness: str
     mode: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
-    effort: str | None = Field(default=None, pattern=EFFORT_PATTERN)
+    effort: Effort | None = None
     workspace: WorkspaceIn = Field(default_factory=WorkspaceIn)
     desired: Literal["running", "stopped"] = "running"
     stop_grace_seconds: int = Field(default=120, ge=0, le=900)
@@ -95,7 +93,7 @@ class PlacementPatch(Strict):
     harness: str | None = None
     mode: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
-    effort: str | None = Field(default=None, pattern=EFFORT_PATTERN)
+    effort: Effort | None = None
     target: str | None = Field(default=None, min_length=1, max_length=200)
     stop_grace_seconds: int | None = Field(default=None, ge=0, le=900)
     workspace_retention: Retention | None = None
