@@ -22,6 +22,7 @@ from . import (
     capabilities,
     config,
     install,
+    keeper,
     limitread,
     logcap,
     loop,
@@ -270,6 +271,10 @@ class Report:
     def warn(self, text: str) -> None:
         self.lines.append(("warn", text))
 
+    def note(self, text: str) -> None:
+        """Worth knowing, nothing to fix: the operator's own choice (`track = "newest"`)."""
+        self.lines.append(("note", text))
+
     def error(self, text: str) -> None:
         self.lines.append(("error", text))
 
@@ -317,6 +322,11 @@ DEFAULTS = (
         " other harnesses start without their sandbox; false: never refused for the sandbox",
     ),
     ("harness.<id>.env_file", "unset"),
+    (
+        "harness.claude-code.track",
+        '"checked": the update installs at most the sandbox-checked version; "newest": the'
+        " vendor's newest, which check notes as unchecked",
+    ),
     (
         "git.name, git.email",
         f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
@@ -624,6 +634,20 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
+def _check_version(
+    report: Report, harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> None:
+    """The installed version against the sandbox-checked one: a warning, or under
+    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too
+    (capabilities.unchecked_warning)."""
+    note = capabilities.unchecked_note(harness.id, version, harness.track)
+    if note is not None:
+        report.note(note)
+    warning = capabilities.unchecked_warning(harness, version, tools_dir)
+    if warning is not None:
+        report.warn(warning)
+
+
 def _check_harness(
     report: Report,
     harness: config.Harness,
@@ -652,9 +676,7 @@ def _check_harness(
         report.error(f"harness {harness.id}: `{found.path} --version` failed")
         return
     report.ok(f"harness {harness.id}: {found.path} ({found.version})")
-    warning = capabilities.unchecked(harness.id, found.version)
-    if warning is not None:
-        report.warn(warning)
+    _check_version(report, harness, found.version, tools_dir)
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
@@ -1298,9 +1320,13 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
-            warning = capabilities.unchecked(harness.id, probe.version)
+            # No tool is managed on an ssh host: the way back is to install it by hand.
+            warning = capabilities.unchecked_warning(harness, probe.version, None)
             if warning is not None:
                 report.warn(f"{name}: {warning}")
+            note = capabilities.unchecked_note(harness.id, probe.version, harness.track)
+            if note is not None:
+                report.note(f"{name}: {note}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
                 if capabilities.sandbox_version_ok(harness.id, probe.version):
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
@@ -1454,7 +1480,7 @@ def cmd_tools(args: argparse.Namespace) -> int:
             print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
             return 1
         try:
-            done = tools.rollback(cfg.tools_dir, args.tool)
+            done = tools.rollback(cfg.tools_dir, args.tool, cap=keeper.cap(managed[args.tool]))
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1475,9 +1501,12 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        # From the active `track`, not the last check's: a switch shows at once.
+        target = tools.hold(row["latest"], keeper.cap(managed[row["id"]]))
+        held = f" (held at {target}: track = checked)" if target else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
-            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}{held}; "
             f"checked {row['checked_at'] or 'never'}"
         )
     return 0
