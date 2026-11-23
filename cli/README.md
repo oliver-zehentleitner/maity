@@ -1473,7 +1473,10 @@ project's own harness configuration is never loaded:
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  sign-in; `maity`, the hub's, forge's and `network` hosts and reading
+  the delivered Keep the Why skill allowed (writing it denied; agy's
+  documentation says its sandbox then mounts it read-only, not yet
+  confirmed in a live session). The
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may
