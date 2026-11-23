@@ -12,6 +12,8 @@ from sqlalchemy import Engine, delete, func, select, update
 
 from maity_hub import account_deletion, clock, contacts, write_guard
 from maity_hub import tables as t
+from maity_hub.auth import sessions
+from maity_hub.auth.caller import SESSION_COOKIE
 from maity_hub.errors import ApiError
 from tests import concurrency, factory, flow
 from tests.conftest import ClientFactory
@@ -351,17 +353,34 @@ def test_a_stranger_gets_one_answer_for_every_name_that_is_not_an_active_person(
         assert answers["nobody-here"][0] == 404
 
 
+def _untouched(make_client: ClientFactory, engine: Engine, handle: str) -> flow.Human:
+    """A human with a session and no transaction yet that took their `account_lock`: the
+    session is made directly, not by a sign-in, which shares the lock (`routes/auth.py`) and,
+    with rows made on first need, would have made the row already."""
+    human_id = factory.human(engine, handle)
+    with engine.begin() as conn:
+        session_id, csrf, _ = sessions.create(
+            conn, human_id, method="password", address="203.0.113.5", user_agent=None
+        )
+    client = make_client()
+    client.cookies.set(SESSION_COOKIE, session_id)
+    return flow.Human(client, csrf, human_id, handle)
+
+
 def test_two_people_adding_each_other_at_once_both_succeed(
-    anna: flow.Human, ben: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#1532: each `PUT` holds its caller's `account_lock` and then, at the same moment as the
     other, reaches for the other's. The rows exist from the accounts' creation, nothing is
     prepared beforehand, and shared locks on existing rows do not wait for each other: both
-    succeed. With the rows made on first need inside the transaction, each would wait for the
-    other's uncommitted insert: a deadlock, and one `PUT` fails."""
+    succeed. Both humans have written nothing before (`_untouched`), so each `PUT` is their
+    first transaction that takes the lock: with the rows made on first need there, each would
+    wait for the other's uncommitted insert, a deadlock, and one `PUT` fails."""
     meeting = concurrency.meet(
         monkeypatch, write_guard, "hold", key=lambda conn, human_id: human_id, engine=migrated
     )  # each caller's first hold is its change's transaction
+    anna = _untouched(make_client, migrated, "anna")
+    ben = _untouched(make_client, migrated, "ben")
     answers: dict[str, int] = {}
 
     def adds(who: flow.Human, other: str) -> None:

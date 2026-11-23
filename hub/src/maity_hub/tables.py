@@ -261,8 +261,8 @@ account_deletion = Table(
 
 # One row per human, never read for its content: the lock that orders a human caller's
 # transactions (shared, before their first locking statement) against the deletion of the
-# account (exclusive, first), `write_guard` (§2.9). Made by 0076 for existing humans and on
-# first need for later ones.
+# account (exclusive, first), `write_guard` (§2.9). Made with the account (`write_guard.make_row`);
+# 0076 and a later backfill made the rows of the humans before.
 account_lock = Table(
     "account_lock",
     metadata,

@@ -128,6 +128,9 @@ DELETION_THROUGH: dict[str, ModuleType] = {
 # stays, and every view shows it as `Deleted account` (§2.9).
 _RECORD = "the projects' or the instance's record, kept without the person (§2.9)"
 DELETION_KEEPS = {
+    # Taken first and exclusively through `write_guard.lock_row` (`lock_account`), never
+    # deleted: it holds only the id and goes with the account row, which stays.
+    "account_lock": "the deletion's own lock, which stays with the account row it belongs to",
     "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",

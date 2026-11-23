@@ -188,7 +188,7 @@ the deletion waits for.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** lead decision on the card, 2026-11-22; counter-checks on SQLite, 2026-11-23: with the lazy insert back the refusal test fails (`hub/tests/test_contacts.py`), with the backfill off the migration test fails (`hub/tests/test_migrations.py`); #1532 review, delta 1
+**Source:** lead decision on the card, 2026-11-22; counter-checks on SQLite, 2026-11-23: with the lazy insert back the refusal test fails (`hub/tests/test_contacts.py`), with the backfill off the migration test fails (`hub/tests/test_migrations.py`); #1532 review, delta 1; review A2143, 2026-11-23 (the reciprocal test's humans, the lock-order test's first statement)
 **Revisit when:** a human row is inserted somewhere other than `write_guard.make_row`'s callers, or `account_lock` is replaced by another lock
 **See:** account.md#one-lock-order-against-a-deletion-the-account-lock-before-any-other — 2cecbd85-ba32-43db-905f-11efddb97f3d — as of 2026-11-23
 
@@ -229,7 +229,22 @@ fail on the deadlock. `meet` wraps a function so each caller's first pass
 waits on a shared barrier, and fails with "interleaving not reached" when
 the parties never meet, instead of passing on whatever order the threads
 ran in. It skips on SQLite, whose single writer never lets two
-transactions stand inside at once.
+transactions stand inside at once. The barrier forces the interleaving
+only for humans whose first locking transaction is the one under test: a
+human made through the HTTP flow has usually locked already (the sign-in
+shares the lock), so with lazy rows the row would exist before the test
+and the reciprocal test would pass anyway (a counter-check on PostgreSQL
+showed exactly that, review A2143). That test therefore makes its humans
+with a session written directly and no prior write.
+
+**Lock-order tests:** since the lock path never inserts, `lock_row` starts
+with the locking read of `account_lock` itself (`FOR SHARE`, or `FOR
+UPDATE` for the deletion); no plain read precedes it. A test of the order
+counts the first locking statement as the account lock when it is that
+read (on SQLite, which renders no lock clause, the read comes before the
+first locking statement instead). Rejected: a plain read put back in
+`lock_row` to keep the older shape, an extra round trip that locks
+nothing.
 
 ## The operator's counter is derived from `deleted_at`, nothing is stored
 
