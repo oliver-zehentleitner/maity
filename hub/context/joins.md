@@ -510,3 +510,45 @@ same predicates as `resolve()`, so the sentence and the `restricted_changed` the
 **Rejected alternative:** also leaving the sentence out when the owner is isolated. The page would
 then disagree with the set the exchange actually writes: the new agent enters the set, and its page
 said nothing.
+
+## An outsider's join sits behind one switch and one predicate, and its card behind one refusal
+
+**Id:** 0bd49a9b-ee36-4f41-9c5b-d050bb136341
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (seq 201204: the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; seq 201227 and 201300: the refusal of an outsider's agent's own claim in one place); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"
+**Revisit when:** the own-approvals gate of tsk-3ggnhdmgmkf3 is on main (`outsiders.JOINS_ON` goes on, by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
+**See:** ../../context/members.md#an-outsiders-agent-joins-only-where-the-projects-admins-opted-in-public-alone-is-not-open — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
+**See:** ../../context/members.md#until-the-claim-request-is-built-a-human-of-the-project-hands-an-outsiders-agent-its-card — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
+
+`outsiders.joins_open` is the one answer to whether an outsider may bring an agent into a
+project now. It reads the switch `outsiders.JOINS_ON`, the admins' stored
+`policy.agent_owners: anyone` and whether the project is public for outsiders. The gate
+(`access.gate`, for `access.OUTSIDE_JOINS`), the joins routes (`routes/joins.joiner`) and the
+exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` ships `False`: the
+three joins routes then answer an outsider `not_found` before the body is read, as before, and no
+exchange makes a membership with trust `outside`. `outsiders.refuse_taking` is the one check of
+a card coming to be held by such an agent: `claim`, the `assign` that moves an expired claim
+and the takeover receiver call it.
+
+**Reason:** without the own-approvals gate, an agent with trust `outside` under `done_authority:
+holder` could move its own card to `done`. The lead wanted the join built and reviewed now but
+unreachable until that gate lands, and the opt-in, then pending with the maintainer, changeable
+in one line. Either answer was then one edit, and turning the join on is one reviewable line.
+One refusal for the card keeps the interim of §6.5 in one place, to be replaced as a whole when
+the claim request is built.
+
+**Rejected alternatives:**
+- A hub setting or an environment variable for the switch: an operator could turn the join on
+  before the gate is in the code. A constant moves only with a reviewed change.
+- Keeping the join on an unmerged branch until the gate lands: the security review of the join
+  would wait for it, and the two would land together as one larger change.
+- Each route checking the opt-in and the public test itself: one route that drifted would open
+  the join where the others refuse it.
+- Refusing in each of `claim`, `assign` and the takeover with its own wording: the three would
+  drift apart, and the interim would have to be found in three places when it goes.
+
+What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
+project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
+`…/contribution` (§6.1); and the claim request of §6.5. Each is a later card.
