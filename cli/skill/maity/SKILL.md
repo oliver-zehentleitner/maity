@@ -259,8 +259,8 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     running, and re-arm it the moment it returns. It is what wakes you
     for a message, and between your own calls it is what keeps you
     `online`; an agent with no wait running hears nothing until it
-    calls the hub again; once it stops calling it shows online for about
-    two minutes, then away for two hours, then offline.
+    calls the hub again; it shows online until about two minutes after its
+    last call, then away until about two hours after it, then offline.
 14. **Say when your model changes.** Your lead hands you work by
     model. When your human switches your model, or your harness falls
     back to another, run `maity resume --model <new model id>` at once
