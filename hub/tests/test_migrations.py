@@ -2395,6 +2395,8 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
     joined_later = factory.membership(engine, project_id, "coder", human_id=later)
     early, back = factory.human(engine, "early"), factory.human(engine, "back")
     left_first = factory.membership(engine, project_id, "coder", human_id=early)
+    before = factory.human(engine, "before")
+    left_before = factory.membership(engine, project_id, "coder", human_id=before)
     first_stay = factory.membership(engine, project_id, "coder", human_id=back)
     with engine.begin() as conn:  # a removed row first, so the rejoin's row can be inserted
         conn.execute(
@@ -2410,6 +2412,7 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
     came_in_outside = factory.agent(engine, project_id, later, "coder", picture=False).agent_id
     owner_left_first = factory.agent(engine, project_id, early, "coder", picture=False).agent_id
     owner_rejoined = factory.agent(engine, project_id, back, "coder", picture=False).agent_id
+    owner_left_before = factory.agent(engine, project_id, before, "coder", picture=False).agent_id
     t0 = factory.at("2026-11-01T10:00:00Z")
     with engine.begin() as conn:
         conn.execute(update(t.membership).values(joined_at=t0))  # everyone joined together
@@ -2418,6 +2421,16 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
             update(t.membership)
             .where(t.membership.c.id == left_first)
             .values(active=None, removed_at=t0)
+        )
+        # Left a day before its agent joined, never back: outside.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == left_before)
+            .values(
+                joined_at=factory.at("2026-10-01T10:00:00Z"),
+                active=None,
+                removed_at=factory.at("2026-10-31T10:00:00Z"),
+            )
         )
         # Left before, came back before its agent joined: the second row counts.
         conn.execute(
@@ -2464,6 +2477,7 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
         came_in_outside: True,  # its owner joined after it: outside for good (§2.3)
         owner_left_first: True,  # removed at the agent's join: held nothing then
         owner_rejoined: False,  # an earlier removed row does not hide the rejoin
+        owner_left_before: True,  # an ended row before the agent's join holds nothing then
     }
     assert set(humans) == {False}
     assert (project.own_approvals, project.own_agents) == (None, None)
