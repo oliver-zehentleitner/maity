@@ -97,6 +97,32 @@ def test_the_parts_of_an_earlier_round_made_in_the_window_are_left_out(
         assert mine[route]["status"] == "reported", route  # the state it finds
 
 
+def test_a_statement_made_in_the_window_is_left_out_of_an_earlier_round(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """The round opened before the isolation and stays readable; only its statement, which
+    came in the window, drops out for the hiding reader, on all three routes. The human admin
+    and an agent isolated over the same window but lifted plainly still read it."""
+    watcher = flow.agent(make_client, owner, role="admin")
+    plain = flow.agent(make_client, owner, role="admin")
+    watcher.resume()
+    plain.resume()
+    held = Round(owner, make_client, migrated, now)
+    isolate(owner, watcher.id)
+    isolate(owner, plain.id)
+    assert held.statement().status_code == 201  # inside the window
+    assert lift(owner, watcher, hide=True).status_code == 200
+    assert lift(owner, plain).status_code == 200
+    mine = _reads(watcher, held.id)
+    for who in (owner, plain):
+        theirs = _reads(who, held.id)
+        for route in ("listed", "got", "overview"):
+            assert theirs[route]["statement"] is not None, (who, route)
+    for route in ("listed", "got", "overview"):
+        assert mine[route] is not None and mine[route]["id"] == held.id, route
+        assert mine[route]["statement"] is None, route
+
+
 def test_a_plain_lift_leaves_the_round_readable(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:
