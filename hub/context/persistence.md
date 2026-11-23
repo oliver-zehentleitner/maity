@@ -1581,3 +1581,32 @@ mirrors.
   answer and the statements of a whole list, which every read on that path should cut alike.
 - Moving the bound into `export` or `namespace`: both import modules that would then import them
   back.
+
+## A revocation reads the instance's attachments once, under its project locks
+
+**Id:** 17af5e56-276a-4ad3-b7a7-2fa53d574611
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** audit R5 batch 2, finding 3 (card tsk-eb06q8ef852k, PR #2131); review A2188 checked the lock order and the reads on PostgreSQL 16
+**Revisit when:** a step between the read and its uses starts writing an attachment or a membership column the read keeps, or `revoke` stops locking its projects first
+
+`auth.revocation.revoke` locks every project it writes in (`projects_of`,
+sorted, `lock_projects`), then reads the instance's live attachments with
+their memberships once (`_attached`, built on `instances.live_attachments`),
+before its own UPDATE of the credential. The overlap refresh, the lead's end
+(`_lead_revoked`) and `holder_stalled.revoked` all take those rows.
+
+**Reason:** the writes between the read and its uses (the credential, its
+session, the overlaps in `environment_overlap`) change no attachment and no
+membership column the rows hold, so one read under the locks answers all
+three. `live_attachments` keeps revoked credentials because the lead's end
+runs for a credential that was revoked already, not because the read comes
+after the UPDATE: it no longer does.
+
+**Rejected alternatives:**
+- One read per step, as before: four reads of the same rows in one
+  transaction (`projects_of`, the refresh loop, `_lead_revoked`,
+  `holder_stalled`).
+- Leaving revoked credentials out of `live_attachments`, as `attached_now()`
+  does: the lead's end of a credential revoked already would find nothing.

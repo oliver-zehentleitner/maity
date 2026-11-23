@@ -56,6 +56,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import attachments as live_attachments
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project, newest_seq
@@ -817,12 +818,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         if agent:
             # Every project the instance is attached to, an isolated one included (§6.1,
             # §6.17); never a project its profile is in without this instance.
-            a = t.instance_attachment
-            attached_rows = conn.execute(
-                select(t.membership.c.project_id, t.membership.c.isolated_since)
-                .join(a, a.c.membership_id == t.membership.c.id)
-                .where(a.c.credential_id == caller.credential_id, a.c.detached_at.is_(None))
-            ).all()
+            attached_rows = live_attachments(conn, caller.credential_id or "")
             query = select(t.project).where(
                 t.project.c.id.in_([r.project_id for r in attached_rows])
             )

@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import attached, availability, clock, events, idempotency, namespace
+from maity_hub import attached, availability, clock, idempotency, namespace
 from maity_hub import tables as t
-from maity_hub.auth.caller import Caller, in_attachment
+from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import invalid
 from maity_hub.models import Strict
 from maity_hub.routes.me import human_body
 from maity_hub.routes.members import members_outcome
@@ -74,41 +75,30 @@ def _agent(
         raise invalid({"show_reason_in": "humans_only"})
     # The project named, else every attachment that is not isolated, all or nothing (§6.12,
     # following `PATCH /me`, §5.3 "Per project").
-    targets = attached.every(conn, caller, body.project)
-    single = attached.single(conn, caller, body.project)
-    # Every project up front, in id order, as a revocation takes them (§6.17): the loop below
-    # goes by attach order, and a lock inside it would invert that order.
-    events.lock_projects(conn, (a.project_id for a in targets))
-    # Read again under those locks: an isolation or a detach in between is not written past.
-    targets = attached.recheck(conn, caller, targets, body.project)
-    ids: list[int] = []
-    for attachment in targets:
+
+    def one(here: Caller, attachment: Any) -> int:
         row = conn.execute(
             select(t.membership).where(t.membership.c.id == attachment.membership_id)
         ).one()
-        actor = in_attachment(caller, attachment).actor(row.id)
-        try:
-            if until is None:
-                # Any `until: null` recomputes the runner's limit (§6.12): while every
-                # placement is still rate-limited, clearing leaves the agent limited by the
-                # runner.
-                availability.clear_agent_limit(conn, row, actor)
-            else:
-                availability.set_agent_limit(
-                    conn,
-                    row,
-                    until,
-                    source="self",
-                    harness=body.harness or caller.harness,
-                    reason=body.reason,
-                    placement_id=None,
-                    actor=actor,
-                )
-        except ApiError as error:
-            if single:
-                raise
-            raise attached.in_project(error, conn, attachment.project_id) from None
-        ids.append(row.id)
+        actor = here.actor(row.id)
+        if until is None:
+            # Any `until: null` recomputes the runner's limit (§6.12): while every placement
+            # is still rate-limited, clearing leaves the agent limited by the runner.
+            availability.clear_agent_limit(conn, row, actor)
+        else:
+            availability.set_agent_limit(
+                conn,
+                row,
+                until,
+                source="self",
+                harness=body.harness or caller.harness,
+                reason=body.reason,
+                placement_id=None,
+                actor=actor,
+            )
+        return int(row.id)
+
+    ids, single = attached.per_attachment(conn, caller, body.project, one)
     return members_outcome(conn, caller.credential_id or "", ids, single)
 
 

@@ -118,9 +118,9 @@ an instance may be attached to several projects (§6.17), one membership in each
 stays on the membership, so it is now one per project the instance is in. `POST /me/limit`
 from an agent writes the membership the `project` it names is attached through, or, without
 `project`, every live attachment's membership that is not isolated, all or nothing
-(`routes/limit.py`, `attached.every`), with each project locked first in the order of their
-ids. The decision and its reason hold per membership: a runner's limit still belongs to one
-placement, and a placement is in one project.
+(`routes/limit.py` through `attached.per_attachment`, as `PATCH /me`), with each project
+locked first in the order of their ids. The decision and its reason hold per membership: a
+runner's limit still belongs to one placement, and a placement is in one project.
 
 ## A cover run is named by its start; on return every item of it loses `cover`
 
@@ -295,3 +295,32 @@ one carried `cover` too: the items are what a substitute actually holds.
 - `covering` from `cover.by` alone: a substitute went on listing the
   covered member after it had released the card or a third member had
   taken it over.
+
+## A replay's attachments are read again under the project locks
+
+**Id:** 9776f433-e7bc-4725-874f-5840e5f3f16a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** audit R5 batch 2, finding 2 (card tsk-eb06q8ef852k, PR #2131); review A2188 showed it on PostgreSQL 16 with two connections
+**Revisit when:** a replay of a write in every project stops locking its projects, or the server engines leave READ COMMITTED
+
+`attached.free_held`, the replay of a write in every attachment (§1.5),
+reads the credential's live attachments twice: once to learn which
+projects to lock (`held`), and once more under those locks, keeping only
+the attachments in the locked projects.
+
+**Reason:** the server engines run at READ COMMITTED and the project lock
+is a row lock. A statement after the lock wait gets a new snapshot, so an
+isolation or a detach that committed while the replay waited for the lock
+is seen only by the second read. Review A2188 showed it: the first read saw
+no isolation, the replay waited a second for the project row while another
+connection isolated the membership and committed, and the read under the
+lock saw it. `attached.recheck` reads again under the locks for the same
+reason.
+
+**Rejected alternatives:**
+- One read, filtered to the locked projects (the audit's proposal): it
+  answers from the snapshot before the lock and writes past an isolation.
+
+The cost is one indexed read per replay.

@@ -1078,6 +1078,32 @@ def test_a_revocation_locks_every_project_in_order_before_any_write(
         assert sorted(stalled) == ordered  # told in each, as before
 
 
+def test_a_revocation_reads_the_instances_attachments_twice(world: World) -> None:
+    """Attached to A and B, each with a claim: one revocation reads the instance's live
+    attachments once for the projects it locks (`projects_of`) and once under those locks for
+    the overlaps, the lead's end and `holder_stalled`, not once per step (audit R5 batch 2,
+    finding 3). It still tells both projects of the stalled holder."""
+    from maity_hub.auth import revocation
+    from tests.statements import listening
+
+    w = world
+    sent: list[str] = []
+
+    def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement)
+
+    with events.transaction(w.engine) as conn, listening(w.engine, heard, async_engines=False):
+        assert revocation.revoke(conn, w.agent.credential_id, "revoked", None)
+    live = "instance_attachment.detached_at IS NULL"
+    reads = [s for s in sent if s.lstrip().startswith("SELECT") and live in s]
+    assert len(reads) == 2, "\n----\n".join(reads)
+    with w.engine.connect() as conn:
+        stalled = conn.execute(
+            select(t.event.c.project_id).where(t.event.c.kind == "holder_stalled")
+        ).scalars()
+        assert sorted(stalled) == sorted([w.alpha, w.beta])
+
+
 @pytest.mark.parametrize(
     "path, body",
     [

@@ -16,6 +16,7 @@ event per holder and pass for the claims whose `lease_until` passed since it las
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -154,22 +155,18 @@ def limit_started(conn: Connection, membership_id: int) -> None:
         stalled(conn, membership_id, instance, "limit")
 
 
-def revoked(conn: Connection, credential_id: str) -> None:
-    """The instance's session ended by a revocation (§6.5). A replacement moves the claims to
-    the new instance and a removal releases them in the same transaction: both say so to
-    `auth.revocation.revoke` (`holder_moves`), which then does not call this."""
-    a = t.instance_attachment
-    rows = conn.execute(
-        select(a.c.membership_id, a.c.instance, t.membership.c.project_id)
-        .join(t.membership, t.membership.c.id == a.c.membership_id)
-        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-        .order_by(t.membership.c.project_id, a.c.id)
-    ).all()
-    # In every project the instance is in (§6.17), all locked first in the order of their
-    # ids; the revocation took them already, so these are taken again harmlessly.
-    lock_projects(conn, [row.project_id for row in rows])
-    for row in rows:
-        stalled(conn, row.membership_id, row.instance, "session_ended")
+def revoked(conn: Connection, attached: Sequence[tuple[str, int, str]]) -> None:
+    """The instance's session ended by a revocation (§6.5), in every project it is attached
+    to (§6.17): `attached` is (project id, membership id, instance) per live attachment, in
+    attach order, as `auth.revocation.revoke` read them under its locks. A replacement moves
+    the claims to the new instance and a removal releases them in the same transaction: both
+    say so to `revoke` (`holder_moves`), which then does not call this."""
+    rows = sorted(attached, key=lambda row: row[0])  # by project, attach order within
+    # All locked first in the order of their ids; the revocation took them already, so these
+    # are taken again harmlessly.
+    lock_projects(conn, [project_id for project_id, _, _ in rows])
+    for _, membership_id, instance in rows:
+        stalled(conn, membership_id, instance, "session_ended")
 
 
 def _unreported(now: datetime) -> ColumnElement[bool]:

@@ -730,12 +730,20 @@ def settle_in_project(
     before any side effect, the read's count included (§6.2; no `ISOLATED_MAY` on a project's
     routes); then the read's count, presence and, unless `renew_leases` is off (the events
     long-poll), the leases in that membership only (§2.4), and the caller acts in it."""
-    if attachment.isolated_since is not None:
-        from maity_hub import isolation
-
-        raise isolation.refusal(attachment)
+    refuse_if_isolated(attachment)
     count_agent_read(conn, caller, facts)
     return in_attachment(_present(conn, caller, [attachment], renew_leases), attachment)
+
+
+def refuse_if_isolated(attachment: Any) -> Any:
+    """`attachment`, or `403 isolated` when its membership is isolated (§6.2): the one check
+    of a call in one project, on a project route (`settle_in_project`, `access`), in the
+    bootstrap bundle and on a route outside any project that names one (`attached`)."""
+    if attachment.isolated_since is not None:
+        from maity_hub import isolation  # late: its imports (cards) reach back here
+
+        raise isolation.refusal(attachment)
+    return attachment
 
 
 def refuse_isolated_everywhere(attached: Sequence[Any], facts: RequestFacts) -> None:

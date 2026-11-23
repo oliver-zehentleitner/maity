@@ -180,6 +180,8 @@ def _shared(conn: Connection, card: Any) -> bool:
         return True
     if any(other.id != card.id for other in cards.naming_pr(conn, card.project_id, number)):
         return True
+    # Compared in Python for the reason `cards.naming_pr` gives: `pr` is a JSON number with
+    # no upper bound, which a JSON-path comparison casts differently per engine.
     told = conn.execute(
         select(t.event.c.subject_id, t.event.c.payload).where(
             t.event.c.project_id == card.project_id,

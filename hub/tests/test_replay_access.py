@@ -484,7 +484,7 @@ EXPECTED = {
     "member_self",
     # member_set: stored by the credential and replayed only to it; the answer re-reads that
     # credential's live, not isolated attachments, so a project it has lost is left out, and
-    # with none left it refuses as the request would (attached.free).
+    # with none left it refuses as the request would (attached.free_held).
     "member_set",
     "member_team",
     "memory",

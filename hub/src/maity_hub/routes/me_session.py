@@ -1180,24 +1180,13 @@ def _per_attachment(
     in every attachment that is not isolated, all or nothing: a refusal in one changes nothing
     anywhere and names its project in `details.project`. Answered with the member view, or,
     without `project` for an instance in several projects, `projects` with one per change."""
-    targets = attached.every(conn, caller, project)
-    one_view = attached.single(conn, caller, project)
-    # Every project up front, in id order, as a revocation takes them (§6.17): the loop below
-    # goes by attach order, and a lock inside it would invert that order.
-    events.lock_projects(conn, (a.project_id for a in targets))
-    # Read again under those locks: an isolation or a detach in between is not written past.
-    targets = attached.recheck(conn, caller, targets, project)
-    ids: list[int] = []
-    for attachment in targets:
-        here = in_attachment(caller, attachment)
+
+    def one(here: Caller, _attachment: Any) -> int:
         mine = _own_membership(conn, here)
-        try:
-            change(here, mine)
-        except ApiError as error:
-            if one_view:
-                raise
-            raise attached.in_project(error, conn, attachment.project_id) from None
-        ids.append(mine.id)
+        change(here, mine)
+        return int(mine.id)
+
+    ids, one_view = attached.per_attachment(conn, caller, project, one)
     return members_outcome(conn, caller.credential_id or "", ids, one_view)
 
 

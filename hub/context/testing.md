@@ -516,3 +516,72 @@ own clock instead, as `test_mentions` does with `shared_counts._now` and `rateli
 - Making only the stored dates relative (`merged_at` from `NOW`, the card's first proposal): the
   window reads the event's own `at` against the clock, never `merged_at`; with that change alone
   the test still failed (`assert None == 1`).
+
+## Background workers in test clients: `test_outside_reads` starts no probe and no public-pages worker
+
+**Id:** 8b631cbc-3da6-481f-973c-f0e93d3a2ff4
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-9j767pr11k1a (the flake in hub CI on #2129 and locally under `-n 4`, and its reproduction with a sweep delayed by a test plugin); implementation session, 2026-11-23 (the same reproduction on the whole file, and a second worker found by a run with the probe already off); `probe.Worker._run`, `probe.observe_visibility`, `public_pages.Worker._run`, `public_project_views.prepare_why`; the `make_client` fixture in `hub/tests/test_outside_reads.py`
+**Revisit when:** a test of that file needs either worker's own pass, another worker that starts with the app reaches the forge within a test's time, or either worker stops working at once on start
+**See:** testing.md#a-cost-test-counts-only-the-statements-of-its-own-call-marked-by-a-context-variable — 6063bcb5-a218-452d-9b8d-b7a9faeca1b0 — as of 2026-11-23
+**See:** testing.md#test_public_why-starts-no-public-pages-worker-the-renders-it-reads-come-from-the-apps-start-and-from-touch — 2be5f10f-49f7-4dae-80c4-bf72205aa584 — as of 2026-11-23
+
+Every test client starts the app's background workers in its lifespan. They
+run on threads of their own, beside the test, and can call a test's fakes
+while the test measures them. The probe worker sweeps at once on start: it
+asks the forge whether each public page's repository is public
+(`observe_visibility`, through `Forge.for_project`) and stores the answer as
+`repository_public`. In `test_outside_reads` that sweep went through the
+`WhyForge` fake and added an `asked`, a `"repos"` event and a `bound`
+project; landing after a test had taken its counts, it failed
+`test_the_why_is_not_found_to_an_outsider_where_the_instance_token_does_not_serve`
+with `assert (2, 4) == (1, 4)`. The public-pages worker does the same on
+start: `prepare_why` reads the Why of every served project for its pages
+through a `ktw.Cache` that binds (`Forge.for_project`), which in this fake adds
+a `bound` project, file reads and the owner's grant; with the probe already
+off, it failed `test_an_outsiders_why_reads_never_ask_the_projects_source`
+(`assert ['prj-…'] == []`) and the test above (`assert (0, 4) == (0, 0)`, four
+file reads). A fake that counts calls must leave the workers' calls out, or the
+test must keep the workers from running; this file keeps them from running:
+its `make_client` patches `probe.Worker.start` and `public_pages.Worker.start`
+to no-ops for every client, as `test_probe`, `test_forge_access`,
+`test_contract_text` do for the probe and `test_public_why` (2be5f10f) for the
+public pages.
+
+Which part stands how: both races are reproduced. With the probe's sweep
+delayed 0.1 s and 0.2 s by a test plugin, the whole file fails with that first
+assert; with the probe off and the sweep delayed 0.5 s, the public-pages
+worker failed the bound check once; a delay of the order of a second before
+its preparation (how much depends on the machine) failed the four-file-reads
+assert in both cases of that test. With both workers off
+the file passes under each delay. That a late sweep would also turn the stored
+visibility false after a test sets `why.private` is read from
+`observe_visibility`, not seen in a run. That no third worker reaches the forge
+within a test's time is read from the code too (the image worker waits its
+600 s interval before its first sweep, the notification mailer is off in the
+conftest).
+
+**Reason:** the probe's sweep does more than count. It writes the fake's
+answer into the project row, which the outsider's gate reads, so a sweep after
+`why.private = True` could refuse an outsider by the stored value where the test
+means the live answer. Not starting the workers removes every such effect, and
+no test in the file needs their passes: the tests read the forge through
+requests and set `repository_public` themselves (`_repository`), and the
+public pages they read are rendered at the app's start and by `touch`.
+6063bcb5 rejected stopping the workers for the cost tests, since there every
+worker's statements counted and a new worker would bring the flake back; here
+only the workers that reach the forge fake matter, and two do within a test's
+time.
+
+**Rejected alternatives:**
+- The fake leaving calls from the `maity-probe` thread out of `asked`, `events`
+  and `bound`, or recording them apart (the card's proposal): it would have
+  missed the public-pages worker, a second thread that reaches the fake, and the
+  sweep would still store the fake's answer as `repository_public`.
+- Stopping `app.state.probe` in every client a test measures (the card's
+  alternative): the first sweep starts as the client enters its lifespan, before
+  a test can stop it, so a sweep already under way still lands; and every client
+  of the file (the world's and a test's own) would need the stop.
