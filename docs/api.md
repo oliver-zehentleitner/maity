@@ -681,7 +681,13 @@ both raw and percent-decoded, a JSON body both raw and as the strings
 `mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b` occurs** (`credential_in_payload`),
 from every caller, whatever character stands right before it: a JSON
 escape such as `\n` or `\u006d` hides no credential, and neither does an encoding the
-JSON parser reads (a UTF-8 byte order mark, UTF-16 or UTF-32). When the matched string is a real credential (the id
+JSON parser reads (a UTF-8 byte order mark, UTF-16 or UTF-32).
+The query is checked before every other answer of the hub, on every
+host: before the `503 maintenance` of a window (§16.12), before the
+limits of §1.7 (a route's `rate_limited`, a body declared over its cap),
+before the forge webhook (§17.4) and before the `not_found` of a path
+the hub does not know (§1.3); such a request is refused with its body
+unread, and a real credential in its query is revoked as below. When the matched string is a real credential (the id
 exists and the secret verifies), the hub revokes it at once
 (`credential_revoked` with `reason: leaked_in_payload`) and emits
 `credential_in_payload` to the credential's owner and the admins, without

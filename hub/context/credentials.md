@@ -161,3 +161,43 @@ and has to join or pair again.
 - The same gate in `auth/leaks.revoke_leaked`: it revokes only a row whose secret verifies, and
   a malformed id matches no row (byte-for-byte comparison, above); its lookup is one batched
   query over the ids found, capped at `MAX_IDS`, not a step of authentication.
+
+## The query's credential filter answers before every other answer of the middleware
+
+**Id:** 7321212c-23ce-4c7c-8d3d-4442de0406c9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-a4n80ebqyaya and the lead's go on its plan, 2026-11-23 (confirmed: the scan first on every request, the join host included; a query hit leaves the body unread; the sentence in docs/api.md §2.2); a reproduction on main c92272f7 in the card (`/api/v1/no-such-route?x=<credential>` answered 404 and left the credential live); `hub/src/maity_hub/middleware.py`, `hub/tests/test_query_credential_first.py`
+**Revisit when:** the middleware gets an early answer that must not wait for the regex over the query, or the body is to be scanned before the early answers as well
+**See:** maintenance.md#a-maintenance-window-answers-503-to-everyone-and-isolates-nobody — c98a226a-75c6-45ea-af01-da3facfe3044 — as of 2026-11-23
+**See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-23
+
+`HubMiddleware.__call__` matches the query string, raw and percent-decoded, right after the
+answer headers are set up and before anything else answers: the maintenance window's `503`,
+the operator's route limit, the forge webhook, the `404` of an unrouted API path and the
+declared body cap. A match is answered by `_leaked` as before (refused with
+`credential_in_payload`, a real credential revoked, best-effort when the database cannot
+answer). On every host and path, the join host included. The body of such a request is not
+read, so a credential in that body is not revoked by it, as the large-body routes already had
+it. A clean query gets each early answer as before.
+
+The order, its reach and the unread body are confirmed by the card and the lead's go; the
+reasons the alternatives lost below are inferred from the code.
+
+**Reason:** §2.2 refuses a credential in any query string from every caller, and revokes a
+real one at once: a credential that travelled in a URL is in proxy and forge logs, wherever the
+request was sent. The query needs no body read, no caller and no database to be matched, so
+nothing an early answer protects is spent by checking it first; only a match costs a lookup,
+the same lookup a routed path already made. Each early answer stood in front of the scan, so
+a leaked credential sent to an unknown path, during a window, past a route limit, with a body
+over its cap or to the webhook stayed live.
+
+**Rejected alternatives:**
+- Keeping the scan after the early answers: those requests answered 404, 503, 429, 413 or the
+  webhook's own refusal and left a real credential live (the reproduction above).
+- Scanning inside each early handler: five places that must stay in step, and the next early
+  answer would have to remember it; one check in front covers them all.
+- Reading the body first so that a credential in both the query and the body is revoked by
+  one request: it would read bodies ahead of the window, the limits and the cap, which exist
+  to keep them unread.
