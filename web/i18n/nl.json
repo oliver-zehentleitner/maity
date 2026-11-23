@@ -1336,7 +1336,7 @@
   "forge.confirm.what": "De repository bevestigen",
   "forge.confirmed": "Bevestigd voor de machtigingen van {handle}.",
   "forge.failed": "Mislukt ({what}): {reason}",
-  "forge.intro": "De hub leest de repositories van de projecten die je bezit met jouw toegang: een installatie van de GitHub App van deze instantie, of een eigen token. Hij leest alleen, schrijft nooit. Ook een publieke repository heeft er een nodig, tenzij die in een van de eigen namespaces van de beheerder staat, en de hub leest de repository van een project pas nadat je die in de instellingen van het project hebt bevestigd.",
+  "forge.intro": "De hub leest de repositories van de projecten die je bezit met jouw toegang: een installatie van de GitHub App van deze instantie, of een eigen token. Hij leest alleen, schrijft nooit. Buiten de eigen namespaces van de beheerder heeft ook een publieke repository er een nodig, en de hub leest de repository van een project pas nadat je die in de instellingen van het project hebt bevestigd.",
   "forge.link": "De GitHub App koppelen",
   "forge.link.all": "alle repositories",
   "forge.link.bad_url": "het antwoord van de hub is geen https-adres",

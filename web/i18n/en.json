@@ -1336,7 +1336,7 @@
   "forge.confirm.what": "Confirming the repository",
   "forge.confirmed": "Confirmed for the grants of {handle}.",
   "forge.failed": "{what} failed: {reason}",
-  "forge.intro": "The hub reads the repositories of the projects you own with your access: an installation of this instance's GitHub App, or a token of your own. It only reads, never writes. A public repository needs one too, unless it is in one of the operator's own namespaces, and the hub reads a project's repository only after you confirm it in the project's settings.",
+  "forge.intro": "The hub reads the repositories of the projects you own with your access: an installation of this instance's GitHub App, or a token of your own. It only reads, never writes. Outside the operator's own namespaces, a public repository needs one too, and the hub reads a project's repository only after you confirm it in the project's settings.",
   "forge.link": "Link the GitHub App",
   "forge.link.all": "all repositories",
   "forge.link.bad_url": "the hub's answer is no https address",

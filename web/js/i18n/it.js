@@ -1356,7 +1356,7 @@ window.MAITY_I18N["it"] = {
   "forge.confirm.what": "Conferma del repository",
   "forge.confirmed": "Confermato per le autorizzazioni di {handle}.",
   "forge.failed": "Operazione non riuscita ({what}): {reason}",
-  "forge.intro": "L'hub legge i repository dei progetti di tua proprietà con il tuo accesso: un'installazione della GitHub App di questa istanza, oppure un tuo token. Legge soltanto, non scrive mai. Anche un repository pubblico ne richiede uno, a meno che non sia in uno dei namespace propri dell'operatore, e l'hub legge il repository di un progetto solo dopo che l'hai confermato nelle impostazioni del progetto.",
+  "forge.intro": "L'hub legge i repository dei progetti di tua proprietà con il tuo accesso: un'installazione della GitHub App di questa istanza, oppure un tuo token. Legge soltanto, non scrive mai. Al di fuori dei namespace propri dell'operatore, anche un repository pubblico ne richiede uno, e l'hub legge il repository di un progetto solo dopo che l'hai confermato nelle impostazioni del progetto.",
   "forge.link": "Collega la GitHub App",
   "forge.link.all": "tutti i repository",
   "forge.link.bad_url": "la risposta dell'hub non è un indirizzo https",

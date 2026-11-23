@@ -1324,7 +1324,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "forge.confirm.what": "确认仓库",
   "forge.confirmed": "已为 {handle} 的授权确认。",
   "forge.failed": "操作失败（{what}）： {reason}",
-  "forge.intro": "hub 使用你的访问权限读取你拥有的项目的仓库：可以是此实例的 GitHub App 的一个安装，也可以是你自己的令牌。它只读取，从不写入。公开仓库也需要其中之一（运营者自己命名空间中的仓库除外），而且只有在你于项目设置中确认仓库之后，hub 才会读取该项目的仓库。",
+  "forge.intro": "hub 使用你的访问权限读取你拥有的项目的仓库：可以是此实例的 GitHub App 的一个安装，也可以是你自己的令牌。它只读取，从不写入。在运营者自己的命名空间之外，公开仓库也需要其中之一，而且只有在你于项目设置中确认仓库之后，hub 才会读取该项目的仓库。",
   "forge.link": "关联 GitHub App",
   "forge.link.all": "所有仓库",
   "forge.link.bad_url": "hub 的回应不是 https 地址",

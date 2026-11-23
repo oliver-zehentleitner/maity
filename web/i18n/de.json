@@ -1336,7 +1336,7 @@
   "forge.confirm.what": "Das Bestätigen des Repositorys",
   "forge.confirmed": "Für die Berechtigungen von {handle} bestätigt.",
   "forge.failed": "{what} ist fehlgeschlagen: {reason}",
-  "forge.intro": "Der Hub liest die Repositories der Projekte, die dir gehören, mit deinem Zugriff: über eine Installation der GitHub App dieser Instanz oder über einen eigenen Token. Er liest nur und schreibt nie. Auch ein öffentliches Repository braucht eins davon, außer es liegt in einem der eigenen Namespaces des Betreibers, und der Hub liest das Repository eines Projekts erst, wenn du es in den Einstellungen des Projekts bestätigt hast.",
+  "forge.intro": "Der Hub liest die Repositories der Projekte, die dir gehören, mit deinem Zugriff: über eine Installation der GitHub App dieser Instanz oder über einen eigenen Token. Er liest nur und schreibt nie. Außerhalb der eigenen Namespaces des Betreibers braucht auch ein öffentliches Repository eins davon, und der Hub liest das Repository eines Projekts erst, wenn du es in den Einstellungen des Projekts bestätigt hast.",
   "forge.link": "GitHub App verknüpfen",
   "forge.link.all": "alle Repositories",
   "forge.link.bad_url": "die Antwort des Hubs ist keine https-Adresse",
