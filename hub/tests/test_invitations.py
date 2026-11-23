@@ -11,14 +11,19 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
+from starlette.testclient import TestClient
 
 from maity_hub import clock, events, invitation_mail, invitations, registration, registration_mail
 from maity_hub import tables as t
+from maity_hub.auth import email_links
 from maity_hub.middleware import _logged_path
-from maity_hub.routes import joins
+from maity_hub.routes import email_sign_in, joins
 from maity_hub.routes import registration as registration_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_email_sign_in import ask
+from tests.test_email_sign_in import mail as mailed_sign_in
+from tests.test_email_sign_in import setup as mail_setup
 from tests.test_join_host import join_client
 from tests.test_registration import MAIL, PASSWORD, SIGNING, hub, pending
 from tests.test_registration_accounts import complete, requested, signed_in
@@ -535,6 +540,93 @@ def test_a_closed_project_and_a_pending_account_accept_nothing(
     closed = accept(guest, token_of(made))
     assert (closed.status_code, closed.json()["error"]["code"]) == (409, "project_closed")
     assert owner.get(PATH).json()["items"][0]["used_at"] is None  # it waits
+
+
+def _by_mail(client: Any, engine: Engine, human_id: str, how: str) -> flow.Human:
+    """`ada`, signed in on `client` by a link or a code from her mailbox (§2.6.3): a session
+    fresh from the sign-in, as the real routes make it."""
+    assert ask(client).status_code == 202
+    url, code = mailed_sign_in(engine)
+    if how == "email_link":
+        client.get(url, headers={"sec-fetch-site": "same-origin"})
+        done = client.post(
+            url,
+            data={"form": client.cookies.get("maity_form")},
+            headers={"sec-fetch-site": "same-origin"},
+            follow_redirects=False,
+        )
+        assert done.status_code == 303, done.text
+    else:
+        done = client.post(
+            "/api/v1/auth/email-code",
+            json={"code": code},
+            headers={"x-csrf-token": client.cookies.get("maity_csrf", "")},
+        )
+        assert done.status_code == 200, done.text
+    session = client.get("/api/v1/auth/session").json()
+    ada = flow.Human(client, session["csrf_token"], human_id, "ada")
+    current = [s for s in ada.get("/auth/sessions").json()["items"] if s["current"]]
+    assert [(s["method"], s["good_standing"]) for s in current] == [(how, False)]
+    return ada
+
+
+@pytest.mark.parametrize("how", ["email_link", "email_code"])
+def test_a_session_fresh_from_the_mailbox_accepts_nothing(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """§3.4, §2.6.5: accepting needs a session in good standing; one signed in from the
+    mailbox is not, until an allowed session confirms it."""
+    monkeypatch.setattr(email_sign_in, "LIMITS", email_links.RequestLimits())
+    made = issue(owner)
+    client, ada_id = mail_setup(make_client, migrated)
+    # Her password session, earlier than the mailbox one: the one that may confirm it; another
+    # browser on the same hub, whose mail settings a second app would not share.
+    other = TestClient(client.app, base_url="https://hub.example", client=("203.0.113.8", 50000))
+    by_password = flow.Human(other, "", ada_id, "ada")
+    assert factory.login(by_password.client, ada_id, engine=migrated).status_code == 200
+    by_password.csrf = by_password.client.get("/api/v1/auth/session").json()["csrf_token"]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.human_id == ada_id)
+            .values(created_at=clock.now() - timedelta(minutes=1))
+        )
+    ada = _by_mail(client, migrated, ada_id, how)
+    refused = accept(ada, token_of(made))
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["code"] == "forbidden"
+    assert reason(refused) == "not_in_good_standing"
+    unknown = accept(ada, "A" * 22)  # the same: it learns nothing of the token
+    assert (unknown.status_code, reason(unknown)) == (403, "not_in_good_standing")
+    with migrated.connect() as conn:
+        assert (
+            conn.execute(select(t.membership.c.id).where(t.membership.c.human_id == ada.id)).first()
+            is None
+        )
+    assert owner.get(PATH).json()["items"][0]["used_at"] is None  # it stays open
+    assert [e.kind for e in kinds(migrated)] == ["invitation_created"]
+    # "This was me" from her password session puts the mailbox session in good standing.
+    mine = [s for s in ada.get("/auth/sessions").json()["items"] if s["current"]][0]
+    confirmed = by_password.post(f"/auth/sessions/{mine['id']}/confirm")
+    assert confirmed.status_code == 200, confirmed.text
+    joined = accept(ada, token_of(made))
+    assert joined.status_code == 201, joined.text
+    assert owner.get(PATH).json()["items"][0]["used_by"] == ada.id
+
+
+def test_a_password_session_accepts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The session `flow.human` makes signs in by password: in good standing (§2.6.5)."""
+    made = issue(owner)
+    guest = flow.human(make_client, migrated, "guest")
+    current = [s for s in guest.get("/auth/sessions").json()["items"] if s["current"]]
+    assert [(s["method"], s["good_standing"]) for s in current] == [("password", True)]
+    assert accept(guest, token_of(made)).status_code == 201
 
 
 def hold(engine: Engine, human_id: str, address: str, status: str = "verified") -> None:

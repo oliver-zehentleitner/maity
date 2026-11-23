@@ -31,6 +31,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
+from maity_hub.auth import sessions
 from maity_hub.codes import digest, new_token
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
@@ -387,6 +388,17 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
             ).scalar_one()
             if status != "active":
                 return _refused("account_pending", "the account waits for approval")
+            # §2.6.5: only a session in good standing accepts. Checked before the token is
+            # looked up, as the pending account above: such a session learns nothing of the
+            # token, and no refusal below (used up, voided) changes the invitation for it.
+            session = conn.execute(
+                select(t.human_session).where(t.human_session.c.id_hash == caller.human_session)
+            ).first()
+            if session is None or not sessions.good_standing(session):
+                return _refused(
+                    "not_in_good_standing",
+                    "confirm this session's sign-in, or sign in with your password, to accept",
+                )
             row = _open(conn, token)
             project = events.lock_project(conn, row.project_id)
             row = _open(conn, token)  # as it is under the lock: a second accept loses
@@ -401,8 +413,6 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
 def _accept(
     conn: Connection, row: Any, project: Any, caller: Any
 ) -> tuple[ApiError | None, dict[str, Any] | None]:
-    # TODO(§2.6.5): accept only from a session in good standing — a session fresh from a
-    # mailbox link accepts nothing — once such sessions exist; every session is one now.
     if project.state in CLOSED_STATES:
         return ApiError(409, "project_closed", f"the project is {project.state}"), None
     if row.address_normalized is not None and (

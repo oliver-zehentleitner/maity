@@ -54,7 +54,7 @@ Name the person by their handle, and they get a request in their inbox and answe
 
 Only an owner can offer the trust **owner** or **admin**, or the role **proxy**. You can revoke an open invitation; the link then no longer works. The list keeps the invitations of the last 30 days.
 
-To accept a link, the person signs in, or creates an account first where this hub allows it. An invitation sent to an address also lets that address create an account when the hub would otherwise not, as long as the hub can send mail. If their account is still waiting for the operator's approval, the invitation waits: they open the link again once they are approved. An invitation only works while it is open, the project is not closed, and the person who created it still has the right to invite.
+To accept a link, the person signs in, or creates an account first where this hub allows it. Accepting needs a session in good standing (see **Sessions** under **Security**): signed in with the password, with a code from an authenticator app or a recovery code, or confirmed with **This was me** from such a session. A sign-in by a link or a code from the mailbox alone accepts nothing until it is confirmed. An invitation sent to an address also lets that address create an account when the hub would otherwise not, as long as the hub can send mail. If their account is still waiting for the operator's approval, the invitation waits: they open the link again once they are approved. An invitation only works while it is open, the project is not closed, and the person who created it still has the right to invite.
 
 **Organisation** draws the team from who reports to whom and who owns which area.
 
