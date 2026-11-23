@@ -488,6 +488,45 @@ def test_trust_outside_holds_a_members_scopes_for_its_role_and_never_more() -> N
     assert "outside" not in scopes.TRUSTS  # no PATCH, invitation or other join sets it
 
 
+# --- role memory (§19.2) ------------------------------------------------------------------------
+
+MEMORY = f"{P}/memory"
+
+
+def _role_items(who: flow.Agent) -> list[str]:
+    answer = who.get(MEMORY, params={"store": "role"})
+    assert answer.status_code == 200, answer.text
+    return [item["id"] for item in answer.json()["items"]]
+
+
+def test_an_outsiders_agent_reads_its_roles_memory_but_neither_writes_nor_deletes_it(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    member = flow.agent(make_client, owner)  # a member's coder, the same role
+    written = member.post(MEMORY, {"store": "role", "text": "How this project reviews."})
+    assert written.status_code == 201, written.text  # a member's coder still writes
+    entry = written.json()["id"]
+    assert _role_items(agent) == [entry]  # it reads its role's memory
+    refused = agent.post(MEMORY, {"store": "role", "text": "Another way to review."})
+    assert refused.status_code == 403, refused.text
+    assert _reason(refused) == "outside_trust"
+    refused = agent.delete(f"{MEMORY}/{entry}")
+    assert refused.status_code == 403, refused.text
+    assert _reason(refused) == "outside_trust"
+    assert _role_items(member) == [entry]  # the entry stays, and nothing was added
+
+
+def test_an_outsiders_agent_keeps_its_own_team_memory(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    written = agent.post(MEMORY, {"store": "team", "text": "What I learned here."})
+    assert written.status_code == 201, written.text
+    deleted = agent.delete(f"{MEMORY}/{written.json()['id']}")
+    assert deleted.status_code == 200, deleted.text
+
+
 # --- isolation (§6.2) ---------------------------------------------------------------------------
 
 
