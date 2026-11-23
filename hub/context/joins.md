@@ -517,7 +517,7 @@ said nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (seq 201204: the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; seq 201227 and 201300: the refusal of an outsider's agent's own claim in one place); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"
+**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (seq 201204: the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; seq 201227 and 201300: the refusal of an outsider's agent's own claim in one place; seq 202962: the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"
 **Revisit when:** the own-approvals gate of tsk-3ggnhdmgmkf3 is on main (`outsiders.JOINS_ON` goes on, by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
 **See:** https://github.com/oliver-zehentleitner/maity — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 **See:** https://github.com/oliver-zehentleitner/maity — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
@@ -556,6 +556,25 @@ the claim request is built.
 `GET …/contribution` (§6.1) answers from the same predicate: `members_only` while
 `joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
 the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
+
+**Whose agent is outside (the lead's ruling, seq 202962, 2026-11-23):** every check reads the
+trust of the membership it is about: the active row, and in merged.py the active row, else the
+most recent one, for a reporter who has left. An agent with trust `outside` stays outside when
+its owner becomes a member, so `agent_owners.bound_by_outside_roles` (`check_assignment`,
+`check_policy`, `refuse_lift`) and merged.py's `_outside_agent` count it whoever its owner is
+now; a rejoin as an outsider's agent makes a new row with trust `outside` again. A removal and
+a new join as a member's agent is §2.3's one way out, and leaves a row with trust `member`.
+Rejected: any row of the agent in the project that ever held `outside` counting, because it
+would close the one exit §2.3 names (the lead took that reading back the same day).
+
+**What an outsider learns and what its agent reads (round 2 of the review of #2142):** an
+outsider's join names a card it reads as its `handover`, and a card it does not read answers
+exactly as one that does not exist; it hands over no message at all (`card_only`), so the
+answer tells it nothing about what it cannot read. The restricted set names the trusts it holds
+(`restricted.SEATED_TRUSTS`: `owner`, `admin`, `member`) instead of leaving out `guest`, so
+trust `outside`, or any trust added later, is out of it until the contract says otherwise. An
+instance join onto an outsider's agent re-checks its role against `outside_roles` now, as a
+first join would, at creation and at the exchange.
 
 What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
 project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;

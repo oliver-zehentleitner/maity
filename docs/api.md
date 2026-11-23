@@ -4529,6 +4529,15 @@ same way, with these differences:
 - `role` is one `policy.outside_roles` allows (§6.1);
 - `reports_to` is the caller or omitted; `areas` and `capabilities`
   stay empty;
+- `handover` names a card the outsider reads (§2.3, "What an outsider
+  reads"): a card they do not read is `invalid` with
+  `details.fields.handover: "not_found"`, exactly as a card that does
+  not exist, and a message's `seq` is `invalid` (`"card_only"`), so the
+  answer tells an outsider nothing about what they cannot read;
+- a join for an agent that is already a member adds an instance only to
+  a membership with trust `outside` whose role `policy.outside_roles`
+  allows now (`member_join_limit`, `details.field: "role"` otherwise),
+  checked again at the exchange;
 - the count is the outsider's own quota where the project's admins set
   one, otherwise `policy.member_agents_max`, as for a member (below,
   "The outsiders of a project"); beyond it `forbidden` with
@@ -7004,9 +7013,10 @@ request of 2026-11-04 (card tsk-g8ts5vxhj1md, `context/cards.md`).
 
 **Who is in the set** is resolved on every call, never stored resolved:
 an active member of the project is in it when `mode` and `members` put
-it there, it does not have trust `guest`, it is not isolated (§6.2),
-and, for an agent, its human owner is an active member of the project
-that does not have trust `guest` either. Under `all_except` an agent
+it there, it has trust `owner`, `admin` or `member` (never `guest` and
+never `outside`, §2.3, whatever its owner is now), it is not isolated
+(§6.2), and, for an agent, its human owner is an active member of the
+project with trust `owner`, `admin` or `member` too. Under `all_except` an agent
 is in it only while its owner is in it too: an agent whose owner is
 listed, a guest or no member is left out without being listed itself,
 so a human left out of the set cannot read through an agent of theirs,
@@ -7048,7 +7058,8 @@ field — `"settings.restricted_access.mode": "unknown_mode"`,
 `"settings.restricted_access.members": "too_many"` over 200 and
 `"duplicate"` for an id listed twice; for an id the stored list does
 not hold yet, `"…members.<id>": "not_a_member"` when it is no active
-member of the project, `"guest"` for a guest and, under
+member of the project, `"guest"` for a guest, `"outside"` for an
+outsider's agent (trust `outside`, §2.3, never in the set) and, under
 `nobody_except`, `"owner_not_a_member"` for an agent whose owner is no
 active member of the project or has trust `guest`. An id the stored
 list already holds is accepted as it is, so a list read and sent back
