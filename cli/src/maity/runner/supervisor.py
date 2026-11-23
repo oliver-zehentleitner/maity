@@ -2593,10 +2593,26 @@ class Supervisor:
             return None
         try:
             if target.as_user.direct and target.as_user.here and not target.host:
-                return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
-            return skills.deliver(target.as_user, self._agents_home(target),
-                                  self.cfg.skills_dir, self.cfg.state_dir, *wanted)  # fmt: skip
-        except (skills.Unavailable, OSError, ValueError, subprocess.SubprocessError) as exc:
+                found = skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+            else:
+                home = self._agents_home(target)
+                found = skills.deliver(
+                    target.as_user, home, self.cfg.skills_dir, self.cfg.state_dir, *wanted
+                )
+            # Resolved on this machine, as the workspaces are (`_context`): a link above the
+            # skills directory (a linked home) would otherwise give MAITY_KTW_SKILL_DIR and every
+            # harness's rules a path other than the one the sandbox mounts. Only the parts above
+            # `<skills_dir>/keep-the-why` can be links (skills.ensure and verify refuse one at or
+            # below it), so the copy's key, `found.parent.name`, stays. Never on an ssh host.
+            return found.resolve() if target.as_user.here else found
+        except (
+            skills.Unavailable,
+            OSError,
+            ValueError,
+            RuntimeError,
+            subprocess.SubprocessError,
+        ) as exc:
+            # RuntimeError: a link loop above the skills directory, on Python before 3.13.
             # ValueError too (a decoding error, the review of #2089): the skill is never what
             # fails a start, so it is never counted as a crash.
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")

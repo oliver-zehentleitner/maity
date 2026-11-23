@@ -23,6 +23,10 @@ class FactsError(Exception):
     """git or gh could not answer a question the report depends on."""
 
 
+class RemoteUnread(FactsError):
+    """`git ls-remote` ran and failed or did not answer: no network, a proxy it cannot reach."""
+
+
 @dataclass(frozen=True)
 class PullRequest:
     number: int
@@ -54,6 +58,9 @@ class Facts:
     # the remote was the push target's (`_push_target`), or there was none.
     upstream_set: bool = False
     push_remote: str | None = None  # by name, for the advice when there is no upstream
+    # `git ls-remote` failed (no network, a proxy it cannot reach); `report` raises it unless
+    # the card's linked pull request with this head, read through the hub's probe, stands in.
+    remote_error: str | None = None
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -69,17 +76,56 @@ def _git(cwd: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _last_line(stderr: str) -> str:
-    """The last line of git's or gh's error output, without a credential: both repeat the
-    remote's URL as configured, a token in it included."""
-    return without_userinfo(stderr.strip().splitlines()[-1]) if stderr.strip() else "no output"
+# What a failed git or gh command is said to be while a proxy that carries credentials is set:
+# the first class, in this order, with a phrase in its error output, matched without case;
+# else "other". The name always comes from this table, never from the output. Under such a
+# proxy, git and libcurl may repeat its credential in forms no scrub can follow, so the output
+# itself is never shown, only its exit code and class.
+FAILURE_CLASSES = (
+    ("proxy", ("could not resolve proxy", "unsupported proxy syntax", "407", "proxy")),
+    ("auth", ("authentication failed", "401", "403", "could not read username",
+              "could not read password", "terminal prompts disabled", "permission denied")),
+    ("not found", ("repository not found", "not found", "404",
+                   "does not appear to be a git repository")),
+    ("network", ("could not resolve host", "timed out", "connection refused",
+                 "network is unreachable", "failed to connect")),
+)  # fmt: skip
+_WITHHELD = "output withheld, a proxy with credentials is set"
+
+
+def _proxy_has_credentials() -> bool:
+    """Whether a proxy variable git may keep (clonecheck.ENV_PROXY) carries credentials: a
+    credential is a URL's userinfo, so a value without an `@` has none."""
+    from maity import clonecheck  # imports onboarding and proc; kept out of this module's load
+
+    return any("@" in os.environ.get(name, "") for name in clonecheck.ENV_PROXY)
+
+
+def _failure_class(stderr: str) -> str:
+    """The first class of FAILURE_CLASSES with a phrase in `stderr`, else "other"."""
+    text = stderr.lower()
+    for name, phrases in FAILURE_CLASSES:
+        if any(phrase in text for phrase in phrases):
+            return name
+    return "other"
+
+
+def _failure(what: str, stderr: str, returncode: int) -> str:
+    """The message for a git or gh command that failed, `what` saying so (`git ls-remote
+    failed`). While a proxy that carries credentials is set: its exit code and class
+    (FAILURE_CLASSES), never its own text. Else its last line without a credential: git and gh
+    repeat the remote's URL as configured, a token in it included."""
+    if _proxy_has_credentials():
+        return f"{what} (exit {returncode}, {_failure_class(stderr)}): {_WITHHELD}"
+    last = without_userinfo(stderr.strip().splitlines()[-1]) if stderr.strip() else "no output"
+    return f"{what}: {last}"
 
 
 def _git_required(cwd: Path, *args: str) -> str:
     """For questions that must be answered; a failure is an error, never an empty answer."""
     result = _run([*proc.GIT, *args], cwd)
     if result.returncode != 0:
-        raise FactsError(f"git {args[0]} failed: {_last_line(result.stderr)}")
+        raise FactsError(_failure(f"git {args[0]} failed", result.stderr, result.returncode))
     return result.stdout.strip()
 
 
@@ -104,7 +150,18 @@ def gh_repository(url: str | None) -> str | None:
     return f"{host}/{path}"
 
 
-def _pull_request(cwd: Path, branch: str, repository: str | None = None) -> PullRequest | None:
+# How many pull requests of one head branch name are read. gh's `--head` matches the branch
+# name alone, not the fork it lives in, so in the project's repository another fork's pull
+# request from a branch of the same name (`main`, `fix`) comes back too (tsk-6yq56cm6k01j).
+PR_CANDIDATES = 30
+
+
+def _pull_request(
+    cwd: Path, branch: str, repository: str | None = None, head: str | None = None
+) -> PullRequest | None:
+    """The pull request of `branch`: of those gh lists by that head branch name, the one whose
+    head is `head` (the local HEAD), else the first, as before (whose other head the report
+    then refuses)."""
     # A fork's clone: its pull request is in the project's repository, which gh would not
     # pick from an `origin` that is the fork (tsk-k0x4jn4y4ykg).
     where = ["--repo", repository] if repository else []
@@ -119,19 +176,23 @@ def _pull_request(cwd: Path, branch: str, repository: str | None = None) -> Pull
             "--state",
             "all",
             "--limit",
-            "1",
+            str(PR_CANDIDATES),
             "--json",
             "number,headRefOid,state,url,title,body",
         ],
         cwd,
     )
     if result.returncode != 0:
-        raise FactsError(f"gh could not list pull requests: {_last_line(result.stderr)}")
+        raise FactsError(
+            _failure("gh could not list pull requests", result.stderr, result.returncode)
+        )
     try:
         rows = json.loads(result.stdout or "[]")
         if not rows:
             return None
-        row = rows[0]
+        # A row that is no object is passed over here and fails below as gh's odd answer.
+        mine = (r for r in rows if isinstance(r, dict) and r.get("headRefOid") == head)
+        row = next(mine, rows[0]) if head is not None else rows[0]
         return PullRequest(
             number=int(row["number"]),
             head=str(row["headRefOid"]),
@@ -244,13 +305,23 @@ def _unreadable(branch: str, derived: bool = False) -> str:
 
 def _default_branch(cwd: Path, remote: str) -> str | None:
     """The remote's default branch: what `refs/remotes/<remote>/HEAD` points at (set by the
-    clone), else what the remote's HEAD names (`ls-remote --symref`); None when neither says."""
+    clone), else what the remote's HEAD names (`ls-remote --symref`); None when neither says.
+    An `ls-remote` that failed or timed out says nothing either, so the branch is left alone
+    and `collect` meets the unread remote with its fallback; a refusal of maity's git is a
+    FactsError as anywhere else."""
     local = _git(cwd, "symbolic-ref", "--quiet", f"refs/remotes/{remote}/HEAD")
     prefix = f"refs/remotes/{remote}/"
     if local and local.startswith(prefix):
         return local.removeprefix(prefix)
-    listing = _git(cwd, "ls-remote", "--symref", "--", remote, "HEAD") or ""
-    for line in listing.splitlines():
+    try:
+        result = proc.run([*proc.GIT, "ls-remote", "--symref", "--", remote, "HEAD"], cwd)
+    except proc.ToolRefused as exc:  # a ToolError too, so caught first
+        raise FactsError(str(exc)) from exc
+    except proc.ToolError:
+        return None
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.strip().splitlines():
         ref, _, name = line.partition("\t")
         if name == "HEAD" and ref.startswith("ref: refs/heads/"):
             return ref.removeprefix("ref: refs/heads/")
@@ -270,8 +341,20 @@ def _branch(cwd: Path) -> str | None:
 def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
     """The commit the remote's `ref` points at, None when it has no such ref. `ls-remote` takes
     the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
-    a line naming exactly `ref` counts."""
-    for line in _git_required(cwd, "ls-remote", "--heads", "--", remote, ref).splitlines():
+    a line naming exactly `ref` counts. A refusal of maity's git is a FactsError as anywhere
+    else; a lookup that ran and failed or timed out is RemoteUnread, with git's failure as
+    `_failure` says it."""
+    try:
+        result = proc.run([*proc.GIT, "ls-remote", "--heads", "--", remote, ref], cwd)
+    except proc.ToolRefused as exc:  # a ToolError too, so caught first
+        raise FactsError(str(exc)) from exc
+    except proc.ToolError as exc:
+        # maity's own text (proc._start: not installed, or no answer in time, naming the first
+        # three words of the command, never the remote), with nothing of git's output in it.
+        raise RemoteUnread(str(exc)) from exc
+    if result.returncode != 0:
+        raise RemoteUnread(_failure("git ls-remote failed", result.stderr, result.returncode))
+    for line in result.stdout.strip().splitlines():
         sha, _, name = line.partition("\t")
         if name == ref:
             return sha
@@ -306,7 +389,11 @@ def track_own_branch(cwd: Path) -> Retrack:
         return Retrack()
     own = f"refs/heads/{branch}"
     shown = without_userinfo(remote)
-    if _remote_head(cwd, remote, own) is None:
+    try:
+        own_head = _remote_head(cwd, remote, own)
+    except RemoteUnread:
+        return Retrack()  # unread, so nothing changes; `collect` meets the failure and says so
+    if own_head is None:
         return Retrack(
             problem=f"branch {branch} tracks {shown}/{tracked}, the default branch, and "
             f"{shown} has no branch {branch}; push it with `git push -u {shown} {branch}`"
@@ -357,7 +444,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
     # proc.GIT's diff.ignoreSubmodules keeps git out of submodules; a staged gitlink still shows.
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
-    remote = remote_branch = remote_head = None
+    remote = remote_branch = remote_head = remote_error = None
     upstream = False
     if branch:
         remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
@@ -371,13 +458,16 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
         if remote and merge_ref:
             _check_upstream(cwd, branch, remote, merge_ref, derived=not upstream)
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            remote_head = _remote_head(cwd, remote, merge_ref)
+            try:
+                remote_head = _remote_head(cwd, remote, merge_ref)
+            except RemoteUnread as exc:
+                remote_error = str(exc)  # unknown, never "no such branch"
 
     unknown = _forge_unknown(cwd, remote)
     pr = forge_error = None
     if unknown is None and branch:
         try:
-            pr = _pull_request(cwd, remote_branch or branch, gh_repository(repository))
+            pr = _pull_request(cwd, remote_branch or branch, gh_repository(repository), head)
         except FactsError as exc:
             forge_error = str(exc)
     # Merged and deleted: the forge still has this head, as the merged pull request's. It
@@ -385,6 +475,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
     merged = (
         remote_branch is not None
         and remote_head is None
+        and remote_error is None
         and pr is not None
         and pr.state.upper() == "MERGED"
         and pr.head == head
@@ -406,6 +497,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
         forge_error=forge_error,
         upstream_set=upstream,
         push_remote=_push_remote(cwd, branch) if branch and not upstream else None,
+        remote_error=remote_error,
     )
 
 
@@ -433,6 +525,10 @@ def mismatches(facts: Facts) -> list[str]:
                 "refspec or pushInsteadOf of its own; give it an upstream on the remote it is "
                 f"pushed to (`git branch --set-upstream-to <remote>/{facts.branch}`)"
             )
+    elif facts.remote_error is not None:
+        problems.append(
+            f"maity could not read {facts.remote}/{facts.remote_branch} ({facts.remote_error})"
+        )
     elif facts.remote_head is None:
         problems.append(
             f"branch {facts.remote_branch} does not exist on {facts.remote}; push it. If it was "

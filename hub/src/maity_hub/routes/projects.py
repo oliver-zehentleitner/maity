@@ -360,6 +360,8 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
         return "not_a_member"
     if found.trust == restricted.GUEST:
         return "guest"
+    if found.trust not in restricted.SEATED_TRUSTS:  # an outsider's agent (§2.3 "Outside")
+        return "outside"
     if found.agent_id is not None and mode == "nobody_except":
         owner = conn.execute(
             select(t.membership.c.trust)
@@ -370,7 +372,7 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
                 t.membership.c.active.is_(True),
             )
         ).first()
-        if owner is None or owner.trust == restricted.GUEST:
+        if owner is None or owner.trust not in restricted.SEATED_TRUSTS:
             return "owner_not_a_member"
     return None
 
@@ -676,6 +678,10 @@ def _apply_policy(
     if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
         # Only `required` or `optional` (§6.1): a null would clear the human's value.
         errors["policy.keep_the_why"] = "unknown"
+    if "agent_owners" in change.model_fields_set and change.agent_owners is None:
+        # Never null again once set (§6.1): a stored `anyone` is the outsiders' opt-in, and
+        # `members` closes it; a null would quietly fall back to the unset reading.
+        errors["policy.agent_owners"] = "unknown"
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
