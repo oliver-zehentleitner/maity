@@ -268,6 +268,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "all.page.jour_fixe": "例会",
   "all.page.no_projects": "你还不在任何项目中。",
   "all.page.reading": "正在读取…",
+  "all.page.runners": "运行器",
   "all.page.unread": "无法读取此项目：{reason}",
   "all.page.why": "Why",
   "all.pages": "所有项目的页面",

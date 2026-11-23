@@ -268,6 +268,7 @@ window.MAITY_I18N["ja"] = {
   "all.page.jour_fixe": "定例会",
   "all.page.no_projects": "まだどのプロジェクトにも参加していません。",
   "all.page.reading": "読み込み中…",
+  "all.page.runners": "ランナー",
   "all.page.unread": "このプロジェクトを読み込めませんでした: {reason}",
   "all.page.why": "Why",
   "all.pages": "全プロジェクトのページ",
