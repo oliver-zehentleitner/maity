@@ -188,7 +188,7 @@ the deletion waits for.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** lead decision on the card, 2026-11-22; counter-checks on SQLite, 2026-11-23: with the lazy insert back the refusal test fails (`hub/tests/test_contacts.py`), with the backfill off the migration test fails (`hub/tests/test_migrations.py`); #1532 review, delta 1; review A2143, 2026-11-23 (the reciprocal test's humans, the lock-order test's first statement)
+**Source:** lead decision on the card, 2026-11-22; counter-checks on SQLite, 2026-11-23: with the lazy insert back the refusal test fails (`hub/tests/test_contacts.py`), with the backfill off the migration test fails (`hub/tests/test_migrations.py`); #1532 review, delta 1; review A2143, 2026-11-23 (the reciprocal test's humans, the lock-order test's first statement); review A2157, 2026-11-23: on PostgreSQL, with the lazy insert back and no row at creation, the reciprocal test fails (40P01, one PUT 503) 3 of 3 times and passes when reverted
 **Revisit when:** a human row is inserted somewhere other than `write_guard.make_row`'s callers, or `account_lock` is replaced by another lock
 **See:** account.md#one-lock-order-against-a-deletion-the-account-lock-before-any-other — 2cecbd85-ba32-43db-905f-11efddb97f3d — as of 2026-11-23
 
