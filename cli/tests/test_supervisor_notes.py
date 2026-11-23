@@ -25,6 +25,9 @@ def world(tmp_path: Path) -> Any:
     sup = supervisor.Supervisor(
         cfg, backend, reports, logs.append, probes, now=clock, rand=lambda: 0.5  # type: ignore[arg-type]
     )
+    # No daemon stop: the probe names `/usr/bin/codex`, which no test may start (conftest's
+    # `codex_guard`); the stop is tested with a fake codex in test_codex_daemon.py.
+    sup._stop_codex_daemon = lambda *args: None  # type: ignore[method-assign]
     return sup, backend, reports, clock, logs
 
 

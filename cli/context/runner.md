@@ -702,6 +702,54 @@ writable surface and no write that leaves the scratch.
   cannot be anchored is refused with a reason the operator can act on
   (upgrade the host) instead, so the breakage is named, not hidden.
 
+## A Codex start stops the app-server daemon left in its codex-home
+
+**Id:** a0398852-94d9-4b31-b0d5-d337cbd74498
+**Type:** decision
+**Status:** active
+**Evidence:** inferred — the command `codex app-server daemon stop` is as the card names it and has not been checked on a host; ops is checking
+**Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh
+**See:** runner.md — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
+**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close) lands
+
+At every Codex start, interactive or supervised, first or restart, the
+runner stops the app-server daemon that an earlier start left in the
+placement's `CODEX_HOME` (`codexd.stop_codex_daemon`, called from
+`Supervisor._start`). It does so in the start thread, outside the lock,
+after the skill and before `_context`, which removes the old TMPDIR leaf,
+and before the launch writes the new `config.toml`. The stop is
+`codex app-server daemon stop` with the probed binary, run as the agents'
+user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment,
+within 15 s. Where it exits non-zero or does not answer on the runner's
+own host, the runner signals the processes of the agents' uid whose
+environment holds exactly that `CODEX_HOME` (the resolved path), or whose
+command line names the home as a whole path: SIGTERM, SIGKILL after 5 s,
+a whole process group only when every member of it matches. In the
+`single` layout that runs in the runner's own process; in `agent_user` it
+runs as the agents' user through `python -I -m maity.runner.codexd`, which
+can read that uid's `/proc/<pid>/environ`. On an ssh host only the command
+runs. A home not there yet has no daemon to stop. Anything that fails is
+one log line, and the start goes on.
+
+**Reason:** Codex 0.171 runs its turns in a managed daemon per `CODEX_HOME` that it
+detaches from the TUI's process group. The runner ends a session with a
+SIGTERM to the pane's process group (`Tmux.terminate`), so that TERM never
+reaches the daemon: it outlives the session, a restart's next TUI talks to
+it, and it still carries the environment of the start that made it. That
+environment's TMPDIR is a leaf the runner removes at every start, so every
+sandboxed command of the restarted session panicked.
+
+**Rejected alternatives:**
+- Only fixing the TMPDIR (keeping the first start's leaf, or one leaf for
+  the placement's life). The old daemon would still run with an older
+  generation's sandbox profile and network domains, which could stay in
+  force after a change that made a new generation.
+- Refusing the placement where the stop fails. The lead prefers an open
+  start over a blocked one, and the next start tries the stop again.
+- Killing every codex process of the agents' user. Other placements share
+  that user, and their daemons are theirs; the exact home match keeps them
+  apart.
+
 ## agy's scratch lives under the host's shared temp directory, not beside the clone
 
 **Id:** 8ec06e26-42b6-47b7-9f23-2bad37da3dfa

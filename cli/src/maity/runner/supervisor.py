@@ -36,6 +36,7 @@ from .. import __version__, clonecheck, hub, onboarding, state
 from . import (
     adapters,
     capabilities,
+    codexd,
     config,
     keeper,
     limitread,
@@ -2303,6 +2304,8 @@ class Supervisor:
                 # Any value but null names a skill, a malformed one included (skills.named).
                 rec.skill_missing = skill is None and p.get("keep_the_why") is not None
                 rec.skill_key = skill.parent.name if skill is not None else None
+            # Before `_context` removes the old TMPDIR leaf and before the session starts.
+            self._stop_codex_daemon(p, harness, target, scratch, view)
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
@@ -2625,6 +2628,36 @@ class Supervisor:
             assert target.agent_files is not None  # noqa: S101 - connected before a start
             return target.agent_files.parent
         return config.home_of(target.as_user.user) if target.as_user.user else Path.home()
+
+    def _stop_codex_daemon(
+        self,
+        p: dict[str, Any],
+        harness: config.Harness,
+        target: Target,
+        scratch: Path | None,
+        view: GateView | None,
+    ) -> None:
+        """A Codex start stops the app-server daemon an earlier start left in the placement's
+        CODEX_HOME (codexd): it is detached from the pane's process group, so a stop's TERM
+        never reached it, and it keeps the first start's TMPDIR, a leaf `_context` is about to
+        remove (tsk-n6sajs3gyh8h). In the start thread, outside the lock: it may take seconds.
+        With the binary the session starts and the home its launch env names. A failed stop is
+        logged and the start goes on."""
+        if harness.id != "codex":
+            return
+        found = (view or GateView.of(target, harness.id)).found
+        if found is None or not found.path:
+            return  # the gate refuses a Codex start without its binary
+        assert target.agent_files is not None  # noqa: S101 - connected before a launch
+        try:
+            agent_dir = agent_dir_for(target.as_user, target.agent_files, p["id"])
+            codexd.stop_codex_daemon(
+                target.as_user, found.path, adapters.codex_home_of(scratch, agent_dir),
+                self._agents_home(target), target.agent_path,
+                lambda line: self.log(f"{p['id']}: {line}"),
+            )  # fmt: skip
+        except Exception as exc:  # noqa: BLE001 - a daemon stop never refuses the start
+            self.log(f"{p['id']}: the Codex app-server daemon stop failed: {type(exc).__name__}")
 
     def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
         """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a

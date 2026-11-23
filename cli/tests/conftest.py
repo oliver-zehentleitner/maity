@@ -27,6 +27,7 @@ collect_ignore = (
         "test_antigravity.py",
         "test_availability.py",
         "test_claude_sandbox_probe.py",
+        "test_codex_daemon.py",
         "test_confinement.py",
         "test_operate.py",
         "test_runner.py",
@@ -177,6 +178,33 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Nor the host's own unshare and AppArmor profiles from an agy start or check (the review
     # of #2119); the probe's own tests take the function from `REAL_AGY_SANDBOX`.
     monkeypatch.setattr(capabilities, "agy_sandbox", lambda *args: capabilities.AGY_STARTS)
+
+
+@pytest.fixture(autouse=True)
+def codex_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """A test must never start a real Codex binary, on a dev box or a runner host: the start's
+    daemon stop (runner/codexd.py) builds its command through `stop_argv`, and a binary outside
+    the test's `tmp_path` fails the test. A test of the stop uses a fake codex under `tmp_path`.
+    The failure is raised in place and again at teardown, since a start runs the stop in its
+    own thread, where a raised failure alone would only end that thread. The guard's own test
+    empties the list this yields."""
+    from maity.runner import codexd
+
+    real = codexd.stop_argv
+    root = tmp_path.resolve()
+    outside: list[str] = []
+
+    def guarded(binary: str, home: Path, agents_home: Path, agent_path: str) -> list[str]:
+        argv = real(binary, home, agents_home, agent_path)
+        if not Path(binary).resolve().is_relative_to(root):
+            outside.append(binary)
+            pytest.fail(f"a test reached the Codex daemon stop with {binary}, outside tmp_path")
+        return argv
+
+    monkeypatch.setattr(codexd, "stop_argv", guarded)
+    yield outside
+    if outside:
+        pytest.fail(f"a test reached the Codex daemon stop with {outside[0]}, outside tmp_path")
 
 
 @pytest.fixture

@@ -36,6 +36,9 @@ def make(tmp_path: Path, extra: str = "") -> Any:
         cfg, backend, reports, logs.append, probes, now=clock, rand=lambda: 0.5  # type: ignore[arg-type]
     )
     sup.login = lambda harness, binary, as_user, agent_path: "ok"
+    # No daemon stop: the probe names `/usr/bin/codex`, which no test may start (conftest's
+    # `codex_guard`); the stop is tested with a fake codex in test_codex_daemon.py.
+    sup._stop_codex_daemon = lambda *args: None  # type: ignore[method-assign]
     return sup, backend, reports, clock, logs
 
 

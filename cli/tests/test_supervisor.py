@@ -166,6 +166,14 @@ def recorded(cfg: config.Config, n: int = 3, credential: bool = True) -> workspa
     return place
 
 
+@pytest.fixture(autouse=True)
+def _no_codex_daemon_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No Codex start in this module runs the daemon stop: its probes name `/usr/bin/codex`,
+    which no test may start (conftest's `codex_guard`). The stop's own behaviour is tested
+    with a fake codex in test_codex_daemon.py, whose tests this fixture does not reach."""
+    monkeypatch.setattr(supervisor.Supervisor, "_stop_codex_daemon", lambda *args: None)
+
+
 @pytest.fixture
 def world(tmp_path: Path) -> Any:
     cfg = load(tmp_path)

@@ -971,9 +971,15 @@ def codex_home(ctx: Context) -> Path:
     sandbox hides it; `maity runner check` verifies from the local configuration that Codex is
     given a scratch and the workspaces root is outside the state directory, but does not catch
     a runtime fall-back to no scratch."""
-    if ctx.scratch is not None:
-        return ctx.scratch / "codex-home"
-    return ctx.agent_dir / "codex-home"
+    return codex_home_of(ctx.scratch, ctx.agent_dir)
+
+
+def codex_home_of(scratch: Path | None, agent_dir: Path) -> Path:
+    """`codex_home` from its two parts, for a caller without a Context: the start's daemon stop
+    (codexd) names the same home the launch env then sets."""
+    if scratch is not None:
+        return scratch / "codex-home"
+    return agent_dir / "codex-home"
 
 
 def codex_config(ctx: Context) -> str:
