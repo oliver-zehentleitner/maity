@@ -1292,8 +1292,10 @@ own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
 otherwise) and then starts, restarts, stops, adopts or ends sessions:
 
 - **Clean environment.** The tmux server starts under `env -i` with only
-  `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
+  `HOME`, `PATH` (= `agent_path`), `SHELL`, `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
+  `SHELL` is `/bin/bash` where the host has it, else `/bin/sh`, never the
+  account's login shell (nologin for the service account); `check` names it.
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and
