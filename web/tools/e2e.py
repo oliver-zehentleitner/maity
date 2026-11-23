@@ -7031,12 +7031,12 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
     expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()
     tree = page.locator("main ul.org-tree")
-    node = lambda mid: tree.locator(f"li.org-member[data-member='{mid}']")
+    node = lambda mid: tree.locator(f"li.org-tree-member[data-member='{mid}']")
     expect(node(me["id"])).to_have_count(1)
-    expect(node(me["id"]).locator(f"li.org-member[data-member='{agent_id}']")).to_have_count(1)
-    expect(node(agent_id).locator(f"li.org-member[data-member='{reviewer['id']}']")).to_have_count(1)
+    expect(node(me["id"]).locator(f"li.org-tree-member[data-member='{agent_id}']")).to_have_count(1)
+    expect(node(agent_id).locator(f"li.org-tree-member[data-member='{reviewer['id']}']")).to_have_count(1)
     owned = {m["id"] for m in members if m["kind"] == "agent" and m.get("owner_id") == me["id"]}
-    shown = set(tree.locator("li.org-member").evaluate_all("(all) => all.map((li) => li.dataset.member)"))
+    shown = set(tree.locator("li.org-tree-member").evaluate_all("(all) => all.map((li) => li.dataset.member)"))
     assert shown == owned | {me["id"]}, (shown, owned)
     dots = node(agent_id).locator(":scope > .org-node a.member-instance.org-dot")
     live = [i for i in next(m for m in members if m["id"] == agent_id)["instances"] if not i.get("revoked_at")]
@@ -7047,6 +7047,12 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     # The row without its picture (a generated one may differ by its drawing's ids), as both tabs draw it.
     row_html = """(li) => { const row = li.querySelector(':scope > .org-node').cloneNode(true);
       row.querySelectorAll('svg, img, .avatar-svg, .avatar-img').forEach((e) => e.remove()); return row.outerHTML; }"""
+    # A member's item stacks: its stub and the list under it start at or below the bottom of its row, not beside
+    # it (A2289: a global .org-member rule once made the item a flex row). Returns the items that do not.
+    stacked = """(tree) => Array.from(tree.querySelectorAll('li.org-tree-member')).flatMap((li) => {
+      const row = li.querySelector(':scope > .org-node').getBoundingClientRect();
+      return Array.from(li.querySelectorAll(':scope > ul, :scope > .org-stub'))
+        .filter((e) => e.getBoundingClientRect().top < row.bottom - 0.5).map((e) => li.dataset.member + ' ' + e.tagName); })"""
     try:
         for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
             page.set_viewport_size({"width": width, "height": height})
@@ -7055,6 +7061,8 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             expect(node(reviewer["id"])).to_be_visible()
             wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
             assert wide[0] <= wide[1], f"the fleet at {width} px {scheme} is {wide[0]} px wide"
+            beside = tree.evaluate(stacked)
+            assert not beside, f"Agents at {width} px {scheme}: beside their row, not under it: {beside}"
             size = dots.first.bounding_box()
             assert size and size["width"] >= 24 and size["height"] >= 24, f"an instance's target at {width} px: {size}"
             # The reviewer stands under E2E Agent by reports_to on both tabs; E2E Agent itself only where it
@@ -7068,6 +7076,8 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             expect(node(reviewer["id"])).to_be_visible()
             wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
             assert wide[0] <= wide[1], f"the team's tree at {width} px {scheme} is {wide[0]} px wide"
+            beside = tree.evaluate(stacked)
+            assert not beside, f"Team at {width} px {scheme}: beside their row, not under it: {beside}"
             for mid, html in on_agents.items():
                 assert node(mid).evaluate(row_html) == html, f"{mid}: Team and Agents draw different rows at {width} px {scheme}"
             run.shot(page, f"organisation-team-{width}-{scheme}")
@@ -7084,7 +7094,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             const b = getComputedStyle(a, '::before');
             return [st, b.width, b.height, b.borderTopWidth, b.borderLeftWidth, b.backgroundImage === 'none' ? 'none' : 'image', b.backgroundColor === 'rgba(0, 0, 0, 0)' ? 'clear' : 'filled'];
           }); }"""
-        states = ["online", "away", "offline", "dormant", "online lead"]
+        states = ["online", "away", "offline", "dormant", "paused", "online lead"]
         # Forced colours too (#1598 review): there the browser would drop a gradient, a background colour and a
         # shadow, so the check runs with forced-colors active as well, and the lead keeps its ring.
         for forced in ("none", "active"):
@@ -7101,7 +7111,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
                 assert ring[0] != "none" or ring[1] not in ("none", ""), f"the lead dot has no ring ({scheme}, forced colours {forced}): {ring}"
                 run.shot(page, f"organisation-dot-states-390-{scheme}" + ("-forced" if forced == "active" else ""))
                 page.evaluate("() => document.querySelectorAll('.org-probe').forEach((e) => e.remove())")
-                print(f"   fleet dots, {scheme}, forced colours {forced}: four shapes {plain}, lead ring kept")
+                print(f"   fleet dots, {scheme}, forced colours {forced}: five shapes {plain}, lead ring kept")
         page.emulate_media(forced_colors="none")
         # A stack of pictures overlaps whether a picture is generated or loaded (nte-b3pfhm2bp0vt (b)): every picture
         # after the first moves 10 px under the one before, mixed kinds included, so the stack keeps its width.

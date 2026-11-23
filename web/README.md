@@ -715,14 +715,18 @@ too.
    **Sessions & credentials** (the instances; the credentials for an admin or the owner,
    without Revoke). An id that is no member here is said. On a phone the header stacks
    and its buttons take the full width.
-5. **Organisation**, a section of the **Overview** (no tab or path of its
-   own; the maintainer, 2026-10-29): an indented tree computed from
-   `reports_to` and area ownership on every render; a member placed by
+5. **Organisation**, the Team page's second tab (`/<owner>/<slug>/organisation`,
+   `js/org.js`), with the faces **Tree** and **Paths** (`js/paths.js`): an indented
+   tree computed from `reports_to` and area ownership on every render; a member placed by
    neither stands at its trust's level (owners at the top, then admins,
    members and guests, each a level deeper, a level nobody holds left out), the policy's preset
-   beside its heading; each agent lists its instances as links to their
-   Sessions on its page, and a dormant one says so; a member event reads the
-   members again and redraws it in place.
+   above it. Each member's row (the same on Agents → Organisation, tsk-zsbe48ty4ces): the
+   presence dot, picture, name, trust and role, a paused or revoked state in words, areas,
+   "(by area)"; an agent's instances as `#abcd` after a status dot (two bars paused, the
+   lead ringed), each a link to its Sessions named with address and state, a dormant one
+   saying so, and its open claims; a lead's `manages` count with the whole branch beside it
+   when larger. The lists keep `role="list"`. A member event reads the members again and
+   redraws it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left, under the heading and **New group
    chat**, the human's chats, one per agent they own in the project,

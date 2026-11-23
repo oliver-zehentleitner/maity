@@ -3811,9 +3811,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(fmDirect && JSON.stringify(fmDirect) === JSON.stringify({ members: 3, instances: 5, online: 2, dormant: 1 }),
       "fixture manages: paused instances and held members count, none of them online " + JSON.stringify(fmDirect));
     const orgManages = t ? t.querySelectorAll(".org-manages") : [];
+    const orgTotals = t ? t.querySelectorAll(".org-manages-total") : [];
     expect(orgManages.length === 1 && text(orgManages[0]) === "leads 1 member · 2 instances (2 online, 1 dormant)"
-      && orgManages[0].getAttribute("title") === "whole branch: leads 3 members · 4 instances (3 online, 1 dormant)",
-      "org: a lead says whom it leads with their instances, dormant a part of online, the whole branch on hover " + orgManages.map((x) => text(x) + " | " + x.getAttribute("title")));
+      && orgTotals.length === 1 && text(orgTotals[0]) === "whole branch: leads 3 members · 4 instances (3 online, 1 dormant)"
+      && orgTotals[0].parentNode === orgManages[0].parentNode && !orgManages[0].getAttribute("title"),
+      "org: a lead says whom it leads with their instances, dormant a part of online, the whole branch beside it in the text, not in a title "
+        + orgManages.map((x) => text(x) + " | " + x.getAttribute("title")) + " | " + orgTotals.map(text));
+    // The tree's lists keep their semantics (role=list, A2290); its items are no Organisations row (.org-member, A2289).
+    const orgLists = t ? [t].concat(t.querySelectorAll("ul")) : [];
+    expect(t && orgLists.length > 1 && orgLists.every((u) => u.getAttribute("role") === "list")
+      && t.querySelectorAll("li").filter((li) => li.getAttribute("data-member")).every((li) => li.className === "org-tree-member") && !t.querySelector(".org-member"),
+      "org: every list of the tree is role=list, every member item org-tree-member and none an Organisations row " + orgLists.map((u) => u.getAttribute("role")));
+    // Paused (A2289, A2290): an instance's dot says it in its own shape and name; a paused member
+    // with no live instance to say it, and a revoked one, say it in words in the row.
+    {
+      const pctx = { members: [
+        { id: "p1", kind: "agent", handle: "p1h", display_name: "Paused One", trust: "member", role: "coder", areas: [], presence: "paused",
+          instances: [{ id: "pa", presence: "paused", dormant: { since: "2026-11-01T10:00:00Z" } }] },
+        { id: "p2", kind: "agent", handle: "p2h", display_name: "Paused Two", trust: "member", role: "coder", areas: [], presence: "paused", instances: [] },
+        { id: "r1", kind: "agent", handle: "r1h", display_name: "Revoked One", trust: "member", role: "coder", areas: [], presence: "revoked",
+          instances: [{ id: "rv", revoked_at: "2026-11-01T09:00:00Z" }] }],
+        memberById: {}, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id };
+      pctx.members.forEach((m) => { pctx.memberById[m.id] = m; });
+      const P = win.Maity.org.drawTree(pctx);
+      const prow = (id) => P.querySelectorAll("li.org-tree-member").find((li) => li.getAttribute("data-member") === id).querySelector(".org-node");
+      const pa = prow("p1").querySelector("a.member-instance");
+      expect(pa && pa.className === "member-instance org-dot paused" && pa.getAttribute("aria-label") === "Sessions of @p1h#pa: paused"
+        && prow("p1").querySelector(".member-dormant") && !prow("p1").querySelector(".org-state")
+        && text(prow("p2").querySelector(".org-state")) === "paused" && prow("p2").querySelector("span.dot.paused")
+        && text(prow("r1").querySelector(".org-state")) === "revoked",
+        "org: a paused instance's dot is paused and named so, its dormant note beside it; a paused member without one, and a revoked member, say it in words "
+          + (pa && pa.className + " " + pa.getAttribute("aria-label")) + " | " + ["p1", "p2", "r1"].map((id) => text(prow(id))).join(" | "));
+    }
     const depthOf = (name) => { let d = 0; let n = t && t.querySelectorAll(".org-node").find((x) => text(x).includes(name)); while (n && n !== t) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return d; };
     expect(t && depthOf("Owner One") === 0 && depthOf("Admin One") === 1 && depthOf("Guest One") === 2,
       "org: owner, then admin, then guest, each a level deeper, the empty member level leaving no step " + [depthOf("Owner One"), depthOf("Admin One"), depthOf("Guest One")]);
@@ -3848,7 +3877,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     };
     const draw = (members, scope) => (win.Maity.org && win.Maity.org.drawTree ? win.Maity.org.drawTree(fleetCtx(members), scope) : null);
     const F = draw(fleetMembers, "own");
-    const fNodes = F ? F.querySelectorAll("li.org-member") : [];
+    const fNodes = F ? F.querySelectorAll("li.org-tree-member") : [];
     const fDepth = (id) => { let d = 0; let n = fNodes.find((x) => x.getAttribute("data-member") === id); while (n && n !== F) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return n ? d : -1; };
     expect(F && JSON.stringify(fNodes.map((n) => n.getAttribute("data-member")).sort()) === JSON.stringify(["a1", "a2", "a3", "a4", "a5", "a6", "me"])
       && fDepth("me") === 0 && fDepth("a1") === 1 && fDepth("a4") === 1 && fDepth("a5") === 1 && fDepth("a6") === 1 && fDepth("a2") === 2 && fDepth("a3") === 2,
@@ -3868,7 +3897,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "one tree: an agent's area and its open claims, the revoked instance's not counted; none active said; the caller's row a human's, with dot and role");
     // Both tabs draw the same row for the same member: Team (every member) and Agents (one's own) differ only in who is fed in.
     const T = draw(fleetMembers, "team");
-    const tNode = (id) => (T ? T.querySelectorAll("li.org-member").find((x) => x.getAttribute("data-member") === id) : null);
+    const tNode = (id) => (T ? T.querySelectorAll("li.org-tree-member").find((x) => x.getAttribute("data-member") === id) : null);
     const dumpEl = (n) => (n instanceof El ? "<" + n.tagName + " " + n.className + " " + JSON.stringify(n.attrs) + ">" + n.childNodes.map(dumpEl).join("") + "</>" : String(n.textContent));
     const differ = ["me", "a1", "a2", "a3", "a4", "a5", "a6"].filter((id) => !tNode(id) || dumpEl(tNode(id).querySelector(".org-node")) !== dumpEl(fNode(id)));
     expect(F && T && !differ.length && tNode("f1") && !T.querySelector(".org-stub") && !win.Maity.org.drawFleet,

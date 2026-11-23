@@ -5,7 +5,12 @@
   `#abcd` after its status dot in the presence's colour, the lead ringed, a
   link to its sessions whose name says the address and the state. Team feeds
   in every member (Tree and Paths stay); Agents feeds in you and your own
-  agents, with a stub for a boss of someone else's.
+  agents, with a stub for a boss of someone else's. A paused instance's dot
+  is two bars; a paused or revoked member says so in words; a lead's whole
+  branch stands beside its direct count instead of in a tooltip; the tree's
+  lists keep `role="list"`.
+- web: the presence dot (`.dot`) keeps a border in forced colours, and
+  "away" is no longer drawn at reduced opacity.
 
 ### Removed
 

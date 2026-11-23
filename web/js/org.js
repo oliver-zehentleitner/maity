@@ -72,7 +72,11 @@ window.Maity = window.Maity || {};
   const STATE_WORDS = {
     online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
     offline: () => M.t("chat.presence.offline"), dormant: () => M.t("org.fleet.dormant"),
+    paused: () => M.t("chat.presence.paused"), revoked: () => M.t("chat.presence.revoked"),
   };
+  const stateWord = (state) => (Object.hasOwn(STATE_WORDS, state) ? STATE_WORDS[state]() : state);
+  // The tree's lists keep their list semantics, which list-style: none drops in Safari (A2290).
+  const list = (attrs, kids) => h("ul", Object.assign({ role: "list" }, attrs), kids);
 
   // An agent's live instances, each `#abcd` after a dot in its presence's colour, the lead ringed
   // (tsk-zsbe48ty4ces: one row for Team and Agents), and a link to its Sessions on the member's
@@ -84,8 +88,9 @@ window.Maity = window.Maity || {};
     if (!list.length) return h("span", { class: "muted org-none" }, M.t("org.fleet.no_instances"));
     const handle = M.dom.handleOf(ctx, m) || m.handle || m.id;
     return h("span", { class: "org-instances" }, list.map((i) => {
-      const state = i.dormant ? "dormant" : (i.presence || "offline");
-      const words = [Object.hasOwn(STATE_WORDS, state) ? STATE_WORDS[state]() : state];
+      // Paused before dormant: a paused instance says so in its dot, its dormant note stands beside it.
+      const state = i.presence === "paused" ? "paused" : i.dormant ? "dormant" : (i.presence || "offline");
+      const words = [stateWord(state)];
       if (i.lead) words.push(M.t("org.fleet.lead"));
       return h("span", { class: "org-instance" },
         h("a", { class: "member-instance org-dot " + state + (i.lead ? " lead" : ""), href: M.dom.instanceHref(ctx, m.id, i.id),
@@ -102,12 +107,22 @@ window.Maity = window.Maity || {};
   }
 
   // Who is below a lead, from the hub's `manages` (§6.2), never counted here: the direct
-  // reports with their instances, and the whole branch on hover when it is larger.
+  // reports with their instances, and the whole branch beside it when it is larger (in the text,
+  // not in a title a keyboard never reaches: A2290).
   function manages(m) {
     const direct = M.dom.managesText(m.manages, "direct");
     if (!direct) return null;
     const total = m.manages.total.members > m.manages.direct.members ? M.dom.managesText(m.manages, "total") : null;
-    return h("span", { class: "muted org-manages", title: total ? M.t("manages.total", { text: total }) : null }, direct);
+    return [h("span", { class: "muted org-manages" }, direct),
+      total ? h("span", { class: "muted org-manages-total" }, M.t("manages.total", { text: total })) : null];
+  }
+
+  // A member's own paused or revoked state in words where no instance's dot already says it
+  // (the member's dot is colour alone, and hidden from a screen reader).
+  function memberState(m) {
+    if (m.presence !== "paused" && m.presence !== "revoked") return null;
+    if (live(m).some((i) => i.presence === m.presence)) return null;
+    return h("span", { class: "org-state presence " + m.presence }, stateWord(m.presence));
   }
 
   // Someone else's boss by its handle alone, as text: no link to their page, no name, no tooltip
@@ -128,6 +143,7 @@ window.Maity = window.Maity || {};
       M.avatar(m, 20),
       h("strong", null, M.dom.memberRef(ctx, m.id)),
       h("span", { class: "role" }, M.trust.words(m)),
+      memberState(m),
       areas.length ? h("span", { class: "area" }, areas.join(", ")) : null,
       via && via.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null,
       instances(ctx, m),
@@ -140,10 +156,10 @@ window.Maity = window.Maity || {};
   function node(ctx, m, tree, stubOf) {
     const kids = tree.children[m.id] || [];
     const boss = stubOf ? stubOf(m) : null;
-    return h("li", { class: "org-member", "data-member": m.id },
+    return h("li", { class: "org-tree-member", "data-member": m.id },
       row(ctx, m, tree.parentOf[m.id]),
       boss ? h("p", { class: "org-stub" }, bossStub(ctx, boss)) : null,
-      kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree, stubOf))) : null);
+      kids.length ? list(null, kids.map((k) => node(ctx, k, tree, stubOf))) : null);
   }
 
   // The one tree object behind both tabs; `scope` chooses the members fed in.
@@ -164,8 +180,8 @@ window.Maity = window.Maity || {};
       const own = new Set(mine.map((m) => m.id));
       const stubOf = (m) => (m.reports_to && !own.has(m.reports_to) && m.reports_to !== ctx.me.id ? m.reports_to : null);
       const me = (ctx.members || []).find((m) => m.id === ctx.me.id) || ctx.me;
-      return h("ul", { class: "org-tree" }, h("li", { class: "org-member", "data-member": me.id },
-        row(ctx, me, null), h("ul", null, tree.roots.map((r) => node(ctx, r, tree, stubOf)))));
+      return list({ class: "org-tree" }, h("li", { class: "org-tree-member", "data-member": me.id },
+        row(ctx, me, null), list(null, tree.roots.map((r) => node(ctx, r, tree, stubOf)))));
     }
     const tree = buildTree(ctx.members || []);
     if (!tree.roots.length) return h("p", { class: "muted" }, M.t("org.empty"));
@@ -174,9 +190,9 @@ window.Maity = window.Maity || {};
     // From the deepest up: each level's members, the deeper levels in one item under them.
     let deeper = null;
     for (let i = levels.length - 1; i > 0; i--) {
-      deeper = h("li", { class: "org-level" }, h("ul", null, levels[i].map((m) => node(ctx, m, tree)), deeper));
+      deeper = h("li", { class: "org-level" }, list(null, levels[i].map((m) => node(ctx, m, tree)).concat(deeper || [])));
     }
-    return h("ul", { class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)), deeper);
+    return list({ class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)).concat(deeper || []));
   }
 
   // Tree or Paths (js/paths.js), kept per browser like the other per-reader choices; a
