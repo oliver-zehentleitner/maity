@@ -671,6 +671,17 @@ def test_find_gh_searches_the_recorded_path_at_each_call(
     monkeypatch.chdir(clone)
     with pytest.raises(ghpr.Refused, match="gh is not installed"):
         ghpr.find_gh("bin", clone)
+    # A link inside the clone to a gh outside it (review A2159 of #2125): its directory, which
+    # gh_env would put first on gh's PATH, is the clone's, so it is refused too.
+    (planted / "gh").unlink()
+    (planted / "gh").symlink_to(gh)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(planted), clone)
+    # A link outside the clone that is resolvable is taken as found.
+    elsewhere = tmp_path / "links"
+    elsewhere.mkdir()
+    (elsewhere / "gh").symlink_to(gh)
+    assert ghpr.find_gh(str(elsewhere), clone) == str(elsewhere / "gh")
 
 
 @runs_gh

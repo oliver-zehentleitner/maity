@@ -803,7 +803,15 @@ def pull_requests_record(ctx: Context) -> str:
     repository = config.normalise_repository(workspace.get("repository") or "")
     if not repository:
         return ""
-    return f"{repository}\n{proc.search_path()}\n"
+    # Whole entries, in PATH's order, as many as fit the size `maity gh` reads
+    # (ghpr.RECORD_MAX; review A2160 of #2125): the earlier ones are the ones that win.
+    room = ghpr.RECORD_MAX - len(f"{repository}\n\n".encode())
+    kept: list[str] = []
+    for entry in (e for e in proc.search_path().split(os.pathsep) if e):
+        if len(os.pathsep.join([*kept, entry]).encode()) > room:
+            break
+        kept.append(entry)
+    return f"{repository}\n{os.pathsep.join(kept)}\n"
 
 
 def lead_record(ctx: Context) -> str:

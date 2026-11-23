@@ -1739,7 +1739,10 @@ systemctl restart maity-runner`, the tools' and the forge's login as
 `maity-runner`, and then `maity runner check` as that user (its probe run
 needs the tool's login), each command as `maity-runner` started in a
 directory that user can enter. A service it starts gets the login and
-check steps too. The harness itself (installed and
+check steps too, and `install` then runs a first `check` itself, before
+any login: a tool not installed yet, or Claude Code's probe run without
+its login, shows up there, and that check's exit is `install`'s. Run
+`check` again after the logins. The harness itself (installed and
 logged in as `maity-runner`) is yours to set up; docs/runners.md, "As a
 service on Linux", has the steps. Every other `maity runner` command
 for the service takes `--config /etc/maity-runner/runner.toml`; without

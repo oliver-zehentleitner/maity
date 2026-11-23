@@ -74,7 +74,8 @@ def test_without_pg_bin_the_newest_debian_server_directory_is_taken(
 ) -> None:
     """tsk-2k0jcaxfd0ja, point 14: with no pg_ctl on PATH and MAITY_PG_BIN unset, the script
     takes Debian's newest /usr/lib/postgresql/<version>/bin that has a pg_ctl, by number (16
-    after 9.6), skipping one without it (17) and a name that is no version."""
+    after 9.6), skipping one without it (17), one whose pg_ctl is a directory (18, review
+    A2159 of #2125) and a name that is no version."""
     lib = tmp_path / "postgresql"
     newest = lib / "16" / "bin"
     newest.mkdir(parents=True)
@@ -86,6 +87,7 @@ def test_without_pg_bin_the_newest_debian_server_directory_is_taken(
         (lib / other / "bin" / "pg_ctl").write_text(wrong)
         (lib / other / "bin" / "pg_ctl").chmod(0o755)
     (lib / "17").mkdir()
+    (lib / "18" / "bin" / "pg_ctl").mkdir(parents=True)  # a directory, searchable (x) too
     env = {k: v for k, v in run.items() if k != "MAITY_PG_BIN"}
     env.update(MAITY_PG_LIB=str(lib), PATH=SYSTEM_PATH)
     subprocess.run([SCRIPT, "true"], env=env, check=True)

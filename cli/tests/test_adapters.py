@@ -1569,6 +1569,21 @@ def test_the_lead_record_needs_lead_and_the_pull_request_record_and_is_cleared_w
     )
 
 
+def test_a_long_path_is_cut_to_whole_entries_that_fit_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The record holds the runner's PATH, and `maity gh` reads at most ghpr.RECORD_MAX bytes
+    (review A2160 of #2125): a longer PATH keeps its first whole entries, in order."""
+    entries = [f"/nix/store/{i:04d}-{'x' * 90}/bin" for i in range(1000)]
+    monkeypatch.setenv("PATH", os.pathsep.join(entries))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    record = adapters.pull_requests_record(ctx)
+    assert len(record.encode()) <= ghpr.RECORD_MAX < len(os.pathsep.join(entries))
+    kept = record.splitlines()[1].split(os.pathsep)
+    assert kept == entries[: len(kept)] and 0 < len(kept) < len(entries)
+
+
 def test_pull_requests_without_gh_on_the_path_are_still_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

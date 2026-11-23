@@ -1531,7 +1531,11 @@ pull request's body predates the last two rows):
   of `workspace.owned`; `workspace.prepare`'s existing-clone branch;
 - every other `AsUser.exists` caller (adapters, commands, operate,
   supervisor's start checks, tmux, workspace) gets the 3.13 meaning
-  back through the same method;
+  back through the same method; `check`'s host warnings of
+  tsk-2k0jcaxfd0ja (an `agent_path` entry, the gh login, a granted
+  program) go through `AsUser.exists` and `capabilities.which` as the
+  agents' user too, and a path that cannot be looked at is said as not
+  checked, never as missing (reviews A2159 and A2160 of #2125);
 - left on pathlib, since a quiet False only does less: `operate.py`'s
   gc walk of `.scratch`, `skills.py` over the runner's own cache,
   `asuser.link`, the runner's own state_dir checks, and the
@@ -3470,8 +3474,16 @@ started before gh was installed finds it at its next call; until then
 `maity gh` says that gh is not installed. The checks of a recorded gh stay:
 the path comes from the runner's record, which the session cannot write;
 only absolute entries are searched; and a gh found inside the clone or the
-placement's scratch, both writable by the session, is refused. A record
-from an older runner, which names gh itself, is still taken. The lookup
+placement's scratch, both writable by the session, is refused: the file gh
+resolves to and the directory it was found in, which `gh_env` puts first on
+gh's `PATH`, so a link in the clone pointing out of it is refused too
+(review A2159 of #2125). The path as found is what runs: its directory is
+checked, and a link that dispatches on its own name (a snap's
+`/snap/bin/gh`) still starts gh. A record from an older runner, which names
+gh itself, is still taken. On an ssh target the recorded entries are the
+runner host's own `PATH`, searched on the target. The record is read up to
+`ghpr.RECORD_MAX` (64 KiB); a longer `PATH` is cut to its first whole
+entries when the runner writes it (review A2160 of #2125). The lookup
 at each call and the kept checks are the lead's decision (confirmed); the
 incident's cause and the not-added check below are inferred.
 

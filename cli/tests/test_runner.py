@@ -16,7 +16,7 @@ from conftest import fake_opencode, posix
 
 from maity import cli, state
 from maity.runner import adapters, commands, config
-from maity.runner.asuser import RUNNER
+from maity.runner.asuser import RUNNER, AsUser
 
 MINIMAL = """\
 [hub]
@@ -1655,6 +1655,17 @@ def test_missing_default_config_names_the_services(
     with pytest.raises(config.ConfigError) as given:
         config.load(home / "other.toml")
     assert "--config" not in given.value.problems[0]
+    # A service directory this user cannot search names nothing and raises nothing (A2159).
+    blocked = tmp_path / "closed"
+    blocked.mkdir()
+    monkeypatch.setattr(config, "SERVICE_PATH", blocked / "runner.toml")
+    blocked.chmod(0)
+    try:
+        with pytest.raises(config.ConfigError) as closed:
+            config.load(config.path_of(None))
+        assert closed.value.problems[0].endswith("write it first (runner design §5.1)")
+    finally:
+        blocked.chmod(0o755)
 
 
 def test_check_warns_on_an_agent_path_entry_under_a_home_that_is_not_there(
@@ -1730,6 +1741,85 @@ def test_check_warns_when_the_host_lacks_what_a_grant_needs(
     report = commands.Report()
     commands._check_grant_programs(report, cfg, str(bin_dir))
     assert report.lines == []
+
+
+GRANT_RAW = {
+    "hub": {"url": "https://hub.example"},
+    "limits": {"projects": ["ow/pr"], "repositories": ["github.com/ow/pr"]},
+    "harness": {"stub": {}},
+    "repositories": {"github.com/ow/pr": {"allow": ["make *"], "pull_requests": True}},
+}
+
+
+def test_check_looks_at_the_agents_side_as_the_agents_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """agent_user layout (reviews A2159/A2160 of #2125): the runner's own user may not enter
+    the agents' home, so the gh login, the granted programs and the agent_path entries are
+    looked up as the agents' user (sudo), never with pathlib as the runner."""
+    from maity import proc
+    from maity.runner import capabilities
+
+    local = {"layout": "agent_user", "agent_user": "agents", "agent_path": "/home/agents/bin"}
+    raw = dict(GRANT_RAW, backend={"kind": "local", "local": local})
+    cfg = config.parse(raw, tmp_path / "runner.toml")
+    asked: list[tuple[str | None, str, str]] = []
+
+    def exists(self: object, path: Path, kind: str = "-e") -> bool:
+        asked.append((getattr(self, "user", None), str(path), kind))
+        return True
+
+    monkeypatch.setattr(AsUser, "exists", exists)
+    which: list[str | None] = []
+
+    def which_as(name: str, path: str | None, as_user: AsUser = RUNNER) -> str:
+        which.append(as_user.user)
+        return "/x"
+
+    monkeypatch.setattr(capabilities, "which", which_as)
+    monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, "/home/agents/bin")
+    assert report.lines == [] and which == ["agents"]
+    assert asked == [("agents", f"{config.home_of('agents')}/.config/gh/hosts.yml", "-f")]
+    asked.clear()
+    assert cfg.local is not None
+    commands._check_agent_path(report, cfg.local)
+    assert report.lines == [] and asked == [("agents", "/home/agents/bin", "-e")]
+
+
+@posix
+def test_check_says_not_checked_where_it_cannot_look(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path this user cannot look at (EACCES) is never taken for absent, on any Python:
+    no false "no login" and no false "does not exist" (pathlib raises up to 3.13 and answers
+    False from 3.14 on)."""
+    from maity import proc
+
+    if os.geteuid() == 0:
+        pytest.skip("root reads every directory")
+    closed = home / ".config"
+    (closed / "gh").mkdir(parents=True)
+    (closed / "gh" / "hosts.yml").write_text("github.com:\n")
+    closed.chmod(0)
+    try:
+        cfg = config.parse(GRANT_RAW, tmp_path / "runner.toml")
+        monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
+        report = commands.Report()
+        commands._check_grant_programs(report, cfg, os.defpath)
+        said = [text for level, text in report.lines if "gh" in text]
+        assert len(said) == 1 and "not checked" in said[0] and "no login" not in said[0], said
+        local = config.Local(
+            workspaces=tmp_path / "ws",
+            tmux_socket=tmp_path / "tmux.sock",
+            agent_path=f"{closed}/bin{os.pathsep}rel/home/x",
+        )
+        report = commands.Report()
+        commands._check_agent_path(report, local)
+        assert report.lines == [("warn", "agent_path entry rel/home/x does not exist")]
+    finally:
+        closed.chmod(0o755)
 
 
 def test_opencode_is_offered() -> None:

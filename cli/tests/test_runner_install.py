@@ -198,6 +198,7 @@ def test_a_started_service_names_the_logins(
     assert "started maity-runner" in err and "next: log each tool in as maity-runner" in err
     assert "gh auth setup-git" in err and "next, in this order:" not in err
     assert err.index("gh auth setup-git") < err.index("then: cd / && sudo -u maity-runner -H")
+    assert "a first check, before the logins (run it again after them):" in err
 
 
 def test_existing_files_are_kept_unless_force(tmp_path: Path) -> None:

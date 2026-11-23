@@ -456,19 +456,36 @@ def _check_agent_path(report: Report, local: config.Local) -> None:
         if local.layout == "agent_user" and local.agent_user
         else Path(os.path.expanduser("~"))
     )
+    as_user = _local_agents_user(local)
     for entry in local.agent_path.split(os.pathsep):
-        if not entry:
-            continue
-        try:
-            if Path(entry).exists():
-                continue
-        except OSError:
-            continue  # not readable for this user: the agents' user may see it
+        if not entry or _seen(as_user, Path(entry)) is not False:
+            continue  # there, or not to be looked at from here: nothing is claimed
         said = f"agent_path entry {entry} does not exist"
         parts = Path(entry).parts
-        if len(parts) > 2 and parts[1] == "home" and not Path(*parts[:3]).exists():
+        if (
+            Path(entry).is_absolute()
+            and len(parts) > 2
+            and parts[1] == "home"
+            and _seen(as_user, Path(*parts[:3])) is False
+        ):
             said += f"; {Path(*parts[:3])} is no home here, the agents' home is {home}"
         report.warn(said)
+
+
+def _local_agents_user(local: config.Local) -> AsUser:
+    """The agents' user of a local backend (supervisor.agents_user, from the backend alone)."""
+    return AsUser(local.agent_user if local.layout == "agent_user" and local.agent_user else None)
+
+
+def _seen(as_user: AsUser, path: Path, kind: str = "-e") -> bool | None:
+    """Whether `path` exists as the agents' user sees it (review A2159/A2160 of #2125): through
+    sudo in the agent_user layout, by stat on the runner's own side. None where this user
+    cannot look (EACCES, which pathlib's predicates raise up to Python 3.13 and hide from 3.14
+    on: cli/context/runner.md, 52b35dea): never taken for absent."""
+    try:
+        return as_user.exists(path, kind)
+    except OSError:
+        return None
 
 
 def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -> None:
@@ -487,15 +504,17 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
     )
     agents = local.agent_user if local.layout == "agent_user" and local.agent_user else None
     who = agents or getpass.getuser()
+    as_user = supervisor.agents_user(cfg)
     for name, grant in cfg.repositories.items():
         for rule in grant.allow:
             program = rule.split(" ")[0]
             if not config.plain_command(rule) or "/" in program:
                 continue
-            if shutil.which(program, path=agent_path) is None:
+            # As the agents' user finds it: a program under that user's home counts.
+            if capabilities.which(program, agent_path, as_user) is None:
                 report.warn(
                     f"repositories.{name}: allow {rule!r}: `{program}` is not on agent_path "
-                    f"({agent_path}); install it, or the command fails in every session"
+                    f"({agent_path}) for {who}; install it, or the command fails in every session"
                 )
         if not grant.pull_requests:
             continue
@@ -507,10 +526,18 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
                 "so `maity gh` refuses until it is installed; install gh (sessions find it at "
                 "their next call)"
             )
-        elif not (agents_home / ".config" / "gh" / "hosts.yml").is_file():
+            continue
+        hosts = agents_home / ".config" / "gh" / "hosts.yml"
+        seen = _seen(as_user, hosts, "-f")
+        if seen is None:
+            report.warn(
+                f"repositories.{name}: gh's login for {who} not checked: {hosts} cannot be "
+                "looked at from this user"
+            )
+        elif not seen:
             report.warn(
                 f"repositories.{name}: pull_requests = true, but gh has no login for {who} "
-                f"(no {agents_home}/.config/gh/hosts.yml); as that user: gh auth login, then "
+                f"(no {hosts}); as that user: gh auth login, then "
                 "gh auth setup-git (an agent's git push uses that login too: without it, "
                 '"could not read Username")'
             )

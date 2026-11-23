@@ -420,7 +420,11 @@ def _missing(path: Path) -> str:
     install` has its own, the message names that one: the service's commands read it only when
     given, never in place of the default (cli/context/runner.md)."""
     said = f"{path}: no such file; write it first (runner design §5.1)"
-    if path == DEFAULT_PATH.expanduser() and SERVICE_PATH.is_file():
+    try:  # an /etc/maity-runner this user cannot search names nothing (review A2159 of #2125)
+        service = SERVICE_PATH.is_file()
+    except OSError:
+        service = False
+    if path == DEFAULT_PATH.expanduser() and service:
         said += (
             f"; the service of `maity runner install` reads {SERVICE_PATH}: pass "
             f"--config {SERVICE_PATH}, as its user (sudo -u maity-runner -H)"

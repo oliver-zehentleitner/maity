@@ -52,7 +52,7 @@ elif ! command -v pg_ctl >/dev/null; then
   lib="${MAITY_PG_LIB:-/usr/lib/postgresql}"
   newest=""
   for found in "$lib"/*/bin/pg_ctl; do
-    [ -x "$found" ] || continue
+    [ -f "$found" ] && [ -x "$found" ] || continue
     version="${found#"$lib"/}"
     version="${version%%/*}"
     case "$version" in '' | *[!0-9.]* | .* | *. | *..*) continue ;; esac

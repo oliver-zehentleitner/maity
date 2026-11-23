@@ -32,6 +32,9 @@ from maity import clonecheck, gitfacts, inclone, onboarding, proc
 # A record of the runner's, in its directory for the agent (`clonecheck.runner_record`); only
 # for Codex, which is never granted pull requests, at PULL_REQUESTS_PATH in the clone.
 PULL_REQUESTS = "pull_requests"
+# The record's size limit, the runner's PATH included: a long PATH (Nix, module systems) is
+# cut to whole entries that fit when the runner writes it (adapters.pull_requests_record).
+RECORD_MAX = 65536
 PULL_REQUESTS_PATH = Path(".git", "maity", PULL_REQUESTS)
 BODY_MAX = 65536  # bytes; the forge's own limit for a pull request's body
 JSON_FIELDS = re.compile(r"[A-Za-z]+(,[A-Za-z]+)*")
@@ -191,7 +194,7 @@ def is_lead(args: argparse.Namespace) -> bool:
 def _record(root: Path, dot_git: int | None) -> bytes:
     """The runner's pull-request record (`clonecheck.runner_record`): in the runner's
     directory for the agent, never a file in the clone, which the agent can write."""
-    return clonecheck.runner_record(root, dot_git, PULL_REQUESTS, 4096)
+    return clonecheck.runner_record(root, dot_git, PULL_REQUESTS, RECORD_MAX)
 
 
 def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
@@ -233,10 +236,19 @@ def find_gh(recorded: str, root: Path, dot_git: int | None = None) -> str:
                 f"gh is not installed on the runner's PATH ({recorded}); once the runner's "
                 "operator installs it, `maity gh` finds it at its next call"
             )
-    found = Path(program).resolve()
-    writable = [root, inclone.recorded_scratch(root, dot_git)]
-    for place in (p for p in writable if p is not None):
-        if found.is_relative_to(Path(place).resolve()):
+    # Both the file gh resolves to and the directory it was found in: gh_env puts that
+    # directory first on gh's PATH, and a link in the clone could point out of it (review
+    # A2159 of #2125). The path as found is what runs: its directory is checked, so the
+    # session cannot swap the link, and a link that dispatches on its own name (a snap's
+    # /snap/bin/gh, which resolves to /usr/bin/snap) still starts gh.
+    try:
+        found = Path(program).resolve(strict=True)
+        folder = Path(program).parent.resolve(strict=True)
+        writable = [Path(p).resolve() for p in (root, inclone.recorded_scratch(root, dot_git)) if p]
+    except (OSError, RuntimeError):
+        raise Refused(f"the gh found ({program}) cannot be resolved") from None
+    for place in writable:
+        if found.is_relative_to(place) or folder.is_relative_to(place):
             raise Refused(f"the gh found ({program}) lies in {place}, which this session can write")
     return program
 

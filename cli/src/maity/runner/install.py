@@ -141,8 +141,10 @@ def _toml_str(text: str) -> str:
 def starter_config(url: str) -> str:
     return (
         "# Written by `maity runner install`. Add [limits] and at least one [harness.<id>],\n"
-        "# then `sudo systemctl restart maity-runner` and `maity runner check`\n"
-        "# (every default: `maity runner check --explain`).\n"
+        "# then `sudo systemctl restart maity-runner`, log the tools and the forge in as\n"
+        "# maity-runner, and check it:\n"
+        f"# {CHECK_AS_RUNNER}\n"
+        "# (every default: the same with --explain).\n"
         "[hub]\n"
         f"url = {_toml_str(url)}\n"
         f"state_dir = {_toml_str(str(STATE_DIR))}\n"
@@ -630,6 +632,9 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
     _say(f"started {SERVICE}")
     for line in LOGIN_STEPS:
         _say(line)
+    # A first check now, before any login (review A2160 of #2125): said as such, since a tool
+    # not installed yet or not logged in shows up in it; its exit stays install's.
+    _say("a first check, before the logins (run it again after them):")
     return host.run(_as_runner(host, ["runner", "check", "--config", str(CONFIG)]))
 
 
