@@ -410,8 +410,11 @@ def catcher_rounds(source: str) -> list[str]:
     avoid the `.port` of every catcher, as `avoid=` or its first argument, directly or
     through a name the function assigned it to. Then the OS cannot hand a catcher the hub's
     port (tsk-vfdn98vwa0ym). A catcher bound to no name cannot be avoided and is a fault too.
-    Each function is its own scope: one defined inside is checked on its own. One message
-    per fault, naming the function and line."""
+    A catcher belongs to the function whose own scope makes it; a pick belongs to the
+    innermost function around it that makes a catcher, so one in a nested def, lambda or
+    default argument still counts for the round. One message per fault, naming the function
+    and line. A helper at module level that picks or makes a catcher for a round is not
+    followed (web/context/stack.md 65a9e67e, Known limits)."""
     faults = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name == "free_port":
@@ -443,7 +446,19 @@ def catcher_rounds(source: str) -> list[str]:
         assigned = {
             t.id: n.value for n in own if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)
         }
-        for call in sorted((n for n in own if _called(n, "free_port")), key=lambda c: (c.lineno, c.col_offset)):
+        # A pick inside a nested def, lambda or default argument is still this round's pick
+        # (review A2197), unless that nested function makes a catcher of its own: then it is
+        # checked there, once. A harmless helper defined above the catcher is a loud fault,
+        # which the strict ruling accepts over a silent gap.
+        theirs = {
+            id(x)
+            for inner in ast.walk(node)
+            if inner is not node and isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and any(_called(n, "MailCatcher") for n in _own_scope(inner))
+            for x in ast.walk(inner)
+        }
+        picks = [n for n in ast.walk(node) if _called(n, "free_port") and id(n) not in theirs]
+        for call in sorted(picks, key=lambda c: (c.lineno, c.col_offset)):
             where = f"{node.name} (line {call.lineno})"
             if call.lineno < last:
                 faults.append(f"{where}: free_port() before the MailCatcher of line {last}")
@@ -573,9 +588,16 @@ def unguarded_round(run):
         ("a catcher bound to no name", "def r():\n    use(MailCatcher())\n    port = free_port()\n", 1),
         ("a catcher on an attribute", "def r(run):\n    run.catcher = MailCatcher()\n    port = free_port()\n", 1),
         ("a catcher returned by a helper", "def make():\n    return MailCatcher()\n", 1),
-        ("a helper defined before the catcher is its own scope",
-         "def r():\n    def helper():\n        return free_port()\n    c = MailCatcher()\n"
-         "    port = free_port(avoid={c.port})\n", 0),
+        ("a pick in a nested def before the catcher is the round's (A2197)",
+         "def r():\n    def pick():\n        return free_port()\n    port = pick()\n    c = MailCatcher()\n", 1),
+        ("a pick in a lambda before the catcher is the round's",
+         "def r():\n    pick = lambda: free_port()\n    port = pick()\n    c = MailCatcher()\n", 1),
+        ("a pick in a default argument before the catcher is the round's",
+         "def r():\n    def go(p=free_port()):\n        return p\n    c = MailCatcher()\n", 1),
+        ("a nested pick after the catcher without avoid is the round's",
+         "def r():\n    c = MailCatcher()\n    def pick():\n        return free_port()\n    port = pick()\n", 1),
+        ("a nested function with its own catcher is checked there, once",
+         "def r():\n    def inner():\n        port = free_port()\n        c = MailCatcher()\n    d = MailCatcher()\n", 1),
         ("avoid passed by position", "def r():\n    c = MailCatcher()\n    port = free_port({c.port})\n", 0),
         ("avoid through a name assigned in the round",
          "def r():\n    c = MailCatcher()\n    skip = {c.port}\n    port = free_port(avoid=skip)\n", 0),
