@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -26,7 +27,9 @@ args = sys.argv[1:]
 if args == ["--version"]:
     print("2.1.326 (Claude Code)")
     sys.exit(0)
-prompt = args[args.index("-p") + 1]
+if any(re.search(r"<(command|read|write)>", arg) for arg in args):  # the prompt goes on stdin
+    sys.exit("fake claude: a prompt on the command line")
+prompt = sys.stdin.read()
 kind, target = re.search(r"<(command|read|write)>(.*?)</\\1>", prompt, re.S).groups()
 if "--no-session-persistence" not in args:  # Claude Code keeps a transcript by default
     projects = os.path.join(os.environ["HOME"], ".claude", "projects", "fake-slug")
@@ -81,7 +84,8 @@ def fake(tmp_path: Path, mode: str = "obey") -> str:
     blocking hook (`hooked`, for Bash only); that refuses it as a permission rule does
     (`refuse`), answers it without starting anything (`fail`), makes none (`idle`), or makes it
     under a tool name that carries the call's text (`oddname`). Like Claude Code, it keeps a
-    transcript of the prompt in the home unless it is given `--no-session-persistence`.
+    transcript of the prompt in the home unless it is given `--no-session-persistence`. It reads
+    its prompt from standard input and refuses one on its command line.
     A test that runs the probe on it is skipped where the probe's scratch has no room for the
     placement's socket (`_probe_tempdir`)."""
     if not PROBE_TEMP_FITS:
@@ -181,8 +185,11 @@ def test_the_world_is_started_as_the_supervisor_starts_a_placement(short: Path) 
     holder = str(scratch.parent.parent.resolve())  # every scratch's holder, denied for reading
     assert holder in world.settings["sandbox"]["filesystem"]["denyRead"]
     assert "WorktreeCreate" in world.settings["hooks"]
-    (short / "old").mkdir()
-    assert "WorktreeCreate" not in probe.build(short / "old", "/usr/bin/claude").settings["hooks"]
+    # A second root beside `short`, as long as it, so its socket fits wherever `short`'s does
+    # (a subdirectory of `short` is one level deeper than the fixture checked).
+    old = Path(tempfile.mkdtemp(prefix="mp-"))
+    assert len(str(old)) == len(str(short))
+    assert "WorktreeCreate" not in probe.build(old, "/usr/bin/claude").settings["hooks"]
     assert probe.version_of("2.1.330 (Claude Code)") == "2.1.330"
 
 
@@ -808,7 +815,9 @@ def test_every_run_saves_no_session(tmp_path: Path, capsys: pytest.CaptureFixtur
     every run is started with `--no-session-persistence`."""
     seen: list[list[str]] = []
 
-    def runner(argv: list[str], env: dict[str, str], cwd: Path) -> tuple[int | None, str]:
+    def runner(
+        argv: list[str], env: dict[str, str], cwd: Path, prompt: str
+    ) -> tuple[int | None, str]:
         seen.append(argv)
         return 0, ""
 
@@ -822,31 +831,209 @@ def test_every_run_saves_no_session(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert all(argv.count(probe.NO_SESSION) == 1 and "-p" in argv for argv in seen)
 
 
-def test_a_private_line_in_claude_codes_home_fails_the_run(
+def test_no_run_has_a_private_line_on_its_command_line(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """Were a transcript kept anyway, the probe names the file, not the line, and fails."""
+    """The prompt quotes the private line; it goes to the run's standard input, never its argv,
+    which any local user can read while it runs (`ps`, /proc/<pid>/cmdline)."""
     marker = "zq" + uuid.uuid4().hex
     lines = tmp_path / "lines.txt"
     lines.write_text(f"true {marker} && maity probe {{T}}\n")
     claude = fake(tmp_path, "sandbox")
+    seen: list[tuple[list[str], str]] = []
+
+    def runner(
+        argv: list[str], env: dict[str, str], cwd: Path, prompt: str
+    ) -> tuple[int | None, str]:
+        seen.append((argv, prompt))
+        return probe.run_claude(argv, env, cwd, prompt)
+
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines)], runner=runner)  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == 0, out + err  # the fake read the prompt from stdin and made its call
+    assert len(seen) == 1 and marker in seen[0][1]  # the private prompt was sent, on stdin
+    assert not any(marker in arg for argv, _ in seen for arg in argv)
+    assert not any("<command>" in arg for argv, _ in seen for arg in argv)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "true {m} && maity probe {{T}}",  # stored as written
+        'true "{m}" && maity probe {{T}}',  # a double quote, escaped in JSON
+        "true \\{m} && maity probe {{T}}",  # a backslash, escaped in JSON
+        "true '{m}\u00e9' && maity probe {{T}}",  # non-ASCII: \u00e9 in ASCII JSON
+        "true '{m}\t' && maity probe {{T}}",  # a tab, \t in JSON
+    ],
+    ids=["plain", "dquote", "backslash", "non-ascii", "tab"],
+)
+def test_a_private_line_in_claude_codes_home_fails_the_run(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], line: str
+) -> None:
+    """Were a transcript kept anyway (JSONL, as `json.dumps` writes it: quotes, backslashes,
+    tabs and non-ASCII escaped), the probe names the file, not the line, and fails."""
+    marker = "zq" + uuid.uuid4().hex
+    lines = tmp_path / "lines.txt"
+    lines.write_text(line.format(m=marker) + "\n", encoding="utf-8")
+    claude = fake(tmp_path, "sandbox")
 
     def keeps_a_transcript(
-        argv: list[str], env: dict[str, str], cwd: Path
+        argv: list[str], env: dict[str, str], cwd: Path, prompt: str
     ) -> tuple[int | None, str]:
         argv = [a for a in argv if a != probe.NO_SESSION]  # as if the flag did nothing
-        return probe.run_claude(argv, env, cwd)
+        return probe.run_claude(argv, env, cwd, prompt)
 
     code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
                        "--extra-lines", str(lines)], runner=keeps_a_transcript)  # fmt: skip
     out, err = capfd.readouterr()
-    assert code == 1 and "PRIVATE LINE FOUND in " in out and marker not in out + err
-    assert "fake-slug" in out  # the file is named
+    assert code == 1 and marker not in out + err
+    kept = next((Path.home() / ".claude" / "projects" / "fake-slug").iterdir())
+    assert f"PRIVATE LINE FOUND in {kept}" in out  # the file is named
+    assert f"SESSION WRITTEN: {kept}" in out
     code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
                        "--extra-lines", str(lines)])  # fmt: skip
     out, _ = capfd.readouterr()
     assert code == 0 and "PRIVATE LINE FOUND" not in out
     assert "Claude Code's home: 0 file(s) written during the run" in out
+
+
+def test_any_session_file_fails_the_run_whatever_it_holds(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """A file under ~/.claude/projects/ that matches no line (a title made of the prompt, as
+    some Claude Code releases wrote despite the flag) still fails the run; one written
+    elsewhere in the home does not."""
+    marker = "zq" + uuid.uuid4().hex
+    lines = tmp_path / "lines.txt"
+    lines.write_text(f"true {marker} && maity probe {{T}}\n")
+    claude = fake(tmp_path, "sandbox")
+    where = ["projects", "-slug", "title.jsonl"]
+
+    def writes_a_title(
+        argv: list[str], env: dict[str, str], cwd: Path, prompt: str
+    ) -> tuple[int | None, str]:
+        _home_file(".claude", *where).write_text('{"title": "A sandbox test"}\n')
+        return probe.run_claude(argv, env, cwd, prompt)
+
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines)], runner=writes_a_title)  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == 1 and marker not in out + err
+    assert f"SESSION WRITTEN: {Path.home().joinpath('.claude', *where)}" in out
+    assert "PRIVATE LINE FOUND" not in out and "summary: 1 PASS, 1 FAIL" in out
+    where = ["todos", "t.json"]
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines)], runner=writes_a_title)  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == 0 and "SESSION WRITTEN" not in out
+    assert f"  {Path.home().joinpath('.claude', *where)}" in out
+
+
+def _home_file(*parts: str) -> Path:
+    path = Path.home().joinpath(*parts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_a_private_line_is_found_in_any_decoded_json_string() -> None:
+    """Escapes `json.dumps` does not write (`\\/`, upper-case `\\u`) are found once decoded,
+    in a value or a key, in a JSON file or a JSONL line; a line split over values is not."""
+    marker = "zq" + uuid.uuid4().hex
+    target = f"cat </tmp/{marker}"
+    other = _home_file(".claude", "projects", "x.jsonl")
+    escaped = target.replace("/", "\\/").replace("<", "\\u003C")
+    assert escaped.encode() != target.encode()  # not found as raw bytes
+    other.write_text('{"a": 1}\n{"b": ["' + escaped + '"]}\n')
+    assert probe.holds_private(other.read_bytes(), other, [target]) is True
+    other.write_text('{"' + escaped + '": 1}')
+    assert probe.holds_private(other.read_bytes(), other, [target]) is True
+    other.write_text('{"a": "cat </tmp/", "b": "' + marker + '"}')
+    assert probe.holds_private(other.read_bytes(), other, [target]) is False
+
+
+@pytest.mark.parametrize("ascii_only", [True, False], ids=["ascii-json", "utf8-json"])
+def test_an_escaped_line_is_found_in_a_file_that_does_not_decode(ascii_only: bool) -> None:
+    """A transcript cut off mid-line does not decode, but the line escaped as `json.dumps`
+    writes it (ASCII or UTF-8) is found in its bytes: FOUND, not merely not scanned."""
+    marker = "zq" + uuid.uuid4().hex
+    target = f'echo "{marker}\u00e9" \\'
+    cut = _home_file(".claude", "projects", "cut.jsonl")
+    escaped = json.dumps(target, ensure_ascii=ascii_only)[1:-1]
+    cut.write_bytes(('{"prompt": "' + escaped).encode("utf-8"))
+    assert target.encode() not in cut.read_bytes()  # not as raw bytes
+    assert probe.holds_private(cut.read_bytes(), cut, [target]) is True
+    cut.write_bytes(b'{"prompt": "unrelated')
+    assert probe.holds_private(cut.read_bytes(), cut, [target]) is None
+
+
+@pytest.mark.parametrize("content", [b'{"a": "unterminated', b'{"a": "\xff"}', b"too big"])
+def test_a_written_file_it_cannot_scan_fails_the_run(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes,
+) -> None:
+    """A JSON-looking file that does not decode, or one over the scan limit, is NOT SCANNED,
+    and the run fails: a private line in it would go unseen. Nothing of it is printed."""
+    marker = "zq" + uuid.uuid4().hex
+    lines = tmp_path / "lines.txt"
+    lines.write_text(f"true {marker} && maity probe {{T}}\n")
+    claude = fake(tmp_path, "sandbox")
+    if content == b"too big":
+        monkeypatch.setattr(probe, "HOME_SCAN_MAX", 4)
+
+    def writes_a_file(
+        argv: list[str], env: dict[str, str], cwd: Path, prompt: str
+    ) -> tuple[int | None, str]:
+        _home_file(".claude", "statsig", "s.json").write_bytes(content)
+        return probe.run_claude(argv, env, cwd, prompt)
+
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines)], runner=writes_a_file)  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == 1 and marker not in out + err
+    assert f"NOT SCANNED: {Path.home() / '.claude' / 'statsig' / 's.json'}: " in out
+    assert "PRIVATE LINE FOUND" not in out
+
+
+@pytest.mark.parametrize("escaped", [False, True], ids=["raw", "json-escaped"])
+def test_a_path_that_holds_a_private_line_is_not_printed(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], escaped: bool
+) -> None:
+    """A file name may itself carry the private line, as written or JSON-escaped: the report
+    shows a numbered label instead and fails; the marker reaches neither the output nor what
+    --keep retains. Other paths are printed as they are."""
+    marker = "zq" + uuid.uuid4().hex
+    lines = tmp_path / "lines.txt"
+    lines.write_text(f'true "{marker}" && maity probe {{T}}\n')
+    claude = fake(tmp_path, "sandbox")
+
+    def names_a_file(
+        argv: list[str], env: dict[str, str], cwd: Path, prompt: str
+    ) -> tuple[int | None, str]:
+        found = re.search(r"<command>(.*?)</command>", prompt, re.S)
+        assert found is not None
+        name = json.dumps(found.group(1))[1:-1] if escaped else found.group(1)
+        _home_file(".claude", "todos", f"{name}.json").write_text("[]")
+        _home_file(".claude", "todos", "plain.json").write_text("[]")
+        return probe.run_claude(argv, env, cwd, prompt)
+
+    code = probe.main(["--claude", claude, "--no-preflight", "--only", "5",
+                       "--extra-lines", str(lines), "--keep"], runner=names_a_file)  # fmt: skip
+    out, err = capfd.readouterr()
+    scratch = Path(out.splitlines()[0].rsplit("scratch: ", 1)[1])
+    try:
+        for kept in scratch.rglob("*"):
+            assert marker[:12] not in str(kept)
+            if kept.is_file() and not kept.is_symlink():
+                assert marker[:12].encode() not in kept.read_bytes(), kept
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    assert code == 1 and marker[:12] not in out + err
+    label = "<path 2: holds a private line>"  # sorted: plain.json, then true ...json
+    assert f"  {label}" in out and f"PRIVATE LINE FOUND in the path of {label}" in out
+    assert f"  {Path.home() / '.claude' / 'todos' / 'plain.json'}" in out
 
 
 @pytest.mark.parametrize("flag", ["true", "false", 1, 0, None])
@@ -889,6 +1076,52 @@ def test_a_copy_in_the_earlier_format_is_restored() -> None:
     with pytest.raises(ValueError):
         probe.recover()
     assert probe.user_saved().exists()  # kept: nothing was restored
+
+
+def test_a_copy_without_its_text_is_refused_as_not_a_copy() -> None:
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.write_text('{"disableAllHooks": true}')
+    probe.user_saved().write_text(json.dumps({"mode": 0o600}))
+    with pytest.raises(ValueError, match="not a copy of the user settings"):
+        probe.recover()
+    assert probe.user_saved().exists() and user.read_text() == '{"disableAllHooks": true}'
+
+
+@pytest.mark.parametrize("flag", ["--managed", "--user-settings"])
+def test_linked_user_settings_are_not_restored_by_a_recovery(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    flag: str,
+) -> None:
+    """A copy left by a killed step meets user settings that are now a symbolic link: whichever
+    flag enters the recovery, it is refused before anything is undone, the copy kept."""
+    managed = tmp_path / "etc" / "managed-settings.json"
+    monkeypatch.setattr(probe, "managed_file", lambda: managed)
+    managed.parent.mkdir(parents=True)
+    managed.write_text('{"disableAllHooks": true}')
+    real = tmp_path / "dotfiles" / "settings.json"
+    real.parent.mkdir()
+    real.write_text('{"disableAllHooks": true}')
+    user = probe.user_settings()
+    user.parent.mkdir(parents=True, exist_ok=True)
+    user.symlink_to(real)
+    probe.user_saved().write_text(json.dumps({"text": "{}", "mode": 0o600, "uid": os.getuid(),
+                                              "gid": os.getgid()}))  # fmt: skip
+    probe.managed_record().write_text(f"{managed}\n")
+    monkeypatch.setattr(probe, "claude_running", lambda any_user: [])
+    claude = fake(tmp_path)
+    home, outside = _tree(Path.home()), _tree(tmp_path)
+    assert probe.main(["--claude", claude, "--no-preflight", flag, "--only", "1a.1"]) == 2
+    err = capsys.readouterr().err
+    assert "is a symbolic link" in err
+    if flag == "--managed":  # --user-settings refuses the link before the recovery
+        assert "recovery refused" in err and "is kept, nothing was changed" in err
+    assert _tree(Path.home()) == home and _tree(tmp_path) == outside
+    with pytest.raises(probe.LinkedSettings):
+        probe._restore_user({"text": "{}", "mode": 0o600, "uid": 0, "gid": 0})
+    assert user.is_symlink() and real.read_text() == '{"disableAllHooks": true}'
 
 
 def test_user_settings_behind_a_link_are_refused(

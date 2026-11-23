@@ -2079,7 +2079,7 @@ refuses a start where those settings switch the hook off.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22; the reviews of #2111 (A2117, A2118, A2119), which found verdicts that passed without their evidence and settings changes that could be left behind, and the lead's order to fix them before the second run, 2026-11-22; the delta reviews A2120 and A2121 and the lead's conditions for the second run (the minimal run writes nothing outside its scratch, recovery only with the flags and after the process check, the files' modes kept), 2026-11-22; the delta reviews A2124 and A2129 (Claude Code's own session transcript in the home, tool names and error flags from the stream, the earlier copy format, a linked settings file) and the lead's choice to turn session persistence off, 2026-11-22; Claude Code 2.1.330's option list, read from its binary: `--no-session-persistence`, "Don't save sessions to disk; they can't be resumed (only works with --print)", 2026-11-22
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22; the reviews of #2111 (A2117, A2118, A2119), which found verdicts that passed without their evidence and settings changes that could be left behind, and the lead's order to fix them before the second run, 2026-11-22; the delta reviews A2120 and A2121 and the lead's conditions for the second run (the minimal run writes nothing outside its scratch, recovery only with the flags and after the process check, the files' modes kept), 2026-11-22; the delta reviews A2124 and A2129 (Claude Code's own session transcript in the home, tool names and error flags from the stream, the earlier copy format, a linked settings file) and the lead's choice to turn session persistence off, 2026-11-22; Claude Code 2.1.330's option list, read from its binary: `--no-session-persistence`, "Don't save sessions to disk; they can't be resumed (only works with --print)", 2026-11-22; the delta reviews A2133, A2134, A2135 and A2136 (a private line stored JSON-escaped in the home went unseen, a file name that could print private text, a recovery entered with `--managed` that replaced linked user settings, a copy without its text, the prompt on the command line, a session file the line check would not match, citing anthropics/claude-code issue 49565) and the review lead's round-4 list, which ruled that a file not scanned fails the run, 2026-11-23; Claude Code 2.1.330's getInputPrompt and its "Input must be provided either through stdin or as a prompt argument when using --print", read from its binary, 2026-11-23
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-22
 **Revisit when:** a scheduled job with its own key runs the probe against each new release (ae02241e, not decided); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
@@ -2112,18 +2112,41 @@ it removes at its end; if an earlier run left settings changed, it says
 so and stops. Claude Code itself still writes to its files in the home,
 so every run is started with `--no-session-persistence`, which Claude
 Code 2.1.330 documents as saving no session to disk: no transcript of a
-prompt under `~/.claude/projects/`. Which other files it writes there
-(`~/.claude.json` and the rest of `~/.claude/`) is not known from a live
-run here; the probe names every one written during the run and fails if
-one holds a private line as the run filled it in. The steps that change managed or user settings are refused
-while Claude Code runs on the host, write atomically with the file's own
-mode and owner, owner-private copies beside them, and leave a record that
-a later run with those flags uses, after the same check, to undo what a
-killed run left; a copy in the earlier text-only format is restored with
-the file's own mode, and user settings behind a symbolic link are
-refused, since writing in place would replace the link. Someone runs it by hand on a machine where Claude Code is
-installed and signed in. Its counts go into the pull
-request and its full output to the lead. `capabilities.CHECKED` is raised
+prompt under `~/.claude/projects/`. The prompt, which quotes the line,
+goes to the run's standard input, not its command line, which any local
+user can read while it runs: in print mode 2.1.330 reads a stdin that is
+no terminal and, with text input, passes it on as the same string
+prompt, so the stream the probe parses does not change; a run that got
+no prompt makes no call and is INCONCLUSIVE, never PASS. The line itself
+still stands in the command line of the precondition's `bash -c`. Which
+other files Claude Code writes in the home (`~/.claude.json` and the
+rest of `~/.claude/`) is not known from a live run here; the probe names
+every one written during the run by its path and fails the run on any of
+four things: a file that holds a private line as the run filled it in,
+as raw bytes, escaped as `json.dumps` writes it (ASCII-only or UTF-8:
+quotes, backslashes, tabs, non-ASCII), or in any string of the file
+decoded as JSON or JSONL; a path that holds such a line in any of those
+forms, shown as a numbered label instead; a file it could not scan (over
+its 64 MiB limit or unreadable, or JSON-looking but not decodable),
+named as not scanned, since the probe cannot claim what it did not
+check; and any file under `~/.claude/projects/`, whatever it holds,
+since with the flag honoured nothing appears there, and a review cites
+Claude Code releases that still wrote a title made of the prompt there
+(not checked here), which no line would match. A line the file holds in
+another form (cut up, reworded) is not detected. The steps that change
+managed or user settings are refused while Claude Code runs on the host,
+write atomically with the file's own mode and owner, owner-private
+copies beside them, and leave a record that a later run with those flags
+uses, after the same check, to undo what a killed run left; a copy in
+the earlier text-only format is restored with the file's own mode, a
+copy without its text is refused and kept. The restore of the user
+settings itself refuses settings behind a symbolic link, whichever flag
+entered the recovery, and so does a step that would change them: writing
+in place would replace the link, so the run stops (exit 2) before
+anything is undone, the copy and the link untouched. Someone runs it by
+hand on a machine where Claude Code is installed and signed in. Its
+counts go into the pull request and its full output to the lead.
+`capabilities.CHECKED` is raised
 in a commit of its own, only after the steps the bump rests on passed: at
 least the prefixed calls (`--only 1`). The bump's own entry names the
 steps that ran and those that did not.

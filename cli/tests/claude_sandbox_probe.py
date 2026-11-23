@@ -37,12 +37,22 @@ What it checks (cli/context/runner.md, the sandbox entries):
    the host (any user's for `--managed`, the user's own for `--user-settings`). A probe killed
    in such a step leaves an owner-private record and copy beside the user settings; a later run
    with those flags puts them right after the same check (`recover`), and a run without them
-   names them and stops, changing nothing; user settings behind a symbolic link are refused.
+   names them and stops, changing nothing; user settings behind a symbolic link are neither
+   changed by a step nor restored from such a copy, whichever flag led there (the copy is kept,
+   nothing changes, exit 2).
    Without the flags those steps are SKIP, and the probe writes nothing of its own outside its
    scratch, which it removes at its end unless `--keep`. Claude Code itself writes to its files
    in the home: every run is started with `--no-session-persistence`, so it saves no transcript
-   under ~/.claude/projects/, and the probe names each file in ~/.claude/ and ~/.claude.json
-   written during the run, failing if one holds a private line as the run filled it in.
+   under ~/.claude/projects/, and gets its prompt on standard input, not as an argument other
+   users could read in the process list. The probe names each file in ~/.claude/ and
+   ~/.claude.json written during the run by its path, and fails if one holds a private line as
+   the run filled it in: as raw bytes, JSON-escaped (ASCII-only or UTF-8, as `json.dumps`
+   writes it), or in any string once the file is decoded as JSON or JSONL. A path that itself
+   holds such a line, in any of those forms, is shown as `<path N: holds a private line>` and
+   fails the run. A written file it cannot scan (larger than `HOME_SCAN_MAX` or unreadable, or
+   JSON-looking but not decodable) is named NOT SCANNED and fails the run, and so does any file
+   written under ~/.claude/projects/ (SESSION WRITTEN), whatever it holds: with the flag
+   honoured nothing appears there.
 4. The clone's credential, another clone's and the home's secrets are not readable from a
    non-maity line or through Read; `.git`'s protected paths are not writable; plain `maity`
    still reads the credential; `git fetch` and `git commit` still work. `git push` is not
@@ -790,8 +800,21 @@ def managed_record() -> Path:
     return Path.home() / ".claude" / "maity-probe-managed"
 
 
+class LinkedSettings(ValueError):
+    """The user settings are a symbolic link: writing them in place would replace the link."""
+
+
+def _refuse_linked_user() -> None:
+    """Refuse to write the user settings when they are a symbolic link (`LinkedSettings`)."""
+    if user_settings().is_symlink():
+        raise LinkedSettings(f"{user_settings()} is a symbolic link; writing it in place would "
+                             "replace the link")  # fmt: skip
+
+
 def _restore_user(copy: dict[str, Any]) -> None:
-    """The user settings back as `copy` (`_user_copy`) holds them, mode and owner included."""
+    """The user settings back as `copy` (`_user_copy`) holds them, mode and owner included;
+    refused, the copy kept, when they are a symbolic link (`LinkedSettings`)."""
+    _refuse_linked_user()
     user = user_settings()
     if copy["text"] is None:
         user.unlink(missing_ok=True)
@@ -814,7 +837,7 @@ def _read_copy(saved: Path) -> dict[str, Any]:
     """A saved copy of the user settings, in this format or the earlier one, which held only
     the text: then the existing file's mode and owner are kept, or 0600 and this user's."""
     copy = json.loads(saved.read_text())
-    if not isinstance(copy, dict) or not isinstance(copy.get("text"), str | None):
+    if not isinstance(copy, dict) or "text" not in copy or not isinstance(copy["text"], str | None):
         raise ValueError(f"{saved}: not a copy of the user settings")
     if not all(isinstance(copy.get(key), int) for key in ("mode", "uid", "gid")):
         user = user_settings()
@@ -833,8 +856,12 @@ def pending_records() -> list[Path]:
 
 def recover() -> list[str]:
     """Undo what a probe killed in the middle of a step left: the managed file it had put in
-    place (only the two paths it writes), and the user settings it had changed."""
+    place (only the two paths it writes), and the user settings it had changed. User settings
+    behind a symbolic link are refused before anything is undone, whichever flag led here: the
+    copy stays and nothing changes (`LinkedSettings`)."""
     done = []
+    if user_saved().is_file():
+        _refuse_linked_user()
     record = managed_record()
     if record.is_file():
         path = Path(record.read_text().strip())
@@ -887,6 +914,7 @@ def changed(change: str | None) -> Iterator[None]:
             _remove(path)
             managed_record().unlink(missing_ok=True)
         return
+    _refuse_linked_user()  # before anything is saved or written
     user = user_settings()
     copy = _user_copy()
     data = json.loads(copy["text"]) if copy["text"] else {}
@@ -919,13 +947,16 @@ def skipped(step: Step, managed: bool, user_settings: bool) -> str | None:
 # --- running ---------------------------------------------------------------------------------
 
 
-Runner = Callable[[list[str], dict[str, str], Path], tuple[int | None, str]]
+# argv, the session's variables, the working directory, and the prompt for standard input.
+Runner = Callable[[list[str], dict[str, str], Path, str], tuple[int | None, str]]
 
 
-def run_claude(argv: list[str], env: dict[str, str], cwd: Path) -> tuple[int | None, str]:
+def run_claude(argv: list[str], env: dict[str, str], cwd: Path,
+               prompt_text: str) -> tuple[int | None, str]:  # fmt: skip
+    """One `claude -p` run, its prompt written to its standard input, which is then closed."""
     try:
         done = subprocess.run(argv, env=env, cwd=cwd, capture_output=True, text=True,
-                              timeout=RUN_TIMEOUT, stdin=subprocess.DEVNULL)  # fmt: skip
+                              timeout=RUN_TIMEOUT, input=prompt_text)  # fmt: skip
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout if isinstance(exc.stdout, str) else ""
         return None, out
@@ -950,9 +981,12 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
         world.private_targets.append(target)
     # No transcript in Claude Code's home (`~/.claude/projects/`): it would keep the prompt,
     # which quotes a private line, and the results (`--no-session-persistence`, print mode only;
-    # read in Claude Code 2.1.330's own option list).
-    argv += ["-p", prompt(step, target), "--output-format", "stream-json", "--verbose",
-             "--max-turns", "3", NO_SESSION]  # fmt: skip
+    # read in Claude Code 2.1.330's own option list). The prompt, which quotes the line, goes to
+    # standard input, not argv, where any local user could read it (`ps`, /proc/<pid>/cmdline):
+    # in print mode 2.1.330 reads a stdin that is no terminal and joins it to the prompt
+    # argument, here none (its getInputPrompt, read from its binary).
+    argv += ["-p", "--output-format", "stream-json", "--verbose", "--max-turns", "3",
+             NO_SESSION]  # fmt: skip
     if model:
         argv += ["--model", model]
     if step.expect == "fetched":
@@ -964,7 +998,7 @@ def run_step(step: Step, world: World, model: str | None, runner: Runner,
     before = {p: (p.read_bytes() if p.is_file() else None) for p in paths}
     with changed(step.change):
         named = capabilities.claude_hooks_off() if step.hooks_check is not None else None
-        code, out = runner(argv, world.env, world.clone)
+        code, out = runner(argv, world.env, world.clone, prompt(step, target))
     (world.root / "streams").mkdir(exist_ok=True)
     if private(step):  # its stream may echo the line: only a status is kept
         calls = parse_stream(out)
@@ -1083,7 +1117,7 @@ def preflight(binary: str) -> str | None:
 
 def home_state() -> dict[Path, tuple[int, int]]:
     """Claude Code's files in the home (`~/.claude/` and `~/.claude.json`), by modification
-    time and size, to name afterwards what the runs wrote there."""
+    time and size, to count afterwards what the runs wrote there (`home_report`)."""
     home = Path.home()
     found: dict[Path, tuple[int, int]] = {}
     paths = [home / ".claude.json"]
@@ -1099,25 +1133,116 @@ def home_state() -> dict[Path, tuple[int, int]]:
     return found
 
 
-HOME_SCAN_MAX = 64 * 1024 * 1024  # bytes read of one written file when looking for a line
+HOME_SCAN_MAX = 64 * 1024 * 1024  # bytes of one written file the scan reads; a larger one fails
+
+
+def _sessions() -> Path:
+    """Where Claude Code keeps its sessions: with `--no-session-persistence` honoured no run
+    writes there, so any file written there fails the run, whether or not it matches a line
+    (some Claude Code releases still wrote a title made of the prompt there)."""
+    return Path.home() / ".claude" / "projects"
+
+
+def private_forms(targets: Sequence[str]) -> set[bytes]:
+    """The byte forms a line may take in a file or a path: as written, and JSON-escaped as
+    `json.dumps` writes it, ASCII-only and UTF-8 (quotes, backslashes, tabs, non-ASCII)."""
+    forms = set()
+    for target in targets:
+        forms |= {target.encode(), json.dumps(target)[1:-1].encode(),
+                  json.dumps(target, ensure_ascii=False)[1:-1].encode()}  # fmt: skip
+    return forms
+
+
+def _strings(value: Any) -> Iterator[str]:
+    """Every string in a decoded JSON value, keys included."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            yield item
+        elif isinstance(item, dict):
+            stack += [*item.keys(), *item.values()]
+        elif isinstance(item, list):
+            stack += item
+
+
+def _decoded(data: bytes, path: Path) -> list[Any] | None:
+    """The file's content as JSON values: the whole file, or each non-blank line (JSONL). An
+    empty list for a file that is not JSON-looking (no `.json`/`.jsonl` name and no leading
+    `{` or `[`) and not UTF-8, or the lines of one that decode; None for a JSON-looking file
+    that does not decode whole, as one value or line by line."""
+    looks = path.suffix in (".json", ".jsonl") or data.lstrip()[:1] in (b"{", b"[")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None if looks else []
+    try:
+        return [json.loads(text)]
+    except ValueError:
+        pass
+    values = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            values.append(json.loads(line))
+        except ValueError:
+            if looks:
+                return None
+    return values
+
+
+def holds_private(data: bytes, path: Path, targets: Sequence[str]) -> bool | None:
+    """Whether a file's content holds one of the lines: as raw bytes, JSON-escaped (ASCII or
+    UTF-8, as `json.dumps` writes it), or in a string value of the file decoded as JSON or JSONL.
+    None when it holds none of them but is JSON-looking and does not decode (not scanned).
+    With no line to look for there is nothing to miss: False."""
+    if not targets:
+        return False
+    if any(form in data for form in private_forms(targets)):
+        return True
+    values = _decoded(data, path)
+    if values is None:
+        return None
+    return any(target in text for value in values for text in _strings(value) for target in targets)
 
 
 def home_report(before: dict[Path, tuple[int, int]], targets: Sequence[str]) -> list[str]:
-    """What the runs wrote to Claude Code's files in the home, by path only, and whether any of
-    those files holds a private line as the run filled it in (named by path, never quoted)."""
+    """What the runs wrote to Claude Code's files in the home, by path, and what fails the run:
+    a file that holds a private line as the run filled it in (`holds_private`), one it could not
+    scan for one (over `HOME_SCAN_MAX`, unreadable, or JSON-looking but not decodable), and any
+    file under `_sessions()`. A path that itself holds a private line, in any of its forms
+    (`private_forms`), is shown as a numbered label instead, and fails the run too."""
     after = home_state()
     written = sorted(p for p, state in after.items() if before.get(p) != state)
+    forms = private_forms(targets)
     lines = [f"Claude Code's home: {len(written)} file(s) written during the run"]
-    lines += [f"  {path}" for path in written]
-    for path in written:
+    failures = []
+    for number, path in enumerate(written, start=1):
+        shown = str(path)
+        if any(form in os.fsencode(path) for form in forms):
+            shown = f"<path {number}: holds a private line>"
+            failures.append(f"PRIVATE LINE FOUND in the path of {shown}")
+        lines.append(f"  {shown}")
+        if path.is_relative_to(_sessions()):
+            failures.append(f"SESSION WRITTEN: {shown}, though every run had {NO_SESSION}")
         try:
             with path.open("rb") as stream:
-                data = stream.read(HOME_SCAN_MAX)
-        except OSError:
+                data = stream.read(HOME_SCAN_MAX + 1)
+        except FileNotFoundError:  # gone again: it holds nothing now
             continue
-        if any(target.encode() in data for target in targets):
-            lines.append(f"PRIVATE LINE FOUND in {path}")
-    return lines
+        except OSError:
+            failures.append(f"NOT SCANNED: {shown}: unreadable")
+            continue
+        if len(data) > HOME_SCAN_MAX:
+            failures.append(f"NOT SCANNED: {shown}: larger than {HOME_SCAN_MAX} bytes")
+            continue
+        held = holds_private(data, path, targets)
+        if held is None:
+            failures.append(f"NOT SCANNED: {shown}: JSON-looking, but it does not decode")
+        elif held:
+            failures.append(f"PRIVATE LINE FOUND in {shown}")
+    return lines + failures
 
 
 def remove_scratch(root: Path) -> None:
@@ -1188,7 +1313,13 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
                   "probe are put right only then, so run them in a window with no placement and "
                   "no other Claude Code session", file=sys.stderr)  # fmt: skip
             return 2
-        for line in recover():  # only after the gate, and only with what a record names
+        try:  # only after the gate, and only with what a record names
+            done = recover()
+        except ValueError as exc:  # a linked settings file or a copy it cannot read: kept
+            print(f"cannot run: recovery refused: {exc}; the earlier probe's copy "
+                  f"{user_saved()} is kept, nothing was changed", file=sys.stderr)  # fmt: skip
+            return 2
+        for line in done:
             print(f"recovered: {line}", file=sys.stderr)
     if not opts.no_preflight:
         why = preflight(binary)
@@ -1229,6 +1360,10 @@ def main(args: Sequence[str] | None = None, runner: Runner = run_claude) -> int:
             print(line, flush=True)
         if any(line.startswith("PRIVATE LINE FOUND") for line in report):
             outcomes.append(Outcome("FAIL", "a private line was written to Claude Code's home"))
+        if any(line.startswith("SESSION WRITTEN") for line in report):
+            outcomes.append(Outcome("FAIL", "Claude Code wrote a session file despite the flag"))
+        if any(line.startswith("NOT SCANNED") for line in report):
+            outcomes.append(Outcome("FAIL", "a file written to Claude Code's home was not scanned"))
     finally:
         if not opts.keep:
             remove_scratch(root)
