@@ -248,9 +248,27 @@ def require_secure_transport(origin: Origin, allow_plain_http: bool) -> None:
         raise ApiError(403, "insecure_transport", "credentials and cookies travel over TLS only")
 
 
+# The one call a cookie session may make from another site (§2.1): the forge sends the
+# browser back to the App's setup (§11.4), and there its single-use `state`, bound to the
+# session, stands in for the check. Read on the raw request path, as `ISOLATED_MAY` is, so
+# only the path the forge's redirect sends matches (hub/context/auth.md e3a7c1d5).
+CROSS_SITE_NAVIGATIONS = Calls(("GET", "/forge/github/setup"))
+
+
+def _cross_site_allowed(facts: RequestFacts) -> bool:
+    """Whether a `cross-site` request may still use the cookie: a call of
+    `CROSS_SITE_NAVIGATIONS` and the browser's top-level navigation, never a `fetch`, a
+    form's `POST`, a frame or a `HEAD`."""
+    return (
+        CROSS_SITE_NAVIGATIONS.admits_api(facts.method, facts.raw_path.decode("latin-1"))
+        and facts.headers.get("sec-fetch-mode") == "navigate"
+        and facts.headers.get("sec-fetch-dest") == "document"
+    )
+
+
 def _cookie_headers(facts: RequestFacts) -> None:
     require_secure_transport(facts.origin, facts.allow_plain_http)
-    if facts.headers.get("sec-fetch-site") == "cross-site":
+    if facts.headers.get("sec-fetch-site") == "cross-site" and not _cross_site_allowed(facts):
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
 
 

@@ -13,6 +13,7 @@ allowed path, a path that only starts like an allowed one, percent-encoding, a p
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -131,6 +132,82 @@ def test_an_isolated_agent_raw_path_is_compared_byte_for_byte() -> None:
     assert not _isolated_agent_passes("GET", "/api/v1/mé".encode())
     assert not _isolated_agent_passes("GET", "/api/v1/mé".encode("latin-1"))
     assert not _isolated_agent_passes("GET", b"/api/v1/me\x00")
+
+
+# --- the one cross-site navigation a cookie session may make (§2.1, §11.4) -------------------
+
+NAVIGATION = {
+    "sec-fetch-site": "cross-site",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-dest": "document",
+}
+
+
+def _cross_site_cookie_passes(method: str, raw_path: bytes, headers: dict[str, str]) -> bool:
+    """The cookie's header check (`caller._cookie_headers`), on the raw path."""
+    facts = replace(_facts(method, raw_path), headers=headers)
+    try:
+        caller_module._cookie_headers(facts)
+    except ApiError as error:
+        assert error.code == "csrf_mismatch"
+        return False
+    return True
+
+
+def test_the_forges_redirect_to_the_setup_keeps_the_cookie() -> None:
+    assert _cross_site_cookie_passes("GET", b"/api/v1/forge/github/setup", NAVIGATION)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("HEAD", "/api/v1/forge/github/setup"),
+        ("POST", "/api/v1/forge/github/setup"),
+        ("get", "/api/v1/forge/github/setup"),
+        ("GET", "/api/v1/forge/github/setup/"),
+        ("GET", "/api/v1/forge/github/setup?installation_id=7"),
+        ("GET", "/api/v1/forge/github/set%75p"),
+        ("GET", "/api/v1/forge/github/setup%2F"),
+        ("GET", "/api/v1//forge/github/setup"),
+        ("GET", "/api/v1/forge/github/setupx"),
+        ("GET", "/api/v1/forge/github/setup/x"),
+        ("GET", "/API/V1/forge/github/setup"),
+        ("GET", "/forge/github/setup"),
+        ("GET", "/api/v1/api/v1/forge/github/setup"),
+        ("GET", "/api/v1/me"),
+        ("GET", "/api/v1/me/forge"),
+        ("POST", "/api/v1/me/forge/github/link"),
+    ],
+)
+def test_a_cross_site_navigation_anywhere_else_is_refused(method: str, path: str) -> None:
+    assert not _cross_site_cookie_passes(method, path.encode(), NAVIGATION)
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {**NAVIGATION, "sec-fetch-mode": "cors"},
+        {**NAVIGATION, "sec-fetch-mode": "no-cors"},
+        {**NAVIGATION, "sec-fetch-mode": "Navigate"},
+        {**NAVIGATION, "sec-fetch-dest": "iframe"},
+        {**NAVIGATION, "sec-fetch-dest": "empty"},
+        {**NAVIGATION, "sec-fetch-dest": "Document"},
+        {"sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate"},
+        {"sec-fetch-site": "cross-site", "sec-fetch-dest": "document"},
+        {"sec-fetch-site": "cross-site"},
+    ],
+)
+def test_a_cross_site_setup_that_is_no_top_level_navigation_is_refused(
+    headers: dict[str, str],
+) -> None:
+    assert not _cross_site_cookie_passes("GET", b"/api/v1/forge/github/setup", headers)
+
+
+@pytest.mark.parametrize("site", [None, "same-origin", "same-site", "none"])
+def test_a_request_from_no_other_site_is_unchanged(site: str | None) -> None:
+    """Only `cross-site` is refused, on every path, whatever the other headers say."""
+    headers = {} if site is None else {"sec-fetch-site": site, "sec-fetch-mode": "cors"}
+    assert _cross_site_cookie_passes("GET", b"/api/v1/me", headers)
 
 
 class _Conn:
@@ -509,6 +586,7 @@ def test_a_second_factor_session_is_judged_on_the_decoded_path(
 
 LISTS = {
     "ISOLATED_MAY": caller_module.ISOLATED_MAY,
+    "CROSS_SITE_NAVIGATIONS": caller_module.CROSS_SITE_NAVIGATIONS,
     "SECOND_STEP_CALLS": second_factor.SECOND_STEP_CALLS,
     "MOVED_ENROLMENT_CALLS": second_factor.MOVED_ENROLMENT_CALLS,
     "ENROLMENT_CALLS": second_factor.ENROLMENT_CALLS,

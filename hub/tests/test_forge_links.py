@@ -495,6 +495,140 @@ def test_a_forge_that_does_not_answer_goes_back_with_the_reason(
     assert "c0de" not in location
 
 
+# --- the forge's redirect is a cross-site navigation (§2.1, tsk-2vtm39ykr7k4) -------------------
+
+# What a browser sends on the forge's redirect back to the hub: a top-level navigation from
+# another site.
+FROM_THE_FORGE = {
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+}
+SETUP = "/api/v1/forge/github/setup"
+
+
+def cross_site(who: flow.Human, params: dict[str, Any], **headers: str) -> Any:
+    sent = {**FROM_THE_FORGE, **{k.replace("_", "-"): v for k, v in headers.items()}}
+    return who.client.get(SETUP, params=params, headers=sent, follow_redirects=False)
+
+
+def test_the_forges_redirect_links_the_installation(human: flow.Human, fake: Forge) -> None:
+    fake.install(7)
+    answer = cross_site(human, {"installation_id": 7, "code": "c0de", "state": start(human)})
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE)
+    assert [link["installation_id"] for link in links(human)] == [7]
+
+
+@pytest.mark.parametrize(
+    ("header", "value"),
+    [
+        ("Sec-Fetch-Mode", "cors"),  # a cross-site `fetch`
+        ("Sec-Fetch-Mode", "no-cors"),
+        ("Sec-Fetch-Mode", "same-origin"),
+        ("Sec-Fetch-Dest", "iframe"),  # a navigation inside another site's frame
+        ("Sec-Fetch-Dest", "empty"),
+        ("Sec-Fetch-Dest", "frame"),
+    ],
+)
+def test_a_cross_site_setup_that_is_no_top_level_navigation_is_refused(
+    human: flow.Human, fake: Forge, header: str, value: str
+) -> None:
+    """Refused before the route runs, as every cross-site cookie call: the state stays."""
+    fake.install(7)
+    state = start(human)
+    params = {"installation_id": 7, "code": "c0de", "state": state}
+    answer = cross_site(human, params, **{header.replace("-", "_"): value})
+    assert answer.status_code == 403
+    assert answer.json()["error"]["code"] == "csrf_mismatch"
+    assert fake.codes == [] and links(human) == []
+    assert setup(human, 7, state) == DONE  # the state was not taken
+
+
+@pytest.mark.parametrize("missing", ["Sec-Fetch-Mode", "Sec-Fetch-Dest"])
+def test_a_cross_site_setup_without_the_navigation_headers_is_refused(
+    human: flow.Human, fake: Forge, missing: str
+) -> None:
+    fake.install(7)
+    sent = {k: v for k, v in FROM_THE_FORGE.items() if k != missing}
+    answer = human.client.get(
+        SETUP,
+        params={"installation_id": 7, "code": "c0de", "state": start(human)},
+        headers=sent,
+        follow_redirects=False,
+    )
+    assert answer.json()["error"]["code"] == "csrf_mismatch"
+    assert fake.codes == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/v1/me"),
+        ("GET", "/api/v1/me/forge"),
+        ("GET", "/api/v1/auth/session"),
+        ("POST", "/api/v1/me/forge/github/link"),
+        # The setup in another spelling: the router routes it there, the exception does not
+        # admit it. Another method on the setup is no route (405 before any check); the
+        # matcher's own cases are in test_permitted_calls.py.
+        ("GET", "/api/v1/forge/github/set%75p"),
+    ],
+)
+def test_the_forges_headers_on_any_other_call_are_csrf_mismatch(
+    human: flow.Human, fake: Forge, method: str, path: str
+) -> None:
+    fake.install(7)
+    answer = human.client.request(
+        method,
+        path,
+        params={"installation_id": 7, "code": "c0de", "state": start(human)},
+        headers={**FROM_THE_FORGE, "X-CSRF-Token": human.csrf},
+        follow_redirects=False,
+    )
+    assert answer.status_code == 403
+    assert answer.json()["error"]["code"] == "csrf_mismatch"
+    assert fake.codes == [] and links(human) == []
+
+
+def test_a_cross_site_setup_with_a_missing_state_goes_back_with_link_state(
+    human: flow.Human, fake: Forge
+) -> None:
+    fake.install(7)
+    answer = cross_site(human, {"installation_id": 7, "code": "c0de"})
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == [] and links(human) == []
+
+
+def test_a_cross_site_setup_with_a_used_state_goes_back_with_link_state(
+    human: flow.Human, fake: Forge
+) -> None:
+    fake.install(7)
+    params = {"installation_id": 7, "code": "c0de", "state": start(human)}
+    assert cross_site(human, params).headers["location"] == DONE
+    again = cross_site(human, params)
+    assert (again.status_code, again.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == ["c0de"]
+
+
+def test_a_cross_site_setup_with_another_sessions_state_goes_back_with_link_state(
+    human: flow.Human, fake: Forge, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The case the exception exists for: another site sends a victim's browser to the setup
+    with a state of the attacker's own session. Nothing is linked to either."""
+    fake.install(7)
+    attacker = flow.human(make_client, migrated, "anna")
+    params = {"installation_id": 7, "code": "c0de", "state": start(attacker)}
+    answer = cross_site(human, params)
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == [] and links(human) == [] and links(attacker) == []
+    # The same human in another browser is another session, refused alike.
+    again = make_client()
+    assert factory.login_handle(again, "maintainer").status_code == 200
+    second = flow.Human(again, "", human.id, "maintainer")
+    own = cross_site(second, {**params, "state": start(human)})
+    assert (own.status_code, own.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == [] and links(human) == []
+
+
 # --- the human's own token -------------------------------------------------------------------
 
 FINE = "github_pat_11AAAA_secret_value_never_printed"
