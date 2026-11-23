@@ -52,7 +52,8 @@ KINDS = (
     "invitation_declined",
 )
 KIND = "invitation"  # the proposal kind of an invitation by handle's request (§3.4, §7)
-# Invitations by handle to one person in 24 hours, across the instance (§3.4).
+# Invitations to one person in 24 hours, across the instance: a project's by handle (§3.4)
+# and an organisation's that reached them as a request (§6.26), one count for both.
 INVITATIONS_PER_INVITEE_PER_DAY = 10
 INTERVAL = 60.0  # the sweep of expired invitations by handle
 _HANDLE = re.compile(HANDLE_PATTERN)
@@ -438,25 +439,43 @@ def invitee(conn: Connection, human_id: str, project_id: str) -> Any:
     return found
 
 
-def check_invitee_rate(conn: Connection, human_id: str) -> None:
-    """At most `INVITATIONS_PER_INVITEE_PER_DAY` invitations by handle to one person in 24
-    hours, counted from the rows under the person's row lock, so two projects at once count
-    both; `Retry-After` is when the oldest of them leaves."""
+def invitee_wait(conn: Connection, human_id: str) -> int | None:
+    """None while the person may get one more invitation, else the seconds until the oldest
+    of the last 24 hours leaves. At most `INVITATIONS_PER_INVITEE_PER_DAY` in 24 hours, one
+    count for a project's invitations by handle (§3.4) and an organisation's invitations
+    whose request went to the person (§6.26), counted from the rows under the person's row
+    lock, so two projects or organisations at once count both."""
     from maity_hub.notifications import records
 
     records.lock_human(conn, human_id)
     since = clock.now() - timedelta(hours=24)
-    times = list(
-        conn.execute(
-            select(t.invitation.c.created_at)
-            .where(t.invitation.c.invitee_id == human_id, t.invitation.c.created_at > since)
-            .order_by(t.invitation.c.created_at.desc())
-            .limit(INVITATIONS_PER_INVITEE_PER_DAY)
-        ).scalars()
-    )
-    if len(times) >= INVITATIONS_PER_INVITEE_PER_DAY:
-        wait = times[-1] + timedelta(hours=24) - clock.now()
-        raise rate_limited(max(1, int(wait.total_seconds()) + 1))
+    limit = INVITATIONS_PER_INVITEE_PER_DAY
+    by_projects = conn.execute(
+        select(t.invitation.c.created_at)
+        .where(t.invitation.c.invitee_id == human_id, t.invitation.c.created_at > since)
+        .order_by(t.invitation.c.created_at.desc())
+        .limit(limit)
+    ).scalars()
+    by_orgs = conn.execute(
+        select(t.org_invitation.c.created_at)
+        .join(t.request, t.request.c.id == t.org_invitation.c.request_id)
+        .where(t.request.c.to_human == human_id, t.org_invitation.c.created_at > since)
+        .order_by(t.org_invitation.c.created_at.desc())
+        .limit(limit)
+    ).scalars()
+    times = sorted([*by_projects, *by_orgs], reverse=True)[:limit]
+    if len(times) < limit:
+        return None
+    wait = times[-1] + timedelta(hours=24) - clock.now()
+    return max(1, int(wait.total_seconds()) + 1)
+
+
+def check_invitee_rate(conn: Connection, human_id: str) -> None:
+    """`invitee_wait` for a project's invitation by handle: over the count, 429 with
+    `Retry-After` (§3.4)."""
+    wait = invitee_wait(conn, human_id)
+    if wait is not None:
+        raise rate_limited(wait)
 
 
 def file_request(

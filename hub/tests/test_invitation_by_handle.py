@@ -342,6 +342,48 @@ def test_ten_invitations_by_handle_a_day_to_one_person(
     assert int(limited.headers["Retry-After"]) > 0
 
 
+ORG_INVITATIONS = "/orgs/oz-team/members/invitations"
+
+
+def test_one_count_with_the_organisations_invitations_to_the_person(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.4, §6.26: a project's invitations by handle and an organisation's that reached the
+    person as a request share the person's count. Over it a project's issue is 429; an
+    organisation's gets the same 202 and files no request, since a 429 would tell an active
+    person from every other name."""
+    make_org(owner)
+    anna = flow.human(make_client, migrated, "anna")
+    bob = flow.human(make_client, migrated, "bob")
+    limit = invitations.INVITATIONS_PER_INVITEE_PER_DAY
+    # anna: all but one by the project, the last by the organisation; the project is refused
+    for _ in range(limit - 1):
+        made = invite(owner, "anna")
+        assert made.status_code == 201, made.text
+        assert owner.delete(f"{PATH}/{made.json()['id']}").status_code == 200
+    by_org = owner.post(ORG_INVITATIONS, {"handle": "anna", "role": "member"})
+    assert by_org.status_code == 202, by_org.text
+    assert len(requests_of(anna)) == 1  # it counted: it reached her
+    limited = invite(owner, "anna")
+    assert limited.status_code == 429, limited.text
+    assert int(limited.headers["Retry-After"]) > 0
+    # bob: the project fills the count; the organisation's answer is the same, no request
+    for _ in range(limit):
+        made = invite(owner, "bob")
+        assert made.status_code == 201, made.text
+        assert owner.delete(f"{PATH}/{made.json()['id']}").status_code == 200
+    quiet = owner.post(ORG_INVITATIONS, {"handle": "bob", "role": "member"})
+    nobody = owner.post(ORG_INVITATIONS, {"handle": "nobody-here", "role": "member"})
+    assert (quiet.status_code, nobody.status_code) == (202, 202), quiet.text
+    assert set(quiet.json()) == set(nobody.json())
+    assert requests_of(bob) == []
+    with migrated.connect() as conn:
+        filed = conn.execute(
+            select(t.org_invitation.c.request_id).where(t.org_invitation.c.handle == "bob")
+        ).scalar_one()
+    assert filed is None
+
+
 def test_a_revocation_withdraws_the_request(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

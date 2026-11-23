@@ -145,6 +145,14 @@ def create(
     now = clock.now()
     invitation_id = new_id("org_invitation")
     invitee = _invitee(conn, handle)
+    if invitee is not None:
+        from maity_hub import invitations
+
+        # One count with the projects' invitations by handle (§3.4). Over it the inviter
+        # gets the same answer and no request is filed: a 429 here would tell an active
+        # person from every other name, which the answer never does (§6.26).
+        if invitations.invitee_wait(conn, invitee) is not None:
+            invitee = None
     request_id = None
     if invitee is not None:
         request_id = _file_request(conn, org, invitation_id, actor_id, invitee, role)
