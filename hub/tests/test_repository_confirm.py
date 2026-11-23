@@ -82,11 +82,35 @@ def test_a_url_creation_would_store_the_same_confirms(owner: flow.Human, sent: s
         "not a url",
     ],
 )
-def test_another_url_or_one_creation_refuses_is_not_confirmed(
-    owner: flow.Human, sent: str
-) -> None:
+def test_another_url_or_one_creation_refuses_is_not_confirmed(owner: flow.Human, sent: str) -> None:
     refused = owner.post(CONFIRM, {"url": sent})
     assert error(refused) == (409, "conflict", {"reason": "repository_changed", "url": URL})
+    assert confirmed(owner) is False
+
+
+LEGACY = "https://GitHub.com/acme/maity.git"  # stored before URLs were normalised
+
+
+@pytest.mark.parametrize("sent", [LEGACY, LEGACY + "/", URL, URL + ".git"])
+def test_a_row_stored_before_normalisation_still_confirms(
+    owner: flow.Human, migrated: Engine, sent: str
+) -> None:
+    """20261114130000_repo_url_2048 kept such a row's spelling: the dashboard sends it as stored,
+    and the normalised form names the same repository (tsk-vt6gwx7h86c0, A2219)."""
+    with migrated.begin() as conn:
+        conn.execute(t.project.update().values(repository_url=LEGACY))
+    answer = owner.post(CONFIRM, {"url": sent})
+    assert answer.status_code == 200, answer.text
+    assert confirmed(owner) is True
+
+
+def test_a_row_stored_before_normalisation_refuses_another_repository(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    with migrated.begin() as conn:
+        conn.execute(t.project.update().values(repository_url=LEGACY))
+    refused = owner.post(CONFIRM, {"url": "https://github.com/acme/other"})
+    assert error(refused) == (409, "conflict", {"reason": "repository_changed", "url": LEGACY})
     assert confirmed(owner) is False
 
 
