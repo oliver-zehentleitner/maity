@@ -281,7 +281,7 @@ def skill_env(ctx: Context) -> dict[str, str]:
     resume block names it instead of "<skills directory>" (onboarding)."""
     if ctx.skill is None:
         return {}
-    return {"MAITY_KTW_SKILL_DIR": str(ctx.skill / "skills" / skills.NAME)}
+    return {"MAITY_KTW_SKILL_DIR": str(skills.skill_in(ctx.skill))}
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -370,6 +370,25 @@ def private_tmpdir_refusal(ctx: Context) -> str | None:
         "host). Its commands would share /tmp/claude-<uid> with every Claude Code session of "
         "this OS user, so it is not started. Set a short `workspaces` root on this host, such "
         "as /srv/mw"
+    )
+
+
+def scratch_refusal(ctx: Context) -> str | None:
+    """Why a sandboxed Claude Code placement must not start, or None: it starts only with a
+    scratch under a holder its sandbox denies (scratch_holder). That deny is what hides a
+    scratch made after the session started (tsk-c7zzd440x8pn), and it is derived from the own
+    scratch, so a start whose scratch could not be made would have none (the review of
+    #2112, A2045). An unsandboxed placement, and every other harness, is not refused: Codex
+    hides the whole workspaces root, and agy and opencode get no such deny. For the runner's
+    log only, with the cause."""
+    if ctx.harness.id != "claude-code" or not ctx.sandbox:
+        return None
+    if scratch_holder(ctx.scratch) is not None:
+        return None
+    return (
+        "no scratch could be made for this sandboxed Claude Code placement, so its sandbox "
+        "would not deny the scratch holder and a scratch made later would stay readable from "
+        "it; it is not started (the cause is logged above)"
     )
 
 
@@ -584,11 +603,18 @@ def own_tmp_leaf(ctx: Context) -> Path | None:
 
 
 def scratch_holder(scratch: Path | None) -> Path | None:
-    """The project's `.scratch` that holds `scratch` beside the clone (workspace.scratch_of), or
-    None for no scratch or one elsewhere (agy's under `/tmp`)."""
-    if scratch is None or scratch.parent.name != SCRATCH:
+    """The `.scratch` that holds `scratch` under the workspaces root (workspace.scratch_of): the
+    one holder of every scratch, `<root>/.scratch` for `<root>/.scratch/<project>/<id>`
+    (tsk-c7zzd440x8pn), or the project's own for the former `<root>/<project>/.scratch/<id>`
+    (an ssh host whose `maity` has no holder op). None for no scratch or one elsewhere (agy's
+    under `/tmp`)."""
+    if scratch is None:
         return None
-    return scratch.parent
+    if scratch.parent.name == SCRATCH:
+        return scratch.parent
+    if scratch.parent.parent.name == SCRATCH:
+        return scratch.parent.parent
+    return None
 
 
 def _shared_tmp(ctx: Context) -> list[str]:
@@ -655,12 +681,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # in that mount alone (the ops probe P4, 2026-11-21).
         own = own_tmpdir_in_use(ctx)
         writable = [str(p) for p in (ctx.scratch, own) if p is not None]
-        # The own project's `.scratch` the same way (tsk-07dwr3t80rg0): denied for reading only,
-        # its own scratch opened again, so a sibling scratch made there after this session
-        # started lies under the read deny's empty mount instead of staying readable. Never in
-        # denyWrite (it would mount the re-opened scratch read-only, as for the leaf); the
-        # holder is not writable from the sandbox anyway, since writes are allowed only where
-        # allowWrite says. The other projects' `.scratch` are hidden whole (ctx.private).
+        # The holder of every scratch, `<root>/.scratch`, the same way (tsk-07dwr3t80rg0,
+        # tsk-c7zzd440x8pn): denied for reading only, its own scratch opened again, so a scratch
+        # of any project made after this session started lies under the read deny's empty mount
+        # instead of staying readable. Never in denyWrite (it would mount the re-opened scratch
+        # read-only, as for the leaf); the holder is not writable from the sandbox anyway, since
+        # writes are allowed only where allowWrite says. The former per-project `.scratch` and
+        # the other entries are hidden whole (ctx.private); on a host with the former layout
+        # the project's `.scratch` is the holder denied here.
         holder = scratch_holder(ctx.scratch)
         readable = [*([str(ctx.scratch)] if holder is not None else []),
                     *([str(own)] if own is not None else [])]  # fmt: skip
@@ -765,16 +793,25 @@ def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
 
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
-    and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty. Always empty for Codex (codex_left_out)."""
+    and the runner's PATH (its absolute entries) when the grant has pull requests, else
+    empty. Always empty for Codex (codex_left_out). `maity gh` looks gh up on that PATH at
+    each call, so a gh installed after the session started is found without a restart
+    (tsk-2k0jcaxfd0ja, point 15); the record, not the session's own PATH, says where."""
     if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
-    gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
     repository = config.normalise_repository(workspace.get("repository") or "")
-    if gh is None or not repository:
+    if not repository:
         return ""
-    return f"{repository}\n{gh}\n"
+    # Whole entries, in PATH's order, as many as fit the size `maity gh` reads
+    # (ghpr.RECORD_MAX; review A2160 of #2125): the earlier ones are the ones that win.
+    room = ghpr.RECORD_MAX - len(f"{repository}\n\n".encode())
+    kept: list[str] = []
+    for entry in (e for e in proc.search_path().split(os.pathsep) if e):
+        if len(os.pathsep.join([*kept, entry]).encode()) > room:
+            break
+        kept.append(entry)
+    return f"{repository}\n{os.pathsep.join(kept)}\n"
 
 
 def lead_record(ctx: Context) -> str:
@@ -1020,17 +1057,16 @@ def codex_skill(ctx: Context, home: Path) -> bool:
     copy stays, one the runner wrote from a checked copy."""
     if ctx.scratch is None:
         return False
-    under = ctx.scratch.parents[2]
     errors = (OSError, ValueError, KeyError, subprocess.SubprocessError, skillop.Mismatch)
     if ctx.skill_source is not None:
         try:
             payload = skillop.payload(ctx.skill_source, ctx.skill_source.name)
-            ctx.as_user.skill_codex(under, home, payload)
+            scratch.write_codex_skill(home, payload, ctx.as_user)
             return True
         except errors:
             pass
     with contextlib.suppress(*errors):
-        ctx.as_user.skill_codex_clear(under, home)
+        scratch.clear_codex_skill(home, ctx.as_user)
     return False
 
 

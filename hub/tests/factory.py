@@ -12,7 +12,7 @@ from typing import Any, Protocol
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine, delete, insert, inspect, select, update
 
-from maity_hub import avatars, clock, handle_register, namespace
+from maity_hub import avatars, clock, handle_register, namespace, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.passwords import hash_password
@@ -126,6 +126,7 @@ def human(engine: Engine, handle: str | None = None) -> str:
     owner (§6.25): asked for again, it is that human."""
     human_id = new_id("human")
     registered = _has_register(engine)  # not inside the transaction: SQLite has one writer
+    lockable = inspect(engine).has_table("account_lock")  # from 0076 on
     with engine.begin() as conn:
         if handle == "maintainer":
             found = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
@@ -140,6 +141,8 @@ def human(engine: Engine, handle: str | None = None) -> str:
                 created_at=clock.now(),
             )
         )
+        if lockable:
+            write_guard.make_row(conn, human_id)
         if registered:
             handle_register.claim(conn, handle or human_id, handle_register.HUMAN, human_id)
     return human_id

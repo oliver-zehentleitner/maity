@@ -141,8 +141,10 @@ def _toml_str(text: str) -> str:
 def starter_config(url: str) -> str:
     return (
         "# Written by `maity runner install`. Add [limits] and at least one [harness.<id>],\n"
-        "# then `sudo systemctl restart maity-runner` and `maity runner check`\n"
-        "# (every default: `maity runner check --explain`).\n"
+        "# then `sudo systemctl restart maity-runner`, log the tools and the forge in as\n"
+        "# maity-runner, and check it:\n"
+        f"# {CHECK_AS_RUNNER}\n"
+        "# (every default: the same with --explain).\n"
         "[hub]\n"
         f"url = {_toml_str(url)}\n"
         f"state_dir = {_toml_str(str(STATE_DIR))}\n"
@@ -622,15 +624,50 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
         _say(f"enabled {SERVICE}, not started: {CONFIG} is not complete yet:")
         for problem in problems:
             _say(f"  {problem}")
-        _say(
-            f"next: fix them in {CONFIG}, then `sudo systemctl start {SERVICE}` and "
-            f"`sudo -u {USER} maity runner check --config {CONFIG}`"
-        )
+        for line in next_steps():
+            _say(line)
         return 0
     if host.run(["systemctl", "enable", "--now", SERVICE]) != 0:
         raise Refused(f"`systemctl enable --now {SERVICE}` failed")
     _say(f"started {SERVICE}")
+    for line in LOGIN_STEPS:
+        _say(line)
+    # A first check now, before any login (review A2160 of #2125): said as such, since a tool
+    # not installed yet or not logged in shows up in it; its exit stays install's.
+    _say("a first check, before the logins (run it again after them):")
     return host.run(_as_runner(host, ["runner", "check", "--config", str(CONFIG)]))
+
+
+# What install cannot do, said in the order it has to be done (tsk-2k0jcaxfd0ja: a fresh host
+# was left with a configuration that never started and tools nobody had logged in).
+# The check comes after the logins: with install = true the tool is installed after the
+# start, and check's probe runs Claude Code headless, which needs its login (review A2144 of
+# the dialog's PR). Commands as the service's user start where it may enter: sudo keeps the
+# caller's directory, which an Ubuntu home (0750) keeps it out of.
+CHECK_AS_RUNNER = f"cd / && sudo -u {USER} -H maity runner check --config {CONFIG}"
+LOGIN_STEPS = (
+    f"next: log each tool in as {USER} (with install = true the runner installs it first, "
+    f"under {HOME}/.local/share/maity-runner/tools/<tool>/versions/<version>/; "
+    f"Claude Code: sudo -u {USER} -H sh -c 'cd && exec <that>/bin/claude', then /login; "
+    f"Codex: sudo -u {USER} -H sh -c 'cd && exec <that>/codex/bin/codex login'), "
+    f"and the forge for git push and maity gh "
+    f"(cd / && sudo -u {USER} -H gh auth login, then gh auth setup-git the same way)",
+    f"then: {CHECK_AS_RUNNER}",
+    'the steps in full: docs/runners.md, "As a service on Linux"',
+)
+
+
+def next_steps() -> list[str]:
+    return [
+        "next, in this order:",
+        f"  1. add [limits] (projects, repositories) and a [harness.<id>] for each tool installed "
+        f"on this machine, or that the runner installs (install = true: claude-code and codex "
+        f"only), to {CONFIG}; keep its state_dir and workspaces",
+        f"  2. sudo systemctl restart {SERVICE}",
+        f"  3. {LOGIN_STEPS[0].removeprefix('next: ')}",
+        f"  4. {CHECK_AS_RUNNER}",
+        LOGIN_STEPS[2],
+    ]
 
 
 # uninstall

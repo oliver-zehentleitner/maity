@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, db
+from maity_hub import clock, db, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import totp
@@ -31,6 +31,7 @@ def conn(engine: Engine) -> Iterator[Connection]:
                 created_at=clock.now(),
             )
         )
+        write_guard.make_row(connection, HUMAN)
         yield connection
 
 
@@ -192,6 +193,7 @@ def test_parallel_link_and_code_make_only_one_grant(engine: Engine) -> None:
                 created_at=clock.now(),
             )
         )
+        write_guard.make_row(connection, HUMAN)
         grant = issue(connection)
     start = Barrier(2)
 

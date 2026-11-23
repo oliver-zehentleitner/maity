@@ -26,6 +26,17 @@ leases while it works.
 included — one commit fewer per call, but a failed call would then erase
 the evidence that the caller is alive.
 
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** for an agent these side effects are no longer
+written inside `authenticate`. An instance may be attached to several projects (§6.17), and
+which memberships a call is present in depends on the route's project, so `authenticate`
+resolves only the credential, its profile and its owner, and `deps._resolve`'s `confine`
+writes the agent's last use, presence, session and leases after it
+(`auth.caller.settle_in_project` in the route's project's attachment alone,
+`settle_project_less` in every live attachment that is not isolated). Both run in the same
+transaction as the authentication (`deps.authenticated`), which still commits before the
+endpoint's own, so the decision and its reason hold unchanged. A human's and a runner's side
+effects stay inside `authenticate`.
+
 ## A runner caller is confined in one place, before any route runs
 
 **Id:** 1d62b2f2-abdb-4470-91dd-8de0517f21b9

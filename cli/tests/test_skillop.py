@@ -253,7 +253,7 @@ def test_deliver_hands_out_nothing_the_runner_did_not_record(
 def _codex_home(tmp_path: Path) -> tuple[Path, Path]:
     """A placement's scratch below a workspaces root, as scratch.make leaves it; its codex-home."""
     under = tmp_path / "ws"
-    place = under / "proj" / ".scratch" / "plc-0003"
+    place = under / ".scratch" / "proj" / "plc-0003"  # the holder layout (tsk-c7zzd440x8pn)
     (place / "tmp").mkdir(parents=True)
     return under, place / "codex-home"
 

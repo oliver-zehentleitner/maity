@@ -16,6 +16,7 @@ from maity.runner import capabilities as _capabilities
 
 GIT = shutil.which("git")
 REAL_SOCKET_PROBE = _capabilities.claude_socket_probe
+REAL_AGY_SANDBOX = _capabilities.agy_sandbox
 GITHUB_URL = "https://github.com/acme/widget"
 
 # The runner does not run on Windows (context/credentials.md).
@@ -25,6 +26,7 @@ collect_ignore = (
         "test_agent_user.py",
         "test_antigravity.py",
         "test_availability.py",
+        "test_claude_sandbox_probe.py",
         "test_confinement.py",
         "test_operate.py",
         "test_runner.py",
@@ -35,6 +37,10 @@ collect_ignore = (
         "test_serve.py",
         "test_ssh.py",
         "test_supervisor.py",
+        "test_supervisor_notes.py",
+        "test_supervisor_pickup.py",
+        "test_supervisor_watch.py",
+        "test_watch.py",
     ]
     if sys.platform == "win32"
     else []
@@ -140,6 +146,9 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         capabilities, "claude_socket_probe", lambda *args: capabilities.SocketProbe("ok")
     )
+    # Nor the host's own unshare and AppArmor profiles from an agy start or check (the review
+    # of #2119); the probe's own tests take the function from `REAL_AGY_SANDBOX`.
+    monkeypatch.setattr(capabilities, "agy_sandbox", lambda *args: capabilities.AGY_STARTS)
 
 
 @pytest.fixture

@@ -34,6 +34,7 @@ from maity_hub import (
     public_pages,
     registration,
     worker_runs,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
@@ -230,6 +231,7 @@ def complete(
     except IntegrityError:  # the handle taken meanwhile, after the check above
         made.rollback()
         return Completion("invalid", fields={"handle": "taken"})
+    write_guard.make_row(conn, human_id)
     if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
         made.rollback()  # an organisation took it meanwhile
         return Completion("invalid", fields={"handle": "taken"})

@@ -323,7 +323,9 @@ Meanwhile that human may give the handle to another agent. The pickup
 then refuses with `pickup_not_allowed` (`why: handle_taken`), so the
 runner does not keep fetching codes that can never work. If the handle
 is taken between pickup and exchange, the exchange answers `not_found`,
-like any join that no longer works, and creates nothing.
+like any join that no longer works, and creates nothing. A `POST /agents`
+or a join that runs while the placement is being created no longer gets
+the handle too: the creation holds the handle's lock (the next entry).
 
 The exchange checks the pickup again under the project lock. The
 placement must still be active, approved, `desired: running`, at the
@@ -360,6 +362,85 @@ keep a live join code in the database.
   whoever holds the link that the human has an agent of that name. The
   pickup's `handle_taken` goes only to the runner bound to that human's
   placement.
+
+## A new profile's placement reads its handle under the handle's lock, after the project's
+
+**Id:** af889d2e-167b-449a-87d2-83f31f04eb51
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`; `hub/tests/test_placement_races.py` (a join, another project's placement and a rename against the placement, tsk-gt0htv1xp3p9); a review probe of the pull request on PostgreSQL 17 and MariaDB 11.8, 2026-11-23, which forced the rename/placement deadlock; a second review probe on PostgreSQL 16, 2026-11-23, which found the deadlock through the owner's `human` row between a placement and `POST /agents` or a join
+**Verification:** corroborated — a review probe of the pull request (PostgreSQL 17, MariaDB 11.8) forced the rename-against-placement deadlock: the database aborted one side, the retry ran, and the rename answered 200 and the placement 400 `taken`; review probes on PostgreSQL 16 forced the deadlock between a placement and `POST /agents` through the owner's `human` row: the retry ran, and the side that waited second won (201) while the other ended 400 `taken`
+**See:** placements.md#a-pickups-join-creates-a-new-profile-at-the-exchange-and-the-pickup-stores-nothing-to-replay — cf956bec-8b32-4ae3-8ba6-73e3afe33e89 — as of 2026-11-23
+**See:** handles.md#a-rename-and-a-creation-take-a-lock-on-the-handle-they-want-not-one-on-the-whole-scope — ddfd0481-7a0a-4ebd-8a33-fc5e5c2787e1 — as of 2026-11-23
+**Revisit when:** a pickup's exchange stops taking the project's lock before `create_profile`, join creation starts taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, `POST /agents` starts taking a project's lock, `create_profile` stops locking the owner's `human` row before the handle's lock (or takes it after), or `placement.created_by` stops referencing `human`
+
+Creating a placement that will create a profile (`{"agent":{"handle",
+"display_name"}}`) takes `handles.lock` on the owner's scope and the
+handle before it asks `handles.holder`, as `handles.ensure_free` does.
+Before, it read the holder without the lock: a `POST /agents` of the same
+owner and handle running at the same time saw neither the other's profile
+nor the placement, both committed, and only the runner's pickup found the
+clash (`handle_taken`). Now that `POST /agents` (or a join naming the
+handle) waits for the placement and is refused `taken`, the placement
+counting as the reservation (§6.24).
+
+The handle's lock comes after the project's: the creation already holds
+`lock_project` (and, for an admitted profile, the profile's row before it),
+and a pickup's exchange calls `create_profile`, which takes the handle's
+lock, under its project's lock too (`_consume`). Join creation does not:
+it calls `create_profile` first and takes the project's lock only
+afterwards, when the role is a project role (`validate_assignment`) or the
+member rule counts its slot. With a built-in role under `members:admin`
+it takes no explicit project lock, but its `join_link` insert checks the
+foreign key to the project and takes a shared lock on the project's row,
+which waits for a placement that holds that row. Such a join that already
+holds the handle can therefore form the same cycle (a review finding, read
+from the code). A profile's rename takes the handle's lock and then its
+`member_updated` events lock the projects of its memberships. So join
+creation and a rename take the opposite order to the placement; the
+database aborts such a deadlock and `idempotency.run` runs the loser again.
+
+A second cycle runs through the owner's `human` row, not the project's.
+While `max_agents_per_human` caps the owner (the default does),
+`create_profile` locks that row for its count (`_refuse_over_agents`)
+before it takes the handle's lock, on every path that gives a new profile
+other than the exchange: `POST /agents` and join creation alike. The
+placement's `INSERT INTO placement` takes the foreign key's shared lock on
+the same row through `created_by`, after it holds the handle's lock. So a
+`POST /agents` or a join that holds the owner's row and waits for the
+handle deadlocks with the placement that holds the handle and waits for
+the row, although `POST /agents` takes no project lock; the database
+aborts one and `idempotency.run` runs it again, and the retry finds the
+handle taken by the side that committed: in review probes on PostgreSQL
+16, 2026-11-23, the placement won (201, the other 400 `taken`) when
+`POST /agents` or the join waited first, and `POST /agents` won (201, the
+placement 400 `taken`) when the placement waited first on the owner's row.
+
+Tests: `test_a_rename_and_a_new_profiles_placement_of_one_handle_deadlock_and_one_wins`
+forces the rename pair. The join test
+(`test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_it_reserved`)
+switches the agent limit off and runs the join in another project, so that
+neither cycle forms: it shows the join waiting on the handle's lock alone,
+with no retry. The join's project-row cycle and the owner-row cycle are
+read from the code and seen in that probe, not driven by a test of their
+own.
+
+**Reason:** the placement reserves the handle for its owner (§6.24), so
+its check has to hold until it commits, like every other path that gives a
+handle; a clash found only at the pickup leaves a placement that can never
+run. The lead decided to take the lock in this branch, after the project's
+(confirmed). That this order is the exchange's and inverts against join
+creation and a rename is read from the code (inferred): the first version
+of this entry said join creation shared it, which a review found wrong.
+
+**Rejected alternative:** taking the handle's lock before the project's
+(the order of join creation and a rename). It would invert the order
+against the pickup's exchange, which creates the profile of this very
+placement's handle in the same project, instead. Either order inverts
+against one path, and every path runs under `idempotency.run` or
+`db.retrying`, so the order the placement already shared with its own
+exchange stayed.
 
 ## Every runner credential revocation carries its consequences; a re-pair keeps what is closing
 
@@ -882,7 +963,7 @@ but only a profile of the caller's own: it reads the owner first without
 a lock and locks only when that is the caller, the locking read itself
 also bound to `owner_id`. Another owner's profile is never locked, and
 `_admitted` answers it `not_yours` before any lock; the caller's own is
-read again under the lock (`live_profile`: not deleted, else
+read again under the lock (`_named_profile`: not deleted, else
 `not_found`). The admitting right under "Bringing your
 own agent" covers creating the placement only: a spec change by `PATCH`
 still needs `members:admin` and the runner, while `desired` stays the
@@ -964,3 +1045,64 @@ recheck symmetric with a member's own join, whose exchange leaves
 `reports_to` alone: a join already handed out does not act on its
 creator's continuing authority, the placement's join does (the ruling
 on review A1826 above).
+
+## The runner's session read takes pause, dormancy and the episode from the placement's project
+
+**Id:** 17941eb5-af86-4341-b53f-e1ef9ef82b74
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hub PR A (#2088, card tsk-yzj829xdmqyy), commits b81a9deb and 391f2b6f; the reviewer's proposal in that pull request's review; the lead's ruling there to keep `detached_at IS NULL`; docs/api.md §15.8, §6.17; `placements.py` `runner_sessions`
+**See:** instances.md#an-instances-projects-are-rows-of-instance_attachment-pause-dormancy-the-commitment-and-the-handover-numbers-live-on-the-row — 8d07cc82-f612-4e24-aebe-72683131671b — as of 2026-11-21
+**See:** events.md#an-episode-of-not-listening-lives-on-the-session-checked-by-a-minute-worker — 0cbc3037-5834-4a6d-b518-ae640fb47046 — as of 2026-11-21
+**Revisit when:** hub PR D writes `detached_at`: a detached instance's placement then stops showing pause and dormancy but may still show an episode from its position row, and PR D must decide whether it should
+
+`runner_sessions` (§15.8) reads the instance's pause and dormancy from its live attachment for
+the placement's (credential, membership), and the not-listening episode from the open session's
+`agent_session_project` row in the placement's membership. It reads the episode in the same
+statement that finds the open session, as an outer join limited to the page's memberships, so
+the page still costs a fixed number of statements. The keys (credential_id, membership_id) on
+`instance_attachment` and (session_id, membership_id) on `agent_session_project` keep the join
+from multiplying values. "Live" here means `detached_at IS NULL` only: a revoked credential's
+pause and dormancy still show, as the credential row's did under #2079.
+
+**Reason:** #2088 moved pause, dormancy and the episode off `credential` and `agent_session`
+(§6.17). #2079's reads of the credential columns broke #2088's PostgreSQL shards, and once an
+instance can be in several projects these values exist only per project.
+
+**Rejected alternatives:**
+- Keep reading the `credential` columns: they are gone with #2088.
+- A third statement for the position rows: it would work, but the open-session statement
+  already has the session ids, and the join adds no statement.
+- `attached_now()`, which also drops revoked credentials: it would change #2079's answer for a
+  revoked instance whose placement still closes. The lead ruled to keep `detached_at IS NULL`.
+
+## A runner that reports `seq` 2^31-1 stops its placement's reports, accepted
+
+**Id:** a6584a9d-47cb-472a-abfc-6f0f0f988f57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N7 of a review: "a context entry is enough"); `routes/runner.py` `Status.seq`, `placements.report`
+**Revisit when:** a placement's reports can come from anyone but its own runner, the hub adds a way to reset `reported_seq` (a new generation, a re-pair, the owner), `seq` gets a wider bound, or a runner is seen stuck this way
+
+A status report (`POST /runner/placements/{id}/status`, §15.8) is a
+compare-and-set on `seq`: `placements.report` applies it only when `seq`
+is above the stored `reported_seq`, and answers anything else as a
+resend that changes nothing. `seq` may be at most 2^31-1 (`Status.seq`).
+A runner that sends that value once has spent the counter: every later
+report of that placement is a no-op, its state stays frozen as of that
+report. Nothing resets `reported_seq` and the counter does not wrap.
+
+**Reason:** only the runner bound to the placement can report on it, so
+a runner that does this (a bug, or on purpose) harms only its own
+placements; the owner sees the placement stop moving and can close it and
+place again, which starts a new placement at `reported_seq` 0
+(`placements.create`). A placement frozen while it runs takes two
+`DELETE`s: the first only sets it closing (`close_uniform`), and the
+runner's report of its end is then a no-op too; the second closes it at
+once, the escape for a runner that never reports (§15.5). The lead accepted that risk and decided an entry
+here is enough.
+
+**Rejected alternatives:** unknown; a reset path and a wraparound are
+named only as what the hub does not have, not as options weighed.

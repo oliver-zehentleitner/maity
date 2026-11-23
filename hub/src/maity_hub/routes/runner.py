@@ -43,7 +43,7 @@ from maity_hub.db import retrying
 from maity_hub.deps import RunnerCaller, engine_of, settings_of, wait_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
-from maity_hub.models import Strict
+from maity_hub.models import Effort, Strict
 from maity_hub.routes.events import FALLBACK_SECONDS, answer, parse_after, parse_limit
 from maity_hub.routes.joins import admission_holds, join_link
 from maity_hub.runners import (
@@ -72,7 +72,6 @@ Harness = Literal[
     "stub",
 ]
 Mode = Literal["interactive", "supervised"]
-Effort = Annotated[str, StringConstraints(pattern=r"^[a-z]{1,16}$")]
 # What bounds a harness's commands (§15.3); the CLI advertises these, test_runner_confinement.
 Confinement = Literal["allowlist", "sandbox", "pod", "none"]
 REPORTED_STATES = Literal[

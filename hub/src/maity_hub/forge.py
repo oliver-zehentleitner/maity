@@ -793,10 +793,12 @@ class Forge:
             except ForgeUnavailableError as error:
                 refused = error.status in (401, 403) and not error.rate_limited
                 if refused or isinstance(error, NotCoveredError):
-                    self._forget(repository)
+                    self.forget_visibility(repository)
                 raise
             if found is None or (query is not None and _graphql_refused(found)):
-                self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
+                self.forget_visibility(
+                    repository
+                )  # a 404 may be a ref that is not there, or a refusal
             return found
         return self._send(path, query, **_raw(raw_cap))
 
@@ -826,8 +828,10 @@ class Forge:
         if self.access is not None and self.project_id is not None:
             self.access.refused(self, error)
 
-    def _forget(self, repository: str) -> None:
-        """A refused read (§11.4): the next one asks again whether the repository is public."""
+    def forget_visibility(self, repository: str) -> None:
+        """Drop the kept verdict on whether the repository is public (`_require_public`, kept
+        `PUBLIC_SECONDS`), so the next read asks again: after a refused read (§11.4), and before
+        each Keep the Why family read from outside (`ktw_reads._before_outside_read`)."""
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
         with _caches_lock:
             _public.pop(key, None)
@@ -855,7 +859,7 @@ class Forge:
         """Raises `NotCoveredError` unless the forge reported the repository public within
         PUBLIC_SECONDS; a visibility the forge does not answer is `ForgeUnavailableError`
         and is asked again on the next read."""
-        # lower case, as `_forget` keys it: a refusal must drop the verdict however the
+        # lower case, as `forget_visibility` keys it: a refusal must drop the verdict however the
         # repository's name was written
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
         known = _public.get(key)
@@ -1305,7 +1309,7 @@ class Forge:
             found = None
         public = isinstance(found, dict) and found.get("private") is False
         if not public and self.granted is None:
-            self._forget(repository)  # the next read asks again whether it is public
+            self.forget_visibility(repository)  # the next read asks again whether it is public
         return public
 
     def items(

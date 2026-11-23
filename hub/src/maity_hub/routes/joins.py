@@ -10,6 +10,7 @@ nothing else, so that a tool saves it straight to a file.
 from __future__ import annotations
 
 import html
+import logging
 import re
 import urllib.parse
 from datetime import timedelta
@@ -23,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from markdown_it import MarkdownIt
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
@@ -80,6 +81,7 @@ from maity_hub.routes.members import validate_assignment
 from maity_hub.scopes import MEMBER_RULE_ROLES, has_scope
 from maity_hub.views import join_view, member_view, principal_id, routing_boss
 
+log = logging.getLogger(__name__)
 router = APIRouter(route_class=ProjectRoute)
 page_router = APIRouter(route_class=ProjectRoute)  # /join/{token}, outside the API prefix
 
@@ -627,26 +629,26 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
         )
     ).first()
     if creator is None:
-        raise not_found()
+        raise _gone("member rule: its creator is no active member", row)
     if has_scope(creator.trust, creator.role_base, "human", "members:admin"):
         return
     if creator.trust != "member":  # a guest now, or anything else below: void
-        raise not_found()
+        raise _gone("member rule: its creator is below member now", row)
     if member is not None:
         if not within_limits(member):
-            raise not_found()
+            raise _gone("member rule: the member is beyond the member limits", row)
         return
     # A first join's role, as it would be stored now: a project role an admin moved to
     # `ops` while the join was open is beyond the member limits (§3.1).
     if project_roles.base_of(project, row.role) not in MEMBER_RULE_ROLES:
-        raise not_found()
+        raise _gone("member rule: its role is beyond the member limits", row)
     # What the member would hold once this join is exchanged: the distinct profiles of
     # their memberships and open first joins, this join's own included, against the
     # maximum now. Another open join naming the same profile is no exemption: a lowered
     # maximum holds for it too.
     held = agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
     if len(held) > _member_agents_limit(conn, project).limit:
-        raise not_found()
+        raise _gone("member rule: member_agents_max reached", row)
 
 
 def _recheck_creator(conn: Connection, row: Any) -> None:
@@ -656,7 +658,7 @@ def _recheck_creator(conn: Connection, row: Any) -> None:
     `proxy`. Areas and capabilities need no more than `members:admin`. Otherwise it
     answers as a revoked join. A runner's pickup has its own check."""
     if not invitations.issuer_holds(conn, row):
-        raise not_found()
+        raise _gone("its creator may no longer give it (issuer_holds)", row)
 
 
 def admission_holds(conn: Connection, row: Any) -> bool:
@@ -731,7 +733,7 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     return bool(len(held) <= _member_agents_limit(conn, project).limit)
 
 
-def live_profile(conn: Connection, agent_id: str) -> None:
+def live_profile(conn: Connection, agent_id: str, row: Any = None) -> None:
     """Lock the agent's profile, and refuse a deleted one: a deleted profile never joins
     again (§6.3). Join creation, the exchange and the profile's deletion all take this
     lock first, before the join and the project, so a deletion cannot commit between
@@ -742,7 +744,7 @@ def live_profile(conn: Connection, agent_id: str) -> None:
         .with_for_update()
     ).one()
     if deleted.deleted_at is not None:
-        raise not_found()
+        raise _gone("its agent profile was deleted", row)  # `row`: the exchange's join
 
 
 def _agent_for_join(
@@ -832,10 +834,58 @@ def _spent(row: Any) -> str | None:
     return None
 
 
+def _gone(reason: str, row: Any = None) -> ApiError:
+    """The bare `not_found` of a join that no longer works (§1.1), its cause in the hub's log
+    at info: every such answer looks the same to the caller, so only the log tells which
+    check refused (tsk-e9pc50wdk9b9). `reason` is a fixed text naming the check; besides it
+    only the join's row id is logged, never its token or code. Mostly the exchange's exits;
+    the shared checks also log it where they refuse elsewhere: `_usable` for the join page,
+    and `live_profile`'s deleted profile at join creation (no join id there). Placement
+    creation refuses a deleted profile before that, from `_named_profile`, unlogged."""
+    log.info("join answered not_found: %s (join %s)", reason, getattr(row, "id", None))
+    return not_found()
+
+
+def _note_no_slot(conn: Connection, join_id: Any, now: Any) -> None:
+    """At debug only, the join's state when the exchange's attempt slot matched no row
+    (`_no_slot`). Normal serving makes no extra read: the refusal does not wait on it, and
+    a failure of that read is logged and never replaces the `not_found` (review A2100)."""
+    if not log.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        log.debug("join %s: %s", join_id, _no_slot(conn, join_id, now))
+    except SQLAlchemyError:
+        log.debug("join %s: no attempt slot; its state could not be read", join_id)
+
+
+def _no_slot(conn: Connection, join_id: Any, now: Any) -> str:
+    """Why the exchange's attempt slot matched no row, as its own transaction reads the join
+    then: which of the slot's conditions failed. Read only to name the cause in the log
+    (`_note_no_slot`); flags and counts, nothing secret."""
+    j = t.join_link.c
+    now_row = conn.execute(
+        select(j.failed_attempts, j.used_at, j.burned_at, j.revoked_at, j.expires_at).where(
+            j.id == join_id
+        )
+    ).first()
+    if now_row is None:
+        return "no attempt slot: the join is gone"
+    return (
+        f"no attempt slot: failed_attempts={now_row.failed_attempts}"
+        f" used={now_row.used_at is not None} burned={now_row.burned_at is not None}"
+        f" revoked={now_row.revoked_at is not None} expired={now_row.expires_at <= now}"
+    )
+
+
 def _usable(conn: Connection, token: str) -> Any:
     row = conn.execute(select(t.join_link).where(t.join_link.c.token_hash == digest(token))).first()
-    if row is None or row.revoked_at is not None or _spent(row) is not None:
-        raise not_found()
+    if row is None:
+        raise _gone("no join with this token")
+    if row.revoked_at is not None:
+        raise _gone("revoked", row)
+    spent = _spent(row)
+    if spent is not None:
+        raise _gone(spent, row)
     return row
 
 
@@ -1131,7 +1181,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
             if owner is not None:
                 write_guard.share(conn, owner)
             if row.agent_id is not None:  # a pickup's new profile does not exist yet (§15.9)
-                live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
+                live_profile(conn, row.agent_id, row)  # first, as the deletion takes it (§6.3)
             # Take an attempt slot before comparing: one conditional UPDATE, so
             # concurrent guesses cannot all read the same count (a lost update
             # would let more than three codes be tried, or unburn a join).
@@ -1149,7 +1199,8 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
                 .values(failed_attempts=t.join_link.c.failed_attempts + 1)
             ).rowcount
             if slot != 1:
-                raise not_found()
+                _note_no_slot(conn, row.id, now)
+                raise _gone("no attempt slot", row)
             if code_matches(body.code, row.code_hash):
                 made = _consume(conn, row, body.client)
                 campaigns.activated(
@@ -1261,13 +1312,14 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         .values(used_at=now)
     ).rowcount
     if consumed != 1:  # a concurrent exchange won
-        raise not_found()
+        raise _gone("consumed by a concurrent exchange", row)
     if row.placement_id is not None:
         _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     in_set_before = restricted.resolve(conn, project)  # who enters is told to the set (§6.4)
     if not allowed_projects.admits(conn, allowed_projects.of_profile(conn, row.agent_id), project):
-        raise not_found()  # the list changed since the join was handed out (§6.3)
+        # The list changed since the join was handed out (§6.3).
+        raise _gone("the profile's allowed projects exclude this one", row)
     if row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
     elif row.placement_id is None:
@@ -1287,7 +1339,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         # (§15.9): it answers as every join that no longer works (§1.1). A pickup that
         # admits a profile is its first join and makes the membership; one whose profile
         # became a member meanwhile adds an instance, below.
-        raise not_found()
+        raise _gone("its member was removed (rejoin or pickup)", row)
     waiting_for: int | None = None  # a cross-owner boss: the edge waits for a human (§3.1)
     if member is None:
         boss = _boss_still_here(conn, row.reports_to)
@@ -1495,7 +1547,7 @@ def _require_pickup_holds(conn: Connection, row: Any) -> None:
         # membership, against the policy as it is now (§3.1, §15.9).
         or (admits(row) and not admission_holds(conn, row))
     ):
-        raise not_found()
+        raise _gone("its pickup no longer holds", row)
 
 
 def admits(row: Any) -> bool:
@@ -1587,7 +1639,7 @@ def _create_for_join(conn: Connection, row: Any) -> str:
         None,
         "placement",
     ):
-        raise not_found()
+        raise _gone("pickup: its new profile's handle is taken or held", row)
     # `POST /agents` does not take the project lock: a profile of that handle may land
     # after the check above. Its `invalid`, or the unique constraint, is still a join
     # that no longer works, never a 400 or a 500 that tells the holder of the link more.
@@ -1597,8 +1649,8 @@ def _create_for_join(conn: Connection, row: Any) -> str:
             placement=True,
         )  # fmt: skip
     except IntegrityError:
-        raise not_found() from None
+        raise _gone("pickup: making its new profile hit an integrity error", row) from None
     except ApiError as error:
         if error.code == "invalid":
-            raise not_found() from None
+            raise _gone("pickup: its new profile is refused as invalid", row) from None
         raise

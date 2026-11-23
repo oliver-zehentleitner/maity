@@ -23,6 +23,7 @@ from sqlalchemy import Connection, delete, func, insert, inspect, select
 
 from maity_hub import clock, paths
 from maity_hub import tables as t
+from maity_hub.chunks import chunks
 from maity_hub.errors import ApiError, rate_limited
 
 PREFIX = "/api/v1/projects/"
@@ -30,7 +31,9 @@ PREFIX = "/api/v1/projects/"
 # together at most 3 per 24 hours per project.
 CHANGES_PER_DAY = 3
 DAY_SECONDS = 24 * 3600
-FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
+# A project's full name `<owner>/<slug>`, the whole text: use `fullmatch`. `\Z`, not `$`, so
+# that even a `match` never passes a trailing newline ("a/b\n" names no project).
+FULL_NAME = re.compile(r"\A([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})\Z")
 
 
 class ProjectRoute(APIRoute):
@@ -155,8 +158,9 @@ def resolve_owner(conn: Connection, handle: str) -> str | None:
 
 def resolve(conn: Connection, full_name: str) -> Any | None:
     """The project row `<owner>/<slug>` names: by its current name or one of its aliases. At
-    most one matches, since a full name once used belongs to one project (§6.25)."""
-    found = FULL_NAME.match(full_name)
+    most one matches, since a full name once used belongs to one project (§6.25). The whole
+    text must be the name; anything else, a project id included, names none."""
+    found = FULL_NAME.fullmatch(full_name)
     if found is None:
         return None
     owner_id = resolve_owner(conn, found[1])
@@ -212,16 +216,18 @@ def aliases_of(conn: Connection, project_id: str) -> list[str]:
 
 
 def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
-    """project id → full name, in one query, for lists."""
-    ids = list(set(project_ids))
-    if not ids:
-        return {}
-    rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug, owner_handle().label("handle"))
-        .select_from(join_owner(t.project))
-        .where(t.project.c.id.in_(ids))
-    ).all()
-    return {row.id: f"{row.handle}/{row.slug}" for row in rows}
+    """project id → full name, for lists: one query for every `chunks.CHUNK` ids, so a list
+    over every project with a public page (`/explore`, which no quota bounds) stays below the
+    engine's limit on bound parameters."""
+    names: dict[str, str] = {}
+    for ids in chunks(project_ids):
+        rows = conn.execute(
+            select(t.project.c.id, t.project.c.slug, owner_handle().label("handle"))
+            .select_from(join_owner(t.project))
+            .where(t.project.c.id.in_(ids))
+        )
+        names.update({row.id: f"{row.handle}/{row.slug}" for row in rows})
+    return names
 
 
 def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = None) -> bool:

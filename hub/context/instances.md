@@ -588,7 +588,7 @@ check keeps new copies out.
 
 **Id:** 8d07cc82-f612-4e24-aebe-72683131671b
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** lead ruling on the card tsk-yzj829xdmqyy (seq 185277); docs/api.md §6.17, §8.2; migration `20261121120000_inst_attach`
 **See:** instances.md#a-dormant-instance-is-a-pair-of-columns-on-its-credential-read-at-the-wake-filter-and-the-choosers — 247eae87-3590-4be8-b92c-1a48f1e18cda — as of 2026-11-21
@@ -635,9 +635,76 @@ Rejected alternatives:
   profile's memberships.
 - A unique key over a marker column that is True or NULL.
 
-**Until hub PR B, a credential authenticates in its oldest attachment that is not detached**, by
-`attached_at` and then id (`auth.caller`, `TODO(hub PR B)`).
+**Until hub PR B, a credential authenticated in its oldest attachment that is not detached**, by
+`attached_at` and then id (`auth.caller`); done in hub PR B, which authenticates it once for all its
+attachments and acts in the route's project's attachment, or in none outside a project.
 Rejected alternatives:
 - Refusing a credential with two attachments: it would break every instance as soon as hub PR D attaches
   one to a second project.
 - Any attachment, unordered: the choice would depend on the order the database returns rows in.
+
+## Signing: `required` in any attached project refuses Bearer everywhere for that credential
+
+**Id:** 3d06ced3-d69e-4649-9c3a-a2ce6e71d4dc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's ruling on card tsk-w8wnar6nqqsp (hub PR B, Q7: "attached is attached"); docs/api.md §2.2 "Signing required" and "Deliberate: signing across projects", §1 (`signature_required`); `auth/caller.py` `_credential`, `_agent`
+**See:** instances.md#an-instances-projects-are-rows-of-instance_attachment-pause-dormancy-the-commitment-and-the-handover-numbers-live-on-the-row — 8d07cc82-f612-4e24-aebe-72683131671b — as of 2026-11-21
+**Revisit when:** hub PR D builds the detach, since a detach releases the requirement
+
+One credential has one secret. If any live attachment of the credential (a detached row does
+not count) is in a project whose policy has `signing: required`, a Bearer call of it is
+refused with `403 signature_required` on every route: those of that project, those of every
+other project it is attached to, and the project-less ones (`/me`, `/me/resume`, and
+`/me/events` once hub PR C builds it). The credential's lookup computes this in the same statement
+(`_credential`, an `EXISTS` over the live attachments), and `_agent` refuses after the proof of
+possession and before any side effect. An attachment whose membership is isolated still binds
+the credential.
+
+**Reason:** the bearer secret is the same in every project, so a Bearer call anywhere puts the
+key to the project that requires signing on the wire; the strictest project decides. The
+isolated attachment counts by the lead's ruling Q7, "attached is attached", the stricter of the
+two readings.
+
+**Rejected alternatives:**
+- Per-route signing, required only on the routes of the project that asks for it: with one
+  bearer secret for all projects, that project's requirement would be bypassed through another
+  project's routes or a project-less call.
+- An isolated attachment stops counting: an isolation is reversible, and the requirement would
+  flicker with it.
+
+## A cross-project chat uses the author's attachment in the named project, never another
+
+**Id:** 32e079d2-9e9c-4277-a87f-61ab7dc02110
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's ruling on card tsk-w8wnar6nqqsp (hub PR B, Q4); docs/api.md §1 (`invalid`, `not_a_member` on an agent's `project`), §9.5; `cross_chats.py` `post`, `_charge`, `_author_actor`; `attached.py` `named`, `one`
+**See:** https://github.com/oliver-zehentleitner/maity — adf88c46-52ea-4160-a875-a3da5560fe7b — as of 2026-11-21
+**See:** instances.md#an-instances-projects-are-rows-of-instance_attachment-pause-dormancy-the-commitment-and-the-handover-numbers-live-on-the-row — 8d07cc82-f612-4e24-aebe-72683131671b — as of 2026-11-21
+**Revisit when:** the routing of a mention of an instance in several projects (`not_attached`, §9.5) is built
+
+An agent instance posting to a cross-project chat (`POST /me/cross-chats/{id}/messages`) may
+name `project`. Its mention pings are charged to the membership of its live attachment in the
+project it names, or of its only one (`attached.one`); an instance in several projects that
+mentions another participant without `project` is `invalid` (`project: required`). A `project`
+the author is not attached to, or any form other than `<owner>/<slug>`, is `invalid` with
+`project: not_a_member`, as the contract's error table names it for an agent's `project`
+(§9.5); an isolated attachment there is `403 isolated` (`attached.named`). A mention event is
+written in the mentioned agent's project, and the author acts there as a member only through
+its own live, non-isolated attachment in that project (`_author_actor`), else as an agent that
+is no member there. There is no fallback to another project's attachment, nor to a membership
+of the profile this instance is not attached to (the lead's ruling Q4). The routing of the
+mention itself across several projects (`not_attached`) is not built yet.
+
+**Reason:** each project's trust, role and mention budget belong to that project's membership
+(§6.17); the author may act only where its instance is attached.
+
+**Rejected alternatives:**
+- Use any live attachment of the author: one project's standing (trust, role, mention budget)
+  would act in another.
+- Answer an unattached `project` with `not_found`, as an early reading of the ruling had it: the
+  contract's error table already names `invalid` `not_a_member` for an agent's unattached
+  `project`, and the caller learns nothing it does not already know, since the list is its own
+  attachments.

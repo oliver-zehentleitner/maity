@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -13,6 +14,7 @@ from maity_hub import (
     API_VERSION,
     CLI_VERSION,
     __version__,
+    attached,
     availability,
     avatars,
     bridges,
@@ -56,11 +58,11 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import Caller, attachments, in_attachment
 from maity_hub.cards import open_claims
 from maity_hub.db import retrying
 from maity_hub.deps import AgentCaller, AnyCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, forbidden, humans_only, invalid
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, unauthenticated
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
@@ -70,7 +72,12 @@ from maity_hub.policy import of as policy_of
 from maity_hub.routes import briefing_view
 from maity_hub.routes.conversations import conversation_packet
 from maity_hub.routes.me import human_body
-from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
+from maity_hub.routes.members import (
+    PausedIn,
+    change_of,
+    members_outcome,
+    set_paused,
+)
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
 from maity_hub.views import (
@@ -203,6 +210,9 @@ class MePatch(Strict):
     starred: list[str] | None = None  # §5.1 "Stars": the whole list; null is `required`
     experiment_notice_understood: Any = None  # §5.1 "Experiment notice": only `true`
     avatar_motif: Any = None  # an agent's own motif or null (§6.10)
+    # The project an agent's `paused` or `dormant` is for (§5.3, "Per project"); without it,
+    # every attachment that is not isolated.
+    project: str | None = Field(default=None, max_length=attached.PROJECT_MAX)
 
 
 # A human's own fields of `PATCH /me`. The switch and its parts are given when not null
@@ -222,6 +232,10 @@ HUMAN_FIELDS = (
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
+    """The membership the route resolved for the caller (`attached`): a route outside a
+    project that names none has none, and refuses before it reads one."""
+    if caller.membership_id is None:
+        raise invalid({"project": "required"}, "name the project: the instance is in several")
     row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     return Membership(project, row, "agent", caller.instance)
@@ -262,6 +276,24 @@ def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONRespons
 def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
+        live = attachments(conn, caller.credential_id or "")
+        if len(live) > 1:
+            # The packet with one entry per project is not built yet (§5.2, "Several
+            # projects"): refused before anything else is checked or done, no session opened
+            # and no `session_started` written. The contract's answer to a client that cannot
+            # read it, with no release to name, until the multi-project resume is built; the
+            # message says what no update of the client changes.
+            raise ApiError(
+                409,
+                "conflict",
+                "resume is not available yet for an instance attached to several projects; "
+                "a later hub version brings it",
+                {"reason": "client_too_old", "min_cli": None},
+            )
+        if not live:  # detached from everything since the call was authenticated
+            raise unauthenticated()
+        # The instance's one project, named by its only attachment, isolated or not (§6.2).
+        caller = in_attachment(caller, live[0])
         mine = _own_membership(conn, caller)
         if mine.row.isolated_since is not None:
             return _isolated_packet(conn, mine, caller)  # no session, no event, no presence
@@ -870,15 +902,27 @@ def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]
     return allowed
 
 
+class AckIn(Strict):
+    """`POST /me/keep-the-why/ack`'s optional body (§6.23): the project, which an instance
+    attached to more than one project must name."""
+
+    project: str | None = Field(default=None, max_length=attached.PROJECT_MAX)
+
+
 @router.post("/me/keep-the-why/ack")
-def acknowledge_keep_the_why(request: Request, caller: AgentCaller) -> JSONResponse:
-    """The calling instance confirms the Keep the Why commitment (§6.23): once, and a
-    second call answers the first record."""
-    return JSONResponse(retrying(lambda: _acknowledge(request, caller)))
+def acknowledge_keep_the_why(
+    request: Request, caller: AgentCaller, body: AckIn | None = None
+) -> JSONResponse:
+    """The calling instance confirms the Keep the Why commitment (§6.23) in one project: once,
+    and a second call answers the first record."""
+    project = body.project if body is not None else None
+    return JSONResponse(retrying(lambda: _acknowledge(request, caller, project)))
 
 
-def _acknowledge(request: Request, caller: Caller) -> dict[str, Any]:
+def _acknowledge(request: Request, caller: Caller, named: str | None) -> dict[str, Any]:
     with events.transaction(engine_of(request)) as conn:
+        # The project named, or the instance's only one; with several, `project: required`.
+        caller = in_attachment(caller, attached.one(conn, caller, named))
         mine = _own_membership(conn, caller)
         project = events.lock_project(conn, mine.project.id)
         if not commitment.required(project):
@@ -948,7 +992,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     given = body.model_fields_set
 
     def human_action(conn: Connection) -> idempotency.Outcome:
-        for field in ("paused", "dormant", "avatar_motif"):
+        for field in ("paused", "dormant", "avatar_motif", "project"):
             if field in given:
                 raise invalid({field: "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
@@ -1084,61 +1128,87 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             raise humans_only("only a human sets their own profile")
         if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
             raise humans_only("only the owner of an agent profile renames its handle")
+        project = body.project
         if "dormant" in given:
-            if given != {"dormant"} or body.dormant is None:
+            if given - {"project"} != {"dormant"} or body.dormant is None:
                 raise invalid({"dormant": "alone"}, "set dormant on its own, true or false")
-            mine = _own_membership(conn, caller)
-            instances.set_dormant(
+            dormant = body.dormant
+            return _per_attachment(
                 conn,
-                mine.row,
-                _credential(conn, caller),
-                body.dormant,
-                caller.principal_id,
-                caller.actor(mine.id),
-                own=True,
+                caller,
+                project,
+                lambda here, mine: instances.set_dormant(
+                    conn,
+                    mine.row,
+                    _credential(conn, here),
+                    dormant,
+                    here.principal_id,
+                    here.actor(mine.id),
+                    own=True,
+                ),
             )
-            return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
-        if "avatar_motif" in given:  # the profile's picture, whichever project the call is in
+        if "avatar_motif" in given:  # the profile's picture, in no project (§6.10, §6.17)
+            if "project" in given and "paused" not in given:
+                raise invalid(
+                    {"project": "not_allowed"},
+                    "avatar_motif is the profile's and takes no project",
+                )
             avatars.choose_motif(conn, caller.principal_id, body.avatar_motif, caller)
             if "paused" not in given:
-                mine = _own_membership(conn, caller)
-                return idempotency.Outcome(
-                    200, "member", str(mine.id), load_member(conn, str(mine.id))
-                )
+                return _per_attachment(conn, caller, project, lambda here, mine: None)
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
-        mine = _own_membership(conn, caller)
-        credential = _credential(conn, caller)
-        for row in (mine.row, credential):
-            if row.paused_since is None or row.paused_by == caller.agent_id:
-                continue
-            # Someone else's pause is not the agent's to lift or replace (§5.3): a
-            # human's, or an admin agent's, which `by` names.
-            by_agent = str(row.paused_by).startswith("agt-")
-            if row.paused_line:  # a manager's, whoever it is (§2.3 "The manager")
-                who, reason = "your manager", "paused_by_manager"
-            elif by_agent:
-                who, reason = "an admin agent", "paused_by_admin"
-            else:
-                who, reason = "a human", "paused_by_human"
-            raise ApiError(
-                403,
-                "forbidden",
-                f"{who} paused you; only they or an admin can change it",
-                {"reason": reason},
-            )
-        # The calling instance's own pause; its siblings carry on (§5.3).
-        set_paused(
-            conn,
-            change_of(mine, caller),
-            mine.row,
-            body.paused.reason if body.paused else None,
-            instance=caller.instance,
+        reason = body.paused.reason if body.paused else None
+        return _per_attachment(
+            conn, caller, project, lambda here, mine: _pause_own(conn, here, mine, reason)
         )
-        return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 
     if caller.kind not in ("human", "agent"):
         raise forbidden(message="this endpoint is for humans and agent credentials")
     return idempotency.run(
         engine_of(request), request, caller, human_action if caller.kind == "human" else action
     )
+
+
+def _per_attachment(
+    conn: Connection,
+    caller: Caller,
+    project: str | None,
+    change: Callable[[Caller, Membership], object],
+) -> idempotency.Outcome:
+    """An agent's own write outside a project (§5.3, "Per project"): in the project named, or
+    in every attachment that is not isolated, all or nothing: a refusal in one changes nothing
+    anywhere and names its project in `details.project`. Answered with the member view, or,
+    without `project` for an instance in several projects, `projects` with one per change."""
+
+    def one(here: Caller, _attachment: Any) -> int:
+        mine = _own_membership(conn, here)
+        change(here, mine)
+        return int(mine.id)
+
+    ids, one_view = attached.per_attachment(conn, caller, project, one)
+    return members_outcome(conn, caller.credential_id or "", ids, one_view)
+
+
+def _pause_own(conn: Connection, caller: Caller, mine: Membership, reason: str | None) -> None:
+    """The calling instance's own pause in one membership (§5.3); its siblings carry on."""
+    credential = _credential(conn, caller)
+    for row in (mine.row, credential):
+        if row.paused_since is None or row.paused_by == caller.agent_id:
+            continue
+        # Someone else's pause is not the agent's to lift or replace (§5.3): a
+        # human's, or an admin agent's, which `by` names.
+        by_agent = str(row.paused_by).startswith("agt-")
+        if row.paused_line:  # a manager's, whoever it is (§2.3 "The manager")
+            who, why = "your manager", "paused_by_manager"
+        elif by_agent:
+            who, why = "an admin agent", "paused_by_admin"
+        else:
+            who, why = "a human", "paused_by_human"
+        raise ApiError(
+            403,
+            "forbidden",
+            f"{who} paused you; only they or an admin can change it",
+            {"reason": why},
+        )
+    set_paused(conn, change_of(mine, caller), mine.row, reason, instance=caller.instance)
