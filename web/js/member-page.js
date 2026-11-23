@@ -112,9 +112,14 @@ window.Maity = window.Maity || {};
     if (menu) menu.el.className = "menu-box member-actions-menu";
     const availability = M.availabilityNodes ? M.availabilityNodes(ctx, m) : null;
     // Report this person or agent to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by the member id
-    // the project's read gives; not oneself, and from a human (the dashboard's reader).
-    const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id
-      ? M.report.control({ type: "profile", id: m.id }, m.kind === "agent" ? "agent" : "person") : null;
+    // the project's read gives; not oneself, and from a human (the dashboard's reader). An outsider
+    // is a stranger to the hub there ("The id a stranger sends"): an agent by its global name
+    // `<owner>/<handle>` (it is named on this public project's page, so the hub finds it), a person
+    // by their handle, which the hub takes while their own page is served and answers not_found
+    // otherwise; the form says that answer as it says any other.
+    const reportId = !M.trust.outsider(ctx) ? m.id : m.kind === "agent" ? m.name : m.handle;
+    const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id && reportId
+      ? M.report.control({ type: "profile", id: reportId }, m.kind === "agent" ? "agent" : "person") : null;
     const heading = h("h2", { id: "member-heading", tabindex: "-1" }, m.display_name, " ", h("span", { class: "mono muted" }, "@" + M.dom.handleOf(ctx, m)));
     const el = h("div", { class: "member-head" },
       h("div", { class: "member-head-face" }, M.avatar(m, 64),

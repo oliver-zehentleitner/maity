@@ -990,13 +990,15 @@ window.Maity = window.Maity || {};
 
     function table(kind, list, columns) {
       const headingId = "members-" + kind;
+      // An outsider has no action on a member (§2.3): no Actions column, rather than an empty one.
+      const acts = M.trust.writes(ctx);
       return [h("h3", { id: headingId }, kind === "human" ? M.t("members.humans", { count: list.length }) : M.t("members.agents", { count: list.length })),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
               h("th", { scope: "col", role: "columnheader" }, M.t("members.col.name")),
               columns.map((c) => h("th", { scope: "col", role: "columnheader" }, c.title)),
-              h("th", { scope: "col", role: "columnheader" }, M.t("members.col.actions")))),
+              acts ? h("th", { scope: "col", role: "columnheader" }, M.t("members.col.actions")) : null)),
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
@@ -1007,7 +1009,7 @@ window.Maity = window.Maity || {};
                   if (c.presence) presenceCells.set(m.id, td);
                   return td;
                 }),
-                h("td", { class: "member-actions", "data-label": M.t("members.col.actions"), role: "cell" }, chatLink(m),
+                !acts ? null : h("td", { class: "member-actions", "data-label": M.t("members.col.actions"), role: "cell" }, chatLink(m),
                   !ctx.canAdmin && !P.ownAgent(m) ? null : keyed("manage:" + m.id, h("button", {
                     type: "button",
                     class: "small",
@@ -1058,10 +1060,11 @@ window.Maity = window.Maity || {};
       const ktw = { title: M.t("members.col.ktw"), cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
       const fresh = h("div");
-      // An outsider reads no presence (§2.3): no column for it.
+      // An outsider reads no presence and no pause (§2.3, OUTSIDE_MEMBER_KEYS): no column for either.
       const seen = M.trust.outsider(ctx) ? [] : [presence];
+      const pauses = M.trust.outsider(ctx) ? [] : [paused];
       append(fresh, mineFilter(), mineOnly ? null : table("human", humans, [role].concat(seen, [joined])),
-        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner].concat(seen, [joined, paused], hasKtw ? [ktw] : []))
+        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner].concat(seen, [joined], pauses, hasKtw ? [ktw] : []))
           : [h("h3", { id: "members-agent" }, M.t("members.agents", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
       M.dom.keepImages(box, fresh);
       append(clear(box), Array.from(fresh.childNodes));

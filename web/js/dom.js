@@ -449,11 +449,15 @@ window.Maity = window.Maity || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = (id && ctx.memberById && ctx.memberById[id]) || (typeof who === "object" ? who : null) || { id };
     const handle = handleOf(ctx, m) || m.handle || id;
-    const presence = m.presence || "offline";
-    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind, Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence].filter(Boolean).join(" · ");
+    // An outsider reads no presence (§2.3): where none came, no dot and no presence word, never
+    // "offline" (a read-along's own agents, /observe, still carry theirs).
+    const outside = M.trust ? M.trust.outsider(ctx) : !!ctx.outsider;
+    const presence = m.presence || (outside ? null : "offline");
+    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind,
+      presence ? (Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence) : null].filter(Boolean).join(" · ");
     const face = [
       h("span", { class: "chip-avatar " + (m.kind === "agent" ? "agent" : "human") }, M.avatar ? M.avatar(m, 22) : null,
-        h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
+        presence ? h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" }) : null),
       h("span", { class: "chip-handle" }, "@" + handle),
     ];
     const linkable = ctx.memberById && ctx.memberById[id] && opensViews(ctx) && typeof ctx.link === "function";
@@ -503,8 +507,11 @@ window.Maity = window.Maity || {};
   const managesText = (manages, half) => {
     const c = manages && manages[half];
     if (!c || !c.members) return null;
-    const live = [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ");
-    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
+    // An outsider's `manages` holds `members` and `instances` alone (§2.3, routes/members.py
+    // OUTSIDE_COUNT_KEYS): no "(… online)" then, rather than a count the hub did not send.
+    const live = typeof c.online === "number"
+      ? " (" + [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ") + ")" : "";
+    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + live : null].filter(Boolean).join(" · ");
   };
 
   M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, sameTree, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };

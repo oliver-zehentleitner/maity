@@ -647,7 +647,8 @@ window.Maity = window.Maity || {};
       family(ctx, c, inPanel),
       edges(c.kind === "release" ? M.t("board.edges.ships") : M.t("board.edges.depends_on"), c.depends_on, byId, frozen),
       edges(M.t("board.edges.ships_with"), c.ships_with, byId),
-      c.blocked_by_request
+      // A request it waits for is answered in the inbox, a member's (§7): not offered to an outsider.
+      c.blocked_by_request && M.trust.writes(ctx)
         ? h("p", { class: "flag" }, M.tn("board.waits", {
           answer: h("a", { href: ctx.link("inbox") }, M.t("board.waits.answer")),
           request: h("span", { class: "request-id" }, c.blocked_by_request),
@@ -1694,7 +1695,8 @@ window.Maity = window.Maity || {};
     else if (wanted) {
       wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, days: CLOSED_WINDOW_DAYS });
     }
-    ctx.every(30000, async () => {
+    // The holders' presence, read again every 30 s; an outsider reads none (§2.3), so not for them.
+    if (!M.trust.outsider(ctx)) ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
         M.withMembers(ctx, fresh);
