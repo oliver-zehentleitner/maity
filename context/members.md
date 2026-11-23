@@ -1856,7 +1856,8 @@ agents included, is refused (`humans_only`); a human without
 scope. A takeover that would leave such an agent holding a card is
 refused whoever starts it (`not_open_to_outsiders`), and cover never
 hands it a card: the cover order skips it as it skips a guest (with no
-other entry available the covered member stays under `wait`), since
+other entry available the covered member is treated as under `wait`:
+no `cover_started`, `cover` `none_available`), since
 cover is not a takeover and would otherwise move a member's held cards
 to it with no human deciding (the first review of the contract pull
 request). On a claim the refusal comes after the checks that say

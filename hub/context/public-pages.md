@@ -644,9 +644,12 @@ A signed-in human without an active membership reads a public project through th
 §2.3). The risk eb7fd1c7 names for a visitor caller in those routes (a field added later becomes public) is met
 for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
 
-- A closed allow-list of routes: `access.OUTSIDE_READS`, twelve GETs (the project, its members and one member, the
-  cards and one card, a card's history and notes, the logo and the banner, and the three reads of the Why view
-  below). Only those endpoints call
+- A closed allow-list of routes: `access.OUTSIDE_READS`, GETs only: the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner, what the project allows an outsider
+  (`GET …/contribution`, §6.1, so the outsider's tab can say why a button is missing; added with the outsider's
+  join, tsk-enfbkj0xqq5m, hub/context/joins.md 0bd49a9b), and the three reads of the Why view below. The list
+  in `access.py` is the reference; this entry names what is in it rather than how many, so that it does not go
+  stale when a read is added on purpose. Only those endpoints call
   `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
   member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
   together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
