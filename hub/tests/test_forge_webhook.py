@@ -10,14 +10,17 @@ import hmac
 import json
 import logging
 import os
+import time
 from dataclasses import replace
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import body as body_reader
-from maity_hub import forge, forge_webhook, probe, secretbox
+from maity_hub import forge, forge_webhook, probe, ratelimit, secretbox, shared_counts
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.net import Origin
@@ -31,9 +34,18 @@ HOOK = "/api/v1/projects/maintainer/maity/forge/webhook"
 
 
 @pytest.fixture(autouse=True)
-def _limits() -> None:
+def _limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty limits, and one window for the whole test. The tests count sixty requests and
+    expect the 61st refused; on PostgreSQL the counts sit in fixed 60-s windows of the wall
+    clock, and requests that straddle a window's edge let the 61st through (it counts the
+    sixty only by weight). The limiter's clock and the windows' clock stand still instead,
+    the windows' at the start of one, as in test_mentions and test_device_codes."""
     for limiter in (forge_webhook.VERIFIED, forge_webhook.UNVERIFIED, forge_webhook.NOBODY):
         limiter.reset()
+    frozen = time.monotonic()
+    monkeypatch.setattr(ratelimit, "time", SimpleNamespace(monotonic=lambda: frozen))
+    window_start = datetime.now(UTC).replace(second=0, microsecond=0)  # a 60-s multiple
+    monkeypatch.setattr(shared_counts, "_now", lambda: window_start)
 
 
 @pytest.fixture
