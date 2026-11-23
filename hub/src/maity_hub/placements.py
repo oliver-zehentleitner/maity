@@ -234,6 +234,18 @@ def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
     }
 
 
+def _agent_ref(conn: Connection, placement: Any) -> tuple[str | None, str]:
+    """The agent's id and handle alone, as its runner reads them (§15.8): the runner gets no
+    name, display name or picture, so none is read on a route every runner polls."""
+    if placement.membership_id is not None or placement.agent_id is not None:
+        profile = t.agent_profile.c
+        found = conn.execute(
+            select(profile.id, profile.handle).where(profile.id == agent_of(conn, placement))
+        ).one()
+        return found.id, found.handle
+    return None, placement.new_handle
+
+
 def _name(conn: Connection, placement: Any, handle: str) -> str:
     """The agent's global name (§6.3): the runner view shows it outside one project."""
     owner = profile_owner(conn, placement)
@@ -582,7 +594,7 @@ def for_runner(
             t.project.c.id == placement.project_id
         )
     ).one()
-    agent = _agent(conn, placement)
+    agent_id, handle = _agent_ref(conn, placement)
     found: dict[str, Any] = {
         "id": placement.id,
         # The full name, the fixed id the runner keys the clone on, and the earlier full
@@ -593,8 +605,8 @@ def for_runner(
         "generation": placement.generation,
         "desired": placement.desired,
         "agent": {
-            "id": agent["id"],
-            "handle": agent["handle"],
+            "id": agent_id,
+            "handle": handle,
             "member": placement.membership_id is not None,
             "credential_expected": placement.credential_id is not None,
         },

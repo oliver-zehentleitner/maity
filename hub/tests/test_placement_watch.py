@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -24,7 +25,7 @@ from maity_hub.routes import placements as placement_routes
 from maity_hub.routes.runner import Status, _check_codes
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.statements import count_statements
+from tests.statements import count_statements, listening
 from tests.test_auth_agent import signed
 from tests.test_placements import REPOSITORY, allow_instances
 from tests.test_runner_stream import attach, hello, member, send
@@ -403,6 +404,31 @@ def test_the_session_costs_the_same_statements_for_3_and_30_placements(watch: Wa
 
     small, large = measured(3), measured(30)
     assert small > 0 and small == large, f"{small} statements for 3 rows, {large} for 30"
+
+
+def test_the_runners_view_reads_the_agents_id_and_handle_and_no_name_or_picture(
+    watch: Watch,
+) -> None:
+    """The runner gets the agent's id and handle alone (§15.8), so its view of a placement,
+    read on a route every runner polls, reads neither the owner's handle for the global name
+    nor the agent's picture (audit R5 batch 2, finding 4)."""
+    body = placed(watch)
+    with watch.engine.begin() as conn:
+        row = pl.row(conn, body["id"])
+    sent: list[str] = []
+
+    def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement)
+
+    with watch.engine.begin() as conn, listening(watch.engine, heard, async_engines=False):
+        found = pl.for_runner(conn, row, {})
+    with watch.engine.connect() as conn:
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == watch.agent.id)
+        ).scalar_one()
+    agent = found["agent"]
+    assert (agent["id"], agent["handle"]) == (watch.agent.id, handle)
+    assert not [s for s in sent if re.search(r"\bFROM (human|avatar_image)\b", s)], sent
 
 
 # --- finding (§15.7) --------------------------------------------------------------------------
