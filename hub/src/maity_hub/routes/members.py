@@ -471,6 +471,10 @@ def validate_assignment(
         values["capabilities"] = list(dict.fromkeys(capabilities))
     if errors:
         raise invalid(errors)
+    if member is not None and current[0] == OUTSIDE:
+        # What an outsider's agent keeps holds after its join too, whoever asks (§2.3).
+        target = conn.execute(select(t.membership).where(t.membership.c.id == member)).one()
+        agent_owners.check_outside_fields(conn, target, values)
     return values
 
 
@@ -831,6 +835,9 @@ def apply_patch(
         # the role, and a field PATCH waiting at the lock reads the new role (§6.2).
         lock_project(conn, target.project_id)
         target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    # Again as the change is written, after any consent: an outsider's agent keeps no areas or
+    # capabilities and reports to its owner or nobody (§2.3 "Outside").
+    agent_owners.check_outside_fields(conn, target, values)
     if values.get("role", "expert") != "expert":
         # The fields belong to the role: any other role has none (§6.2).
         values = {**values, "expert_for": None, "expert_sources": None}
