@@ -306,8 +306,11 @@ def test_a_non_numeric_port_is_refused_without_echo(
 @pytest.mark.parametrize(
     ("url", "reason"),
     [
-        ("foo://x/y", "sqlalchemy.exc.NoSuchModuleError"),  # unknown dialect
-        ("postgresql+psycopg2://maity:s3cret@db/maity", "ModuleNotFoundError"),  # no driver
+        ("foo://x/y", "sqlalchemy.exc.NoSuchModuleError unclassified code="),  # unknown dialect
+        (  # no driver: the line names the module to install
+            "postgresql+psycopg2://maity:s3cret@db/maity",
+            "builtins.ModuleNotFoundError unclassified module=psycopg2 code=",
+        ),
     ],
 )
 def test_an_unusable_dialect_or_driver_fails_in_one_line(
@@ -364,6 +367,29 @@ def test_the_drivers_text_never_reaches_the_output(
         "psycopg.ProgrammingError unclassified code=- number=- behind=-\n"
     )
     assert PASSWORD not in err and "s3cr" not in err and "host=db" not in err
+
+
+@pytest.mark.parametrize("query", ["password", "PASSWORD", "pass%77ord", "sslpassword"])
+def test_a_password_in_the_query_string_is_not_printed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], query: str
+) -> None:
+    """A database error names the URL without its query string, where a password can stand."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("connect", {}, psycopg.OperationalError("connection refused"))
+
+    monkeypatch.setattr(cli, "make_engine", refuse)
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity@db/maity?{query}={PASSWORD}")
+    assert main(["migrate"]) == 1
+    err = capsys.readouterr().err
+    assert err == (
+        "maity-hub: database postgresql+psycopg://maity@db/maity?***: "
+        "psycopg.OperationalError refused code=- number=- behind=-\n"
+    )
 
 
 def test_the_bucket_clean_up_logs_no_drivers_text(caplog: pytest.LogCaptureFixture) -> None:

@@ -864,26 +864,34 @@ trusted with text that may quote a credential.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the clean-up audit of the core platform, which found the CLI printing what the log never lets out; the lead's go for the pull request, 2026-11-23
+**Source:** the clean-up audit of the core platform, which found the CLI printing what the log never lets out; the lead's go for the pull request, 2026-11-23; its first review, which found a password in the URL's query string printed with the URL
 **Revisit when:** a command needs a cause the categories cannot name, or the driver's text can be shown without any route into a stored log
 **See:** persistence.md#a-database-error-is-logged-with-a-category-of-its-cause-never-with-the-drivers-text — 79c93ec6-d67e-4a0a-8d82-041409b1fd92 — as of 2026-11-23
 
 Every `maity-hub` command (`migrate`, `serve`, `quickstart`, `owner create`, the operator
 commands, `loadtest`, `attachments copy-to-s3` and its bucket clean-up) says of a database error
-only the redacted URL, the original exception's class, the cause category and the driver's codes
-(`errors.driver_reason`, `errors.driver_fields`). The driver's own message is never printed or
-logged, not even its first line.
+only the URL with its password masked and its query string left out (`config.redact_database_url`),
+the original exception's class, the cause category and the driver's codes (`errors.driver_reason`,
+`errors.driver_fields`). The driver's own message is never printed or logged, not even its first
+line. Not covered: PyMySQL refuses a query option it does not take with a plain `TypeError` or
+`AttributeError`, not a database error, and the command ends with that traceback.
 
 **Reason:** the server and the CLI followed opposite rules for the same text. A malformed URL makes
 the driver quote the whole connection string, the password included, and `migrate` usually runs as
 a Kubernetes job or init container whose stderr ends up in the cluster's log store, which is the
-case the log's rule guards against. `serve` and the bucket clean-up run under a supervisor too.
+case the log's rule guards against. `serve` runs under a supervisor too. The query string is left
+out whole because the drivers take a password there as well (`password`, `passwd`, `sslpassword`,
+in any case and percent-encoding).
 
 **Rejected alternatives:**
 - The driver's first line on the operator's own terminal, since the operator holds the URL anyway:
   the same command's output is a stored log as soon as it runs as a job, and the CLI cannot tell.
 - A `--verbose` flag that prints the text with a warning: not built; the operator who needs the
   text can connect with the database's own client.
+- Masking the query parameters that carry a secret by name: each driver accepts its own names,
+  cases and encodings, and a list would miss the next one; `?***` still shows that a query was set.
+- Catching `TypeError` and `AttributeError` around every command's database work for the one-line
+  form: it would also turn the hub's own bugs into one line without a traceback.
 
 ## The pool keeps connections warm, and a host name that does not resolve is tried once more
 

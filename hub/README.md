@@ -134,11 +134,16 @@ version; run `maity-hub migrate` after every upgrade. Migrations never run
 implicitly.
 
 A `maity-hub` command that meets a database error prints one line: the URL
-with its password masked, the error's class, a cause category (`dns`,
-`timeout`, `refused`, `auth`, `ssl` and a few more, else `unclassified`)
-and the driver's codes, as the hub's log names it. The driver's own message
-is never printed: it can quote the connection string with the password.
-For the full text, connect with the database's own client.
+with its password masked and its query string left out (`?***` stands in
+its place, since a password can stand there too), the error's class, a
+cause category (`dns`, `timeout`, `refused`, `auth`, `ssl` and a few more,
+else `unclassified`) and the driver's codes, as the hub's log names it; a
+missing driver is named by its module. The driver's own message is never
+printed: it can quote the connection string with the password. For the
+full text, connect with the database's own client. Not covered: on MariaDB,
+PyMySQL refuses an option in the URL's query string that it does not take
+with a plain Python error, not a database error, and the command ends with
+its traceback.
 
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is

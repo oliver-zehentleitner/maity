@@ -486,7 +486,9 @@ def _database_reason(error: Exception) -> str:
     string, the password included, and `migrate` runs as a job whose output is kept in logs."""
     reason = driver_reason(error)
     if not reason:  # no driver behind it: SQLAlchemy's own error, or a missing driver
-        reason = f"{type(error).__module__}.{type(error).__qualname__}"
+        reason = f"{type(error).__module__}.{type(error).__qualname__} unclassified"
+        if isinstance(error, ImportError) and error.name:
+            reason += f" module={error.name}"  # the driver to install; a module name, no secret
     return f"{reason} {driver_fields(error)}"
 
 
