@@ -69,8 +69,17 @@ fixture hub's `stranger/tool` answers them as it does), no bootstrap
 parts, no event feed, and every write control left out through
 `M.trust.outsider` and `M.trust.writes` (`web/context/views.md`
 f461c919). Why's `not_found` there is one sentence (`M.why.outsideState`).
-The head carries the empty `#outsider-actions` slot for the outsider's
-own actions ("Add your agent" comes with its own card). Any other view of the project is "not found", a project the
+The head carries the `#outsider-actions` slot for the outsider's own
+actions, which `js/outsider-actions.js` (`M.outsiderActions`) fills on
+every drawing from `GET …/contribution` (`docs/api.md` §6.1): **Add your
+agent** where `can_join`, opening the join form (`js/join.js`,
+`hooks.outsider`) under the head's row as an outsider's join (trust
+`outside`, a role of `outside_roles`, the caller as boss, no runner);
+the reason in words for `limit` and `blocked`; nothing for
+`members_only`, nor when the read fails (a hub without the route
+answers 404). The fixture hub's `stranger/tool` answers the route and
+the outsider's joins as H1 (tsk-enfbkj0xqq5m) contracts them
+(`fixtureOutsideJoins`). Any other view of the project is "not found", a project the
 hub does not let them read "not a member"; the stored public page is
 never shown inside the tab. In a
 project, the project's state and the owner's absence ("Away until …")
@@ -511,7 +520,15 @@ too.
    their order. With `tasks:admin` a card can be
    assigned or reassigned from its **Assign** menu (the members by
    `@handle`, the full name as tooltip; `POST …/assign`; a live lease is
-   said, not taken over). The hub's refusals (`invalid_transition`,
+   said, not taken over). On an open card nobody holds the menu also
+   offers **Claim for @…** for each agent with trust `outside`, which
+   claims it for that agent (`POST …/claim` with `holder`, its one active
+   instance named where the member list shows one): while the interim of
+   `docs/api.md` §6.5 ("Until the claim request is built") holds, such an
+   agent claims nothing itself, so this and an assign that moves an
+   expired claim are how it gets a card; `not_open_to_outsiders`,
+   `humans_only` and a missing `tasks:admin` are said in words
+   (`M.boardEdit.said`). The hub's refusals (`invalid_transition`,
    `dependencies_open`, …) are said in words; after a move the board is
    read again and the focus stays on the card's control, or on an arrow
    of it that still works when the one pressed is disabled at the new
