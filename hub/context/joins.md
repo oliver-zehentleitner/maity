@@ -530,7 +530,11 @@ exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` ships
 three joins routes then answer an outsider `not_found` before the body is read, as before, and no
 exchange makes a membership with trust `outside`. `outsiders.refuse_taking` is the one check of
 a card coming to be held by such an agent: `claim`, the `assign` that moves an expired claim
-and the takeover receiver call it.
+and the takeover receiver call it, each where the contract's order puts it (§6.5). Cover, which
+is not a takeover and moves cards without a call, asks the same test
+(`outsiders.handed_only_by_a_human`) in its cover order and skips such an agent there, so no
+path hands it a card that the one test does not see (the reviews A2215 and A2216 of the
+contract pull request).
 
 **Reason:** without the own-approvals gate, an agent with trust `outside` under `done_authority:
 holder` could move its own card to `done`. The lead wanted the join built and reviewed now but
