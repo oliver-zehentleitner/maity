@@ -230,7 +230,7 @@ gained keys for as long as the process ran, and nothing removed them.
 - **Visibility and publicness:** a write first drops the entries past
   their time (300 s and 600 s), then the oldest written beyond
   `CACHE_KEPT` (4096). A dropped entry costs one more read of
-  `/repos/{repository}`, nothing else. The writes and the `_forget` of
+  `/repos/{repository}`, nothing else. The writes and the `forget_visibility` of
   `_public` go under one lock, since the probe's worker and the requests
   write them from different threads.
 - **A contract text read's gate** (`contract_text._pending`) goes in a

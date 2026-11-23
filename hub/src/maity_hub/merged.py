@@ -99,13 +99,9 @@ def returned_to_review(conn: Connection, card_id: str) -> None:
         _tell(conn, card_id, _merge_sha(conn, card))
 
 
-def _pr_number(card: Any) -> Any:
-    return ((card.report or {}).get("pr") or {}).get("number")
-
-
 def _pr_data(conn: Connection, card: Any) -> dict[str, Any]:
     """The stored observation of the report's pull request, `{}` when there is none."""
-    number = _pr_number(card)
+    number = cards.pr_number(card)
     if number is None:
         return {}
     data = conn.execute(
@@ -179,19 +175,11 @@ def _shared(conn: Connection, card: Any) -> bool:
     """Another card of the project, in any status, names the pull request in its current
     report, or the pull request closed another card before. Read only when the hub would
     close, under the project's lock: no two cards close by one pull request."""
-    number = _pr_number(card)
+    number = cards.pr_number(card)
     if number is None:
         return True
-    others = conn.execute(
-        select(t.card.c.report).where(
-            t.card.c.project_id == card.project_id,
-            t.card.c.id != card.id,
-            t.card.c.report.is_not(None),
-        )
-    )
-    for (report,) in others:
-        if ((report or {}).get("pr") or {}).get("number") == number:
-            return True
+    if any(other.id != card.id for other in cards.naming_pr(conn, card.project_id, number)):
+        return True
     told = conn.execute(
         select(t.event.c.subject_id, t.event.c.payload).where(
             t.event.c.project_id == card.project_id,
@@ -248,7 +236,7 @@ def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
         audience.append("trust:admin")
     payload: dict[str, Any] = {
         "task": card.id,
-        "pr": ((card.report or {}).get("pr") or {}).get("number"),
+        "pr": cards.pr_number(card),
         "merge_sha": merge_sha,
         "done_authority": authority,
         "closed": closed,

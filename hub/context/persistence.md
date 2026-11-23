@@ -1551,3 +1551,33 @@ loop the statement's time, which the loop-lag guard watches only for the hot fam
 - A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
   busy timeout per run and shows only the families it calls; the scan covers every route at no
   cost.
+
+## An IN list over many ids is cut into chunks by one leaf module, `chunks`
+
+**Id:** 63ffb6dc-48cb-400d-8692-5466fb7de939
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jttknmqzghw9 (clean-up audit round 5, batch 1, finding 2, 2026-11-22): the bound written four times (`export.CHUNK`, `public_projects.BATCH`, `reports.PATHS_PER_QUERY`, `loadtest.CHUNK`), held together by "mirrored" comments; `maity_hub.chunks`
+**See:** public-pages.md#whether-a-project-has-a-page-is-one-rule-over-rows-served-judges-the-row-it-is-given — 1def6e81-4be2-4e03-8bd7-4426d59407e5 — as of 2026-11-22
+**Revisit when:** a read needs a bound of its own other than `CHUNK`, or an engine's limit on bound parameters falls near 500
+
+A read that names a list of ids or paths whose length nothing bounds asks in IN lists of at most
+`chunks.CHUNK` (500) values: `chunks.chunks(values)` yields them without repeats, sorted, in lists of
+that size. The export, the public lists, the reporter's pages (`reports._pages_at`), the load test's
+purge and `namespace.full_names` use it; `namespace.full_names` batches itself, so every list of full
+names is bounded and `public_projects.full_names`, which batched it for the public lists, is gone.
+`CHUNK` is read at each call, so a test lowers it once (`monkeypatch.setattr(chunks, "CHUNK", 2)`)
+for every read on the path it drives.
+
+**Reason:** `chunks` imports nothing of the hub, so every module may use it: the copies existed
+because `export` imports `reports`, which imports `moderation`, which imports `public_projects`, and
+each later module could not import the first one's bound. One value cannot drift apart from its
+mirrors.
+
+**Rejected alternatives:**
+- Keeping a bound per module, each pointing at the shared value, so a test could lower one read's
+  bound alone: the tests that lower it (`test_public_lists_cost`, `test_reports_public`) check the
+  answer and the statements of a whole list, which every read on that path should cut alike.
+- Moving the bound into `export` or `namespace`: both import modules that would then import them
+  back.

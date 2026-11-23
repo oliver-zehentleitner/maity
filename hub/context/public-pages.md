@@ -698,7 +698,7 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
     outsider is preceded by a live visibility answer in the same request (the lead's rule, seq 186723, A1863
     point 1). `OUTSIDE_CACHE`'s `before_read` (`_before_outside_read`) asks the forge live before each family
     read unless the gate or the endpoint asked in this request (a context variable), and drops the forge's own
-    kept verdict (`Forge._forget`, PUBLIC_SECONDS) so the file reads that follow ask again; not public raises
+    kept verdict (`Forge.forget_visibility`, PUBLIC_SECONDS) so the file reads that follow ask again; not public raises
     before anything is fetched or stored. The read itself goes through a reader bound to no project and holding no
     grant into `OUTSIDE_CACHE`, a `ktw.Cache` of its own that never asks `Forge.for_project` (`bind=False`). The
     outsider path picks its token by the operator's namespaces, as the public page does
@@ -1360,22 +1360,24 @@ would put the old design back over the new one until the next pass.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-e37ckp87r9cp (audit round 4: the rule written twice since #1986, five public lists asking it per project); the plan for it and the lead's approval, 2026-11-21; reviews A1831 (the cost of one project) and A1832 (an IN list over every public project), and the fix the review lead agreed and the lead approved, 2026-11-21; `public_projects.served_of`, `served`, `served_among`, `BATCH`; `routes.projects._refuse_outside_roles`, `agent_owners.effective`
+**Source:** card tsk-e37ckp87r9cp (audit round 4: the rule written twice since #1986, five public lists asking it per project); the plan for it and the lead's approval, 2026-11-21; reviews A1831 (the cost of one project) and A1832 (an IN list over every public project), and the fix the review lead agreed and the lead approved, 2026-11-21; `public_projects.served_of`, `served`, `served_among`, `chunks.CHUNK` (was `BATCH`); `routes.projects._refuse_outside_roles`, `agent_owners.effective`
 **See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-21
+**See:** persistence.md#an-in-list-over-many-ids-is-cut-into-chunks-by-one-leaf-module-chunks — 63ffb6dc-48cb-400d-8692-5466fb7de939 — as of 2026-11-22
 **Revisit when:** no caller asks `served` of a project as it will be after a write, or the rule needs a column a list's rows do not carry
 
 Whether a project has a page now (its page on, not archived, under no moderation hold, its namespace owner an
 organisation that is not deleted and under no hold, or a human who is active, not deleted and not suspended) is
 written once, in `public_projects.served_of(conn, rows)`, which judges the rows it is given in at most four
-statements for every `BATCH` (500) rows. `served(conn, project)` passes it that one row as it is;
+statements for every `chunks.CHUNK` (500) rows. `served(conn, project)` passes it that one row as it is;
 `served_among(conn, ids)` (the stars) reads the stored rows first (page on, not archived, in SQL) and passes those.
 The public lists (`/explore`, an organisation's page, a person's and an agent's projects, the landing page's count
 of public projects) read their candidates with the columns the rule needs and pass those rows to `served_of`, and
-read the full names once (`public_projects.full_names`), so they cost the same for 3 projects as for 30
+read the full names once (`namespace.full_names`), so they cost the same for 3 projects as for 30
 (`hub/tests/test_public_lists_cost.py`). One project costs what it did before: no statement with the page off or
 archived, one under a project hold, two for a human owner, three for an organisation. Every IN list these ask
-carries at most `BATCH` ids, the bound of `export.CHUNK`, mirrored as `reports.PATHS_PER_QUERY` is, because
-`export` imports this module through `reports` and `moderation`.
+carries at most `chunks.CHUNK` ids. Until 2026-11-22 that bound was `BATCH` here, mirrored from `export.CHUNK`
+because `export` imports this module through `reports` and `moderation`; the leaf module `chunks` replaced the
+copies (persistence.md 63ffb6dc).
 
 **Reason:** a `PATCH` of a project asks `served` of the project as it will be: `_refuse_outside_roles` passes
 `agent_owners.effective` a row whose `public_page` is the one in the request, not yet written. A `PATCH` that
