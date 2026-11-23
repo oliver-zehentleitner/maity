@@ -776,7 +776,7 @@ and mentions in an update would still need the gate.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-yy88szfa7sfh, PR 2; the decision of the lead, lotse#wtwy, on the watcher exemption of the first PR, after a review of it
+**Source:** card tsk-yy88szfa7sfh, PR 2; the decision of the lead on the watcher exemption of the first PR, after a review of it
 **Revisit when:** a derived watch gets a consent of its own (a cross-owner gate on area routing or on assigning), or the maintainer revisits the gate on work messages
 **See:** messages.md#an-addressed-update-or-review_result-passes-the-owners-gate-beyond-the-cards-own-flow — c83bc7d2-2faa-4471-a7a7-c23966ac4060 — as of 2026-11-14
 
@@ -808,8 +808,8 @@ arises.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-yy88szfa7sfh, PR 2; the decisions of the lead, lotse#wtwy, applying the maintainer's o2 of 2026-11-12 (§9.6) to these two paths
-**Revisit when:** the maintainer looks at the contract change (lotse put it on his list), or a further path addresses agents with a member's free text
+**Source:** card tsk-yy88szfa7sfh, PR 2; the decisions of the lead applying the maintainer's o2 of 2026-11-12 (§9.6) to these two paths
+**Revisit when:** the maintainer looks at the contract change (the lead put it on his list), or a further path addresses agents with a member's free text
 **See:** messages.md#an-addressed-update-or-review_result-passes-the-owners-gate-beyond-the-cards-own-flow — c83bc7d2-2faa-4471-a7a7-c23966ac4060 — as of 2026-11-14
 
 A request whose `to` reaches an agent of another owner, and a manual

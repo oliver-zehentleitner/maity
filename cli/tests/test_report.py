@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import fake_gh, git, posix
 
-from maity import cli, gitfacts
+from maity import cli, gitfacts, proc
 
 # Absolute: the fixtures' PATH holds git alone.
 TOOLS = {"sh": shutil.which("sh") or "/bin/sh", "touch": shutil.which("touch") or "/usr/bin/touch"}
@@ -117,6 +120,75 @@ def test_a_branch_without_an_upstream_and_without_origin_has_no_upstream(clone: 
 def test_branch_deleted_on_remote_is_refused(clone: Path) -> None:
     git(clone, "push", "--quiet", "origin", "--delete", "work")
     assert any("does not exist" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+
+
+def test_a_remote_that_could_not_be_read_is_no_branch_to_push() -> None:
+    """A failed `git ls-remote` says nothing about the branch (tsk-mfac5zscnkxs)."""
+    facts = gitfacts.Facts(
+        head="a" * 40, branch="work", remote="origin", remote_branch="work", remote_head=None,
+        dirty=False, pr=None, remote_error="git ls-remote failed: proxy refused",
+    )  # fmt: skip
+    problems = gitfacts.mismatches(facts)
+    assert problems == ["maity could not read origin/work (git ls-remote failed: proxy refused)"]
+    assert not any("push it" in p for p in problems)
+
+
+def test_a_refusal_of_maitys_git_at_the_lookup_is_raised_not_kept(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a lookup that ran and failed falls back to the probe; a refusal stays one."""
+    real = proc.run
+
+    def refusing(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "ls-remote" in cmd:
+            raise proc.ToolRefused("maity runs no git here: x")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", refusing)
+    with pytest.raises(gitfacts.FactsError, match="maity runs no git here") as raised:
+        gitfacts.collect(clone)
+    assert not isinstance(raised.value, gitfacts.RemoteUnread)
+
+
+def test_a_timed_out_default_branch_read_leaves_the_branch_alone(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A branch that tracks origin/main, and no `refs/remotes/origin/HEAD` to say main is the
+    default: `ls-remote --symref` is asked, and its timeout says nothing, so nothing changes
+    and `collect` meets the unread remote with its fallback."""
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+    with contextlib.suppress(subprocess.CalledProcessError):
+        git(clone, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    real = proc.run
+
+    def timing_out(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "--symref" in cmd:
+            raise proc.ToolError("`git ls-remote --symref` did not answer within 30s")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", timing_out)
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "--get", "branch.work.merge") == "refs/heads/main"
+
+
+def test_a_refusal_at_the_default_branch_read_is_raised(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal of maity's git stays one at the default branch's read too."""
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+    with contextlib.suppress(subprocess.CalledProcessError):
+        git(clone, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    real = proc.run
+
+    def refusing(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "--symref" in cmd:
+            raise proc.ToolRefused("maity runs no git here: x")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", refusing)
+    with pytest.raises(gitfacts.FactsError, match="maity runs no git here") as raised:
+        gitfacts.track_own_branch(clone)
+    assert not isinstance(raised.value, gitfacts.RemoteUnread)
 
 
 def test_a_branch_deleted_after_its_merge_reports_the_merged_head(
