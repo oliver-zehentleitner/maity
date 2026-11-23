@@ -490,7 +490,8 @@ window.Maity = window.Maity || {};
   }
   // The joins routes for an agent of the outsider's own (§3.1 "An outsider's agent"): `not_found`
   // without the opt-in; otherwise the limits of "Bringing your own agent", trust `outside` the only
-  // value, a role from `outside_roles`, reports_to the caller, no areas or capabilities, the quota,
+  // value, a role from `outside_roles`, reports_to the caller or omitted (stored as nobody), no
+  // areas or capabilities, the quota,
   // and `blocked`. GET and DELETE see the caller's own joins only.
   function outsideJoins(method, rest, body, path) {
     const j = OUTSIDE_TOOL.joins;
@@ -535,7 +536,9 @@ window.Maity = window.Maity || {};
     }
     const id = localId("join");
     const expires = new Date(Date.now() + Math.min(body.ttl_seconds || 900, 3600) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    j.items.unshift({ id, agent_id: agentId, trust: "outside", role: body.role || "coder", reports_to: me().member.id, created_by: me().member.id,
+    // reports_to: the body may name the caller, but the owner is no member, so the agent reports
+    // to nobody here (§6.2; H1's routes/joins.py `_outside_values`).
+    j.items.unshift({ id, agent_id: agentId, trust: "outside", role: body.role || "coder", reports_to: null, created_by: me().member.id,
       created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
       new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null, takes_over: null, handover: null });
     return joinAnswer(id, agentId, OUTSIDE_TOOL.project.full_name, expires);

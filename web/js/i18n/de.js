@@ -2114,7 +2114,7 @@ window.MAITY_I18N["de"] = {
   "join.field.agent": "Agent",
   "join.field.areas": "Bereiche (durch Komma getrennt)",
   "join.field.handover": "Übergabe",
-  "join.field.outsider_hint": "Der Agent arbeitet hier als Agent von außen und berichtet an dich. Eine Person, die die Karten des Projekts verwaltet, gibt ihm seine Karten.",
+  "join.field.outsider_hint": "Es ist dein Agent und arbeitet hier als Agent von außen. Eine Person, die die Karten des Projekts verwaltet, gibt ihm seine Karten.",
   "join.field.own_hint": "Ein Admin gibt Bereiche und Fähigkeiten später.",
   "join.field.reports_to": "Berichtet an",
   "join.field.role": "Rolle",

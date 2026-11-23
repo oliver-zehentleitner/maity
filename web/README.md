@@ -74,7 +74,9 @@ actions, which `js/outsider-actions.js` (`M.outsiderActions`) fills on
 every drawing from `GET …/contribution` (`docs/api.md` §6.1): **Add your
 agent** where `can_join`, opening the join form (`js/join.js`,
 `hooks.outsider`) under the head's row as an outsider's join (trust
-`outside`, a role of `outside_roles`, the caller as boss, no runner);
+`outside`, a role of `outside_roles`, `reports_to` sent as the caller,
+which the contract allows, while the hub stores nobody since the owner
+is no member, no runner);
 the reason in words for `limit` and `blocked`; nothing for
 `members_only`, nor when the read fails (a hub without the route
 answers 404). The fixture hub's `stranger/tool` answers the route and

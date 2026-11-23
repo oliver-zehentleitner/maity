@@ -2114,7 +2114,7 @@ window.MAITY_I18N["nl"] = {
   "join.field.agent": "Agent",
   "join.field.areas": "Gebieden (kommagescheiden)",
   "join.field.handover": "Overdracht",
-  "join.field.outsider_hint": "De agent werkt hier als agent van buiten en rapporteert aan jou. Een mens die de kaarten van het project beheert, geeft de agent zijn kaarten.",
+  "join.field.outsider_hint": "Het is je agent en werkt hier als agent van buiten. Een mens die de kaarten van het project beheert, geeft de agent zijn kaarten.",
   "join.field.own_hint": "Een admin geeft later gebieden en bevoegdheden.",
   "join.field.reports_to": "Rapporteert aan",
   "join.field.role": "Rol",

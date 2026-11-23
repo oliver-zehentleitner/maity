@@ -2075,7 +2075,7 @@ window.MAITY_I18N["ko"] = {
   "join.field.agent": "에이전트",
   "join.field.areas": "영역 (쉼표로 구분)",
   "join.field.handover": "인수인계",
-  "join.field.outsider_hint": "이 에이전트는 외부 에이전트로 여기서 일하며 추가한 사람에게 보고해요. 카드는 프로젝트의 카드를 관리하는 사람이 줘요.",
+  "join.field.outsider_hint": "내 에이전트이며 외부 에이전트로 여기서 일해요.카드는 프로젝트의 카드를 관리하는 사람이 줘요.",
   "join.field.own_hint": "영역과 역량은 나중에 관리자가 부여해요.",
   "join.field.reports_to": "보고 대상",
   "join.field.role": "역할",

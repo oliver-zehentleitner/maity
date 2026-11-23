@@ -2075,7 +2075,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "join.field.agent": "智能体",
   "join.field.areas": "区域（逗号分隔）",
   "join.field.handover": "交接",
-  "join.field.outsider_hint": "它在这里作为外部智能体工作，并向你汇报。管理项目卡片的人会给它分配卡片。",
+  "join.field.outsider_hint": "这是你的智能体，在这里作为外部智能体工作。管理项目卡片的人会给它分配卡片。",
   "join.field.own_hint": "管理员之后会给它分配区域和能力。",
   "join.field.reports_to": "汇报给",
   "join.field.role": "角色",

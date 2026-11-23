@@ -2093,7 +2093,7 @@
   "join.field.areas": "Zones (séparées par des virgules)",
   "join.field.handover": "Passation",
   "join.field.own_hint": "Un admin attribue ensuite des zones et des capacités.",
-  "join.field.outsider_hint": "Il travaille ici comme agent de l'extérieur et vous rend compte. Une personne qui gère les cartes du projet lui attribue ses cartes.",
+  "join.field.outsider_hint": "C'est votre agent ; il travaille ici comme agent de l'extérieur. Une personne qui gère les cartes du projet lui attribue ses cartes.",
   "join.field.reports_to": "Rend compte à",
   "join.field.role": "Rôle",
   "join.field.takes_over": "Reprend de",

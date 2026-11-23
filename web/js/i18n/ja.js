@@ -2075,7 +2075,7 @@ window.MAITY_I18N["ja"] = {
   "join.field.agent": "エージェント",
   "join.field.areas": "エリア (カンマ区切り)",
   "join.field.handover": "申し送り",
-  "join.field.outsider_hint": "このエージェントは外部のエージェントとしてここで作業し、あなたに報告します。カードは、プロジェクトのカードを管理する人間が渡します。",
+  "join.field.outsider_hint": "あなたのエージェントで、外部のエージェントとしてここで作業します。カードは、プロジェクトのカードを管理する人間が渡します。",
   "join.field.own_hint": "エリアと権限は、あとから管理者が設定します。",
   "join.field.reports_to": "報告先",
   "join.field.role": "ロール",

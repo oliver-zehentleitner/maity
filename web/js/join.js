@@ -183,7 +183,8 @@ window.Maity = window.Maity || {};
     if (!profiles.offered.length) newFields.hidden = false;
     // An outsider's own agent (§3.1 "An outsider's agent", js/outsider-actions.js): a member's
     // own join with trust `outside`, a role of `outside.roles` (the policy's `outside_roles`),
-    // reporting to the caller; no trust or boss to choose, no runner, no restricted texts.
+    // reports_to sent as the caller, which the contract allows; the hub stores nobody, the owner
+    // being no member (§6.2). No trust or boss to choose, no runner, no restricted texts.
     const outside = hooks.outsider || null;
     const own = !!hooks.member || !!outside;
     // Or on a runner instead of a join line (§15.6, js/placements.js `runnerPart`,
@@ -677,7 +678,7 @@ window.Maity = window.Maity || {};
           ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
             replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
           // One's own agent (§3.1): oneself (the default) or one of one's own managers here.
-          // An outsider's: the caller, never another boss (§3.1 "An outsider's agent").
+          // An outsider's: the caller, never another boss (§3.1 "An outsider's agent"); stored as nobody.
           : own ? { agent, trust: trust.value, role: role.value, reports_to: outside ? ctx.me.id : reportsTo.value || ctx.me.id, ttl_seconds: Number(ttl.value) }
           : {
             agent,

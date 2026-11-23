@@ -35,10 +35,10 @@ window.Maity = window.Maity || {};
     }
     // The join panel under the head's row, so it stays in view on every tab of the project; a
     // drawing of the head (another view) replaces it, as leaving the Agents view does a member's.
-    const box = h("div", { class: "outsider-join" });
+    const box = h("div", { class: "outsider-join", id: "outsider-join" });
     const row = slot.parentNode && slot.parentNode.parentNode;
     if (row && row.parentNode) row.parentNode.insertBefore(box, row.nextSibling);
-    const button = h("button", { type: "button", class: "primary outsider-add-agent", "aria-expanded": "false" }, M.t("outsider.add_agent"));
+    const button = h("button", { type: "button", class: "primary outsider-add-agent", "aria-expanded": "false", "aria-controls": "outsider-join" }, M.t("outsider.add_agent"));
     let J = null;
     let mounting = null; // one mount for every click while it is read (as js/page-head.js)
     button.addEventListener("click", async () => {

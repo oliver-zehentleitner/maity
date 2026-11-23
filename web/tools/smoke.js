@@ -17437,7 +17437,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const roles = byId("join-role") ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")) : [];
       expect(ojBox() && ojBox().querySelector(".join-panel") && !ojBox().querySelector(".join-panel").hidden && byId("join-title") && text(byId("join-title")) === "Add your agent"
         && JSON.stringify(roles) === '["coder","writer"]' && !byId("join-trust") && !byId("join-reports") && !byId("join-areas") && !byId("placement-new-clone")
-        && text(ojBox()).includes("It works here as an agent from outside and reports to you."),
+        && text(ojBox()).includes("It is your agent and works here as an agent from outside.")
+        && btn(ojSlot(), "Add your agent").getAttribute("aria-controls") === ojBox().getAttribute("id") && !!ojBox().getAttribute("id"),
       "add your agent: the form offers the roles of outside_roles, and no trust, boss, areas or runner " + JSON.stringify(roles));
       const ojSent = [];
       const ojPost = M_.api.post;
@@ -17452,9 +17453,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       await ojSubmit();
       const sent = ojSent[ojSent.length - 1] || {};
       expect(sent.trust === "outside" && sent.role === "writer" && sent.reports_to === "hum-maintainer" && !("areas" in sent) && !("capabilities" in sent)
-        && JSON.stringify(sent.agent) === '{"handle":"outbot","display_name":"outbot"}' && OJ.items[0] && OJ.items[0].trust === "outside"
+        && JSON.stringify(sent.agent) === '{"handle":"outbot","display_name":"outbot"}' && OJ.items[0] && OJ.items[0].trust === "outside" && OJ.items[0].reports_to === null
         && text(ojBox().querySelector(".paste-line")).includes("maity join https://maity.example/j/FIXTURE-"),
-      "add your agent: the join is POST …/joins with trust outside, the role chosen, the caller as boss, no areas or capabilities; the line is shown once " + JSON.stringify(sent));
+      "add your agent: the join is POST …/joins with trust outside, the role chosen, reports_to the caller (stored as nobody), no areas or capabilities; the line is shown once " + JSON.stringify(sent));
       // The hub's refusals, in words: a role outside outside_roles, the quota, a block, the opt-in gone (not_found).
       const ojRefused = async (setup, handle, role) => {
         setup();
