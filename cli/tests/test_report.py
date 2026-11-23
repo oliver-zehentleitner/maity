@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -146,6 +148,27 @@ def test_a_refusal_of_maitys_git_at_the_lookup_is_raised_not_kept(
     with pytest.raises(gitfacts.FactsError, match="maity runs no git here") as raised:
         gitfacts.collect(clone)
     assert not isinstance(raised.value, gitfacts.RemoteUnread)
+
+
+def test_a_timed_out_default_branch_read_leaves_the_branch_alone(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A branch that tracks origin/main, and no `refs/remotes/origin/HEAD` to say main is the
+    default: `ls-remote --symref` is asked, and its timeout says nothing, so nothing changes
+    and `collect` meets the unread remote with its fallback."""
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+    with contextlib.suppress(subprocess.CalledProcessError):
+        git(clone, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    real = proc.run
+
+    def timing_out(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "--symref" in cmd:
+            raise proc.ToolError("`git ls-remote --symref` did not answer within 30s")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", timing_out)
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "--get", "branch.work.merge") == "refs/heads/main"
 
 
 def test_a_branch_deleted_after_its_merge_reports_the_merged_head(

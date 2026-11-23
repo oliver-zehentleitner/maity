@@ -275,13 +275,19 @@ a third such case. When `git ls-remote` ran and failed or timed out (no
 network, a proxy git cannot reach; not a refusal of maity's git, which is
 raised as before), `gitfacts.collect` keeps the failure as `remote_error`
 instead of raising it, and on a clean checkout the report asks the probe about
-the card's linked pull requests whatever gh said. The first one whose
-`head_sha` equals the local HEAD, compared whole as in the deleted-branch case,
-stands in for the remote branch (`remote_head` the local HEAD); a pull request
-gh read stays the one reported. Only when none matches do the linked pull
-requests it read with another head refuse. Without one, or with a card that
-cannot be read, the failure stays an error, never "does not exist;
-push it", since the branch may well be there.
+the card's linked pull requests whatever gh said. The first one that is open
+or merged and whose `head_sha` equals the local HEAD, compared whole as in the
+deleted-branch case, stands in for the remote branch (`remote_head` the local
+HEAD); a pull request gh read stays the one reported. A closed, unmerged one
+with that head does not stand in: its head says nothing about the branch now,
+which may have moved since it was closed. Only when none stands in do the
+linked pull requests it read with another head or closed refuse. Without one,
+or with a card that cannot be read, the failure stays an error, never "does not
+exist; push it", since the branch may well be there. The lookup's error goes
+into that error and to standard error without the credentials of the proxy
+variables git keeps under a placement (`gitfacts._proxy_secrets`), as set and
+percent-decoded, a proxy set without a scheme (`user:pass@host:port`) included,
+which the URL redaction alone does not recognize.
 
 What decides here is the hub's record that the card links the pull request, and
 the probe's read of it, not a GitHub lookup by the branch's name. A link is

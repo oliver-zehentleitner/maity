@@ -62,8 +62,9 @@ ENV_KEPT = ("HOME", "LANG", "TMPDIR")
 # The proxy a placement reaches the forge through, kept as set (a URL with userinfo too, never
 # logged): without it `git ls-remote` cannot reach the remote. A planted proxy reads no
 # credential, since git's https still verifies the server through the tunnel; a planted trust
-# root (SSL_CERT_FILE, GIT_SSL_CAINFO) would, so none is kept. `maity gh` (ghpr.ENV_PASSED) and
-# the skill fetch (runner/skills.py _KEPT_ENV) keep the same proxy names.
+# root (SSL_CERT_FILE, GIT_SSL_CAINFO) would, so none is kept. The skill fetch
+# (runner/skills.py _KEPT_ENV) keeps the same names; `maity gh` (ghpr.ENV_PASSED) passes the
+# HTTP(S) and no-proxy ones.
 ENV_PROXY = (
     "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY",
     "no_proxy", "NO_PROXY",

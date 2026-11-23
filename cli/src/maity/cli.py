@@ -1545,13 +1545,20 @@ PROBED_LINKS_MAX = 5  # a card links one or two pull requests; more are not read
 
 
 def _probed_pr(
-    session: Session, card: Any, head: str, merged_only: bool = False
+    session: Session,
+    card: Any,
+    head: str,
+    merged_only: bool = False,
+    *,
+    open_or_merged: bool = False,
 ) -> tuple[gitfacts.PullRequest | None, list[str] | None]:
     """The card's linked pull request whose head is `head`, read through the hub's probe (§11)
-    when gh could not answer, and with `merged_only` one the forge has merged; else the linked
-    pull requests the probe read that are not it (`PR #N has head …`), for the refusal. `None`
-    for those when the probe cannot say (not configured, unavailable, nothing found): nothing
-    stands in, and nothing refuses on its account.
+    when gh could not answer, with `merged_only` one the forge has merged, and with
+    `open_or_merged` one that is open or merged: a closed, unmerged one never stands in for a
+    remote branch maity could not read. Else the linked pull requests the probe read that are
+    not it (`PR #N (<state>) has head …`), one with this head in a state that does not count
+    too, for the refusal. `None` for those when the probe cannot say (not configured,
+    unavailable, nothing found): nothing stands in, and nothing refuses on its account.
 
     Only a pull request the card already links is asked about, never one the agent names
     (8c58cebb), and the probe is asked with `max_age=0` and reads the project's repository
@@ -1591,7 +1598,10 @@ def _probed_pr(
             continue
         if not isinstance(url, str) or _pr_key(url) != (repository, number):
             continue
-        if sha == head and (not merged_only or state.lower() == "merged"):
+        stands = (not merged_only or state.lower() == "merged") and (
+            not open_or_merged or state.lower() in ("open", "merged")
+        )
+        if sha == head and stands:
             found = gitfacts.PullRequest(number=number, head=sha, state=state, url=url, title=title)
             return found, None
         others.append(f"PR #{number} ({onboarding.inline(state.lower())}) has head {sha}")
@@ -1789,13 +1799,16 @@ def cmd_report(args: argparse.Namespace) -> int:
     probed = False
     if facts.remote_error is not None and not facts.dirty:
         # `git ls-remote` failed (a placement behind a proxy git cannot reach): the card's
-        # linked pull request with this very head, read through the hub's probe, stands in for
-        # the remote branch. Without one the failure stays an error, never "push it".
+        # linked pull request with this very head, open or merged, read through the hub's probe,
+        # stands in for the remote branch. Without one the failure stays an error, never "push
+        # it"; a closed one refuses.
         try:
             card = session.client.call("GET", session.project_path("tasks", args.task))
         except hub.HubError:
             card = None
-        found, others = _probed_pr(session, card, facts.head) if card else (None, None)
+        found, others = (
+            _probed_pr(session, card, facts.head, open_or_merged=True) if card else (None, None)
+        )
         if others:
             unread = onboarding.inline(f"{facts.remote}/{facts.remote_branch}")
             _err(

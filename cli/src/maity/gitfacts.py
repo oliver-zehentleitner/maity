@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from maity import proc
-from maity.redact import without_userinfo
+from maity.redact import without_secrets, without_userinfo
 
 
 class FactsError(Exception):
@@ -251,13 +251,23 @@ def _unreadable(branch: str, derived: bool = False) -> str:
 
 def _default_branch(cwd: Path, remote: str) -> str | None:
     """The remote's default branch: what `refs/remotes/<remote>/HEAD` points at (set by the
-    clone), else what the remote's HEAD names (`ls-remote --symref`); None when neither says."""
+    clone), else what the remote's HEAD names (`ls-remote --symref`); None when neither says.
+    An `ls-remote` that failed or timed out says nothing either, so the branch is left alone
+    and `collect` meets the unread remote with its fallback; a refusal of maity's git is a
+    FactsError as anywhere else."""
     local = _git(cwd, "symbolic-ref", "--quiet", f"refs/remotes/{remote}/HEAD")
     prefix = f"refs/remotes/{remote}/"
     if local and local.startswith(prefix):
         return local.removeprefix(prefix)
-    listing = _git(cwd, "ls-remote", "--symref", "--", remote, "HEAD") or ""
-    for line in listing.splitlines():
+    try:
+        result = proc.run([*proc.GIT, "ls-remote", "--symref", "--", remote, "HEAD"], cwd)
+    except proc.ToolRefused as exc:  # a ToolError too, so caught first
+        raise FactsError(str(exc)) from exc
+    except proc.ToolError:
+        return None
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.strip().splitlines():
         ref, _, name = line.partition("\t")
         if name == "HEAD" and ref.startswith("ref: refs/heads/"):
             return ref.removeprefix("ref: refs/heads/")
@@ -274,19 +284,47 @@ def _branch(cwd: Path) -> str | None:
     return ref.removeprefix("refs/heads/")
 
 
+def _proxy_secrets() -> list[str]:
+    """The userinfo of every proxy variable git keeps under a placement (clonecheck.ENV_PROXY),
+    as set and percent-decoded, and its password alone: git and curl may repeat a proxy in
+    their errors, one set without a scheme too (`user:pass@proxy:3128`), which
+    `without_userinfo` does not recognize. The userinfo is what comes before the last `@` of the
+    part before the first `/`, and also before the last `@` of the whole value: an unencoded `/`
+    in a password or an `@` in a path then leaves no credential in, at worst more is taken out."""
+    from maity import clonecheck  # imports onboarding and proc; kept out of this module's load
+
+    secrets: list[str] = []
+    for name in clonecheck.ENV_PROXY:
+        value = os.environ.get(name)
+        if not value:
+            continue
+        rest = value.partition("://")[2] if "://" in value else value
+        for part in {rest.partition("/")[0], rest}:
+            userinfo, at, _ = part.rpartition("@")
+            if not at or not userinfo:
+                continue
+            password = userinfo.partition(":")[2]
+            for secret in (userinfo, password):
+                if secret:
+                    secrets += [secret, urllib.parse.unquote(secret)]
+    return secrets
+
+
 def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
     """The commit the remote's `ref` points at, None when it has no such ref. `ls-remote` takes
     the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
     a line naming exactly `ref` counts. A refusal of maity's git is a FactsError as anywhere
-    else; a lookup that ran and failed or timed out is RemoteUnread."""
+    else; a lookup that ran and failed or timed out is RemoteUnread, its message without the
+    proxy's credentials (`_proxy_secrets`)."""
     try:
         result = proc.run([*proc.GIT, "ls-remote", "--heads", "--", remote, ref], cwd)
     except proc.ToolRefused as exc:  # a ToolError too, so caught first
         raise FactsError(str(exc)) from exc
     except proc.ToolError as exc:
-        raise RemoteUnread(str(exc)) from exc
+        raise RemoteUnread(without_secrets(str(exc), _proxy_secrets())) from exc
     if result.returncode != 0:
-        raise RemoteUnread(f"git ls-remote failed: {_last_line(result.stderr)}")
+        error = f"git ls-remote failed: {_last_line(result.stderr)}"
+        raise RemoteUnread(without_secrets(error, _proxy_secrets()))
     for line in result.stdout.strip().splitlines():
         sha, _, name = line.partition("\t")
         if name == ref:

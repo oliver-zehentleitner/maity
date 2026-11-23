@@ -324,6 +324,20 @@ def test_a_failed_remote_lookup_with_another_head_on_the_probe_is_refused(
     assert not _sent(fake)
 
 
+def test_a_failed_remote_lookup_does_not_take_a_closed_pull_request(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A closed, unmerged pull request with this head says nothing about the remote branch."""
+    head = _head(joined)
+    _lookup_fails(tmp_path)
+    _probe(fake, {12: head}, state="closed")
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "could not read" in err and "PR #12 (closed)" in err
+    assert not _sent(fake)
+
+
 def test_a_failed_remote_lookup_without_a_linked_pull_request_stays_an_error(
     joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

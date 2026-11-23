@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import fakehub
 import pytest
 from conftest import fake_gh, git, posix
 
-from maity import cli, gitfacts
-from maity.redact import without_userinfo
+from maity import cli, gitfacts, proc
+from maity.redact import without_secrets, without_userinfo
 from maity.runner import config
 
 SECRET = "ghs_s3cret"
@@ -118,6 +119,47 @@ def test_a_git_error_that_repeats_the_url_loses_the_token(clone: Path) -> None:
     error = gitfacts.collect(clone).remote_error  # kept for `report`, which raises it as is
     assert error is not None and error.startswith("git ls-remote failed:")
     assert SECRET not in error
+
+
+def test_known_secrets_go_whatever_their_shape() -> None:
+    """A proxy set without a scheme has userinfo `without_userinfo` does not recognize; the
+    value maity knows is secret goes as set and decoded, the longest first."""
+    secrets = ["user:s3cr%40t", "user:s3cr@t", "s3cr%40t", "s3cr@t", ""]
+    text = (
+        "Failed to connect to user:s3cr%40t@proxy:3128; proxy user:s3cr@t@proxy:3128; "
+        f"remote {TOKEN_URL}"
+    )
+    shown = without_secrets(text, secrets)
+    assert shown == (
+        "Failed to connect to ***@proxy:3128; proxy ***@proxy:3128; "
+        "remote https://github.com/acme/widget.git"
+    )
+    assert "s3cr" not in shown and SECRET not in shown
+    assert without_secrets("nothing secret", []) == "nothing secret"
+
+
+def test_a_git_error_that_repeats_the_proxy_loses_its_credentials(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "agent:SECRETPW@proxy.invalid:3128")  # no scheme
+    real = proc.run
+
+    def fake(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "ls-remote" in cmd:
+            return subprocess.CompletedProcess(
+                cmd,
+                128,
+                "",
+                "fatal: unable to access 'https://github.com/acme/widget/': Failed to connect to "
+                "agent:SECRETPW@proxy.invalid port 3128\n",
+            )
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", fake)
+    facts = gitfacts.collect(clone)
+    assert facts.remote_error is not None
+    assert facts.remote_error.startswith("git ls-remote failed")
+    assert "SECRETPW" not in facts.remote_error
 
 
 @posix
