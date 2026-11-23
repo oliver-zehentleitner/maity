@@ -1,7 +1,8 @@
 """docs/api.md §2.3 "Own approvals", §6.4, §6.6: outsiders' work reaches `done` only with
 `policy.own_approvals` own approvals on its reported head, on every path to done and under
-every `done_authority` (tsk-3ggnhdmgmkf3, PR 2). An outside agent here is one whose owner holds
-no membership; the tests make one by giving an agent's profile to a stranger."""
+every `done_authority` (tsk-3ggnhdmgmkf3, PR 2). An outside agent has trust `outside` or the
+`joined_outside` mark on its current membership, or an owner who holds no membership; most tests
+make one by giving an agent's profile to a stranger, and the others set the trust or the mark."""
 
 from __future__ import annotations
 
@@ -270,6 +271,158 @@ def _rejoined(engine: Engine, agent_id: str, role: str = "reviewer") -> int:
         )
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     return factory.membership(engine, project_id, role, agent_id=agent_id)
+
+
+def _last_result(engine: Engine, card_id: str) -> int:
+    with engine.connect() as conn:
+        seq: int = (
+            conn.execute(
+                select(t.event.c.seq)
+                .where(t.event.c.kind == "message", t.event.c.subject_id == card_id)
+                .order_by(t.event.c.seq.desc())
+                .limit(1)
+            )
+            .scalars()
+            .one()
+        )
+    return seq
+
+
+def _set_event(engine: Engine, seq: int, **values: Any) -> None:
+    with engine.begin() as conn:
+        conn.execute(update(t.event).where(t.event.c.seq == seq).values(**values))
+
+
+def _outsiders_card(owner: flow.Human, make_client: ClientFactory, engine: Engine) -> str:
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, engine, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    return card_id
+
+
+def test_the_hub_records_whether_a_review_results_author_stood_as_a_signer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    reviewer_seq = _last_result(migrated, card_id)
+    _review(flow.agent(make_client, owner, role="coder"), card_id)
+    coder_seq = _last_result(migrated, card_id)
+    with migrated.connect() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.event.c.seq, t.event.c.review_signer).where(
+                    t.event.c.seq.in_([reviewer_seq, coder_seq])
+                )
+            ).all()
+        )
+    assert rows == {reviewer_seq: True, coder_seq: False}
+
+
+def test_an_approve_sent_before_its_author_could_sign_never_counts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Promoted in place after the `approve`: the standing is the one recorded when the hub
+    stored it, not reconstructed from the row as it is now."""
+    card_id = _outsiders_card(owner, make_client, migrated)
+    judge = flow.agent(make_client, owner, role="coder")
+    _review(judge, card_id)
+    row = _row(migrated, judge.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == row)
+            .values(role="reviewer", role_base="reviewer")
+        )
+    assert _count(migrated, card_id) == 0
+
+
+def test_an_approve_without_a_recorded_standing_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A result the hub stored before it kept the record (the upgrade sets none)."""
+    card_id = _outsiders_card(owner, make_client, migrated)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    assert _count(migrated, card_id) == 1
+    _set_event(migrated, _last_result(migrated, card_id), review_signer=None)
+    assert _count(migrated, card_id) == 0
+
+
+def test_an_approve_sent_through_a_bridge_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    assert _count(migrated, card_id) == 1
+    bridge = {"member_id": "agt-bridge", "instance": "br01", "bridge_id": "brg-x"}
+    _set_event(migrated, _last_result(migrated, card_id), actor_bridge=bridge)
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_removal_and_rejoin_leave_no_earlier_approve(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    _review(judge, card_id)
+    assert _count(migrated, card_id) == 1
+    _rejoined(migrated, judge.id)
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_redacted_later_result_still_withdraws_the_approve(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    _review(judge, card_id)
+    _review(judge, card_id, verdict="changes")
+    _set_event(migrated, _last_result(migrated, card_id), redacted=True)
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_suspended_human_neither_approves_nor_makes_its_agents_own(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    card_id = _outsiders_card(owner, make_client, migrated)
+    member = _human_member(make_client, migrated, "soon-away", "reviewer")
+    _review(member, card_id)
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    agent_id = factory.agent(migrated, project_id, member.id, "reviewer").agent_id
+    assert _count(migrated, card_id) == 1
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == member.id)
+            .values(suspended_at=factory.at("2026-11-22T10:00:00Z"))
+        )
+    assert _count(migrated, card_id) == 0
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        assert not own_approvals._own_agent(conn, project, agent_id, set())
+
+
+def test_a_signature_counts_only_for_the_slot_its_signer_still_may_sign(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A human reviewer's review signature, then moved to tester: still of the project, but
+    the review signature no longer stands (§6.4)."""
+    _policy(owner, done_authority="reviewer_and_tester")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    reviewer = _human_member(make_client, migrated, "moved-on", "reviewer")
+    assert _done(reviewer, card_id, approve="review").status_code == 200
+    assert _count(migrated, card_id) == 1
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == reviewer.id)
+            .values(role="tester", role_base="tester")
+        )
+    assert _count(migrated, card_id) == 0
 
 
 def test_an_approve_counts_only_while_its_author_may_review_or_test(

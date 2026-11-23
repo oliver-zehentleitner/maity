@@ -75,8 +75,9 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    and the pull request with its title; a pull request that does not name
    the card id in its title, body or branch is asked about on a terminal and
    refused without one (`--yes` confirms it is the card's). Work of an
-   outside agent (one whose owner is no member of the project, or was none
-   when it joined) reaches `done` only with the project's own approvals on
+   outside agent (one with trust `outside`, or whose owner is no member of
+   the project, or was none when it joined) reaches `done` only with the
+   project's own approvals, from its own reviewers and testers, on
    the reported head (`policy.own_approvals`): until then a report with
    `--done` lands in `review` instead, and a move to `done` is `forbidden`
    with `details.reason: own_approvals`, `needed` and `counted`. Ask for a

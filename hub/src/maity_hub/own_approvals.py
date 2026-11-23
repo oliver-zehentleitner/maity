@@ -84,6 +84,52 @@ def _excluded_owners(conn: Connection, card: Any) -> set[str]:
     return {str(owner) for owner in rows if owner is not None}
 
 
+def _live_account(conn: Connection, human_id: str) -> bool:
+    """An active account, neither suspended nor deleted: only such a human approves, or makes
+    its agents the project's own (the lead's ruling of 2026-11-23)."""
+    row = conn.execute(
+        select(t.human.c.account_status, t.human.c.suspended_at, t.human.c.deleted_at).where(
+            t.human.c.id == human_id
+        )
+    ).first()
+    return (
+        row is not None
+        and row.account_status == "active"
+        and row.suspended_at is None
+        and row.deleted_at is None
+    )
+
+
+def signer_when_posted(conn: Connection, project: Any, row: Any, bridged: bool) -> bool:
+    """What the hub records on a `review_result` when it stores it (`event.review_signer`):
+    whether its author stood as a signer at that moment, on the membership `row` it posted
+    from. Not through a bridge (a bridge never signs); active and not isolated; trust and role
+    giving `tasks:review` or `tasks:test`; a human's account live; an agent the project's own
+    on that row (neither trust `outside` nor marked) with an owner who is a member, live."""
+    if bridged or row.removed_at is not None or row.isolated_since is not None:
+        return False
+    if row.active is not True:
+        return False
+    kind = "human" if row.human_id is not None else "agent"
+    if not (
+        (kind == "human" and row.trust == "owner")
+        or any(scopes.has_scope(row.trust, row.role_base, kind, s) for s in SIGNING_SCOPES)
+    ):
+        return False
+    if kind == "human":
+        return _live_account(conn, str(row.human_id))
+    if row.trust == OUTSIDE_TRUST or row.joined_outside:
+        return False
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == row.agent_id)
+    ).scalar()
+    return (
+        owner is not None
+        and agent_owners.owner_is_member(conn, project.id, str(owner))
+        and _live_account(conn, str(owner))
+    )
+
+
 def _human_of_the_project(conn: Connection, project: Any, human_id: str) -> bool:
     """A human member, not isolated, whose trust and role give `tasks:review` or `tasks:test`
     (trust `owner` gives every scope), the standing a signature in `approvals` needs (§6.4)."""
@@ -96,7 +142,7 @@ def _human_of_the_project(conn: Connection, project: Any, human_id: str) -> bool
             t.membership.c.isolated_since.is_(None),
         )
     ).first()
-    if row is None:
+    if row is None or not _live_account(conn, human_id):
         return False
     return row.trust == "owner" or any(
         scopes.has_scope(row.trust, row.role_base, "human", scope) for scope in SIGNING_SCOPES
@@ -137,7 +183,7 @@ def _own_agent(conn: Connection, project: Any, agent_id: str, excluded: set[str]
             t.membership.c.active.is_(True),
         )
     ).first()
-    if owner_row is None:
+    if owner_row is None or not _live_account(conn, str(owner)):
         return False
     if setting == "owners":
         return bool(owner_row.trust == "owner")
@@ -146,64 +192,89 @@ def _own_agent(conn: Connection, project: Any, agent_id: str, excluded: set[str]
     return True  # members: the agents of every human member
 
 
-class _Approval:
-    """An `approve` that is its author's latest review result on the card."""
-
-    def __init__(self, kind: str, posted_from: Any) -> None:
-        self.kind = kind  # `agent` or `human`
-        self.posted_from = posted_from  # the membership row it was posted from
-
-
-def _review_approvers(conn: Connection, card: Any, head: str) -> dict[str, _Approval]:
-    """The principals whose latest review result for the card (§8.4: its `task_id`, or a
-    subject that is exactly `#<n>`) is an `approve` on exactly `head`. A later `changes` or
-    `comment` withdraws an earlier `approve`, from any of the principal's memberships: the
-    latest is the principal's, so a removal and a rejoin bring no older result back."""
-    rows = conn.execute(
-        select(t.event.c.payload, t.event.c.actor_membership)
-        .where(
-            t.event.c.project_id == card.project_id,
-            t.event.c.kind == "message",
-            t.event.c.redacted.is_(False),
-            t.event.c.actor_membership.is_not(None),
-            (t.event.c.subject_id == card.id) | t.event.c.subject_id.is_(None),
+def _current_row(conn: Connection, project: Any, principal: str) -> int | None:
+    """The principal's active membership row in the project, if any."""
+    m = t.membership.c
+    found = conn.execute(
+        select(m.id).where(
+            m.project_id == project.id,
+            (m.agent_id == principal) | (m.human_id == principal),
+            m.active.is_(True),
+            m.removed_at.is_(None),
         )
-        .order_by(t.event.c.seq)
+    ).scalar()
+    return int(found) if found is not None else None
+
+
+def _review_approvers(conn: Connection, card: Any, project: Any, head: str) -> dict[str, str]:
+    """The principals whose latest review result for the card is an `approve` on exactly
+    `head` that may count, by principal with `agent` or `human` (the lead's ruling of
+    2026-11-23). A card's results are those tied to it by `task_id` and those whose subject
+    names only its current pull request (§8.4), read through the event's own columns: the
+    read is bounded by the card's results, never the project's chat.
+
+    The latest result is the principal's, from any of its memberships, a redacted one
+    included: a later `changes`, `comment` or redacted result withdraws an earlier `approve`.
+    That `approve` then counts only if it was not sent through a bridge, the hub recorded its
+    author as a signer when it stored it (`review_signer`; none recorded is no), and it came
+    from the author's current active membership, so a removal and a rejoin leave none."""
+    e = t.event.c
+    pr = ((card.report or {}).get("pr") or {}).get("number")
+    tied = e.subject_id == card.id
+    if isinstance(pr, int) and not isinstance(pr, bool):
+        tied = tied | (e.subject_id.is_(None) & (e.review_pr == pr))
+    rows = conn.execute(
+        select(
+            e.payload, e.actor_membership, e.actor_bridge, e.review_signer, e.redacted, e.subject_id
+        )
+        .where(
+            e.project_id == card.project_id,
+            e.kind == "message",
+            e.review_signer.is_not(None),
+            e.actor_membership.is_not(None),
+            tied,
+        )
+        .order_by(e.seq)
     ).all()
-    rows_by_id: dict[int, Any] = {}
-    latest: dict[str, tuple[dict[str, Any], Any]] = {}
-    for payload, membership_id in rows:
-        if (payload or {}).get("type") != "review_result":
+    principals: dict[int, Any] = {}
+    latest: dict[str, Any] = {}
+    for row in rows:
+        payload = row.payload or {}
+        if payload.get("type") != "review_result":
             continue
-        review = payload.get("review") or {}
-        task_id = payload.get("task_id")
-        if task_id is None:
+        if row.subject_id is None:  # named by its pull request alone: is it this card's?
+            review = payload.get("review")
+            if not isinstance(review, dict) or not isinstance(review.get("subject"), str):
+                continue
             resolved = review_delivery._card(conn, card.project_id, None, review)
             if resolved is None or resolved.id != card.id:
                 continue
-        elif task_id != card.id:
-            continue
-        row = rows_by_id.get(int(membership_id))
-        if row is None:
-            row = conn.execute(
-                select(
-                    t.membership.c.agent_id,
-                    t.membership.c.human_id,
-                    t.membership.c.trust,
-                    t.membership.c.joined_outside,
-                ).where(t.membership.c.id == membership_id)
+        membership_id = int(row.actor_membership)
+        if membership_id not in principals:
+            principals[membership_id] = conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.human_id).where(
+                    t.membership.c.id == membership_id
+                )
             ).first()
-            rows_by_id[int(membership_id)] = row
-        if row is None:
+        member = principals[membership_id]
+        if member is None:
             continue
-        principal = row.agent_id if row.agent_id is not None else row.human_id
+        principal = member.agent_id if member.agent_id is not None else member.human_id
         if principal is not None:
-            latest[str(principal)] = (review, row)
-    approvers: dict[str, _Approval] = {}
-    for principal, (review, row) in latest.items():
-        if review.get("verdict") != "approve" or review.get("head") != head:
+            latest[str(principal)] = (row, member)
+    approvers: dict[str, str] = {}
+    for principal, (row, member) in latest.items():
+        review = (row.payload or {}).get("review") or {}
+        if (
+            row.redacted
+            or review.get("verdict") != "approve"
+            or review.get("head") != head
+            or row.actor_bridge is not None
+            or row.review_signer is not True
+            or _current_row(conn, project, principal) != int(row.actor_membership)
+        ):
             continue
-        approvers[principal] = _Approval("agent" if row.agent_id is not None else "human", row)
+        approvers[principal] = "agent" if member.agent_id is not None else "human"
     return approvers
 
 
@@ -213,24 +284,18 @@ def counted(conn: Connection, card: Any, project: Any, mover: str | None = None)
     report, and `mover`, a human whose own move to `done` or signature counts as one approval
     itself. Each member counts once.
 
-    An agent's `approve` counts when it was the project's own both when it posted it (the
-    membership it posted from had neither trust `outside` nor the `joined_outside` mark) and
-    now (`_own_agent`): a later fresh join never makes an outsider's approval an own one (the
-    lead's ruling of 2026-11-23). A signature counts while its signer stands (`cards.standing`)
-    and only for the report it was given on (its `revision`)."""
+    An `approve` counts when it may (`_review_approvers`: recorded as a signer's, not
+    bridged, from the author's current membership) and its author stands now: an agent the
+    project's own (`_own_agent`), a human of the project. A signature counts while its signer
+    stands (`cards.standing`) and only for the report it was given on (its `revision`)."""
     report = card.report or {}
     head = report.get("head")
     excluded = _excluded_owners(conn, card)
     found: set[str] = set()
     if isinstance(head, str) and head:
-        for principal, approval in _review_approvers(conn, card, head).items():
-            if approval.kind == "agent":
-                posted = approval.posted_from
-                if (
-                    posted.trust != OUTSIDE_TRUST
-                    and not posted.joined_outside
-                    and _own_agent(conn, project, principal, excluded)
-                ):
+        for principal, kind in _review_approvers(conn, card, project, head).items():
+            if kind == "agent":
+                if _own_agent(conn, project, principal, excluded):
                     found.add(principal)
             elif principal not in excluded and _human_of_the_project(conn, project, principal):
                 found.add(principal)

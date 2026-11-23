@@ -32,6 +32,7 @@ from maity_hub import (
     mentions,
     namespace,
     not_listening,
+    own_approvals,
     project_roles,
     review_delivery,
     reviews,
@@ -51,6 +52,9 @@ router = APIRouter(route_class=ProjectRoute)
 
 FALLBACK_SECONDS = 2.0
 PAGE_DEFAULT, PAGE_MAX = 50, 200
+# `event.review_pr` is a 32-bit integer: a review subject naming a larger pull request number
+# records none (no forge has one that large).
+REVIEW_PR_MAX = 2_147_483_647
 MESSAGE_TYPES = (
     "interface_change",
     "blocker",
@@ -822,6 +826,24 @@ def post_message(
         conversation_id=body.conversation_id,
         card_watchers=watching,
     )
+    if review is not None:
+        # §2.3 "Own approvals": whether its author stood as a signer now, under the project
+        # lock, recorded on the event and never reconstructed; and the pull request its
+        # subject names, so the card it names finds it.
+        named_pr = review_delivery.PULL_REQUEST.fullmatch(review["subject"].strip())
+        number = int(named_pr.group(1)) if named_pr is not None else None
+        if number is not None and number > REVIEW_PR_MAX:  # wider than the column: none
+            number = None
+        conn.execute(
+            update(t.event)
+            .where(t.event.c.seq == seq)
+            .values(
+                review_signer=own_approvals.signer_when_posted(
+                    conn, mine.project, mine.row, bridged=caller.bridge is not None
+                ),
+                review_pr=number,
+            )
+        )
     attachments.attach(conn, named, seq)
     if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
         chat_request.note_held_by(conn, mine, seq, body.type, held)

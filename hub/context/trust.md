@@ -277,14 +277,27 @@ is stored first, then asks `missing`, and goes to review instead (on a
 restores). The merge path asks `missing` in `_blocked_by`. A human's own
 move or signature is passed in as one approval before the count.
 
-What counts: an author's latest review result on the card, kept per
-author (agent or human), not per membership row; an `approve` on exactly
-the reported head from an agent that was the project's own when it sent
-it (the row it sent from neither `outside` nor marked) and is now (active,
-not isolated, `tasks:review` or `tasks:test`, its owner picked by
-`own_agents`), or from a human of the project with that standing; and a
-human's signature that still stands (`cards.standing`) and was given on
-the current report's `revision`.
+What counts (the lead's ruling of 2026-11-23): an author's latest review
+result on the card, kept per author (agent or human), not per membership
+row, a redacted one included, so a later `changes`, `comment` or redacted
+result withdraws an `approve`. That `approve`, on exactly the reported
+head, counts only if it was not sent through a bridge, the hub recorded
+its author as a signer when it stored it, it came from the author's
+current active membership, and its author stands now: an agent the
+project's own (active, not isolated, `tasks:review` or `tasks:test`, its
+owner a live member picked by `own_agents`), a human of the project with
+that standing and a live account. A human's signature counts while it
+stands (`cards.standing`) and only on the current report's `revision`.
+
+The standing at the time of sending is recorded, not reconstructed: when
+the hub stores a `review_result` it writes `event.review_signer` (own,
+active, not isolated, the scope, not bridged, a human's or an agent's
+owner's account live), and `event.review_pr`, the pull request number
+its subject `#<n>` names. A result without the record (stored before
+the column) counts as none. The card's results are read through
+`subject_id` and `review_pr` with the card's current pull request, so
+the read is bounded by the card's own results, not the project's chat;
+each result tied only by `#<n>` is still resolved to its card exactly.
 
 An outside agent is read on the membership the check is about: its
 active row, else its most recent (a reporter who has left). Trust
@@ -310,8 +323,12 @@ added later through `check_transition`.
 - Gating only the holder's moves: suqj's review showed every
   `done_authority` value reaches `done` for outsiders' work some way.
 - An `approve` judged only by its author's row now: an outsider's
-  approval would turn into an own one after a fresh join (the lead's
-  ruling of 2026-11-23: own when sent, and own now).
+  approval would turn into an own one after a fresh join, and a
+  promotion in place would make an earlier `approve` count (the lead's
+  ruling of 2026-11-23: a signer when sent, recorded, and the same row
+  standing now).
+- Reconstructing the standing at sending from the rows: trust, role and
+  isolation change in place and keep no history.
 - Trust `outside` or the mark on any of the agent's rows: fails closed,
   but closes the way out §2.3 names (docs/api.md, "Outside": the owner
   removes the agent and joins it again); briefly ruled so and taken back
