@@ -1268,6 +1268,12 @@ this narrow because a request the hub lets through cross-site carries the victim
 `fetch`, a frame or a form's `POST`, so another site gets nothing it could read and no call
 without the state's protection.
 
+A known and accepted effect: a navigation another site forces onto the setup still passes the
+ordinary authentication (`current_caller`) before `take_state` refuses its `state`, so the
+caller's presence is written (at most once a minute, `SEEN_EVERY`), the leases of their open
+claims are renewed and the read is counted against the session (§1.7). A same-origin visit of
+the route does exactly the same, and the `state` refuses before any forge read or write.
+
 **Rejected alternatives:**
 - Letting every cross-site `GET` through: every read route would then answer with the cookie to
   a navigation another site starts, and the authentication's own effects (presence, the
@@ -1283,3 +1289,9 @@ without the state's protection.
   only what the callback is.
 - Matching the decoded path (as the router does): it would also admit `set%75p` and other
   spellings no forge redirect sends; the raw path is the narrower test.
+- Authenticating the route with `seen=False, renew_leases=False`, so a forced navigation leaves
+  no presence and renews no lease: the route has one caller dependency, so the same-origin
+  path would change too.
+- Also requiring `Sec-Fetch-User: ?1`: a redirect chain drops it. The browser arrives at the
+  setup by the forge's redirect after the user's action on github.com, so the header may be
+  absent, and requiring it would refuse real links.
