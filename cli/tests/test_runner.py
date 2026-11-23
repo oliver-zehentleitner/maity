@@ -1770,6 +1770,7 @@ def test_check_looks_at_the_agents_side_as_the_agents_user(
         return True
 
     monkeypatch.setattr(AsUser, "exists", exists)
+    monkeypatch.setattr(commands, "_reaches", lambda as_user: True)  # sudo works here
     which: list[str | None] = []
 
     def which_as(name: str, path: str | None, as_user: AsUser = RUNNER) -> str:
@@ -1786,6 +1787,33 @@ def test_check_looks_at_the_agents_side_as_the_agents_user(
     assert cfg.local is not None
     commands._check_agent_path(report, cfg.local)
     assert report.lines == [] and asked == [("agents", "/home/agents/bin", "-e")]
+    # sudo to the agents' user fails (review A2168 of #2125): every look would read as absent,
+    # so none is made; _check_agent_user reports the sudo error once.
+    monkeypatch.setattr(commands, "_reaches", lambda as_user: False)  # A2167 P3-3, A2168 P3-2
+    monkeypatch.setattr(AsUser, "exists", lambda self, path, kind="-e": False)
+    monkeypatch.setattr(capabilities, "which", lambda name, path, as_user=RUNNER: None)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, "/home/agents/bin")
+    commands._check_agent_path(report, cfg.local)
+    assert report.lines == []
+    # A look that fails underway (sudo gone, a timeout) crashes nothing (A2167 P3-1, P3-2).
+    import subprocess
+
+    def gone(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError("sudo")
+
+    def slow(self: object, path: Path, kind: str = "-e") -> bool:
+        raise subprocess.TimeoutExpired("sudo", 10)
+
+    monkeypatch.setattr(commands, "_reaches", lambda as_user: True)
+    monkeypatch.setattr(capabilities, "which", gone)
+    monkeypatch.setattr(AsUser, "exists", slow)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, "/home/agents/bin")
+    assert [text for _, text in report.lines] == [
+        f"repositories.github.com/ow/pr: gh's login for agents not checked: "
+        f"{config.home_of('agents')}/.config/gh/hosts.yml cannot be looked at from this user"
+    ]
 
 
 @posix
@@ -1817,7 +1845,13 @@ def test_check_says_not_checked_where_it_cannot_look(
         )
         report = commands.Report()
         commands._check_agent_path(report, local)
-        assert report.lines == [("warn", "agent_path entry rel/home/x does not exist")]
+        assert report.lines == [
+            (
+                "warn",
+                f"agent_path entry {closed}/bin not checked: it cannot be looked at from " "here",
+            ),
+            ("warn", "agent_path entry rel/home/x does not exist"),
+        ]
     finally:
         closed.chmod(0o755)
 

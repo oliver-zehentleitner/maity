@@ -223,8 +223,9 @@ def find_gh(recorded: str, root: Path, dot_git: int | None = None) -> str:
     session started is found without a restart (tsk-2k0jcaxfd0ja, point 15). The checks stay
     those of a gh recorded at the start: only absolute entries are searched (`proc.program`),
     the record is the runner's and not writable by the session, and a gh found inside the
-    clone or the placement's scratch, which the session can write, is refused. A record of an
-    older runner names gh itself: that path is taken under the same checks."""
+    clone or the placement's scratch, which the session can write, is refused (as written and
+    resolved, below). A record of an older runner names gh itself: that path is taken under
+    the same checks."""
     if os.path.isabs(recorded) and os.path.isfile(recorded):
         program: str | None = recorded if os.access(recorded, os.X_OK) else None
         if program is None:
@@ -236,21 +237,69 @@ def find_gh(recorded: str, root: Path, dot_git: int | None = None) -> str:
                 f"gh is not installed on the runner's PATH ({recorded}); once the runner's "
                 "operator installs it, `maity gh` finds it at its next call"
             )
-    # Both the file gh resolves to and the directory it was found in: gh_env puts that
-    # directory first on gh's PATH, and a link in the clone could point out of it (review
-    # A2159 of #2125). The path as found is what runs: its directory is checked, so the
-    # session cannot swap the link, and a link that dispatches on its own name (a snap's
+    # Every path the system passes through to reach gh is checked against the clone and the
+    # scratch (reviews A2159, A2167, A2168 of #2125): `visited` resolves the path as the kernel
+    # does, one component and one link at a time, `..` against the real directory reached so
+    # far, and lists each directory, link and link target on the way, the final file's own
+    # link chain included. Any of them inside a place the session can write refuses: a link
+    # in the clone pointing out, a directory or ancestor link through it, `..` through it,
+    # or a link outside bouncing through it. What runs is the real directory reached with
+    # gh's own name: gh_env puts that directory first on gh's PATH, so no link the session
+    # could swap later stays on the way, and a link that dispatches on its own name (a snap's
     # /snap/bin/gh, which resolves to /usr/bin/snap) still starts gh.
     try:
-        found = Path(program).resolve(strict=True)
-        folder = Path(program).parent.resolve(strict=True)
-        writable = [Path(p).resolve() for p in (root, inclone.recorded_scratch(root, dot_git)) if p]
+        scratch = inclone.recorded_scratch(root, dot_git)
+        given = [Path(os.path.abspath(p)) for p in (root, scratch) if p]
+        places = [*given, *(p.resolve(strict=True) for p in given)]
+        absolute = os.path.join(os.getcwd(), program)
+        passed, _ = visited(absolute)
+        _, folder = visited(os.path.dirname(absolute))
     except (OSError, RuntimeError):
         raise Refused(f"the gh found ({program}) cannot be resolved") from None
-    for place in writable:
-        if found.is_relative_to(place) or folder.is_relative_to(place):
-            raise Refused(f"the gh found ({program}) lies in {place}, which this session can write")
-    return program
+    for step in passed:
+        for place in places:
+            if Path(step).is_relative_to(place):
+                raise Refused(
+                    f"the gh found ({program}) passes through {step}, in {place}, which this "
+                    "session can write"
+                )
+    return os.path.join(folder, os.path.basename(absolute))
+
+
+LINK_HOPS = 40  # as the kernel's own limit for symbolic links on one lookup
+
+
+def visited(path: str) -> tuple[list[str], str]:
+    """The paths an absolute `path` passes through, resolved as the kernel resolves it, and
+    the real path it ends in. A link's target is taken component by component too, so every
+    directory and link on the way is listed, never only the end. RuntimeError on a loop."""
+    pending = list(Path(path).parts)
+    current = pending.pop(0)  # the root
+    passed: list[str] = []
+    hops = 0
+    while pending:
+        part = pending.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            current = os.path.dirname(current)  # `current` holds no link: this is physical
+            passed.append(current)
+            continue
+        candidate = os.path.join(current, part)
+        passed.append(candidate)
+        if os.path.islink(candidate):
+            hops += 1
+            if hops > LINK_HOPS:
+                raise RuntimeError(f"{path}: too many links")
+            target = list(Path(os.readlink(candidate)).parts)
+            if target and os.path.isabs(target[0]):
+                current = target.pop(0)
+            pending = target + pending
+        else:
+            current = candidate
+    if not os.path.exists(current):
+        raise FileNotFoundError(current)
+    return passed, current
 
 
 def lead_granted(root: Path, dot_git: int | None = None) -> None:

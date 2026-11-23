@@ -1534,8 +1534,11 @@ pull request's body predates the last two rows):
   back through the same method; `check`'s host warnings of
   tsk-2k0jcaxfd0ja (an `agent_path` entry, the gh login, a granted
   program) go through `AsUser.exists` and `capabilities.which` as the
-  agents' user too, and a path that cannot be looked at is said as not
-  checked, never as missing (reviews A2159 and A2160 of #2125);
+  agents' user too. A path that cannot be looked at is said as not
+  checked (the gh login, an `agent_path` entry), never as missing, a
+  granted program whose look fails is not mentioned, and without working
+  sudo to the agents' user none of the three is looked at (reviews A2159,
+  A2160, A2167 and A2168 of #2125);
 - left on pathlib, since a quiet False only does less: `operate.py`'s
   gc walk of `.scratch`, `skills.py` over the runner's own cache,
   `asuser.link`, the runner's own state_dir checks, and the
@@ -3474,12 +3477,21 @@ started before gh was installed finds it at its next call; until then
 `maity gh` says that gh is not installed. The checks of a recorded gh stay:
 the path comes from the runner's record, which the session cannot write;
 only absolute entries are searched; and a gh found inside the clone or the
-placement's scratch, both writable by the session, is refused: the file gh
-resolves to and the directory it was found in, which `gh_env` puts first on
-gh's `PATH`, so a link in the clone pointing out of it is refused too
-(review A2159 of #2125). The path as found is what runs: its directory is
-checked, and a link that dispatches on its own name (a snap's
-`/snap/bin/gh`) still starts gh. A record from an older runner, which names
+placement's scratch, both writable by the session, is refused.
+`ghpr.visited` resolves the path to gh as the kernel does: one component
+and one link at a time, `..` against the real directory reached so far.
+It lists every directory, link and link target on the way, the final
+file's own link chain included. Any of them inside the clone or the
+scratch, as written or resolved, refuses (reviews A2159, A2167, A2168 of
+#2125). That covers a link in the clone pointing out, a directory or
+ancestor link through it, `..` through it, an older record through a
+directory link, and a link outside that bounces through the clone. A
+session could swap any of those between the check and the start. What
+runs is the real directory reached, joined with gh's own name, and that
+directory is what `gh_env` puts first on gh's `PATH`, so no link the
+session could swap stays on the way. A link that dispatches on its own
+name (a snap's `/snap/bin/gh`, which resolves to `/usr/bin/snap`) sits in
+a directory no session writes and still starts gh. A record from an older runner, which names
 gh itself, is still taken. On an ssh target the recorded entries are the
 runner host's own `PATH`, searched on the target. The record is read up to
 `ghpr.RECORD_MAX` (64 KiB); a longer `PATH` is cut to its first whole
@@ -3497,8 +3509,13 @@ incident's cause and the not-added check below are inferred.
 - Not added: refusing a gh in any directory the agents' user can write
   (such as `~/.local/bin` in the `single` layout), which today's recorded
   gh did not refuse either and which would refuse a gh installed there on
-  purpose. The sandboxed session can write only its clone, scratch and
-  temporary directory, and the first two are checked.
+  purpose. Why the place check is enough (security review A2169 of
+  #2125): only a sandboxed session's writes matter here, since an
+  unsandboxed harness already runs any code as the agents' user and needs
+  no planted gh. A sandboxed Claude Code writes only its clone, its scratch
+  and its temporary leaf. The first two are checked. The runner's recorded
+  `PATH` names no temporary leaf, and the service's `PATH` (systemd's
+  default) holds root-owned directories only.
 
 ## A failed clone says why in the runner's log, not in the report
 

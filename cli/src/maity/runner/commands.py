@@ -457,9 +457,14 @@ def _check_agent_path(report: Report, local: config.Local) -> None:
         else Path(os.path.expanduser("~"))
     )
     as_user = _local_agents_user(local)
+    if not _reaches(as_user):
+        return  # the sudo error is said by _check_agent_user
     for entry in local.agent_path.split(os.pathsep):
-        if not entry or _seen(as_user, Path(entry)) is not False:
-            continue  # there, or not to be looked at from here: nothing is claimed
+        seen = _seen(as_user, Path(entry)) if entry else True
+        if seen is None:  # said as such, as the gh login is (review A2167 of #2125)
+            report.warn(f"agent_path entry {entry} not checked: it cannot be looked at from here")
+        if seen is not False:
+            continue
         said = f"agent_path entry {entry} does not exist"
         parts = Path(entry).parts
         if (
@@ -470,6 +475,18 @@ def _check_agent_path(report: Report, local: config.Local) -> None:
         ):
             said += f"; {Path(*parts[:3])} is no home here, the agents' home is {home}"
         report.warn(said)
+
+
+def _reaches(as_user: AsUser) -> bool:
+    """Whether the agents' side can be looked at: always on the runner's own side, through sudo
+    only when sudo to the agents' user works. Where it does not, `_check_agent_user` reports
+    that, and a failed look must not read as absent on top of it (review A2168 of #2125)."""
+    if as_user.direct:
+        return True
+    try:
+        return as_user.run(["true"], timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def _local_agents_user(local: config.Local) -> AsUser:
@@ -484,7 +501,7 @@ def _seen(as_user: AsUser, path: Path, kind: str = "-e") -> bool | None:
     on: cli/context/runner.md, 52b35dea): never taken for absent."""
     try:
         return as_user.exists(path, kind)
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
 
 
@@ -505,13 +522,19 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
     agents = local.agent_user if local.layout == "agent_user" and local.agent_user else None
     who = agents or getpass.getuser()
     as_user = supervisor.agents_user(cfg)
+    reaches = _reaches(as_user)  # without sudo, the agents' side is not looked at at all
     for name, grant in cfg.repositories.items():
         for rule in grant.allow:
             program = rule.split(" ")[0]
-            if not config.plain_command(rule) or "/" in program:
+            if not reaches or not config.plain_command(rule) or "/" in program:
                 continue
-            # As the agents' user finds it: a program under that user's home counts.
-            if capabilities.which(program, agent_path, as_user) is None:
+            # As the agents' user finds it: a program under that user's home counts. A look
+            # that fails (sudo gone, a timeout) says nothing (review A2167 of #2125).
+            try:
+                where = capabilities.which(program, agent_path, as_user)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if where is None:
                 report.warn(
                     f"repositories.{name}: allow {rule!r}: `{program}` is not on agent_path "
                     f"({agent_path}) for {who}; install it, or the command fails in every session"
@@ -526,6 +549,8 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
                 "so `maity gh` refuses until it is installed; install gh (sessions find it at "
                 "their next call)"
             )
+            continue
+        if not reaches:
             continue
         hosts = agents_home / ".config" / "gh" / "hosts.yml"
         seen = _seen(as_user, hosts, "-f")

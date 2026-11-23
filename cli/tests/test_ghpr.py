@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from maity import cli, clonecheck, ghpr, hub, state
+from maity import cli, clonecheck, ghpr, hub, inclone, state
 from maity.runner import supervisor
 from maity.runner.asuser import AsUser
 
@@ -677,11 +677,93 @@ def test_find_gh_searches_the_recorded_path_at_each_call(
     (planted / "gh").symlink_to(gh)
     with pytest.raises(ghpr.Refused, match="which this session can write"):
         ghpr.find_gh(str(planted), clone)
+    # A PATH entry that passes through the clone by a directory link to a directory outside it
+    # (review A2168 of #2125): file and directory resolve outside, but the entry as written is
+    # the clone's, where the session could swap the link after the check.
+    (clone / "via").symlink_to(bin_dir, target_is_directory=True)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(clone / "via"), clone)
     # A link outside the clone that is resolvable is taken as found.
     elsewhere = tmp_path / "links"
     elsewhere.mkdir()
     (elsewhere / "gh").symlink_to(gh)
     assert ghpr.find_gh(str(elsewhere), clone) == str(elsewhere / "gh")
+
+
+def _gh_world(tmp_path: Path) -> dict[str, Path]:
+    """A workspace with a clone and its sibling, a scratch, and a gh outside both (in a
+    `usr/bin` with a `bin` link to it, as /bin -> /usr/bin)."""
+    ws = tmp_path / "ws"
+    clone, sibling, scratch = ws / "clone", ws / "clone2", tmp_path / "scratch"
+    for d in (clone, sibling, scratch, tmp_path / "usr" / "bin", tmp_path / "out"):
+        d.mkdir(parents=True)
+    gh = tmp_path / "usr" / "bin" / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    (tmp_path / "bin").symlink_to(tmp_path / "usr" / "bin", target_is_directory=True)
+    return {"ws": ws, "clone": clone, "sibling": sibling, "scratch": scratch, "gh": gh,
+            "usr": tmp_path / "usr", "out": tmp_path / "out", "tmp": tmp_path}  # fmt: skip
+
+
+# Every way a path can pass through the clone or the scratch (review A2167 of #2125): each
+# returns the recorded entry (or, for an older record, gh itself) after building its links.
+PASSING_THROUGH = {
+    "a dir link in the clone": lambda w: _link(w["clone"] / "bin", w["usr"] / "bin"),
+    "a dir link in the scratch": lambda w: _link(w["scratch"] / "bin", w["usr"] / "bin"),
+    "an ancestor link in the clone": lambda w: _link(w["clone"] / "anc", w["usr"]) / "bin",
+    "an older record through a dir link": lambda w: _link(w["clone"] / "b", w["usr"] / "bin")
+    / "gh",
+    "dot-dot through the clone": lambda w: _mkdir(w["clone"] / "sub")
+    / ".."
+    / ".."
+    / ".."
+    / "usr"
+    / "bin",
+    "a link outside bouncing through the clone": lambda w: _link(
+        w["out"] / "gh", _link(w["clone"] / "bounce", w["gh"])
+    ).parent,
+}
+
+
+def _link(link: Path, target: Path) -> Path:
+    link.symlink_to(target, target_is_directory=target.is_dir())
+    return link
+
+
+def _mkdir(path: Path) -> Path:
+    path.mkdir()
+    return path
+
+
+@runs_gh
+@pytest.mark.parametrize("case", list(PASSING_THROUGH))
+def test_find_gh_refuses_a_path_through_the_clone_or_the_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    world = _gh_world(tmp_path)
+    monkeypatch.setattr(inclone, "recorded_scratch", lambda root, dot_git: world["scratch"])
+    recorded = PASSING_THROUGH[case](world)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(recorded), world["clone"])
+
+
+@runs_gh
+def test_find_gh_takes_what_passes_through_neither(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept: a link dispatching on its name in a directory of its own (a snap's /snap/bin/gh),
+    a PATH entry that is itself a link (/bin -> /usr/bin), the clone's parent, and a sibling
+    whose name only starts like the clone's. What runs is the real directory with gh's name."""
+    world = _gh_world(tmp_path)
+    monkeypatch.setattr(inclone, "recorded_scratch", lambda root, dot_git: world["scratch"])
+    snap = _mkdir(tmp_path / "snap")
+    _link(snap / "gh", world["gh"])
+    assert ghpr.find_gh(str(snap), world["clone"]) == str(snap / "gh")
+    assert ghpr.find_gh(str(tmp_path / "bin"), world["clone"]) == str(world["gh"])
+    for place in (world["ws"], world["sibling"]):
+        (place / "gh").write_text("#!/bin/sh\nexit 0\n")
+        (place / "gh").chmod(0o755)
+        assert ghpr.find_gh(str(place), world["clone"]) == str(place / "gh")
 
 
 @runs_gh
