@@ -260,12 +260,8 @@ def _bash_allowed(allow: list[str], command: str) -> bool:
     matcher (which also strips some wrappers and known-safe env assignments; see Claude Code's
     permissions docs). What is used here was observed on Claude Code 2.1.327 (tsk-66zyvc4xnhtv):
     a rule `Bash(P *)` matches a command that starts with `P ` (a trailing argument after a
-    space); a rule `Bash(P)` matches the exact command `P`. A `cat <path>` line is NOT covered by
-    a `Bash(cat …)` rule — Claude Code routes it to the Read tool's file permission — so this
-    helper refuses it, which is why the kernel-UUID source needs a Read rule."""
+    space); a rule `Bash(P)` matches the exact command `P`."""
     body = [r[len("Bash(") : -1] for r in allow if r.startswith("Bash(") and r.endswith(")")]
-    if command.split(" ", 1)[0] == "cat":
-        return False
     for rule in body:
         if rule.endswith(" *"):
             if command.startswith(rule[:-1]):
@@ -308,6 +304,102 @@ def test_the_claude_code_allowlist_lets_a_coder_use_git_dash_c_on_its_clone(
     assert _bash_denied(deny, f"git -C {clone} diff --no-index /etc/passwd /etc/passwd")
     assert _bash_denied(deny, f"git -C {clone} --exec-path=/tmp log")
     assert _bash_denied(deny, f"git -C {clone} worktree add ../other")  # main's worktree deny too
+    # Every plain git deny has its `-C <clone>` mirror, one to one (#1962 review).
+    plain = (*adapters.GIT_DENIED, *adapters.GIT_WORKTREE_DENIED)
+    mirrored = [r for r in deny if r.startswith(f"Bash(git -C {clone} ")]
+    assert mirrored == [f"Bash(git -C {clone} {rule[len('git '):]})" for rule in plain]
+    assert all(f"Bash({rule})" in deny for rule in plain)
+    # No `-C` allow reaches past the clone.
+    assert all(r.startswith(f"Bash(git -C {clone} ") for r in allow if r.startswith("Bash(git -C"))
+    for outside in ("git -C /other status", "git -C .. status", f"git -C {clone}/.. status"):
+        assert not _bash_allowed(allow, outside), outside
+
+
+# The git subcommands a placed agent may run, written out here rather than read from adapters, so
+# that a subcommand added there fails the full-list test below until it is added here too.
+_GIT_SUBS = (
+    "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
+    "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
+    "ls-files", "blame", "grep", "remote -v",
+)  # fmt: skip
+# Every plain git deny, and the worktree denies, each mirrored once for `git -C <clone>`.
+_GIT_DENIES = (
+    "-c *", "--config-env*", "--exec-path*", "* --no-index*", "* --upload-pack*",
+    "* --receive-pack*", "* --exec=*", "*.git/maity*", "worktree", "worktree *",
+)  # fmt: skip
+
+
+def test_the_claude_code_rules_are_exactly_the_expected_list(tmp_path: Path) -> None:
+    """The whole generated allow and deny lists of an unsandboxed coder placement, compared with
+    the full expected lists (#1962 review): a rule added, dropped or reordered in claude_settings
+    fails here, so no allow can slip in beside the `git -C <clone>` forms unseen."""
+    ctx = context(tmp_path)
+    perms = adapters.claude_settings(ctx)["permissions"]
+    ws = str(ctx.clone)
+    allow = [
+        "Bash(maity *)",
+        *(f"Bash(git {sub})" for sub in _GIT_SUBS),
+        *(f"Bash(git {sub} *)" for sub in _GIT_SUBS),
+        *(f"Bash(git -C {ws} {sub})" for sub in _GIT_SUBS),
+        *(f"Bash(git -C {ws} {sub} *)" for sub in _GIT_SUBS),
+        "Bash(make test)",  # the repository grant
+        f"Read(/{ws}/**)", f"Edit(/{ws}/**)", f"Write(/{ws}/**)",
+    ]  # fmt: skip
+    deny = [
+        f"Edit(/{ws}/.git/config)", f"Edit(/{ws}/.git/config.worktree)",
+        f"Edit(/{ws}/.git/hooks/**)", f"Edit(/{ws}/.git/info/**)",
+        f"Edit(/{ws}/.git/objects/info/alternates)",
+        f"Edit(/{ws}/.git/maity/**)", f"Read(/{ws}/.git/maity/**)",
+        *(f"Bash(git {rule})" for rule in _GIT_DENIES),
+        "Bash(gh)", "Bash(gh *)", "Bash(maity runner)", "Bash(maity runner *)",
+        *(f"Bash(git -C {ws} {rule})" for rule in _GIT_DENIES),
+        "EnterWorktree",
+    ]  # fmt: skip
+    assert perms["allow"] == allow
+    assert perms["deny"] == deny
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "git -C . status",  # relative
+        "git -C ../other status",
+        "git -C /etc status",  # absolute, outside the clone
+        "git -C {ws}/.. status",  # `..` out of the clone
+        "git -C {ws}/../other commit -m x",
+        "git -C {ws}/ status",  # the clone, spelled otherwise: refused, not widened
+        "git -C {link} status",  # a symlink to the clone
+        "git -C ~ status",
+        "git -C ~/other status",
+        "git -C {ws} -C /etc status",  # a second -C
+        "git -C {ws} -C .. log",
+        'git -C "" status',  # an empty value
+        "git -C  status",
+        "git -C {ws} --git-dir=/etc/.git status",  # the repository chosen another way
+        "git -C {ws} --work-tree=/etc status",
+        "GIT_DIR=/etc/.git git -C {ws} status",
+        "GIT_WORK_TREE=/etc git -C {ws} status",
+        "GIT_DIR=/etc/.git git status",  # as plain git: gated no less, no more
+    ],
+)
+def test_git_dash_c_is_allowed_for_the_clone_path_alone(tmp_path: Path, spelling: str) -> None:
+    """Each spelling that would point `git -C` at another repository, or at the clone through
+    another path, matches no allow rule, so dontAsk refuses it (#1962 review). The rules carry
+    the clone's literal resolved path followed by a space and a fixed subcommand; anything else
+    in that place, a second `-C`, `--git-dir`, `--work-tree`, `..` or another spelling of the
+    path, matches none. An environment prefix (`GIT_DIR=…`) matches none either: Claude Code
+    strips only a fixed set of known-safe variables before matching (its permissions docs), and
+    git's are not among them. This checks the rules with the test matcher above, which models
+    Claude Code's prefix matching as observed on 2.1.327; it is not a live run of the harness."""
+    ctx = context(tmp_path)
+    ctx.clone.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(ctx.clone)
+    allow = adapters.claude_settings(ctx)["permissions"]["allow"]
+    command = spelling.format(ws=ctx.clone, link=link)
+    assert not _bash_allowed(allow, command), command
+    # The clone's own path, as the rules spell it, still runs.
+    assert _bash_allowed(allow, f"git -C {ctx.clone} status")
 
 
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:

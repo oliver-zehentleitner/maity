@@ -101,8 +101,9 @@ GIT_DENIED = (
 # about git running programs or reading configuration, and which agy's rules mirror.
 # Only the subcommand itself: a pattern with a wildcard before `worktree` (`git * worktree *`,
 # also `git -C * worktree *`) would deny ordinary commands that only mention the word
-# (`git log --grep worktree`, a commit message), so it is not used. `git -C <dir> worktree …`
-# is not matched; no allow rule matches it either (cli/context/runner.md).
+# (`git log --grep worktree`, a commit message), so it is not used. For Claude Code these
+# denies are mirrored as `git -C <clone> worktree …` (claude_settings); `git -C <dir>` with any
+# other directory matches no allow rule (cli/context/runner.md).
 GIT_WORKTREE_DENIED = ("git worktree", "git worktree *")
 # No session runs gh: the token is the operator's and reaches every repository it may, and no
 # glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests

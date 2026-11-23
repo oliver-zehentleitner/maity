@@ -501,10 +501,7 @@ with free arguments.
 - Allowing the Read tool to read the file (`Read(//proc/...)`) rather
   than a Bash command: the file reports size 0 and yields its bytes
   only on read, which the Read tool is not built to handle; a plain
-  command is what the skill tells the agent to run. (Corrected by
-  1e86907b: a `Read(//proc/...)` rule is needed anyway — not to read the
-  file with the Read tool, but because Claude Code gates the `cat`
-  command through Read-tool permission. The plain command still runs.)
+  command is what the skill tells the agent to run.
 - A read-allow in Claude Code's OS `filesystem` sandbox: the block is
   the command allowlist, not the OS sandbox (reads outside the denied
   paths are already allowed), so widening the filesystem would not let
@@ -528,7 +525,7 @@ with free arguments.
 Additions to `claude_settings` and the start briefing. The specific
 behaviours below were observed on Claude Code 2.1.327; the matcher also
 normalises some wrapper and environment-assignment forms (its permissions
-docs), so item 3 guides phrasing rather than assuming the whole line is
+docs), so item 2 guides phrasing rather than assuming the whole line is
 matched verbatim.
 
 1. `git -C <clone> <subcommand>` is allowed like plain git, as fixed rules

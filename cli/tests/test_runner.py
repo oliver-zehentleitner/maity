@@ -123,7 +123,7 @@ def test_locate_refuses_a_relative_root_resolving_under_a_wildcard_cwd(
     monkeypatch.chdir(cwd)
     with pytest.raises(workspace.Refused) as info:
         workspace.locate(Path("ws"), "proj", "clone")
-    assert "?" in (info.value.why or "")
+    assert "carries the character(s) ? that" in (info.value.why or "")
 
 
 def test_locate_refuses_a_tilde_root_whose_home_carries_a_wildcard(
@@ -138,7 +138,9 @@ def test_locate_refuses_a_tilde_root_whose_home_carries_a_wildcard(
     root = Path("~/ws").expanduser()  # exactly what config.parse stores for the workspaces root
     with pytest.raises(workspace.Refused) as info:
         workspace.locate(root, "proj", "clone")
-    assert "[" in (info.value.why or "") and "]" in (info.value.why or "")
+    # The reported character list, not the whole message: the path itself holds both brackets,
+    # so only the list fails when either bracket is dropped from the refused set.
+    assert "carries the character(s) [ ] that" in (info.value.why or "")
 
 
 def test_scratch_of_refuses_a_resolved_wildcard_root(tmp_path: Path) -> None:
