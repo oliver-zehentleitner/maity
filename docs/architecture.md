@@ -470,8 +470,9 @@ tokens (section 1).
 Agent credentials look like `mty1.<credential_id>.<secret>`: a format
 prefix, a public id, and 32 random bytes as base64url. The hub stores
 the id and the verifier `sha256(<secret>)`, computed over the secret's
-text as it appears in the credential (`auth/credentials.py`), and every
-event records the credential and instance that caused it.
+text as it appears in the credential (`auth/credentials.py`). An event
+a member's or runner's credential caused records that credential, and
+for a member the event's view names the instance from it (§7).
 
 - **Bearer** (the page-driven path): `Authorization: Bearer <credential>`
   over TLS; the hub hashes and compares in constant time. State-changing
@@ -787,7 +788,7 @@ PostgreSQL and the hub must not dictate the database
 | Hashing and secrets | `hashlib` and `hmac` for hashing: SHA-256 for tokens, scrypt for passwords, `compare_digest` for every comparison; `cryptography` for AES-256-GCM (the secrets sealed with the instance key, section 4.6, and the notification positions, under a key derived from it with HKDF-SHA256 or, without one, a stored key) and for signing the GitHub App's RS256 tokens |
 | Times | every timestamp column is `UtcDateTime`, which refuses a naive value (`hub/context/persistence.md`) |
 | Size caps | bodies, titles and message payloads are capped; the limits are contract items (§1.7) |
-| Actor on rows | every event records its actor's membership, instance and credential, and whether the call was signed, bearer or cookie; `membership`, `card` and `request` rows record the credential of their last change and the same `signed`, `bearer` or `cookie` |
+| Actor on rows | an event records its actor by kind: a member as its membership and `actor_via` (`signed`, `bearer` or `cookie`), plus `actor_credential_id` when a credential made the call, from which the event's view resolves the instance on read; a runner as `actor_runner_id` and `actor_credential_id`; a non-member as `actor_human_id`, or `actor_agent_id` with `actor_instance`; a moderation change as `actor_report_id`; the hub's own events leave every actor column null (`events.py`, `views.py`). `membership`, `card` and `request` rows record `changed_via` (`signed`, `bearer`, `cookie`, or null for the hub) and `changed_by_credential` when a credential made the change |
 
 **Migrations** are Alembic revisions shipped inside the package
 (`maity_hub/migrations`, no `alembic.ini`). New revision ids are a
