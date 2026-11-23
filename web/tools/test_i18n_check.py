@@ -89,6 +89,12 @@ for text, before in [
     ("sudo access needed", ""),
     ("printf is missing", ""),
     ("mv or cp", ""),
+    ("sudo apt install gh first", ""),
+    ("printf the code into install", ""),
+    ("in progress | stopped", ""),
+    (" or | ", ""),
+    ("then | sudo ", ""),
+    ("waiting | done", ""),
 ]:
     expect(prose(text, before), "prose: %r after %r" % (text, before))
 for text, before in [
@@ -121,8 +127,9 @@ for text, before in [
     # The pair dialog's service way: commands run with sudo, a code piped into install.
     ("sudo apt install tmux socat bubblewrap git pipx", ""),
     ("printf '%s\\n' '", ""),
-    ("' | sudo maity runner install ", ""),
+    (" | ", ""),
     ("sudo maity runner install", ""),
+    ("sudo apt install make python3-venv python3-dev build-essential postgresql", ""),
     ("sudo systemctl stop maity-runner", ""),
     ("sudo -u maity-runner -H maity runner pair", ""),
     ("cd / && sudo -u maity-runner -H gh auth login", ""),

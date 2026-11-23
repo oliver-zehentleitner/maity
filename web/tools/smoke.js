@@ -3139,7 +3139,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const serviceLines = service.querySelectorAll("pre.paste-line").map((p) => text(p));
   const serviceConfig = service.querySelector(".runner-config").textContent;
   expect(JSON.stringify(serviceLines.slice(0, 3)) === JSON.stringify(["sudo apt install tmux socat bubblewrap git pipx",
-    "sudo apt install make python3-venv python3-dev build-essential postgresql", "sudo pipx install --global maity"])
+    "sudo apt install make python3-venv python3-dev build-essential postgresql && sudo systemctl disable --now postgresql", "sudo pipx install --global maity"])
     && /^printf '%s\\n' 'FIXT-URE0-RUNR' \| sudo maity runner install 'https:\/\/maity\.example\/r\/FIXTURE-\S+' --code-file -$/.test(serviceLines[3])
     && JSON.stringify(serviceLines.slice(4)) === JSON.stringify(["sudo systemctl restart maity-runner",
       "sudo ls /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions",
@@ -3187,6 +3187,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.runnerConfigCommand("x\n").includes("(set -C; umask 077; cat > ~/.config/maity-runner/runner.toml) <<'EOF'\nx\nEOF"),
     "runners: the command writes the configuration owner-only and never over an existing one");
   expect(win.Maity.runnerShellWord("a'b c") === "'a'\\''b c'", "runners: a pairing line's words are single-quoted, a quote in one closed and escaped");
+  // A tool the runner installs itself is not "not installed" while its install runs or after
+  // it failed (review A2146): the runner's `tools` entry says which.
+  {
+    const words = win.Maity.runnerWords;
+    const missing = { id: "claude-code", available: false, reason: "binary_not_found" };
+    const managed = (state, reason) => ({ name: "box", capabilities: { tools: [{ id: "claude-code", state, reason }] } });
+    const said = [words.unavailableText(managed("installing", null), missing), words.unavailableText(managed("failed", "installer_failed"), missing),
+      words.unavailableText(managed("current", null), missing), words.unavailableText({ name: "box", capabilities: {} }, missing)];
+    expect(JSON.stringify(said) === JSON.stringify(["Claude Code is being installed on box", "Claude Code could not be installed on box (installer_failed)",
+      "Claude Code is not installed on box", "Claude Code is not installed on box"]),
+      "runners: a managed tool being installed, or whose install failed, says so " + JSON.stringify(said));
+  }
   expect(text(main).includes("Open pairings") && text(main).includes("new-laptop"), "runners: the open pairing is listed, revocable");
   await go("#/all"); await go("#/runners"); await tick();
   expect(!main.querySelector(".pair-steps") && !text(main).includes("FIXT-URE0-RUNR"), "runners: the pairing line is gone after leaving the view");

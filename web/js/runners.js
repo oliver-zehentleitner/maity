@@ -32,7 +32,9 @@ window.Maity = window.Maity || {};
     state: "/var/lib/maity-runner/state",
     workspaces: "/var/lib/maity-runner/workspaces",
     packages: "sudo apt install tmux socat bubblewrap git pipx",
-    checks: "sudo apt install make python3-venv python3-dev build-essential postgresql",
+    // `postgresql` brings the server's programs; the cluster apt makes and starts with them is
+    // not what a project's scripts use (they start their own), so it is stopped (review A2146).
+    checks: "sudo apt install make python3-venv python3-dev build-essential postgresql && sudo systemctl disable --now postgresql",
     cli: "sudo pipx install --global maity",
     start: "sudo systemctl restart maity-runner",
     stop: "sudo systemctl stop maity-runner",
@@ -110,9 +112,17 @@ window.Maity = window.Maity || {};
     return c.backend === "ssh" ? M.t("runners.target.host", { name: target.name, line }) : M.t("runners.target.pool", { name: target.name, line });
   }
 
-  // Why a tool the runner lists is offered to no placement: its reason (§15.3) in words.
+  // Why a tool the runner lists is offered to no placement: its reason (§15.3) in words. A tool
+  // the runner installs itself (§15.16, `capabilities.tools`) is not found while its install
+  // runs or after it failed: that is said instead of "not installed" (review A2146).
   function unavailableText(runner, tool) {
     const values = { tool: toolName(tool.id), runner: runner.name, reason: tool.reason };
+    const managed = tool.reason === "binary_not_found"
+      ? ((runner.capabilities && runner.capabilities.tools) || []).find((t) => t.id === tool.id) : null;
+    if (managed && managed.state === "installing") return M.t("runners.tool.installing", values);
+    if (managed && managed.state === "failed") {
+      return M.t("runners.tool.install_failed", Object.assign({}, values, { reason: managed.reason || "?" }));
+    }
     return tool.reason === "binary_not_found" ? M.t("runners.tool.not_installed", values)
       : tool.reason === "version_failed" ? M.t("runners.tool.no_version", values)
         : tool.reason === "login_needed" ? M.t("runners.tool.login_needed", values)

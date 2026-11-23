@@ -25,6 +25,8 @@ The pairing line is shown once and expires after the time you chose; the code in
 
 [`maity runner install`](../cli/README.md#maity-runner) is the reference; these are the steps around it, in order.
 
+The steps work as written on Debian 13 and Ubuntu 25.10 or later. `maity` needs Python 3.11 or later, so Ubuntu 22.04 (Python 3.10) is out; on Debian 12 and Ubuntu 24.04 step 2 differs (below).
+
 1. **Install what the runner needs.** On Debian or Ubuntu:
 
    ```sh
@@ -36,17 +38,25 @@ The pairing line is shown once and expires after the time you chose; the code in
    If the agents run the project's own checks (a `make` target that builds a virtual environment, a C extension, a test database), install those tools too:
 
    ```sh
-   sudo apt install make python3-venv python3-dev build-essential postgresql
+   sudo apt install make python3-venv python3-dev build-essential postgresql && sudo systemctl disable --now postgresql
    ```
 
-   Debian keeps PostgreSQL's server programs (`pg_ctl`, `initdb`) outside the `PATH`, in `/usr/lib/postgresql/<version>/bin` (`ls /usr/lib/postgresql` shows the version). A script that needs them has to be pointed there; Maity's own `hub/scripts/with_postgres.sh` reads `MAITY_PG_BIN`. What a session may run at all is the repository's grant ([Letting agents run a repository's checks](#letting-agents-run-a-repositorys-checks)).
+   The `postgresql` package brings the server's programs, and on Debian and Ubuntu it also makes and starts a cluster of its own (`main`). The project's scripts start their own cluster, so the second command stops that one and keeps it from starting at boot; the programs stay. Debian keeps PostgreSQL's server programs (`pg_ctl`, `initdb`) outside the `PATH`, in `/usr/lib/postgresql/<version>/bin` (`ls /usr/lib/postgresql` shows the version). A script that needs them has to be pointed there; Maity's own `hub/scripts/with_postgres.sh` reads `MAITY_PG_BIN`. What a session may run at all is the repository's grant ([Letting agents run a repository's checks](#letting-agents-run-a-repositorys-checks)).
 2. **Install `maity` for every user**, the service's user included:
 
    ```sh
    sudo pipx install --global maity
    ```
 
-   A `pipx install` in your own home is one the service's user cannot run; `install` stops then and says so. `--global` needs pipx 1.5 or later; Ubuntu 24.04 has 1.4.3. There, install a newer pipx first (`sudo apt install python3-pip`, then `sudo pip install --break-system-packages 'pipx>=1.5'`, which puts it in `/usr/local/bin`), or install `maity` into a virtual environment of its own that every user can run: `sudo python3 -m venv /opt/maity && sudo /opt/maity/bin/pip install maity && sudo ln -s /opt/maity/bin/maity /usr/local/bin/maity`.
+   A `pipx install` in your own home is one the service's user cannot run; `install` stops then and says so. `--global` needs pipx 1.5 or later. Debian 13 and Ubuntu 25.10 have 1.7.1; Debian 12 has 1.1.0 and Ubuntu 24.04 1.4.3, where `--global` is an unknown option. There, install `maity` into a virtual environment of its own that every user can run, and put it on the `PATH`:
+
+   ```sh
+   sudo python3 -m venv /opt/maity
+   sudo /opt/maity/bin/pip install maity
+   sudo ln -s /opt/maity/bin/maity /usr/local/bin/maity
+   ```
+
+   `install` runs `maity` for the service's user with the Python it was started with, here `/opt/maity/bin/python`, which every user can read. This way has not been run on a Debian 12 or Ubuntu 24.04 host yet.
 3. **Install the service and pair it**, with the URL and code of the pairing line. The dashboard shows the line ready to paste:
 
    ```sh
@@ -89,7 +99,7 @@ The pairing line is shown once and expires after the time you chose; the code in
    sudo systemctl restart maity-runner
    ```
 
-   With `install = true` the runner installs Claude Code as it starts, in the background. The runner's log is `journalctl -u maity-runner`.
+   With `install = true` the runner installs Claude Code as it starts, in the background. Until it is there, the runner's card and the **On a runner** form say that it is being installed, or that its install failed, with the reason (`installer_failed`, `network`, `no_space`, …). The runner's log is `journalctl -u maity-runner`.
 6. **Log the tool in as `maity-runner`.** The runner installs Claude Code into its own tools directory. Once it is there, find the version, then start that binary as the service's user and type `/login` in it:
 
    ```sh
@@ -500,7 +510,7 @@ This opens no path beyond the scratch, which the sandbox may already write. Ever
 
 A project that uses Keep the Why asks every agent to load the skill and to confirm it with `maity ack keep-the-why`. A placed session cannot install the skill itself: its sandbox does not write the harness's skills directory, and it has no network for an installer. So the runner delivers the skill:
 
-- **Which hub and runner:** the delivery needs `maity` 0.1.0a18 or later on the runner and a hub released after 0.1.0a10. A hub of 0.1.0a10 or older names no skill on the placement, and the runner then delivers nothing, without a log line and without `keep_the_why_unavailable`: the agent is asked to load a skill it does not have. Until the hub is updated, install the skill by hand for the agents' user, at the version the project's `AGENTS.md` or the agent's resume names (`<version>` below, for example `0.20.3`). For a service of `maity runner install`, that user is `maity-runner`:
+- **Which hub and runner:** the delivery needs `maity` 0.1.0a18 or later on the runner and a hub released after 0.1.0a10. A hub of 0.1.0a10 or older names no skill on the placement, and the runner then delivers nothing and reports no `keep_the_why_unavailable` (a runner whose `maity` has the log line for it says so at each start; older ones say nothing): the agent is asked to load a skill it does not have. Until the hub is updated, install the skill by hand for the agents' user, at the version the project's `AGENTS.md` or the agent's resume names (`<version>` below, for example `0.20.3`). For a service of `maity runner install`, that user is `maity-runner`:
 
   ```sh
   sudo -u maity-runner -H git clone --depth 1 --branch v<version> https://github.com/oliver-zehentleitner/keep-the-why /var/lib/maity-runner/keep-the-why-src

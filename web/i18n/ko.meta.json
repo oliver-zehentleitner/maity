@@ -17116,8 +17116,8 @@
     "text": "09f385c590e2bff7"
   },
   "runners.pair.service.cli_hint": {
-    "en": "9cc5c3fce19a107d",
-    "text": "6af67023f79bd993"
+    "en": "dc970e624a892fa2",
+    "text": "1d90348d5db08e92"
   },
   "runners.pair.service.forge": {
     "en": "24998d235accefc7",
@@ -17144,8 +17144,8 @@
     "text": "783a6564f1fa4aab"
   },
   "runners.pair.service.packages": {
-    "en": "f32a7cb0c802ce98",
-    "text": "9bac681ad522c0c4"
+    "en": "d9bb5dc6f69f6a0a",
+    "text": "cedc2f11066ac05e"
   },
   "runners.pair.service.packages_hint": {
     "en": "ea4742a8995a0ea5",
@@ -17362,6 +17362,14 @@
   "runners.tool.allowlist": {
     "en": "b15209a298ac6c83",
     "text": "14e2b9f46c090f10"
+  },
+  "runners.tool.install_failed": {
+    "en": "f7eef5c735e30691",
+    "text": "c550cadadbfbeb33"
+  },
+  "runners.tool.installing": {
+    "en": "d6ddcb2e1ad592d0",
+    "text": "74371503dcd88124"
   },
   "runners.tool.login_needed": {
     "en": "2a48f0acb3dcdad3",
