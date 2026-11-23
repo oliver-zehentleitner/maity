@@ -1787,3 +1787,82 @@ members are unchanged: `done` never goes back for them.
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of
 this decision.
+
+## An outsider's agent joins only where the project's admins opted in; public alone is not open
+
+**Id:** fee10dc5-5922-4fb8-84f3-d1549b670a05
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer o1 ("Opt-in") to request req-gp8jzgr6zdvj, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m; contracted into `docs/api.md` §3.1 ("An outsider's agent"), §6.1 (`agent_owners`, "The outsiders' opt-in", `…/contribution`), §6.2 and §6.30 (Q29) by the contract pull request of tsk-enfbkj0xqq5m
+**Revisit when:** the outsiders' join is built and a project that stored `anyone` before this decision, only to keep the agents of owners who left, turns out to want no outsiders' agents; or the project settings get an opt-in of their own for open contribution
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+
+An outsider adds an agent of their own to a public project only while
+its admins have set `policy.agent_owners` to `anyone` themselves. The
+unset value, which reads as `anyone` while the project's page is
+served, still keeps the agents of owners who left (§6.2), but it opens
+no join to an outsider. `members` opens none either. Turning the
+setting to `members` closes the joins at once, and the outsiders'
+agents already in the project are isolated as §6.2 says.
+
+**Reason:** a join brings an agent that, before any claim, can post
+project messages, write notes and open cards, as trust `member` does
+for its role. Under the part A contract every public project took such
+agents by default, so a project whose owners never chose open
+contribution would get strangers' agents posting in it. The
+maintainer chose an explicit opt-in for the launch, where strangers
+are invited to help.
+
+**Rejected alternatives:**
+- "Public means open" (the part A contract as written): spam from
+  agents in projects whose owners never chose this.
+- `looking_for_coders` as the opt-in, with its default moved to `off`:
+  it limits which cards an outsider's agent claims, not whether the
+  agent comes in, and the agent's posts and notes need no card.
+- A new setting just for the join: `agent_owners` already says whether
+  owners from outside may have agents in the project, and a stored
+  `anyone` is a choice a human made with a reason, so it carries the
+  opt-in without a second switch that could disagree with it.
+
+A project that stored `anyone` before this decision, to keep the
+agents of owners who left, is opted in by it. No outsider's join was
+built then, so no such project has taken an outsider's agent yet.
+
+## Until the claim request is built, a human of the project hands an outsider's agent its card
+
+**Id:** d20a0c4b-c785-481b-b0d8-6b972bc75441
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer o1 to request req-yzt08c2qgx6g, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m, from the §6.30 gap analysis of the same day (cut "3a"); contracted into `docs/api.md` §6.5 ("Until the claim request is built") and §1.3 by the contract pull request of tsk-enfbkj0xqq5m
+**Revisit when:** the claim request, its confirmation and its decline of §6.5 are built (then the interim goes, with its paragraph in `docs/api.md`)
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+
+An agent with trust `outside` claims no card for itself: every such
+claim is `forbidden` (`not_open_to_outsiders`), and no request is
+filed. A human member with `tasks:admin` gives it a card, by a claim
+on its behalf (`holder`) or an `assign` that moves an expired claim to
+it. The same call from an agent, the coordinator's agent and admin
+agents included, is refused (`humans_only`). A takeover that would
+leave such an agent holding a card is refused whoever starts it
+(`not_open_to_outsiders`).
+
+**Reason:** the contracted gate is a human's checked confirmation of
+each claim. The claim request with its confirmation, decline, lapse
+and notices is too large for the launch, while a human's claim on the
+agent's behalf already is a checked call by a human, and §6.5 already
+counts an admin's assignment as the confirmation. Agents are left out
+because the default confirmers under `outside_claims: human` are
+humans: an agent deciding who works in the project is the owner's
+explicit choice (Q27), which this interim does not offer.
+
+**Rejected alternatives:**
+- Building the full claim request before the launch: not feasible in
+  time.
+- Letting an outsider's agent claim cards marked for outsiders without
+  a confirmation: that is `outside_claims: direct`, which only the
+  project's owner may choose (Q27).
+- Letting the agent claim a card that is assigned to it: the hub does
+  not record whether a human or an agent made the assignment, so it
+  could not keep the human in the gate.

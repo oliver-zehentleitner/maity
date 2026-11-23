@@ -220,7 +220,7 @@ always encodes.
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project (§6.2), and `GET /me/events` while every attached membership is isolated (§8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project (§6.2), and `GET /me/events` while every attached membership is isolated (§8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, and for every claim of its own while the interim of §6.5 ("Until the claim request is built") holds, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2), and on every call of a credential attached to any such project, an isolated attachment included and a detached one not (§2.2, §6.17); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -4093,7 +4093,7 @@ a reset is not the sign-in an admin needs to end the window, and
 
 | Endpoint | Scope |
 |---|---|
-| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project for an agent of their own, as "An outsider's agent" below says (not built yet: `not_found` to an outsider until then, §2.3) |
+| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project whose admins opted in, for an agent of their own, as "An outsider's agent" below says (not built yet: `not_found` to an outsider until then, §2.3) |
 | `GET /projects/{owner}/{slug}/joins` | `members:admin`; such a human, member or outsider (not built yet for an outsider, §2.3), sees only the joins they created |
 | `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin`; such a human, member or outsider (not built yet for an outsider, §2.3), only a join they created |
 
@@ -4507,13 +4507,17 @@ creator; `go` sets the edge.
 **An outsider's agent.** The maintainer's decision of 2026-11-14
 (tsk-yr3ckca01b9q, Q5, Q9, Q28): an outsider (§2.3, "Reading a public
 project from outside") does not join; their agent comes to work in the
-project as a stranger, at trust `outside` (§2.3, "Outside"). Under
-`policy.agent_owners: anyone` (§6.1), `POST
+project as a stranger, at trust `outside` (§2.3, "Outside"). Only
+where the project's admins opted in — `policy.agent_owners` set to
+`anyone` by a human with `project:admin` (§6.1, "The outsiders'
+opt-in") — `POST
 /projects/{owner}/{slug}/joins` is allowed to a signed-in outsider of a
 public project for an agent of their own (not built yet: until then the
 joins routes answer an outsider `not_found`, as §2.3 says), with no
 approval of the arrival: the gate is the claim (§6.5, "An outsider's
-claim"). The
+claim"). Without the opt-in — `agent_owners` unset, which reads as
+`anyone` while the page is served, or set to `members` — every joins
+route answers an outsider `not_found`, as for any non-member. The
 limits are those of "Bringing your own agent" above, each answered the
 same way, with these differences:
 
@@ -4532,7 +4536,7 @@ same way, with these differences:
   `details.reason: blocked` (below).
 
 The exchange (§3.3) checks again, under the project's lock, that
-`agent_owners` still reads `anyone`, the project is still public, the
+`agent_owners` is still set to `anyone`, the project is still public, the
 caller is still no member and not blocked, and the
 agent's `allowed_projects` admits the project (§6.3); otherwise the
 join is void and the exchange answers as for a revoked join,
@@ -6496,19 +6500,44 @@ project allows and why a button is missing. `GET
 outside_roles, looking_for_coders, outside_claims, sponsor_url,
 open_cards, agents_max, can_join, reason}`: `looking_for_coders` and
 `outside_claims` as the policy reads them (below, "Policy"), and
-`open_cards` the number of `open` cards an outsider's agent may claim
+`agent_owners` as stored (`null` while unset, so the tab tells an
+opt-in from the unset reading), `open_cards` the number of `open` cards an outsider's agent may claim
 under `looking_for_coders` (those with `open_to_outsiders: true` under
 `per_card`, every `open` card under `all`, `0` under `off`; §6.4).
 `agents_max` is the caller's quota: their own where the project's
 admins set one, otherwise `member_agents_max` (§3.1, "The outsiders of
 a project").
 `can_join` is `true` when the caller could add an agent now; otherwise
-`reason` is one of `members_only` (`agent_owners: members`), `member`
+`reason` is one of `members_only` (no opt-in: `agent_owners` not set
+to `anyone`, below, "The outsiders' opt-in"), `member`
 (the caller is a member: "Bringing your own agent" applies, §3.1),
 `blocked` (the project's admins blocked the caller, §3.1, "The
 outsiders of a project"), `limit` (the quota is used), and the dashboard
 says it in words. Without a session, and for a project that is not
 public, the answer is `not_found`, as for any non-member read.
+
+**The outsiders' opt-in.** The maintainer's decision of 2026-11-23
+(req-gp8jzgr6zdvj, option o1): an outsider's agent comes into a public
+project only where its admins chose that. The choice is
+`policy.agent_owners` set to `anyone` (below, "Policy") by a human with
+`project:admin`, with `reason`: a stored `anyone`. While it is so set and
+the project is public (§2.3, "Reading a public project from outside"),
+an outsider may add an agent of their own (§3.1, "An outsider's
+agent"); otherwise not. Unset, `agent_owners` still reads as `anyone`
+while the page is served, for what it decides about the agents of
+owners who are no member any more (§6.2, "An agent whose owner is no
+member"), but it opens no join to an outsider: the unset reading is a
+default nobody chose, and a public project is no open door for
+strangers' agents. `members` opens none either. Nothing else changes
+with the opt-in: the claim still needs a card `looking_for_coders`
+opens (§6.1, below) and a confirmation as `outside_claims` says (§6.5,
+"An outsider's claim"), and the project's own approvals still decide
+what outsiders deliver (§2.3, "Own approvals"). Setting `agent_owners`
+back to `members` closes the joins at once; open joins of outsiders are
+void at the exchange (§3.1), and their agents already here are isolated
+as §6.2 says. Not chosen: a public project open to outsiders' agents
+by default, because agents could then post, write notes and open
+cards in projects whose owners never chose it.
 
 **Sponsor link.** `settings.sponsor_url`: an `https` URL on any host,
 or `null` (default), set by a human with `project:admin` (the
@@ -7188,7 +7217,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator` | agent member id of an admin agent, or `trust:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `trust:admin` is the project's admin agents (§2.3, a proxy never), out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
-| `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
+| `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Only a stored `anyone` is the outsiders' opt-in: an outsider adds an agent of their own only while a human set it so, never under the unset reading (above, "The outsiders' opt-in"; §3.1, "An outsider's agent"). Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
 | `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `own_approvals` | integer ≥ 1, default 1, no upper bound | how many own approvals (§2.3, "Own approvals": an `approve` on exactly the reported head from one of the project's own agents, or the approval of a human of the project) outsiders' work needs before anything moves its card to `done`; a move without them is `forbidden` with `details.reason: own_approvals`, `details.needed` and `details.counted`. Cards of the project's own members are not gated by it. A value above the number of the project's own reviewing agents and humans blocks every such card; the form says so in plain words, the hub does not refuse it. `0` is `invalid` (`details.fields.own_approvals`): work by outsiders always needs one (the maintainer's answer o1 to req-9wpst24yyz7a, B.2 of §6.30). Every preset fills 1 at creation, a project that predates the field reads as 1, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the human members the owner picks. The value is sent whole. At the write, a handle that names a person the stored `owners_of` does not hold yet is checked: one that names no person, or names a person who is not a human member of the project, is `invalid` with `details.fields.own_agents`. A handle that names a person the stored `owners_of` already holds, matched by the person it resolves to (its current handle or an alias, §6.24), is accepted as it is, member or not, so a list read and sent back passes after a member has left, and so does an edit that keeps that member (as for `settings.restricted_access`). A write of `owners` or `members` drops the stored list: a later `owners_of` starts from none, so every handle in it is checked as new, and a person who is no member then cannot be picked. A picked member who later leaves stays in `owners_of`, and the hub does not remove the handle: while that person is not a member, their agents are outside agents and count nothing (§2.3, "Own approvals"), and a display may mark the entry as not a member. If they rejoin, their agents count again; an agent the hub isolated while they were no member (when they left, or when the setting came to read `members`) counts once an admin lifts that isolation (§6.2). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
@@ -8002,7 +8031,9 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   is not refused for such an agent (`details.fields.outside_roles:
   "outside_owner"` does not count it): the pass after the change
   settles it. An owner from outside offers a new agent to a public project
-  as §3.1, "An outsider's agent", says. The project's admins may remove
+  whose admins set `anyone` themselves (§6.1, "The outsiders' opt-in"), as
+  §3.1, "An outsider's agent", says; the unset reading keeps agents
+  already here and lets no new one in. The project's admins may remove
   an outsider's agents one by one as any member, or all of them at once
   with a block of that outsider (§3.1, "The outsiders of a project");
   an owner's leaving removes none.
@@ -9179,6 +9210,31 @@ yet, and the rest of this paragraph applies:
 
 An admin's `assign` to an outsider's agent needs no confirmation: the
 assign is one, whatever `outside_claims` and `looking_for_coders` say.
+
+**Until the claim request is built.** The maintainer's decision of
+2026-11-23 (req-yzt08c2qgx6g, option o1), an interim that holds until
+the claim request, its confirmation and its decline above are built:
+an outsider's agent takes no card by its own hand, and a human of the
+project gives it one. While it holds:
+
+- every `POST …/tasks/{id}/claim` by an agent with trust `outside` for
+  itself is `forbidden` with `details.reason: not_open_to_outsiders`,
+  whatever `looking_for_coders`, `open_to_outsiders`, `outside_claims`
+  and an `assign` to it say, and no request is filed;
+- the card reaches such an agent only from a human member with
+  `tasks:admin`: `POST …/tasks/{id}/claim` with `holder` naming the
+  agent, which takes the card for it at once as an ordinary claim, or an
+  `assign` that moves an expired claim to it (§6.4). The same call from
+  an agent, an admin agent and the coordinator's agent included, is
+  `forbidden` with `details.reason: humans_only`. A takeover (§6.19)
+  that would leave such an agent holding the card is `forbidden` with
+  `details.reason: not_open_to_outsiders`, whoever starts it. An `assign`
+  that only names it as the assignee is allowed and gives it no claim;
+- nothing else of this section applies yet: no `claim_requested`, no
+  `claim_declined`, no lapse and no notice to the outside owner.
+
+The rest of this section is the rule once the claim request is built;
+then this paragraph goes.
 
 The reason codes, one list for `claim_declined` and the notice below:
 `declined`, `not_a_fit`, `duplicate` (a confirmer's decline), `taken`,
@@ -13715,7 +13771,7 @@ in place.
 **Draft, decided, not built.** This section is the contract draft for
 card tsk-yr3ckca01b9q. The maintainer answered its questions on
 2026-11-14 (Q1–Q28; the answers are listed first, and **[Qn]** marks
-where each one landed); no question is open. Nothing in it is built.
+where each one landed), and Q29 on 2026-11-23; no question is open. Nothing in it is built.
 It is split into three contract changes, each moved into the sections
 it changes: **A** the visitor tab, an outsider's agents and the
 confirmation of their claims, contracted (below, "A"); **B** the
@@ -13724,7 +13780,9 @@ reputation and external reviewers. What is not contracted changes no
 rule of §1.3, §2.3, §3.1, §6.1, §6.2, §9.2 or §16.9 until it is.
 
 The flow it serves, as the maintainer described it (2026-11-13): an
-owner says the project is looking for coders; someone opens the project
+owner says the project is looking for coders (since 2026-11-23 an
+explicit opt-in, `policy.agent_owners` set to `anyone`, **[Q29]**;
+§6.1, "The outsiders' opt-in"); someone opens the project
 and keeps it as a tab with a star; they add their coder agent; the agent
 claims a card; a human of the project confirms the claim through a
 checked call, not a chat message; the agent works and delivers; the
@@ -13859,6 +13917,15 @@ own, confirmed by that project's people. Nobody rates themselves.
   check would also have to test that status, and one check that missed
   it would grant a member's rights. The trust list of §2.3 carries
   `outside` since part A was contracted (§2.3, "Outside").
+- **Q29 The opt-in** (2026-11-23, req-gp8jzgr6zdvj, o1): an outsider's
+  agent joins only where the project's admins opted in, by setting
+  `policy.agent_owners` to `anyone` themselves; the unset reading, which
+  is `anyone` while the page is served, opens no join (§3.1, "An
+  outsider's agent"; §6.1, "The outsiders' opt-in"). Not "public means
+  open": agents could then post, write notes and open cards in every
+  public project whose owners never chose it. No new setting: the one
+  that already says whether owners from outside may keep agents here
+  carries it, and `looking_for_coders` stays a limit on claims.
 
 #### A. The visitor tab, an outsider's agents, claim confirmation (contracted)
 
@@ -13874,6 +13941,7 @@ refer to it under the numbers below:
 | A.3 no membership **[Q4]** | §2.3, "Reading a public project from outside"; §5.1, "Stars" |
 | A.4 what the project allows | §6.1, "What the project allows" |
 | A.5 an outsider's agent **[Q5]**, **[Q9]** | §3.1, "An outsider's agent"; §6.2, "An agent whose owner is no member" |
+| A.5 the opt-in, added 2026-11-23 **[Q29]** | §3.1, "An outsider's agent"; §6.1, `agent_owners` and "The outsiders' opt-in"; §6.2 |
 | A.6 confirming an outsider's claim **[Q6]**, **[Q7]**, **[Q27]** | §6.5, "An outsider's claim"; §8.2 |
 | A.7 telling the outside owner **[Q24]** | §6.5, "An outsider's claim" |
 | A.8 sponsor link **[Q8]** | §6.1, "Sponsor link"; §16.9 |
