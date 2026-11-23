@@ -137,11 +137,24 @@ def isolate_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
+def isolate_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop every proxy variable of the shell that maity's git keeps (clonecheck.ENV_PROXY).
+
+    Like GIT_*, a shell's proxy changes what a test's git and gh print: a runner session's
+    own environment can carry one with credentials, and then a failed git or gh shows only its
+    exit code and class. A test that needs a proxy sets it itself."""
+    from maity import clonecheck
+
+    for name in clonecheck.ENV_PROXY:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test sees the developer's git config, the shell's git variables, a MAITY_STATE_DIR
-    or a placement from the shell, and none writes into the developer's home: an interactive
-    Claude Code launch records the clone's folder trust in ~/.claude.json (runner/trust.py)."""
+    """No test sees the developer's git config, the shell's git or proxy variables, a
+    MAITY_STATE_DIR or a placement from the shell, and none writes into the developer's home:
+    an interactive Claude Code launch records the clone's folder trust in ~/.claude.json
+    (runner/trust.py)."""
     home = tmp_path / "isolated-home"  # not `home`: tests make their own
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -150,6 +163,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
     monkeypatch.delenv("MAITY_GIT_PRIVATE", raising=False)
     isolate_git(monkeypatch)
+    isolate_proxy(monkeypatch)
     # Nor the host's managed Claude Code settings (runner/capabilities.claude_hooks_off).
     from maity.runner import capabilities
 
