@@ -2133,20 +2133,41 @@ later (S200) and is why the claim above was corrected.
 **Id:** 53782ad6-6178-4037-9760-a248de7eb122
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-nnmgvz773z5n; the version installed by the managed update on a runner host and that host's `maity runner check` warning that 2.1.330 was not checked, reported by ops, 2026-11-22; the probe (`cli/tests/claude_sandbox_probe.py`) from head a7f86c94 with `--only 1,5 --extra-lines` on that host, Claude Code 2.1.330 (the runner's own binary, sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb`, the npm linux-x64 build), maity 0.1.0a18, 2026-11-22: 50 PASS (1a 13, 1b 13, 5 24), 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, exit 0, recorded in card note nte-q2gnj0ktxk03; `maity runner check` from the same checkout on that host, 2026-11-22; the lead's decision to raise the version on that minimum run, 2026-11-22; the lead's ruling, after the reviews of #2111 (A2117, A2118, A2119) found verdicts of the probe that could pass without their evidence, that the first run no longer carries the bump on its own and a second minimum run from the fixed head is the proof, 2026-11-22
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n; the version installed by the managed update on a runner host and that host's `maity runner check` warning that 2.1.330 was not checked, reported by ops, 2026-11-22; the probe (`cli/tests/claude_sandbox_probe.py`) from head a7f86c94 with `--only 1,5 --extra-lines` on that host, Claude Code 2.1.330 (the runner's own binary, sha256 `f390eaa0814e6a1bff74cbb47acb74cb9c89d30ced809fe0af5af00c7bfe8ebb`, the npm linux-x64 build), maity 0.1.0a18, 2026-11-22: 50 PASS (1a 13, 1b 13, 5 24), 0 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, exit 0, recorded in card note nte-q2gnj0ktxk03; `maity runner check` from the same checkout on that host, 2026-11-22; the lead's decision to raise the version on that minimum run, 2026-11-22; the lead's ruling, after the reviews of #2111 (A2117, A2118, A2119) found verdicts of the probe that could pass without their evidence, that the first run no longer carries the bump on its own and a second minimum run from the fixed head is the proof, 2026-11-22; the second minimum run of the probe from head c12b672e (the fixes of the reviews of #2111, after main merges) with `--only 1,5 --extra-lines` and no `--keep` on a runner host, its Claude Code 2.1.330 the same binary as the first run, under the owner's consent (req-xcg86xmres45), the host's Claude Code placements stopped for it, 2026-11-23: 50 PASS (1a 13, 1b 13, 5 24), 2 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE, reported by ops on the card; the lead's rule that a FAIL only from paths foreign to the probe counts as INCONCLUSIVE, the home check's blind spot accepted for the merge (card tsk-nqhqt1d1dmyz), and the lead's acceptance of that run as the proof for the bump, 2026-11-23
 **See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-22
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
-**Revisit when:** the second minimum run, from the head with the fixes of the reviews of #2111, is in or fails; the full run (`--managed --user-settings`) on 2.1.330 is done (card tsk-3dyptc98pejt) or fails; the runner's managed update installs a version other than 2.1.330; the probe or a review shows a line that runs `maity` outside the sandbox other than as one plain call
+**Verification:** corroborated — the second minimum run from c12b672e on 2.1.330: 1a 13 of 13, 1b 13 of 13 and 5.1–5.24 24 of 24 passed, every call with something in front of `maity` inside the sandbox and only the controls 1a.1 and 1b.1 outside; its two FAIL lines are the home check on the operator's own live transcript, INCONCLUSIVE by the lead's rule
+**Revisit when:** the full run (`--managed --user-settings`) on 2.1.330 is done (card tsk-3dyptc98pejt) or fails; the runner's managed update installs a version other than 2.1.330; the probe or a review shows a line that runs `maity` outside the sandbox other than as one plain call
 
 `capabilities.CHECKED` for `claude-code` is raised from 2.1.325 to
 2.1.330, the version the runners' managed update installed. The proof it
-rests on is a second minimum run (`--only 1,5 --extra-lines`) from the
-head with the fixes of the reviews of #2111, which has not run yet. The
-first run, below, was taken with the probe before those fixes, which
-tightened its verdicts (the exact marker value, timeouts, a denial for
-the native tools), so it no longer carries the bump on its own. What ran
-in it: points 1 and 5, that is a call with
+rests on is the second minimum run (`--only 1,5 --extra-lines`, no
+`--keep`) from head c12b672e, which has the fixes of the reviews of
+#2111. Ops ran it on a runner host on 2026-11-23 with the runner's Claude
+Code 2.1.330, the same binary as the first run, under the owner's consent
+(req-xcg86xmres45), with the host's Claude Code placements stopped. Points
+1 and 5 passed: 1a 13 of 13, 1b 13 of 13, and the 24 prefixed lines 24 of
+24. Every call with something in front of `maity` ran inside the sandbox;
+only the plain-call controls 1a.1 and 1b.1 ran outside, as they should.
+The summary read 50 PASS, 2 FAIL, 0 SKIP, 0 INCONCLUSIVE, 0 NOT-TESTABLE.
+
+Both FAIL lines are the home check (SESSION WRITTEN and NOT SCANNED) on
+one file: the operator's own live Claude Code transcript under
+`~/.claude/projects/`, since the operator runs Claude Code as the same OS
+user with the same home. By the lead's rule a FAIL only from paths
+foreign to the probe counts as INCONCLUSIVE, not as a failure of the
+fix. The probe's own sessions wrote no file there, so
+`--no-session-persistence` holds on 2.1.330, seen live. The other 14
+files Claude Code wrote in the home during the run were scanned, and
+none holds a private line. The home check cannot tell the operator's own
+transcript from the probe's; the lead accepted that blind spot for the
+merge, and card tsk-nqhqt1d1dmyz holds it.
+
+The first run, from a7f86c94 on 2026-11-22, was taken with the probe
+before those fixes, which tightened its verdicts (the exact marker value,
+timeouts, a denial for the native tools), so the bump no longer rests on
+it. What ran in it: points 1 and 5, that is a call with
 something in front of `maity` with the runner's permission rules (1a)
 and with Bash allowed behind the runner's hook and sandbox (1b), and the
 prefixed lines probed live from the private list (`--extra-lines`). All
@@ -2167,19 +2188,21 @@ of `maity` is still the runner's hook (63492c65). The supported machines
 of Claude Code's seccomp step were read again from the 2.1.330 binaries
 (c774c132).
 
-The probe ran from a7f86c94. The main merged after it moved every scratch
-under one holder of the workspaces root (tsk-c7zzd440x8pn), and the
-probe's launch follows that move since. The moved scratch is not one of
-the things points 1 and 5 check; this reading is the author's, not
-reviewed, and the reason the entry is graded inferred. The rest of it is
-confirmed.
+The main merged after the first run moved every scratch under one
+holder of the workspaces root (tsk-c7zzd440x8pn), and the probe's launch
+follows that move since. While the first run stood alone, the entry was
+graded inferred on the author's unreviewed reading that the move does not
+touch what points 1 and 5 check. The second run started from a head with
+the move, so the bump no longer rests on that reading.
 
 **Reason:** the version check warned on every runner that took 2.1.330.
 The minimum run covers what can change between Claude Code versions: its
 sandbox for 1a and 1b, and the Unix sockets the private lines would use
-(point 5), all 50 passed, and the binary's hash matched the build that was
-read. Point 3 checks a settings path, and `maity runner check` already
-refuses a start where those settings switch the hook off.
+(point 5). In the second run all 50 of those steps passed, its two FAIL
+lines came from a file that was not the probe's, and the binary was the
+one whose hash matched the build that was read. Point 3 checks a
+settings path, and `maity runner check` already refuses a start where
+those settings switch the hook off.
 
 **Rejected alternatives:**
 - Holding the bump until the full run has passed: the lead's reason
@@ -2193,7 +2216,7 @@ refuses a start where those settings switch the hook off.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22; the reviews of #2111 (A2117, A2118, A2119), which found verdicts that passed without their evidence and settings changes that could be left behind, and the lead's order to fix them before the second run, 2026-11-22; the delta reviews A2120 and A2121 and the lead's conditions for the second run (the minimal run writes nothing outside its scratch, recovery only with the flags and after the process check, the files' modes kept), 2026-11-22; the delta reviews A2124 and A2129 (Claude Code's own session transcript in the home, tool names and error flags from the stream, the earlier copy format, a linked settings file) and the lead's choice to turn session persistence off, 2026-11-22; Claude Code 2.1.330's option list, read from its binary: `--no-session-persistence`, "Don't save sessions to disk; they can't be resumed (only works with --print)", 2026-11-22; the delta reviews A2133, A2134, A2135 and A2136 (a private line stored JSON-escaped in the home went unseen, a file name that could print private text, a recovery entered with `--managed` that replaced linked user settings, a copy without its text, the prompt on the command line, a session file the line check would not match, citing anthropics/claude-code issue 49565) and the review lead's round-4 list, which ruled that a file not scanned fails the run, 2026-11-23; Claude Code 2.1.330's getInputPrompt and its "Input must be provided either through stdin or as a prompt argument when using --print", read from its binary, 2026-11-23
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22; the reviews of #2111 (A2117, A2118, A2119), which found verdicts that passed without their evidence and settings changes that could be left behind, and the lead's order to fix them before the second run, 2026-11-22; the delta reviews A2120 and A2121 and the lead's conditions for the second run (the minimal run writes nothing outside its scratch, recovery only with the flags and after the process check, the files' modes kept), 2026-11-22; the delta reviews A2124 and A2129 (Claude Code's own session transcript in the home, tool names and error flags from the stream, the earlier copy format, a linked settings file) and the lead's choice to turn session persistence off, 2026-11-22; Claude Code 2.1.330's option list, read from its binary: `--no-session-persistence`, "Don't save sessions to disk; they can't be resumed (only works with --print)", 2026-11-22; the delta reviews A2133, A2134, A2135 and A2136 (a private line stored JSON-escaped in the home went unseen, a file name that could print private text, a recovery entered with `--managed` that replaced linked user settings, a copy without its text, the prompt on the command line, a session file the line check would not match, citing anthropics/claude-code issue 49565) and the review lead's round-4 list, which ruled that a file not scanned fails the run, 2026-11-23; Claude Code 2.1.330's getInputPrompt and its "Input must be provided either through stdin or as a prompt argument when using --print", read from its binary, 2026-11-23; the second minimum run from head c12b672e on 2.1.330, which showed which kinds of files Claude Code writes in the home and the home check's blind spot for the operator's own transcript, reported by ops on the card, 2026-11-23
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-22
 **Revisit when:** a scheduled job with its own key runs the probe against each new release (ae02241e, not decided); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
@@ -2232,11 +2255,14 @@ user can read while it runs: in print mode 2.1.330 reads a stdin that is
 no terminal and, with text input, passes it on as the same string
 prompt, so the stream the probe parses does not change; a run that got
 no prompt makes no call and is INCONCLUSIVE, never PASS. The line itself
-still stands in the command line of the precondition's `bash -c`. Which
-other files Claude Code writes in the home (`~/.claude.json` and the
-rest of `~/.claude/`) is not known from a live run here; the probe names
-every one written during the run by its path and fails the run on any of
-four things: a file that holds a private line as the run filled it in,
+still stands in the command line of the precondition's `bash -c`. In
+the second minimum run (2026-11-23, from head c12b672e, Claude Code
+2.1.330) the probe's own runs wrote nothing under `~/.claude/projects/`.
+The other files Claude Code wrote in the home were, by kind,
+`~/.claude.json` and its backups, the model catalog, and plugin and
+skill sync files; none held a private line. The probe names every file
+written during the run by its path and fails the run on any of four
+things: a file that holds a private line as the run filled it in,
 as raw bytes, escaped as `json.dumps` writes it (ASCII-only or UTF-8:
 quotes, backslashes, tabs, non-ASCII), or in any string of the file
 decoded as JSON or JSONL; a path that holds such a line in any of those
@@ -2247,7 +2273,12 @@ check; and any file under `~/.claude/projects/`, whatever it holds,
 since with the flag honoured nothing appears there, and a review cites
 Claude Code releases that still wrote a title made of the prompt there
 (not checked here), which no line would match. A line the file holds in
-another form (cut up, reworded) is not detected. The steps that change
+another form (cut up, reworded) is not detected. The home check
+compares the whole home of the user, so it cannot tell the operator's
+own live Claude Code transcript, when the operator runs Claude Code as
+the same user, from a run's; in the second run that was the only path
+behind its two FAIL lines, read as INCONCLUSIVE by the lead's rule, and
+card tsk-nqhqt1d1dmyz holds the follow-up. The steps that change
 managed or user settings are refused while Claude Code runs on the host,
 write atomically with the file's own mode and owner, owner-private
 copies beside them, and leave a record that a later run with those flags
