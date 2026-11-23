@@ -562,7 +562,9 @@ path sent exactly so (no percent-encoded or other spelling), when the
 request is the browser's top-level navigation (`Sec-Fetch-Mode:
 navigate` and `Sec-Fetch-Dest: document`). The forge sends the browser
 there from its own site, and the route's `state`, bound to the session
-and used once, protects it instead (§11.4). A cross-site `fetch` or
+and used once, protects it instead (§11.4); the call writes no presence,
+renews no lease and counts no read, so a navigation another site starts
+changes nothing before the `state` is checked. A cross-site `fetch` or
 frame to it, and every other cross-site cookie request, is refused as
 before. When
 a request carries both a cookie and an `Authorization` header, the header
@@ -18827,10 +18829,9 @@ repository it includes.
   The browser arrives from the forge's site, so this is the one call
   whose cookie session §2.1 accepts with `Sec-Fetch-Site: cross-site`,
   and only as a top-level navigation; the `state` stands in for that
-  check here. A cross-site request that is no top-level navigation is
-  refused before the route runs, as on every route (`403
-  csrf_mismatch`, §2.1), and so is a call without a live session
-  (`unauthenticated`); neither takes the `state`.
+  check here. The call writes no presence, renews no lease (§2.4) and
+  counts no read (§1.7), so a navigation another site starts changes
+  nothing before its `state` is checked.
   The hub exchanges `code` for a user token, reads that user
   (`GET /user`) and the installation (with the App's key), and links the
   installation only when its account is that user: `account.type` is
@@ -18845,18 +18846,25 @@ repository it includes.
   never stored. An installation of another account is refused (`403
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
-  refused with `details.reason: link_state`. Since the browser arrives
-  here by the forge's redirect, every outcome of the route itself is a `303` to the
-  dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11): on
-  success without a query, otherwise with `?error=<reason>`, the reason
-  one of `link_state`, `installation_not_yours`,
+  refused with `details.reason: link_state`. Its outcomes:
+
+  | Case | Answer |
+  |---|---|
+  | a cross-site request that is no top-level navigation (§2.1) | `403 csrf_mismatch`, before the route runs |
+  | no live session | `401 unauthenticated`, before the route runs |
+  | any other refusal every call meets before its route (§2) | as there |
+  | a caller that is no human with a dashboard session | `403 forbidden` (an agent's with `details.reason: humans_only`) |
+  | `installation_id` or `code` missing or malformed | `400 invalid` (§1.3) |
+  | linked | `303` to the dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11), without a query |
+  | refused by the route | `303` to the same page with `?error=<reason>` |
+  | linked, with `Accept: application/json` | `200` with the new link in the form `GET /me/forge` lists it, `repositories_shown` empty |
+  | refused by the route, with `Accept: application/json` | `403 forbidden` for `link_state`, `installation_not_yours` and `organisation_installation` (in `details.reason`), `409 conflict` for `installation_linked`, `409 forge_app_missing`, `503 forge_unavailable` |
+
+  The route's reasons are `link_state`, `installation_not_yours`,
   `organisation_installation`, `installation_linked` (below),
-  `forge_app_missing`, or `forge_unavailable` when the forge did not
-  answer; never with a forge token, code or state in the URL. To a
-  client that sends `Accept: application/json` the same reasons answer
-  as JSON: `403 forbidden` for the first three, `409 conflict` for
-  `installation_linked`, `409 forge_app_missing`, and `503
-  forge_unavailable`.
+  `forge_app_missing`, and `forge_unavailable` when the forge did not
+  answer. No answer puts a forge token, code or state in the URL, and
+  the first five rows never take the `state`.
 - An installation is linked to one human at a time. Linking one that is
   linked to another human is refused (`409 conflict`, `details.reason:
   installation_linked`); the other human unlinks it first, or the
