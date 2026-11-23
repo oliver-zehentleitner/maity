@@ -731,8 +731,9 @@ class Client:
         what the events read writes (the acknowledged cursor, which only moves forward, and a
         chat message's first delivery) comes out the same when it is read again. A write is
         never sent again on it: the delivery the hub accepted may have done it already. A real
-        replay by someone else gets the same answer. Only status 401 with that code counts; the
-        code on any other status, or another 401, ends the call at once."""
+        replay by someone else gets the same answer. Only status 401 with that code triggers
+        this retry: no other response does (that code on another status, another 401). The
+        separate `timestamp_skew` retry above is unchanged."""
         limit = timeout or self.timeout
         end = time.monotonic() + limit
         skew_retried = nonce_retried = False

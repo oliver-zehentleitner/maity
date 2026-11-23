@@ -569,8 +569,9 @@ between the client and the hub delivered a copy, and the hub refused the second 
 real replay by someone else gets the same answer; the client's one more read then only reads
 again.) A `GET` answered that way is signed again with a new nonce and sent once more, within
 what is left of the call's timeout; a second `nonce_reused` ends the call as before. Only
-status 401 with that code counts: the code on another status, or another 401, ends the call at
-once. `POST`, `PATCH`, `PUT` and `DELETE` are never sent again on it.
+status 401 with that code triggers this retry: no other response does (that code on another
+status, another 401); the separate `timestamp_skew` retry, a 401 with the hub's time, is
+unchanged. `POST`, `PATCH`, `PUT` and `DELETE` are never sent again on it.
 
 **Reason:** the hub has no path that spends one request's nonce twice. On PostgreSQL the nonce is
 spent by an insert that skips a conflict, inside the short auth transaction; the transaction's
