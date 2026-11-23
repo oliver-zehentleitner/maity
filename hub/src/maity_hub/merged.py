@@ -5,7 +5,8 @@ on a card in `review`, the hub emits `task_merged` once per report: it wakes the
 authority, and under `merged_closes: auto` with `done_authority` `holder` or `admin`
 the hub moves the card to `done` itself, unless a dependency or child is open, a
 takeover of it is objected or escalated, or it is a release card (the releaser closes
-those after the checklist, §6.7), or the pull request is not the card's own: its head
+those after the checklist, §6.7), or it is outsiders' work without its own approvals
+(§2.3, `own_approvals`), or the pull request is not the card's own: its head
 branch as the forge names it is not the reported one or lives in another repository, its
 title and body do not name the card, it was merged before the report named it, or
 another card names it or was closed by it (`_not_its_own`). A card `blocked` from
@@ -24,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import cards, clock, forge, takeovers
+from maity_hub import agent_owners, cards, clock, forge, takeovers
 from maity_hub import tables as t
 from maity_hub.events import emit
 from maity_hub.instances import token
@@ -214,7 +215,40 @@ def _blocked_by(conn: Connection, card: Any, project: Any) -> list[str]:
         # A release closes through its readiness gate (§6.7), which the releaser
         # passes after the checklist; a merge of its pull request is not that step.
         reasons.append("release")
+    if outsiders_work(conn, card, project):
+        # §2.3 "Own approvals", §6.6: `auto` acts as `notify` on outsiders' work without
+        # its own approvals on the reported head. The hub counts none yet, so a merge never
+        # closes such a card on its own; its done authority closes it.
+        reasons.append("own_approvals")
     return reasons + _not_its_own(conn, card, project)
+
+
+def outsiders_work(conn: Connection, card: Any, project: Any) -> bool:
+    """§2.3 "Own approvals": an outside agent holds the card, or filed its current report,
+    judged as the card and its members stand now. An outside agent is one whose owner holds
+    no active membership of the project (trust `outside` is not built yet)."""
+    agents: list[str] = []
+    if card.claim_holder is not None:
+        held = conn.execute(
+            select(t.membership.c.agent_id).where(t.membership.c.id == card.claim_holder)
+        ).scalar()
+        if held is not None:
+            agents.append(str(held))
+    reporter = (card.report or {}).get("reported_by")
+    if isinstance(reporter, str) and reporter.startswith("agt-"):
+        agents.append(reporter)
+    return any(_outside_agent(conn, project, agent_id) for agent_id in agents)
+
+
+def _outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
+    """An agent whose owner is no member of the project; one whose profile the hub cannot
+    find counts as outside, since nothing then shows it is the project's own."""
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar()
+    if owner is None:
+        return True
+    return not agent_owners.owner_is_member(conn, project.id, str(owner))
 
 
 def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:

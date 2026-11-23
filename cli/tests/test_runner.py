@@ -15,7 +15,7 @@ import pytest
 from conftest import fake_opencode, posix
 
 from maity import cli, state
-from maity.runner import adapters, capabilities, commands, config
+from maity.runner import adapters, capabilities, commands, config, tools
 from maity.runner.asuser import RUNNER, AsUser
 
 MINIMAL = """\
@@ -927,6 +927,51 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     found = [line for line in lines(capsys) if f"sandbox was checked with {checked}" in line]
     assert bool(found) is warned, found
     assert all(line.startswith("warn") for line in found)
+
+
+@pytest.mark.parametrize(
+    ("track", "version", "level"),
+    [("newest", "2.1.330", "note"), ("newest", "2.1.318", "warn"), ("checked", "2.1.330", "warn")],
+)
+def test_check_only_notes_a_newer_claude_code_the_operator_chose(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    track: str,
+    version: str,
+    level: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    fake_tool(bin_dir, "bwrap")
+    fake_tool(bin_dir, "socat")
+    paired.write_text(paired.read_text() + f'\n[harness.claude-code]\ntrack = "{track}"\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    found = [line for line in lines(capsys) if "2.1.325" in line and version in line]
+    assert len(found) == 1 and found[0].startswith(level), found
+    if level == "note":
+        assert 'track = "newest"' in found[0]
+    elif version == "2.1.330":  # above the checked one under "checked": the way back
+        assert "install 2.1.325 yourself" in found[0] and 'track = "newest"' in found[0]
+
+
+@pytest.mark.parametrize(
+    ("kept", "said"), [("2.1.325", "rollback claude-code"), (None, "no version")]
+)
+def test_check_points_a_managed_claude_code_above_the_checked_one_back(
+    tmp_path: Path, kept: str | None, said: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    tools.save(tmp_path, "claude-code", tools.ToolState(version="2.1.330", previous_version=kept))
+    harness = config.Harness("claude-code", ("supervised",), "supervised", update="daily")
+    report = commands.Report()
+    commands._check_version(report, harness, "2.1.330", tmp_path)
+    ((level, text),) = report.lines
+    assert level == "warn" and said in text and "takes at most 2.1.325" in text, text
 
 
 def test_check_requires_the_sandbox_when_configured(

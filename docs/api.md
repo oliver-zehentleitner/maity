@@ -9684,7 +9684,8 @@ the card's `approvals` stay. Every replacement clears `approvals`
   like the case below and told when the answer returns it to `review`.
   When a condition fails the card stays where it is and `task_merged`
   says `closed: false` with `blocked_by` (`dependencies`,
-  `objection`, `release`; and where the pull request is not the card's
+  `objection`, `release`; `own_approvals` when the card is outsiders'
+  work without its own approvals on the reported head, §2.3; and where the pull request is not the card's
   own: `head_ref` when its head branch is not the reported one, is in
   another repository or is not known, `pull_request_unnamed` when its
   title and body do not name the card, `merged_before_report` when it
@@ -14775,7 +14776,7 @@ learns its content.
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value. An agent profile's owner who is not a member of the project gets it as an account record (§18.1), as for `credential_revoked` with `reason: no_membership` above (not built yet, hub PR D) |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
-| `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6), `blocked_by` of `dependencies`, `objection`, `release`, `head_ref`, `pull_request_unnamed`, `merged_before_report`, `pull_request_shared`; wakes the done authority only, and nobody when `closed` is true |
+| `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6), `blocked_by` of `dependencies`, `objection`, `release`, `own_approvals`, `head_ref`, `pull_request_unnamed`, `merged_before_report`, `pull_request_shared`; wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at`, `finding` (the report's finding or `null`, never with its `log`, §15.7) |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
@@ -23200,20 +23201,44 @@ update = "daily"    # maity itself; default "never"
   version the one new sessions start with; the version it left stays on
   the machine as `previous_version`, so a second rollback goes back to
   it. After a rollback the tool reports `rolled_back` when the version
-  now in use is older than `latest`, and `current` otherwise. While it
-  is `rolled_back`, the runner does not install the version it left, or
+  now in use is older than the version the runner would take, and
+  `current` otherwise. The version the runner would take is `latest`,
+  or, when the runner holds Claude Code at its checked version (`track =
+  "checked"` in the runner's own configuration, docs/runners.md) because
+  `latest` is later than that version or cannot be compared with it, that
+  held version, which is local to the runner and not reported. A later
+  check that takes no version reports `rolled_back` only when the version
+  the runner would take is newer than the one in use and is one the
+  runner does not take again on its own, such as the version the rollback
+  left (below); otherwise it reports `current`. While it is
+  `rolled_back`, the runner does not install the version it left, or
   one that failed its version answer, again on its own, neither on the
   daily check nor on `Update now`: it takes only a version newer than
-  those, which ends `rolled_back`. Taking the left version again is the
-  operator's second rollback. A rollback is refused while an install or
-  update of the tool runs; it can be run again once that is done, so
+  those, or, under `track = "checked"`, the held version when that is
+  newer than the version in use, even when it is older than the version
+  the rollback left: the version a runner on `checked` should run is the
+  checked one, and a rollback from a version above it rejects that
+  version, not the checked one. Either such check ends `rolled_back`:
+  the version it takes starts the next sessions, the one in use before
+  it is kept as `previous_version`, and the version the rollback left is
+  no longer kept, so it is removed once no running session started from
+  it. The runner never takes the left version again on its own, under
+  either value of `track`; until a check takes a version, taking it
+  again is the operator's second rollback. A rollback is refused while
+  an install or update of the tool runs; it can be run again once that is done, so
   neither overwrites the other. For example, with 2.1.320 in use, 2.1.308
-  kept and `latest` 2.1.320: a rollback starts new sessions on 2.1.308,
-  keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
+  kept, `latest` 2.1.320 and no hold: a rollback starts new sessions on
+  2.1.308, keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
   daily check finds 2.1.320 again and leaves it. A second rollback
   starts them on 2.1.320 again, keeps 2.1.308 and reports `current`. If
   2.1.321 appears while it is `rolled_back`, the runner installs it as
-  any update and reports `current`.
+  any update and reports `current`. Under `track = "checked"` with the
+  checked version 2.1.330, 2.1.335 in use (taken under `newest`) and
+  2.1.320 kept: a rollback starts new sessions on 2.1.320, keeps 2.1.335
+  and reports `rolled_back`; the next check installs 2.1.330, keeps
+  2.1.320 as `previous_version` and reports `current`, and 2.1.335 is
+  removed once no session uses it. A second rollback then starts them
+  on 2.1.320 again.
 - **maity itself.** The same rules. After an update, the runner restarts
   itself on the new version, takes over its sessions (`adopted`, §15.7),
   and restarts each session that an older `maity` started, at that
@@ -23261,10 +23286,13 @@ needs a hub that has it:
 - `version`: what new sessions start with, `null` when the tool is not
   there; `previous_version`: the version kept for a rollback, or `null`;
   `latest`: the newest version the last check found, or `null` before
-  the first check or with `update: "never"`.
-- `state`: `current` (in use is the latest the runner knows of, or no
-  check has run), `rolled_back` (in use is older than `latest` after a
-  rollback; above), `missing` (not there and `install: false`),
+  the first check or with `update: "never"`. It stays the vendor's newest
+  while the runner holds Claude Code at its checked version (above), so
+  `current` can come with a `version` below `latest`.
+- `state`: `current` (in use is not older than the version the runner
+  would take, `latest` or the held version; or no check has run),
+  `rolled_back` (after a rollback, in use is older than the version the
+  runner would take; above), `missing` (not there and `install: false`),
   `installing`, `updating`, `login_needed`, `failed`. `reason` with `failed` only:
   `installer_failed`, `version_failed` (the new version does not run;
   the one before is kept), `network`, `no_space`; `null` otherwise. The
