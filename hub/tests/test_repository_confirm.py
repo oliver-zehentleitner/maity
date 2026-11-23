@@ -81,7 +81,9 @@ def test_a_url_creation_would_store_the_same_confirms(owner: flow.Human, sent: s
         "https://github.com/acme/maity.GIT",  # only a lower-case `.git` is dropped
         "http://github.com/acme/maity",  # creation refuses it: no repository at all
         "not a url",
-        # Guards against a later loosening (A2220 P3-1): none names the stored repository.
+        # Guards against over-accepting (A2220 P3-1): none names the stored repository. They pass
+        # with the comparison before tsk-vt6gwx7h86c0 and after it; they fail only if a later
+        # change widens it too far (A2275, lotse's ruling).
         URL + "/tree/main",
         "https://www.github.com/acme/maity",
         "https://github.com:443/acme/maity",
@@ -117,6 +119,8 @@ def test_a_row_stored_before_normalisation_still_confirms(
 def test_a_row_stored_before_normalisation_refuses_another_repository(
     owner: flow.Human, migrated: Engine
 ) -> None:
+    """A guard, as the near misses above: it passes before and after the change and fails only
+    if the comparison over-accepts a legacy row."""
     with migrated.begin() as conn:
         conn.execute(t.project.update().values(repository_url=LEGACY))
     refused = owner.post(CONFIRM, {"url": "https://github.com/acme/other"})
