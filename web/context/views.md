@@ -147,8 +147,8 @@ to open them from.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's spec on card tsk-kqn8zhptf06k (the dashed outsider tab, the star that anchors it, member views limited to the outsider's rights); the owner's correction of 2026-11-19 (no separate view for outsiders: the dashed tab renders the normal member views with the controls the outsider has no right to hidden, fed by the member routes #2001 opens, and no public-page fallback inside the tab, not even as an interim) and their scope change the same day (seq 169849: outsiders see Why too; its routes come with a contract addition in #2001); docs/api.md §2.3, §5.1 "Stars" and §6.30 Q2; lotse's answers to the web plan's questions Q2–Q8, 2026-11-19
-**Revisit when:** #2001's contract addition names Why's routes for an outsider (`…/keep-the-why/export` and `…/bodies`) differently from the member shapes the fixture hub answers now; the hub opens another member route to an outsider, or closes one; or the contract lets an unstarred tab outlive its browser session
+**Source:** the owner's spec on card tsk-kqn8zhptf06k (the dashed outsider tab, the star that anchors it, member views limited to the outsider's rights); the owner's correction of 2026-11-19 (no separate view for outsiders: the dashed tab renders the normal member views with the controls the outsider has no right to hidden, fed by the member routes #2001 opens, and no public-page fallback inside the tab, not even as an interim) and their scope change the same day (seq 169849: outsiders see Why too); docs/api.md §2.3, §5.1 "Stars" and §6.30 Q2, as #2001 and #2078 built them (hub access.py `OUTSIDE_READS`, `PUBLIC_REPOSITORY_READS`; routes/keep_the_why.py); the lead's answers to the web plan's questions Q2–Q8, 2026-11-19, and their rulings on card tsk-2fxc53xqf922 (seq 201203: an owner of an agent or runner in the project is a plain outsider in the tab; one Why sentence for every reason the hub closes it; a slot for "Add your agent"); the card's note nte-n3vef4qz1838
+**Revisit when:** the hub opens another member route to an outsider, or closes one; the Why reads answer an outsider with a reason the dashboard could say; "Add your agent" or another outsider action lands in the slot; or the contract lets an unstarred tab outlive its browser session
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-19
 
 A signed-in human who opens a public project they are no member of gets
@@ -158,11 +158,29 @@ the project's Overview and is current while any of its views is shown
 view for outsiders: the tab opens the project's member views, Overview,
 Board, Team and Why, read from the member routes the hub opens to an
 outsider (§2.3, #2001: the project, its members, its cards with their
-history and notes, its logo and banner; Why's export and bodies pending
-a contract addition there), with every control they have no right to
-left out (`ctx.outsider`: no card created, moved, assigned or watched,
-no note added or edited, no member managed, invited or chatted with,
-no agent joined; Report stays). Each view is switched on for outsiders
+history and notes, its logo and banner; #2078: the three Why reads,
+only while the hub found the repository public), with every control
+they have no right to left out (`js/trust.js`: `outsider(ctx)` and
+`writes(ctx)` beside the trust helpers, which already answer no for a
+reader with no trust: no card created, moved, assigned or watched, no
+note added or edited, no member managed, invited or chatted with, no
+agent joined; Report stays). A member's name links to their page there
+(`opensViews(ctx)`, `ctx.outsideViews`), which a group chat read along
+(`/observe`, also `ctx.outsider`) keeps unlinked; card and request ids
+in text stay unlinked for both, since an id can lead into a view closed
+to them (`js/ids.js`). A person who owns an agent or a runner in
+the project is a plain outsider here: the owner calls §2.3 keeps for
+them stay with the CLI and the API, and the tab offers none of them,
+not even for that agent. Where the Why reads answer `not_found`, Why
+says in one sentence that the project's Why is not shown outside it,
+naming no reason, since the hub answers the same for a repository that
+is not public, for none, and for a project outside the operator's own
+namespaces (`js/why.js` `outsideState`). The head of every view in the
+tab carries an empty slot for the outsider's own actions,
+`span#outsider-actions.outsider-actions` with
+`data-slot="outsider-add-agent"` in `.project-state` (`js/app.js`),
+hidden while empty; "Add your agent" (§3.1, its own card) is drawn
+into it, and nothing else is yet. Each view is switched on for outsiders
 in the nav itself (`NAV`'s `outsider: true`), Why's included, so one
 flag takes a view out; every other route of the project, the inbox,
 chat and settings among them, is the dashboard's "not found", and a
@@ -208,9 +226,11 @@ project.
 this entry first had it while the hub's outsider read was missing, or
 as a fallback where a member route fails (the owner, 2026-11-19: there
 is no separate view for outsiders, and no public-page fallback inside
-the tab, not even as an interim; until #2001 merges the views build
-against the fixture hub); a view of their own for outsiders (the same
-reason); kept in localStorage until closed (Q2's wording rules it out:
+the tab, not even as an interim); a view of their own for outsiders (the
+same reason); a Why sentence per reason the hub closes it (its
+`not_found` does not say which, and naming one, such as "the repository
+is not public", would be false for the others); the owner actions of an
+agent's owner inside the tab (the lead: a plain outsider there); kept in localStorage until closed (Q2's wording rules it out:
 it would outlive the session and come back in a fresh start); gone on
 leaving the project's page (Q2: "not until the reader moves to another
 tab"); kept in memory only (it dies on a reload, which is no end of the

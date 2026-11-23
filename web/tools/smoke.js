@@ -17261,6 +17261,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const heads = main.querySelectorAll("th").map(text);
       expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView() && !text(main).includes("A quiet agent"),
         "outsider: the Team lists the members they read, the isolated agent not among them, its tab current, no presence column " + JSON.stringify([rows, heads]));
+      expect(main.querySelectorAll("a.member-ref").some((a) => (a.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/team/hum-sam"),
+        "outsider: a member's name links to their page in the tab (M.trust.opensViews), as for a member");
       // The fixture hub as routes/members.py answers an outsider: its allow-list of keys, the public
       // page's picture (null here, never /avatars/…), no edge to a member they do not read.
       const read = (await M_.api.get("/projects/stranger/tool/members")).items;

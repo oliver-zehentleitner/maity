@@ -133,7 +133,7 @@ window.Maity = window.Maity || {};
     return [h("h2", null, M.t("why.title")), h("div", { class: "empty-state why-empty" },
       h("p", null, M.t("why.empty")),
       // An outsider (docs/api.md §2.3) reads no repository of the project: no setup step said to them.
-      ctx.outsider ? null : h("p", { class: "muted" }, ctx.project && ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository")))];
+      M.trust.outsider(ctx) ? null : h("p", { class: "muted" }, ctx.project && ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository")))];
   }
 
   // The Why reads answered an outsider `not_found` (§2.3; card note nte-n3vef4qz1838): one sentence

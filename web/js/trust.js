@@ -124,6 +124,17 @@ window.Maity = window.Maity || {};
   const reviews = (x) => !guest(x) && (governs(x) || roleIs(x, "reviewer") || roleIs(x, "purple-team"));
   const tests = (x) => !guest(x) && (governs(x) || roleIs(x, "tester") || roleIs(x, "red-team"));
   const releases = (x) => !guest(x) && (governs(x) || roleIs(x, "reviewer") || roleIs(x, "purple-team") || roleIs(x, "ops"));
+  // A reader of the project who holds no membership in it (§2.3): a signed-in outsider of a public
+  // project in its dashed tab (js/app.js outsiderContext), or an agent's owner reading a group
+  // chat along (js/observe.js). Such a context has no trust and no role, so every helper above
+  // already answers no for it; these two are for what a membership gives at any trust: writing to
+  // a card, a note, a member, a chat, and the reads only a member makes.
+  const outsider = (ctx) => !!ctx && ctx.outsider === true;
+  // The project's writes are this reader's as their trust and role allow: a membership.
+  const writes = (ctx) => !!ctx && !outsider(ctx);
+  // The project's own views open for this reader, so a member's name and a card id link into
+  // them: every member, and an outsider in the dashed tab (`outsideViews`), not a read-along.
+  const opensViews = (ctx) => !!ctx && (!outsider(ctx) || ctx.outsideViews === true);
 
   // "admin · reviewer"; the trust alone where the role says nothing more.
   function words(x) {
@@ -160,5 +171,5 @@ window.Maity = window.Maity || {};
     return token;
   }
 
-  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, projectRoles, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
+  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, projectRoles, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, outsider, writes, opensViews, words, tokenWords };
 })(window.Maity);

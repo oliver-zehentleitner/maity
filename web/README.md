@@ -62,12 +62,15 @@ as `starred` are dashed tabs among the human's own, opened after
 `start_tabs` in a browser with none kept, each with a filled star whose
 button sends the list without it. The tab links to the project's
 Overview and opens its member views, Overview, Board, Team and Why (the
-views with `outsider: true` in `js/app.js` `NAV`; Why's routes pending a
-contract addition in #2001), with `ctx.outsider` set: the reads are the
-member routes the hub opens to an outsider (#2001; the fixture hub's
-`stranger/tool` answers them as it does), no bootstrap parts, no event
-feed, and every write control left out (`web/context/views.md`
-f461c919). Any other view of the project is "not found", a project the
+views with `outsider: true` in `js/app.js` `NAV`), with `ctx.outsider`
+set: the reads are the member routes the hub opens to an outsider
+(#2001, and #2078's Why reads while the repository is public; the
+fixture hub's `stranger/tool` answers them as it does), no bootstrap
+parts, no event feed, and every write control left out through
+`M.trust.outsider` and `M.trust.writes` (`web/context/views.md`
+f461c919). Why's `not_found` there is one sentence (`M.why.outsideState`).
+The head carries the empty `#outsider-actions` slot for the outsider's
+own actions ("Add your agent" comes with its own card). Any other view of the project is "not found", a project the
 hub does not let them read "not a member"; the stored public page is
 never shown inside the tab. In a
 project, the project's state and the owner's absence ("Away until …")

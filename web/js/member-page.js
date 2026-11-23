@@ -65,7 +65,7 @@ window.Maity = window.Maity || {};
   };
 
   // An outsider of a public project (docs/api.md §2.3) manages nothing in it, an agent of their own included.
-  const ownAgentOf = (ctx, m) => !ctx.outsider && m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
+  const ownAgentOf = (ctx, m) => M.trust.writes(ctx) && m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
 
   // The instance that speaks for the member now: the online one, else the newest.
   function currentInstance(m) {
@@ -98,7 +98,7 @@ window.Maity = window.Maity || {};
       m.paused ? pill(M.t("memberpage.paused"), "member-pill-paused") : null];
     // Chat: one's own agent's direct chat, anyone else a group chat with them chosen (§9.2).
     const groupOk = !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);
-    const chat = m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" || ctx.outsider ? null
+    const chat = m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" || !M.trust.writes(ctx) ? null
       : ownAgentOf(ctx, m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
     // Actions lead to where each one is done (#643): nothing is done here.
     const actions = [];
@@ -272,7 +272,7 @@ window.Maity = window.Maity || {};
     }
     // An outsider (§2.3) reads Cards alone: Activity reads the event feed, Briefing the
     // briefings and Sessions & credentials what a member view shows them only in part.
-    const offered = TABS.filter(([k]) => (ctx.outsider ? k === "cards" : k !== "briefing" || readsBriefing(ctx, m)));
+    const offered = TABS.filter(([k]) => (M.trust.outsider(ctx) ? k === "cards" : k !== "briefing" || readsBriefing(ctx, m)));
     const chosen = offered.some(([k]) => k === tab) ? tab : offered[0][0];
     // The cards held, for the header's line, from the instances' claims where the hub counts them.
     const claims = (m.instances || []).some((i) => typeof i.claims === "number")

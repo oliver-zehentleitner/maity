@@ -92,7 +92,7 @@ window.Maity = window.Maity || {};
   function holderPresence(ctx, holder) {
     const member = (ctx.memberById || {})[holder];
     // An outsider reads no presence (docs/api.md §2.3): nothing to say beside the holder.
-    if (ctx.outsider) return h("span", { class: "holder-presence", "data-holder": holder });
+    if (M.trust.outsider(ctx)) return h("span", { class: "holder-presence", "data-holder": holder });
     return h("span", { class: "holder-presence", "data-holder": holder }, member
       ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
         " " + presenceWord(member.presence), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
@@ -195,7 +195,7 @@ window.Maity = window.Maity || {};
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
     // An outsider (docs/api.md §2.3) edits no card and starts no subtask.
-    if (!manage || !manage.reload || ctx.outsider) return null;
+    if (!manage || !manage.reload || !M.trust.writes(ctx)) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
     // The board's cards as they are now: byId is filled in place at every draw, and the late draw
     // may keep this part (draw, showPanelPart), so New subtask reads them when it is opened.
@@ -607,7 +607,7 @@ window.Maity = window.Maity || {};
     };
     const E = M.boardEdit;
     // An outsider (docs/api.md §2.3) moves, assigns and places no card: no row of controls, no drag.
-    const writes = manage && !ctx.outsider;
+    const writes = manage && M.trust.writes(ctx);
     const controls = writes ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
       E.orderControl(ctx, c, manage.columnOf, manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
@@ -660,7 +660,7 @@ window.Maity = window.Maity || {};
           : M.tn("board.contract.line", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
       // Its section from the repository (§6.8); not for an outsider, who reads no …/contract (§2.3).
-      c.contract && M.contractPanel && !ctx.outsider ? M.contractPanel.panel(ctx, c, redraw) : null,
+      c.contract && M.contractPanel && M.trust.writes(ctx) ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       subtasks(ctx, c, byId, inPanel),
       inPanel ? familyEditor(ctx, c, byId, manage) : null,
@@ -690,8 +690,9 @@ window.Maity = window.Maity || {};
     // whatever the filters said; the board's own title keeps them.
     const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
     let marked = wanted || returning;
-    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin.
-    ctx.canRelease = !ctx.outsider && M.trust.releases(ctx);
+    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin; an outsider has
+    // no trust and no role, so none.
+    ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     // The cards in column groups read side by side, each following its own pages, instead of one
@@ -1584,7 +1585,7 @@ window.Maity = window.Maity || {};
     }
 
     // An outsider (docs/api.md §2.3) creates no card.
-    const newButton = ctx.outsider ? null : h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
+    const newButton = !M.trust.writes(ctx) ? null : h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
     formBox.id = "new-card-box";
     const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
     if (newButton) newButton.addEventListener("click", () => {

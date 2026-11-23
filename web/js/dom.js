@@ -403,7 +403,8 @@ window.Maity = window.Maity || {};
     const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
     // Without a handle (a reference read across projects carries none) the
     // name stands before the #id: the instance is said all the same.
-    const linkable = !!m && !ctx.outsider && typeof ctx.link === "function";
+    // A member's page opens for a member and for an outsider in the dashed tab, not read along (/observe).
+    const linkable = !!m && opensViews(ctx) && typeof ctx.link === "function";
     const suffix = inst && agent
       ? (linkable
         ? h("a", { class: "member-instance muted", href: instanceHref(ctx, id, inst.id), title: instanceTitle(inst) }, "#" + inst.id)
@@ -418,6 +419,9 @@ window.Maity = window.Maity || {};
     // The #id is a link of its own beside the handle's, never inside it.
     return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
+  // Whether the project's views open for this reader (js/trust.js `opensViews`), so a name links
+  // into them; where trust.js is not loaded, a reader from outside gets no link, as before.
+  const opensViews = (ctx) => (M.trust ? M.trust.opensViews(ctx) : !ctx.outsider);
   // Where an instance's #id leads: its member's page, Sessions, with it chosen.
   const instanceHref = (ctx, memberId, instanceId) => ctx.link("team", memberId, "sessions", instanceId);
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
@@ -452,7 +456,7 @@ window.Maity = window.Maity || {};
         h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
       h("span", { class: "chip-handle" }, "@" + handle),
     ];
-    const linkable = ctx.memberById && ctx.memberById[id] && !ctx.outsider && typeof ctx.link === "function";
+    const linkable = ctx.memberById && ctx.memberById[id] && opensViews(ctx) && typeof ctx.link === "function";
     return linkable
       ? h("a", { class: "member-chip", href: ctx.link("team", id), title: said, "aria-label": said, "data-member": id }, face)
       : h("span", { class: "member-chip plain", title: said }, face);

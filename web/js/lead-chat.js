@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
   // project's outside one (then each named with its project).
   async function found(ctx) {
     // An outsider of a public project (§2.3) has no chat there: nobody to reach from its views.
-    if (!ctx.me || ctx.me.kind !== "human" || ctx.outsider) return { list: [], multiProject: false };
+    if (!ctx.me || ctx.me.kind !== "human" || M.trust.outsider(ctx)) return { list: [], multiProject: false };
     if (ctx.scope === "project") return { list: targets(ctx).map((member) => ({ ctx, member, project: ctx.project })), multiProject: false };
     const list = await targetsEverywhere(ctx);
     return { list, multiProject: new Set(list.map((t) => t.project.full_name)).size > 1 };

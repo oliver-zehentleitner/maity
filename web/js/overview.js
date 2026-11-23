@@ -54,8 +54,8 @@ window.Maity = window.Maity || {};
   // and Project the repository, the policy and the export, none of which the hub gives them.
   const TABS = [
     { key: "", get label() { return M.t("overview.tab.summary"); } },
-    { key: "swarm", get label() { return M.t("overview.tab.swarm"); }, when: (ctx) => !!M.swarm && !ctx.outsider },
-    { key: "project", get label() { return M.t("overview.tab.project"); }, when: (ctx) => !ctx.outsider },
+    { key: "swarm", get label() { return M.t("overview.tab.swarm"); }, when: (ctx) => !!M.swarm && M.trust.writes(ctx) },
+    { key: "project", get label() { return M.t("overview.tab.project"); }, when: (ctx) => M.trust.writes(ctx) },
   ];
 
   // A link from data: plain https only, in a new tab; anything else is text.
@@ -180,7 +180,7 @@ window.Maity = window.Maity || {};
     const online = list.filter((m) => m.presence === "online").length;
     const counted = [M.t("overview.team.humans", { count: humans }), M.t("overview.team.agents", { count: agents })];
     // An outsider reads no presence (§2.3): no count of who is online, which would read 0.
-    const facts = !list.length ? null : ctx.outsider ? M.fmt.list(counted)
+    const facts = !list.length ? null : M.trust.outsider(ctx) ? M.fmt.list(counted)
       : M.t("overview.team.facts", { humans: counted[0], agents: counted[1], online });
     return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
       head("overview-members", M.t("overview.team.title"),
@@ -294,14 +294,14 @@ window.Maity = window.Maity || {};
     const asked = args && args[0];
     const tab = TABS.some((t) => t.key === asked && t.key && (!t.when || t.when(ctx))) ? asked : "";
     // A tab an outsider is not offered is Summary, at its own address.
-    if (asked && !tab && ctx.outsider) { M.route.go(ctx.link("overview"), { replace: true }); return; }
+    if (asked && !tab && M.trust.outsider(ctx)) { M.route.go(ctx.link("overview"), { replace: true }); return; }
     const counts = tab === "";
     const since = new Date(Date.now() - M.boardWindowDays * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const path = ctx.base + "/overview?closed_after=" + encodeURIComponent(since);
     // GET …/overview is a member's: an outsider's Summary counts the board from the cards they
     // read (§2.3, `GET …/tasks`, the closed ones of the same window), with no requests and no
     // reports, which the hub reads only for members.
-    const read = ctx.outsider
+    const read = M.trust.outsider(ctx)
       ? () => M.api.getAll(ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since)).then((r) => {
         const tally = {};
         r.items.forEach((c) => { tally[c.status] = (tally[c.status] || 0) + 1; });

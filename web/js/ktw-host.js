@@ -465,7 +465,7 @@ window.Maity = window.Maity || {};
       // An outsider's `not_found` (§2.3): the Why reads are closed to them for this project, for
       // whichever of the hub's reasons (its repository not public, no repository, or not in the
       // operator's own namespaces); said as such, with nothing to set up and nothing to read again.
-      if (made.code === "not_found" && ctx.outsider) {
+      if (made.code === "not_found" && M.trust.outsider(ctx)) {
         append(clear(root), M.why.outsideState());
         return;
       }

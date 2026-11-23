@@ -70,7 +70,7 @@ window.Maity = window.Maity || {};
     // one's own at settings/mine for every human member.
     { route: "settings", get label() { return M.t("nav.settings"); }, when: (ctx) => ctx.canAdmin || ctx.me.kind === "human" },
   ];
-  const offered = (ctx, item) => (!ctx.outsider || item.outsider === true) && (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
+  const offered = (ctx, item) => (!M.trust.outsider(ctx) || item.outsider === true) && (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
   // docs/api.md §6.1; moving to launch is the owner's go.
   const STATES = ["plan", "build", "review", "launch", "archived"];
@@ -1538,7 +1538,7 @@ window.Maity = window.Maity || {};
     const link = h("a", {
       href: projectLink(p.full_name, "overview"),
       class: "outsider" + (p.starred ? " starred" : ""),
-      "aria-current": ctx.scope === "project" && ctx.outsider && ctx.slug === p.full_name ? "page" : null,
+      "aria-current": ctx.scope === "project" && M.trust.outsider(ctx) && ctx.slug === p.full_name ? "page" : null,
       // Only a starred tab has a place among the tabs the row moves (this session's own stay last).
       "data-project": p.starred ? p.id : null,
       "data-outsider": p.full_name,
@@ -2001,7 +2001,7 @@ window.Maity = window.Maity || {};
             // The outsider's own actions in the tab's head, on every view of it (web/context/views.md
             // f461c919): empty here, and hidden while empty. "Add your agent" (§3.1 "An outsider's
             // agent", its own card) is drawn into it; nothing else is.
-            ctx.outsider ? h("span", { class: "outsider-actions", id: "outsider-actions", "data-slot": "outsider-add-agent" }) : null)
+            M.trust.outsider(ctx) ? h("span", { class: "outsider-actions", id: "outsider-actions", "data-slot": "outsider-add-agent" }) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block above; what holds meanwhile, here.
@@ -2211,12 +2211,16 @@ window.Maity = window.Maity || {};
   // owner, 2026-11-19; web/context/views.md f461c919): the project and its members, read through
   // the member routes the hub opens to an outsider, and nothing else; no event feed (`…/events`
   // is a member's), so no head is read and the views offer no reload on events. No trust, no
-  // role: every control keyed on a right is left out, and the views leave out what is keyed on
-  // `ctx.outsider`. The project is a dashed tab of this browser session, or its starred tab, and
-  // the current one (js/tabs.js visit).
+  // role: every control keyed on a right is left out, and the views leave out what a membership
+  // gives at any trust (js/trust.js `outsider`, `writes`). An owner of an agent or a runner in the
+  // project is such a reader too: their owner calls (§2.3) stay with the CLI, none is offered here.
+  // `outsideViews`: the project's views open for them, so a member's name links to its page
+  // (`opensViews`), unlike a group chat read along (js/observe.js). The project is a dashed tab of
+  // this browser session, or its starred tab, and the current one (js/tabs.js visit).
   async function outsiderContext(ctx, where, kept) {
     ctx.slug = where.slug;
     ctx.outsider = true;
+    ctx.outsideViews = true;
     ctx.trust = null;
     ctx.role = null;
     ctx.canAdmin = false;
@@ -2349,7 +2353,7 @@ window.Maity = window.Maity || {};
     ctx.markSeen = () => { seen = openNow(); };
 
     // An outsider reads no event feed of the project (§2.3): its views read on their own.
-    if (where.scope !== "project" || ctx.outsider) return;
+    if (where.scope !== "project" || M.trust.outsider(ctx)) return;
     ctx.onEvents((events) => {
       const theirs = events.filter((e) => !(e.actor && e.actor.member_id === ctx.me.id));
       const texts = [];
