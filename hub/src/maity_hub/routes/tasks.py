@@ -1978,8 +1978,9 @@ def assign(
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
+            # Before the holder's instance is chosen (§6.5, "Until the claim request is built").
+            outsiders.refuse_taking(assignee_row, mine)
             instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
-            outsiders.refuse_taking(assignee_row, mine)  # §6.5, "Until the claim request…"
             _refuse_paused(conn, assignee, instance)
             values.update(
                 claim_holder=assignee,
