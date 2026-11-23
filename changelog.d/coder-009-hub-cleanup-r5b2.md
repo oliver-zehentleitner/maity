@@ -7,5 +7,6 @@
   view of a placement (`GET /runner/placements`, hello) reads only the agent's id and handle,
   no longer its owner's handle and its picture; a revocation reads the instance's live
   attachments twice instead of four times (`instances.live_attachments`), and `GET /projects`
-  for an agent reuses the caller's attachment read; one `Effort` type for a runner's offered
-  efforts and a placement's effort.
+  for an agent reuses the caller's attachment read; creating a placement for an existing
+  profile reads that profile once after its lock instead of once per check; one `Effort` type
+  for a runner's offered efforts and a placement's effort.
