@@ -488,7 +488,7 @@ in both directions.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-1z1h4rwyz0qf, pull request #2126 (main red on 2026-11-23) and its review A2173; card tsk-2s1bwwsvqy9h; `_test_clock` in `hub/tests/test_backfill_public_merges.py`, `_fresh` in `hub/tests/test_swarm.py`
-**Revisit when:** a window or expiry that a dated test asserts on reads a time other than `clock.now()`
+**Revisit when:** `swarm.window` or `swarm._Cache.get` stops reading `clock.now()`, or the conftest stops resetting the clock after each test
 
 A test that writes fixed times (a module `NOW`, a calendar string) and asserts on anything cut
 by a window, an expiry or a retention against `clock.now()` pins `clock.set_source` to the same
@@ -506,9 +506,11 @@ rather than importing that module's fixture, since `test_swarm`'s `_fresh` also 
 **Reason:** a pin on `maity_hub.clock` moves every time read through `clock.now()` together: on
 this test's path the swarm window (`swarm.window`) and the swarm cache's age and day
 (`_Cache.get`), so the test gives the same answer on every future date. It does not move the
-times the hub reads elsewhere: the database's `now()` (`listening`, `shared_budget`), a module's
-own `datetime.now(UTC)` (`listening`, `shared_counts`) or a monotonic clock (the caches in
-`ktw`, `images`). A dated test that asserts on one of those needs another means.
+times the hub reads elsewhere, among others the database's `now()` (for example `listening`,
+`shared_budget`), a module's own `datetime.now(UTC)` (`listening`, `shared_counts`), the epoch
+from `time.time()` (`forge`, `attachments`) and monotonic clocks (`ktw`, `images`,
+`contract_text`, `ratelimit`). A dated test that asserts on one of those freezes that module's
+own clock instead, as `test_mentions` does with `shared_counts._now` and `ratelimit.time`.
 
 **Rejected alternatives:**
 - Making only the stored dates relative (`merged_at` from `NOW`, the card's first proposal): the
