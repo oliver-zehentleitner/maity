@@ -4207,6 +4207,8 @@ window.MAITY_FIXTURES = {
       "outside_roles": [
         "coder"
       ],
+      "own_agents": "members",
+      "own_approvals": 1,
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",

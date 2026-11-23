@@ -69,6 +69,7 @@ from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
+from maity_hub.policy import shown as policy_shown
 from maity_hub.routes import briefing_view
 from maity_hub.routes.conversations import conversation_packet
 from maity_hub.routes.me import human_body
@@ -773,7 +774,7 @@ def _packet(
                 namespace.owner_of(conn, project)["handle"],
                 confirmed_by_of(conn, [project])[project.id],
             ),
-            "policy": policy_of(project),
+            "policy": policy_shown(conn, policy_of(project)),  # own_agents by handle (§6.1)
             "absence": absence(project),
             "memory": memory_of(project),
             "rules_version": project.rules_version,
