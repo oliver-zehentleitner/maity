@@ -1088,8 +1088,9 @@ and that a profile for agy does not clear it, and no profile is looked
 for. Or the probe cannot tell (no `unshare`, a failure of the lookup or the
 run, a timeout, a failure that is no permission refusal, the profile list
 unreadable or read only in part, agy's path not resolvable): "not
-checked", a warning. A refusal counts only as stderr that is exactly one
-line, `Operation not permitted` on one of those writes or on the unshare
+checked", a warning. A refusal counts only with unshare's own failure
+status 1 (a signal, sudo's or ssh's status tells nothing) and stderr that
+is exactly one line, `Operation not permitted` on one of those writes or on the unshare
 call (read under `LC_ALL=C`); a refusal beside any other line tells
 nothing. "cannot start" on the write needs every profile name read, and
 the agents'-side listing tells a missing part under a directory it can

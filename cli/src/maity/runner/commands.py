@@ -655,9 +655,9 @@ def _check_antigravity(
             f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
             "user namespace's uid_map, gid_map or setgroups write is refused (AppArmor's "
             "restriction of unprivileged user namespaces) and no AppArmor profile lifts that, "
-            "so agy runs commands unsandboxed. An AppArmor profile for agy clears this: named "
-            "`agy`, attached to agy's real path, allowing `userns`, loaded as root, then a "
-            "restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+            "so agy runs commands unsandboxed. On Ubuntu an AppArmor profile for agy clears "
+            "this: named `agy`, attached to agy's real path, allowing `userns`, loaded as root, "
+            "then a restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
         )
     elif state == capabilities.AGY_REFUSED:
         report.error(
