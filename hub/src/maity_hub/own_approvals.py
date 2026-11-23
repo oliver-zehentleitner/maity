@@ -20,7 +20,7 @@ from maity_hub import agent_owners, cards, policy, review_delivery, scopes
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 
-OUTSIDE_TRUST = "outside"
+OUTSIDE_TRUST = scopes.OUTSIDE  # H1's trust, one name for it
 REASON = "own_approvals"
 # The scopes whose holder may approve a card's head (§6.4, the signatures).
 SIGNING_SCOPES = ("tasks:review", "tasks:test")
