@@ -166,7 +166,10 @@ def meet(
     """Wrap `module.name` so that each caller's first pass waits on one shared
     `threading.Barrier` of `parties`: after the original returned (by default), or before it
     runs (`before=True`, for a point the other side must not have passed yet, such as a lock
-    both serialise on). Later passes of the same caller run straight through.
+    both serialise on). Later passes of the same caller run straight through, and so does every
+    pass of a caller that comes after `parties` distinct callers have arrived: the barrier is
+    cyclic, so an extra caller waiting on it would start a second meeting nobody joins, time
+    out and mark this one broken. Only the first `parties` callers take part.
 
     "The same caller" is the thread by default; `key` maps the wrapped function's arguments to
     another key (for a route whose transactions run in pool threads: the human id, say). A
@@ -190,9 +193,10 @@ def meet(
 
     def wrapped(*args: Any, **kwargs: Any) -> Any:
         who = key(*args, **kwargs) if key is not None else threading.get_ident()
-        with guard:
-            first = who not in seen
-            seen.add(who)
+        with guard:  # check and add under one lock: two new callers must not both get a seat
+            first = who not in seen and len(seen) < parties
+            if first:
+                seen.add(who)
         if first and before:
             wait(who)
         result = original(*args, **kwargs)
