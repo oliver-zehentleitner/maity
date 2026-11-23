@@ -1108,19 +1108,39 @@ configuration allows; its credential's id and dates, never its value.
 **Pair a runner** creates a pairing (`POST /runners/enrollments`) with a
 name, the projects to allow it in and how long the line stays valid, and
 shows the steps for the machine (the name follows the handle rule, said
-under the field): install the CLI (from the repository's
-current main, which has `maity runner pair` and `maity runner check`;
-the page says so),
-save the **starter configuration** generated in the browser as
-`~/.config/maity-runner/runner.toml`, run the pairing line (shown once,
-gone after leaving the view, and replaced by a note once it is used or
-expired), then `maity runner check` and `maity runner serve` (available
-once the runner track lands; the page says so). The
-configuration holds only the keys without a default: this pairing's hub
-URL, the chosen projects and their repositories, the local backend's
-layout and Claude Code's modes and models; no secret. Its "copy as a
-command" form never overwrites an existing file (`set -C`) and writes
-it owner-only (`umask 077`). The panel
+under the field) in one of two ways the person chooses
+(docs/runners.md, "Pair a runner"). **As a service on Linux**, chosen
+first: the Debian/Ubuntu packages (and those for a project's own
+checks), `sudo pipx install --global maity`, the install line (the
+pairing's code piped into `sudo maity runner install <url> --code-file
+-`; shown once, like the pairing line), the configuration for
+`/etc/maity-runner/runner.toml`, the restart, the tool's login and the
+forge login as `maity-runner`, then `check` as that user (last: before the
+login its probe run fails), each command as `maity-runner` started in a
+directory that user can enter; the hints say that install
+makes the user itself (home `/var/lib/maity-runner`), starts the service
+only once `[limits]` and a harness are there, and that only installed
+tools belong in the file. **In a terminal** (the only way on macOS):
+`pipx install maity`, save the **starter configuration** generated in the
+browser as `~/.config/maity-runner/runner.toml`, run the pairing line
+(shown once, gone after leaving the view, and replaced by a note once it
+is used or expired, also while no runner is paired yet), then `maity
+runner check` and `maity runner serve`. Every pairing line is built by the
+page from the enrollment's URL and code, both single-quoted, the code piped
+into `--code-file -`, never the hub's `pair_line` with `--code`.
+The terminal's configuration holds only the keys without a default: this
+pairing's hub URL, the chosen projects and their repositories, the local
+backend's layout and Claude Code's modes and models; no secret. The
+service's adds install's `state_dir` and `workspaces`, which it replaces
+install's file with, and `install = true` for Claude Code. The terminal's
+"copy as a command" form never overwrites an existing file (`set -C`) and
+writes it owner-only (`umask 077`); the service's writes the fixed path
+with `sudo tee`, root's and readable by the service's user, keeping
+install's file beside it as `runner.toml.install` (copied once, so a second
+paste keeps it). A re-pair offers both ways too: the service's stops it,
+moves its credential aside, pairs as `maity-runner` with install's
+configuration, restarts and checks it; the terminal's moves the default
+state directory's credential aside. The panel
 says when the runner has paired (for a re-pair: when its credential is a
 new one) and when it is online (the view re-reads every 30 s). Open pairings are listed and
 revocable. Each runner can be renamed, re-paired (a new line for the same
@@ -1865,8 +1885,11 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     switcher and the tab's icon (loaded from the hub at its real size); a
     banner heads the inbox; the hub's project view says both are
     uploaded; removing the logo brings the monogram back;
-15. **Runners**: the empty view; a pairing for `e2e-runner` with the
-    starter configuration (this hub, both projects) and the line; the
+15. **Runners**: the empty view; a pairing for `e2e-runner`, the service's
+    steps chosen first (the install line with the pairing's URL and code,
+    install's `state_dir`; the page no wider than a phone), then the
+    terminal's, with the starter configuration (this hub, both projects)
+    and the line; the
     line's exchange done as `maity runner pair` would (`POST
     /runners/pair/{token}`), after which the panel says the runner is
     paired and its card says offline, never connected, with the credential

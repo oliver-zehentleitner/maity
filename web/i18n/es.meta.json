@@ -13995,6 +13995,10 @@
     "en": "0e25eee1502a372a",
     "text": "e2982cdba04e2da3"
   },
+  "placements.new.no_tool_listed": {
+    "en": "ed4f1ad05a2a469d",
+    "text": "f7b5efd99bd4e5a6"
+  },
   "placements.new.none": {
     "en": "4c51e5fed486a0c4",
     "text": "5af702258655b03c"
@@ -17035,6 +17039,10 @@
     "en": "f4ebc774df1605b4",
     "text": "2ed8232fee66a42b"
   },
+  "runners.pair.aside": {
+    "en": "cb16464b5befc303",
+    "text": "4351da8e0542db36"
+  },
   "runners.pair.check": {
     "en": "96ef5f8b49aa23b9",
     "text": "b0b1757fad459f14"
@@ -17091,6 +17099,78 @@
     "en": "4caae70996a2e1cd",
     "text": "44a00a670e0145de"
   },
+  "runners.pair.service.check": {
+    "en": "8fb6ecf995a16906",
+    "text": "630fa77255afabdc"
+  },
+  "runners.pair.service.checks": {
+    "en": "7b8101bbaf3ee91d",
+    "text": "4341a1c178b49757"
+  },
+  "runners.pair.service.checks_hint": {
+    "en": "35f1905121c00e8f",
+    "text": "fec0101846251b30"
+  },
+  "runners.pair.service.cli": {
+    "en": "f8c1033befbd1cf8",
+    "text": "2a5530761d7780ff"
+  },
+  "runners.pair.service.cli_hint": {
+    "en": "dc970e624a892fa2",
+    "text": "171b8877874e8c70"
+  },
+  "runners.pair.service.forge": {
+    "en": "24998d235accefc7",
+    "text": "7e69ed0a9c1ea701"
+  },
+  "runners.pair.service.forge_hint": {
+    "en": "4d7ecf2bf72025b1",
+    "text": "d13de9c3057aabfb"
+  },
+  "runners.pair.service.install": {
+    "en": "5b1a97d6d9bb0874",
+    "text": "8d5e25a034c3d7e3"
+  },
+  "runners.pair.service.install_hint": {
+    "en": "c7aa59392c3b9a4b",
+    "text": "900bab4792b8acbf"
+  },
+  "runners.pair.service.login": {
+    "en": "de2e704b6a1307f8",
+    "text": "c77ae20abd7c0bd5"
+  },
+  "runners.pair.service.login_hint": {
+    "en": "a60e298294e6d9b9",
+    "text": "3e822db85393857b"
+  },
+  "runners.pair.service.packages": {
+    "en": "d9bb5dc6f69f6a0a",
+    "text": "0f43c4a42ac8775e"
+  },
+  "runners.pair.service.packages_hint": {
+    "en": "ea4742a8995a0ea5",
+    "text": "9022c513fc3a5f34"
+  },
+  "runners.pair.service.repair_line": {
+    "en": "d655183882f716a9",
+    "text": "3219b53f54fed7a0"
+  },
+  "runners.pair.service.repair_stop": {
+    "en": "9e9b7213663b3f1e",
+    "text": "e3ef927659a3dc17"
+  },
+  "runners.pair.service.save": {
+    "en": "d9a15c61818681bf",
+    "text": "5e18fe443630612f"
+  },
+  "runners.pair.service.save_hint": {
+    "en": "24dbc1ac7df50f40",
+    "text": "d67a913a7f1ea7b9"
+  },
+  "runners.pair.service.start": {
+    "en": "4ba1097ada4a75f4",
+    "text": "4cce74e4e7df8038"
+  },
   "runners.pair.start": {
     "en": "1fc9d7b62256de1d",
     "text": "3b4ee5e3b3eeb20f"
@@ -17115,6 +17195,18 @@
     "en": "2754ae633b8e65a3",
     "text": "03febb25a8a38c5a"
   },
+  "runners.pair.way": {
+    "en": "14e8a2d2a78b58b6",
+    "text": "35853e12a77b7b1a"
+  },
+  "runners.pair.way_service": {
+    "en": "2ea1d53068615359",
+    "text": "e214a27707744adf"
+  },
+  "runners.pair.way_terminal": {
+    "en": "e3148209d96a7b81",
+    "text": "7c533f64216a671d"
+  },
   "runners.pair.where": {
     "en": "1be6c909404e4f4f",
     "text": "6ef7b0bed9b2ef46"
@@ -17124,8 +17216,8 @@
     "text": "3576874953f56d26"
   },
   "runners.paired.offline": {
-    "en": "e6e375994b7f72eb",
-    "text": "a813059090953e1d"
+    "en": "2c143b03dc7a0551",
+    "text": "848ad35c63067911"
   },
   "runners.paired.online": {
     "en": "ffc89edae00f749d",
@@ -17270,6 +17362,18 @@
   "runners.tool.allowlist": {
     "en": "b15209a298ac6c83",
     "text": "6f203bc71e641fc4"
+  },
+  "runners.tool.install_failed": {
+    "en": "f7eef5c735e30691",
+    "text": "bc38a4c9978fd8a6"
+  },
+  "runners.tool.installing": {
+    "en": "d6ddcb2e1ad592d0",
+    "text": "94259f80df4166e0"
+  },
+  "runners.tool.login_needed": {
+    "en": "2a48f0acb3dcdad3",
+    "text": "ef60ea3db06f4ae8"
   },
   "runners.tool.models": {
     "en": "fc59651c64bac706",
