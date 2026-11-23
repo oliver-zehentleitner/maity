@@ -18512,6 +18512,9 @@ is one the namespace owner confirmed for it: `repository` carries
 owner, as a human acting directly (no proxy, no agent), with the step-up
 of §2.8.4, with `{"url": "<the repository URL the owner saw>"}`; it
 confirms only when that is the URL the project carries at that moment,
+compared as creation stores a URL (§6.1: the scheme and host in any
+case, one trailing slash and a lower-case `.git` dropped; a URL creation
+refuses matches none),
 otherwise it answers `409 conflict` (`details.reason:
 repository_changed`, `details.url` the current one) and
 `owner_confirmed` stays `false`, so a co-admin's change between what the

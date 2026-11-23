@@ -56,6 +56,40 @@ def test_a_new_repository_is_unconfirmed_until_the_owner_confirms_it(owner: flow
     assert owner.post(CONFIRM, {"url": URL + "/"}).status_code == 200  # the same URL
 
 
+@pytest.mark.parametrize(
+    "sent",
+    [
+        URL + ".git",
+        URL + ".git/",
+        "HTTPS://GitHub.com/acme/maity",
+        "https://GITHUB.COM/acme/maity.git",
+    ],
+)
+def test_a_url_creation_would_store_the_same_confirms(owner: flow.Human, sent: str) -> None:
+    """The URL is compared as creation stores one (§6.1): the scheme and host in any case, a
+    trailing slash and a `.git` are the same repository (tsk-vt6gwx7h86c0)."""
+    answer = owner.post(CONFIRM, {"url": sent})
+    assert answer.status_code == 200, answer.text
+    assert confirmed(owner) is True
+
+
+@pytest.mark.parametrize(
+    "sent",
+    [
+        "https://github.com/ACME/maity",  # the path's own case is kept at creation
+        "https://github.com/acme/maity.GIT",  # only a lower-case `.git` is dropped
+        "http://github.com/acme/maity",  # creation refuses it: no repository at all
+        "not a url",
+    ],
+)
+def test_another_url_or_one_creation_refuses_is_not_confirmed(
+    owner: flow.Human, sent: str
+) -> None:
+    refused = owner.post(CONFIRM, {"url": sent})
+    assert error(refused) == (409, "conflict", {"reason": "repository_changed", "url": URL})
+    assert confirmed(owner) is False
+
+
 def test_a_url_the_project_no_longer_carries_is_refused(
     owner: flow.Human, anna: flow.Human
 ) -> None:

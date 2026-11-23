@@ -1540,6 +1540,16 @@ def transfer_project(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _as_stored(url: str) -> str | None:
+    """A confirmed URL as creation stores one (§6.1: the scheme and host in lower case, one
+    trailing slash and a `.git` dropped), so `…/repo.git/` confirms the `…/repo` the project
+    carries; one creation would refuse is no repository and matches nothing."""
+    try:
+        return forge.stored_repository_url(url)
+    except forge.RepositoryURLError:
+        return None
+
+
 @router.post("/projects/{owner}/{slug}/repository/confirm")
 def confirm_repository(
     slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
@@ -1565,7 +1575,7 @@ def confirm_repository(
         elif mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
-        if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
+        if project.repository_url is None or _as_stored(body.url) != project.repository_url:
             # A co-admin's change between what the owner saw and the click is never
             # confirmed with it.
             raise ApiError(
