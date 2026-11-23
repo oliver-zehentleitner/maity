@@ -4099,6 +4099,42 @@ without the agent having to remember a flag in every session.
   the configuration write fails, so a deny would refuse a push that
   works; the prompt names them instead.
 
+## The CLI tests drop the shell's git variables, so a placed session runs them without writing its clone's `.git/config`
+
+**Id:** 09b8806b-ad72-484a-8891-3c24570cf770
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e00g3ydhq2xc (CLI tests erroring at setup in a placed Claude Code session, 2026-11-13); design note on card tsk-0byeaemhpfx3 and the lead's decision on it, 2026-11-23; reproduced on main in a placed session (`test_state.py`, the `clone` fixture's `git init --bare`)
+**See:** runner.md#git-in-a-sandboxed-session-works-without-writing-gitconfig — 82e70deb-7cf9-4ea1-be2f-137186b20b2d — as of 2026-11-23
+**Revisit when:** the runner stops pinning the session's git through the environment, or a test needs a session's git variable it does not set itself
+
+The autouse `_isolate` fixture drops every `GIT_*` of the shell before a
+test (`conftest.isolate_git`) and sets only `GIT_CONFIG_GLOBAL` and
+`GIT_CONFIG_NOSYSTEM`. A test that needs a session's variable sets it
+itself: `placed` sets `GIT_COMMON_DIR`. The cause: a runner session sets
+`GIT_COMMON_DIR` and `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` for its whole
+run, and the fixtures' git inherited them. So `git init --bare`, `config` and `push -u` in the
+`clone` fixture went to the session's own clone, whose `.git/config` the
+sandbox keeps unwritable, and almost every CLI test errored at setup.
+
+**Reason:** a test's git must reach only the repositories the test makes.
+Outside a sandbox, a shell that sets these variables would let the
+fixtures' keys land in the repository they name without an error.
+
+**Rejected alternatives:**
+- A per-placement sandbox allowance that lets the session write
+  `.git/config` (tsk-0byeaemhpfx3): it would plant the fixtures' keys (an
+  `insteadOf`, an upstream) in the agent's real clone, which the clone
+  check then refuses, and it would open hooks and `core.fsmonitor` outside
+  the sandbox (82e70deb).
+- Dropping only the runner's own variables (`GIT_COMMON_DIR`,
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`): other `GIT_*` reach a test's git
+  the same way. `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` redirect
+  it, and `GIT_CONFIG_PARAMETERS`, which Claude Code's sandbox sets in a
+  placed session for its network proxy (seen in that session's
+  environment), configures it.
+
 ## The sandbox's placeholders are hidden in `.git/info/exclude`
 
 **Id:** c4c60f8e-d87f-44f6-bce6-97f2d5671af8
