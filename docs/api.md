@@ -556,7 +556,15 @@ only when the hub runs with `MAITY_ALLOW_PLAIN_HTTP` (§2.5). Every `POST`,
 `PATCH`, `PUT` and `DELETE` made with a cookie session must carry `X-CSRF-Token`;
 the hub compares it with the token stored on the session, not with the
 cookie the request happens to carry, otherwise `csrf_mismatch`. The hub
-also refuses cookie requests whose `Sec-Fetch-Site` is `cross-site`. When
+also refuses cookie requests whose `Sec-Fetch-Site` is `cross-site`
+(`csrf_mismatch`), with one exception: `GET /forge/github/setup`, its
+path sent exactly so (no percent-encoded or other spelling), when the
+request is the browser's top-level navigation (`Sec-Fetch-Mode:
+navigate` and `Sec-Fetch-Dest: document`). The forge sends the browser
+there from its own site, and the route's `state`, bound to the session
+and used once, protects it instead (§11.4). A cross-site `fetch` or
+frame to it, and every other cross-site cookie request, is refused as
+before. When
 a request carries both a cookie and an `Authorization` header, the header
 authenticates and the cookie is ignored; the CSRF rule applies whenever
 the cookie authenticated the call.
@@ -18816,6 +18824,13 @@ repository it includes.
   `code`.
 - `GET /forge/github/setup?installation_id=…&code=…&state=…` (cookie
   session, the same human whose session the `state` names) completes it.
+  The browser arrives from the forge's site, so this is the one call
+  whose cookie session §2.1 accepts with `Sec-Fetch-Site: cross-site`,
+  and only as a top-level navigation; the `state` stands in for that
+  check here. A cross-site request that is no top-level navigation is
+  refused before the route runs, as on every route (`403
+  csrf_mismatch`, §2.1), and so is a call without a live session
+  (`unauthenticated`); neither takes the `state`.
   The hub exchanges `code` for a user token, reads that user
   (`GET /user`) and the installation (with the App's key), and links the
   installation only when its account is that user: `account.type` is
@@ -18831,7 +18846,7 @@ repository it includes.
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
   refused with `details.reason: link_state`. Since the browser arrives
-  here by the forge's redirect, every outcome is a `303` to the
+  here by the forge's redirect, every outcome of the route itself is a `303` to the
   dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11): on
   success without a query, otherwise with `?error=<reason>`, the reason
   one of `link_state`, `installation_not_yours`,

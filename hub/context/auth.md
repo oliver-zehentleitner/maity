@@ -1237,3 +1237,49 @@ different keys (a nonce hash or a browser's pending value; a token's nonce and h
   later column of that name in another table would be cleared unasked.
 - `RequestLimits` taking a full name per limiter: nine strings per path to keep in step, where
   one prefix cannot drift.
+
+## The forge's setup callback is the one cross-site cookie call, and only as a top-level navigation
+
+**Id:** e3a7c1d5-4b62-4f09-9a8e-2c6d1f7b5034
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2vtm39ykr7k4 from the lead (found by the maintainer's own test of a11, ops 3yc2); docs/api.md §2.1, §11.4; `caller.CROSS_SITE_NAVIGATIONS`, `_cross_site_allowed`; tests in `test_forge_links.py` (the cross-site section) and `test_permitted_calls.py`
+**Revisit when:** another forge or OAuth callback lands on the hub, or browsers stop sending `Sec-Fetch-*` on navigations
+**See:** auth.md#the-permitted-call-allowlists-share-one-format-and-one-matcher-each-gate-keeping-the-path-it-reads — a8fd69cb-de04-4977-af4e-90a06ddc6415 — as of 2026-11-23
+
+`_cookie_headers` refuses a cookie request with `Sec-Fetch-Site: cross-site` (§2.1) except
+`GET /forge/github/setup` with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`. The
+call is a `Calls` list of one entry (`CROSS_SITE_NAVIGATIONS`), matched on the raw request
+path as the isolated agent's gate is, so a percent-encoded spelling the router would still
+route there stays refused; the route itself is unchanged: its `state` (256 bits, stored as a
+hash, bound to the session, 15 minutes, used once) is checked before any forge read or write,
+and every refusal of the route is a `303` to `/settings/forge?error=…`.
+
+**Reason:** the setup is an OAuth-style callback: GitHub sends the browser back after the
+installation, so the request comes from github.com and is `cross-site` by design. §2.1 refused
+every such cookie request while §11.4 had the browser arrive exactly that way, so linking an
+installation in a browser always failed with `csrf_mismatch` on a11; the tests called the route
+without `Sec-Fetch-Site` and never saw it. On this route the `state` does what the site check
+does elsewhere: a request another site starts cannot carry a state of the victim's session,
+and a state of the attacker's own session is `link_state` for anyone else. The exception stays
+this narrow because a request the hub lets through cross-site carries the victim's cookie
+(`SameSite=Lax` sends it on a top-level `GET` navigation): one method and path, never a
+`fetch`, a frame or a form's `POST`, so another site gets nothing it could read and no call
+without the state's protection.
+
+**Rejected alternatives:**
+- Letting every cross-site `GET` through: every read route would then answer with the cookie to
+  a navigation another site starts, and the authentication's own effects (presence, the
+  renewal of leases, the read count) would follow; the site check would protect nothing.
+- Accepting `same-site` only: GitHub is never the hub's site, so the callback would still fail.
+- Relying on `SameSite=Lax` alone: it sends the cookie on every cross-site top-level `GET`
+  navigation, this one included, so it decides nothing here; that is why §2.1 checks
+  `Sec-Fetch-Site` on top of it.
+- Dropping the check for the route altogether, `fetch` included: no forge redirect needs a
+  `fetch`, a frame or another method, and each would let another site's script send the
+  victim's cookie to the setup (with `Accept: application/json` too) without the browser
+  ever showing the page. The `state` would still refuse it, but the exception should admit
+  only what the callback is.
+- Matching the decoded path (as the router does): it would also admit `set%75p` and other
+  spellings no forge redirect sends; the raw path is the narrower test.
