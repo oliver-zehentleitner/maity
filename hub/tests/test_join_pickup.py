@@ -1129,8 +1129,26 @@ def test_an_admitting_placement_locks_the_profile_before_the_project(setup: Setu
     assert [x.startswith("SELECT agent_profile.owner_id \nFROM") for x in reads] == [True]
 
 
+def test_an_admitting_placement_reads_the_named_profile_three_times(setup: Setup) -> None:
+    """Whose it is before its lock, the lock, then one read of owner, handle, deletion and
+    membership here under both locks (`_named_profile`): not one read per check, and no
+    second `_admits` (audit R5 batch 2, finding 5)."""
+    from tests.test_moderation import transactions
+
+    agent_id = _own_profile(setup)
+    with transactions(setup.engine) as seen:
+        placed(setup, agent={"id": agent_id})
+    [statements] = [x for x in seen if any(y.startswith("INSERT INTO placement ") for y in x)]
+    # Up to the profile's `allowed_projects` check, where the checks of the name end; what
+    # comes after (the placement's creator, the view) is not this lookup.
+    end = next(i for i, x in enumerate(statements) if "agent_profile.allowed_projects" in x)
+    named = [x for x in statements[:end] if x.startswith("SELECT") and "agent_profile.id = " in x]
+    assert len(named) == 3, "\n----\n".join(named)
+
+
 def _is_profile_lock(statement: str) -> bool:
-    """`_lock_named_profile`'s locking read; `_admits` reads the same columns, not deleted."""
+    """`_lock_named_profile`'s locking read: the profile's id alone, by id and owner (the one
+    read after it, `_named_profile`, selects other columns)."""
     lock = "SELECT agent_profile.id \nFROM agent_profile \nWHERE agent_profile.id ="
     return statement.startswith(lock) and "deleted_at" not in statement
 

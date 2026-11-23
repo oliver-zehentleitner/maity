@@ -10,7 +10,7 @@ placements lose and the `runner_credential_revoked` event per attached project (
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from sqlalchemy import Connection, select, update
@@ -18,6 +18,7 @@ from sqlalchemy import Connection, select, update
 from maity_hub import clock, environment, placements
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_projects
+from maity_hub.instances import live_attachments
 from maity_hub.runners import attached_project_ids, human_actor
 
 
@@ -26,24 +27,44 @@ def projects_of(conn: Connection, credential_ids: Iterable[str]) -> set[str]:
     attached to now (§6.17), its `holder_stalled`, its lead's end, its overlaps, and each one
     of an active placement that names one (§15.5), which stops."""
     ids = sorted(set(credential_ids))
+    return attached_projects(conn, ids) | placement_projects(conn, ids)
+
+
+def attached_projects(conn: Connection, credential_ids: Iterable[str]) -> set[str]:
+    """The projects these agent credentials' instances are attached to now (§6.17)."""
+    ids = sorted(set(credential_ids))
     if not ids:
         return set()
-    a = t.instance_attachment
-    found = set(
-        conn.execute(
-            select(t.membership.c.project_id)
-            .join(a, a.c.membership_id == t.membership.c.id)
-            .where(a.c.credential_id.in_(ids), a.c.detached_at.is_(None))
-        ).scalars()
-    )
-    found.update(
+    return set(conn.execute(live_attachments(ids, t.membership.c.project_id)).scalars())
+
+
+def placement_projects(conn: Connection, credential_ids: Iterable[str]) -> set[str]:
+    """The projects of the active placements that name one of these credentials (§15.5)."""
+    ids = sorted(set(credential_ids))
+    if not ids:
+        return set()
+    return set(
         conn.execute(
             select(t.placement.c.project_id).where(
                 t.placement.c.credential_id.in_(ids), t.placement.c.active.is_(True)
             )
         ).scalars()
     )
-    return found
+
+
+def _attached(conn: Connection, credential_id: str) -> list[Any]:
+    """The instance's live attachments with their membership rows, in attach order: what the
+    revocation's overlaps, lead's end and `holder_stalled` each need, read once, under the
+    project locks (`revoke`). `attachment_id` and `attachment_instance` are the attachment's
+    own columns; the rest is the membership's."""
+    a = t.instance_attachment
+    query = live_attachments(
+        [credential_id],
+        t.membership,
+        a.c.id.label("attachment_id"),
+        a.c.instance.label("attachment_instance"),
+    )
+    return list(conn.execute(query.order_by(a.c.id)).all())
 
 
 def revoke(
@@ -70,6 +91,10 @@ def revoke(
     (`projects_of`): a caller that writes in more projects took those, with these, in one
     such pass before calling this, and the locks taken again here are harmless."""
     lock_projects(conn, projects_of(conn, [credential_id]))
+    # Read once under those locks, for the overlaps, the lead's end and `holder_stalled`: the
+    # writes in between (the credential, its session, the overlaps) change no attachment and
+    # no membership column this read holds.
+    attached = _attached(conn, credential_id)
     now = clock.now()
     won = conn.execute(
         update(t.credential)
@@ -82,22 +107,11 @@ def revoke(
         .values(live=None, ended_at=now)
     ).rowcount
     if ended:
-        # Every project the instance is attached to now, as `holder_stalled.revoked` reads
-        # them; not `attached_now()`, as the credential is revoked by now (§6.17).
-        for member in conn.execute(
-            select(t.membership.c.id, t.membership.c.project_id)
-            .join(
-                t.instance_attachment,
-                t.instance_attachment.c.membership_id == t.membership.c.id,
-            )
-            .where(
-                t.instance_attachment.c.credential_id == credential_id,
-                t.instance_attachment.c.detached_at.is_(None),
-            )
-            .order_by(t.instance_attachment.c.id)
-        ).all():
+        # Every project the instance is attached to now, as `holder_stalled.revoked` gets
+        # them (§6.17).
+        for member in attached:
             environment.refresh(conn, member.project_id, member.id)
-    _lead_revoked(conn, credential_id, announce=not member_goes)
+    _lead_revoked(conn, attached, announce=not member_goes)
     if won == 1:
         # Its open wait ends at once in this process; another replica's ends at its next
         # pass, which reads `revoked_at` (`routes/events`).
@@ -107,7 +121,9 @@ def revoke(
     if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 
-        holder_stalled.revoked(conn, credential_id)
+        holder_stalled.revoked(
+            conn, [(m.project_id, m.id, m.attachment_instance) for m in attached]
+        )
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
     if stops_placements:
@@ -115,24 +131,17 @@ def revoke(
     return won == 1
 
 
-def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> None:
+def _lead_revoked(conn: Connection, attached: Sequence[Any], *, announce: bool) -> None:
     """A revoked lead stops being lead: `lead_instance: null`, `member_updated` (§6.17), in
-    every membership the instance leads and is attached to now (a detach clears its lead
-    there, §6.17). Not announced when the whole member is being removed: `member_removed`
-    says it."""
+    every membership the instance leads and is attached to now (`attached`, from `_attached`;
+    a detach clears its lead there, §6.17). Not announced when the whole member is being
+    removed: `member_removed` says it."""
     from maity_hub.views import member_view  # views reads the auth modules
 
-    attachment = t.instance_attachment
-    rows = conn.execute(
-        select(t.membership)
-        .join(attachment, attachment.c.membership_id == t.membership.c.id)
-        .where(
-            attachment.c.credential_id == credential_id,
-            attachment.c.detached_at.is_(None),
-            t.membership.c.lead_instance == attachment.c.instance,
-        )
-        .order_by(t.membership.c.id)
-    ).all()
+    rows = sorted(
+        (row for row in attached if row.lead_instance == row.attachment_instance),
+        key=lambda row: row.id,
+    )
     for row in rows:
         conn.execute(
             update(t.membership).where(t.membership.c.id == row.id).values(lead_instance=None)

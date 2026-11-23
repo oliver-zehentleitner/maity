@@ -35,7 +35,7 @@ from maity_hub.config import Settings
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.list_rows import same_for_3_and_30
-from tests.statements import count_statements
+from tests.statements import count_statements, listening
 from tests.test_agent_owners import PROJECT, _friend, _isolated, _project, _remove
 from tests.test_public_project_views import World
 
@@ -340,3 +340,26 @@ def test_the_public_lists_ask_in_batches_of_a_bounded_size(
     # the agent's 10: holds 5, 5 human owners 3, and the person's 10 names 5.
     more = {"explore": 7 + 3 + 4, "landing": 7 + 3, "org": 3 + 2, "person": 4 + 2 + 4}
     assert {name: two_each[name] - one_batch[name] for name in lists} == {**more, "agent": 4 + 2}
+
+
+def test_handles_of_asks_in_batches_of_chunk_ids(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`views.handles_of` cuts each kind's IN list at `chunks.CHUNK`, as `namespace.full_names`
+    does, so a long list of principals stays under the bound-parameter limit (review A2178 of
+    #2128): 5 agents and 3 humans in batches of 2 are 3 and 2 statements."""
+    from maity_hub import views
+
+    monkeypatch.setattr(chunks, "CHUNK", 2)
+    ids = [f"agt-{i}" for i in range(5)] + [f"hum-{i}" for i in range(3)]
+
+    sent: list[str] = []
+
+    def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement)
+
+    with migrated.connect() as conn, listening(migrated, heard, async_engines=False):
+        assert views.handles_of(conn, ids) == {}  # none of them exists
+    reads = [s for s in sent if s.lstrip().startswith("SELECT")]
+    assert [s.count("FROM agent_profile") for s in reads] == [1, 1, 1, 0, 0], reads
+    assert len(reads) == 3 + 2, reads

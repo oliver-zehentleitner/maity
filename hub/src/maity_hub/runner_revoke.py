@@ -57,16 +57,11 @@ def revoke_agent(
     placement's project the instance may have left), in the order of their ids. Never one
     project chosen for the others. Those and every project the revocation writes in are
     locked first, in the order of their ids, before any write."""
-    from maity_hub.auth.revocation import projects_of, revoke
+    from maity_hub.auth.revocation import attached_projects, placement_projects, revoke
 
-    a = t.instance_attachment
-    attached = conn.execute(
-        select(t.membership.c.project_id)
-        .join(a, a.c.membership_id == t.membership.c.id)
-        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-    ).scalars()
-    told = {*attached, *(project_ids or ())}
-    events.lock_projects(conn, {*told, *projects_of(conn, [credential_id])})
+    told = {*attached_projects(conn, [credential_id]), *(project_ids or ())}
+    # `told` holds the projects `revocation.projects_of` reads but its placements' (§15.5)
+    events.lock_projects(conn, {*told, *placement_projects(conn, [credential_id])})
     if not revoke(conn, credential_id, REASON, by):
         return
     agent_id = conn.execute(
