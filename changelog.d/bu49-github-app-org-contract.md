@@ -3,32 +3,47 @@
 - Contract: an installation of the GitHub App on a GitHub organisation (§11.4, §6.26,
   not built yet). It is linked when the human completing the link is an active owner of
   that organisation on GitHub (role `admin`, the organisation's id the installation
-  account's), otherwise `403 forbidden` with the new reason `not_organisation_admin`,
-  decided before `installation_not_yours` and before `installation_linked`; another
-  account kind stays `organisation_installation`. The link is that human's grant, never
-  a Maity organisation's: it serves their projects and the Maity organisation projects
-  whose repository they confirmed, and no organisation name is matched to a GitHub
-  login. The hub keeps the GitHub user's id on the link (`forge_user_id`, in no answer).
-- Contract: such a link serves a read only on an owner check that succeeded less than
-  10 minutes before; the remaining window after an owner loses the role is stated as
+  account's). A definite answer that they are not gets `403 forbidden` with the new
+  reason `not_organisation_admin`. The checks keep their order: the `state`, the
+  installation's existence (`installation_not_yours`), the account check by kind (the
+  owner check among them), then `installation_linked`. Without a definite answer no link
+  is written and the call answers `forge_unavailable`; another account kind stays
+  `organisation_installation`. The link is that human's grant, never a Maity
+  organisation's: it serves their projects and the Maity organisation projects whose
+  repository they confirmed, and no organisation name is matched to a GitHub login. The
+  hub keeps the GitHub user's id on the link (`forge_user_id`, in no answer).
+- Contract: such a link serves a read only on an owner check that succeeded less than 10
+  minutes before; the remaining window after an owner loses the role is stated as
   accepted. The hub re-checks in a fixed order (the installation, the user by the kept
-  id, that user's membership, whose user id must match) on the source choice and on
-  `GET /me/forge` at most every 10 minutes per link whatever the last outcome, and at
-  once when a repository the link covers is confirmed or a project's source newly rests
-  on it. A forge that does not answer, a rate-limit answer included, changes no status
-  but leaves the link serving nothing once its last success is 10 minutes old. A failed
-  check sets the new link status `not_admin`: the link serves nothing, shows no
-  repositories on `GET /me/forge` and is re-checked there and on the source choice, so a
-  restored role restores it; the human who confirmed the project sees the probe reason
-  `installation_not_admin`, other project admins the new neutral reason
-  `installation_link_invalid`, and the linking human gets the account record change
-  `not_admin` as a `security` item. One human holds an installation's link at a time,
-  but an owner's link replaces a `not_admin` one (the replaced human gets `unlinked`);
-  no App webhook.
+  id, that user's membership, whose user id must match) at most once every 10 minutes
+  per link, counted from its last check whatever came of it: the source choice, a
+  repository's confirmation and `GET /me/forge` serve on a success under 10 minutes old,
+  check first when the last check is 10 minutes old or older, and otherwise wait without
+  a call; a link's `checked_at` is its last check. Only a definite membership answer
+  changes a link's status, a membership in another organisation than the installation's
+  among them, as at linking: every other refusal
+  and no answer change none, but leave the link serving nothing once its last success is
+  10 minutes old. A failed check sets the new link status `not_admin`: the link serves
+  nothing and is re-checked on `GET /me/forge` and on the source choice, so a restored
+  role restores it, and the linking human gets the account record change `not_admin` as
+  a `security` item (`Forge access stopped: no longer an owner of <account login>`). A
+  link that serves nothing shows no repositories on `GET /me/forge`, which within the
+  window makes no owner-check call. One reason for every link that serves nothing: other
+  project admins see the new neutral reason `installation_link_invalid` for a
+  `not_admin`, suspended, removed or overdue link on an organisation, and the human who
+  confirmed the project the specific reason (the new `installation_not_admin` among
+  them). One human holds an installation's link at a time, but another owner's link may
+  replace it: a link is checked again right before another owner's link replaces it,
+  `active` or `not_admin`, at once, the one exception to the 10-minute cadence, since
+  only a human who has passed the owner check for that organisation can set it off;
+  only a definite answer that its human is
+  no active owner lets the replacement go ahead (the replaced human gets `unlinked`), a
+  success answers `installation_linked` and no definite answer `forge_unavailable`. No
+  App webhook.
 
 ### Changed
 
 - deploy: the instance's GitHub App asks for the organisation permission Members
   (read-only) beside its repository read permissions (§11.4), for the owner check of an
-  organisation installation; a membership read the forge refuses for want of it counts
-  as a failed owner check. Installations on user accounts need nothing new.
+  organisation installation; a membership read refused for want of it changes no link's
+  status. Installations on user accounts need nothing new.

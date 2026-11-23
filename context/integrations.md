@@ -98,11 +98,11 @@ instance grows.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); contract `docs/api.md` §11.4, §6.26
+**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); the security delta round A2230 and the contract delta round A2231 of 2026-11-23 on that pull request and the lead's ruling of 2026-11-23 on them (one cadence counted from every check, a link of either status checked before a replacement; only a definite membership answer changes a link's status, one reason for every link that serves nothing, a link checked again right before another owner's link replaces it); the lead's rulings of 2026-11-23 on the contract amendment (a membership in another organisation is a definite answer on a re-check as at linking; a replacement checks the existing link at once, the one exception to the cadence); contract `docs/api.md` §11.4, §6.26
 **Verification:** uncorroborated — contract only, not built yet: the hub still refuses an organisation installation (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-23
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-23
-**Revisit when:** the forge's events are to replace the re-check; the 10-minute window after an owner loses the role is no longer acceptable; owners need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
+**Revisit when:** the forge's events are to replace the re-check; narrowing the read tokens' permissions gets a ruling; the 10-minute window after an owner loses the role is no longer acceptable; owners need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
 
 An installation of the instance's GitHub App on a GitHub organisation
 is linked when the human completing the link is, by the forge's answer
@@ -121,22 +121,43 @@ The link serves a read only on an owner check that succeeded less than
 installation token, in a fixed order: the installation (current
 organisation login and id), the forge user by the kept id (current
 login), then that user's membership, whose user id must be the kept
-one. It checks on the source choice and on the forge settings listing
-(`GET /me/forge`) at most every 10 minutes per link, whatever the last
-check's outcome, and at once on a repository's confirmation and when a
-project's source newly rests on the link, unless a check succeeded
-within the window. A failed check sets the link `not_admin`: it mints
-nothing except for its own re-check, shows no repositories and serves
-no project; the human who confirmed the project sees
-`installation_not_admin`, other project admins the neutral
-`installation_link_invalid`, and the linking human gets a security
-item. A check that succeeds restores `active`. A forge that does not
-answer, a rate limit included, changes no status, but the link then
-serves nothing once its last success is 10 minutes old. Up to 10
-minutes after an owner loses the role, their link may still serve; that
-window is accepted. One human holds an installation's link at a time,
-but an owner's link replaces a `not_admin` one, and the replacement
-stands if the former owner becomes an owner again. The App asks for the
+one. A link is checked at most once every 10 minutes, counted from its
+last check whatever came of it, for every caller but one: the source
+choice, a repository's confirmation and the forge settings listing
+(`GET /me/forge`) take it as it stands, and only another owner's attempt
+to replace it checks it at once. A success less than
+10 minutes old serves without a check; a last check 10 minutes old or
+older is made again first; a check less than 10 minutes old that did
+not succeed is waited out without a call, and the link serves nothing
+meanwhile. A link's `checked_at` is its last check, whatever came of it.
+Only a definite membership answer changes a link's status: a
+membership that is not an active owner's, one of another user id, one
+in another organisation than the installation's (its login now belongs
+to another organisation), or no membership or user at all (`404`), the
+same answers that refuse a link at linking. A failed check sets the link
+`not_admin`: it mints nothing except for its own re-check, shows no
+repositories and serves no project, and the linking human gets a
+security item. A check that succeeds restores `active`. Every other
+refusal (a missing permission and a rate limit included) and no answer
+change no status, but the link then serves nothing once its last
+success is 10 minutes old; at linking they write no link and answer
+`forge_unavailable`. A link that serves nothing lists no repositories,
+`active` ones included, and within the window `GET /me/forge` makes no
+owner-check call, and for such a link no call to the forge at all. There is one reason for every link that
+serves nothing: other project admins see `installation_link_invalid`
+whether the link is `not_admin`, suspended, removed or without a recent
+successful check; the human who confirmed the project gets the
+specific reason (`installation_not_admin`, `installation_suspended`,
+`installation_removed`, or `probe_unavailable` while the check has no
+answer). Up to 10 minutes after an owner loses the role, their link may
+still serve; that window is accepted. One human holds an installation's
+link at a time, but another owner's link may replace it: a link is
+checked again right before another owner's link replaces it, `active`
+or `not_admin`, at once however recent its last check. The replacement goes ahead only on a
+definite answer that its human is no active owner; a success keeps the
+link (`installation_linked`), and no definite answer refuses with
+`forge_unavailable`. The replacement stands if the former owner
+becomes an owner again. The App asks for the
 organisation permission Members, read-only; nothing else turns on by
 itself, so there is no instance switch. Tokens stay per installation,
 not per repository.
@@ -150,22 +171,69 @@ trusted. Keeping the grant a person's needs no new grant holder and
 leaves the Maity organisation rule (no grant of its own, the confirming
 owner lends theirs) as it is. A bound on how old the check a read rests
 on may be, not only on how often it runs, is what makes the window
-after a lost role a fixed and stated one; the checks at once cover the
-moments a human newly puts the link to use. Polling within that window
+after a lost role a fixed and stated one; one cadence counted from
+every attempt keeps the forge calls per link bounded whatever the forge
+answers. The replacement is its one exception because only a human who
+has just passed the owner check for that organisation can set it off,
+so no listing, source choice or other read brings a check forward, and
+a replacement then never rests on a check that may be up to 10 minutes
+old. Polling within that window
 needs no new contract surface, and nothing activates without an
 owner's deliberate link, so a switch would guard nothing. Letting a
-current owner replace a `not_admin` link keeps "one human at a time"
-from becoming one former owner forever.
+current owner replace a link whose human is no owner any more keeps
+"one human at a time" from becoming one former owner forever, also when
+nothing else has checked that link for a long time; checking it again
+right before keeps a replacement from resting on a status that may no
+longer hold.
+Taking only a definite membership answer as a failed check keeps a
+link's status from turning on a refusal that says nothing about the
+human, while reads still stop once the check is overdue. A membership
+in another organisation is such an answer: the login no longer names
+the organisation the installation was made on, so the re-check decides
+it as linking does. One reason for
+every link that serves nothing gives other project admins what they
+need to act (the link serves nothing) without telling one cause from
+another.
+
+Open, without a ruling yet: narrowing the read tokens' permissions (a
+token without Members, for example, for the reads that do not need it)
+has no ruling of its own; it is deferred with the per-repository
+narrowing of question 8 below.
 
 **Rejected alternatives:**
 - The App's webhook (`installation`, `installation_repositories`,
   member removal) now: a further contract change with a signature and
   replay table of its own; polling within the existing window is
   enough for launch.
+- Counting any refusal of the membership read as a failed check, a
+  refusal for a missing permission included, as the round before this
+  one said: a link's status would then change on an answer that is not
+  about the human; only a definite membership answer changes a link's
+  status.
+- Counting a membership in another organisation than the
+  installation's as no answer on a re-check, as the round before this
+  one said: it is a definite answer, and linking already refuses on it;
+  the re-check fails on it the same way.
+- A neutral reason given only for a `not_admin` link: it would stand
+  for exactly one cause; one reason for every link that serves nothing
+  is what makes it neutral.
+- Replacing a link on its recorded status alone, or only a link already
+  `not_admin`: the status may be old, and a link nothing else reads
+  may stay `active` long after its human left; a link is checked again
+  right before another owner's link replaces it.
+- Letting a check of the existing link up to 10 minutes old stand in
+  for the one before a replacement, as the round before this one said:
+  a replacement could then go ahead or be refused on a status that no
+  longer holds; the replacement checks at once instead.
+- Checking at once on a repository's confirmation or when a project's
+  source newly rests on the link, skipped only after a successful
+  check, as the round before said: after a failed or unanswered check
+  it would bring checks forward; one cadence counted from every attempt
+  holds for every caller but a replacement attempt.
 - Re-checking at once after every refusal, as the first draft of the
   contract said: it would call the forge on every listing of a link
-  that stays refused; the 10-minute window per link is unconditional
-  instead.
+  that stays refused; the 10-minute window per link holds whatever came
+  of the last check instead.
 - Letting a link keep serving on its last successful check while the
   forge does not answer: the window after a lost role would then have
   no fixed bound.
