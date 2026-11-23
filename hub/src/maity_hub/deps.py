@@ -76,7 +76,9 @@ def facts_of(request: Request) -> RequestFacts:
     )
 
 
-async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> Caller:
+async def _resolve(
+    request: Request, renew_leases: bool, seen: bool = True, counted: bool = True
+) -> Caller:
     """The caller, authenticated on the async engine (tsk-v874y63b4z8p, PR 2): the transaction's
     sync code runs through `run_sync` on the event loop, so no call waits for a thread of the
     pool for it. What it runs there is the database's work and a few hashes
@@ -115,7 +117,7 @@ async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> C
             _confine_pending(conn, caller, request.method, path)
         return caller
 
-    return await authenticated(request, renew_leases, confine, seen=seen)
+    return await authenticated(request, renew_leases, confine, seen=seen, counted=counted)
 
 
 async def authenticated(
@@ -123,16 +125,21 @@ async def authenticated(
     renew_leases: bool,
     confine: Callable[[Connection, Caller], Caller],
     seen: bool = True,
+    counted: bool = True,
 ) -> Caller:
     """Authenticate the request in one transaction and run `confine` on its caller in the
     same one, so that a refusal there undoes the call's presence and lease effects; then
     bind the caller to the request. `GET /bootstrap` confines differently (§5.4). With `seen`
-    false the call writes no `last_seen_at` (`POST /me/presence`, §18.4)."""
+    false the call writes no `last_seen_at` (`POST /me/presence`, §18.4); with `counted` false
+    a cookie session's read is not counted (the forge's setup, §11.4)."""
     facts = facts_of(request)
     engine = async_engine_of(request)
 
     def run_in(conn: Connection) -> Caller:
-        return confine(conn, authenticate(conn, facts, renew_leases=renew_leases, seen=seen))
+        return confine(
+            conn,
+            authenticate(conn, facts, renew_leases=renew_leases, seen=seen, counted=counted),
+        )
 
     async def run() -> Caller:
         try:
@@ -310,6 +317,21 @@ async def presence_caller(request: Request) -> Caller:
     return caller
 
 
+async def forge_setup_caller(request: Request) -> Caller:
+    """`GET /forge/github/setup` (§11.4): a human's cookie session only, checked as any call,
+    but writing no presence, renewing no lease and counting no read. It is the one call
+    another site may start with the cookie (§2.1): a navigation another site forces leaves
+    no trace before its `state` refuses it, and the forge's redirect, the only way the route
+    is reached, loses nothing by it (hub/context/auth.md e3a7c1d5). An `Authorization`
+    header (an agent, a runner, a bridge) or `Maity-For` is refused before any credential
+    is looked up, as for `presence_caller`, so no caller's presence, lease or read count is
+    touched either."""
+    headers = request.headers
+    if "authorization" in headers or "maity-for" in headers:
+        raise humans_only("forge access is a human's own")
+    return await _resolve(request, renew_leases=False, seen=False, counted=False)
+
+
 async def human_caller(request: Request) -> Caller:
     caller = await current_caller(request)
     if caller.kind != "human":
@@ -338,4 +360,5 @@ HumanCaller = Annotated[Caller, Depends(human_caller)]
 AgentCaller = Annotated[Caller, Depends(agent_caller)]
 EventsCaller = Annotated[Caller, Depends(events_caller)]
 ConversationsCaller = Annotated[Caller, Depends(conversations_caller)]
+ForgeSetupCaller = Annotated[Caller, Depends(forge_setup_caller)]
 RunnerCaller = Annotated[Caller, Depends(runner_caller)]

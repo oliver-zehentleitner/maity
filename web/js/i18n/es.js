@@ -279,6 +279,7 @@ window.MAITY_I18N["es"] = {
   "all.page.jour_fixe": "Reunión fija",
   "all.page.no_projects": "Todavía no estás en ningún proyecto.",
   "all.page.reading": "Leyendo…",
+  "all.page.runners": "Runners",
   "all.page.unread": "No se pudo leer este proyecto: {reason}",
   "all.page.why": "Why",
   "all.pages": "Páginas de todos los proyectos",
