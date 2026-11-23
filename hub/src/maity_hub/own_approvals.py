@@ -236,30 +236,37 @@ def _review_approvers(conn: Connection, card: Any, project: Any, head: str) -> d
     from the author's current active membership, so a removal and a rejoin leave none."""
     e = t.event.c
     pr = pr_in_range(((card.report or {}).get("pr") or {}).get("number"))
-    tied = e.subject_id == card.id
+    columns = (
+        e.seq,
+        e.payload,
+        e.actor_membership,
+        e.actor_bridge,
+        e.review_signer,
+        e.review_pr,
+        e.redacted,
+        e.subject_id,
+    )
+    # Only a `review_result` gets the record: the row's own columns say what it is, never its
+    # payload, which a redaction replaces (the lead's ruling of 2026-11-23).
+    results = (
+        e.project_id == card.project_id,
+        e.kind == "message",
+        e.review_signer.is_not(None),
+        e.actor_membership.is_not(None),
+    )
+    # Two reads, each on its own index, merged by seq: tied to the card (`ix_event_subject`,
+    # its type named so the index is sought) and named by its pull request alone
+    # (`ix_event_review_pr`). One `OR` would leave neither index usable.
+    rows = list(
+        conn.execute(
+            select(*columns).where(*results, e.subject_type == "task", e.subject_id == card.id)
+        ).all()
+    )
     if pr is not None:
-        tied = tied | (e.subject_id.is_(None) & (e.review_pr == pr))
-    rows = conn.execute(
-        select(
-            e.payload,
-            e.actor_membership,
-            e.actor_bridge,
-            e.review_signer,
-            e.review_pr,
-            e.redacted,
-            e.subject_id,
-        )
-        .where(
-            e.project_id == card.project_id,
-            e.kind == "message",
-            # Only a `review_result` gets the record: the row's own columns say what it is,
-            # never its payload, which a redaction replaces (the lead's ruling of 2026-11-23).
-            e.review_signer.is_not(None),
-            e.actor_membership.is_not(None),
-            tied,
-        )
-        .order_by(e.seq)
-    ).all()
+        rows += conn.execute(
+            select(*columns).where(*results, e.review_pr == pr, e.subject_id.is_(None))
+        ).all()
+    rows.sort(key=lambda row: int(row.seq))
     principals: dict[int, Any] = {}
     latest: dict[str, Any] = {}
     for row in rows:

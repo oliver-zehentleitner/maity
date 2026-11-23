@@ -303,10 +303,11 @@ An outside agent is read on the membership the check is about: its
 active row, else its most recent (a reporter who has left). Trust
 `outside` and the `joined_outside` mark count on that row only, so §2.3's
 one way out of `outside` (removal, then a member's fresh join, a new row
-without either) works. An owner who is no member now, or whose account
-is suspended or deleted, makes its agent outside too, so that agent's
-work is gated (failing closed); the same reading as trust `outside` in H1
-(tsk-enfbkj0xqq5m), by the lead's ruling of 2026-11-23 (seq 202963).
+without either) works; the same reading as trust `outside` in H1
+(tsk-enfbkj0xqq5m), by the lead's ruling of 2026-11-23 (seq 202963). An
+owner who is no member now makes its agent outside too, and so does an
+owner whose account is suspended or deleted, so that agent's work is
+gated (failing closed; the lead's ruling of 2026-11-23, seq 203828).
 
 **Reason:** the contract judges outsiders' work "as the card and its
 members stand then", and an approval stops counting when its author
@@ -337,12 +338,14 @@ added later through `check_transition`.
   the same day.
 
 **Cost:** review results are message events, recognised by their own
-columns (`review_signer` set), never by a payload a redaction replaces. A
-result tied to the card by `task_id` is read through `ix_event_subject`;
-one tied only by a subject `#<n>` through `ix_event_review_pr`
-(`project_id`, `review_pr`) with the card's current pull request, then
-resolved to its card one by one, so the read is bounded by the card's
-own results. A report naming a pull request beyond the column's range
+columns (`review_signer` set), never by a payload a redaction replaces.
+They are read in two queries, merged by seq, each seeking its own index:
+a result tied to the card by `task_id` through `ix_event_subject`
+(`project_id`, `subject_type` `task`, `subject_id`), and one tied only
+by a subject `#<n>` through `ix_event_review_pr` (`project_id`,
+`review_pr`) with the card's current pull request, then resolved to its
+card one by one; so the read is bounded by the card's own results. One
+query with an `OR` across both would leave neither index usable. A report naming a pull request beyond the column's range
 looks none up. This runs only on a move to `done` of outsiders' work.
 
 ## `PUT …/roles` refuses a guide and keeps the one a role already has

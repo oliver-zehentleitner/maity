@@ -454,6 +454,41 @@ def test_a_redacted_approve_counts_nothing_however_it_was_tied(
     assert _count(migrated, card_id) == 0
 
 
+def test_the_count_reads_the_cards_results_through_their_two_indexes(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The read is bounded by the card's own results: each query on `event` seeks
+    `ix_event_subject` or `ix_event_review_pr`, never scans the project's messages (checked
+    with SQLite's planner on the statements the count runs)."""
+    from sqlalchemy import event as sa_event
+
+    card_id = _outsiders_card(owner, make_client, migrated)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    seen: list[tuple[str, Any]] = []
+
+    def capture(conn: Any, cursor: Any, statement: str, params: Any, *_: Any) -> None:
+        if "FROM event" in statement and "review_signer" in statement:
+            seen.append((statement, params))
+
+    sa_event.listen(migrated, "before_cursor_execute", capture)
+    try:
+        assert _count(migrated, card_id) == 1
+    finally:
+        sa_event.remove(migrated, "before_cursor_execute", capture)
+    assert len(seen) == 2  # one tied by the card, one named by its pull request
+    assert all(" OR " not in statement for statement, _ in seen)
+    assert sum("subject_type" in statement for statement, _ in seen) == 1
+    assert sum("review_pr =" in statement for statement, _ in seen) == 1
+    if migrated.dialect.name != "sqlite":
+        return  # the plan is asked of SQLite's planner; the shape above holds everywhere
+    used: set[str] = set()
+    with migrated.connect() as conn:
+        for statement, params in seen:
+            plan = str(conn.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", params).all())
+            used |= {name for name in ("ix_event_subject", "ix_event_review_pr") if name in plan}
+    assert used == {"ix_event_subject", "ix_event_review_pr"}
+
+
 def test_a_report_naming_a_pull_request_beyond_the_column_still_counts(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
