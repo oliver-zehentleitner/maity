@@ -1787,6 +1787,33 @@ def cmd_report(args: argparse.Namespace) -> int:
     facts = gitfacts.collect(Path.cwd(), repository if isinstance(repository, str) else None)
     card: Any = None
     probed = False
+    if facts.remote_error is not None and not facts.dirty:
+        # `git ls-remote` failed (a placement behind a proxy git cannot reach): the card's
+        # linked pull request with this very head, read through the hub's probe, stands in for
+        # the remote branch. Without one the failure stays an error, never "push it".
+        try:
+            card = session.client.call("GET", session.project_path("tasks", args.task))
+        except hub.HubError:
+            card = None
+        found, others = _probed_pr(session, card, facts.head) if card else (None, None)
+        if others:
+            unread = onboarding.inline(f"{facts.remote}/{facts.remote_branch}")
+            _err(
+                f"report refused: maity could not read {unread} "
+                f"({onboarding.inline(facts.remote_error)}) and the hub's probe reads "
+                f"{'; '.join(others)}, local HEAD is at {facts.head}; push the work to the "
+                "card's pull request"
+            )
+            return EXIT_REFUSED
+        if found is None:
+            raise gitfacts.FactsError(facts.remote_error)
+        probed = facts.pr is None  # a pull request gh read is said as gh's
+        facts = dataclasses.replace(
+            facts, remote_head=facts.head, remote_error=None, pr=facts.pr or found,
+            pr_unknown_reason=None if facts.pr is None else facts.pr_unknown_reason,
+            forge_error=None,
+        )  # fmt: skip
+    # Read after the stand-in above: a remote head the probe gave is no branch gone.
     no_forge = facts.pr is None and bool(facts.pr_unknown_reason or facts.forge_error)
     gone = no_forge and facts.remote_branch and facts.remote_head is None and not facts.dirty
     if gone and gitfacts.mismatches(facts):

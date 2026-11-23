@@ -10,7 +10,7 @@ from typing import Any
 
 import fakehub
 import pytest
-from conftest import fake_gh, git
+from conftest import GITHUB_URL, fake_gh, git
 
 from maity import cli, gitfacts, state
 
@@ -291,6 +291,48 @@ def test_a_failing_gh_falls_back_to_the_probe_for_a_linked_pull_request(
     _card(fake, links=[_link(780), _link(12)])
     assert _report() == cli.EXIT_OK
     assert _report_body(fake)["pr"]["number"] == 12
+
+
+def _lookup_fails(tmp_path: Path) -> None:
+    """`git ls-remote` fails, as behind a proxy git cannot reach: GitHub's URL is sent to a
+    repository that does not exist instead of the clone's bare remote (conftest `clone`)."""
+    work = tmp_path / "work"
+    git(work, "config", "--remove-section", f"url.{tmp_path / 'remote.git'}")
+    git(work, "config", f"url.{tmp_path / 'missing.git'}.insteadOf", GITHUB_URL)
+
+
+def test_a_failed_remote_lookup_falls_back_to_the_probe_for_the_pushed_head(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    head = _head(joined)
+    _lookup_fails(tmp_path)
+    _probe(fake, {12: head})
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_OK
+    assert _sent(fake)
+    assert _report_body(fake)["pr"]["number"] == 12
+
+
+def test_a_failed_remote_lookup_with_another_head_on_the_probe_is_refused(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _lookup_fails(tmp_path)
+    _probe(fake, {12: "f" * 40})
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    assert "could not read" in capsys.readouterr().err
+    assert not _sent(fake)
+
+
+def test_a_failed_remote_lookup_without_a_linked_pull_request_stays_an_error(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Never "does not exist; push it": the branch may well be there."""
+    _lookup_fails(tmp_path)
+    _card(fake)
+    assert _report() == cli.EXIT_ERROR
+    assert "git ls-remote failed" in capsys.readouterr().err
+    assert not _sent(fake)
 
 
 def test_without_a_probe_the_unknown_pull_request_is_still_refused(

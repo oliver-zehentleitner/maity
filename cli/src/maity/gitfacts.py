@@ -23,6 +23,10 @@ class FactsError(Exception):
     """git or gh could not answer a question the report depends on."""
 
 
+class RemoteUnread(FactsError):
+    """`git ls-remote` ran and failed or did not answer: no network, a proxy it cannot reach."""
+
+
 @dataclass(frozen=True)
 class PullRequest:
     number: int
@@ -54,6 +58,9 @@ class Facts:
     # the remote was the push target's (`_push_target`), or there was none.
     upstream_set: bool = False
     push_remote: str | None = None  # by name, for the advice when there is no upstream
+    # `git ls-remote` failed (no network, a proxy it cannot reach); `report` raises it unless
+    # the card's linked pull request with this head, read through the hub's probe, stands in.
+    remote_error: str | None = None
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -270,8 +277,17 @@ def _branch(cwd: Path) -> str | None:
 def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
     """The commit the remote's `ref` points at, None when it has no such ref. `ls-remote` takes
     the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
-    a line naming exactly `ref` counts."""
-    for line in _git_required(cwd, "ls-remote", "--heads", "--", remote, ref).splitlines():
+    a line naming exactly `ref` counts. A refusal of maity's git is a FactsError as anywhere
+    else; a lookup that ran and failed or timed out is RemoteUnread."""
+    try:
+        result = proc.run([*proc.GIT, "ls-remote", "--heads", "--", remote, ref], cwd)
+    except proc.ToolRefused as exc:  # a ToolError too, so caught first
+        raise FactsError(str(exc)) from exc
+    except proc.ToolError as exc:
+        raise RemoteUnread(str(exc)) from exc
+    if result.returncode != 0:
+        raise RemoteUnread(f"git ls-remote failed: {_last_line(result.stderr)}")
+    for line in result.stdout.strip().splitlines():
         sha, _, name = line.partition("\t")
         if name == ref:
             return sha
@@ -306,7 +322,11 @@ def track_own_branch(cwd: Path) -> Retrack:
         return Retrack()
     own = f"refs/heads/{branch}"
     shown = without_userinfo(remote)
-    if _remote_head(cwd, remote, own) is None:
+    try:
+        own_head = _remote_head(cwd, remote, own)
+    except RemoteUnread:
+        return Retrack()  # unread, so nothing changes; `collect` meets the failure and says so
+    if own_head is None:
         return Retrack(
             problem=f"branch {branch} tracks {shown}/{tracked}, the default branch, and "
             f"{shown} has no branch {branch}; push it with `git push -u {shown} {branch}`"
@@ -357,7 +377,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
     # proc.GIT's diff.ignoreSubmodules keeps git out of submodules; a staged gitlink still shows.
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
-    remote = remote_branch = remote_head = None
+    remote = remote_branch = remote_head = remote_error = None
     upstream = False
     if branch:
         remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
@@ -371,7 +391,10 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
         if remote and merge_ref:
             _check_upstream(cwd, branch, remote, merge_ref, derived=not upstream)
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            remote_head = _remote_head(cwd, remote, merge_ref)
+            try:
+                remote_head = _remote_head(cwd, remote, merge_ref)
+            except RemoteUnread as exc:
+                remote_error = str(exc)  # unknown, never "no such branch"
 
     unknown = _forge_unknown(cwd, remote)
     pr = forge_error = None
@@ -385,6 +408,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
     merged = (
         remote_branch is not None
         and remote_head is None
+        and remote_error is None
         and pr is not None
         and pr.state.upper() == "MERGED"
         and pr.head == head
@@ -406,6 +430,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
         forge_error=forge_error,
         upstream_set=upstream,
         push_remote=_push_remote(cwd, branch) if branch and not upstream else None,
+        remote_error=remote_error,
     )
 
 
@@ -433,6 +458,10 @@ def mismatches(facts: Facts) -> list[str]:
                 "refspec or pushInsteadOf of its own; give it an upstream on the remote it is "
                 f"pushed to (`git branch --set-upstream-to <remote>/{facts.branch}`)"
             )
+    elif facts.remote_error is not None:
+        problems.append(
+            f"maity could not read {facts.remote}/{facts.remote_branch} ({facts.remote_error})"
+        )
     elif facts.remote_head is None:
         problems.append(
             f"branch {facts.remote_branch} does not exist on {facts.remote}; push it. If it was "

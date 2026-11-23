@@ -59,6 +59,15 @@ SCRATCH_RECORD = "scratch"
 # (`GIT_SSH_COMMAND=… maity report`, `PATH=…`) picks a program git starts; HOME reaches git
 # without its configuration (`GIT_CONFIG_GLOBAL`).
 ENV_KEPT = ("HOME", "LANG", "TMPDIR")
+# The proxy a placement reaches the forge through, kept as set (a URL with userinfo too, never
+# logged): without it `git ls-remote` cannot reach the remote. A planted proxy reads no
+# credential, since git's https still verifies the server through the tunnel; a planted trust
+# root (SSL_CERT_FILE, GIT_SSL_CAINFO) would, so none is kept. `maity gh` (ghpr.ENV_PASSED) and
+# the skill fetch (runner/skills.py _KEPT_ENV) keep the same proxy names.
+ENV_PROXY = (
+    "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY",
+    "no_proxy", "NO_PROXY",
+)  # fmt: skip
 ENV_KEPT_WINDOWS = (
     "SYSTEMROOT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP",
     "TMP", "PATHEXT", "COMSPEC",
@@ -917,7 +926,7 @@ def _windows_directory() -> str:
 
 
 def kept_env(environ: Mapping[str, str]) -> dict[str, str]:
-    """What git under the runner gets from `environ`: ENV_KEPT, and on Windows what a
-    program needs to start there."""
-    names = ENV_KEPT + (ENV_KEPT_WINDOWS if _windows() else ())
+    """What git under the runner gets from `environ`: ENV_KEPT, the placement's proxy
+    (ENV_PROXY), and on Windows what a program needs to start there."""
+    names = ENV_KEPT + ENV_PROXY + (ENV_KEPT_WINDOWS if _windows() else ())
     return {name: environ[name] for name in names if name in environ}
