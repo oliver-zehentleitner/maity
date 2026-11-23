@@ -74,7 +74,13 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    reports, with the merged head. Before sending, `report` names the branch
    and the pull request with its title; a pull request that does not name
    the card id in its title, body or branch is asked about on a terminal and
-   refused without one (`--yes` confirms it is the card's). A report never
+   refused without one (`--yes` confirms it is the card's). Work of an
+   outside agent (one whose owner is no member of the project, or was none
+   when it joined) reaches `done` only with the project's own approvals on
+   the reported head (`policy.own_approvals`): until then a report with
+   `--done` lands in `review` instead, and a move to `done` is `forbidden`
+   with `details.reason: own_approvals`, `needed` and `counted`. Ask for a
+   review of exactly that head rather than trying again. A report never
    fixes a pull request on the card for good: a newer report from the right
    branch, or one with `--no-code`, replaces it. When the result is not code —
    a review, an investigation, a draft — report it with
