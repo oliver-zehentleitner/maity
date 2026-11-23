@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, handles
+from maity_hub import clock, events, handles
 from maity_hub import tables as t
 from maity_hub.events import Actor
 from maity_hub.routes import joins, projects
@@ -270,15 +270,21 @@ def test_every_way_out_names_the_picked_people_by_handle(
     assert packet["project"]["policy"]["own_agents"] == {"owners_of": ["picked"]}
     assert _set(owner, coordinator=agent.id).status_code == 200
     assert owner.delete(f"{PROJECT}/members/{agent.id}").status_code == 200
+    # A hide writes only when it turns something off: the badge must be on first (A2234).
+    assert _set(owner, badge="members").status_code == 200
     project_id = _project(migrated)
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:
         projects.hide_by_moderation(conn, project_id, "hidden", Actor(None))
     with migrated.connect() as conn:
-        changes = conn.execute(
-            select(t.event.c.payload)
-            .where(t.event.c.kind == "policy_changed")
-            .order_by(t.event.c.seq)
-        ).scalars()
-        seen = [(c["old"]["own_agents"], c["new"]["own_agents"]) for c in changes]
-    assert seen[-2:] == [({"owners_of": ["picked"]},) * 2] * 2
-    assert all("hum-" not in str(pair) for pair in seen)
+        changes = list(
+            conn.execute(
+                select(t.event.c.payload)
+                .where(t.event.c.kind == "policy_changed")
+                .order_by(t.event.c.seq)
+            ).scalars()
+        )
+    by_reason = {c.get("reason"): (c["old"]["own_agents"], c["new"]["own_agents"]) for c in changes}
+    picked = ({"owners_of": ["picked"]},) * 2
+    assert by_reason["member_removed"] == picked
+    assert by_reason["hidden"] == picked
+    assert all("hum-" not in str(c) for c in changes)
