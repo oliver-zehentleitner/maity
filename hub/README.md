@@ -133,6 +133,13 @@ curl http://127.0.0.1:8080/api/v1/help
 version; run `maity-hub migrate` after every upgrade. Migrations never run
 implicitly.
 
+A `maity-hub` command that meets a database error prints one line: the URL
+with its password masked, the error's class, a cause category (`dns`,
+`timeout`, `refused`, `auth`, `ssl` and a few more, else `unclassified`)
+and the driver's codes, as the hub's log names it. The driver's own message
+is never printed: it can quote the connection string with the password.
+For the full text, connect with the database's own client.
+
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is
 no human (`--handle` defaults to the login name, the address is asked

@@ -1,3 +1,6 @@
-### Fixed
+### Security
 
-- Hub: `maity-hub migrate`, `serve` and the bucket clean-up name a database error the way the log does, by its class, cause category and codes, instead of printing the driver's message.
+- hub: every `maity-hub` command (`migrate`, `serve`, `quickstart`, `owner create`, the
+  operator commands, `loadtest`, `attachments copy-to-s3` and its bucket clean-up) names a
+  database error the way the log does, by its class, cause category and codes, and no longer
+  prints the driver's message, which can quote the connection string with the password.

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +10,8 @@ from maity_hub.db import head_revision, make_engine
 
 PASSWORD = "s3cret-pw"
 ACCOUNT_PASSWORD = "correct-horse-battery-staple"
+# A driver's message that quotes the connection string, as one does for a malformed URL.
+QUOTED = f'invalid connection option "x" in "host=db user=maity password={PASSWORD}"'
 
 
 def head() -> str | None:
@@ -349,20 +350,42 @@ def test_the_drivers_text_never_reaches_the_output(
 
     import maity_hub.cli as cli
 
-    quoted = f'invalid connection option "x" in "host=db user=maity password={PASSWORD}"'
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("connect", {}, psycopg.ProgrammingError(QUOTED))
 
-    def refuse(_url: str, **_kw: Any) -> Any:
-        raise OperationalError("connect", {}, psycopg.ProgrammingError(quoted))
-
-    monkeypatch.setattr(cli, "make_engine", refuse)
+    monkeypatch.setattr(cli, "make_engine", refuse)  # migrate
+    monkeypatch.setattr(cli, "serving_engine", refuse)  # serve builds its engine there
     monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity:{PASSWORD}@db/maity")
     assert main([command]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
-    assert err.startswith("maity-hub: database postgresql+psycopg://maity:***@db/maity: ")
-    # `migrate` meets the quoting error; `serve` builds its engine elsewhere and finds no host.
-    assert re.search(r": psycopg\.\w+ (unclassified|dns) code=- number=- behind=-$", err), err
+    assert err == (
+        "maity-hub: database postgresql+psycopg://maity:***@db/maity: "
+        "psycopg.ProgrammingError unclassified code=- number=- behind=-\n"
+    )
     assert PASSWORD not in err and "s3cr" not in err and "host=db" not in err
+
+
+def test_the_bucket_clean_up_logs_no_drivers_text(caplog: pytest.LogCaptureFixture) -> None:
+    """The clean-up after `attachments copy-to-s3` logs a database error and goes on; the log line
+    names it as a command's output does, never with the driver's text."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+    from maity_hub import attachments
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("select", {}, psycopg.ProgrammingError(QUOTED))
+
+    with pytest.MonkeyPatch.context() as patch, caplog.at_level("ERROR"):
+        patch.setattr(attachments, "sweep", refuse)
+        done = cli._clean_bucket(None, None, apply=True)  # type: ignore[arg-type]
+    assert done == {"tombstoned": 0, "orphans": 0, "failed": 1}
+    assert [r.getMessage() for r in caplog.records] == [
+        "cleaning the bucket: psycopg.ProgrammingError unclassified code=- number=- behind=-"
+    ]
+    assert PASSWORD not in caplog.text and "host=db" not in caplog.text
 
 
 def test_an_unwritable_sqlite_path_fails_in_one_line(
