@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import re
@@ -40,6 +41,7 @@ class HubError(Exception):
         self.status = status
         self.details: dict[str, Any] = {}
         self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
+        self.unreached = False  # no answer came through: set by `unreached` alone
 
 
 # `MAITY_ERROR_LINE=<nonce>`: a command that fails and handles it itself ends its stderr with
@@ -54,11 +56,11 @@ ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")  # fullmatch only: `$` would ta
 
 def error_code(exc: HubError) -> str | None:
     """What a machine line says for a refusal: the hub's code and, for `forbidden`, its
-    `details.reason`; `network` when the hub was not reached; None when neither holds. A
-    `code` that is no string (a proxy's `{"error": {"code": 409}}`) holds no code either."""
+    `details.reason`; `network` when no answer came through (`unreached`: the hub not
+    reached, or its answer broken off); None when neither holds. A `code` that is no string
+    (a proxy's `{"error": {"code": 409}}`) holds no code either."""
     if exc.code is None:
-        unreached = exc.status is None and str(exc).startswith("cannot reach ")
-        return "network" if unreached else None
+        return "network" if exc.unreached else None
     if not isinstance(exc.code, str) or not ERROR_CODE.fullmatch(exc.code):
         return None
     reason = exc.details.get("reason")
@@ -112,8 +114,34 @@ def opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(_NoRedirect)
 
 
+# The path segments whose next segment is a secret, compared case-folded and %-decoded:
+# a join link's token (`/join/`, `/j/`), a runner's pairing link (`/r/`, `…/runners/pair/`),
+# an invitation's (`/i/`, `/invite/`, `/api/v1/invitations/`). Under `/mail/` every segment
+# after the page's name is one (`/mail/verify/<token>`, `/mail/sign-in/<token>`, …).
+TOKEN_PREFIXES = frozenset({"join", "j", "r", "i", "invite", "invitations", "pair"})
+# A lone segment of lower-case letters and hyphens, as written, is a route (`/skill`, `/help`,
+# `/join`), not a token: a token (22 characters of `[A-Za-z0-9_-]`, §3.1) is all of them
+# almost never. Checked before case-folding, so a token with capitals stays masked.
+ROUTE_WORD = re.compile(r"[a-z-]+")
+
+
+def _decoded(segment: str) -> str:
+    """A segment %-decoded until nothing changes (`%256Aoin` is `join` too), at most a few
+    rounds."""
+    for _ in range(5):
+        once = urllib.parse.unquote(segment)
+        if once == segment:
+            break
+        segment = once
+    return segment
+
+
 def safe_url(url: str) -> str:
-    """A URL fit for a message: scheme, host, port and path; never userinfo or query."""
+    """A URL fit for a message: scheme, host, port and path; never userinfo or query, and
+    never a link's token, which reads as `<token>`: the message may be pasted into a chat or
+    a card, and the link works for whoever reads it. A path of one segment is masked as
+    well, as a join host's link is the token alone (`https://join.example/<token>`), unless
+    it is a route's word (`ROUTE_WORD`)."""
     try:
         parts = urllib.parse.urlsplit(url.strip())
         host = parts.hostname or ""
@@ -121,7 +149,18 @@ def safe_url(url: str) -> str:
             host = f"{host}:{parts.port}"
     except ValueError:
         return "<not a URL>"
-    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", "")) or "<empty>"
+    segments = parts.path.split("/")
+    named = [i for i, raw in enumerate(segments) if raw]  # `//` is no segment
+    words = {i: _decoded(segments[i]).casefold() for i in named}
+    for k, i in enumerate(named):
+        before = [words[j] for j in named[:k]]
+        lone = len(named) == 1 and not ROUTE_WORD.fullmatch(urllib.parse.unquote(segments[i]))
+        if lone or (before and before[-1] in TOKEN_PREFIXES):
+            segments[i] = "<token>"
+        elif len(before) >= 2 and "mail" in before[:-1]:
+            segments[i] = "<token>"
+    path = "/".join(segments)
+    return urllib.parse.urlunsplit((parts.scheme, host, path, "", "")) or "<empty>"
 
 
 def hub_base(url: str) -> str:
@@ -136,13 +175,62 @@ def hub_base(url: str) -> str:
         raise HubError(f"not a hub URL: {safe_url(url)}") from None
     if port == 0:
         raise HubError(f"not a hub URL: {safe_url(url)}")
-    if parts.username or parts.password:
+    # Compared with None: an empty user or password (`https://@hub`, `https://:@hub`) is a
+    # userinfo part all the same, and the stored URL never carries one.
+    if parts.username is not None or parts.password is not None:
         raise HubError("refusing a URL with credentials in it")
     if parts.scheme not in ("https", "http") or not parts.hostname:
         raise HubError(f"not a hub URL: {safe_url(url)}")
     if parts.scheme == "http" and parts.hostname not in LOOPBACK_HOSTS:
         raise HubError(f"refusing plain HTTP to {parts.hostname}; the hub must be served over TLS")
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "", "", "")).rstrip("/")
+
+
+DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def origin(url: str) -> tuple[str, str, int]:
+    """The origin of a hub URL as `hub_base` accepts it: scheme, host and port, the port filled
+    in with the scheme's default, so `https://Hub.example:443/x` and `https://hub.example` are
+    one origin. The path is not part of it, as `hub_base` drops it. The host is an IP literal
+    in its one canonical spelling (`[2001:0DB8::0:1]` is `2001:db8::1`), or a name as `_host`
+    compares it (lowercase, IDNA, one trailing dot dropped). A name with a trailing dot that
+    reads as an address after the dot is dropped (`127.0.0.1.`) keeps its dot: a name, never
+    that address. Only the comparison uses this form; a stored URL stays as it was given."""
+    base = hub_base(url)
+    parts = urllib.parse.urlsplit(base)
+    port = parts.port or DEFAULT_PORTS[parts.scheme]
+    raw = parts.hostname or ""
+    if _is_ip(raw):  # checked before `_host` drops a trailing dot
+        return parts.scheme, str(ipaddress.ip_address(raw)), port
+    host = _host(base)
+    if host is None:
+        raise HubError(f"not a hub URL: {safe_url(url)}")
+    return parts.scheme, f"{host}." if _is_ip(host) else host, port
+
+
+def _is_ip(host: str) -> bool:
+    """An IP literal as `ipaddress` reads it, nothing a resolver would make of a name."""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def same_origin(a: str, b: str) -> bool:
+    """Whether two hub URLs name the same origin (`origin`)."""
+    return origin(a) == origin(b)
+
+
+def shown_origin(url: str) -> str:
+    """A hub URL's origin as one prints it: `scheme://host`, an IPv6 host in brackets, the
+    port only when it is not the scheme's default. The same form for every URL it is given,
+    so two origins side by side differ only where they differ."""
+    scheme, host, port = origin(url)
+    shown = f"[{host}]" if ":" in host else host
+    suffix = "" if port == DEFAULT_PORTS[scheme] else f":{port}"
+    return f"{scheme}://{shown}{suffix}"
 
 
 def join_target(url: str) -> str:
@@ -237,9 +325,9 @@ def _parent(host: str) -> str | None:
     return parent if "." in parent else None
 
 
-def segment(value: str) -> str:
-    """One path segment, percent-encoded the way the canonical string expects it."""
-    return urllib.parse.quote(value, safe="-_.~")
+# One path segment, percent-encoded the way the canonical string expects it: the one encoder
+# the query's canonical form uses too.
+segment = sign.encode
 
 
 def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
@@ -253,8 +341,8 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
         code = error.get("code", code)
         message = error.get("message", message)
         details = error.get("details") or {}
-    except (ValueError, OSError):
-        pass
+    except (ValueError, OSError, http.client.HTTPException):
+        pass  # a body cut short (IncompleteRead) leaves the status to speak for itself
     details = details if isinstance(details, dict) else {}
     # The hub's words reach a terminal: one line each, every escape shown, never acted on.
     if isinstance(code, str):
@@ -378,9 +466,25 @@ def get_text(url: str, timeout: float = 30.0) -> str:
             return body.decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
         raise _error_from(exc, safe_url(url)) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        reason = getattr(exc, "reason", exc)
-        raise HubError(f"cannot reach {safe_url(url)}: {reason}") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise unreached(safe_url(url), exc) from exc
+
+
+def unreached(where: str, exc: OSError | http.client.HTTPException) -> HubError:
+    """No answer came through, at each of the three places a connection is opened
+    (`get_text`, `_exchange`, `Client._send`; an `HTTPError` is an answer and never comes
+    here). An `OSError` (`URLError`, a timeout, a refused or reset connection, an SSL EOF,
+    and `RemoteDisconnected`, which is both) is "cannot reach"; any other `HTTPException` is
+    an answer that broke off (a status line, headers or a body cut short: BadStatusLine,
+    IncompleteRead), a lost connection like any other. Either has no status and no code, so
+    `wait` retries it and every other command fails once with this line, and `unreached` is
+    set, so the machine line says `network` for both (`error_code`)."""
+    if isinstance(exc, OSError):
+        err = HubError(f"cannot reach {where}: {getattr(exc, 'reason', exc)}")
+    else:
+        err = HubError(f"{where} broke off its answer ({onboarding.inline(type(exc).__name__)})")
+    err.unreached = True
+    return err
 
 
 @dataclass(frozen=True)
@@ -409,8 +513,8 @@ def _exchange(
             facts: Message = response.headers
     except urllib.error.HTTPError as exc:
         raise _error_from(exc, what) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HubError(f"cannot reach {safe_url(url)}: {getattr(exc, 'reason', exc)}") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise unreached(safe_url(url), exc) from exc
     value = raw.decode("utf-8", errors="replace").strip()
     if not sign.is_credential(value):
         raise HubError(f"the {what} exchange answered with something that is not a credential")
@@ -640,8 +744,8 @@ class Client:
                     if limit > 0:
                         continue
                 raise err from exc
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
+            except (OSError, http.client.HTTPException) as exc:
+                raise unreached(self.base, exc) from exc
         raise AssertionError("unreachable")
 
 

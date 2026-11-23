@@ -20,7 +20,7 @@ from maity_hub.auth import mail_factor, second_factor, sessions
 from maity_hub.config import ConfigError, Settings
 from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified, decide_held
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -67,7 +67,7 @@ def setup(
     if verified:
         addresses.prepare(engine, None)
         with engine.begin() as conn:
-            assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+            assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     if not stored:
         return browser(make_client, mail=mail), human
     with engine.begin() as conn:
@@ -89,7 +89,7 @@ def mails(engine: Engine) -> list[Any]:
         return list(
             conn.execute(
                 select(t.mail_outbox)
-                .where(t.mail_outbox.c.kind == "sign_in")
+                .where(t.mail_outbox.c.kind == "second_factor")
                 .order_by(t.mail_outbox.c.id)
             )
         )
@@ -141,6 +141,46 @@ def test_a_password_sign_in_ends_in_a_second_factor_session_by_mail(
     assert "Never give this code to anyone" in body and "someone has your password" in body
     # nothing but the second step is reachable
     assert client.get("/api/v1/me").status_code == 403
+
+
+def test_the_mail_is_sent_on_its_own_budget_whatever_the_sign_in_budget(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A spent sign-in budget stops no mail of the factor (§16.2): it is counted as
+    `second_factor`, and a spent `second_factor` budget drops it."""
+    from maity_hub import instance_settings as store
+    from maity_hub.mail import outbox, smtp
+    from maity_hub.mail import settings as mail_settings
+
+    monkeypatch.setattr(
+        smtp,
+        "send",
+        lambda resolved, message: smtp.Outcome(
+            ok=True, stage=None, smtp_code=None, detail=None, at=clock.now()
+        ),
+    )
+    client, _ = setup(make_client, migrated)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.sign_in_max_per_hour", 1, None)
+        conn.execute(
+            t.mail_budget.insert().values(kind="sign_in", window_start=clock.now(), admitted=1)
+        )
+    assert login(client).status_code == 200
+    assert outbox.send_due(migrated, hub_mail(), None) == 1
+    [row] = mails(migrated)
+    assert row.status == "sent"
+    with migrated.begin() as conn:
+        assert mail_settings.counters(conn)["second_factor_sent_last_hour"] == 1
+        store.put(conn, "mail.second_factor_max_per_hour", 1, None)
+    assert resend(client).status_code == 200
+    assert outbox.send_due(migrated, hub_mail(), None) == 0
+    assert [r.status for r in mails(migrated)] == ["sent", "dropped"]
+    with migrated.begin() as conn:
+        counters = mail_settings.counters(conn)
+    assert (counters["second_factor_dropped_last_hour"], counters["sign_in_dropped_last_hour"]) == (
+        1,
+        0,
+    )
 
 
 def test_the_code_completes_the_sign_in_once_and_the_session_is_fresh(
@@ -296,7 +336,7 @@ def test_switching_away_from_email_ends_the_open_second_step(
     human = factory.human(migrated, "ada")
     addresses.prepare(migrated, None)
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
         conn.execute(  # the admin's setting, with no environment value to win over it
             t.instance_setting.insert().values(
                 name="sign_in.second_factor", value="email", updated_at=clock.now()
@@ -531,7 +571,7 @@ def _admin(make_client: ClientFactory, engine: Engine, *, verified: bool = True)
     if verified:
         addresses.prepare(engine, None)
         with engine.begin() as conn:
-            assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+            assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     client = make_client(mail=hub_mail(), secret_key=b"k" * 32)
     assert login(client).status_code == 200
     return client
@@ -683,7 +723,7 @@ def test_totp_stays_while_it_is_the_only_way_in(
         assert second_factor.view(conn, hub, human)["required"] is True
     addresses.prepare(migrated, None)
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     with migrated.connect() as conn:
         assert second_factor.view(conn, hub, human)["required"] is False
     with migrated.begin() as conn:
@@ -722,7 +762,7 @@ def test_approving_a_held_removal_keeps_the_factor(
             mock_good_standing(),
             pytest.raises(ApiError),
         ):
-            preferences.decide_held(
+            decide_held(
                 conn,
                 human=row,
                 session=session,

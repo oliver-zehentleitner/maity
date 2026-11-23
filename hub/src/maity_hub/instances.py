@@ -1,9 +1,9 @@
 """Agent instances and the team's rulebook (docs/api.md §6.17, §6.18).
 
-An agent instance is one agent credential of a membership: its `instance` column is
-the short id, unique within the membership and never reused. Everything the hub
-records about work names the member and the instance; a member id alone addresses
-the team.
+An agent instance is one agent credential, attached to one or more memberships of its
+profile (`instance_attachment`): its `instance` column is the short id, unique within each
+membership and never reused. Everything the hub records about work names the member and
+the instance; a member id alone addresses the team.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import Field
-from sqlalchemy import Connection, func, select, update
+from sqlalchemy import ColumnElement, Connection, Join, Select, and_, func, select, update
 
 from maity_hub import cards, clock, commitment, namespace
 from maity_hub import tables as t
@@ -25,9 +25,83 @@ from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_instance_id
 from maity_hub.models import Strict
 from maity_hub.scopes import tokens_of
+from maity_hub.seen import ONLINE, presence_by_age
 
 INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
-MAX_INSTANCES = 16
+BOUND = 1000  # the hub's bound of `max_instances`; its ceiling is in ceilings.py (§6.31)
+
+# What an instance has per project, on its `instance_attachment` row (§6.17): the
+# membership, its dormancy, the handover numbers, its Keep the Why commitment and its pause;
+# and `detached_at`, so a reader of a row can tell an attachment that ended.
+ATTACHMENT_COLUMNS = (
+    "membership_id",
+    "detached_at",
+    "dormant_since",
+    "dormant_by",
+    "exchange_seq",
+    "first_after",
+    "first_cursor",
+    "ktw_acknowledged_at",
+    "ktw_acknowledged_session",
+    "ktw_acknowledge_by",
+    "ktw_session_id",
+    "ktw_reminded_at",
+    "ktw_request_id",
+    "paused_reason",
+    "paused_since",
+    "paused_by",
+    "paused_line",
+)
+
+
+def credential_join() -> Join:
+    """`credential` joined with its attachments, for a `select_from`: one row per project
+    the instance is in."""
+    a = t.instance_attachment
+    return t.credential.join(a, a.c.credential_id == t.credential.c.id)
+
+
+def credential_rows() -> Select[Any]:
+    """The credential rows as they read before an instance could sit in several projects:
+    every credential column plus the per-project columns of one attachment
+    (`ATTACHMENT_COLUMNS`), so `row.membership_id`, `row.paused_since`, `row.dormant_since`
+    or `row.ktw_acknowledged_at` read as they did. One row per (credential, membership):
+    the caller narrows it, by `t.instance_attachment.c.membership_id` and `attached_now()`
+    for the instances a membership holds now."""
+    a = t.instance_attachment
+    return select(t.credential, *(a.c[name] for name in ATTACHMENT_COLUMNS)).select_from(
+        credential_join()
+    )
+
+
+def live_attachments(credential_ids: Iterable[str], *columns: Any) -> Select[Any]:
+    """`columns` of the credentials' attachments that have not ended, joined with their
+    memberships (`t.instance_attachment` as `a`, `t.membership`): one row per project an
+    instance is in (§6.17). Unlike `attached_now()` it does not leave out a revoked
+    credential: `auth.revocation.revoke` reads them under its project locks, before its own
+    UPDATE, and its lead's end (`_lead_revoked`) runs for a credential revoked already too."""
+    a, m = t.instance_attachment, t.membership
+    return (
+        select(*columns)
+        .select_from(a)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(a.c.credential_id.in_(sorted(set(credential_ids))), a.c.detached_at.is_(None))
+    )
+
+
+def attached_now() -> ColumnElement[bool]:
+    """An active instance in the attachment's project: its credential not revoked and the
+    attachment not ended (§6.17)."""
+    return and_(t.credential.c.revoked_at.is_(None), t.instance_attachment.c.detached_at.is_(None))
+
+
+def attachment_of(credential_id: str, membership_id: int | None = None) -> ColumnElement[bool]:
+    """The attachment row of (credential, membership), for an `update(t.instance_attachment)`;
+    without a membership every attachment of the credential."""
+    a = t.instance_attachment
+    if membership_id is None:
+        return a.c.credential_id == credential_id
+    return and_(a.c.credential_id == credential_id, a.c.membership_id == membership_id)
 
 
 def address(member_id: str, instance: str) -> str:
@@ -46,9 +120,13 @@ def addressed(
     named; when it was replaced, the instance that replaced it, along the chain; a revoked
     one without a successor keeps its own token, so the write is accepted and wakes nobody.
     An id the member never had is `invalid` (`not_an_instance`)."""
+    in_membership = select(t.credential.c.instance, t.credential.c.revoked_at).select_from(
+        credential_join()
+    )
     row = conn.execute(
-        select(t.credential.c.instance, t.credential.c.revoked_at).where(
-            t.credential.c.membership_id == membership_id, t.credential.c.instance == instance
+        in_membership.where(
+            t.instance_attachment.c.membership_id == membership_id,
+            t.credential.c.instance == instance,
         )
     ).first()
     if row is None:
@@ -56,8 +134,8 @@ def addressed(
     seen = {instance}
     while row.revoked_at is not None:
         successor = conn.execute(
-            select(t.credential.c.instance, t.credential.c.revoked_at).where(
-                t.credential.c.membership_id == membership_id,
+            in_membership.where(
+                t.instance_attachment.c.membership_id == membership_id,
                 t.credential.c.replaces == row.instance,
             )
         ).first()
@@ -97,16 +175,18 @@ def token_is_dormant(conn: Connection, project_id: str, instance_token: str) -> 
     member, _, instance = instance_token.removeprefix("instance:").partition("#")
     if not instance:
         return False
+    a = t.instance_attachment
     return (
         conn.execute(
             select(t.credential.c.id)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+            .select_from(credential_join())
+            .join(t.membership, t.membership.c.id == a.c.membership_id)
             .where(
                 t.membership.c.project_id == project_id,
                 t.membership.c.agent_id == member,
                 t.credential.c.instance == instance,
-                t.credential.c.revoked_at.is_(None),
-                t.credential.c.dormant_since.is_not(None),
+                attached_now(),
+                a.c.dormant_since.is_not(None),
             )
         ).first()
         is not None
@@ -119,10 +199,11 @@ def dormant_members(conn: Connection, membership_ids: Iterable[int]) -> set[int]
     ids = list(membership_ids)
     if not ids:
         return set()
+    a = t.instance_attachment
     rows = conn.execute(
-        select(t.credential.c.membership_id, t.credential.c.dormant_since).where(
-            t.credential.c.membership_id.in_(ids), t.credential.c.revoked_at.is_(None)
-        )
+        select(a.c.membership_id, a.c.dormant_since)
+        .select_from(credential_join())
+        .where(a.c.membership_id.in_(ids), attached_now())
     ).all()
     awake = {r.membership_id for r in rows if r.dormant_since is None}
     return {r.membership_id for r in rows} - awake
@@ -155,16 +236,16 @@ def team(conn: Connection, row: Any, people: Mapping[str, Any] | None = None) ->
         "wake": row.wake,
         "review_within_team": bool(row.review_within_team),
         "updated_by": by,
-        "updated_at": clock.rfc3339(row.team_updated_at) if row.team_updated_at else None,
+        "updated_at": clock.rfc3339_or_none(row.team_updated_at),
     }
 
 
 def taken(conn: Connection, membership_id: int) -> set[str]:
-    """Every id the membership ever gave: an id is never reused (§6.17)."""
+    """Every id the membership ever gave: an id is never reused (§6.17). A detached
+    instance's id counts: its attachment row stays."""
+    a = t.instance_attachment
     return set(
-        conn.execute(
-            select(t.credential.c.instance).where(t.credential.c.membership_id == membership_id)
-        ).scalars()
+        conn.execute(select(a.c.instance).where(a.c.membership_id == membership_id)).scalars()
     )
 
 
@@ -173,14 +254,12 @@ def next_id(conn: Connection, membership_id: int) -> str:
 
 
 def active(conn: Connection, membership_id: int) -> list[Any]:
-    """The membership's active instances (their credentials), oldest first."""
+    """The membership's active instances (their credential rows, `credential_rows`), oldest
+    first."""
     return list(
         conn.execute(
-            select(t.credential)
-            .where(
-                t.credential.c.membership_id == membership_id,
-                t.credential.c.revoked_at.is_(None),
-            )
+            credential_rows()
+            .where(t.instance_attachment.c.membership_id == membership_id, attached_now())
             .order_by(t.credential.c.created_at, t.credential.c.id)
         )
     )
@@ -190,33 +269,58 @@ def active_count(conn: Connection, membership_id: int) -> int:
     return int(
         conn.execute(
             select(func.count())
-            .select_from(t.credential)
-            .where(
-                t.credential.c.membership_id == membership_id,
-                t.credential.c.revoked_at.is_(None),
-            )
+            .select_from(credential_join())
+            .where(t.instance_attachment.c.membership_id == membership_id, attached_now())
         ).scalar_one()
     )
 
 
-def refuse_over_quota(conn: Connection, member: Any, adding: int = 1) -> None:
-    """`instance_quota` when the team would have more active instances than it may."""
-    if active_count(conn, member.id) + adding > member.max_instances:
+def max_instances_limit(conn: Connection, member: Any, project: Any | None = None) -> Any:
+    """`max_instances` in effect for the agent membership `member` (§6.31): its stored value,
+    or its ceiling when that is lower, the agent profile owner's account override counting."""
+    from maity_hub import ceilings
+
+    if project is None:
+        project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
+    ).scalar_one()
+    return ceilings.resolve(conn, "max_instances", project, member.max_instances, owner), owner
+
+
+def refuse_over_quota(
+    conn: Connection, member: Any, adding: int = 1, caller_id: str | None = None
+) -> None:
+    """`instance_quota` with the quota details (§6.31) when the team would have more active
+    instances than `max_instances` in effect allows. The ceiling's value is shown to the
+    agent profile's owner, who sets the value; `caller_id` names the caller."""
+    from maity_hub import ceilings, namespace
+
+    count = active_count(conn, member.id)
+    project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    limit, owner = max_instances_limit(conn, member, project)
+    if count + adding > limit.limit:
         raise ApiError(
             409,
             "instance_quota",
             "the team has as many instances as its rulebook allows",
-            {"max": member.max_instances},
+            ceilings.details(
+                limit,
+                count,
+                namespace.full_name(conn, project),
+                sees_ceiling=caller_id is not None and caller_id == owner,
+                member_id=member.agent_id,
+            ),
         )
 
 
 def require_active(conn: Connection, member: Any, instance: str, field: str) -> Any:
     """The credential of an active instance of `member`, else `invalid` (§6.4)."""
     row = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == member.id,
+        credential_rows().where(
+            t.instance_attachment.c.membership_id == member.id,
             t.credential.c.instance == instance,
-            t.credential.c.revoked_at.is_(None),
+            attached_now(),
         )
     ).first()
     if row is None:
@@ -233,9 +337,10 @@ def require_replaceable(
     sibling, so with `revoked` the instance's credential must be revoked."""
     if not revoked:
         return require_active(conn, member, instance, field)
+    a = t.instance_attachment
     row = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == member.id,
+        credential_rows().where(
+            a.c.membership_id == member.id,
             t.credential.c.instance == instance,
             t.credential.c.revoked_at.is_not(None),
         )
@@ -243,9 +348,9 @@ def require_replaceable(
     if row is None:
         raise invalid({field: "not_an_instance"})
     successor = conn.execute(
-        select(t.credential.c.id).where(
-            t.credential.c.membership_id == member.id, t.credential.c.replaces == instance
-        )
+        select(t.credential.c.id)
+        .select_from(credential_join())
+        .where(a.c.membership_id == member.id, t.credential.c.replaces == instance)
     ).first()
     if successor is not None:  # a human's join replaced it already: one successor only
         raise invalid({field: "already_replaced"})
@@ -288,22 +393,14 @@ def resolve(
     raise invalid({field: "instance_required"}, "name the instance: the team has several")
 
 
-ONLINE_SECONDS, AWAY_SECONDS = 120, 2 * 3600
-
-
 def presence(last_used_at: datetime | None, live: bool, listening: bool) -> str:
     """One instance's presence by the table of §5.3; the membership's pause is applied
-    by the caller."""
+    by the caller. Every call writes `last_used_at`, so it is the latest call itself."""
     if listening:
         return "online"
     if not live or last_used_at is None:
         return "offline"
-    age = (clock.now() - last_used_at).total_seconds()
-    if age <= ONLINE_SECONDS:
-        return "online"
-    if age <= AWAY_SECONDS:
-        return "away"
-    return "offline"
+    return presence_by_age(clock.now() - last_used_at)
 
 
 def views(
@@ -331,11 +428,11 @@ def views(
             p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(wanted)))
         }
     credentials = conn.execute(
-        select(t.credential)
-        .where(t.credential.c.membership_id.in_(list(rows)), t.credential.c.revoked_at.is_(None))
+        credential_rows()
+        .where(t.instance_attachment.c.membership_id.in_(list(rows)), attached_now())
         .order_by(t.credential.c.created_at, t.credential.c.id)
     ).all()
-    sessions = _live_sessions(conn, [c.id for c in credentials])
+    sessions, episodes = _live_sessions_and_episodes(conn, [c.id for c in credentials], list(rows))
     latest = _latest_sessions(conn, [c.id for c in credentials if c.id not in sessions])
     claims = _claim_counts(conn, list(rows))
     heard = listening.which((s.id for s in sessions.values()), conn)  # one read for all
@@ -365,10 +462,8 @@ def views(
                         "started_at": clock.rfc3339(session.started_at),
                         "listening": is_listening,
                         # When the 10 minutes ran out, while an episode is open (§5.3).
-                        "not_listening_since": (
-                            clock.rfc3339(session.not_listening_since)
-                            if session.not_listening_since is not None
-                            else None
+                        "not_listening_since": clock.rfc3339_or_none(
+                            episodes.get((session.id, c.membership_id))
                         ),
                     }
                     if session
@@ -379,7 +474,7 @@ def views(
                     if member.paused_since is not None or c.paused_since is not None
                     else presence(c.last_used_at, session is not None, is_listening)
                 ),
-                "last_seen_at": clock.rfc3339(c.last_used_at) if c.last_used_at else None,
+                "last_seen_at": clock.rfc3339_or_none(c.last_used_at),
                 "paused": paused_view(c),
                 "dormant": dormant_view(c),
                 "lead": member.lead_instance == c.instance,
@@ -434,9 +529,8 @@ def unpaused_presences(conn: Connection, membership_ids: Iterable[int]) -> dict[
     from maity_hub import listening  # the in-process registry of open long-polls
 
     credentials = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id.in_(list(membership_ids)),
-            t.credential.c.revoked_at.is_(None),
+        credential_rows().where(
+            t.instance_attachment.c.membership_id.in_(list(membership_ids)), attached_now()
         )
     ).all()
     sessions = _live_sessions(conn, [c.id for c in credentials])
@@ -470,6 +564,36 @@ def _live_sessions(conn: Connection, credential_ids: list[str]) -> dict[str, Any
             )
         )
     }
+
+
+def _live_sessions_and_episodes(
+    conn: Connection, credential_ids: list[str], membership_ids: list[int]
+) -> tuple[dict[str, Any], dict[tuple[str, int], datetime]]:
+    """`_live_sessions`, and per (session, membership) of `membership_ids` the start of its
+    open not-listening episode (§5.3), in the same one read; one without an episode is
+    absent."""
+    if not credential_ids:
+        return {}, {}
+    s = t.agent_session
+    p = t.agent_session_project
+    sessions: dict[str, Any] = {}
+    episodes: dict[tuple[str, int], datetime] = {}
+    for row in conn.execute(
+        select(s, p.c.membership_id.label("episode_membership"), p.c.not_listening_since)
+        .outerjoin(
+            p,
+            and_(
+                p.c.session_id == s.c.id,
+                p.c.membership_id.in_(membership_ids),
+                p.c.not_listening_since.is_not(None),
+            ),
+        )
+        .where(s.c.credential_id.in_(credential_ids), s.c.live.is_(True))
+    ):
+        sessions[row.credential_id] = row
+        if row.not_listening_since is not None:
+            episodes[(row.id, row.episode_membership)] = row.not_listening_since
+    return sessions, episodes
 
 
 def _claim_counts(conn: Connection, membership_ids: list[int]) -> dict[tuple[int, str], int]:
@@ -538,8 +662,10 @@ def round_robin(conn: Connection, member: Any) -> str | None:
         return None
     last = (
         conn.execute(
-            select(t.credential.c.created_at, t.credential.c.id).where(
-                t.credential.c.membership_id == member.id,
+            select(t.credential.c.created_at, t.credential.c.id)
+            .select_from(credential_join())
+            .where(
+                t.instance_attachment.c.membership_id == member.id,
                 t.credential.c.instance == member.round_robin_last,
             )
         ).first()
@@ -560,11 +686,7 @@ def round_robin(conn: Connection, member: Any) -> str | None:
         if session is not None and session.id in heard:
             return True
         seen = c.last_used_at
-        return (
-            session is not None
-            and seen is not None
-            and (now - seen).total_seconds() <= ONLINE_SECONDS
-        )
+        return session is not None and seen is not None and now - seen <= ONLINE
 
     chosen: str = next((c for c in order if online(c)), order[0]).instance
     conn.execute(
@@ -610,9 +732,8 @@ def team_wakes(
     if not teams:
         return None
     credentials = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id.in_([m.id for m in teams]),
-            t.credential.c.revoked_at.is_(None),
+        credential_rows().where(
+            t.instance_attachment.c.membership_id.in_([m.id for m in teams]), attached_now()
         )
     ).all()
     sessions = _live_sessions(conn, [c.id for c in credentials])
@@ -660,7 +781,7 @@ def refresh_team_wake(conn: Connection, project_id: str) -> None:
 
 
 class TeamIn(Strict):
-    max_instances: int | None = Field(default=None, ge=1, le=MAX_INSTANCES)
+    max_instances: int | None = Field(default=None, ge=1, le=BOUND)
     distribution: Literal["free", "lead", "round_robin"] | None = None
     lead_instance: str | None = Field(default=None, max_length=5)
     wake: Literal["all", "lead", "next_free"] | None = None
@@ -749,6 +870,16 @@ def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> No
             if value is None:
                 raise invalid({f"team.{field}": "required"})
             values[field] = value
+    if "max_instances" in values:
+        from maity_hub import ceilings
+
+        project = conn.execute(select(t.project).where(t.project.c.id == target.project_id)).one()
+        owner = conn.execute(
+            select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+        ).scalar_one()
+        cap = ceilings.ceiling(conn, "max_instances", project, owner)
+        if values["max_instances"] > cap.value:
+            raise ceilings.above_ceiling("team.max_instances", cap)
     if "lead_instance" in given:
         if team.lead_instance is not None:
             if not INSTANCE_PATTERN.fullmatch(team.lead_instance):
@@ -814,8 +945,8 @@ def set_dormant(
         raise invalid({"dormant": "lead"}, "a team's lead is moved before it rests")
     lock_project(conn, target.project_id)
     conn.execute(
-        update(t.credential)
-        .where(t.credential.c.id == credential.id)
+        update(t.instance_attachment)
+        .where(attachment_of(credential.id, target.id))
         .values(
             dormant_since=clock.now() if value else None,
             dormant_by=by if value else None,

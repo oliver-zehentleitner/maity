@@ -45,9 +45,11 @@ from maity_hub import (
     policy,
     rules,
     setup_cards,
+    write_guard,
 )
 from maity_hub import tables as t
-from maity_hub.auth import credentials, sessions
+from maity_hub.auth import credentials, sessions, verifiers
+from maity_hub.chunks import chunks
 from maity_hub.db import metadata
 from maity_hub.ids import new_id
 
@@ -112,6 +114,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                 created_at=now,
             )
         )
+        write_guard.make_row(conn, human_id)
         if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
             raise RuntimeError(f"the handle {handle} is taken")
         project_id = new_id("project")
@@ -180,22 +183,34 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
             conn.execute(
                 insert(t.credential).values(
                     id=credential_id,
-                    membership_id=membership_id,
+                    agent_id=agent_id,
                     instance=f"lt{k}a",
-                    verifier=verifier,
+                    verifier=verifiers.stored("credential", credential_id, verifier),
                     created_at=now,
                 )
             )
             conn.execute(
-                insert(t.agent_session).values(
-                    id=new_id("session"),
+                insert(t.instance_attachment).values(
                     credential_id=credential_id,
                     membership_id=membership_id,
+                    instance=f"lt{k}a",
+                    attached_at=now,
+                )
+            )
+            session_id = new_id("session")
+            conn.execute(
+                insert(t.agent_session).values(
+                    id=session_id,
+                    credential_id=credential_id,
                     harness="k6",
                     started_at=now,
                     last_seen_at=now,
-                    acknowledged_seq=0,
                     live=True,
+                )
+            )
+            conn.execute(
+                insert(t.agent_session_project).values(
+                    session_id=session_id, membership_id=membership_id, acknowledged_seq=0
                 )
             )
             agents.append(
@@ -225,7 +240,6 @@ def seed(engine: Engine, humans: int, out: Path) -> int:
 # ----- purge -----------------------------------------------------------------------------------
 
 HANDLE = re.compile(rf"{re.escape(PREFIX)}[0-9]+")
-CHUNK = 500
 # What the seed's accounts are; every row that refers to one of these goes with them.
 ANCHORS = ("human", "project", "agent_profile", "membership")
 # Tables that name an account without a foreign key: the column, and whose ids it holds.
@@ -257,18 +271,13 @@ class Refused(Exception):
     """`purge` would touch something the seed did not make."""
 
 
-def _chunks(values: set[Any]) -> list[list[Any]]:
-    items = sorted(values, key=str)
-    return [items[i : i + CHUNK] for i in range(0, len(items), CHUNK)]
-
-
 def _key(table: Table, row: Any) -> tuple[Any, ...]:
     return tuple(row._mapping[c.name] for c in table.primary_key.columns)
 
 
 def _select_in(conn: Connection, table: Table, column: Column[Any], values: set[Any]) -> list[Any]:
     found: list[Any] = []
-    for chunk in _chunks(values):
+    for chunk in chunks(values):
         found.extend(conn.execute(select(table).where(column.in_(chunk))).all())
     return found
 
@@ -428,7 +437,7 @@ def _each(conn: Connection, table: Table, keys: set[tuple[Any, ...]], statement:
     """Run `statement(where)` over `keys` in chunks."""
     pk = list(table.primary_key.columns)
     if len(pk) == 1:
-        for chunk in _chunks({k[0] for k in keys}):
+        for chunk in chunks({k[0] for k in keys}):
             conn.execute(statement(pk[0].in_(chunk)))
     else:
         for key in keys:

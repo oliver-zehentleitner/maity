@@ -7,6 +7,7 @@ created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL).
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -47,6 +48,11 @@ def _shard() -> tuple[int, int] | None:
 
 def pytest_configure(config: pytest.Config) -> None:
     _shard()  # a bad MAITY_TEST_SHARD stops the run before collection, with a usage error
+    # Which check refused a join (`routes.joins._gone`, at info, and the attempt slot's join
+    # state at debug) shows under a failing test's captured log, so a flaky exchange names its
+    # cause in CI (tsk-e9pc50wdk9b9). Only this logger: a propagated record is held back by the
+    # handlers' level, not the root's.
+    logging.getLogger("maity_hub.routes.joins").setLevel(logging.DEBUG)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -324,6 +330,9 @@ def settings(database_url: str, web_dir: Path) -> Settings:
             "MAITY_DATABASE_URL": database_url,
             "MAITY_PUBLIC_URL": "https://hub.example",
             "MAITY_WEB_DIR": str(web_dir),
+            # The agent firewall's tests are written against the gate on; the default (off) is
+            # tested where it is set (`agent_firewall=False`, tests/test_firewall_switch.py).
+            "MAITY_AGENT_FIREWALL": "on",
         }
     )
 
@@ -412,7 +421,7 @@ def _fresh_process_state() -> Iterator[None]:
         shared_budget,
         shared_counts,
     )
-    from maity_hub.auth import caller
+    from maity_hub.auth import caller, verifiers
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.routes import badges, device_codes
 
@@ -420,6 +429,10 @@ def _fresh_process_state() -> Iterator[None]:
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
     shared_budget.configure(None)
+    from maity_hub import chat_gate
+
+    chat_gate.configure(True)  # as the `settings` above, for a test that builds no app
+    verifiers.configure(None)  # a credential written outside an app is stored plain
     listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
     listening.reset()
     # The limits are the module's, set by the last app built: back to the defaults, so a test
@@ -430,6 +443,9 @@ def _fresh_process_state() -> Iterator[None]:
     # address and a few fixed addresses make all the visitors of the suite.
     for limiter in process_limiters():
         limiter.reset()
+    from maity_hub import read_limits
+
+    read_limits.reset()  # the reads per credential, and the instance's value kept for them
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
@@ -452,9 +468,15 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import ktw_reads
 
     ktw_reads.FOREIGN.clear()
+    ktw_reads.OUTSIDE_CACHE.clear()  # the peer link to `ktw.CACHE` stays
+    ktw_reads._outside_seen.clear()
+    ktw_reads._asked_now.set(frozenset())  # no answer of an earlier test counts as this one's
     ktw_reads._slots.clear()
     ktw_reads._flights.clear()
     ktw_reads._failed.clear()
+    from maity_hub import contract_text
+
+    contract_text.forget()  # a kept branch head must not answer the next test's reads
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests

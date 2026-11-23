@@ -139,8 +139,9 @@ repo_owner=${slug##*/}
   || die "cannot read an owner and a repository from origin's URL $origin"
 # The host: scheme://[user@]host[:port]/... or scp's [user@]host:path. A host on the loopback is
 # a proxy in front of github.com (Claude Code's cloud sessions fetch through one), which serves
-# git and not the API. A URL without a host (a local path) names no server to ask.
-case $origin in
+# git and not the API. A URL without a host (a local path) names no server to ask. The scheme is
+# matched in any case (RFC 3986): FILE://localhost/... is a local path too, not the loopback proxy.
+case ${origin,,} in
   file://*) authority="" ;;
   *://*)
     authority=${origin#*://}

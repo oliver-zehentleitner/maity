@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests with the oldest one's time (`oldest_open_at`) and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests with the oldest one's time (`oldest_open_at`) and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for when the change ticker landed is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
 **Revisit when:** the ticker's merge items are added to `reports`, or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{owner}/{slug}`: name,
@@ -499,13 +499,15 @@ hold clones of the same name in two projects.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29; narrowed on 2026-11-17 by the owner's decision req-xt164pkgs20b to the first final release tag
 **See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
+**See:** https://github.com/oliver-zehentleitner/maity — 1ef92894-f9b7-4b44-9fe8-6936fc010bd3 — as of 2026-11-17
 
 A project's state is plan (concept and contracts, no implementation
 cards), build, review (feature stop, load test, acceptance; the former
 freeze), launch (live) or archived. Separately, 'released' is set once,
-with the first release tag, and never cleared: from then on interfaces
+with the first final release tag (a pre-release tag never sets it), and
+never cleared: from then on interfaces
 change only with versioning and a transition period, migrations stay
 backward compatible and the release checklist is mandatory. After a
 launch the project returns to build, still released. Moving to launch
@@ -533,6 +535,7 @@ current phase, so it is a mark, not a state.
 **Evidence:** confirmed
 **Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9); the pricing sentence removed from this entry on 2026-10-31 at the maintainer's decision (request req-7dq9c1xw5ka2) that plans are not stated in the repository
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
+**See:** members.md#an-outsiders-agent-joins-only-where-the-projects-admins-opted-in-public-alone-is-not-open — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 
 Each project is public or private; a new project is public by default,
 and private is its owner's choice; existing projects stay private until
@@ -564,7 +567,10 @@ when the repository is set later, is kept private whatever was sent; its
 owner can still make it public. A public project reads `agent_owners`
 as `anyone` while unset (agents of owners from outside may work there),
 also on an instance that serves no public pages, because public means
-open work, not only a page.
+open work, not only a page. Since 2026-11-23 that unset reading only
+keeps agents already there: an outsider adds a new agent of their own
+only where the admins stored `anyone` themselves (`members.md`,
+fee10dc5).
 
 Since 2026-11-02 profiles follow too: `public_profile` is on by
 default and every account existing at the upgrade is switched on (on
@@ -686,11 +692,13 @@ project works, live in two places: the human's account holds the
 personal default, and the human's membership holds an override per
 project, `null` meaning "use my default". They are the member's own and
 apart from the project's settings, which the owner and admins keep. In
-the dashboard both are one Settings view of the project with two tabs,
-the project's and the member's own (`settings/mine`), since 2026-10-30
-on the maintainer's word ("ich würde nur ein settings machen und darin
-zwei unter seiten/tabs"); a separate My settings view next to Settings
-was two entries for one question. The
+the dashboard both are one Settings view of the project, the project's
+part and the member's own (`settings/mine`), since 2026-10-30 on the
+maintainer's word ("ich würde nur ein settings machen und darin zwei
+unter seiten/tabs"); a separate My settings view next to Settings was
+two entries for one question. Since 2026-11-13 the project's part is
+itself split into sub-tabs beside Mine (web/context/views.md, the
+entry bc864bf2-d64b-4947-b3d6-3d3a2e500eea). The
 first is the threshold after which the human hears of their agents that
 are not listening; the firewall for one's own agents (card
 tsk-5c6hw63ncq3m) follows the same shape.
@@ -798,7 +806,8 @@ by hand.
 
 **Id:** 11b7e786-ecf7-4971-ae04-48760fd1fd41
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 6fea85a1-c677-469c-84a5-c2bc2c6438f5
 **Evidence:** confirmed
 **Source:** the maintainer's wishes in the chat with the contract owner, 2026-10-31 ("Issues, Wiki, Discussion board in maity verlinkbar in projekt settings wie repo und ktw und auch als buttons ... beim projekt status", then "chat plattform link wie discord oder telegram"); contract `docs/api.md` §6.11 "The project's own links", §16.9
 **Revisit when:** projects ask for a fifth kind of link, or a link on a public page is abused
@@ -828,6 +837,48 @@ rule.
 - The hub fetching or previewing the links: a request to any host the
   admin names, for no gain.
 
+## A fifth fixed link, Docs, set in the project settings and shown after Discussions, before Chat
+
+**Id:** 6fea85a1-c677-469c-84a5-c2bc2c6438f5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish in chat, 2026-11-19, recorded on card tsk-qeftb8bg0yt6 (no request id); contract `docs/api.md` §6.11 "The project's own links"
+**See:** projects.md#a-project-links-its-issues-wiki-discussions-and-chat-as-four-fixed-fields-on-any-host — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-11-20
+**Revisit when:** projects ask for a sixth kind of link, or the header row has no room for its buttons on a phone
+
+`links` gains a fifth fixed key, `docs`, beside issues, wiki,
+discussions and chat: an https URL on any host or `null`, under the same
+rule as the other four, set by a human with `project:admin` in the Links
+section of the project settings. Everything else of 11b7e786 stands:
+the hub never fetches it, the public page applies the repository rule,
+and the order of the keys is the order of the buttons: issues, wiki,
+discussions, docs, chat. Docs stands after Discussions and before Chat
+because that is where the maintainer put it; Wiki, which the maintainer's
+list did not name since the project sets none, keeps its place after
+Issues. `links` is a JSON column, so no migration.
+
+Which part is whose: the Docs link, its field under Links in the
+project settings and its place after Discussions are the maintainer's
+wish (confirmed). The reason below and the rejected alternative of
+deriving Docs from the repository are the implementer's reasoning
+(inferred): the card does not show that the maintainer weighed a derived
+link. The free list stays rejected for 11b7e786's confirmed reason.
+
+**Reason:** a project's documentation often lives outside the forge (a
+site of its own, a docs host), so it is a link the admin sets, like the
+wiki, on any host. 11b7e786 rejected a free list because the header
+needs to know which button is which; a fifth named kind keeps that, and
+is what was asked.
+
+**Rejected alternatives:**
+- A free list of named links instead of a fifth key: rejected again for
+  11b7e786's reason, the header and the overview draw each kind with
+  its word and mark.
+- Deriving Docs from the repository, as Actions and Pull Requests are:
+  a forge has no fixed address for a project's documentation, and the
+  maintainer asked for a field in the settings.
+
 ## A project adds rule lines per role: a subagent per card, and a checklist for reviewers and testers
 
 **Id:** 3f91d19a-b103-49e7-a908-09274d4c5fd2
@@ -845,8 +896,13 @@ Only a human with `project:admin` sets them. A change of the lines
 bumps `rules_version`, so a running agent reads the new lines at its
 next resume. A value that adds no line (`false`, an empty checklist) is
 stored as given and announced, but moves no version: the rules text is
-the same. The hub cannot see a subagent or a ticked item; these are
-rules like the others.
+the same. A `PATCH` that changes the lines together with another rules
+input bumps once and writes one `rules_changed`, whose `reason` is the
+`PATCH`'s own when it gives one, else `settings.role_rules` (`docs/api.md`
+§6.1). When the same `PATCH` changes the state or the policy, its
+`state_changed` or `policy_changed` marks the new version and no
+`rules_changed` is written (§6.1). The hub cannot see a subagent or a
+ticked item; these are rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
 card names no reason for the two rules themselves): working a card in the main agent's context carries one

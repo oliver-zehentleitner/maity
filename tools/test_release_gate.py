@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import release_gate as g
+import upgrade_page
 
 TAG = "a" * 40
 LATER = "b" * 40  # a later commit of main with the same hub files
@@ -59,8 +63,17 @@ BRANCH = "d" * 40  # a commit only on a branch
 UNKNOWN = "e" * 40  # a commit the checkout cannot get
 
 
+OLD = "f" * 40  # a commit of main from before hub-mariadb-11-8 was added
+NO_HISTORY = "9" * 40  # a commit whose ancestry the checkout cannot tell (shallow, missing)
+
+
 class FakeGit:
     """TAG and LATER share the hub files; OTHER differs; BRANCH is not on main."""
+
+    def contains(self, ancestor, sha):
+        if sha in (UNKNOWN, NO_HISTORY):
+            return None
+        return sha != OLD
 
     def on_main(self, sha):
         return None if sha == UNKNOWN else sha != BRANCH
@@ -140,9 +153,18 @@ def maria(rid, sha, title="hub-mariadb ci", event="workflow_dispatch", status="c
     return run(rid, sha=sha, status=status, event=event, title=title)
 
 
+def with_11_8(jobs):
+    """The tables below name the 11.4 suite; a run of today's workflow has the 11.8 job too,
+    green unless the test names it."""
+    return {
+        rid: ({"hub-mariadb-11-8": "success", **named} if "hub-mariadb" in named else named)
+        for rid, named in jobs.items()
+    }
+
+
 class MariaDb(unittest.TestCase):
     def api(self, runs, jobs):
-        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs})
+        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **with_11_8(jobs)})
 
     def test_green_run_on_the_tag_passes(self):
         code, out = gate(
@@ -184,6 +206,97 @@ class MariaDb(unittest.TestCase):
         code, out = gate(self.api([maria(5, TAG)], {5: {"hub-mariadb": "cancelled"}}))
         self.assertEqual(code, 1)
         self.assertIn("hub-mariadb is cancelled", out)
+
+    def test_a_red_11_8_job_stops_a_green_11_4_suite(self):
+        for result in ("failure", "cancelled", "timed_out", "skipped"):
+            jobs = {5: {"hub-mariadb": "success", "hub-mariadb-11-8": result}}
+            code, out = gate(self.api([maria(5, TAG)], jobs))
+            self.assertEqual(code, 1, result)
+            self.assertIn("::error::hub-mariadb-11-8 is " + result + " on " + TAG, out)
+
+    def test_both_red_are_named(self):
+        jobs = {5: {"hub-mariadb": "failure", "hub-mariadb-11-8": "failure"}}
+        code, out = gate(self.api([maria(5, TAG)], jobs))
+        self.assertEqual(code, 1)
+        self.assertIn("hub-mariadb is failure, hub-mariadb-11-8 is failure on " + TAG, out)
+
+    def test_both_green_pass(self):
+        jobs = {5: {"decide": "success", "hub-mariadb": "success", "hub-mariadb-11-8": "success"}}
+        code, out = gate(self.api([maria(5, TAG)], jobs))
+        self.assertEqual(code, 0, out)
+        self.assertIn("hub-mariadb passed on " + TAG, out)
+        self.assertNotIn("predates", out)
+
+    def gate_on(self, head, jobs):
+        """The gate on one green-CI hand run from main at head that tested TAG."""
+        runs = [maria(5, head, "hub-mariadb hand " + TAG)]
+        return gate(FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], 5: jobs}))
+
+    def test_a_run_from_before_the_11_8_job_counts_on_11_4_alone(self):
+        # A hand run from main at OLD, a commit from before 4fafdf1f added hub-mariadb-11-8.
+        code, out = self.gate_on(OLD, {"hub-mariadb": "success"})
+        self.assertEqual(code, 0, out)
+        self.assertIn("(its commit predates hub-mariadb-11-8)", out)
+
+    def test_a_run_after_the_11_8_job_needs_it(self):
+        # Missing (a partial re-run, a renamed job), skipped or red: never "predates".
+        for result in (None, "skipped", "failure", "cancelled"):
+            with self.subTest(result=result):
+                listed = {} if result is None else {"hub-mariadb-11-8": result}
+                code, out = self.gate_on(TAG, {"hub-mariadb": "success", **listed})
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"::error::hub-mariadb-11-8 is {result or 'missing'} on " + TAG, out)
+                self.assertNotIn("predates", out)
+
+    def test_a_run_before_the_11_8_job_that_lists_it_red_stops(self):
+        code, out = self.gate_on(OLD, {"hub-mariadb": "success", "hub-mariadb-11-8": "failure"})
+        self.assertEqual(code, 1, out)
+        self.assertIn("::error::hub-mariadb-11-8 is failure on " + TAG, out)
+
+    def test_ancestry_that_cannot_be_told_stops(self):
+        # A shallow checkout or a commit it cannot get: never "predates".
+        for listed in ({}, {"hub-mariadb-11-8": "success"}):
+            with self.subTest(listed=listed):
+                code, out = self.gate_on(NO_HISTORY, {"hub-mariadb": "success", **listed})
+                self.assertEqual(code, 1, out)
+                self.assertIn("::error::cannot tell whether " + NO_HISTORY, out)
+                self.assertIn("4fafdf1f80dedf7c50016d133984b013d8719588", out)
+
+    def test_a_hub_mariadb_job_the_table_does_not_know_stops(self):
+        for head in (TAG, OLD):
+            with self.subTest(head=head):
+                code, out = self.gate_on(
+                    head,
+                    {
+                        "hub-mariadb": "success",
+                        "hub-mariadb-11-8": "success",
+                        "hub-mariadb-12": "x",
+                    },
+                )
+                self.assertEqual(code, 1, out)
+                self.assertIn(
+                    "::error::the run lists hub-mariadb-12, which tools/release_gate.py", out
+                )
+
+    def test_a_red_11_8_beside_a_skipped_suite_stops_instead_of_an_older_green_run(self):
+        runs = [maria(6, TAG), maria(5, TAG)]
+        for result in ("failure", "cancelled"):
+            jobs = {
+                6: {"hub-mariadb": "skipped", "hub-mariadb-11-8": result},
+                5: {"hub-mariadb": "success"},
+            }
+            code, out = gate(self.api(runs, jobs))
+            self.assertEqual(code, 1, result)
+            self.assertIn("hub-mariadb is skipped, hub-mariadb-11-8 is " + result, out)
+
+    def test_both_skipped_still_counts_for_nothing(self):
+        runs = [maria(6, TAG), maria(5, TAG)]
+        jobs = {
+            6: {"hub-mariadb": "skipped", "hub-mariadb-11-8": "skipped"},
+            5: {"hub-mariadb": "success"},
+        }
+        code, out = gate(self.api(runs, jobs))
+        self.assertEqual(code, 0, out)
 
     def test_hand_run_counts_by_the_sha_in_its_title(self):
         # Its head_sha is main's head (OTHER); the title names what it tested.
@@ -254,7 +367,7 @@ class Provenance(unittest.TestCase):
     """Only main's own hub-mariadb.yml can vouch for a commit."""
 
     def api(self, runs, jobs):
-        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs})
+        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **with_11_8(jobs)})
 
     def test_hand_run_dispatched_on_a_branch_is_refused(self):
         # The branch's copy of the workflow keeps the title and the job name.
@@ -380,6 +493,23 @@ class RealGit(unittest.TestCase):
         self.assertIs(git.same(self.one, self.web), True)
         self.assertIs(git.same(self.web, self.hub), False)  # self.hub was fetched for this
 
+    def test_contains_reads_ancestry_and_fails_closed(self):
+        git = self.check()
+        self.assertIs(git.contains(self.one, self.hub), True)  # self.hub was fetched for this
+        self.assertIs(git.contains(self.hub, self.one), False)
+        self.assertIs(git.contains(self.web, self.side), False)  # another branch
+        self.assertIsNone(git.contains(self.one, "e" * 40))  # a commit it cannot get
+        self.assertIsNone(git.contains("e" * 40, self.hub))
+
+    def test_contains_in_a_shallow_checkout_is_none(self):
+        # A cut history would read "not an ancestor", the answer that lets a run skip a job.
+        shallow = Path(self.tmp.name) / "shallow"
+        self.git(self.origin, "clone", "-q", "--depth", "1", f"file://{self.origin}", str(shallow))
+        cwd = Path.cwd()
+        os.chdir(shallow)
+        self.addCleanup(os.chdir, cwd)
+        self.assertIsNone(g.Git().contains(self.one, self.hub))
+
     def test_unknown_commit_is_none_not_different(self):
         git = self.check()
         self.assertIsNone(git.same(self.one, "f" * 40))
@@ -392,6 +522,49 @@ class RealGit(unittest.TestCase):
 
 
 class Workflows(unittest.TestCase):
+    def test_hub_mariadb_defines_the_jobs_the_gate_requires_under_their_ids(self):
+        # The gate looks the jobs up by name in the jobs API: the same as their keys only
+        # while no job of the file sets a `name:` of its own.
+        text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
+        for job in ("hub-mariadb", *g.MARIADB_EXTRA_JOBS):
+            self.assertRegex(text, rf"(?m)^  {re.escape(job)}:$")
+        self.assertNotRegex(text, r"(?m)^    name:")
+
+    def test_each_extra_job_was_added_by_its_commit(self):
+        # The table's commit is the one whose hub-mariadb.yml first has the job. Needs each
+        # commit and its parent: skipped in a local checkout that lacks them, failed on GitHub
+        # Actions, where ci.yml's changelog job fetches them (a skip there would hide the check).
+        import subprocess
+
+        def show(rev):
+            return subprocess.run(
+                ["git", "show", f"{rev}:.github/workflows/hub-mariadb.yml"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        for job, added in g.MARIADB_EXTRA_JOBS.items():
+            with self.subTest(job):
+                at, before = show(added), show(added + "^")
+                if at.returncode != 0 or before.returncode != 0:
+                    missing = f"{added} or its parent is not in this checkout"
+                    if os.environ.get("GITHUB_ACTIONS") == "true":
+                        self.fail(missing + " (ci.yml's changelog job fetches them)")
+                    self.skipTest(missing)
+                self.assertRegex(at.stdout, rf"(?m)^  {re.escape(job)}:$")
+                self.assertNotRegex(before.stdout, rf"(?m)^  {re.escape(job)}:$")
+
+    def test_the_mariadb_gate_jobs_check_out_the_full_history(self):
+        # The ancestry test needs it; a shallow checkout makes the gate stop, never pass.
+        for name, job in (("release-hub.yml", "check"), ("publish-image.yml", "gate")):
+            with self.subTest(name):
+                text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+                body = re.search(rf"(?ms)^  {job}:\n(.*?)(?=^  \S)", text).group(1)
+                self.assertIn("--mariadb", body)
+                self.assertRegex(body, r"fetch-depth: 0\b")
+
     def test_paths_match_decide_in_hub_mariadb(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
         line = re.search(r'git diff --name-only "\$base" "\$sha" -- (.+)\)"', text).group(1)
@@ -406,10 +579,46 @@ class Workflows(unittest.TestCase):
             text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
             self.assertIn('python tools/release_gate.py --sha "$GITHUB_SHA"', text, name)
             self.assertEqual("--mariadb" in text, mariadb, name)
+            # The hub's releases (package and image) ask for the version's upgrade page.
+            self.assertEqual("--upgrade-page" in text, mariadb, name)
             self.assertNotIn("make check", text, name)
             dependent = "publish" if name.startswith("release") else "image"
             block = text[text.index(f"\n  {dependent}:") :]
             self.assertRegex(block, rf"needs: (\[[^\]]*\b{job}\b[^\]]*\]|{job})", name)
+
+    def test_the_image_is_built_only_for_a_v_tag(self):
+        # No hand start and no branch: an image from main is signed as
+        # refs/heads/main and never deployed (req-ry02xngnedjq).
+        text = (ROOT / ".github/workflows/publish-image.yml").read_text(encoding="utf-8")
+        on = re.search(r"^on:\n((?:[ #].*\n|\n)*)", text, re.M).group(1)
+        triggers = [line.strip() for line in on.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        self.assertEqual(triggers, ["push:", 'tags: ["v*"]'])
+        self.assertNotIn("workflow_dispatch", text)
+        self.assertNotIn("branches", on)
+        gate_job = text[text.index("\n  gate:") : text.index("\n  image:")]
+        image_job = text[text.index("\n  image:") : text.index("\n  sign:")]
+        for job in (gate_job, image_job):
+            condition = job[job.index("\n    if:") : job.index("\n    runs-on:")]
+            self.assertIn("github.ref_type == 'tag' && startsWith(github.ref_name, 'v')", condition)
+            self.assertNotIn("refs/heads", condition)
+            self.assertNotIn("||", condition)
+        # The image is built only after the gate passed, never when it was skipped.
+        self.assertIn("needs.gate.result == 'success' &&", image_job)
+        self.assertNotIn("'skipped'", image_job)
+        self.assertNotIn("always()", image_job)
+
+    def test_the_documented_verify_accepts_only_a_tag_signature(self):
+        # Every deploy is a release: a signature from main is refused.
+        text = (ROOT / "deploy/helm/maity-hub/README.md").read_text(encoding="utf-8")
+        identities = re.findall(r"--certificate-identity-regexp '([^']*)'", text)
+        self.assertEqual(
+            identities,
+            [
+                r"^https://github\.com/oliver-zehentleitner/maity/"
+                r"\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$"
+            ],
+        )
+        self.assertNotIn("heads/main", identities[0])
 
     def test_hand_title_names_the_tested_commit(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
@@ -469,6 +678,63 @@ class Main(unittest.TestCase):
     def test_short_sha_is_refused(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             g.main(["--sha", "abc123"])
+
+    def test_a_missing_upgrade_page_stops_before_any_api_call(self):
+        failing = g.State("fail", "docs/upgrade/0.1.0a9.md is missing")
+        with mock.patch.object(g, "page_state", return_value=failing), mock.patch.object(
+            g, "Api", side_effect=AssertionError("no API call")
+        ):
+            self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
+
+    def test_the_page_check_gets_the_tag_only_on_a_tag_run(self):
+        failing = g.State("fail", "x")
+        for env, tag in (
+            ({"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v0.1.0a9"}, "v0.1.0a9"),
+            ({"GITHUB_REF_TYPE": "branch", "GITHUB_REF_NAME": "main"}, None),
+            ({}, None),
+        ):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env):
+                for k in ("GITHUB_REF_TYPE", "GITHUB_REF_NAME"):
+                    if k not in env:
+                        os.environ.pop(k, None)
+                with mock.patch.object(g, "page_state", return_value=failing) as page:
+                    self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
+                page.assert_called_once_with(tag=tag)
+
+
+class UpgradePage(unittest.TestCase):
+    def page_state(self, page, tag=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "hub").mkdir()
+            (root / "hub" / "pyproject.toml").write_text('version = "0.1.0a9"\n', encoding="utf-8")
+            if page is not None:
+                (root / "docs" / "upgrade").mkdir(parents=True)
+                (root / "docs" / "upgrade" / "0.1.0a9.md").write_text(page, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                state = g.page_state(root, tag)
+        return state, out.getvalue()
+
+    COMPLETE = "".join(f"## {s}\n\nNothing.\n\n" for s in upgrade_page.SECTIONS)
+
+    def test_a_tag_of_the_pyproject_version_passes(self):
+        state, _ = self.page_state(self.COMPLETE, "v0.1.0a9")
+        self.assertEqual(state.kind, "ok")
+
+    def test_a_tag_of_another_version_fails_even_with_a_complete_page(self):
+        state, out = self.page_state(self.COMPLETE, "v0.1.0a10")
+        self.assertEqual(state.kind, "fail")
+        self.assertIn("::error::the tag v0.1.0a10 is not v0.1.0a9", out)
+
+    def test_the_tagged_versions_page_must_exist(self):
+        state, out = self.page_state(None)
+        self.assertEqual(state.kind, "fail")
+        self.assertIn("::error::docs/upgrade/0.1.0a9.md is missing", out)
+
+    def test_a_complete_page_passes(self):
+        page = "".join(f"## {s}\n\nNothing.\n\n" for s in upgrade_page.SECTIONS)
+        state, _ = self.page_state(page)
+        self.assertEqual(state.kind, "ok")
 
 
 if __name__ == "__main__":

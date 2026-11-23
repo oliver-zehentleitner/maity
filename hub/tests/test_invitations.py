@@ -34,6 +34,7 @@ def _fresh() -> Iterator[None]:
         registration_routes.BY_SOURCE,
         registration_routes.BY_PAIR_SHORT,
         registration_routes.BY_PAIR_DAY,
+        registration_routes.BY_ADDRESS_HOUR,
         registration_routes.BY_ADDRESS_DAY,
     ):
         limiter.reset()
@@ -144,6 +145,18 @@ def test_an_owner_issues_one_and_its_url_is_shown_once(
     assert created.audience == [f"member:{owner.id}"]
 
 
+def test_a_note_with_a_lone_surrogate_is_a_control_character(owner: flow.Human) -> None:
+    # The escape is JSON text: the test client cannot send a lone surrogate as a str.
+    raw = '{"note": "a\\ud800b", "trust": "member", "role": "coder"}'
+    refused = owner.client.post(
+        f"/api/v1{PATH}",
+        content=raw,
+        headers={"X-CSRF-Token": owner.csrf, "Content-Type": "application/json"},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"note": "control_character"}
+
+
 def test_what_issuing_refuses(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -165,6 +178,15 @@ def test_what_issuing_refuses(
     plain = member(make_client, migrated, "a-member")
     assert plain.post(PATH, {}).status_code == 403
     assert plain.get(PATH).status_code == 403
+
+
+def test_a_lone_surrogate_in_the_note_is_refused_and_an_emoji_is_not(owner: flow.Human) -> None:
+    # The note's reason for a character the plain-text rule refuses (§1.7.1, §3.4).
+    refused = owner.raw("POST", PATH, b'{"note": "a \\ud800 b"}')
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"note": "control_character"}
+    made = owner.raw("POST", PATH, b'{"note": "\\ud83d\\ude42 welcome"}')
+    assert made.status_code == 201, made.text
 
 
 def test_an_agent_never_touches_invitations(
@@ -267,13 +289,53 @@ def test_the_page_says_who_invites_to_what(owner: flow.Human, make_client: Clien
         },
         "trust": "member",
         "role": "reviewer",
-        "invited_by": {"display_name": shown.json()["invited_by"]["display_name"]},
+        "invited_by": {
+            "display_name": shown.json()["invited_by"]["display_name"],
+            "handle": "maintainer",
+        },
         "note": "Welcome.",
         "expires_at": made["expires_at"],
         "address_bound": False,
         "registration": "sign_in_only",  # a fresh instance is closed and has no mail
+        "restricted_texts": False,  # no restricted-access setting
     }
-    assert "handle" not in str(shown.json()) and token_of(made) not in shown.text
+    # The inviter's handle is the only one the page carries (§3.4).
+    rest = {key: value for key, value in shown.json().items() if key != "invited_by"}
+    assert "handle" not in str(rest)
+    assert token_of(made) not in shown.text
+
+
+def test_the_page_says_whether_the_new_member_reads_the_restricted_texts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.4: `true` under `all_except` for an invitation above `guest`, `false` otherwise;
+    from the project and the invitation alone, the same for every reader."""
+    member_level, guest_level = issue(owner), issue(owner, trust="guest", role="coder")
+    anna = member(make_client, migrated, "anna")
+    visitor = make_client()
+
+    def shown(made: dict[str, Any], client: Any = visitor) -> Any:
+        response = page(client, token_of(made))
+        assert response.status_code == 200, response.text
+        return response.json()["restricted_texts"]
+
+    def stored(value: Any) -> None:
+        with migrated.begin() as conn:
+            settings = dict(conn.execute(select(t.project.c.settings)).scalar_one() or {})
+            settings["restricted_access"] = value
+            conn.execute(update(t.project).values(settings=settings))
+        joins.EXCHANGE_BY_ADDRESS.reset()  # each step its own room under 10 a minute (§3.4)
+
+    assert (shown(member_level), shown(guest_level)) == (False, False)  # no setting
+    stored({"mode": "all_except", "members": []})
+    assert (shown(member_level), shown(guest_level)) == (True, False)
+    # A list that names someone changes nothing: no person is looked at, nor who reads.
+    stored({"mode": "all_except", "members": [owner.id, anna.id]})
+    assert (shown(member_level), shown(member_level, anna.client)) == (True, True)
+    stored({"mode": "nobody_except", "members": [owner.id]})
+    assert (shown(member_level), shown(guest_level)) == (False, False)
+    stored(None)
+    assert shown(member_level) is False
 
 
 def test_the_page_is_one_not_found_for_every_dead_token(
@@ -606,6 +668,20 @@ def test_an_issuer_who_lost_the_authority_voids_it(
     assert accept(guest, token_of(made)).status_code == 404
 
 
+def test_a_suspended_issuers_invitation_admits_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = member(make_client, migrated, "an-admin", "admin")
+    made = issue(admin)
+    with migrated.begin() as conn:  # suspended between issue and accept (§16.8)
+        conn.execute(
+            update(t.human).where(t.human.c.id == admin.id).values(suspended_at=clock.now())
+        )
+    guest = flow.human(make_client, migrated, "guest")
+    void = accept(guest, token_of(made))
+    assert (void.status_code, reason(void)) == (403, "invitation_void")
+
+
 def test_an_owner_invitation_needs_the_issuer_still_owner(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -799,10 +875,17 @@ def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
     )
     assert made.status_code == 201, made.text
     [mail] = [r for r in outbox_rows(migrated) if r.recipient == "new@example.org"]
-    assert mail.kind == "security"  # the recipient's security budget (§3.4)
+    assert mail.kind == "invitation"  # a budget of its own, never security mail's (§16.2)
+    from maity_hub.mail import outbox
+
+    assert outbox.BUDGETS["invitation"] == "invitation_max_per_hour"
+    assert "invitation" not in outbox.DROPPED_OVER_BUDGET  # over it, queued like security mail
     assert mail.subject.startswith("[Maity] ") and "Maity" in mail.subject
     for shown in (made.json()["url"], "maintainer/maity", "member", "reviewer", "Hi!"):
         assert shown in mail.body, shown
+    # By display name and handle, as the invitation page shows the inviter (§3.4).
+    assert " (@maintainer) invites you to the Maity project " in mail.body
+    assert "(@maintainer)" not in mail.subject
     assert "https://evil.example" not in mail.body and "evil[.]example" in mail.body  # §18.5
     unbound = owner.post("/projects/maintainer/maity/invitations", {})
     assert unbound.status_code == 201

@@ -64,7 +64,8 @@ window.Maity = window.Maity || {};
     restricted_changed: () => M.t("memberpage.kind.restricted_changed"),
   };
 
-  const ownAgentOf = (ctx, m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
+  // An outsider of a public project (docs/api.md §2.3) manages nothing in it, an agent of their own included.
+  const ownAgentOf = (ctx, m) => M.trust.writes(ctx) && m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
 
   // The instance that speaks for the member now: the online one, else the newest.
   function currentInstance(m) {
@@ -97,7 +98,7 @@ window.Maity = window.Maity || {};
       m.paused ? pill(M.t("memberpage.paused"), "member-pill-paused") : null];
     // Chat: one's own agent's direct chat, anyone else a group chat with them chosen (§9.2).
     const groupOk = !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);
-    const chat = m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" ? null
+    const chat = m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" || !M.trust.writes(ctx) ? null
       : ownAgentOf(ctx, m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
     // Actions lead to where each one is done (#643): nothing is done here.
     const actions = [];
@@ -111,9 +112,17 @@ window.Maity = window.Maity || {};
     if (menu) menu.el.className = "menu-box member-actions-menu";
     const availability = M.availabilityNodes ? M.availabilityNodes(ctx, m) : null;
     // Report this person or agent to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by the member id
-    // the project's read gives; not oneself, and from a human (the dashboard's reader).
-    const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id
-      ? M.report.control({ type: "profile", id: m.id }, m.kind === "agent" ? "agent" : "person") : null;
+    // the project's read gives; not oneself, and from a human (the dashboard's reader). An outsider
+    // is a stranger to the hub there ("The id a stranger sends"): an agent by its global name
+    // `<owner>/<handle>` (it is named on this public project's page, so the hub finds it), a person
+    // by their handle, which the hub takes while their own page is served and answers not_found
+    // otherwise; the form says that answer in words of its own (`report.not_found.person`).
+    const outside = M.trust.outsider(ctx);
+    const reportId = !outside ? m.id : m.kind === "agent" ? m.name : m.handle;
+    // That not_found, for a person, in words a stranger understands rather than its code (seq 201952).
+    const notFound = outside && m.kind !== "agent" ? () => M.t("report.not_found.person") : null;
+    const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id && reportId
+      ? M.report.control({ type: "profile", id: reportId }, m.kind === "agent" ? "agent" : "person", notFound ? { notFound } : undefined) : null;
     const heading = h("h2", { id: "member-heading", tabindex: "-1" }, m.display_name, " ", h("span", { class: "mono muted" }, "@" + M.dom.handleOf(ctx, m)));
     const el = h("div", { class: "member-head" },
       h("div", { class: "member-head-face" }, M.avatar(m, 64),
@@ -269,8 +278,10 @@ window.Maity = window.Maity || {};
       append(root, crumb, h("p", { class: "error", role: "alert" }, M.t("members.no_such", { id })));
       return;
     }
-    const offered = TABS.filter(([k]) => k !== "briefing" || readsBriefing(ctx, m));
-    const chosen = offered.some(([k]) => k === tab) ? tab : "activity";
+    // An outsider (§2.3) reads Cards alone: Activity reads the event feed, Briefing the
+    // briefings and Sessions & credentials what a member view shows them only in part.
+    const offered = TABS.filter(([k]) => (M.trust.outsider(ctx) ? k === "cards" : k !== "briefing" || readsBriefing(ctx, m)));
+    const chosen = offered.some(([k]) => k === tab) ? tab : offered[0][0];
     // The cards held, for the header's line, from the instances' claims where the hub counts them.
     const claims = (m.instances || []).some((i) => typeof i.claims === "number")
       ? (m.instances || []).filter((i) => !i.revoked_at).reduce((n, i) => n + (i.claims || 0), 0) : null;

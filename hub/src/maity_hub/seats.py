@@ -78,7 +78,11 @@ def _reset(
             project,
             "policy_changed",
             ["all", *deciders],
-            {"old": policy.of(project), "new": new, "reason": reason},
+            {
+                "old": policy.shown(conn, policy.of(project)),
+                "new": policy.shown(conn, new),
+                "reason": reason,
+            },
             actor=actor,
         )
     if arbiter:

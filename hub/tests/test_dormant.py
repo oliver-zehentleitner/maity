@@ -50,8 +50,8 @@ def rest_by_owner(owner: flow.Human, agent: flow.Agent, instance: str, value: bo
 def _credential(engine: Engine, agent: flow.Agent, instance: str) -> Any:
     with engine.connect() as conn:
         return conn.execute(
-            select(t.credential)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+            instances.credential_rows()
+            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
             .where(t.membership.c.agent_id == agent.id, t.credential.c.instance == instance)
         ).one()
 
@@ -150,15 +150,17 @@ def test_another_owners_instance_rests_only_with_its_owner_s_go(
 def _lent_credential(engine: Engine, lent: Any) -> Any:
     with engine.connect() as conn:
         return conn.execute(
-            select(t.credential)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+            instances.credential_rows()
+            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
             .where(t.membership.c.agent_id == lent.agent_id)
         ).one()
 
 
 def _credential_by_id(engine: Engine, credential_id: str) -> Any:
     with engine.connect() as conn:
-        return conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
+        return conn.execute(
+            instances.credential_rows().where(t.credential.c.id == credential_id)
+        ).one()
 
 
 def _project(engine: Engine) -> str:

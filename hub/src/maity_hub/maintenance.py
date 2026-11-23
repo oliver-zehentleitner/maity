@@ -465,12 +465,16 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
             )
 
     move(t.card, t.card.c.lease_until)
-    credential = t.credential.c
+    # The Keep the Why deadline is per project, on the instance's attachment (§6.17).
+    attachment = t.instance_attachment.c
     move(
-        t.credential,
-        credential.ktw_acknowledge_by,
-        credential.revoked_at.is_(None),
-        credential.ktw_acknowledged_at.is_(None),
+        t.instance_attachment,
+        attachment.ktw_acknowledge_by,
+        attachment.credential_id.in_(
+            select(t.credential.c.id).where(t.credential.c.revoked_at.is_(None))
+        ),
+        attachment.detached_at.is_(None),
+        attachment.ktw_acknowledged_at.is_(None),
     )
     move(t.takeover, t.takeover.c.window_ends_at, t.takeover.c.status == "open")
     invitation = t.invitation.c
@@ -533,7 +537,7 @@ def _shift_held_changes(
 ) -> None:
     """A held address change lapses `HELD_FOR` after `requested_at`; when that falls into the
     window, `requested_at` moves, so the change lapses that much later."""
-    from maity_hub.notifications.preferences import HELD_FOR
+    from maity_hub.notifications.address import HELD_FOR
 
     settings = t.notification_settings.c
     held = conn.execute(

@@ -188,8 +188,8 @@ def test_a_deleted_person_has_no_page(
     assert press(pat, token_of(migrated)).status_code == 200
     assert shown(anyone, "pat") is None
     with migrated.connect() as conn:
-        both = select(t.public_page).where(t.public_page.c.path.in_(["/pat", "/pat/agents"]))
-        assert conn.execute(both).all() == []
+        stored = select(t.public_page).where(t.public_page.c.path.like("/pat%"))
+        assert conn.execute(stored).all() == []
         row = conn.execute(select(t.human).where(t.human.c.id == pat.id)).one()
         # the text and the switches of the numbers and the agents go with the person
         assert (row.public_profile, row.public_bio, row.public_stats) == (False, None, False)

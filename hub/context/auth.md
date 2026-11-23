@@ -26,6 +26,17 @@ leases while it works.
 included — one commit fewer per call, but a failed call would then erase
 the evidence that the caller is alive.
 
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** for an agent these side effects are no longer
+written inside `authenticate`. An instance may be attached to several projects (§6.17), and
+which memberships a call is present in depends on the route's project, so `authenticate`
+resolves only the credential, its profile and its owner, and `deps._resolve`'s `confine`
+writes the agent's last use, presence, session and leases after it
+(`auth.caller.settle_in_project` in the route's project's attachment alone,
+`settle_project_less` in every live attachment that is not isolated). Both run in the same
+transaction as the authentication (`deps.authenticated`), which still commits before the
+endpoint's own, so the decision and its reason hold unchanged. A human's and a runner's side
+effects stay inside `authenticate`.
+
 ## A runner caller is confined in one place, before any route runs
 
 **Id:** 1d62b2f2-abdb-4470-91dd-8de0517f21b9
@@ -380,10 +391,11 @@ nudge toward TOTP over a gate.
   instance.
 - One switch for the sign-in link and the reset together: the reset is the stronger way in, and
   a human may want the link off and the reset on.
-- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails come from
-  it too, so anonymous reset requests could stop them for an hour, and with them the sign-in of
-  every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
-  contract PR).
+- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails came from
+  it too at the time, so anonymous reset requests could have stopped them for an hour, and with
+  them the sign-in of every human without TOTP. Reset mails got `password_reset_max_per_hour`
+  instead (review of the contract PR). The mail factor's mails have since a budget of their own
+  (mail.md 443bdca8-64b0-4a07-9ea5-daf368945d35).
 - Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
   keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
   links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
@@ -519,6 +531,50 @@ the window holds nothing of the request.
   engines that run one replica, for what one comparison solves.
 
 
+## A refused request keeps its nonce spent: the nonce is claimed again after the rollback
+
+**Id:** fbc8c3e0-d945-4237-89dc-0a4cc8e1282d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-thjx5bdqnq9f; review of pull request #2074; checked on 2026-11-20 on SQLite and PostgreSQL with `tests/test_refused_nonce.py`
+**See:** auth.md#a-request-run-again-after-a-deadlock-is-still-the-first-user-of-its-nonce — 05c462cb-0a99-41e7-98d3-c226c085a697 — as of 2026-11-20
+**Revisit when:** the nonce claim moves out of the authentication transaction, or the process's nonce window goes away; or the hub runs behind another HTTP server: the canonical string relies on no line feed appearing in a header value or in the raw path, which the current server refuses
+
+A signed request spends its nonce inside the authentication transaction, and several refusals
+come after that in the same transaction: an isolated agent, a read past the limit, another
+project, a bridge's `Maity-For` refusal, a runner outside `/runner/*`. Their rollback undid the
+spend on PostgreSQL, where the nonce is a row; in the process's window (SQLite, MariaDB) it
+stayed spent. Now `RequestFacts.nonces_spent` keeps what the request spent in the database
+across its runs, and `deps.authenticated` claims those nonces again in a committed transaction
+of their own whenever the authentication ends in an exception, before the refusal is answered
+(`caller.keep_nonces_spent`). A nonce the process's window holds is not recorded, so a refusal
+on SQLite or MariaDB opens no such transaction. If the claim again still fails after its
+retries, a warning without nonce or credential is logged and the original refusal is answered
+all the same, never a 500; that nonce then stays unspent on PostgreSQL, as it was before. That
+is the accepted limit, set in the pull request's review: the refusal never turns into a 500.
+
+**Reason:** a refused request sent again unchanged inside the timestamp window was accepted on
+PostgreSQL once the refusal's condition had ended, while SQLite and MariaDB answered
+`nonce_reused`: the engines disagreed, and a refusal is no reason to hand a nonce back (05c462cb
+already rejects giving one back). Claiming again on the error path changes nothing on the
+accepted path, the one every signed request takes: no extra commit, no second connection. It
+lives in the one function every authentication runs through, beside the two other writes that
+commit on their own after a refusal (a due runner revocation, an ended second-factor session),
+and it leaves 05c462cb intact: a deadlock's retry still rolls the claim back and is the first
+user again. A copy of the request that arrives while the original is still authenticating, or
+between its rollback and the new claim, can claim the nonce first; it meets the same state, and
+so the same refusal, unless the refusal's condition ends within that time.
+
+**Rejected alternative:** claiming the nonce in its own committed transaction before the rest
+of the authentication. It closes that window too, but costs every signed request one more
+transaction; claiming it from inside the authentication transaction would hold two pooled
+connections per request (a pool exhausted by requests each waiting for their second), and
+claiming it before the transaction would mean verifying the signature in a transaction of its
+own first. A committed claim would also make a deadlock's retry find its own nonce spent on
+PostgreSQL, which needs the request identity 05c462cb gives only the process's window.
+
+
 ## A sign-in's confirmation is stored on its session, carried over from the read marks once
 
 **Id:** f5611a2e-9219-4e5e-a816-5700da32a47c
@@ -610,7 +666,8 @@ re-authentication, the address change and the second-factor check do it through
 account and source, use `place` and `release` directly in `LoginAttempt`, because a refusal there
 depends on the source. `LoginAttempt` places in both login buckets and refuses with `email_link` or `password_paused` when the account's bucket is full and the
 source is not a known one or has spent its own five. An address of no account counts in a bucket
-keyed by its fingerprint, never the address or a plain hash.
+keyed by its fingerprint, never the address or a plain hash; since tsk-2y0qbc1zm7r1 that is the
+key every limit keyed by an address takes (7d3f0a52).
 
 `known_source` holds an HMAC-SHA-256 of the source address per human. Its key is derived by HKDF
 (purpose `sign_in.known_source`) from `MAITY_SECRET_KEY`, or without one from the per-address
@@ -730,6 +787,218 @@ that a member that calls is never shown away.
   expire up to a minute early.
 - Other options of the first request: unknown.
 
+## The daily cap of wrong second-factor codes is a row per human and UTC day, refuses before the compare, and its alert mail carries the one link that lifts it
+
+**Id:** bdb3d207-90bb-4f5c-999c-110a8a9f10fb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); review of #1756 by maity-review-team-grok#axvg, 2026-11-13 (the link outlived a password change; a lowered cap refused without an alert); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; `auth/password_resets.py` `password_changed`; docs/api.md §2.8.6, §18.6
+**Revisit when:** the 15-minute window or the per-session limit changes, a human asks for the cap per instance in the admin settings rather than the environment, or the hub keeps a sliding day for another limit
+**See:** auth.md#two-factor-sign-in-whether-a-session-must-enrol-is-worked-out-per-call-and-the-second-step-re-keys-the-session-in-place — ff8b8099-8384-4d68-906a-1b4d7b17bc47 — as of 2026-11-13
+
+Every wrong TOTP or recovery code of an enrolled human (`second_factor.check`: the sign-in step,
+a step-up, a password reset) adds one to `second_factor_day(human_id, day)`, the UTC date, under
+the factor's row lock the check already holds. At `MAITY_SECOND_FACTOR_WRONG_PER_DAY` (default
+50) the check refuses with `rate_limited` (`reason: daily_limit`) before it compares anything, so
+a right code is refused too, until the UTC day ends. The first wrong code at or over the cap
+writes `second_factor_failed` with `method: daily_limit`, the day, `unlocks` and the human's
+`password_generation`, and sets the row's `alerted`; the refusal needs `alerted` as well as the
+count. The mailer's at-once mail of that record carries `/mail/second-factor-unlock/{token}`, a
+signed token of the human, the day, `unlocks` and the password generation. Its `POST` resets the
+day's count to zero, clears `alerted` and moves `unlocks` in one conditional update, so the link
+works once and dies with the day. A password change moves the generation, which kills the link,
+and clears `alerted`, so the next wrong code mails a link of the new password. The mail factor's
+codes and an enrolment's confirm do not count: neither is a guess at an enrolled secret. Rows are
+locked in one order: the factor, the human, then the day. `_count_day` locks the human before it
+touches the day row, because the alert's record locks the human and a password change updates
+the human before it clears `alerted`; the other order lets the two wait on each other. A reset by
+mail locks the factor before the human (`routes/password_reset._live`), since its code is
+checked after the token: the human's lock first would cross a wrong code counted elsewhere.
+
+**Reason:** the 15-minute window alone lets 960 guesses through a day. A count in the database,
+unlike the in-process limiters, survives a restart, which a limit over a whole day must; and
+lifting it needs one human's count reset, which a row gives directly. Comparing a code after the
+cap would answer whether it was right, so the refusal comes first. The calendar day follows the
+card ("until the next day") and `email_sign_in_day`, and gives one `Retry-After`. Putting the
+link into the alert's own mail sends one mail, not two, and the `unlocks` counter makes it
+single-use without a table of nonces. Refusing only once the alert is written keeps the promise
+that the refused human holds a way back: a count over a cap the operator lowered during the day,
+or one whose link a password change voided, would otherwise refuse with no mail at all; the cost
+is one more compared code in those two cases. The link carries the password generation as the
+reset links do (§2.10): a link mailed under a password someone else may have known should not
+outlive the human's change of it.
+
+**Rejected alternatives:**
+- A `Limiter` with a 24-hour window: shared across replicas only on PostgreSQL, forgotten on a
+  restart on SQLite and MariaDB, and no way to lift one human's count but clearing its bucket.
+- A sliding 24 hours: the count of a refused human would never fall to a clear moment for the
+  `Retry-After` and the mail's "until the end of the day".
+- Comparing the code at the cap and only refusing a wrong one: an oracle for the guesser.
+- A separate unlock mail beside the alert: two mails for one event, and the alert's mail would
+  still say nothing about the way back.
+- A stored nonce per link (as the admin's reset keeps): one more table where a counter on the
+  day's row already decides "once".
+- Alerting only on the code that hits the cap exactly (`==`): a lowered cap is passed without
+  ever being hit, and the human is refused with neither notice nor link.
+- Leaving the reset by mail to lock the human first and the factor at its code check (review A308
+  of #1756): a wrong code elsewhere holds the factor and waits for the human, so the two cross.
+- Clearing `alerted` before the password change updates the human: `POST /auth/password` has
+  already written the new password, and with it locked the human, by then; the count moves
+  instead (review A215 of #1756, a deadlock reproduced on PostgreSQL).
+- Leaving the link alive across a password change: it is single-use and dies with the day, but
+  every other mailed link of the human dies with the old password, and this one should not be
+  the exception.
+
+`password_changed` is a record type of its own rather than `password_reset` with a method: the
+text differs (every other session ends, not every one), and the bell and the mail name what the
+human did in the account apart from a reset by mail.
+
+## The mail links and the second-factor resets of another human take that human's account lock first, as the deletion does
+
+**Id:** 8dfeeba9-9c68-4fab-a06c-3cc457abdd49
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a9jk1ec1frgk, from review A319 of #1756, 2026-11-14, and review A543 of #1827, 2026-11-15; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_mail_link_pressed_first_…`, `test_a_second_factor_reset_by_the_admin_or_the_operator_…`); `write_guard.share`, `routes/password_reset._live`, `auth/second_factor._unlockable`, `auth/second_factor_reset._alive`, `request`, `operator_reset`
+**Revisit when:** a path locks a human's factor, human or day row without that human's account lock, or the deletion stops taking `account_lock` before everything else
+**See:** auth.md#the-daily-cap-of-wrong-second-factor-codes-is-a-row-per-human-and-utc-day-refuses-before-the-compare-and-its-alert-mail-carries-the-one-link-that-lifts-it — bdb3d207-90bb-4f5c-999c-110a8a9f10fb — as of 2026-11-15
+
+The `POST` of a password reset link (§2.10), of the link that lifts the daily cap (§2.8.6) and
+of an admin's second-factor reset link (§2.8.3) takes the human's `account_lock` shared
+(`write_guard.share`) before any other lock, as the address's confirmation link already did.
+So do an admin's request for that link and the operator's reset (`maity-hub second-factor
+reset`), before they lock the other human's factor: the admin's own write guard holds only the
+admin's account lock, the operator's command none. One order for every path: the account lock,
+then the factor, the human, the day. The deletion's confirmation takes the account lock
+exclusively before anything else (`lock_account`), so these paths and a deletion run one after
+the other. A path that came first commits, and the deletion then goes on: after a password reset
+it deletes nothing, since the reset withdrew the pending deletion; after the unlock link or a
+second-factor reset it deletes the account. A link that came second waits for the deletion's
+commit and then finds nothing left to change (its `POST` answers as a dead link).
+
+**Reason:** these paths ran without the human's account lock (the links carry no session, the
+admin's guard is the admin's, the command has none), and the deletion's later locks crossed
+theirs. The reset link held the factor and the human and then withdrew the pending deletion,
+whose row the confirmation held while it waited for the human; the unlock link held the factor
+and then wrote the day's row, which the deletion had already deleted on its way to the factor;
+the admin's reset link held the factor and its reset row and then wrote the human's record,
+while the deletion held the human and waited for that row; the admin's request and the
+operator's reset held the factor and then wrote rows that wait for the human's row or its
+sessions, which the deletion held while it waited for the factor. Each deadlocked on PostgreSQL.
+A lock in front of both sides removes every such crossing at once, whatever the deletion locks
+later.
+
+**Rejected alternatives:**
+- The deletion locking the factor's row right after the account lock, so it follows "the factor,
+  the human, the day" too: a human without TOTP has no factor row to lock, and the reset link
+  still crossed the deletion on the human's row and the deletion request's row.
+- The deletion locking the human's row early: ordinary work locks it after project locks, and the
+  deletion takes its project locks after the account lock (`confirm`), so that would invert the
+  order against every other write.
+
+## A path without the human's session takes the account lock before it locks a row of that human's
+
+**Id:** 20c2cbdf-3159-4ed6-889f-18dc7d1302f2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-srrd56vs9h99, from review A551 of #1827, 2026-11-15: an audit of every path that locks a human's row (`records.lock_human`, `email_links.lock_human`, a record written) for a human other than the bound caller; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_way_in_racing_the_deletion_…`, `test_the_hourly_digest_pass_…`, `test_a_worker_writing_the_humans_record_…`); `not_listening_digest.reconcile`, `routes/auth.login`, `routes/email_sign_in._lock`, `routes/password_reset.deliver`, `outbox._settle`, `ForgeAccess._token_rejected_owner`, `forge_links.set_status`
+**Revisit when:** a path without the human's session locks the human's row or another row of the account before that human's account lock
+**See:** auth.md#the-mail-links-and-the-second-factor-resets-of-another-human-take-that-humans-account-lock-first-as-the-deletion-does — 8dfeeba9-9c68-4fab-a06c-3cc457abdd49 — as of 2026-11-15
+**See:** auth.md#the-deletion-locks-every-project-and-organisation-it-locks-later-in-its-first-sorted-pass — 7835ed73-66eb-4f79-b235-c03b8c254cd0 — as of 2026-11-15
+
+A transaction that changes a human's account without that human's session takes the human's
+`account_lock` shared (`write_guard.share`) before its first lock, as the mail links of #1827
+do. These now do so too:
+
+- the sign-ins that have no session yet: the password (`POST /auth/login`, after the password is
+  checked), the mailed link's `POST` and its code (`email_sign_in._lock`);
+- the mails of a sign-in link and of a password reset link, sent after the response
+  (`email_sign_in.deliver`, `password_reset.deliver`);
+- the hourly pass of the agents that do not listen (`not_listening_digest.reconcile`), which then
+  leaves a deleted owner alone;
+- the mail worker's outcome of a mail to a human (`outbox._settle`), whose third hard failure
+  writes the human's record;
+- the forge's refusal of an owner's token and a link's new status (`ForgeAccess._token_rejected_owner`,
+  `forge_links.set_status`), which write the owner's record;
+- a sign-in in a browser that presents another account's live session (`auth.end_presented`),
+  which ends that session and writes that account's record; it runs before the addresses' pass
+  (`sessions.forget_expired_addresses`), which may lock an expired session of the same account.
+
+A path whose caller is the human (the write guard holds that account lock already) or that
+takes the target's lock already (an invitation by handle, a moderation, a contact, a chat access
+entry, a join's or a runner's owner, a device code's sign-in through `moderation.refuse_suspended`)
+needs nothing more. A registration's record for the instance admin locks nothing of the admin's
+the deletion touches before it, and an approval changes an account that has none to delete.
+
+**Reason:** the deletion's confirmation holds the human's rows in two orders. It ends the
+memberships, removes the sign-in and reset links and withdraws the human's open personal requests
+before it writes the human's row at its end, and it writes the human's record (locking the row)
+for a withdrawn request or an ended session before it removes the mails, the forge rows and the
+sign-in rows. A sign-in or a link's mail locks the human's row and then a membership, the mail
+settings or a link row; the hourly pass locks the human's row and then the digest request; the
+mail and forge workers lock the mail, the token or the link and then the human's row. Each crossed
+the deletion and deadlocked on PostgreSQL. A shared account lock in front of them makes them wait
+for the deletion's exclusive lock, or the deletion wait for them, whatever either locks later.
+
+**Closed (2026-11-15, card tsk-nt30de6r799x):** this entry first recorded as open that the deletion
+itself takes a project's lock after it first locks the human's row (`_withdraw_personal`,
+`invitations.invitee_deleted`), against writers that hold that project's lock and then lock the
+human's row. Those writers find the human only under the project's lock, so the account lock
+cannot go first there; the deletion's order changed instead (7835ed73). `auth.end_presented`, the
+corner named with it, is in the list above.
+
+**Rejected alternatives:**
+- Taking the account lock inside `records.lock_human` or `email_links.lock_human`: most callers lock
+  a project or a row of the account before they write a record, and a shared account lock taken
+  there would wait for a deletion while holding what the deletion waits for.
+- Retrying the deadlock (`db.TRANSIENT`): the workers and the mails after a response run once, and
+  a sign-in answered 503 is a failed sign-in; the order removes the cycle instead.
+
+## The deletion locks every project and organisation it locks later in its first sorted pass
+
+**Id:** 7835ed73-66eb-4f79-b235-c03b8c254cd0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nt30de6r799x, the open case of 20c2cbdf (#1841), design accepted by the lead, 2026-11-15; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_writer_holding_a_project_lock_meets_the_deletion_…`, `test_an_organisations_invitation_meets_the_deletion_…`, `test_a_sign_in_ending_the_presented_session_…`); `account_deletion.lock_first`, `_orgs_to_lock`, `_projects_to_lock`, `routes/auth.end_presented`
+**Revisit when:** `delete_account` gains a step that locks a project or an organisation, a step's query changes which ones it locks, or a writer finds the human under a lock other than a project's or an organisation's
+**See:** auth.md#a-path-without-the-humans-session-takes-the-account-lock-before-it-locks-a-row-of-that-humans — 20c2cbdf-3159-4ed6-889f-18dc7d1302f2 — as of 2026-11-15
+
+`account_deletion.confirm` takes, right after the account lock and before it writes anything, the
+rows of every organisation and then of every project whose lock the deletion takes later
+(`lock_first`), each set in the order of its ids. The organisations: those the human belongs to,
+those with a live invitation to or from the human, those a transfer the human started goes into.
+The projects: the namespace's, those the removal of the runners locks, those of the placements and
+invitations the human made, of the decisions their memberships hold, of their agents' and their own
+memberships, of the transfers they started, of the repositories they confirmed, of the invitations
+by handle to them and of the personal requests to them. Each part reads what the step that locks it
+reads. `test_the_deletion_takes_no_project_or_organisation_lock_after_its_first_pass` checks, from the
+statements, that nothing is locked later that the pass did not lock.
+
+**Reason:** the deletion writes the human's record for each withdrawn request and each ended session,
+so it holds the human's row from its first record to its commit. Writers that file to the human or
+notify them (a personal request, a chat request, a restricted card's notice, a jour fixe filing, an
+organisation's invitation and its revocation) hold their project's or organisation's lock and then
+lock the human's row; they find the human only under that lock, so the account lock cannot go first
+there (20c2cbdf). With every such lock taken before the first record, a writer either holds its lock
+first and the deletion waits for it in the pass, holding no row of the human's, or it waits for the
+deletion's commit. The ids' order keeps two deletions, or a deletion and a runner's removal, from
+crossing in the pass.
+
+A request filed to the human in a project outside the pass, and committed after the pass and before
+the deletion's first record, is withdrawn under a project lock taken after the human's row; a second
+writer in that project at that moment can still meet it. The database then rolls one back as a
+transient deadlock, and the confirmation is run again (`db.retrying`).
+
+**Rejected alternatives:**
+- Locking the human's row at the end of the pass as well, to keep new filings out: it narrows the
+  window above, but moves the human's row ahead of every row the deletion locks later, and each of
+  those would need the audit of #1841 again.
+- Taking the human's account lock in the writers: they find the human under the project's lock, and
+  a shared account lock taken there waits for a deletion while holding what it waits for.
+
 ## The credential filter has no boundary in front, and reads a JSON body's decoded strings too
 
 **Id:** d539d36c-45e7-4178-8428-835e67549e0f
@@ -763,3 +1032,277 @@ but the scan does not would carry an escaped credential past it.
   no JSON, would still pass.
 - Scanning only the decoded strings: the raw scan is what covers a
   body that is not JSON, or JSON that does not decode, and the query.
+
+## Anonymous mail requests are capped per recipient in source networks, and limits per source address count an IPv6 client by its /64
+
+**Id:** ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.5, §2.6.4, §2.7.3; tsk-q4zynccy5t0b and its review (a single source spent an address's hour under the first design), counting in networks decided by the maintainer on 2026-11-17, counting at request time on 2026-11-18; `hub/src/maity_hub/net.py` `Origin.limit_key`, `hub/src/maity_hub/auth/email_links.py` `recipient_over`; tests in `hub/tests/test_email_link_state.py`, `test_password_reset.py` and `test_registration.py`, red when every mail counts
+**See:** auth.md#the-resets-request-limits-are-buckets-of-their-own-and-an-empty-code-is-no-guess — 0e98bef7-6601-4f00-b10c-6c1a4c19222e — as of 2026-11-13
+
+`POST /auth/email-link`, `POST /auth/password-reset` and `POST /auth/register` each keep, beside the pair limits, a silent limit per recipient, in buckets of each path's own: 5 places per hour and 20 per day, counted in source networks, not in mails, and at most 50 mails queued for the address in any hour and 200 in any day from all networks together. Places and mail counts are taken when the request is answered and its mail queued, not when the outbox delivers it: the outbox checks only the path's instance-wide hourly budget, so mails queued in different windows can go out together after a delay. A network is `Origin.limit_key` (an IPv4 address as it is, an IPv6 address as its /64, an IPv4-mapped address as its IPv4); its first mail to the address in a window takes a place, its further ones take none and are held by its pair limit alone. A request counts only once its pair limit let it through. The places are taken first, then the mails, and the mark that a network holds a place is set only after both, at its place's own moment and in the same window, so that it ends with the place, and never given back; two or three concurrent first requests of one network (its quarter limit) each take a place, and each that finds the mark set gives its own back. The two mail counts keep a row per mail across replicas (`Limiter(exact=True)`). Every limit keyed on the caller's address takes `Origin.limit_key`; the session's address, a mail's text and the known sources keep the whole address.
+
+**Reason:** the pair limits bound one source, not the mails one address receives from many. Counted in mails, the cap let one source spend the address's hour with its pair limit's 3 + 2 requests, and two sources asking all day kept the owner from ever getting a link. Counted in networks, one to four networks cannot stop the owner's own network through these limits, but for the moment two or three first requests of one network run at once (each holds a place until all but one gave theirs back), longer when such a request stalls. The path's instance-wide hourly budget is a separate cap and stays the accepted denial the contract names: at the defaults, three networks at their 10 requests an hour spend the 30 reset or registration mails of an hour. The windows slide, so places alone let a place pass from one network to the next inside a window (60 mails in one hour and 380 in one day were measured in review); the count of the mails makes the bound on what is queued true, and four networks at their pair limits (10 a day each, at most 40 requested in any hour or day) never reach it, so it adds no lock-out. What stays: requests from five distinct networks in an hour (twenty in a day) leave a further network without a place, or reach the count, until the window has passed — any fixed per-address cap allows that; sessions, the password and the device code are unaffected. The price is the mailbox: at most 50 mails queued in any hour and 200 in any day for one address, and each path's instance-wide hourly budget as the outer bound on what is sent. The mark is set after the places because a mark set first and given back on refusal let concurrent requests of the same network through without a place (31 of 90 on PostgreSQL in review). It takes the place's moment because a mark that ended earlier, 10 seconds before its place (an intermediate version), let a network take a second place in that gap, so that three networks could leave the owner without a mail; one taken at its own later moment would outlive the place after a stalled request. One bucket per path keeps the reset and the sign-in link apart as before (0e98bef7). A /64 is what one IPv6 client is usually given, so a limit per full IPv6 address would count one client as many.
+
+**Rejected alternatives:**
+- Counting mails against the recipient, only those the pair limit passed (the first design): one source spends the address's hour, two its day.
+- A lock per address (in the process and a PostgreSQL advisory lock) around mark and places: heavier, and nothing else in the hub's limiters takes one; taking the places first and the mark after needs none, at the price of a brief over-count under concurrency.
+- Stating the sliding-window worst case (about 100 an hour, 400 a day) instead of counting the mails: a bound twice the places' product, and no smaller one would be true.
+- Counting every request against the recipient, refused by the pair limit or not: one source alone could then stop the address's mails at once.
+- One mail per network and hour to the address: the owner gets no second link within the hour, and one network would still spend 24 of the day's 20 without a separate day share.
+- No per-recipient cap at all: no lock-out, but no bound on a stranger's mailbox beyond the instance budget.
+- A per-recipient check at delivery too, in the outbox, so that the windows bound what arrives: the maintainer decided on 2026-11-18, in the review of PR #1797, that these limits apply at request time and the code stays as it is; the contract says so.
+- One recipient bucket shared by the three paths: requests of one kind would refuse the mails of another.
+- /56 or /48: wider prefixes put unrelated customers of one provider into one count; /64 is the smallest prefix a client is commonly handed whole.
+
+## The in-process limiter keeps its keys in order of their newest attempt and forgets idle ones from the front
+
+**Id:** 6112b6e6-f3b7-481b-911e-d6bab311242d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-q4zynccy5t0b; `hub/src/maity_hub/ratelimit.py` `Limiter._prune`
+
+`Limiter._hits` is an `OrderedDict`; an attempt moves its key to the end, and every take first drops keys from the front while their newest attempt is outside the window. Each attempt costs the keys it forgets and one look more. A key whose newest attempt was given back (`release`) may stay behind a live key a little longer.
+
+**Reason:** a pass over every key once more than 1024 were live cost each attempt time in the number of keys, exactly when many keys are live.
+
+**Rejected alternatives:**
+- Prune at most once per N calls or per part of the window: bounded on average, but memory still grows between passes and the pass itself stays a scan of all keys.
+
+## Every anonymous sign-in and sign-up call keeps one rule, `same-site` refused too
+
+**Id:** 5c274a37-aec7-45d5-86e6-49bbee326b87
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hkgnd1dp0c9c (sign-in routes clean-up), the lead's ruling 2026-11-14; docs/api.md §2.1, §2.6.5
+**Revisit when:** the dashboard is served from a host other than the hub's own, or an anonymous call has to be started from another site on purpose
+
+The password login, the registration, the device login and its
+completion, the mail link and code and the password reset all call
+`auth.anonymous.entry` first: an `Authorization` header is `forbidden`
+with `humans_only`, plain HTTP is refused as §2.5 says, and a
+`Sec-Fetch-Site` of `cross-site` or `same-site` is `forbidden`. The mail
+link's `GET` page only shows a form and keeps `anonymous.no_credential`
+without the site check.
+
+**Reason:** these calls run before a session exists, so neither the
+`SameSite` cookie nor `X-CSRF-Token` protects them, and a sibling host
+under the same registrable domain counts as the same site for
+`SameSite`; refusing `same-site` keeps such a host from signing a
+visitor into an account of its choosing or starting a registration in
+their name. Nothing legitimate is lost: the dashboard posts
+same-origin, the hub has no separate web origin, and the CLI sends no
+`Sec-Fetch-Site` at all. One guard with no switch per route, because
+each route's own copy is how the registration and the login came to
+refuse only `cross-site` while §2.6.5 asked for both.
+
+**Rejected alternatives:**
+- Keeping the login at `cross-site` only and rewording §2.6.5: it
+  leaves login CSRF from a sibling host open for no gain.
+- A guard with a per-route switch for the site rule: the switch is the
+  divergence this replaces.
+
+## The permitted-call allowlists share one format and one matcher, each gate keeping the path it reads
+
+**Id:** a8fd69cb-de04-4977-af4e-90a06ddc6415
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f5sdcgr7vzj0, item 3 (clean-up audit tsk-hgnbapyw7hnh, area 14, finding #12), 2026-11-15; docs/api.md §2.7.5, §2.8.2, §2.8.5, §6.2
+
+The lists of what an isolated agent (`caller.ISOLATED_MAY`), a
+second-factor or enrolment session (`second_factor.SECOND_STEP_CALLS`,
+`ENROLMENT_CALLS`, `MOVED_ENROLMENT_CALLS`) and a pending account
+(`deps.PENDING_MAY`) may still call are `auth.permitted.Calls`: a
+method and the path template below `/api/v1` as the router writes it,
+`{name}` for one segment and `{name:path}` for the rest. A list refuses
+an entry in another form when it is built, and a test holds every entry
+to exactly one route of the router.
+
+The matcher only compares. Each gate hands it the path it always read:
+the isolated agent's authentication the raw request path (decoded
+byte for byte as Latin-1, so `/api/v1/m%65` is not `/me`), the
+second-factor gate and the pending check the decoded path. The
+second-factor gate still takes `/api/v1` off only where it is there, so
+a path without it reads as one below it; the other two refuse such a
+path. The pending account's own-session delete is
+`/auth/sessions/{public_id:path}`, the `startswith` it replaced.
+`tests/test_permitted_calls.py` pins what each gate let through and
+refused before the change, the edges included.
+
+**Reason:** three formats for one concept (bytes with the prefix,
+strings without it plus a regex, strings with it plus a `startswith`)
+meant a path written in the wrong form opened or closed a call
+silently, and nothing checked the lists against the router. One format
+checked at build time and against the routes makes such a slip fail a
+test instead.
+
+**Rejected alternatives:**
+- Matching on the router's own route (the matched `path_format`)
+  instead of the path: the isolated agent is judged during
+  authentication, on the raw path, and `GET /bootstrap` judges each
+  part on a path no route matched for it; moving the gates would
+  change what they see.
+- Narrowing the pending delete to `{public_id}` and making the
+  second-factor gate require the prefix: no route tells them apart
+  today, but either is a change of an access gate, left to a card of
+  its own.
+
+## Every limit keyed by a mail address counts it by one keyed fingerprint, `known_sources.address_key`
+
+**Id:** 7d3f0a52-1c4e-4b8a-9f6d-2e5b8c1a9d47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2y0qbc1zm7r1 (clean-up audit, limits and abuse), the follow-up agreed in tsk-q4zynccy5t0b (#1797) and named in notifications.md dc952df1; `hub/src/maity_hub/auth/known_sources.py` `address_key`; tests `test_*_counts_keep_the_address_only_as_its_keyed_fingerprint` in `test_email_sign_in.py`, `test_password_reset.py`, `test_registration.py`, `test_notification_address.py`, and `test_a_login_counts_an_address_of_no_account_only_by_its_keyed_fingerprint` in `test_auth_human.py`, all through `tests/stored_keys.py`
+**See:** auth.md#a-password-attempt-takes-its-place-in-the-count-before-the-compare-the-known-sources-fingerprints-are-keyed-from-the-locks-first-use-pepper — d12ec062-8d9e-4357-916a-a2f1a1bc3bd1 — as of 2026-11-18
+
+The login's bucket for an address of no account (`password_limits.account_key`), the pair and
+per-recipient limits of `POST /auth/email-link` and `POST /auth/password-reset`
+(`RequestLimits.take`, `email_links.recipient_over`), those of `POST /auth/register` and the
+per-recipient limits of a verification mail (`notifications.address._recipient_over`) all count the
+address by `known_sources.address_key`: an HMAC-SHA-256 of the address as each path normalises
+it, under a key derived by HKDF (purpose `rate_count.address`) from `MAITY_SECRET_KEY`, else from
+the per-address lock's pepper. A pair is that key, a space and the source network or the asking
+account. The limits take the key, not the address; the route makes it, after `addresses.prepare`
+before its transaction, and without the pepper `address_key` raises instead of counting every
+address in one bucket. `shared_counts._key` is a guard of length (and of a NUL) only. On deploy
+the counts of these limits start again once, as their keys changed.
+
+**Reason:** `rate_count` keeps a key for up to two days, and a plain SHA-256 of an address (the
+pairs of the link and the reset) or the address itself (the registration's pair, hashed only
+for its NUL, and the address in process memory) lets a copy of the table confirm a guessed
+address, which the login's bucket already ruled out (d12ec062). One helper makes the rule one
+place to keep. A purpose of its own keeps the counts' keys apart from the known sources'
+fingerprints, as every keyed value of the hub has one (notifications.md dc952df1). One bucket
+for all when no key exists, as the login's bucket had, would let five networks stop the mails
+to every address; a loud failure shows a path that forgot `prepare`.
+
+**Rejected alternatives:**
+- `shared_counts._key` refusing a key that holds an `@`: it runs only where the counts are
+  shared, on PostgreSQL, so a regression would pass every SQLite test and turn into a `500` in
+  production; and a plain hash has no `@`, so the guard misses the very case this entry is
+  about. A test per limit that reads the stored keys, on both counting paths, catches both.
+- The same check in `Limiter` for every key, also in the process: it would catch a raw address
+  in a test on SQLite, but not a plain hash either, and it puts a rule about addresses into a
+  generic limiter whose other keys are ids and source networks.
+- `RequestLimits.take` and `recipient_over` taking a connection and the address: every unit test
+  of the limits would need a database and a pepper, for a key they treat as an opaque string.
+- Reusing `known_sources.fingerprint` (purpose `sign_in.known_source`): one key for two uses.
+
+## Single-use mail links have one implementation, the table a parameter
+
+**Id:** 3b8e5f21-9c47-4d6a-b0e3-71a2c9d84f56
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pfjwgw5e94k1 (item 1 of the clean-up audit tsk-f5sdcgr7vzj0); `hub/src/maity_hub/auth/single_use.py`; tests in `test_single_use.py`, each for `email_sign_in` and `password_reset`, and the limiters' names pinned in `test_request_limits_keep_their_names`
+**Revisit when:** a third kind of mailed single-use link comes, or one of the two needs a step of its own inside issuing, using or voiding that a column to clear cannot express
+
+`auth/single_use.py` holds, once, what the sign-in link (`email_sign_in`) and the password reset
+(`password_reset`) share: the human row lock (`lock_human`), issuing (`start`: under that lock,
+None when a newer row from the same source exists or the request outlived a row's life, else
+the earlier unused row from that source is voided; `add`: the new row; `issue`: both with a
+fresh nonce), `use`, `void_human`, `void_open`, and `RequestLimits(prefix)` with the recipient's
+limits (`recipient_over`, `RECIPIENT_*`). A `Kind` names the table, a row's life and the columns
+a spent row clears with `used_at`: `email_sign_in` clears `code_mac`, so a used or voided link's
+code dies with it. The statements, their order and the locks are those the two modules had.
+`email_links` keeps the code, its MAC, the per-day count of wrong codes, `live` and the mail,
+and draws the code between `start` and `add`, as before; `password_resets` keeps the token,
+`live`, the password generation and the wrong codes at resets. Both keep their former names as
+thin wrappers or re-exports (`RequestLimits` a subclass that passes `auth.email_links` or
+`auth.password_resets`), so callers, tests and their monkeypatches are unchanged, and
+`single_use` imports neither module. Nothing changes for users.
+
+**Reason:** the two modules held the same issue, use and void code and the same nine limiters,
+so a fix to one (a lock, a condition of single use) could miss the other on a security path.
+The limiters' names key the shared counts (`rate_count`): built from the same prefix, they stay
+exactly as they were, so no count starts again; the test pins every name. The audit's claim
+that use and the voids differ only in the table did not hold: the sign-in row also clears
+`code_mac`, hence `Kind.cleared`. `live` stays in each module, as the two read a row by
+different keys (a nonce hash or a browser's pending value; a token's nonce and human).
+
+**Rejected alternatives:**
+- One `issue` with a callback for the kind's columns: the sign-in code is drawn (and the day's
+  row read or written) after the void and before the insert, and also returned; a callback
+  hides that step and its statement. `start` and `add` keep it visible in `email_links.issue`.
+- Updating every caller to `single_use` and deleting the old names: a larger diff on a security
+  path for no change in behaviour, and the conftest finds the limiters through the routes'
+  `LIMITS` either way.
+- Clearing `code_mac` chosen by the table's columns rather than named in `Kind`: implicit, and a
+  later column of that name in another table would be cleared unasked.
+- `RequestLimits` taking a full name per limiter: nine strings per path to keep in step, where
+  one prefix cannot drift.
+
+## The forge's setup callback is the one cross-site cookie call, and only as a top-level navigation
+
+**Id:** e3a7c1d5-4b62-4f09-9a8e-2c6d1f7b5034
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2vtm39ykr7k4 from the lead (found by the maintainer's own test of a11, ops 3yc2); docs/api.md §2.1, §11.4; `caller.CROSS_SITE_NAVIGATIONS`, `_cross_site_allowed`, `deps.forge_setup_caller`; tests in `test_forge_links.py` (the cross-site section) and `test_permitted_calls.py`
+**Revisit when:** another forge or OAuth callback lands on the hub, or browsers stop sending `Sec-Fetch-*` on navigations
+**See:** auth.md#the-permitted-call-allowlists-share-one-format-and-one-matcher-each-gate-keeping-the-path-it-reads — a8fd69cb-de04-4977-af4e-90a06ddc6415 — as of 2026-11-23
+
+`_cookie_headers` refuses a cookie request with `Sec-Fetch-Site: cross-site` (§2.1) except
+`GET /forge/github/setup` with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`. The
+call is a `Calls` list of one entry (`CROSS_SITE_NAVIGATIONS`), matched on the raw request
+path as the isolated agent's gate is, so a percent-encoded spelling the router would still
+route there stays refused. The route authenticates its caller without side effects
+(`deps.forge_setup_caller`: `seen=False`, `renew_leases=False`, `counted=False`): no presence
+is written, no lease renewed and no read counted, on any path to it. Those flags reach only the
+cookie path, so `forge_setup_caller` first refuses an `Authorization` or `Maity-For` header
+(`humans_only`, as `presence_caller` does) before any credential is looked up: an agent's
+credential would otherwise have its last use (`last_used_at`), its presence (`last_seen_at` of
+the membership, and of its live session if it has one) and its read count moved, and a
+runner's or a bridge's (`Maity-For`) its read count. Its `state` (256 bits, stored as a hash,
+bound to the session, 15 minutes, used once) is checked before any forge read or write; the
+route's outcomes, and the refusals before it runs, are listed in §11.4.
+
+**Reason:** the setup is an OAuth-style callback: GitHub sends the browser back after the
+installation, so the request comes from github.com and is `cross-site` by design. §2.1 refused
+every such cookie request while §11.4 had the browser arrive exactly that way, so linking an
+installation in a browser always failed with `csrf_mismatch` on a11; the tests called the route
+without `Sec-Fetch-Site` and never saw it. On this route the `state` does what the site check
+does elsewhere: a request another site starts cannot carry a state of the victim's session,
+and a state of the attacker's own session is `link_state` for anyone else. The exception stays
+this narrow because a request the hub lets through cross-site carries the victim's cookie
+(`SameSite=Lax` sends it on a top-level `GET` navigation): one method and path, as a top-level
+navigation only. `SameSite=Lax` already withholds the cookie from a cross-site `fetch`, frame
+or form's `POST`; the navigation test refuses those as well, as defence in depth, should a
+browser or a later cookie setting send it after all.
+
+A navigation another site forces onto the setup changes nothing before its `state` refuses it:
+the caller is authenticated without presence, lease renewal or read count, so the attacker
+cannot keep a victim's session alive, show them online or renew their claims' leases by
+sending them there, nor spend their reads. The route loses nothing by it: it is only reached by
+the forge's redirect, once per link, so the same-origin path changing too costs nothing; the
+human's next dashboard call writes presence and renews leases as always.
+
+**Rejected alternatives:**
+- Letting every cross-site `GET` through: every read route would then answer with the cookie to
+  a navigation another site starts, and the authentication's own effects (presence, the
+  renewal of leases, the read count) would follow; the site check would protect nothing.
+- Accepting `same-site` only: GitHub is never the hub's site, so the callback would still fail.
+- Relying on `SameSite=Lax` alone, without the `Sec-Fetch-Site` gate: it sends the cookie on
+  every cross-site top-level `GET` navigation, to every route, so it does not decide the
+  navigation case at all; that is why §2.1 checks `Sec-Fetch-Site` on top of it.
+- Dropping the check for the route altogether, `fetch` and frames included: no forge redirect
+  needs a `fetch`, a frame or another method. `SameSite=Lax` would still withhold the cookie
+  from them, but the gate refusing them too keeps a second barrier should that ever change,
+  and the exception should admit only what the callback is.
+- Matching the decoded path (as the router does): it would also admit `set%75p` and other
+  spellings no forge redirect sends; the raw path is the narrower test.
+- Accepting the effects of the ordinary authentication (`current_caller`: presence written at
+  most once a minute, the leases of open claims renewed, the read counted against the session)
+  on a forced navigation before the `state` refuses it: a navigation another site forces should
+  leave no trace on the victim's session, and the route, only reached by the forge's redirect,
+  loses nothing without them.
+- Also requiring `Sec-Fetch-User: ?1`: not every browser sends it, and the forge's return need
+  not be user-activated (the forge may redirect back without a fresh user gesture), so
+  requiring it would refuse real links; it would add nothing the single-use, session-bound
+  `state` does not already protect.

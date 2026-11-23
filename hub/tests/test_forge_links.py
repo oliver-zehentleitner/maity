@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -23,9 +23,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, forge, forge_links, github_app, secretbox
+from maity_hub import clock, forge, forge_links, github_app, read_limits, secretbox
 from maity_hub import tables as t
+from maity_hub.auth.caller import SESSION_COOKIE, session_id_hash
 from maity_hub.config import ConfigError, Settings
+from maity_hub.seen import SEEN_EVERY
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_two_factor import Clock, code_now, enrol
@@ -336,6 +338,46 @@ def test_a_missing_or_malformed_state_is_link_state_in_both_forms(
 
 
 @pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        ({"code": "c0de"}, "installation_id"),
+        ({"installation_id": "seven", "code": "c0de"}, "installation_id"),
+        ({"installation_id": 0, "code": "c0de"}, "installation_id"),
+        ({"installation_id": 7}, "code"),
+        ({"installation_id": 7, "code": ""}, "code"),
+        ({"installation_id": 7, "code": "c" * 513}, "code"),
+    ],
+)
+def test_a_query_the_setup_cannot_read_is_invalid_before_the_route_runs(
+    human: flow.Human, fake: Forge, params: dict[str, Any], field: str
+) -> None:
+    """No or a malformed `installation_id` or `code` is the framework's `400 invalid` like any
+    malformed request (§1.3), no 303: the route never runs, so the state is not taken."""
+    fake.install(7)
+    state = start(human)
+    answer = human.client.get(
+        "/api/v1/forge/github/setup", params={**params, "state": state}, follow_redirects=False
+    )
+    assert answer.status_code == 400
+    error = answer.json()["error"]
+    assert error["code"] == "invalid" and field in error["details"]["fields"]
+    assert fake.codes == [] and links(human) == []
+    assert setup(human, 7, state) == DONE  # the state was not taken
+
+
+def test_a_malformed_setup_without_a_session_is_unauthenticated(
+    make_client: ClientFactory, fake: Forge
+) -> None:
+    """Authentication comes before the query is read: no session is `unauthenticated`, not
+    `invalid` (§11.4)."""
+    answer = make_client().get(
+        "/api/v1/forge/github/setup", params={"code": "c0de"}, follow_redirects=False
+    )
+    assert answer.status_code == 401
+    assert answer.json()["error"]["code"] == "unauthenticated"
+
+
+@pytest.mark.parametrize(
     ("account_id", "kind", "reason"),
     [
         (43, "User", "installation_not_yours"),
@@ -493,6 +535,260 @@ def test_a_forge_that_does_not_answer_goes_back_with_the_reason(
     location = setup(human, 7, start(human))
     assert location == DONE + "?error=forge_unavailable"
     assert "c0de" not in location
+
+
+# --- the forge's redirect is a cross-site navigation (§2.1, tsk-2vtm39ykr7k4) -------------------
+
+# What a browser sends on the forge's redirect back to the hub: a top-level navigation from
+# another site.
+FROM_THE_FORGE = {
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+}
+SETUP = "/api/v1/forge/github/setup"
+
+
+def cross_site(who: flow.Human, params: dict[str, Any], **headers: str) -> Any:
+    sent = {**FROM_THE_FORGE, **{k.replace("_", "-"): v for k, v in headers.items()}}
+    return who.client.get(SETUP, params=params, headers=sent, follow_redirects=False)
+
+
+def test_the_forges_redirect_links_the_installation(human: flow.Human, fake: Forge) -> None:
+    fake.install(7)
+    answer = cross_site(human, {"installation_id": 7, "code": "c0de", "state": start(human)})
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE)
+    assert [link["installation_id"] for link in links(human)] == [7]
+
+
+@pytest.mark.parametrize(
+    ("header", "value"),
+    [
+        ("Sec-Fetch-Mode", "cors"),  # a cross-site `fetch`
+        ("Sec-Fetch-Mode", "no-cors"),
+        ("Sec-Fetch-Mode", "same-origin"),
+        ("Sec-Fetch-Dest", "iframe"),  # a navigation inside another site's frame
+        ("Sec-Fetch-Dest", "empty"),
+        ("Sec-Fetch-Dest", "frame"),
+    ],
+)
+def test_a_cross_site_setup_that_is_no_top_level_navigation_is_refused(
+    human: flow.Human, fake: Forge, header: str, value: str
+) -> None:
+    """Refused before the route runs, as every cross-site cookie call: the state stays."""
+    fake.install(7)
+    state = start(human)
+    params = {"installation_id": 7, "code": "c0de", "state": state}
+    answer = cross_site(human, params, **{header.replace("-", "_"): value})
+    assert answer.status_code == 403
+    assert answer.json()["error"]["code"] == "csrf_mismatch"
+    assert fake.codes == [] and links(human) == []
+    assert setup(human, 7, state) == DONE  # the state was not taken
+
+
+@pytest.mark.parametrize("missing", ["Sec-Fetch-Mode", "Sec-Fetch-Dest"])
+def test_a_cross_site_setup_without_the_navigation_headers_is_refused(
+    human: flow.Human, fake: Forge, missing: str
+) -> None:
+    fake.install(7)
+    sent = {k: v for k, v in FROM_THE_FORGE.items() if k != missing}
+    answer = human.client.get(
+        SETUP,
+        params={"installation_id": 7, "code": "c0de", "state": start(human)},
+        headers=sent,
+        follow_redirects=False,
+    )
+    assert answer.json()["error"]["code"] == "csrf_mismatch"
+    assert fake.codes == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/v1/me"),
+        ("GET", "/api/v1/me/forge"),
+        ("GET", "/api/v1/auth/session"),
+        ("POST", "/api/v1/me/forge/github/link"),
+        # The setup in another spelling: the router routes it there, the exception does not
+        # admit it. Another method on the setup is no route (405 before any check); the
+        # matcher's own cases are in test_permitted_calls.py.
+        ("GET", "/api/v1/forge/github/set%75p"),
+    ],
+)
+def test_the_forges_headers_on_any_other_call_are_csrf_mismatch(
+    human: flow.Human, fake: Forge, method: str, path: str
+) -> None:
+    fake.install(7)
+    answer = human.client.request(
+        method,
+        path,
+        params={"installation_id": 7, "code": "c0de", "state": start(human)},
+        headers={**FROM_THE_FORGE, "X-CSRF-Token": human.csrf},
+        follow_redirects=False,
+    )
+    assert answer.status_code == 403
+    assert answer.json()["error"]["code"] == "csrf_mismatch"
+    assert fake.codes == [] and links(human) == []
+
+
+def test_a_cross_site_setup_with_a_missing_state_goes_back_with_link_state(
+    human: flow.Human, fake: Forge
+) -> None:
+    fake.install(7)
+    answer = cross_site(human, {"installation_id": 7, "code": "c0de"})
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == [] and links(human) == []
+
+
+def test_a_cross_site_setup_with_a_used_state_goes_back_with_link_state(
+    human: flow.Human, fake: Forge
+) -> None:
+    fake.install(7)
+    params = {"installation_id": 7, "code": "c0de", "state": start(human)}
+    assert cross_site(human, params).headers["location"] == DONE
+    again = cross_site(human, params)
+    assert (again.status_code, again.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == ["c0de"]
+
+
+def test_a_cross_site_setup_with_another_sessions_state_goes_back_with_link_state(
+    human: flow.Human, fake: Forge, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The case the exception exists for: another site sends a victim's browser to the setup
+    with a state of the attacker's own session. Nothing is linked to either."""
+    fake.install(7)
+    attacker = flow.human(make_client, migrated, "anna")
+    params = {"installation_id": 7, "code": "c0de", "state": start(attacker)}
+    answer = cross_site(human, params)
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == [] and links(human) == [] and links(attacker) == []
+    # The same human in another browser is another session, refused alike.
+    again = make_client()
+    assert factory.login_handle(again, "maintainer").status_code == 200
+    second = flow.Human(again, "", human.id, "maintainer")
+    own = cross_site(second, {**params, "state": start(human)})
+    assert (own.status_code, own.headers["location"]) == (303, DONE + "?error=link_state")
+    assert fake.codes == [] and links(human) == []
+
+
+def traces(engine: Engine, who: flow.Human) -> tuple[Any, ...]:
+    """What an authenticated call may change for its human (§2.4, §6.5, §1.7): the session's,
+    the human's and the memberships' presence, the leases of its claims, its read count."""
+    id_hash = session_id_hash(who.client.cookies[SESSION_COOKIE])
+    with engine.connect() as conn:
+        found = (
+            conn.execute(
+                select(t.human_session.c.last_seen_at).where(t.human_session.c.id_hash == id_hash)
+            ).scalar_one(),
+            conn.execute(select(t.human.c.last_seen_at).where(t.human.c.id == who.id)).scalar(),
+            conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.human_id == who.id)
+            ).all(),
+            conn.execute(
+                select(t.card.c.lease_until).where(t.card.c.lease_until.is_not(None))
+            ).all(),
+        )
+    counted = read_limits.COUNTER._counts.get(id_hash)
+    window = clock.now().timestamp() // read_limits.WINDOW_SECONDS
+    return (*found, counted.current if counted and counted.window == window else 0)
+
+
+@pytest.mark.parametrize("which", ["foreign", "used"])
+def test_a_cross_site_setup_with_a_bad_state_changes_nothing(
+    human: flow.Human, fake: Forge, make_client: ClientFactory, migrated: Engine, which: str
+) -> None:
+    """A navigation another site forces writes no presence, renews no lease and counts no read
+    before its `state` refuses it (§2.1, §11.4); an ordinary call at the same moment does."""
+    # One window of the read count (§1.7) for the whole test, so its count only grows.
+    window = read_limits.WINDOW_SECONDS
+    now = [datetime.fromtimestamp((time.time() // window + 1) * window + 1, UTC)]
+    clock.set_source(lambda: now[0])
+    fake.install(7)
+    flow.project(human, "alpha")
+    card = human.post("/projects/maintainer/alpha/tasks", {"title": "held"}).json()
+    claimed = human.post(f"/projects/maintainer/alpha/tasks/{card['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    if which == "foreign":
+        state = start(flow.human(make_client, migrated, "anna"))
+    else:
+        state = start(human)
+        assert setup(human, 7, state) == DONE
+    # Presence due again (§2.4), and a renewal now would move the lease (§6.5).
+    with migrated.begin() as conn:
+        aged = now[0] - 2 * SEEN_EVERY
+        conn.execute(update(t.human_session).values(last_seen_at=aged))
+        conn.execute(update(t.human).values(last_seen_at=aged))
+        conn.execute(update(t.membership).values(last_seen_at=aged))
+    now[0] += timedelta(seconds=20)
+    before = traces(migrated, human)
+    answer = cross_site(human, {"installation_id": 7, "code": "c0de", "state": state})
+    assert (answer.status_code, answer.headers["location"]) == (303, DONE + "?error=link_state")
+    assert traces(migrated, human) == before
+    # The same moment, an ordinary read: every one of them changes.
+    assert human.client.get("/api/v1/me").status_code == 200
+    after = traces(migrated, human)
+    assert all(a != b for a, b in zip(after, before, strict=True)), (before, after)
+
+
+def agent_traces(engine: Engine, agent: flow.Agent) -> tuple[Any, ...]:
+    """What an agent's call may change (§2.4, §1.7): its credential's last use, its
+    membership's presence, its read count."""
+    with engine.connect() as conn:
+        found = (
+            conn.execute(
+                select(t.credential.c.last_used_at).where(t.credential.c.id == agent.credential_id)
+            ).scalar_one(),
+            conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.agent_id == agent.id)
+            ).scalar_one(),
+        )
+    counted = read_limits.COUNTER._counts.get(agent.credential_id)
+    window = clock.now().timestamp() // read_limits.WINDOW_SECONDS
+    return (*found, counted.current if counted and counted.window == window else 0)
+
+
+@pytest.mark.parametrize("bridged", [False, True])
+def test_a_credential_header_on_the_setup_is_refused_before_it_is_read(
+    human: flow.Human, fake: Forge, make_client: ClientFactory, migrated: Engine, bridged: bool
+) -> None:
+    """An `Authorization` or `Maity-For` header on the setup is `humans_only` before any
+    credential is looked up (§11.4): the agent's presence and read count stay as they were,
+    and the query is not read either; an ordinary read at the same moment moves them."""
+    window = read_limits.WINDOW_SECONDS
+    now = [datetime.fromtimestamp((time.time() // window + 1) * window + 1, UTC)]
+    clock.set_source(lambda: now[0])
+    fake.install(7)
+    flow.project(human, "maity")
+    agent = flow.agent(make_client, human)
+    with migrated.begin() as conn:
+        aged = now[0] - 2 * SEEN_EVERY
+        conn.execute(update(t.membership).values(last_seen_at=aged))
+        conn.execute(update(t.credential).values(last_used_at=aged))
+    now[0] += timedelta(seconds=20)
+    before = agent_traces(migrated, agent)
+    headers = agent.auth | ({"Maity-For": human.id} if bridged else {})
+    queries: list[dict[str, Any]] = [
+        {"installation_id": 7, "code": "c0de", "state": "x"},
+        {"code": "c0de"},  # malformed: the header refusal comes before the query is read
+    ]
+    for query in queries:
+        answer = agent.client.get(SETUP, params=query, headers=headers, follow_redirects=False)
+        assert agent_traces(migrated, agent) == before
+        assert answer.status_code == 403, answer.text
+        assert answer.json()["error"]["details"] == {"reason": "humans_only"}
+    assert fake.codes == [] and links(human) == []
+    # A cookie with `Maity-For` is refused alike, before its session is read: even a
+    # cross-site `fetch`, so the header comes before `csrf_mismatch` (§11.4's order).
+    state = start(human)
+    params = {"installation_id": 7, "code": "c0de", "state": state}
+    for extra in ({}, {"Sec_Fetch_Mode": "cors"}):
+        cookie = cross_site(human, params, Maity_For=agent.id, **extra)
+        assert cookie.json()["error"]["details"] == {"reason": "humans_only"}
+    assert setup(human, 7, state) == DONE  # the state was not taken
+    # The same moment, an ordinary read: every one of them changes.
+    assert agent.get("/me").status_code == 200
+    after = agent_traces(migrated, agent)
+    assert all(a != b for a, b in zip(after, before, strict=True)), (before, after)
 
 
 # --- the human's own token -------------------------------------------------------------------

@@ -159,8 +159,8 @@ def test_an_instance_from_before_the_cursors_existed_falls_back_to_its_creation(
     left = tell(owner, f"{first.id}#{first.instance}", "undone")
     with migrated.begin() as conn:
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == first.credential_id)
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.credential_id == first.credential_id)
             .values(exchange_seq=None)
         )
     second = replace(make_client, owner, first)

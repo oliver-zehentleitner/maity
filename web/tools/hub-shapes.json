@@ -10,6 +10,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -204,6 +207,9 @@
      "social": {
       "object": {}
      },
+     "starred": {
+      "array": null
+     },
      "start_tabs": "null",
      "terms": "null",
      "timezone": "null",
@@ -389,6 +395,7 @@
     "object": {
      "chat": "null",
      "discussions": "null",
+     "docs": "null",
      "issues": "null",
      "wiki": "null"
     }
@@ -431,6 +438,8 @@
      "outside_roles": {
       "array": "string"
      },
+     "own_agents": "string",
+     "own_approvals": "number",
      "preset": "string",
      "signing": "string",
      "spawn_consent_by": "string",
@@ -528,7 +537,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -599,7 +611,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -809,6 +824,17 @@
         "state": "string"
        }
       },
+      "placements": {
+       "array": {
+        "object": {
+         "desired": "string",
+         "id": "string",
+         "instance": "null",
+         "runner_name": "string",
+         "state": "string"
+        }
+       }
+      },
       "presence": "string",
       "reports_to": "null",
       "role": "string",
@@ -908,6 +934,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -970,7 +999,8 @@
    },
    "custom": {
     "array": null
-   }
+   },
+   "version": "number"
   }
  },
  "GET /projects/{project}/tasks": {
@@ -1347,6 +1377,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -1416,6 +1449,9 @@
            "available": "boolean",
            "confinement": "string",
            "default_mode": "string",
+           "efforts": {
+            "array": null
+           },
            "id": "string",
            "models": {
             "array": "string"
@@ -1502,6 +1538,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -1641,6 +1680,9 @@
    "created_at": "string",
    "filed_by": "null",
    "forwarding": {
+    "array": null
+   },
+   "held": {
     "array": null
    },
    "holder": "string",
@@ -1818,6 +1860,9 @@
    "owner_preferences": "boolean",
    "paused": "null",
    "placement": "null",
+   "placements": {
+    "array": null
+   },
    "presence": "string",
    "reports_to": "null",
    "role": "string",
@@ -1873,6 +1918,9 @@
    "created_at": "string",
    "filed_by": "null",
    "forwarding": {
+    "array": null
+   },
+   "held": {
     "array": null
    },
    "holder": "string",
@@ -1932,7 +1980,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/conversations/{group}/messages": {
@@ -1953,7 +2004,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/tasks": {

@@ -9,21 +9,25 @@ card under a moderation hold has none, and the holder and the notes' authors are
 as the Board names a holder; an edited note shows its edit mark and reason, never its old
 text; a redacted note shows as removed, without its reason. Whatever
 changes a card or its notes calls `public_pages.touch` for the kind `card`.
+
+A public project's outsider reading the member routes (§2.3) reads the cards by the same rule
+(`outside_clause`, `outside_card`), and no hidden card's id in another card's view
+(`outside_views`), each decided in the statement that reads the rows it returns.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Collection
-from html import escape
 from typing import Any
 
-from sqlalchemy import Connection, or_, select
+from sqlalchemy import Connection, and_, case, func, or_, select
 
-from maity_hub import clock, moderation, namespace, public_pages, render
+from maity_hub import clock, moderation, namespace, public_design, public_pages, render
 from maity_hub import tables as t
+from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
-from maity_hub.public_project_views import _holder, _who, members
+from maity_hub.public_project_views import _holder, members
 from maity_hub.public_projects import served
 
 KIND = "card"
@@ -33,6 +37,138 @@ def shown(card: Any) -> bool:
     """Whether the card itself may stand on a public page: a `security` card only once it is
     done (§16.9). The project and the hold are checked by the caller."""
     return (card.label or "").lower() != "security" or card.status == "done"
+
+
+def shown_clause(card: Any = t.card) -> Any:
+    """`shown` as a condition on `card` (the table or an alias of it), for a query of cards:
+    what the Board's columns leave out (`public_project_views.board_rows`), and what a public
+    project's outsider does not read through the member routes either (§2.3)."""
+    c = card.c
+    return or_(c.status == "done", c.label.is_(None), func.lower(c.label) != "security")
+
+
+def unheld_clause(card: Any = t.card) -> Any:
+    """No moderation hold on the card, as a condition on `card`: the hold `render_card` and
+    `board_rows` read (`moderation.hold`, any hold row of the card), so a card under one is
+    on no board, has no page, and is in no list an outsider reads (§2.3, §16.8)."""
+    h = t.moderation_hold.c
+    held = select(h.report_id).where(h.target_type == "card", h.target_id == card.c.id)
+    return ~held.exists()
+
+
+def outside_clause(card: Any = t.card) -> Any:
+    """The cards a public project's outsider reads through the member routes (§2.3): those the
+    public Board shows, `shown_clause` without a hold (`unheld_clause`).
+
+    Decided in the statement that reads the rows it returns, never in one before: on the
+    server engines each statement reads its own snapshot (READ COMMITTED), so a card that
+    became `security` or held after an earlier statement read it would otherwise reach the
+    outsider (hub/context/public-pages.md, as #2005 decides a request on its full rows)."""
+    return and_(shown_clause(card), unheld_clause(card))
+
+
+def outside_card(card_id: Any) -> Any:
+    """`outside_clause` for the card `card_id` (a column) names, as a condition on a query of
+    what belongs to one card (its history, its notes): the statement that reads them reads
+    nothing while the card is one the outsider does not read."""
+    return select(t.card.c.id).where(t.card.c.id == card_id, outside_clause()).exists()
+
+
+EDGE_FIELDS = ("depends_on", "ships_with", "related")
+
+
+def _release_ids(release: dict[str, Any]) -> set[str]:
+    """The card ids a release object names (`releases.release_view`)."""
+    found = {pr["task_id"] for pr in release.get("pull_requests") or [] if pr.get("task_id")}
+    found |= {card for group in release.get("groups") or [] for card in group}
+    for item in (release.get("readiness") or {}).get("blocking") or []:
+        if item.get("task"):
+            found.add(item["task"])
+        found |= set(item.get("tasks") or [])
+    return found
+
+
+def _release_without(release: dict[str, Any], hidden: set[str]) -> dict[str, Any]:
+    """The release object with no trace of a hidden card: a pull request only a hidden card
+    reported, a hidden card in a group or a blocker, and a blocker that names nothing else."""
+    dropped = {
+        pr["number"] for pr in release.get("pull_requests") or [] if pr.get("task_id") in hidden
+    }
+    groups = [
+        [card for card in group if card not in hidden] for group in release.get("groups") or []
+    ]
+    blocking = []
+    readiness = release.get("readiness") or {}
+    for item in readiness.get("blocking") or []:
+        if item.get("task") in hidden or item.get("pr") in dropped:
+            continue
+        if "tasks" in item:
+            rest = [card for card in item["tasks"] if card not in hidden]
+            if len(rest) < 2:
+                continue
+            item = {**item, "tasks": rest}
+        blocking.append(item)
+    return {
+        **release,
+        "pull_requests": [
+            pr for pr in release.get("pull_requests") or [] if pr["number"] not in dropped
+        ],
+        "groups": [group for group in groups if len(group) > 1],
+        "readiness": {**readiness, "blocking": blocking},
+    }
+
+
+def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Card views as a public project's outsider reads them (§2.3): no trace of a card it does
+    not read (a not-done `security` card, a card under a hold), neither in `depends_on`,
+    `ships_with`, `related`, `parent`, the `children` counts nor a release's pull requests,
+    groups and blockers.
+
+    One statement, read after every other read of the views, decides it all on the rows it
+    returns (`outside_clause`): the views' own cards, the cards they name and their children.
+    A view whose card the outsider no longer reads by then is dropped, the `children` counts
+    are counted again from the children it reads, and a named card hidden by then is left
+    out, so no card that became `security` or held after the statement that listed it, or
+    after the edges were read, reaches the outsider (READ COMMITTED)."""
+    if not views:
+        return views
+    own = {view["id"] for view in views}
+    referenced: set[str] = set()
+    for view in views:
+        for name in EDGE_FIELDS:
+            referenced.update(view[name])
+        if view["parent"]:
+            referenced.add(view["parent"])
+        if view["release"]:
+            referenced |= _release_ids(view["release"])
+    c = t.card.c
+    seen = case((outside_clause(), 1), else_=0).label("seen")
+    rows = conn.execute(
+        select(c.id, c.parent, c.status, seen).where(
+            or_(c.id.in_(referenced | own), c.parent.in_(own))
+        )
+    ).all()
+    kept = {row.id for row in rows if row.seen}
+    hidden = {row.id for row in rows if not row.seen and row.id in referenced}
+    children = {card: {"open": 0, "total": 0} for card in own}
+    for row in rows:
+        if row.seen and row.parent in children:
+            children[row.parent]["total"] += 1
+            children[row.parent]["open"] += row.status not in CLOSED
+    shaped = []
+    for view in views:
+        if view["id"] not in kept:
+            continue
+        view = dict(view)
+        for name in EDGE_FIELDS:
+            view[name] = [card for card in view[name] if card not in hidden]
+        if view["parent"] in hidden:
+            view["parent"] = None
+        view["children"] = children[view["id"]]
+        if view["release"]:
+            view["release"] = _release_without(view["release"], hidden)
+        shaped.append(view)
+    return shaped
 
 
 def _gone_agent(conn: Connection, membership_id: int) -> bool:
@@ -53,27 +189,6 @@ def _notes(conn: Connection, card_id: str) -> list[Any]:
             select(t.card_note).where(n.card_id == card_id).order_by(n.created_at, n.id)
         ).all()
     )
-
-
-def _time(when: str) -> str:
-    return f'<time datetime="{escape(when, quote=True)}">{escape(when[:10])}</time>'
-
-
-def _note_html(note: Any, who: str, editor: str | None) -> str:
-    tags = [who, _time(clock.rfc3339(note.created_at))]
-    if note.state != "open":
-        tags.append(escape(note.state))
-    if editor is not None and note.edited and not note.redacted:
-        mark = f"edited by {editor} {_time(note.edited['at'])}"
-        if note.edited.get("reason"):
-            mark += f": {escape(note.edited['reason'])}"
-        tags.append(mark)
-    text = (
-        '<p class="muted">Removed.</p>'
-        if note.redacted
-        else render.markdown(note.body or "", ugc=True)
-    )
-    return f'<li><p class="muted">{" · ".join(tags)}</p>{text}</li>'
 
 
 def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pages.Page]:
@@ -109,32 +224,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         by = note.edited["by"]
         return people.get(by), by == note.author and note.author_kind == "agent"
 
-    status = card.status.replace("_", " ")
-    tags = [escape(status)]
-    if card.label:
-        tags.append(escape(card.label))
-    if card.claim_holder is not None:
-        tags.append(_who(person, gone))
     body = card.body or ""
-    content = (
-        f'<p class="eyebrow"><a href="/{escape(full, quote=True)}/board">'
-        f"{escape(project.name)}: Board</a></p>"
-        f"<h1>{escape(card.title)}</h1>{render.report_link(f'/{full}/tasks/{card.id}')}"
-        f'<p><span class="tag">{escape(card.id)}</span> '
-        + " ".join(f'<span class="tag">{tag}</span>' for tag in tags)
-        + "</p>"
-        + (render.markdown(body, ugc=True) if body.strip() else "")
-        + (
-            '<h2>Notes</h2><ol class="notes">'
-            + "".join(
-                _note_html(note, _who(*author(note)), _who(*editor(note)) if editor(note) else None)
-                for note in notes
-            )
-            + "</ol>"
-            if notes
-            else ""
-        )
-    )
     path = f"/{full}/tasks/{card.id}"
     data = {
         "id": card.id,
@@ -164,6 +254,8 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
             for note in notes
         ],
     }
+    # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
+    content = public_design.page(KIND, data, path)
     digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
         public_pages.Page(
@@ -173,6 +265,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
                 title=f"{card.title} ({card.id}) · {project.name}",
                 canonical=f"{hub.public_url.rstrip('/')}{path}",
                 content=content,
+                styled=False,
             ),
             inputs=digest.hexdigest(),
             lastmod=clock.now(),

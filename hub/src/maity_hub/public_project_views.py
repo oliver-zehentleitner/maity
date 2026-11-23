@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Collection
 from datetime import timedelta
-from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, Engine, func, or_, select
@@ -25,13 +24,14 @@ from maity_hub import (
     ktw,
     moderation,
     namespace,
+    public_design,
     public_pages,
     public_people,
     render,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.public_projects import served
+from maity_hub.public_projects import member_pictures, served
 
 KIND = "project_views"
 # Apart from the members' cache, which may have read with an owner's grant: what the public
@@ -52,6 +52,7 @@ class Person:
         human: bool,
         address: str | None = None,
         presence_named: bool = True,
+        profile_on: bool = True,
     ) -> None:
         self.address = address  # the member's own page: a person's, or the agent's under its owner
         self.id = row.id
@@ -63,6 +64,10 @@ class Person:
         self.human = human
         # Named and counted as online on a public page: off by a person's `public_presence` (§16.9).
         self.presence_named = presence_named
+        # The person or the agent, and whether their own page shows their picture (§16.9): a
+        # person's `public_profile`; an agent's page always shows one.
+        self.principal: str = row.human_id or row.agent_id
+        self.profile_on = profile_on
 
     @property
     def shown(self) -> bool:
@@ -115,6 +120,7 @@ def members(
                 True,
                 f"/{human.handle}" if ok else None,
                 bool(human.public_presence),
+                bool(human.public_profile),
             )
         else:
             agent = agents[row.agent_id]
@@ -145,16 +151,6 @@ def _holder(person: Person | None, gone_agent: bool) -> dict[str, str] | str:
     if person is None:
         return "agent" if gone_agent else "member"
     return _shown(person) or ("member" if person.human else "agent")
-
-
-def _who(person: Person | None, gone_agent: bool = False) -> str:
-    """The holder of a card: by name only while the page names them. A holder no longer among
-    the members (isolated, removed) is "an agent" when it was one, else "a member"."""
-    if person is None:
-        return "an agent" if gone_agent else "a member"
-    if person.shown:
-        return f"{escape(person.name or '')} ({escape(person.handle or '')})"
-    return "a member" if person.human else "an agent"
 
 
 def _gone_agents(conn: Connection, project_id: str, who: dict[int, Person]) -> set[int]:
@@ -208,32 +204,6 @@ def board_rows(
     return columns, gone
 
 
-def board_html(
-    columns: list[tuple[str, list[Any]]], who: dict[int, Person], gone: set[int], full: str
-) -> str:
-    """Each card's id links its own page (§16.9, "Card")."""
-    base = escape(f"/{full}/tasks/", quote=True)
-    html = []
-    for status, rows in columns:
-        items = "".join(
-            f'<li><a class="tag" href="{base}{escape(r.id, quote=True)}">{escape(r.id)}</a> '
-            f"{escape(r.title)}"
-            + (f' <span class="tag">{escape(r.label)}</span>' if r.label else "")
-            + (
-                f' <span class="tag">{_who(who.get(r.claim_holder), r.claim_holder in gone)}</span>'
-                if r.claim_holder
-                else ""
-            )
-            + "</li>"
-            for r in rows
-        )
-        html.append(
-            f"<h2>{escape(status.replace('_', ' '))} ({len(rows)})</h2>"
-            + (f"<ul>{items}</ul>" if items else "")
-        )
-    return "".join(html)
-
-
 def board_data(
     columns: list[tuple[str, list[Any]]], who: dict[int, Person], gone: set[int]
 ) -> dict[str, Any]:
@@ -268,10 +238,32 @@ def _other_roles(who: dict[int, Person]) -> dict[str, int]:
     return counts
 
 
-def members_data(who: dict[int, Person]) -> dict[str, Any]:
+def shown_pictures(conn: Connection, who: dict[int, Person]) -> dict[str, str | None]:
+    """The picture of each member the views name, as their own page shows it (§16.9), by human
+    or agent id: the project page's rule (`public_projects.member_pictures`). One read for the
+    Team and the Organisation tab."""
+    shown = [p for p in who.values() if p.shown]
+    return member_pictures(
+        conn,
+        [(p.principal, p.profile_on) for p in shown if p.human],
+        [p.principal for p in shown if not p.human],
+    )
+
+
+def _pictured(person: Person, pictures: dict[str, str | None]) -> dict[str, Any] | None:
+    """Someone shown with the picture their own page shows; None for one the page does not name."""
+    named = _shown(person)
+    return None if named is None else {**named, "picture": pictures.get(person.principal)}
+
+
+def members_data(who: dict[int, Person], pictures: dict[str, str | None]) -> dict[str, Any]:
+    """The Team tab's `data` (§16.9, `team`): each one shown with the picture their own page
+    shows (`pictures`)."""
     shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
     return {
-        "shown": [{**(_shown(p) or {}), "trust": p.trust, "role": p.role} for p in shown],
+        "shown": [
+            {**(_pictured(p, pictures) or {}), "trust": p.trust, "role": p.role} for p in shown
+        ],
         "others": [{"role": r, "count": n} for r, n in sorted(_other_roles(who).items())],
     }
 
@@ -285,8 +277,9 @@ def _tree_order(p: Person) -> tuple[int, str, str, int]:
     return (0, p.handle or "", p.role, p.id) if p.shown else (1, "", p.role, p.id)
 
 
-def organisation_data(who: dict[int, Person]) -> dict[str, Any]:
-    """The nodes carry a number of this answer, so no member id leaves the hub."""
+def organisation_data(who: dict[int, Person], pictures: dict[str, str | None]) -> dict[str, Any]:
+    """The nodes carry a number of this answer, so no member id leaves the hub. A named node's
+    `person` carries the picture as the Team tab's does (`pictures`, §16.9)."""
     ordered = sorted(who.values(), key=_tree_order)
     index = {p.id: i for i, p in enumerate(ordered)}
     nodes = []
@@ -295,46 +288,12 @@ def organisation_data(who: dict[int, Person]) -> dict[str, Any]:
         nodes.append(
             {
                 "index": index[p.id],
-                "person": _shown(p),
+                "person": _pictured(p, pictures),
                 "role": p.role,
                 "reports_to": None if boss is None else index[boss],
             }
         )
     return {"nodes": nodes}
-
-
-def members_html(who: dict[int, Person]) -> str:
-    shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
-    items = "".join(
-        f'<li><a href="{escape(p.address or "", quote=True)}">{escape(p.name or "")}</a>'
-        f" ({escape(p.handle or '')}) "
-        f'<span class="tag">{escape(p.trust)} · {escape(p.role)}</span></li>'
-        for p in shown
-    )
-    others = "".join(
-        f"<li>{n} × {escape(role)}</li>" for role, n in sorted(_other_roles(who).items())
-    )
-    return (f"<ul>{items}</ul>" if items else "") + (
-        f"<h2>Others</h2><ul>{others}</ul>" if others else ""
-    )
-
-
-def organisation_html(who: dict[int, Person]) -> str:
-    """The reporting lines among the members: a boss who is no active member is no line."""
-    children: dict[int | None, list[Person]] = {}
-    for p in who.values():
-        children.setdefault(_boss(p, who), []).append(p)
-
-    def node(p: Person, seen: frozenset[int]) -> str:
-        label = (
-            f"{escape(p.name or '')} ({escape(p.handle or '')}) " if p.shown else ""
-        ) + f'<span class="tag">{escape(p.role)}</span>'
-        below = [c for c in children.get(p.id, []) if c.id not in seen]
-        inner = "".join(node(c, seen | {c.id}) for c in sorted(below, key=_tree_order))
-        return f"<li>{label}{f'<ul>{inner}</ul>' if inner else ''}</li>"
-
-    roots = sorted(children.get(None, []), key=_tree_order)
-    return "<ul>" + "".join(node(p, frozenset({p.id})) for p in roots) + "</ul>" if roots else ""
 
 
 def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> dict[str, Any]:
@@ -374,32 +333,6 @@ def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> 
     }
 
 
-def why_html(data: dict[str, Any]) -> str:
-    if not data["readable"]:
-        return "<p>The Keep the Why of this project is not public, or not read yet.</p>"
-    status = data["summary"]["status"]
-    counts = "".join(f"<li>{escape(key)}: {value}</li>" for key, value in status.items() if value)
-    family = "".join(
-        (
-            f'<li><a href="{escape(m["dashboard_url"], quote=True)}" rel="nofollow ugc">'
-            f'{escape(m["name"] or m["path"])}</a></li>'
-            if m["dashboard_url"]
-            else f'<li>{escape(m["name"] or m["path"])}</li>'
-        )
-        for m in data["family"]
-    )
-    attention = "".join(
-        f'<li><a href="{escape(a["link"], quote=True)}" rel="nofollow ugc">{escape(a["title"])}</a>'
-        f' <span class="tag">{escape(a["status"])}</span></li>'
-        for a in data["attention"]
-    )
-    return (
-        f"<p>{data['summary']['entries']} entries</p><ul>{counts}</ul>"
-        + (f"<h2>Family</h2><ul>{family}</ul>" if family else "")
-        + (f"<h2>Needs attention</h2><ul>{attention}</ul>" if attention else "")
-    )
-
-
 def prepare_why(engine: Engine, hub: Settings) -> None:
     """Read the exports of the projects whose repository the hub last found public, with the
     instance's token and no grant, for the renders that follow: only those in the operator's
@@ -435,20 +368,18 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
         hub.forge_instance_namespaces, full.split("/", 1)[0]
     )
     why = why_data(conn, project, f"/{full}/why", by_instance)
+    faces = shown_pictures(conn, who)
     views = (
-        ("board", "Board", board_html(columns, who, gone, full), board_data(columns, who, gone)),
-        ("team", "Team", members_html(who), members_data(who)),
-        ("organisation", "Organisation", organisation_html(who), organisation_data(who)),
-        ("why", "Why", why_html(why), why),
+        ("board", "Board", board_data(columns, who, gone)),
+        ("team", "Team", members_data(who, faces)),
+        ("organisation", "Organisation", organisation_data(who, faces)),
+        ("why", "Why", why),
     )
     pages = []
-    for view, heading, inner, data in views:
-        content = (
-            f'<p class="eyebrow"><a href="/{escape(full, quote=True)}">{escape(full)}</a></p>'
-            f"<h1>{escape(project.name)}: {heading}</h1>"
-            f"{render.report_link(f'/{full}/{view}')}{inner}"
-        )
+    for view, heading, data in views:
         path = f"/{full}/{view}"
+        # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
+        content = public_design.page(view, data, path)
         digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
         pages.append(
             public_pages.Page(
@@ -458,6 +389,7 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
                     title=f"{heading} of {project.name} ({full})",
                     canonical=f"{hub.public_url.rstrip('/')}{path}",
                     content=content,
+                    styled=False,
                 ),
                 inputs=digest.hexdigest(),
                 lastmod=clock.now(),

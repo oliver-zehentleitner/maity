@@ -44,12 +44,13 @@ def test_a_translation_has_english_keys_and_placeholders(tag: str) -> None:
 
 
 @pytest.mark.parametrize("tag", languages.INTERFACE)
-def test_the_experiment_notice_reads_the_same_on_the_hub_and_the_dashboard(tag: str) -> None:
-    # docs/api.md §5.1 "Experiment notice": the registration page (hub) and the dashboard
-    # (web) show one text in every interface language; each keeps its own copy, so this
-    # keeps them equal.
+def test_the_experiment_notice_has_one_copy_the_registration_pages(tag: str) -> None:
+    # docs/api.md §5.1 "Experiment notice": only the registration page (hub) shows it, so the
+    # hub's catalog holds the one text; the dashboard's catalog (web) keeps no copy that could
+    # drift from it.
     web: dict[str, str] = json.loads((WEB_WORDS / f"{tag}.json").read_text(encoding="utf-8"))
-    assert _file(tag)["register_page.experiment"] == web["experiment.notice"]
+    assert _file(tag)["register_page.experiment"].strip()
+    assert not [key for key in web if key.startswith("experiment.")]
 
 
 def test_a_key_without_a_translation_reads_in_english(monkeypatch: pytest.MonkeyPatch) -> None:

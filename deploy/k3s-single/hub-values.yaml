@@ -6,7 +6,9 @@ config:
   # k3s's pod network: Traefik's pods connect from here.
   trustedProxies: "10.42.0.0/16"
 database:
-  existingSecret: maity-hub-db           # key database-url (docs/install/README.md)
+  existingSecret: maity-hub-db           # key database-url: the role maity_app (docs/install/README.md, "Database roles")
+  migrate:
+    existingSecret: maity-hub-db-migrate # key database-url: the role maity_owner, for the migrate Job only
 secretKey:
   existingSecret: maity-secret-key       # key secret-key (docs/install/README.md)
 mail:
@@ -48,3 +50,13 @@ networkPolicy:
       podSelector:
         matchLabels:
           app.kubernetes.io/name: traefik
+  # The hub's outbound connections: k3s's CoreDNS (the chart's default peer), PostgreSQL
+  # from postgres.yaml, HTTPS and the SMTP port of `mail` above.
+  egress:
+    enabled: true
+    database:
+      to:
+        - podSelector:
+            matchLabels:
+              app: maity-postgres
+      port: 5432

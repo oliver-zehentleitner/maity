@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,8 +9,8 @@ from typing import Any
 import pytest
 from conftest import git
 
-from maity import cli, state
-from maity.runner import config, operate, serve, supervisor, tmux, workspace
+from maity import cli, hub, state
+from maity.runner import config, operate, scratch, serve, supervisor, tmux, workspace
 
 CONFIG = """\
 [hub]
@@ -133,7 +134,7 @@ def test_gc_lists_and_only_removes_with_yes(
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")  # no placement any more
     monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    monkeypatch.setattr(operate, "_active_with_skills", lambda cfg: (set(), set(), set(), set()))
     assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
     out = capsys.readouterr().out
     assert "agent agt-g  credential revoked" in out and "?? draft.txt" in out
@@ -154,7 +155,7 @@ def test_gc_runs_no_hook_of_the_clone(tmp_path: Path) -> None:
     assert not marker.exists()
 
 
-def test_gc_needs_revoked(tmp_path: Path) -> None:
+def test_gc_needs_revoked_or_scratch(tmp_path: Path) -> None:
     path = setup(tmp_path)
     assert cli.main(["runner", "gc", "--config", str(path)]) == cli.EXIT_USAGE
 
@@ -198,7 +199,7 @@ def revoked_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
     monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    monkeypatch.setattr(operate, "_active_with_skills", lambda cfg: (set(), set(), set(), set()))
     return path, place
 
 
@@ -349,7 +350,9 @@ def test_a_clone_an_active_placement_continues_is_kept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path, place = revoked_clone(tmp_path, monkeypatch)
-    monkeypatch.setattr(operate, "_active", lambda cfg: ({("maity", "agent-g")}, set()))
+    monkeypatch.setattr(
+        operate, "_active_with_skills", lambda cfg: ({("maity", "agent-g")}, set(), set(), set())
+    )
     assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
     assert place.path.exists()
 
@@ -390,6 +393,24 @@ def test_an_exact_placement_id_wins_over_a_handle(tmp_path: Path) -> None:
     assert operate._placement_id(cfg, "plc-0004") == "plc-0004"
 
 
+def test_a_placement_id_with_a_trailing_newline_is_not_taken(tmp_path: Path) -> None:
+    path = setup(tmp_path)
+    state.save_state(
+        tmp_path / "st",
+        {"placements": [{"id": "plc-0003\n", "agent": "agent-3"},
+                        {"id": "plc-0004", "agent": "agent-4"}]},
+        name=serve.STATUS_FILE,
+    )  # fmt: skip
+    cfg = config.load(path)
+    assert operate._placement_id(cfg, "plc-0004") == "plc-0004"
+    assert operate._placement_id(cfg, "agent-4") == "plc-0004"
+    assert operate._placement_id(cfg, "plc-0005") == "plc-0005"  # not seen, but an id
+    with pytest.raises(operate.Refused):  # the status entry with the newline is not read
+        operate._placement_id(cfg, "agent-3")
+    with pytest.raises(operate.Refused):
+        operate._placement_id(cfg, "plc-0005\n")
+
+
 def test_only_an_exact_credential_revoked_code_counts(monkeypatch: pytest.MonkeyPatch,
                                                        tmp_path: Path) -> None:  # fmt: skip
     place = workspace.Workspace(tmp_path, "maity", "c")
@@ -408,3 +429,199 @@ def test_only_an_exact_credential_revoked_code_counts(monkeypatch: pytest.Monkey
         "maity.runner.operate.subprocess.run", answer("maity: hub says the credential_revoked flag")
     )
     assert not operate.credential_revoked(place)
+
+
+def _no_sessions(monkeypatch: pytest.MonkeyPatch) -> Any:
+    from test_supervisor import FakeTmux
+
+    backend = FakeTmux()
+    monkeypatch.setattr(supervisor, "local_backend", lambda cfg: backend)
+    return backend
+
+
+@pytest.mark.parametrize("layout", ["holder", "former"])
+def test_gc_scratch_lists_then_removes_what_no_active_placement_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    layout: str,
+) -> None:  # fmt: skip
+    """In the holder `<root>/.scratch/<project>` and in a former per-project `.scratch` alike
+    (tsk-c7zzd440x8pn): what no active placement names is listed, then removed."""
+    _no_sessions(monkeypatch)
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    holder = (cfg.local.workspaces / workspace.SCRATCH / "maity" if layout == "holder"
+              else cfg.local.workspaces / "maity" / workspace.SCRATCH)  # fmt: skip
+    for name in ("plc-0001", "plc-0002"):
+        (holder / name / "tmp").mkdir(parents=True)
+        (holder / name / "tmp" / "venv.bin").write_bytes(b"z" * 2000)
+    (holder / "not-a-placement").mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep").write_text("k")
+    (holder / "plc-0009").symlink_to(elsewhere)
+    monkeypatch.setattr(
+        operate, "_active_with_skills", lambda cfg: (set(), set(), {"plc-0002"}, set())
+    )
+    assert cli.main(["runner", "gc", "--scratch", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert f"{holder / 'plc-0001'}: removable" in out and "plc-0002" not in out
+    assert "not-a-placement: not a placement's; left as it is" in out
+    assert f"{holder / 'plc-0009'}: not a placement's; left as it is" in out  # a link
+    assert (holder / "plc-0001").is_dir()  # listed only
+    assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
+    assert not (holder / "plc-0001").exists() and (holder / "plc-0002").is_dir()
+    assert (elsewhere / "keep").exists() and (holder / "not-a-placement").is_dir()
+    (entry,) = scratch.removals(cfg.state_dir, 10)
+    assert entry["placement"] == "plc-0001" and entry["why"] == "gc"
+    assert entry["size_bytes"] >= 2000
+
+
+def test_gc_scratch_leaves_a_name_with_a_trailing_newline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_sessions(monkeypatch)
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    holder = cfg.local.workspaces / "maity" / workspace.SCRATCH
+    (holder / "plc-0001" / "tmp").mkdir(parents=True)
+    (holder / "plc-0002\n" / "tmp").mkdir(parents=True)
+    other = cfg.local.workspaces / "maity\n" / workspace.SCRATCH / "plc-0003"
+    (other / "tmp").mkdir(parents=True)
+    monkeypatch.setattr(operate, "_active_with_skills", lambda cfg: (set(), set(), set(), set()))
+    assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "plc-0002\\n: not a placement's; left as it is" in out
+    assert not (holder / "plc-0001").exists()  # the plain id is still taken
+    assert (holder / "plc-0002\n").is_dir() and other.is_dir()
+    assert [e["placement"] for e in scratch.removals(cfg.state_dir, 10)] == ["plc-0001"]
+
+
+def test_status_shows_the_sizes_and_the_removals(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    state.save_state(cfg.state_dir, {"placements": [{"id": "plc-0003", "project": "o/m",
+                                                     "generation": 1, "desired": "running"}]},
+                     name=serve.STATUS_FILE)  # fmt: skip
+    state.save_state(cfg.state_dir, {"plc-0003": {"state": "running", "clone_bytes": 3 * 1024**2,
+                                                  "scratch_bytes": 512}},
+                     name=supervisor.ACTUAL_FILE)  # fmt: skip
+    scratch.log_removal(cfg.state_dir, "plc-0001", Path("/w/m/.scratch/plc-0001"), 2048, "closed")
+    assert cli.main(["runner", "status", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "disk     clone 3.0 MiB, scratch 512 B" in out and "removed" not in out
+    assert cli.main(["runner", "status", "--removed", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "plc-0001  2.0 KiB  closed  /w/m/.scratch/plc-0001" in out
+    assert cli.main(["runner", "status", "--removed", "--json", "--config", str(path)]) == 0
+    view = json.loads(capsys.readouterr().out)
+    assert view["placements"][0]["scratch_bytes"] == 512
+    assert view["removed"][0]["placement"] == "plc-0001"
+
+
+class _Answer:
+    def __init__(self, answer: Any) -> None:
+        self.answer = answer
+
+    def call(self, method: str, path: str, **kwargs: Any) -> Any:
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def _hub_answers(monkeypatch: pytest.MonkeyPatch, answer: Any) -> None:
+    service = type("S", (), {"client": _Answer(answer)})()
+    monkeypatch.setattr(serve, "open_service", lambda cfg, state_: service)
+
+
+def test_gc_scratch_keeps_every_scratch_unless_the_hub_gave_a_whole_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_sessions(monkeypatch)
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    room = cfg.local.workspaces / "maity" / workspace.SCRATCH / "plc-0001"
+    room.mkdir(parents=True)
+    argv = ["runner", "gc", "--scratch", "--yes", "--config", str(path)]
+    # A failed read is never "nothing active": gc refuses.
+    _hub_answers(monkeypatch, hub.HubError("401 credential_revoked", code="credential_revoked",
+                                           status=401))  # fmt: skip
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "cannot ask the hub which placements are active" in capsys.readouterr().err
+    # An answer that is not a list refuses too.
+    _hub_answers(monkeypatch, {"items": None})
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "did not answer with a list" in capsys.readouterr().err
+    # One item it cannot read: every scratch is kept.
+    _hub_answers(monkeypatch, {"items": [{"id": "not-a-placement"}]})
+    assert cli.main(argv) == 0
+    assert "every scratch is kept" in capsys.readouterr().out
+    assert room.is_dir()
+    # A whole list without it: removed.
+    _hub_answers(monkeypatch, {"items": []})
+    assert cli.main(argv) == 0
+    assert not room.exists()
+
+
+def test_gc_scratch_keeps_a_scratch_while_a_session_of_its_placement_is_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    backend = _no_sessions(monkeypatch)
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    room = cfg.local.workspaces / "maity" / workspace.SCRATCH / "plc-0001"
+    room.mkdir(parents=True)
+    argv = ["runner", "gc", "--scratch", "--yes", "--config", str(path)]
+    _hub_answers(monkeypatch, {"items": []})  # the hub reads it as not active
+    # A session the stopped service left, even a dead pane: kept.
+    backend.live["maity_maity_agent-1"] = tmux.Session("maity_maity_agent-1", True, 0, 9,
+                                                       "plc-0001", 1)  # fmt: skip
+    assert cli.main(argv) == 0
+    assert "kept (a session of the placement is still there)" in capsys.readouterr().out
+    assert room.is_dir()
+    # Sessions that cannot be read: every scratch is kept.
+    del backend.live["maity_maity_agent-1"]
+
+    def unreadable() -> dict[str, tmux.Session]:
+        raise tmux.TmuxError("tmux list-panes failed: boom")
+
+    monkeypatch.setattr(backend, "sessions", unreadable)
+    assert cli.main(argv) == 0
+    assert "sessions could not be read" in capsys.readouterr().out
+    assert room.is_dir()
+
+
+def test_gc_scratch_removes_nothing_through_a_linked_project_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_sessions(monkeypatch)
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / workspace.SCRATCH / "plc-0001").mkdir(parents=True)
+    (elsewhere / workspace.SCRATCH / "plc-0001" / "keep").write_text("k")
+    cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    (cfg.local.workspaces / "maity").symlink_to(elsewhere)
+    # In the holder layout too: a project's directory in `<root>/.scratch` that is a link.
+    (elsewhere / "inner" / "plc-0002").mkdir(parents=True)
+    (elsewhere / "inner" / "plc-0002" / "keep").write_text("k")
+    (cfg.local.workspaces / workspace.SCRATCH).mkdir()
+    (cfg.local.workspaces / workspace.SCRATCH / "other").symlink_to(elsewhere / "inner")
+    _hub_answers(monkeypatch, {"items": []})
+    assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    # A link on the way is named in one line and never gone into (the reviews of #2112,
+    # A2055): nothing behind it is listed, let alone removed.
+    ws = cfg.local.workspaces
+    for link in (ws / "maity", ws / workspace.SCRATCH / "other"):
+        assert f"scratch  {link}: a link, skipped (not gone into)" in out
+    assert "plc-0001" not in out and "plc-0002" not in out
+    assert (elsewhere / workspace.SCRATCH / "plc-0001" / "keep").read_text() == "k"
+    assert (elsewhere / "inner" / "plc-0002" / "keep").read_text() == "k"

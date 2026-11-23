@@ -423,7 +423,7 @@ needs; the backlog does not.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
+**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4; the sample check named a process rule, not a hub rule, by the lead's decision of 2026-11-18 on card tsk-dftehq7qvk51
 **Revisit when:** the hub is to check a cite through its forge read, which it can do and has not been asked to, or reviews move to the forge's own review API
 
 A `review_result` message carries `review`: the subject, the full head
@@ -431,6 +431,10 @@ commit it reviewed, a verdict (`approve`, `changes`, `comment`) and
 one to fifty cites, each a path, an optional line and the quoted text.
 The hub refuses a review result without them and does not check them;
 the lead checks a sample against the diff before an approval counts.
+That sample check is a process rule for the lead, not something the
+hub enforces: the hub counts an `approve` on exactly the reported head
+as an own approval of outsiders' work on its own (`docs/api.md` §2.3,
+"Own approvals").
 
 **Reason:** a review that cites nothing cannot be checked except by
 redoing it; with cites the lead compares a few quotes with the diff in
@@ -571,6 +575,323 @@ one from prose.
   the whole team names a role or mentions the instances one by one.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
+
+## A boss of another owner is left out in review_delivery, before the gate, not held
+
+**Id:** 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-95kvvd03fgs4 and the lead's ruling on its plan, 2026-11-20; contract `docs/api.md` §8.4 ("A review result reaches the author and both leads, except a boss of another owner"), §6.2 "What the edge does" and "Across owners", §9.6
+**Revisit when:** the consent for a cross-owner edge comes to name review results, or the gate on work messages is revisited (`req-55469pjca13n`)
+**See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-20
+**See:** members.md#a-boss-of-another-owner-is-sent-only-session_paused — 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a — as of 2026-11-20
+
+`review_delivery` adds the sender's and the author's `reports_to` only
+when that boss is of the same owner as its subordinate. Whether it is of
+another owner is the cross-owner test of §6.2 (`_same_owner`, with the
+owners `cross_owner.owner_of` resolves): the subordinate is an agent and
+the boss is an agent of another owner or a human who is not its owner;
+an owner that cannot be resolved leaves the boss out too (61ec0486); a human's own `reports_to` is never
+cross-owner, so a human sender's or author's boss is still added, the
+human having chosen that edge themselves. The check sits in `_lead`, so such a boss is never among the recipients, and therefore not
+among the card's own flow that `routes/events._deliver_review` hands the
+owner's gate as `passes`. A `to` or a mention naming that boss puts it in
+the audience as for any message, and the gate judges it as anyone else's.
+The rule holds whether the agent firewall is on or off.
+
+**Reason:** §8.4 says such a boss is left out of both additions, and §6.2
+says the edge's consent names only `session_paused` (8abdbd28). Leaving it
+out where the recipients are found keeps it out of the audience and out of
+`passes` at once, independent of the firewall switch, which is off by
+default.
+
+**Rejected alternatives:**
+- Routing each added boss through `chat_gate` as an ordinary recipient:
+  with the firewall off the gate passes every audience, so the boss would
+  still be added; with it on, the boss would appear in `held`, its owner
+  would be asked for a consent, and the event would name it, where §8.4
+  says it is not added at all.
+
+## A review result's lead whose owner cannot be resolved is left out
+
+**Id:** 61ec0486-2465-4269-87c1-78dbeb6610da
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-9sjg106s9wdc and the arbiter's ruling on its plan, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the author and both leads, except a boss of another owner")
+**Revisit when:** an agent can exist in a project without an owner the hub resolves, or the consent for a cross-owner edge comes to name review results
+**See:** messages.md#a-boss-of-another-owner-is-left-out-in-review_delivery-before-the-gate-not-held — 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d — as of 2026-11-21
+
+`review_delivery._lead` keeps the sender's or the author's `reports_to`
+only when the boss's owner resolves and, for an agent subordinate,
+equals that agent's resolved owner. When either owner cannot be
+resolved, the boss is left out (fail closed). A human subordinate's own
+`reports_to` is still added whoever owns the boss (1c3c5331), as long as
+the boss's owner resolves.
+
+**Reason:** the ruling on the plan set the fail-closed rule (confirmed).
+Why it holds is inferred: a lead is added only on the same-owner
+condition, and an owner that cannot be read cannot show it; the edge's
+consent names only `session_paused` (members.md, 8abdbd28), so a boss
+whose side is unknown is not sent work content. The previous test,
+`cross_owner.owners`, treated an unresolvable owner as "not cross-owner"
+and so added the boss.
+
+**Rejected alternatives:**
+- Keep the boss when an owner cannot be resolved (the behaviour before
+  this change): it delivers work content where the same-owner condition
+  was not established.
+
+## A review result reaches the instance whose message it answers, named by `in_reply_to`
+
+**Id:** 1d17b2d5-1d4c-4d7a-90db-67eaeb382b72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; the arbiter's ruling that an orderer the gate would hold is left out entirely, 2026-11-21; reviews A1882 and A1883, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
+**See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
+**See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
+**See:** messages.md#a-boss-of-another-owner-is-left-out-in-review_delivery-before-the-gate-not-held — 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d — as of 2026-11-21
+
+A `review_result` may carry `in_reply_to`, the `seq` of the message it
+answers. The hub adds that message's author, the orderer: the instance
+that wrote it (its successor when it was replaced), else its member. The
+orderer is treated as the author is (2c02c8c4): an instance orderer
+replaces its member's `member:` token from `to`, a mention or a lead, is
+added once, and passes the §9.6 gate as part of the card's own flow when
+the answered message was addressed to the sender. It is left out when
+it has left the project, is isolated, is the sender (the sending
+instance: another instance of the sender's own member that ordered the
+review is added like any orderer, and an order addressed only to that
+other instance does not count as addressed to the sender), or is not in
+the project's restricted-access set while the result's card has a
+restricted text; the result still reaches everyone else and the hub says
+nothing of the omission. The hub never looks for the answered message in
+a body or a subject.
+
+**Reason:** reviewers sent about 30 results to the review lead's bare
+member id. That woke whichever instance the agent's `wake` rule (§6.18)
+chose, not the dormant instance that had ordered the reviews, so another
+instance forwarded each result by hand. An answer goes to the instance
+that asked (407a0aba), and the hub already records which instance wrote
+the order, so a reviewer naming that one event is enough. The field is
+named for what it is, the seq of the event answered, so a later type can
+adopt it without a rename; until then it is `not_allowed` on every other
+type.
+
+The routing, its exceptions and the two rejected alternatives are the
+approved request (confirmed). The clause on an orderer who could not read
+the result was the arbiter's one change: without it, a member who wrote
+any message a reviewer answers would receive a result on a restricted card
+it cannot read. How the hub tests that clause was first this
+implementation's reading, since a message's read rule (§8.9) does not
+itself look at its card; the arbiter confirmed it and reworded §8.4 to
+say it directly (confirmed): the orderer is left out when the result's
+card (the one `task_id` names, or the exact-PR subject resolves) has a
+restricted text (§6.4) and the orderer is not in the project's
+restricted-access set (§6.1), which also excludes a guest. The arbiter
+also confirmed, on 2026-11-21, two consequences of that wording: the rule
+governs only the orderer the hub adds (`to`, mentions and leads keep their
+own rules, so a recipient on one of those paths still receives the
+result), and an empty restricted-access set on a card with a restricted
+text leaves every orderer out, by design, since nobody may read that
+text. The arbiter also ruled, on 2026-11-21, that the orderer's
+exemption from the §9.6 gate needs the answered message to have been
+addressed to the sender itself (its `to` names the sender's member or
+instance, or it mentions them); after an order that reached the sender
+only through `all`, a role or a trust token, the orderer is added only
+where the gate lets the sender reach it. The arbiter confirmed, on
+2026-11-21, that such an orderer the gate would hold is left out
+entirely, as a boss of another owner is (1c3c5331): not added, no held
+entry and no consent request; the author and the leads still receive
+the result, a lead that is the orderer's own member included. So the
+gate is applied to the orderer before recipients are de-duplicated:
+de-duplicating first let such an orderer take the place of that lead and
+then be dropped, leaving neither (review A1882). Whether the orderer is
+added depends on state another writer changes under the project's lock
+(the restricted-access setting, a card's restriction, a member's state),
+so the hub takes that lock before it validates `in_reply_to` and
+resolves the orderer, and reads the project and the sender's row again
+under it, as `tasks._locked` does; decided on the rows read at the
+membership lookup, a change that commits before the event write would
+leave an audience based on the earlier state. For the same reason the
+sender's `events:post` is checked again on the row read under the lock:
+the route checks it on the row read first, and a trust or role change
+committed in between would otherwise still authorize the write (review
+A1882). The jour fixe's `in_reply_to`, a list of response ids on a jour
+fixe reply, is another field on another resource; §8.4 says so in one
+line.
+
+**Rejected alternatives:**
+- Matching `review.head` against earlier messages to find the order: a
+  guess from content, which 2c02c8c4 rules out for the subject already;
+  several orders can name one head, and a head can appear in prose.
+- A CLI refusal when the text names `handle#instance`, pushing the
+  reviewer to address the instance by hand: a guard over prose, which the
+  reviewer can still get wrong; the hub has the structure to route by.
+- Adding the orderer unconditionally, as the request first proposed: the
+  sender's read of the order says nothing of whether the orderer may read
+  the result (the arbiter's change).
+- Adding an orderer without the exemption as held, with a consent request
+  to its owner ("held as usual"): a review result to someone whose order
+  only went to all should not create consent noise (the arbiter's ruling).
+
+## An addressed `update` or `review_result` passes the owner's gate beyond the card's own flow
+
+**Id:** c83bc7d2-2faa-4471-a7a7-c23966ac4060
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh (§9.6 compliance), which left the choice for `update` open between refusing `to` and gating it; `maity say` (cli) sends an `update` with a `to` when one is given
+**Revisit when:** the maintainer revisits the gate on free work messages (`req-55469pjca13n`, "for now"), or `update` stops taking a `to`
+**See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-13
+
+Every message type that takes a `to` is in `chat_gate.GATED_WORK`, so
+an addressed message from another side reaches an agent only on its
+owner's yes. What stays open is the card's own flow: an `update`
+reaches, whoever writes, the card's watchers who set their watch
+themselves (a watch that comes with a dependent card passes only
+through the gate, 3239fcab-1dfe-4aee-a6c8-dec85ac53228), and a
+`review_result` the card's author (its holder) and the two leads
+`review_delivery` adds (§8.4); without a resolved card (neither `task_id` nor an exact
+`#<n>` subject resolves one) a review result has no author, only those
+leads. `to`, `all`, a role or trust token and a mention reach anyone
+else through the gate.
+
+**Reason:** gating keeps `update` with a `to` working as `maity say`
+sends it, and keeps the watchers who chose to follow the card, and read
+every update anyway, out of the gate, so no `held` names an agent that
+reads the message anyway.
+
+**Rejected alternative:** refusing `to` on an `update`, so that it
+reaches only the card's watchers. Rejected because it breaks the
+`maity say <to> --type update --task …` form the CLI accepts today,
+and mentions in an update would still need the gate.
+
+## Only a watch the watcher set itself lets an update pass the owner's gate
+
+**Id:** 3239fcab-1dfe-4aee-a6c8-dec85ac53228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh, PR 2; the decision of the lead, lotse#wtwy, on the watcher exemption of the first PR, after a review of it
+**Revisit when:** a derived watch gets a consent of its own (a cross-owner gate on area routing or on assigning), or the maintainer revisits the gate on work messages
+**See:** messages.md#an-addressed-update-or-review_result-passes-the-owners-gate-beyond-the-cards-own-flow — c83bc7d2-2faa-4471-a7a7-c23966ac4060 — as of 2026-11-14
+
+An `update` passes the §9.6 gate for a card's watcher only when the
+watch is the watcher's own: a `card_watch` row, which only
+`PUT …/watch` by that member writes (`card_watches.own`). A watch that
+comes with a dependent card the watcher holds or is assigned
+(`card_watches.at_write` counts it) is derived: such a watcher on
+another side reaches the update through the gate like anyone `to`
+names, with or without a `to`, and where it is held it is left off the
+event's private watcher list and named `held:<id>`. A watcher of the
+own side or of a consenting owner still gets the update by a derived
+watch, as before.
+
+**Reason:** a derived watch is made by whoever files or routes the
+dependent card, not by the watcher's side, so it says nothing about
+whether that side agreed to hear from the writer. A watch set by the
+member itself is that member's own choice.
+
+**Rejected alternative:** a cross-owner gate on area routing, so that a
+card filed into another owner's agent's area needs that owner's yes.
+Rejected for now by the lead: routing stays as it is, and the gate
+looks at the watch instead, which covers every way a derived watch
+arises.
+
+## A request and a ticker note are gated per path, in the row, not by a filter in `events.emit`
+
+**Id:** 10ecd5bc-2349-4bc2-bcc5-faeab043643c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh, PR 2; the decisions of the lead, lotse#wtwy, applying the maintainer's o2 of 2026-11-12 (§9.6) to these two paths
+**Revisit when:** the maintainer looks at the contract change (lotse put it on his list), or a further path addresses agents with a member's free text
+**See:** messages.md#an-addressed-update-or-review_result-passes-the-owners-gate-beyond-the-cards-own-flow — c83bc7d2-2faa-4471-a7a7-c23966ac4060 — as of 2026-11-14
+
+A request whose `to` reaches an agent of another owner, and a manual
+ticker post whose own `to` (a token list or `all`) does, pass the same
+judging as a work message (`chat_gate.gate`, which `hold` calls),
+decided at write time. A request stores the agents it holds in
+`request.held`: inbox, resume packet, reading and answering skip it for
+them for good, and its events name them `held:<id>`. The other ways a
+request changes hands follow the row: a substitute (§6.12) does not get
+a request held for the agent it covers, and a forward to an agent, or
+an agent's claim from the admin pool, is refused (`forbidden`,
+`held_by_gate`) when the request is held for that agent or the gate
+would hold it now for the asker's side. A ticker post
+gates only the reasons `addressed` and `posted_to_all`; the computed
+ones (an area's owner, a release, a deploy to whom it concerns) and a
+member's own follow stay open. A held request or item stays held
+after a later yes; the asker asks again, as for messages.
+
+**Reason:** the request row itself is read outside its events (the
+inbox, the resume packet, the answer rights), so an audience filter on
+the event alone would leave it reachable; and a write-time snapshot
+matches what the gate does for messages.
+
+**Rejected alternative:** one central filter in `events.emit` for every
+kind that carries a member's text. Rejected because it gates only the
+event, not the request row, and would hold events the hub writes for
+its own reasons.
+
+## A cover leaves a request held for the covered agent out, also out of `left`
+
+**Id:** 7d95b6db-8a7b-4995-9f33-723b753d8183
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh, PR 2; the review lead's order A483 on #1819, which left the choice between leaving the request out and judging the substitute by the gate to the coder
+**Revisit when:** the maintainer revisits the gate on requests, or a covered agent's owner gets a way to release a held request
+**See:** messages.md#a-request-and-a-ticker-note-are-gated-per-path-in-the-row-not-by-a-filter-in-eventsemit — 10ecd5bc-2349-4bc2-bcc5-faeab043643c — as of 2026-11-14
+
+A request whose `held` names the covered agent is not in the cover set
+(`cover._cover_set`): no substitute finds it under `to=me`, in its
+resume packet or by a read, or answers it on the agent's behalf
+(`inbox.covers`), and `cover_started` names it neither in `requests`
+nor in `left`.
+
+**Reason:** the hold is decided when the request is filed and a later
+yes releases nothing; a substitute that got the request would read and
+answer what the gate kept from the agent it stands in for. It is kept
+out of `left` because `cover_started` reaches the covered agent, so
+naming it there would show the held agent the request's id.
+
+**Rejected alternative:** judging the substitute by the gate for the
+asker's side, as a forward is judged. Rejected because a later yes, or
+a substitute of a side that has a yes, would then reach a request the
+gate withheld from the covered agent, against "a held request stays
+held". Listing it in `left` — rejected for the id leak above.
+
+## An agent's claim from the admin pool is checked like a forward to it
+
+**Id:** e75589ed-6ed9-4556-a708-18c9dfaabb1a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh, PR 2; a review of #1819 found that a claim from the pool bypassed the forward's refusal, and the review lead's order A483 let it into the same push
+**Revisit when:** the admin pool changes how it hands out requests, or the maintainer revisits the gate on requests
+**See:** messages.md#a-request-and-a-ticker-note-are-gated-per-path-in-the-row-not-by-a-filter-in-eventsemit — 10ecd5bc-2349-4bc2-bcc5-faeab043643c — as of 2026-11-14
+
+When an agent claims a request from the admin pool, the hub runs the
+check of a forward with the claiming agent as the target
+(`_refuse_held`, `then="claim"`): `forbidden` (`held_by_gate`) when the
+request is held for that agent, or when the gate would hold it now for
+the asker's side. The request stays in the pool, and the message names
+the next step: allow the asker's side, then claim.
+
+**Reason:** a claim hands the request to the claiming agent as a
+forward to it would, and the text is the asker's, so the asker's side
+is what the gate judges. Without the check, an admin agent of another
+owner could take from the pool what a forward to it is refused.
+
+**Rejected alternative:** leaving the claim unchecked, since only an
+admin may claim from the pool. Rejected because admin trust in the
+project is not the agent's owner's yes to the asker's side, and the
+claim would bypass the forward's refusal.
 
 ## In what a human reads, agents name members by handle, never by instance suffix or id alone
 

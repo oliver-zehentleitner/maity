@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,6 +20,7 @@ from tests.conftest import ClientFactory
 from tests.test_pages import hero, publish
 
 PATH = "/oz-team"
+WEB_INDEX = Path(__file__).resolve().parents[2] / "web" / "index.html"
 
 
 def store(engine: Engine, path: str = PATH, body: str | None = None) -> None:
@@ -91,10 +93,39 @@ def test_the_frame_is_put_around_the_stored_page_when_it_is_served(
     assert '<html lang="en">' in page and "<title>OZ Team</title>" in page
     assert '<link rel="canonical" href="https://hub.example/oz-team">' in page
     assert "/assets/landing/public-pages.css?v=" in page
+    assert "/assets/landing/public-sections.css?v=" in page  # the public pages' design (§16.9)
     # The page has one language, the content's: no hreflang links.
     assert "hreflang" not in page
     with migrated.connect() as conn:
         assert conn.execute(select(t.public_page.c.body)).scalar_one() == row.body
+
+
+def test_a_page_in_the_dashboards_design_stands_in_main_as_the_dashboard_draws_it(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.9: a page in the dashboard's design draws its own sections across the page, so the frame
+    puts it into `<main>` as it is, where the dashboard puts its view, not into the stored pages'
+    column; and it carries no stylesheet of its own."""
+    client = visitor(make_client)
+    content = (
+        '<section class="view-visitor public-view" data-kind="project">'
+        '<section class="phero hero dz"><div class="wrap"><h1>OZ Team</h1></div></section>'
+        "</section>"
+    )
+    store(
+        migrated,
+        body=render.page_document(
+            lang="en",
+            title="OZ Team",
+            canonical=f"https://hub.example{PATH}",
+            content=content,
+            styled=False,
+        ),
+    )
+    with migrated.connect() as conn:
+        assert "<style" not in conn.execute(select(t.public_page.c.body)).scalar_one()
+    page = client.get(PATH).text
+    assert f"<main>{content}</main>" in page and "stored-page" not in page
 
 
 def only_the_frames_script(html: str) -> bool:
@@ -375,6 +406,39 @@ def test_a_slash_at_the_end_leads_a_visitor_to_the_page(
     assert client.get("/nobody/here/", follow_redirects=False).status_code != 308
 
 
+def test_the_frame_sheets_come_after_the_dashboards_own_in_the_real_shell() -> None:
+    """landing.css sets the root's and the body's type as css/app.css does, and the later one
+    wins: the shell links the frame's sheets after the dashboard's own, where js/site-chrome.js
+    appends them, so a page has the same type however the visitor came to it (tsk-zhyqdtt5v59c)."""
+    shell = shell_module.versioned(
+        shell_module.shell_document(WEB_INDEX.read_bytes(), "https://hub.example"),
+        WEB_INDEX.parent,
+    )
+    designed = render.page_document(
+        lang="en",
+        title="T",
+        canonical="https://hub.example/t",
+        content='<section class="view-visitor public-view" data-kind="board"><h1>T</h1></section>',
+        styled=False,
+    )
+    shown = shell_module.page_in_shell(shell, designed)
+    assert shown is not None
+    head = shown.split(b"</head>")[0].decode()
+    sheets = [
+        href.split("?")[0]
+        for rel, href in re.findall(r'<link rel="(\w+)" href="([^"]+)"', head)
+        if rel == "stylesheet"
+    ]
+    assert sheets == [
+        "css/app.css",
+        "brand/loader.css",
+        "/assets/landing/landing.css",
+        "/assets/landing/public-pages.css",
+        "/assets/landing/public-sections.css",
+    ]
+    assert re.search(r'<html class="public-frame"[ >]', shown.decode())
+
+
 def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None:
     shell = (
         b'<html><head><title>Maity</title><meta name="description" content="x"></head><body>'
@@ -387,8 +451,36 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
     assert made is not None
     assert b"<title>A &amp; B</title>" in made and b"Loading" not in made
     assert b'<link rel="canonical" href="https://hub.example/a">' in made
-    assert b'<main id="main" data-public-page><h1>Text</h1></main>' in made
+    # In the wrapper the dashboard's first view replaces, invisible until then (tsk-777vkhtzmq6f).
+    assert (
+        b'<main id="main" data-public-page><div class="hub-page"><h1>Text</h1></div></main>' in made
+    )
     assert b'src="js/app.js"' in made and b'content="x"' not in made
+    # Not in the dashboard's design: no frame sheets, the root not marked as in the frame.
+    assert b"/assets/landing/" not in made and b"public-frame" not in made
+    # In the dashboard's design: it stands as it is, the frame's stylesheets in the head and the
+    # root marked as in the frame, so the first paint is the page drawn over it (tsk-zhyqdtt5v59c).
+    designed = render.page_document(
+        lang="en",
+        title="T",
+        canonical="https://hub.example/t",
+        content='<section class="view-visitor public-view" data-kind="board"><h1>T</h1></section>',
+        styled=False,
+    )
+    shown = shell_module.page_in_shell(shell, designed)
+    assert shown is not None
+    assert (
+        b'<main id="main" data-public-page><section class="view-visitor public-view"' in shown
+        and b"hub-page" not in shown
+    )
+    head = shown.split(b"</head>")[0]
+    sheets = [s for s in head.split(b'<link rel="stylesheet" href="')[1:]]
+    assert [s.split(b"?v=")[0] for s in sheets] == [
+        b"/assets/landing/landing.css",
+        b"/assets/landing/public-pages.css",
+        b"/assets/landing/public-sections.css",
+    ]
+    assert shown.startswith(b'<html class="public-frame">')
     social = shell_module.page_in_shell(
         b'<html><title>M</title><meta property="og:title" content="Maity">'
         b'<meta property="og:description" content="Old"><main id="main"></main></html>',
@@ -413,6 +505,46 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
     assert b'property="og:description" content="a&quot; b"' in escaped
     assert shell_module.page_in_shell(b"<html></html>", page) is None
     assert shell_module.page_in_shell(shell, "<html></html>") is None
+
+
+@pytest.mark.parametrize("kind", ["person", "agent"])
+def test_a_person_and_an_agent_page_stand_in_the_shell_at_once(kind: str) -> None:
+    """Since PR 4 of tsk-zhyqdtt5v59c a person's and an agent's stored page are in the dashboard's
+    design: in the shell they stand as they are, no `.hub-page`, the frame's three sheets once."""
+    import json
+
+    from maity_hub import public_design
+
+    fixture = Path(__file__).resolve().parents[2] / "web" / "tools" / "public-pages-fixture.json"
+    answer = next(p for p in json.loads(fixture.read_text()) if p["kind"] == kind)
+    page = render.page_document(
+        lang="en",
+        title="T",
+        canonical="https://hub.example" + answer["path"],
+        content=public_design.page(kind, answer["data"], answer["path"]),
+        styled=False,
+    )
+    assert "<style" not in page
+    shell = (
+        b'<html><head><title>Maity</title></head><body><script src="js/app.js"></script>'
+        b'<main id="main"><p>Loading</p></main></body></html>'
+    )
+    shown = shell_module.page_in_shell(shell, page)
+    assert shown is not None
+    opening = (
+        b'<main id="main" data-public-page><section class="view-visitor public-view profile-view"'
+        + f' data-kind="{kind}">'.encode()
+    )
+    assert opening in shown and b"hub-page" not in shown
+    assert f"<h1>{escape(answer['data']['name'])}</h1>".encode() in shown
+    head = shown.split(b"</head>")[0]
+    sheets = [s.split(b"?v=")[0] for s in head.split(b'<link rel="stylesheet" href="')[1:]]
+    assert sheets == [
+        b"/assets/landing/landing.css",
+        b"/assets/landing/public-pages.css",
+        b"/assets/landing/public-sections.css",
+    ]
+    assert shown.startswith(b'<html class="public-frame">')
 
 
 def test_a_visitor_gets_the_shell_with_the_page_and_as_public_the_bare_page(

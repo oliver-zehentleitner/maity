@@ -16,6 +16,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from maity_hub import clock, events, proposals
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
+from maity_hub.plain_text import plain
 from maity_hub.scopes import in_admin_team
 
 MAX_BYTES = 8192  # §1.7
@@ -30,7 +31,18 @@ KIND = "preferences"
 
 
 def size(text: str) -> int:
-    return len(text.encode())
+    # `surrogatepass`: a lone surrogate (Cs) is counted here and refused by `plain` in `check`.
+    return len(text.encode("utf-8", "surrogatepass"))
+
+
+def check(text: str) -> None:
+    """`invalid` for a text that may not be stored: over 8 KiB (`too_long`), or a character
+    the plain-text rule refuses (`control_character`; line feed and tab stay, §1.7.1). Agents
+    read the text, so nothing in it may hide from the human who wrote or confirmed it."""
+    if size(text) > MAX_BYTES:
+        raise invalid({"markdown": "too_long"}, "preferences are at most 8 KiB")
+    if not plain(text, keep="\n\t"):
+        raise invalid({"markdown": "control_character"}, "preferences are plain text")
 
 
 def _handle(conn: Connection, kind: str, principal: str) -> str | None:
@@ -112,8 +124,7 @@ def write(
 ) -> dict[str, Any]:
     """The next version, under the human row's lock; `conflict` when `base_version` is
     given and not current (§19.4: never a silent overwrite)."""
-    if size(text) > MAX_BYTES:
-        raise invalid({"markdown": "too_long"}, "preferences are at most 8 KiB")
+    check(text)
     conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
     current = current_version(conn, human_id)
     if base_version is not None and base_version != current:
@@ -410,12 +421,26 @@ def open_proposals(conn: Connection, membership_id: int, human_id: str) -> list[
     return [r for r in rows if (r.proposal or {}).get("kind") == KIND]
 
 
+def _require_proposer(conn: Connection, request: Any, human_id: str) -> None:
+    """The proposing agent still stands and may still propose (§19.4): its `go` is given
+    on that agent's authority, which a demotion or a suspension took away."""
+    from maity_hub.access import Membership
+
+    row = proposals.proposer_row(conn, request)
+    if row is None:
+        raise proposals.proposer_lost()
+    project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
+    if not may_propose(conn, Membership(project, row, "agent"), human_id):
+        raise proposals.proposer_lost()
+
+
 def settle(conn: Connection, settled: proposals.Settlement) -> None:
     """On `go`: the proposed text, or the human's edit of it, becomes the next version.
     The answer route checked `base_version` before it answered (`check_answer`)."""
     if settled.outcome != "go" or settled.approver is None:
         return
     proposal, request = settled.proposal, settled.request
+    _require_proposer(conn, request, proposal["human_id"])
     edit = proposal.get("edit")
     proposer = {**proposal["proposed_by"], "request_id": request.id}
     if edit is None:
@@ -454,8 +479,8 @@ def check_answer(
     base = edit["base_version"] if edit is not None else proposal["base_version"]
     if base != current:
         raise conflict(current, base)
-    if edit is not None and size(edit["markdown"]) > MAX_BYTES:
-        raise invalid({"markdown": "too_long"}, "preferences are at most 8 KiB")
+    if edit is not None:
+        check(edit["markdown"])
 
 
 proposals.register(

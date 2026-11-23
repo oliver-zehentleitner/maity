@@ -17,7 +17,7 @@ from sqlalchemy.orm import aliased
 
 from maity_hub import clock, mentions, namespace, paging
 from maity_hub import tables as t
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import Caller, attachment_in, in_attachment
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, on_rollback
 from maity_hub.ids import new_id
@@ -794,8 +794,11 @@ def messages(
     }
 
 
-def _charge(conn: Any, caller: Caller, count: int) -> None:
-    """One ping per mentioned participant other than the writer (§8.6, §9.5)."""
+def _charge(conn: Any, caller: Caller, count: int, project: str | None) -> None:
+    """One ping per mentioned participant other than the writer (§8.6, §9.5): an agent's from
+    the membership of its live attachment in the project the post names, or of its only one;
+    an instance in several projects names it (`project: required`), and never spends another
+    project's pings."""
     if count <= 0:
         return
     if caller.kind == "human":
@@ -805,8 +808,9 @@ def _charge(conn: Any, caller: Caller, count: int) -> None:
             raise rate_limited(wait)
         on_rollback(conn, lambda: OWNER_PINGS.release(key, mark, count))
         return
-    assert caller.membership_id is not None
-    mentions.charge(conn, caller.membership_id, count)
+    from maity_hub import attached
+
+    mentions.charge(conn, attached.one(conn, caller, project).membership_id, count)
 
 
 def _resolve(conn: Any, chat_id: str, text: str) -> list[dict[str, Any]]:
@@ -902,23 +906,29 @@ def _resolve(conn: Any, chat_id: str, text: str) -> list[dict[str, Any]]:
 def _known_instances(conn: Any, agent_ids: set[str], wanted: set[str]) -> set[tuple[str, str]]:
     if not agent_ids or not wanted:
         return set()
+    from maity_hub import instances  # instances imports what this module's imports import
+
+    a = t.instance_attachment
     successor = aliased(t.credential)
+    successor_in = aliased(a)
     replaced = (
         select(successor.c.id)
+        .join(successor_in, successor_in.c.credential_id == successor.c.id)
         .where(
-            successor.c.membership_id == t.credential.c.membership_id,
+            successor_in.c.membership_id == a.c.membership_id,
             successor.c.replaces == t.credential.c.instance,
         )
         .exists()
     )
     rows = conn.execute(
         select(t.membership.c.agent_id, t.credential.c.instance)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .select_from(instances.credential_join())
+        .join(t.membership, t.membership.c.id == a.c.membership_id)
         .where(
             t.membership.c.agent_id.in_(agent_ids),
             t.membership.c.active.is_(True),
             t.credential.c.instance.in_(wanted),
-            or_(t.credential.c.revoked_at.is_(None), replaced),
+            or_(instances.attached_now(), replaced),
         )
     )
     return {(r.agent_id, r.instance) for r in rows}
@@ -944,29 +954,19 @@ def _author_actor(conn: Any, caller: Caller, project_id: str) -> Actor:
                 session_id=caller.session_id,
             )
         return Actor(None, via=caller.via, human_id=caller.human_id)
-    membership_id = conn.execute(
-        select(t.membership.c.id).where(
-            t.membership.c.project_id == project_id,
-            t.membership.c.agent_id == caller.agent_id,
-            t.membership.c.active.is_(True),
-        )
-    ).scalar()
-    if membership_id is not None:
-        if caller.membership_id == membership_id:
-            return caller.actor(int(membership_id))
-        return Actor(
-            membership_id=int(membership_id),
-            session_id=caller.session_id,
-            credential_id=caller.credential_id,
-            via=caller.via,
-            harness=caller.harness,
-            model=caller.model,
-        )
+    # An agent acts as a member only through its instance's live attachment in that project
+    # (§6.17, the lead's Q4), never through another project's, nor through a membership of
+    # its profile this instance is not attached to, nor an isolated one (§6.2).
+    attachment = attachment_in(conn, caller, project_id)
+    if attachment is not None and attachment.isolated_since is None:
+        return in_attachment(caller, attachment).actor(int(attachment.membership_id))
     return Actor(None, via=caller.via, agent_id=caller.agent_id, agent_instance=caller.instance)
 
 
 def _mention_home(conn: Any, agent_id: str) -> Any:
-    """The one non-isolated membership that resumed most recently, or None."""
+    """The one non-isolated membership that resumed most recently, or None. An instance
+    detached from a membership's project resumes nothing for it (§6.17)."""
+    a = t.instance_attachment
     rows = conn.execute(
         select(
             t.membership.c.id,
@@ -974,7 +974,9 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
             func.max(t.credential.c.resumed_at).label("resumed"),
         )
         .select_from(
-            t.membership.outerjoin(t.credential, t.credential.c.membership_id == t.membership.c.id)
+            t.membership.outerjoin(
+                a, and_(a.c.membership_id == t.membership.c.id, a.c.detached_at.is_(None))
+            ).outerjoin(t.credential, t.credential.c.id == a.c.credential_id)
         )
         .where(
             t.membership.c.agent_id == agent_id,
@@ -994,21 +996,36 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
 
 
 def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
-    """The active membership whose instance id is the one the mention wrote."""
+    """The active membership whose instance id is the one the mention wrote: where the
+    instance is attached now, else, for a revoked or detached one, where it was. None
+    when it is attached now only in isolated memberships: §9.5 makes that a mention of
+    the profile."""
+    from maity_hub import instances  # instances imports what this module's imports import
+
     rows = conn.execute(
-        select(t.membership.c.id, t.membership.c.project_id, t.credential.c.revoked_at)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        select(
+            t.membership.c.id,
+            t.membership.c.project_id,
+            t.membership.c.isolated_since,
+            t.credential.c.revoked_at,
+            t.instance_attachment.c.detached_at,
+        )
+        .select_from(instances.credential_join())
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .where(
             t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),
-            t.membership.c.isolated_since.is_(None),
             t.credential.c.instance == instance,
         )
     ).all()
-    if not rows:
-        return None
-    live = [r for r in rows if r.revoked_at is None]
-    return (live or rows)[0]
+    live = [r for r in rows if r.revoked_at is None and r.detached_at is None]
+    if live:
+        # Where it is attached now decides, isolated or not: a detached row elsewhere
+        # must not take the mention to a project the instance left.
+        return next((r for r in live if r.isolated_since is None), None)
+    # Without a live one a detached row is meant on purpose: the id was the instance's there.
+    past = [r for r in rows if r.isolated_since is None]
+    return past[0] if past else None
 
 
 def _mention_events(
@@ -1051,15 +1068,24 @@ def _mention_events(
         )
 
 
-def post(conn: Any, caller: Caller, chat: Any, body: str) -> dict[str, Any]:
+def post(
+    conn: Any, caller: Caller, chat: Any, body: str, project: str | None = None
+) -> dict[str, Any]:
+    """A message; `project`, from an agent instance, the project it posts from (§9.5)."""
     chat = lock_chat(conn, chat.id)
     reader = caller.principal_id
     if _window_of(conn, chat, reader) is None:
         raise not_found()
     refuse_closed(chat)
+    if project is not None:
+        if caller.kind != "agent":
+            raise invalid({"project": "agents_only"})
+        from maity_hub import attached
+
+        attached.named(conn, caller, project)  # one of its own attachments, not isolated
     stored = _resolve(conn, chat.id, body)
     others = {m["member_id"] for m in stored if m["member_id"] != reader}
-    _charge(conn, caller, len(others))
+    _charge(conn, caller, len(others), project)
     seq = int(chat.next_seq)
     message_id = new_id("cross_message")
     now = clock.now()

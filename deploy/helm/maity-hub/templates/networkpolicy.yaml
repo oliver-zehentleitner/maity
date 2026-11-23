@@ -32,3 +32,61 @@ spec:
         - port: http
           protocol: TCP
 {{- end }}
+{{- if .Values.networkPolicy.egress.enabled }}
+---
+# Where the hub's pods may connect to: DNS, the database, HTTPS and SMTP, and
+# networkPolicy.egress.extra; nothing else. Replies to the connections the
+# ingress policy admits are not affected. The migrate Job and the test pod are
+# not selected. The CNI must enforce NetworkPolicy for this to take effect.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "maity-hub.fullname" . }}-egress
+  labels:
+    {{- include "maity-hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hub
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "maity-hub.hubSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      {{- with .Values.networkPolicy.egress.dns }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    - ports:
+        - port: {{ .Values.networkPolicy.egress.database.port }}
+          protocol: TCP
+      {{- with .Values.networkPolicy.egress.database.to }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if .Values.networkPolicy.egress.https }}
+    - ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
+    {{- $smtp := .Values.networkPolicy.egress.smtpPorts }}
+    {{- if not $smtp }}
+    {{- if .Values.mail.host }}
+    {{- $smtp = list .Values.mail.port }}
+    {{- else }}
+    {{- $smtp = list 587 465 }}
+    {{- end }}
+    {{- end }}
+    - ports:
+        {{- range $smtp }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- with .Values.networkPolicy.egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

@@ -42,7 +42,7 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
 
     import maity_hub.cli
 
-    def deadlocked(_engine: object) -> None:
+    def deadlocked(_engine: object, **_options: object) -> None:
         raise OperationalError("ALTER TABLE", {}, Exception("deadlock detected"))
 
     monkeypatch.setattr(maity_hub.cli, "migrate", deadlocked)
@@ -50,6 +50,178 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
     err = capsys.readouterr().err.splitlines()
     assert err[0] == f"maity-hub: schema stays at empty, head {head()} not reached"
     assert err[1].endswith(": deadlock detected")
+
+
+def test_migrate_hands_the_instance_key_to_the_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A downgrade opens sealed verifiers with the key (docs/api.md §2.2); no upgrade seals."""
+    import base64
+
+    import maity_hub.cli
+
+    key = bytes(range(32))
+    handed: list[object] = []
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(key).decode())
+    monkeypatch.setattr(
+        maity_hub.cli, "migrate", lambda _engine, **options: handed.append(options["secret_key"])
+    )
+    assert main(["migrate"]) == 0
+    assert handed == [key]
+
+
+@pytest.mark.parametrize("with_key", [False, True], ids=["no key", "key without the setting"])
+def test_seal_verifiers_refuses_while_sealing_is_off(
+    with_key: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import base64
+
+    monkeypatch.delenv("MAITY_SEAL_VERIFIERS", raising=False)
+    monkeypatch.delenv("MAITY_SECRET_KEY", raising=False)
+    if with_key:
+        monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+    assert main(["migrate"]) == 0
+    capsys.readouterr()
+    assert main(["seal-verifiers"]) == 2
+    assert "refused: sealing is off" in capsys.readouterr().err
+
+
+def test_seal_verifiers_needs_the_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("MAITY_SECRET_KEY", raising=False)
+    monkeypatch.setenv("MAITY_SEAL_VERIFIERS", "1")
+    assert main(["seal-verifiers"]) == 2
+    assert "MAITY_SEAL_VERIFIERS=1 needs MAITY_SECRET_KEY" in capsys.readouterr().err
+
+
+def test_seal_verifiers_seals_the_plain_rows_once_and_prints_a_count(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import base64
+
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+    monkeypatch.setenv("MAITY_SEAL_VERIFIERS", "1")
+    assert main(["migrate"]) == 0
+    engine = make_engine("sqlite:///maity-hub.db")
+    try:
+        project_id = factory.project(engine)
+        human = factory.human(engine)
+        factory.membership(engine, project_id, human_id=human)
+        agent = factory.agent(engine, project_id, human)  # written plain, outside an app
+        capsys.readouterr()
+        assert main(["seal-verifiers"]) == 0
+        out = capsys.readouterr().out.splitlines()
+        assert out == [
+            "credential: sealed 1, already sealed 0, plain left 0",
+            "runner_credential: sealed 0, already sealed 0, plain left 0",
+            "total: sealed 1, already sealed 0, plain left 0",
+        ]
+        with engine.connect() as conn:
+            stored = conn.execute(
+                select(t.credential.c.verifier).where(t.credential.c.id == agent.credential_id)
+            ).scalar_one()
+        assert stored.startswith("s1:")
+        assert main(["seal-verifiers"]) == 0
+        assert capsys.readouterr().out.splitlines()[-1] == (
+            "total: sealed 0, already sealed 1, plain left 0"
+        )
+    finally:
+        engine.dispose()
+
+
+def _plain_agent_in(path: str) -> tuple[Any, str]:
+    from tests import factory
+
+    engine = make_engine(f"sqlite:///{path}")
+    project_id = factory.project(engine)
+    human = factory.human(engine)
+    factory.membership(engine, project_id, human_id=human)
+    return engine, factory.agent(engine, project_id, human).credential_id
+
+
+def _verifier(engine: Any, credential_id: str) -> str:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    with engine.connect() as conn:
+        value: str = conn.execute(
+            select(t.credential.c.verifier).where(t.credential.c.id == credential_id)
+        ).scalar_one()
+    return value
+
+
+@pytest.mark.parametrize("env", [{}, {"MAITY_SEAL_VERIFIERS": "1"}], ids=["no key", "sealing on"])
+def test_seal_verifiers_dry_run_counts_and_writes_nothing(
+    env: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """It needs neither the key nor the setting, and leaves every row as it is."""
+    import base64
+
+    monkeypatch.delenv("MAITY_SEAL_VERIFIERS", raising=False)
+    monkeypatch.delenv("MAITY_SECRET_KEY", raising=False)
+    if env:
+        monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+    assert main(["migrate"]) == 0
+    engine, credential_id = _plain_agent_in("maity-hub.db")
+    try:
+        before = _verifier(engine, credential_id)
+        capsys.readouterr()
+        assert main(["seal-verifiers", "--dry-run"]) == 0
+        assert capsys.readouterr().out.splitlines() == [
+            "credential: sealed 0, already sealed 0, plain left 1",
+            "runner_credential: sealed 0, already sealed 0, plain left 0",
+            "total: sealed 0, already sealed 0, plain left 1",
+            "dry run: nothing written",
+        ]
+        assert _verifier(engine, credential_id) == before
+    finally:
+        engine.dispose()
+
+
+def test_seal_verifiers_fails_while_a_plain_row_is_left(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A row written plain while it ran (an old pod in a rolling deploy) is left: exit 1."""
+    import base64
+
+    from maity_hub.auth import verifiers
+
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+    monkeypatch.setenv("MAITY_SEAL_VERIFIERS", "1")
+    assert main(["migrate"]) == 0
+    engine, credential_id = _plain_agent_in("maity-hub.db")
+
+    def sealed_nothing(_engine: object, _key: bytes) -> dict[str, int]:
+        return {"credential": 0, "runner_credential": 0}
+
+    monkeypatch.setattr(verifiers, "seal_plain", sealed_nothing)
+    try:
+        capsys.readouterr()
+        assert main(["seal-verifiers"]) == 1
+        captured = capsys.readouterr()
+        assert captured.out.splitlines()[-1] == "total: sealed 0, already sealed 0, plain left 1"
+        assert "1 plain verifier(s) left" in captured.err
+        assert not _verifier(engine, credential_id).startswith(verifiers.SEALED)
+    finally:
+        engine.dispose()
+
+
+def test_seal_verifiers_refuses_a_database_behind_the_schema(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import base64
+
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+    monkeypatch.setenv("MAITY_SEAL_VERIFIERS", "1")
+    assert main(["seal-verifiers"]) == 1
+    assert capsys.readouterr().out == ""
 
 
 @pytest.mark.wheel
@@ -350,6 +522,7 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     monkeypatch.setenv("MAITY_DB_STATEMENT_TIMEOUT", "11")
     monkeypatch.setenv("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "22")
     monkeypatch.setattr(cli, "require_current_schema", lambda engine: None)
+    monkeypatch.setattr(cli, "require_unprivileged_role", lambda engine, settings: None)
     monkeypatch.setattr(cli, "warn_on_connection_budget", lambda engine, settings: None)
     served: list[Any] = []
     monkeypatch.setattr(

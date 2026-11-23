@@ -1,7 +1,9 @@
 """docs/api.md §9.6 "Free work messages from another side are gated like chat": a `notice`,
 `blocker`, `handover`, `interface_change` or `go_request` from another side reaches an agent only
 on its owner's yes; a held agent neither reads nor is woken by it, its owner reads it along, and
-the work channel (an `update`, a lead's message) stays open."""
+the work channel (a lead's message, the card's own flow) stays open. An `update` and a
+`review_result` pass the same gate for every agent they reach beyond that flow: an update's
+watchers, a review result's author and two leads (§8.4) (tsk-yy88szfa7sfh)."""
 
 from __future__ import annotations
 
@@ -10,8 +12,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import chat_gate, events
+from maity_hub import card_watches, chat_gate, events
 from maity_hub import tables as t
+from maity_hub.routes.events import MESSAGE_TYPES
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -180,6 +183,8 @@ def test_the_switch_is_one_set_and_the_line_walk_ends() -> None:
         "handover",
         "interface_change",
         "go_request",
+        "update",
+        "review_result",
     } == chat_gate.GATED_WORK
     assert chat_gate._in_line({1: 2, 2: 3, 3: 1}, 1, 4) is False  # a loop ends the walk
     assert chat_gate._in_line({1: 2, 2: 3}, 1, 3) is True
@@ -223,3 +228,406 @@ def test_a_redacted_held_message_and_its_notices_stay_held(
     read = seqs(theirs)
     assert {sent["seq"], notice.seq, deleted} & set(read) == set()
     assert {sent["seq"], notice.seq, deleted} & set(woken(migrated, theirs.id)) == set()
+
+
+# Every message type that takes a `to`, each with what it needs besides: a card for an update,
+# a review object for a review result (without a resolved card: no author, so every target is
+# gated).
+HEAD = "7039a4b6fd8b988d71a63338711da188fcd95fba"
+REVIEW = {
+    "subject": "#7",
+    "head": HEAD,
+    "verdict": "approve",
+    "cites": [{"path": "docs/api.md", "line": 1, "quote": "a line"}],
+}
+ADDRESSED = sorted(set(MESSAGE_TYPES) - {"chat"})
+
+
+def card(owner: flow.Human) -> str:
+    made = owner.post(f"{PROJECT}/tasks", {"title": "A card"})
+    assert made.status_code == 201, made.text
+    found: str = made.json()["id"]
+    return found
+
+
+def work(
+    who: Any,
+    kind: str,
+    to: str | None,
+    task_id: str,
+    body: str = "please look",
+    reviewed: bool = False,
+) -> Any:
+    """`reviewed`: a review result names the card it reviews; otherwise it names none."""
+    sent: dict[str, Any] = {"kind": "message", "type": kind, "body": body}
+    if to is not None:
+        sent["to"] = to
+    if kind == "update" or reviewed:
+        sent["task_id"] = task_id
+    if kind == "review_result":
+        sent["review"] = REVIEW
+    return who.post(f"{PROJECT}/events", sent)
+
+
+def held_for(who: Any, kind: str, to: str | None, task_id: str, body: str = "please look") -> Any:
+    answer = work(who, kind, to, task_id, body)
+    assert answer.status_code == 201, answer.text
+    return answer.json()
+
+
+def test_every_addressed_type_is_gated() -> None:
+    """No message type that takes a `to` stays out of the gate by accident: all but `chat`,
+    which has a gate of its own (§9.6)."""
+    assert "chat" in MESSAGE_TYPES
+    assert set(ADDRESSED) <= chat_gate.GATED_WORK
+    assert set(MESSAGE_TYPES) >= chat_gate.GATED_WORK
+
+
+@pytest.mark.parametrize("kind", ADDRESSED)
+def test_a_held_side_is_held_for_every_addressed_type_and_target(
+    kind: str, owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == theirs.id).values(trust="admin")
+        )
+        role = conn.execute(
+            select(t.membership.c.role).where(t.membership.c.agent_id == theirs.id)
+        ).scalar_one()
+    targets = (theirs.id, f"{theirs.id}#{theirs.instance}", "all", f"role:{role}", "trust:admin")
+    sent = [held_for(writer, kind, to, task_id) for to in targets]
+    for message in sent:
+        assert theirs.id in message["payload"]["held"], message["payload"]["to"]
+    read, rung = seqs(theirs), woken(migrated, theirs.id)
+    for message in sent:
+        assert message["seq"] not in read and message["seq"] not in rung, message["payload"]["to"]
+        assert message["seq"] in seqs(other)  # its owner reads along
+
+
+@pytest.mark.parametrize("kind", ADDRESSED)
+def test_a_mention_of_a_held_agent_is_gated(
+    kind: str, owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    theirs, writer = sides["theirs"], sides["writer"]
+    with migrated.connect() as conn:
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == theirs.id)
+        ).scalar_one()
+    to = None if kind in ("update", "review_result") else writer.id
+    body = f"see @{handle}"
+    if kind == "review_result":  # one that reaches nobody but its sender is invalid
+        to = f"role:{_role_of(migrated, writer.id)}"
+    message = held_for(writer, kind, to, card(owner), body)
+    assert theirs.id in message["payload"]["held"]
+    assert message["seq"] not in seqs(theirs)
+
+
+def _role_of(engine: Engine, human_id: str) -> str:
+    with engine.connect() as conn:
+        found: str = conn.execute(
+            select(t.membership.c.role).where(t.membership.c.human_id == human_id)
+        ).scalar_one()
+    return found
+
+
+@pytest.mark.parametrize("kind", ADDRESSED)
+def test_the_own_side_and_a_consenting_owner_are_not_held(
+    kind: str,
+    owner: flow.Human,
+    make_client: ClientFactory,
+    sides: dict[str, Any],
+    migrated: Engine,
+) -> None:
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    task_id = card(owner)
+    peer = flow.agent(make_client, other)  # its owner's own side, no lead
+    for who in (other, peer):
+        own = held_for(who, kind, theirs.id, task_id)
+        assert own["payload"]["held"] == []
+        assert own["seq"] in seqs(theirs)
+    allow(other, agents=[theirs.id], owner_id=writer.id, their_human=True)
+    for to in (theirs.id, "all"):
+        allowed = held_for(writer, kind, to, task_id)
+        # `all` reaches agents the yes does not name too: they stay held, `theirs` is not.
+        assert theirs.id not in allowed["payload"]["held"]
+        assert to == "all" or allowed["payload"]["held"] == []
+        assert allowed["seq"] in seqs(theirs) and allowed["seq"] in woken(migrated, theirs.id)
+
+
+def test_an_update_reaches_the_cards_watchers_ungated(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    theirs, writer = sides["theirs"], sides["writer"]
+    task_id = card(owner)
+    watched = theirs.client.put(f"/api/v1{PROJECT}/tasks/{task_id}/watch", headers=theirs.auth)
+    assert watched.status_code in (200, 201, 204), watched.text
+    for to in (None, theirs.id, "all"):
+        news = held_for(writer, "update", to, task_id)
+        assert theirs.id not in news["payload"]["held"], to  # the card's own flow
+        assert news["seq"] in seqs(theirs)
+    # A card the agent does not watch: the same update to it is held.
+    other_card = card(owner)
+    assert held_for(writer, "update", theirs.id, other_card)["payload"]["held"] == [theirs.id]
+
+
+def test_a_review_result_reaches_the_author_and_the_leads_ungated(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    lead = flow.agent(make_client, other, role="manager")
+    bystander = flow.agent(make_client, other)
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, lead.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[theirs.id])
+            .values(reports_to=rows[lead.id])
+        )
+        conn.execute(
+            update(t.card).where(t.card.c.id == task_id).values(claim_holder=rows[theirs.id])
+        )
+    for to in (theirs.id, lead.id, "all"):
+        message = work(writer, "review_result", to, task_id, reviewed=True)
+        assert message.status_code == 201, message.text
+        payload = message.json()["payload"]
+        assert theirs.id not in payload["held"] and lead.id not in payload["held"], to
+        if to == "all":  # anyone else the card's flow does not name is gated
+            assert bystander.id in payload["held"]
+        assert message.json()["seq"] in seqs(theirs)
+    # Without the card, nobody is its author: the same result to that agent is held.
+    loose = held_for(writer, "review_result", theirs.id, task_id)
+    assert loose["payload"]["held"] == [theirs.id]
+
+
+def test_a_review_results_orderer_passes_the_gate(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The orderer, the author of the message `in_reply_to` names (§8.4), is part of the card's
+    own flow: it wrote to the reviewer first, so the gate leaves it open (tsk-9ytv9jmscmdr)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    theirs.resume()
+    task_id = card(owner)
+    asked = send(theirs, writer.id, body="please review #7")["seq"]
+    # Without `in_reply_to` the same result to that agent is held (as above).
+    assert held_for(writer, "review_result", theirs.id, task_id)["payload"]["held"] == [theirs.id]
+    answered = writer.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": theirs.id,
+            "body": "please look",
+            "review": REVIEW,
+            "in_reply_to": asked,
+        },
+    )
+    assert answered.status_code == 201, answered.text
+    assert answered.json()["payload"]["held"] == []
+    assert answered.json()["seq"] in seqs(theirs)
+
+
+def answer_order(who: Any, asked: int, task_id: str, to: str) -> dict[str, Any]:
+    answered = who.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": to,
+            "task_id": task_id,
+            "body": "reviewed",
+            "review": REVIEW,
+            "in_reply_to": asked,
+        },
+    )
+    assert answered.status_code == 201, answered.text
+    found: dict[str, Any] = answered.json()
+    return found
+
+
+def audience_of(engine: Engine, seq: int) -> list[str]:
+    with engine.connect() as conn:
+        found: list[str] = conn.execute(
+            select(t.event.c.audience).where(t.event.c.seq == seq)
+        ).scalar_one()
+    return found
+
+
+def test_an_orderer_passes_the_gate_only_for_an_order_addressed_to_the_sender(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The arbiter's ruling on review A1859: the orderer's §9.6 exemption needs the answered
+    message's `to` to name the sender, or a mention of it. An order that reached the sender
+    only through `all` gives none: the orderer is then added only where the gate lets the
+    sender reach it, and is neither added nor held here (§8.4)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    theirs.resume()
+    task_id = card(owner)
+    broadcast = send(theirs, "all", body="please review #7")["seq"]
+    result = answer_order(writer, broadcast, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert all(theirs.id not in token for token in audience_of(migrated, result["seq"]))
+    assert result["seq"] not in seqs(theirs)
+    # The same agent's order to the sender directly: the orderer is added and passes.
+    direct = send(theirs, writer.id, body="please review #7")["seq"]
+    result = answer_order(writer, direct, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert f"instance:{theirs.id}#{theirs.instance}" in audience_of(migrated, result["seq"])
+    assert result["seq"] in seqs(theirs)
+    # A mention of the sender in an order to `all` counts as addressing it.
+    mentioned = send(theirs, "all", body=f"@{writer.handle} please review #7")["seq"]
+    result = answer_order(writer, mentioned, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert result["seq"] in seqs(theirs)
+
+
+def test_an_orderer_left_out_by_the_gate_keeps_its_delivery_as_the_authors_lead(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """Review A1882, point 1: `theirs` leads the card's author, an agent of the same owner, and
+    ordered the review through `all`. As the orderer the gate would hold it, so it is left out
+    (§8.4); as the author's lead it is the card's own flow and still gets the result. The
+    orderer is judged before recipients are de-duplicated, so it cannot displace the lead."""
+    theirs, writer, other = sides["theirs"], sides["writer"], sides["other"]
+    theirs.resume()
+    author = flow.agent(make_client, other)
+    author.resume()
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, author.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[author.id])
+            .values(reports_to=rows[theirs.id])
+        )
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == task_id)
+            .values(claim_holder=rows[author.id], claim_instance=author.instance)
+        )
+    broadcast = send(theirs, "all", body="please review #7")["seq"]
+    result = answer_order(writer, broadcast, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    got = audience_of(migrated, result["seq"])
+    assert f"member:{theirs.id}" in got
+    assert f"instance:{theirs.id}#{theirs.instance}" not in got
+    assert result["seq"] in seqs(theirs)
+    assert result["seq"] in woken(migrated, theirs.id)
+
+
+def test_a_review_results_lead_of_another_owner_is_reached_only_through_the_gate(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The reviewer `mine` reports to `theirs`, an agent of another owner: the hub does not add
+    that lead (§8.4), so it is no part of the card's own flow, and a `to` or a mention naming
+    it passes the gate as anyone's does (§9.6): held without its owner's yes, reached with it
+    (tsk-95kvvd03fgs4)."""
+    theirs, mine, other = sides["theirs"], sides["mine"], sides["other"]
+    author = flow.agent(make_client, owner)
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, mine.id, author.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[mine.id])
+            .values(reports_to=rows[theirs.id])
+        )
+        conn.execute(
+            update(t.card).where(t.card.c.id == task_id).values(claim_holder=rows[author.id])
+        )
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == theirs.id)
+        ).scalar_one()
+    sent = work(mine, "review_result", None, task_id, reviewed=True)
+    assert sent.status_code == 201, sent.text
+    plain = sent.json()
+    assert plain["payload"]["held"] == []
+    assert plain["seq"] not in seqs(theirs) and plain["seq"] not in woken(migrated, theirs.id)
+    named = work(mine, "review_result", theirs.id, task_id, reviewed=True)
+    mentioned = work(mine, "review_result", None, task_id, f"see @{handle}", reviewed=True)
+    for message in (named, mentioned):
+        assert message.status_code == 201, message.text
+        assert message.json()["payload"]["held"] == [theirs.id]
+        assert message.json()["seq"] not in seqs(theirs)
+    allow(other, agents=[theirs.id], owner_id=owner.id)
+    admitted = work(mine, "review_result", theirs.id, task_id, reviewed=True)
+    assert admitted.status_code == 201, admitted.text
+    assert admitted.json()["payload"]["held"] == []
+    assert admitted.json()["seq"] in seqs(theirs)
+    assert admitted.json()["seq"] in woken(migrated, theirs.id)
+
+
+@pytest.mark.parametrize("change", ["unwatch", "watch"])
+def test_the_gate_and_the_watcher_list_read_the_watchers_once(
+    change: str,
+    owner: flow.Human,
+    sides: dict[str, Any],
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The watchers an update passes the gate for are the watchers its event lists (§6.4,
+    §9.6): one read. A watch or unwatch committed between two reads would leave an agent
+    exempt but unlisted, or listed but held; here every read after the first sees that change,
+    which stands for such a commit on any database."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    task_id = card(owner)
+    with migrated.connect() as conn:
+        agent_row = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == theirs.id)
+        ).scalar_one()
+    if change == "unwatch":
+        watched = theirs.client.put(f"/api/v1{PROJECT}/tasks/{task_id}/watch", headers=theirs.auth)
+        assert watched.status_code in (200, 201, 204), watched.text
+    real = card_watches.at_write
+    calls: list[str] = []
+
+    def at_write(conn: Any, card_id: str) -> list[int]:
+        found = real(conn, card_id)
+        if card_id == task_id:
+            calls.append(card_id)
+            if len(calls) > 1:  # the watch changed after the first read
+                found = sorted(
+                    set(found) - {agent_row} if change == "unwatch" else set(found) | {agent_row}
+                )
+        return found
+
+    monkeypatch.setattr(card_watches, "at_write", at_write)
+    for to in (None, theirs.id):
+        calls.clear()
+        news = held_for(writer, "update", to, task_id)
+        assert calls == [task_id], to  # one read for the gate and the event's list
+        with migrated.connect() as conn:
+            listed = (
+                agent_row
+                in conn.execute(
+                    select(t.event_watcher.c.membership_id).where(
+                        t.event_watcher.c.seq == news["seq"]
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert listed == (change == "unwatch"), to  # as the one read saw it
+        assert (news["seq"] in seqs(theirs)) == listed, to
+        if to is not None:  # addressed: held exactly when not a watcher
+            assert (theirs.id in news["payload"]["held"]) == (not listed), to

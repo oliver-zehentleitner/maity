@@ -15,7 +15,7 @@ from maity_hub import clock, invitation_mail, orgs, registration_accounts
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
 from maity_hub.mail import headers, outbox, smtp
-from maity_hub.models import one_line
+from maity_hub.plain_text import plain
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
@@ -258,10 +258,10 @@ def test_a_lapsed_unbuildable_row_is_not_admitted_again(migrated: Engine) -> Non
 # --- names ----------------------------------------------------------------------------
 
 
-def test_one_line_refuses_every_character_of_cc_zl_zp() -> None:
+def test_a_name_refuses_every_character_of_cc_zl_zp() -> None:
     for ch in _every_refused_character():
-        assert not one_line(f"a{ch}b"), hex(ord(ch))
-    assert one_line("Zoë ‍👩‍💻 名前")
+        assert not plain(f"a{ch}b"), hex(ord(ch))
+    assert plain("Zoë 👩 名前 ❤️")
 
 
 @pytest.mark.parametrize("bad", ["\x85", " ", " ", "\x9f", "\n", "\x07"])
@@ -276,7 +276,7 @@ def test_a_project_name_refuses_control_and_line_break_characters(
     patched = owner.patch("/projects/maintainer/maity", {"name": f"Maity{bad}x"})
     assert patched.status_code == 400, patched.text
     assert patched.json()["error"]["details"]["fields"] == {"name": "control_character"}
-    fine = owner.patch("/projects/maintainer/maity", {"name": "Maity ‍👩‍💻"})
+    fine = owner.patch("/projects/maintainer/maity", {"name": "Maity 👩 ❤️"})
     assert fine.status_code == 200, fine.text
 
 
@@ -336,4 +336,38 @@ def test_human_and_organisation_display_names_refuse_c1_and_unicode_line_breaks(
             assert registration_accounts.check_names(conn, "free-name", f"Ann{bad}x") == {
                 "display_name": "invalid"
             }
-    assert orgs.display_name_ok("Team ‍👩‍💻")
+    assert orgs.display_name_ok("Team 👩 ❤️")
+
+
+def test_the_invitation_subject_is_cut_like_every_subject() -> None:
+    subject, _body = invitation_mail.text(
+        inviter="Ann " + "a" * 200,
+        project_name="see evil.example " + "p" * 200,
+        full_name="ann/evil",
+        public_url="https://maity.example",
+        trust="member",
+        role="coder",
+        note=None,
+        url="https://maity.example/i/t",
+        expires_at=clock.now(),
+    )
+    assert len(subject) <= 120 and subject.endswith("…")
+
+
+def test_the_invitation_mail_folds_a_stored_name_with_a_bidi_control() -> None:
+    bidi = "\U0000202e"
+    subject, body = invitation_mail.text(
+        inviter=f"Ann{bidi}Lee",
+        project_name=f"Mai{bidi}ty",
+        full_name="ann/maity",
+        public_url="https://maity.example",
+        trust="member",
+        role="coder",
+        note=None,
+        url="https://maity.example/i/t",
+        expires_at=clock.now(),
+        inviter_handle="ann",
+    )
+    assert bidi not in subject and bidi not in body
+    assert subject == "[Maity] Ann Lee invites you to Mai ty"
+    assert body.startswith("Ann Lee (@ann) invites you to the Maity project Mai ty (ann/maity) ")
