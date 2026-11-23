@@ -534,7 +534,7 @@ def _check_harness(
         )
         _check_user_skill(report, as_user)
     if harness.id == "antigravity":
-        _check_antigravity(report, harness, as_user, agent_path, binary=found.path)
+        _check_antigravity(report, harness, as_user, binary=found.path)
     if harness.id == "opencode":
         _check_opencode(report, harness, layout)
         _check_opencode_flags(report, harness, found.path, agent_path, as_user)
@@ -627,8 +627,8 @@ _AGY_UNTIL = (
 
 
 def _check_antigravity(
-    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
-    where: str = "", binary: str | None = None,
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, where: str = "",
+    binary: str | None = None,
 ) -> None:  # fmt: skip
     """agy's sandbox (reported off; whether it can start as a diagnostic, an error where it
     cannot, tsk-xjy2d5617sar), its sign-in, and what of the agents' user's own agy settings
@@ -655,9 +655,9 @@ def _check_antigravity(
             f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
             "user namespace's uid_map, gid_map or setgroups write is refused (AppArmor's "
             "restriction of unprivileged user namespaces) and no AppArmor profile lifts that, "
-            "so agy runs commands unsandboxed. An AppArmor profile for agy clears this: named "
-            "`agy`, attached to agy's real path, allowing `userns`, loaded as root, then a "
-            "restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+            "so agy runs commands unsandboxed. On Ubuntu an AppArmor profile for agy clears "
+            "this: named `agy`, attached to agy's real path, allowing `userns`, loaded as root, "
+            "then a restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
         )
     elif state == capabilities.AGY_REFUSED:
         report.error(
@@ -1186,8 +1186,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             if harness.id == "claude-code":
                 _check_worktree_guard(report, as_user, f"{name}: ", probe.version)
             if harness.id == "antigravity":
-                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ",
-                                   probe.path)  # fmt: skip
+                _check_antigravity(report, harness, as_user, f"{name}: ", probe.path)
             if harness.id == "opencode":
                 _check_opencode(report, harness, where=f"{name}: ")
                 _check_opencode_flags(

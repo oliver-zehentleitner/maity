@@ -424,6 +424,9 @@ _MAPPING_REFUSED = re.compile(
     r"(?:unshare: )?write failed /proc/self/(?:uid_map|gid_map|setgroups): "
     r"Operation not permitted"
 )
+# util-linux's unshare reports its own failure, a refused call or write included, with this
+# status (`err()`, EXIT_FAILURE); a refusal is read from stderr only then.
+UNSHARE_FAILED = 1
 _UNSHARE_REFUSED = re.compile(r"(?:unshare: )?unshare failed: Operation not permitted")
 # Every command of the probe is looked up here, never on the agents' PATH, which a directory
 # they can write to could hold: an unshare of theirs that exits 0 would hide the error, and a
@@ -489,6 +492,10 @@ def agy_sandbox(as_user: AsUser = RUNNER, binary: str | None = None) -> str:
         return AGY_UNKNOWN
     if done.returncode == 0:
         return AGY_STARTS
+    if done.returncode != UNSHARE_FAILED:
+        # A signal (negative), sudo's or ssh's own status (255 for a transport error), or any
+        # other code is no refusal unshare reported, whatever stderr holds (the review of #2119).
+        return AGY_UNKNOWN
     refusal = unshare_refusal(done.stderr or "")
     if refusal is None:
         return AGY_UNKNOWN

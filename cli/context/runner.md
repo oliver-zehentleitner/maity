@@ -1088,8 +1088,9 @@ and that a profile for agy does not clear it, and no profile is looked
 for. Or the probe cannot tell (no `unshare`, a failure of the lookup or the
 run, a timeout, a failure that is no permission refusal, the profile list
 unreadable or read only in part, agy's path not resolvable): "not
-checked", a warning. A refusal counts only as stderr that is exactly one
-line, `Operation not permitted` on one of those writes or on the unshare
+checked", a warning. A refusal counts only with unshare's own failure
+status 1 (a signal, sudo's or ssh's status tells nothing) and stderr that
+is exactly one line, `Operation not permitted` on one of those writes or on the unshare
 call (read under `LC_ALL=C`); a refusal beside any other line tells
 nothing. "cannot start" on the write needs every profile name read, and
 the agents'-side listing tells a missing part under a directory it can
@@ -1138,9 +1139,11 @@ refuses the namespace before any profile is asked. A profile named `agy`
 must then not turn the error into a warning while agy still runs
 unsandboxed. That reading of the call's refusal comes from the reviewers
 and the kernel's documented behaviour, not from a host seen doing it, so
-this part is inferred while the rest of the entry is confirmed. The cost:
-a host where an AppArmor profile confining the agents' user itself refuses
-the call gets the error without the profile route. Requiring the refusal
+this part is inferred while the rest of the entry is confirmed. On a host
+where an AppArmor profile confining the agents' user itself refuses the
+call, the probe most likely gets "not checked", since AppArmor denies
+`userns_create` with EACCES, not EPERM (upstream reports, Launchpad
+2065088; unverified on a host). Requiring the refusal
 as one whole line came from the same round: the words were matched
 anywhere in stderr, so a refusal beside another failure, or the words on
 different lines, read as "cannot start".

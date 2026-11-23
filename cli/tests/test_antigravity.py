@@ -699,9 +699,9 @@ def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
     assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
 
 
-def refusing(monkeypatch: pytest.MonkeyPatch, profiles: Path, err: str) -> list[Any]:
-    """unshare refused with `err` on the direct side, a profile named `agy` loaded; the envs the
-    probe's runs got."""
+def refusing(monkeypatch: pytest.MonkeyPatch, profiles: Path, err: str, code: int = 1) -> list[Any]:
+    """unshare refused with `err` and exit `code` on the direct side, a profile named `agy`
+    loaded; the envs the probe's runs got."""
     (profiles / "agy.0").mkdir(parents=True, exist_ok=True)
     (profiles / "agy.0" / "name").write_text("agy\n")
     monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
@@ -710,10 +710,25 @@ def refusing(monkeypatch: pytest.MonkeyPatch, profiles: Path, err: str) -> list[
 
     def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
         envs.append(env)
-        return subprocess.CompletedProcess(argv, 1, "", err)
+        return subprocess.CompletedProcess(argv, code, "", err)
 
     monkeypatch.setattr(AsUser, "run", run)
     return envs
+
+
+@pytest.mark.parametrize("code", [-9, 2, 126, 255])
+@pytest.mark.parametrize("err", [UID_MAP, "unshare: unshare failed: Operation not permitted\n"])
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refusal_line_counts_only_with_unshares_own_failure_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, err: str
+) -> None:
+    """The review of #2119: unshare reports its own failure with status 1. A signal, sudo's or
+    ssh's own status (255) or any other code is no refusal it reported, whatever stderr says:
+    `unknown`, never `cannot` or `refused`."""
+    (tmp_path / "profiles").mkdir()
+    refusing(monkeypatch, tmp_path / "profiles", err, code)
+    (tmp_path / "profiles" / "agy.0" / "name").write_text("bwrap\n")  # nothing lifts it
+    assert capabilities.agy_sandbox() == "unknown"
 
 
 @pytest.mark.usefixtures("real_agy_sandbox")
@@ -2333,7 +2348,7 @@ def checked(
     monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
     monkeypatch.setattr(capabilities, "agy_sandbox", lambda *args, **kw: state, raising=False)
     report = commands.Report()
-    commands._check_antigravity(report, harness, AsUser(), "/usr/bin")
+    commands._check_antigravity(report, harness, AsUser())
     return report.lines
 
 
