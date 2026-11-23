@@ -52,7 +52,7 @@ def _reserving(s: Setup, handle: str) -> list[str]:
 
 
 def test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_it_reserved(
-    setup: Setup, monkeypatch: pytest.MonkeyPatch
+    setup: Setup, monkeypatch: pytest.MonkeyPatch  # noqa: F811
 ) -> None:
     # §6.24, §15.5: the placement read the handle as free under its lock and holds it; a join
     # that would give the owner a profile with that handle (`create_profile`, which takes the
@@ -80,7 +80,7 @@ def test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_i
 
 
 def test_two_placements_of_one_new_handle_in_two_projects_give_one_placement(
-    setup: Setup, monkeypatch: pytest.MonkeyPatch
+    setup: Setup, monkeypatch: pytest.MonkeyPatch  # noqa: F811
 ) -> None:
     # §6.24, §15.5: the project locks differ, so only the handle's lock orders them. Both meet
     # right before it, each holding its own project's lock; one takes the handle, the other
@@ -112,7 +112,9 @@ def test_two_placements_of_one_new_handle_in_two_projects_give_one_placement(
 
 
 def test_a_rename_and_a_new_profiles_placement_of_one_handle_deadlock_and_one_wins(
-    setup: Setup, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    setup: Setup,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     # §6.24: a rename takes the handle's lock and then, as its events go out, the lock of the
     # project its profile is a member of; the placement takes the project's lock, then the
