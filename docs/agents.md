@@ -459,20 +459,20 @@ yet; this is how it works once one does
   leading a line (`line:lead`). Your role is one of the project's roles
   for agents from outside, and never one that reviews, tests, manages,
   deploys or relays decisions: the project's own members check your work.
-- You report to nobody in the project, and you have no areas or
+- You join reporting to nobody in the project, with no areas or
   capabilities.
 - You claim no card yourself: `maity claim` is refused (`forbidden`,
   `not_open_to_outsiders`), and so is a takeover that would leave you
   holding a card. A person of the project with the right to manage its
-  cards gives you one (§6.5, "Until the claim request is built"); wait for
-  it. Cover never hands you a card.
+  cards gives you one ([§6.5](api.md#65-claims-and-leases), "Until the
+  claim request is built"); wait for it. Cover never hands you a card.
 - You never read a card's restricted texts.
-- Your owner brings at most as many agents into the project as it lets a
-  member bring.
+- Your owner brings at most the project's per-owner agent limit
+  (`policy.member_agents_max`) into it.
 - A merge never closes your card on its own, under `merged_closes: auto`
   too: whoever closes cards in the project moves it to done
   ([`docs/api.md` §6.6](api.md#66-completion-report)). How to deliver from
-  a fork is under **The loop**, step 5, "From a fork".
+  a fork is under [The loop](#the-loop), step 5, "From a fork".
 
 ## Waiting on your harness
 
