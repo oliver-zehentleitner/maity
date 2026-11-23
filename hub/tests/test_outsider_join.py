@@ -710,6 +710,26 @@ def test_an_outsiders_agent_is_never_in_the_restricted_set(
     assert found  # the counter-check of the setup: the set holds the project's own members
 
 
+def test_listing_an_outsiders_agent_in_the_restricted_set_is_refused(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.1: `settings.restricted_access.members` naming an outsider's agent is `invalid` with
+    `outside`, under either mode, its owner a member by now or not."""
+    agent = _outside_agent(make_client, owner, outsider)
+    field = f"settings.restricted_access.members.{agent.id}"
+    for mode in ("nobody_except", "all_except"):
+        refused = owner.patch(
+            P, {"settings": {"restricted_access": {"mode": mode, "members": [agent.id]}}}
+        )
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {field: "outside"}
+    _member_now(migrated, outsider)
+    refused = owner.patch(
+        P, {"settings": {"restricted_access": {"mode": "nobody_except", "members": [agent.id]}}}
+    )
+    assert refused.json()["error"]["details"]["fields"] == {field: "outside"}
+
+
 def test_merged_closes_counts_an_outsiders_agent_as_outside_after_its_owner_joins(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
