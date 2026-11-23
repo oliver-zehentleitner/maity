@@ -168,10 +168,10 @@ def remove_participant(
 
     def action(conn: Any) -> idempotency.Outcome:
         chat = _chat(conn, chat_id)
-        if caller.kind == "agent" and member_id != reader:
-            raise humans_only("an agent leaves only itself")
         if cross_chats.view(conn, chat, reader) is None:
             raise not_found()
+        if caller.kind == "agent" and member_id != reader:
+            raise humans_only("an agent leaves only itself")
         current = cross_chats.stay(conn, chat.id, member_id)
         if current is not None:
             cross_chats.refuse_closed(chat)

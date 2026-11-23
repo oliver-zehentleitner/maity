@@ -381,3 +381,32 @@ would erase every stored guide on the next `PUT`, a change of stored data the ca
 - Keep accepting `guide` until the briefings exist: the contract already refuses it, and no
   client in the repository sends one.
 - Move the stored guides into the briefings now: there are no briefings to move them to.
+
+## A trust the hub does not know gives no scopes
+
+**Id:** 483172a9-4079-4415-b3cd-2e63deda672b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's approval of the plan for tsk-aqw1kqh8h12t (docs/api.md §2.3)
+
+`scopes._granted` grants scopes only for a trust in `TRUSTS` or `OUTSIDE`. Any other trust,
+null or a name the hub does not know, gets no scopes at all, whatever the role, a proxy
+included: `scopes_for`, `listed_scopes` and `has_scope` answer an empty list and `False`.
+The role is still checked first, so a name that is not a built-in role stays the caller's
+fault (entry 25a99503).
+
+Every caller reads trust from a membership row, whose `trust` column is not null and is only
+written from `TRUSTS` or by the outsider's join (`OUTSIDE`), so no stored membership changes
+its scopes. The stand-ins without a trust (`attachments.reader_row`, the chat `Outsider`)
+never ask `has_scope`.
+
+**Reason:** a check on scopes must refuse what it cannot place. Before, every trust other
+than `guest` and `outside` fell through to the role's scopes, so a trust added later, or a
+row a future join wrote wrongly, would have acted as a member's without anyone deciding so.
+
+**Rejected alternatives:**
+- Fall back to the role's scopes for a trust the hub does not know: the default this replaces;
+  it gives work rights to a membership no rule describes.
+- Raise for an unknown trust, as for an unknown role: a request would end in a server error
+  instead of a refusal, and the read paths that list scopes would break for the whole page.

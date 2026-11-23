@@ -3244,7 +3244,7 @@
   "observe.title": "在 {project} 中旁听",
   "org.by_area": "（按区域）",
   "org.empty": "没有成员。",
-  "org.instance.label": "{address} 的会话",
+  "org.instance.label": "{address} 的会话：{state}",
   "org.intro": "策略：{preset}。根据谁汇报给谁以及谁拥有哪个区域计算得出。",
   "org.reread_failed": "无法重新读取成员：{reason}",
   "org.face.label": "组织的显示方式",
@@ -3254,7 +3254,6 @@
     "other": "{count} 个未完成的认领"
   },
   "org.fleet.dormant": "休眠",
-  "org.fleet.dot": "{address}：{state}",
   "org.fleet.empty": "你在此项目中没有智能体。",
   "org.fleet.lead": "负责人实例",
   "org.fleet.no_instances": "没有活跃的实例",

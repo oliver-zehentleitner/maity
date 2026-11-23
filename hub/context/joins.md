@@ -414,7 +414,7 @@ added them as a contact so that they may.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-tp97v64vpy5z, PR 4: lotse#wtwy's answers 121818 (frame only the browser's HTML, Markdown byte-identical with a test) and 121899 (public host only, the join host keeps its page; no `/join/<token>` route on the join host); `routes/joins.py` `_framed`, `render.join_document`
+**Source:** card tsk-tp97v64vpy5z, PR 4: the lead's answers 121818 (frame only the browser's HTML, Markdown byte-identical with a test) and 121899 (public host only, the join host keeps its page; no `/join/<token>` route on the join host); `routes/joins.py` `_framed`, `render.join_document`
 **Revisit when:** the join host serves the landing stylesheets, or the join page gets languages
 
 `GET /join/{token}` on the public host with `Accept: text/html` answers the page's text in the
@@ -443,7 +443,7 @@ header's targets (§1.1), so the frame there would show only its fallback style.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 ("revoking a join link records `revoked_by` and writes an event, as `invitation_revoked` does"); review of #1756 by maity-review-team-grok#axvg, 2026-11-13 (the cascades revoked joins without it); `join_revocation.py`; `routes/joins.py` `revoke_join`; docs/api.md §3.1, §8.2
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 ("revoking a join link records `revoked_by` and writes an event, as `invitation_revoked` does"); review of #1756 by a reviewer, 2026-11-13 (the cascades revoked joins without it); `join_revocation.py`; `routes/joins.py` `revoke_join`; docs/api.md §3.1, §8.2
 **Revisit when:** the instance audit log exists, or agents get to revoke joins
 
 `DELETE …/joins/{id}` stores the caller's id in `join_link.revoked_by` and writes `join_revoked`
@@ -476,7 +476,7 @@ revocation says what happened without naming the deleted human as the actor.
 - Recording `revoked_by` on the cascades without the event: the creator and the admins would see a
   join stop working with nobody told, unlike the `DELETE` that does the same thing directly.
 - Attributing the release of an organisation owner's kept seat to whoever changed the
-  organisation (review of #1756 by maity-review-team-grok#axvg): the seat is the hub's, the
+  organisation (review of #1756 by a reviewer): the seat is the hub's, the
   release follows from a change to the organisation in four places (a role, a removal, its
   deletion, a project's move) and the deletion has no remover to pass; naming one would change
   `Change.by`, which pauses and placement closures read as well. The seat's `member_updated`
