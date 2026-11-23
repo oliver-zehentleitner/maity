@@ -25,7 +25,14 @@ from sqlalchemy import Connection, select
 
 from maity_hub import clock, namespace, proxy_go
 from maity_hub import tables as t
-from maity_hub.auth.caller import SESSION_COOKIE, Caller, session_alive, session_id_hash
+from maity_hub.auth.caller import (
+    SESSION_COOKIE,
+    Caller,
+    attachment_in,
+    in_attachment,
+    session_alive,
+    session_id_hash,
+)
 from maity_hub.errors import ApiError, forbidden, not_found
 from maity_hub.scopes import GOVERNANCE, has_scope
 
@@ -128,8 +135,15 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     project = namespace.resolve(conn, slug)
     if project is None or caller.kind == "runner":  # a runner is no member (§15.1)
         raise not_found()
-    # An agent credential belongs to one membership, of one project (§2.2): the
-    # profile's memberships elsewhere are not reachable through it.
+    # An agent acts in the membership its call resolved (§2.2, §6.17): on a project route the
+    # live attachment of its credential in the route's project (`deps._refuse_other_project`),
+    # through a bridge the served agent's. A project its instance is not attached to, though
+    # the profile has a membership there, is not reachable through it. A route outside any
+    # project resolves nothing: the project `slug` names is the one asked for, so it is the
+    # live attachment there, as a project route resolves it (`not_found` without one, then
+    # `isolated`), never another attachment and never one chosen for the instance.
+    if caller.kind == "agent" and caller.membership_id is None:
+        caller = _attached_in(conn, caller, project.id)
     principal = (
         t.membership.c.id == caller.membership_id
         if caller.kind == "agent"
@@ -168,6 +182,19 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
         go,
         bridge_windows,
     )
+
+
+def _attached_in(conn: Connection, caller: Caller, project_id: str) -> Caller:
+    """An agent outside a project route acting in the live attachment of its credential in
+    `project_id`: `not_found` without one, `isolated` when that membership is (§6.2)."""
+    attachment = attachment_in(conn, caller, project_id)
+    if attachment is None:
+        raise not_found()
+    if attachment.isolated_since is not None:
+        from maity_hub import isolation
+
+        raise isolation.refusal(attachment)
+    return in_attachment(caller, attachment)
 
 
 # --- the outsider of a public project (§2.3) ------------------------------------------------

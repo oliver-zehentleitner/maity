@@ -432,7 +432,9 @@ window.Maity = window.Maity || {};
 
   function runnerPart(ctx, hooks) {
     if (!M.placements.startOffered(ctx)) return null;
-    const own = !!hooks.member && !ctx.canAdmin;
+    // A member bringing their own agent, as the join form has it (js/join.js): its callers set it
+    // only without members:admin (M.bringing, or the Agents page's !M.trust.governs).
+    const own = !!hooks.member;
     const words = M.runnerWords;
     const id = (x) => "placement-new-" + x;
     const field = (key, label, control, hint) => h("div", { class: "field" },

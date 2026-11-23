@@ -3,8 +3,9 @@ project lives on its attachment there (`instance_attachment`), and a session's p
 not-listening episode on its row for that project (`agent_session_project`). Each test
 attaches one instance to two projects, A and B, acts in one and finds the other untouched.
 
-Until hub PR B a credential authenticates in its oldest attachment (QA6), here A: the agent's
-own calls act in A, a human's act in the project of the route."""
+The agent's calls outside a project name their project (hub PR B): it resumes in A before it is
+attached to B, since the resume of an instance in several projects is not built yet, and
+confirms Keep the Why naming A; a human's calls act in the project of the route."""
 
 from __future__ import annotations
 
@@ -53,10 +54,10 @@ class World:
                     t.membership.c.agent_id == self.agent.id,
                 )
             ).scalar_one()
-        self.in_b = factory.attach(engine, self.agent, self.beta)
         resumed = self.agent.resume()
         assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["project"]["id"] == self.alpha  # the oldest attachment (QA6)
+        assert resumed.json()["project"]["id"] == self.alpha
+        self.in_b = factory.attach(engine, self.agent, self.beta)  # B's position row too
 
     def attachment(self, membership_id: int) -> Any:
         a = t.instance_attachment
@@ -179,7 +180,7 @@ def test_the_keep_the_why_commitment_is_per_project(world: World) -> None:
     w = world
     assert w.attachment(w.in_a).ktw_acknowledge_by is not None  # the resume's, in A
     assert _ktw(w.attachment(w.in_b)) == (None,) * 6
-    acked = w.agent.post("/me/keep-the-why/ack")
+    acked = w.agent.post("/me/keep-the-why/ack", {"project": "maintainer/alpha"})
     assert acked.status_code == 200, acked.text
     assert w.attachment(w.in_a).ktw_acknowledged_at is not None
     assert _ktw(w.attachment(w.in_b)) == (None,) * 6
@@ -313,7 +314,7 @@ def test_the_commitment_of_a_detached_attachment_ends(world: World) -> None:
     """An overdue deadline on B's attachment, once detached, reminds nobody: the sweep ends
     it as it ends a revoked instance's."""
     w = world
-    acked = w.agent.post("/me/keep-the-why/ack")  # A owes nothing
+    acked = w.agent.post("/me/keep-the-why/ack", {"project": "maintainer/alpha"})  # A owes nothing
     assert acked.status_code == 200, acked.text
     session = w.position(w.in_b).session_id
     with w.engine.begin() as conn:
@@ -448,46 +449,6 @@ def test_a_mention_of_an_instance_attached_only_where_it_is_isolated_is_a_profil
     assert [(row.project_id, list(row.audience)) for row in places] == [
         (w.beta, [f"member:{w.agent.id}"])
     ]
-
-
-def test_auth_resolves_the_oldest_attachment_that_is_not_detached(
-    make_client: ClientFactory, migrated: Engine
-) -> None:
-    """9 (QA6): with several attachments a credential authenticates in the oldest by
-    `attached_at`, then by id; a detached one is skipped. TODO(hub PR B): the route's."""
-    owner = flow.human(make_client, migrated)
-    alpha = flow.project(owner, "alpha")["id"]
-    beta = flow.project(owner, "beta")["id"]
-    gamma = flow.project(owner, "gamma")["id"]
-    agent = flow.agent(make_client, owner, "alpha")
-    a = t.instance_attachment
-    with migrated.connect() as conn:
-        joined = conn.execute(
-            select(a.c.attached_at).where(a.c.credential_id == agent.credential_id)
-        ).scalar_one()
-
-    def resolved() -> str:
-        me = agent.get("/me")
-        assert me.status_code == 200, me.text
-        [project] = me.json()["projects"]
-        found: str = project["id"]
-        return found
-
-    assert resolved() == alpha
-    # Attached later, but at the same moment as A: the lower id, A's, decides.
-    factory.attach(migrated, agent, gamma, attached_at=joined)
-    assert resolved() == alpha
-    # Attached later, with an older `attached_at`: the oldest wins, whatever its id.
-    in_beta = factory.attach(migrated, agent, beta, attached_at=joined - timedelta(days=1))
-    assert resolved() == beta
-    # A detached attachment is skipped.
-    with migrated.begin() as conn:
-        conn.execute(
-            update(a)
-            .where(a.c.membership_id == in_beta)
-            .values(detached_at=clock.now(), detached_reason="detached")
-        )
-    assert resolved() == alpha
 
 
 def test_a_single_project_instance_reads_as_before_after_the_migration(

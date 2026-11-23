@@ -812,41 +812,65 @@ idempotency.register("project", load_project, idempotency.in_project(idempotency
 def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
     settings = settings_of(request)
     with engine_of(request).begin() as conn:
-        query = select(t.project).join(t.membership, t.membership.c.project_id == t.project.c.id)
-        if caller.kind == "agent":
-            query = query.where(t.membership.c.id == caller.membership_id)
+        agent = caller.kind == "agent"
+        isolated_in: set[str] = set()
+        if agent:
+            # Every project the instance is attached to, an isolated one included (§6.1,
+            # §6.17); never a project its profile is in without this instance.
+            a = t.instance_attachment
+            attached_rows = conn.execute(
+                select(t.membership.c.project_id, t.membership.c.isolated_since)
+                .join(a, a.c.membership_id == t.membership.c.id)
+                .where(a.c.credential_id == caller.credential_id, a.c.detached_at.is_(None))
+            ).all()
+            query = select(t.project).where(
+                t.project.c.id.in_([r.project_id for r in attached_rows])
+            )
+            isolated_in = {r.project_id for r in attached_rows if r.isolated_since is not None}
         else:
-            query = query.where(
-                t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True)
+            query = (
+                select(t.project)
+                .join(t.membership, t.membership.c.project_id == t.project.c.id)
+                .where(t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True))
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
-        shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
-        aliases = namespace.aliases_by(conn, [r.id for r in rows])
-        confirmed = confirmed_by_of(conn, rows)
-        return JSONResponse(
-            {
-                "items": [
-                    _serve_restricted(
-                        conn,
-                        r,
-                        request,
-                        project_view(
-                            r,
-                            settings,
-                            names[r.id].split("/")[0],
-                            shown[r.id],
-                            _export(r, request),
-                            aliases[r.id],
-                            _stored(conn, r, request),
-                            confirmed[r.id],
-                        ),
-                    )
-                    for r in rows
-                ],
-                "next_cursor": None,
-            }
-        )
+        full = [r for r in rows if r.id not in isolated_in]
+        shown = images.views(conn, [r.id for r in full])
+        aliases = namespace.aliases_by(conn, [r.id for r in full])
+        confirmed = confirmed_by_of(conn, full)
+        items = []
+        for r in rows:
+            if r.id in isolated_in:
+                # The isolated entry (§6.1): what `GET /me` already shows of the project.
+                items.append(
+                    {
+                        "id": r.id,
+                        "slug": r.slug,
+                        "full_name": names[r.id],
+                        "name": r.name,
+                        "state": r.state,
+                        "isolated": True,
+                    }
+                )
+                continue
+            view = _serve_restricted(
+                conn,
+                r,
+                request,
+                project_view(
+                    r,
+                    settings,
+                    names[r.id].split("/")[0],
+                    shown[r.id],
+                    _export(r, request),
+                    aliases[r.id],
+                    _stored(conn, r, request),
+                    confirmed[r.id],
+                ),
+            )
+            items.append({**view, "isolated": False} if agent else view)
+        return JSONResponse({"items": items, "next_cursor": None})
 
 
 def _creation_owner(

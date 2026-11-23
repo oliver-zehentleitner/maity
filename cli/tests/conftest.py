@@ -36,6 +36,10 @@ collect_ignore = (
         "test_serve.py",
         "test_ssh.py",
         "test_supervisor.py",
+        "test_supervisor_notes.py",
+        "test_supervisor_pickup.py",
+        "test_supervisor_watch.py",
+        "test_watch.py",
     ]
     if sys.platform == "win32"
     else []

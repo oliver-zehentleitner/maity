@@ -235,13 +235,16 @@ def _on_project_page(conn: Connection, pages: bool, handle: str, project: str) -
 
 def _shares_a_project(conn: Connection, caller: Caller, principal: str) -> bool:
     """Whether the reporter reads `principal`'s member view somewhere: an active
-    membership of both in one project. An agent credential reaches its own project only."""
+    membership of both in one project. An agent credential reaches only the projects its
+    instance is attached to and not isolated in (§6.17), outside a project route as on one."""
+    from maity_hub import attached
+
     m = t.membership.c
     theirs = select(m.project_id).where(
         m.active.is_(True), (m.agent_id == principal) | (m.human_id == principal)
     )
     if caller.kind == "agent":
-        mine = select(m.project_id).where(m.id == caller.membership_id, m.active.is_(True))
+        mine = select(m.project_id).where(m.id.in_(attached.free_memberships(caller)))
     else:
         mine = select(m.project_id).where(m.human_id == caller.human_id, m.active.is_(True))
     return (

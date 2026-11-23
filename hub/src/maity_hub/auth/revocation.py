@@ -10,14 +10,40 @@ placements lose and the `runner_credential_revoked` event per attached project (
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import Connection, select, update
 
 from maity_hub import clock, environment, placements
 from maity_hub import tables as t
-from maity_hub.events import emit
+from maity_hub.events import emit, lock_projects
 from maity_hub.runners import attached_project_ids, human_actor
+
+
+def projects_of(conn: Connection, credential_ids: Iterable[str]) -> set[str]:
+    """The projects revoking these agent credentials writes in: each one an instance is
+    attached to now (§6.17), its `holder_stalled`, its lead's end, its overlaps, and each one
+    of an active placement that names one (§15.5), which stops."""
+    ids = sorted(set(credential_ids))
+    if not ids:
+        return set()
+    a = t.instance_attachment
+    found = set(
+        conn.execute(
+            select(t.membership.c.project_id)
+            .join(a, a.c.membership_id == t.membership.c.id)
+            .where(a.c.credential_id.in_(ids), a.c.detached_at.is_(None))
+        ).scalars()
+    )
+    found.update(
+        conn.execute(
+            select(t.placement.c.project_id).where(
+                t.placement.c.credential_id.in_(ids), t.placement.c.active.is_(True)
+            )
+        ).scalars()
+    )
+    return found
 
 
 def revoke(
@@ -38,7 +64,12 @@ def revoke(
     `member_goes`: the whole member is removed in the same transaction, so `member_removed`
     says the lead's end; also the caller's word, for the same reason.
     `stops_placements: False`: the revocation follows a clone the runner removed, whose
-    placement rejoins at its next start instead of being stopped (§15.5)."""
+    placement rejoins at its next start instead of being stopped (§15.5).
+
+    Every project it writes in is locked first, in the order of their ids, before any write
+    (`projects_of`): a caller that writes in more projects took those, with these, in one
+    such pass before calling this, and the locks taken again here are harmless."""
+    lock_projects(conn, projects_of(conn, [credential_id]))
     now = clock.now()
     won = conn.execute(
         update(t.credential)

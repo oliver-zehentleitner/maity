@@ -290,6 +290,13 @@ DEFAULTS = (
                        "an exit within 60 s counts as a crash"),  # fmt: skip
     ("limits.log_keep_bytes", "10 MiB per placement; a full log drops its older half"),
     ("limits.require_local_approval", "false"),
+    (
+        "limits.watch.not_listening_grace_minutes",
+        "15 (1-1440; how long the hub must report the session not listening)",
+    ),
+    ("limits.watch.join_within_minutes", "10 (1-120; how long after a start the agent may join)"),
+    ("limits.watch.auto_restarts", "1 (0-3; the watch's restarts within the window)"),
+    ("limits.watch.retry_window_minutes", "120 (10-1440; the window those restarts count in)"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
     ("backend.local.tmux_socket", "<state_dir>/tmux.sock; agent_user: ~<user>/.maity-runner/"),
