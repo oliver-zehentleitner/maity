@@ -626,28 +626,346 @@ def test_agy_is_advertised_with_its_allowlist_and_its_sandbox_off(
     assert ran == []  # the namespaces are tried by `maity runner check` only
 
 
-def test_the_namespace_diagnostic_tries_them_as_the_agents_user(
-    monkeypatch: pytest.MonkeyPatch,
+PROBE = ["/usr/bin/unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork", "--net",
+         "true"]  # fmt: skip
+UID_MAP = "unshare: write failed /proc/self/uid_map: Operation not permitted\n"
+
+
+@pytest.fixture
+def real_agy_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The probe itself, which conftest stubs for every other test (the review of #2119)."""
+    from conftest import REAL_AGY_SANDBOX
+
+    monkeypatch.setattr(capabilities, "agy_sandbox", REAL_AGY_SANDBOX, raising=False)
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ran: list[list[str]] = []
-    code = 0
+    """tsk-xjy2d5617sar: the namespaces start; they are refused but a profile named for agy is
+    loaded (the Ubuntu host with AppArmor's userns restriction, 3yc2); they are refused and
+    nothing lifts that; or the probe cannot tell. Only a definite refusal is `cannot`."""
+    assert (capabilities.AGY_STARTS, capabilities.AGY_PROFILE, capabilities.AGY_CANNOT,
+            capabilities.AGY_UNKNOWN) == ("starts", "profile", "cannot", "unknown")  # fmt: skip
+    profiles = tmp_path / "profiles"
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    looked_up: list[str | None] = []
 
-    def fake(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        ran.append(argv)
-        return subprocess.CompletedProcess(argv, code, "/usr/bin/unshare\n", "")
+    def which(name: str, path: str | None = None) -> str:
+        looked_up.append(path)
+        return f"/usr/bin/{name}"
 
-    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
-    monkeypatch.setattr(proc, "run", lambda argv, cwd, timeout: fake(argv))
-    assert capabilities.agy_namespaces("/usr/bin")
-    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: fake(argv))
-    assert capabilities.agy_namespaces("/usr/bin", AsUser("agents"))
-    probe = ["/usr/bin/unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork",
-             "--net", "true"]  # fmt: skip
-    assert [argv for argv in ran if argv[0] != "sh"] == [probe, probe]
-    code = 1
-    assert not capabilities.agy_namespaces("/usr/bin")
+    monkeypatch.setattr("shutil.which", which)
+    answer: dict[str, Any] = {"code": 0, "err": ""}
+    ran: list[tuple[list[str], Any]] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        ran.append((list(argv), env))
+        return subprocess.CompletedProcess(argv, answer["code"], "", answer["err"])
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox() == capabilities.AGY_STARTS
+    assert [argv for argv, _ in ran] == [PROBE] and ran[0][1]["LC_ALL"] == "C"  # in English
+    # Looked up on the system's own PATH, never the agents' (the review of #2119): an unshare
+    # of theirs that exits 0 would hide the error.
+    assert looked_up == [capabilities.SYSTEM_PATH]
+    answer.update(code=1, err=UID_MAP)
+    assert capabilities.agy_sandbox() == capabilities.AGY_CANNOT  # no AppArmor at all
+    (profiles / "bwrap.10").mkdir(parents=True)
+    (profiles / "bwrap.10" / "name").write_text("bwrap\n")
+    assert capabilities.agy_sandbox() == capabilities.AGY_CANNOT  # none for agy
+    (profiles / "agy.0").mkdir()
+    (profiles / "agy.0" / "name").write_text("agy\n")
+    assert capabilities.agy_sandbox() == capabilities.AGY_PROFILE
+    (profiles / "agy.0" / "name").write_text("/opt/bin/agy\n")  # named after agy's path
+    assert capabilities.agy_sandbox() == capabilities.AGY_CANNOT
+    assert capabilities.agy_sandbox(binary="/opt/bin/agy") == capabilities.AGY_PROFILE
+    answer.update(err="unshare: unrecognized option '--fork'\n")  # no refusal: tells nothing
+    assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+    # The same call failing for another cause is no refusal (the review of #2119).
+    for other in ("unshare failed: Cannot allocate memory\n",
+                  "unshare failed: No space left on device\n"):  # fmt: skip
+        answer.update(err=other)
+        assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN, other
+    # A list read only in part: an unread name may be agy's, so it is no refusal (#2119).
+    answer.update(err=UID_MAP)
+    (profiles / "agy.0" / "name").unlink()
+    (profiles / "agy.0" / "name").mkdir()  # a name that cannot be read as a file
+    assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+    (profiles / "bwrap.10" / "name").write_text("agy\n")  # a readable one is agy's: enough
+    assert capabilities.agy_sandbox() == capabilities.AGY_PROFILE
     monkeypatch.setattr("shutil.which", lambda name, path=None: None)
-    assert not capabilities.agy_namespaces("/usr/bin")
+    assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+
+
+def refusing(monkeypatch: pytest.MonkeyPatch, profiles: Path, err: str, code: int = 1) -> list[Any]:
+    """unshare refused with `err` and exit `code` on the direct side, a profile named `agy`
+    loaded; the envs the probe's runs got."""
+    (profiles / "agy.0").mkdir(parents=True, exist_ok=True)
+    (profiles / "agy.0" / "name").write_text("agy\n")
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    envs: list[Any] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        envs.append(env)
+        return subprocess.CompletedProcess(argv, code, "", err)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    return envs
+
+
+@pytest.mark.parametrize("code", [-9, 2, 126, 255])
+@pytest.mark.parametrize("err", [UID_MAP, "unshare: unshare failed: Operation not permitted\n"])
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refusal_line_counts_only_with_unshares_own_failure_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, err: str
+) -> None:
+    """The review of #2119: unshare reports its own failure with status 1. A signal, sudo's or
+    ssh's own status (255) or any other code is no refusal it reported, whatever stderr says:
+    `unknown`, never `cannot` or `refused`."""
+    (tmp_path / "profiles").mkdir()
+    refusing(monkeypatch, tmp_path / "profiles", err, code)
+    (tmp_path / "profiles" / "agy.0" / "name").write_text("bwrap\n")  # nothing lifts it
+    assert capabilities.agy_sandbox() == "unknown"
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_the_probe_runs_unshare_with_the_system_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2119: run with the agents' PATH, unshare could still call out to a tool of
+    theirs; the probe runs with the system's PATH, in English for the refusal's words."""
+    envs = refusing(monkeypatch, tmp_path / "profiles", UID_MAP)
+    capabilities.agy_sandbox()
+    assert envs == [{"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"}]
+
+
+@pytest.mark.parametrize(
+    "err",
+    [
+        UID_MAP + "unshare: unshare failed: No space left on device\n",
+        "unshare: unshare failed: Cannot allocate memory\nsetgroups: Operation not permitted\n",
+        "unshare: write failed /proc/self/uid_map: Invalid argument\nOperation not permitted\n",
+    ],
+)
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refusal_counts_only_as_one_whole_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, err: str
+) -> None:
+    """The review of #2119: a refusal beside another failure, or its words spread over two
+    lines, is no refusal: `unknown`, not `profile` or `cannot`."""
+    (tmp_path / "profiles").mkdir()
+    refusing(monkeypatch, tmp_path / "profiles", err)
+    (tmp_path / "profiles" / "agy.0" / "name").write_text("bwrap\n")  # nothing lifts it
+    assert capabilities.agy_sandbox() == "unknown"
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refused_unshare_call_is_not_lifted_by_a_profile_for_agy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2119: the unshare call itself refused is the kernel or a container, which a
+    profile named `agy` does not lift; it stays an unsandboxed answer, never `profile`."""
+    refused = "unshare: unshare failed: Operation not permitted\n"
+    refusing(monkeypatch, tmp_path / "profiles", refused)
+    assert capabilities.agy_sandbox() == "refused"
+    assert capabilities.agy_sandbox(binary="/opt/bin/agy") == "refused"
+    assert "refused" in capabilities.AGY_UNSANDBOXED
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_profile_named_after_agys_real_path_counts_when_agy_is_a_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2119: a profile without a name of its own is named after the path it
+    attaches to, agy's real one, while `which` gives the symlink on the PATH; a path that
+    cannot be resolved leaves it untold, never `cannot`."""
+    real = tmp_path / "opt" / "agy"
+    real.parent.mkdir()
+    real.write_text("")
+    link = tmp_path / "bin" / "agy"
+    link.parent.mkdir()
+    link.symlink_to(real)
+    profiles = tmp_path / "profiles"
+    (profiles / "agy.0").mkdir(parents=True)
+    (profiles / "agy.0" / "name").write_text(f"{real}\n")
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: subprocess.CompletedProcess(
+        argv, 1, "", UID_MAP))  # fmt: skip
+    assert capabilities.agy_sandbox(binary=str(link)) == capabilities.AGY_PROFILE
+    (profiles / "agy.0" / "name").write_text("bwrap\n")
+    assert capabilities.agy_sandbox(binary=str(link)) == capabilities.AGY_CANNOT
+    gone = str(tmp_path / "bin" / "gone")  # not resolvable: its profile not looked for
+    assert capabilities.agy_sandbox(binary=gone) == capabilities.AGY_UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "real, expected",
+    [
+        ((0, "/opt/agy/agy\n"), "profile"),
+        ((0, "/opt/other\n"), "cannot"),
+        ((1, ""), "unknown"),  # realpath failed there: its profile not looked for
+    ],
+)
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_agys_path_is_resolved_as_the_agents_user(
+    monkeypatch: pytest.MonkeyPatch, real: tuple[int, str], expected: str
+) -> None:
+    """On the agents' user's side (and on an ssh host) agy's path is resolved there, by the
+    user whose PATH found it."""
+    calls: list[list[str]] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        calls.append(argv)
+        if argv[0] == "realpath":  # a realpath of the agents' would name any path (#2119)
+            assert env is not None and env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin"
+        if argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES:
+            return subprocess.CompletedProcess(argv, 0, "bwrap\n/opt/agy/agy\n", "")
+        if argv[:2] == ["sh", "-c"]:  # capabilities.which
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        if argv[0] == "realpath":
+            return subprocess.CompletedProcess(argv, real[0], real[1], "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    found = capabilities.agy_sandbox(AsUser("agents"), "/usr/local/bin/agy")
+    assert found == expected
+    # -e: a missing last part is no path, as on the direct side (the review of #2119).
+    assert ["realpath", "-e", "--", "/usr/local/bin/agy"] in calls
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory whatever its mode")
+def test_an_unreadable_profile_list_is_no_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: subprocess.CompletedProcess(
+        argv, 1, "", UID_MAP))  # fmt: skip
+    profiles.chmod(0)
+    try:
+        assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+    finally:
+        profiles.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory whatever its mode")
+@pytest.mark.skipif(shutil.which("sh") is None, reason="the listing runs in sh")
+def test_the_agents_side_profile_listing_tells_missing_from_unreadable(tmp_path: Path) -> None:
+    """The review of #2119: the script the agents' user runs is run itself, on a real tree.
+    A missing part under a directory that can be searched is no AppArmor (3); a part that
+    cannot be reached, or is no directory, is an unreadable list (4), never an empty one; an
+    empty tree is a complete empty list, as on the direct side; every entry is read, hidden ones
+    included, and one whose name cannot be read makes the list partial (5)."""
+
+    def listing(path: Path) -> tuple[int, list[str]]:
+        done = subprocess.run(["sh", "-c", capabilities._PROFILE_NAMES, "sh", str(path)],
+                              capture_output=True, text=True, check=False)  # fmt: skip
+        return done.returncode, done.stdout.splitlines()
+
+    profiles = tmp_path / "apparmor" / "profiles"
+    assert listing(profiles) == (3, [])  # missing, its parent missing under a searchable one
+    profiles.mkdir(parents=True)
+    assert listing(profiles) == (0, [])  # empty: complete, not the literal glob
+    (profiles / "bwrap.10").mkdir()
+    (profiles / "bwrap.10" / "name").write_text("bwrap\n")
+    (profiles / ".agy.1").mkdir()  # a hidden entry is listed as os.listdir lists it
+    (profiles / ".agy.1" / "name").write_text("agy\n")
+    assert listing(profiles) == (0, ["agy", "bwrap"]) or listing(profiles) == (0, ["bwrap", "agy"])
+    unreadable = profiles / "x.2"
+    unreadable.mkdir()
+    (unreadable / "name").write_text("x\n")
+    (unreadable / "name").chmod(0)
+    try:
+        code, names = listing(profiles)
+        assert code == 5 and sorted(names) == ["agy", "bwrap"]  # a name unreadable
+    finally:
+        (unreadable / "name").chmod(0o600)
+    unreadable.chmod(0o600)  # an entry that cannot be searched is not skipped unseen
+    try:
+        assert listing(profiles)[0] == 5
+    finally:
+        unreadable.chmod(0o700)
+    locked = tmp_path / "apparmor"
+    locked.chmod(0)  # an ancestor that cannot be searched: unreadable, not "no AppArmor"
+    try:
+        assert listing(profiles) == (4, [])
+        assert listing(profiles / "deeper") == (4, [])
+    finally:
+        locked.chmod(0o700)
+    plain = tmp_path / "plain"
+    plain.write_text("")
+    assert listing(plain) == (4, [])  # no directory: cannot be read as a list
+    assert listing(plain / "profiles") == (4, [])
+
+
+# The answers by value, so the parametrized tests below collect on code without them too (a
+# counter-check against main then fails test by test, not at collection).
+@pytest.mark.parametrize(
+    "listing, expected",
+    [
+        ((0, "bwrap\nagy\n"), "profile"),
+        ((0, "bwrap\n"), "cannot"),
+        ((3, ""), "cannot"),  # no AppArmor on that side
+        ((4, ""), "unknown"),  # the list cannot be read there
+        ((5, "bwrap\n"), "unknown"),  # read in part: an unread name may be agy's (#2119)
+        ((5, "agy\n"), "profile"),  # read in part, but agy's is among what was read
+    ],
+)
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_the_agy_sandbox_probe_reads_the_profiles_as_the_agents_user(
+    monkeypatch: pytest.MonkeyPatch, listing: tuple[int, str], expected: str
+) -> None:
+    calls: list[list[str]] = []
+    envs: list[Any] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        calls.append(argv)
+        envs.append(env)
+        if argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES:
+            return subprocess.CompletedProcess(argv, listing[0], listing[1], "")
+        if argv[:2] == ["sh", "-c"]:  # capabilities.which
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox(AsUser("agents")) == expected
+    assert PROBE in calls  # the namespaces tried as the agents' user
+    assert ["sh", "-c", capabilities._PROFILE_NAMES, "sh", capabilities.APPARMOR_PROFILES] in calls
+    # Every step runs with the system's PATH, never the agents' (the review of #2119).
+    assert all(env is not None and env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin" for env in envs)
+
+
+@pytest.mark.parametrize("step", ["lookup", "probe", "listing"])
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_timed_out_step_of_the_agy_probe_is_not_checked(
+    monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """The review of #2119: a timeout anywhere, the lookup as the agents' user included,
+    answers `unknown`; nothing escapes to the start that asks it."""
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        listing = argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES
+        kind = "listing" if listing else "lookup" if argv[:2] == ["sh", "-c"] else "probe"
+        if kind == step:
+            raise subprocess.TimeoutExpired(argv, 30)
+        if kind == "lookup":
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        if kind == "listing":
+            return subprocess.CompletedProcess(argv, 0, "bwrap\n", "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox(AsUser("agents")) == capabilities.AGY_UNKNOWN
 
 
 @dataclass
@@ -2019,14 +2337,18 @@ def test_claim_records_a_workspace_folder_as_one(tmp_path: Path) -> None:
 
 
 def checked(
-    monkeypatch: pytest.MonkeyPatch, namespaces: bool, home: Path,
+    monkeypatch: pytest.MonkeyPatch, namespaces: bool | str, home: Path,
     harness: config.Harness = AGY, platform: bool = True,
 ) -> list[tuple[str, str]]:  # fmt: skip
+    """`namespaces`: what `agy_sandbox` answers; True and False for starts and cannot."""
+    if namespaces is True or namespaces is False:
+        namespaces = "starts" if namespaces else "cannot"
+    state = namespaces
     monkeypatch.setattr(AsUser, "home", lambda self: home)
     monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
-    monkeypatch.setattr(capabilities, "agy_namespaces", lambda path, as_user=None: namespaces)
+    monkeypatch.setattr(capabilities, "agy_sandbox", lambda *args, **kw: state, raising=False)
     report = commands.Report()
-    commands._check_antigravity(report, harness, AsUser(), "/usr/bin")
+    commands._check_antigravity(report, harness, AsUser())
     return report.lines
 
 
@@ -2048,8 +2370,8 @@ def test_check_reports_agys_sandbox_off_and_the_namespaces_as_a_diagnostic(
     ]  # fmt: skip
     login.unlink()
     lines = checked(monkeypatch, False, tmp_path)
-    assert [level for level, _ in lines] == ["warn", "warn", "warn"]
-    assert "do not start" in lines[0][1] and OFF in lines[1][1] and "no sign-in" in lines[2][1]
+    assert [level for level, _ in lines] == ["error", "warn", "warn"]
+    assert "cannot start" in lines[0][1] and OFF in lines[1][1] and "no sign-in" in lines[2][1]
     strict = dataclasses.replace(AGY, require_sandbox=True)
     for namespaces in (True, False):  # refused whether the namespaces start or not
         found = checked(monkeypatch, namespaces, tmp_path, strict)
@@ -2057,6 +2379,106 @@ def test_check_reports_agys_sandbox_off_and_the_namespaces_as_a_diagnostic(
                                            "require_sandbox = true refuses them")  # fmt: skip
     assert "on this platform" in checked(monkeypatch, True, tmp_path, platform=False)[0][1]
     assert not any("secret" in text for _, text in lines)
+
+
+@pytest.mark.parametrize(
+    "state, level, words",
+    [
+        # The Ubuntu host with AppArmor's userns restriction and a profile for agy (3yc2): a
+        # warning, never the error the plain refusal alone would give.
+        ("profile", "warn", ("profile named for agy", "not verified")),
+        # Refused and nothing lifts it: an error that names the profile that clears it, and
+        # says require_sandbox only refuses the starts (the review of #2119).
+        (
+            "cannot",
+            "error",
+            (
+                "cannot start",
+                "named `agy`",
+                "agy's real path",
+                "userns",
+                "restart",
+                "require_sandbox = true",
+                "stays an error",
+            ),
+        ),
+        # The unshare call itself refused: the kernel or a container, which a profile for agy
+        # does not clear, so the profile route is not offered (the review of #2119).
+        (
+            "refused",
+            "error",
+            ("cannot start", "kernel or a container", "does not clear", "stays an error"),
+        ),
+        ("unknown", "warn", ("not checked",)),
+    ],
+)
+def test_check_says_what_the_agy_sandbox_probe_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str, level: str,
+    words: tuple[str, ...],
+) -> None:  # fmt: skip
+    """tsk-xjy2d5617sar, lotse's ruling: "cannot start" is an error, everything short of a
+    definite refusal is a warning."""
+    first = checked(monkeypatch, state, tmp_path)[0]
+    assert first[0] == level and all(word in first[1] for word in words), first
+    if state == "refused":
+        assert "named `agy`" not in first[1] and "uid_map" not in first[1]
+
+
+def test_an_agy_start_where_its_sandbox_cannot_start_says_so_aloud_once_probed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """lotse's ruling on tsk-xjy2d5617sar: with `require_sandbox = false` the start goes on and
+    the runner says at every such start that it runs unsandboxed; the probe is asked once per
+    target and agy binary, as the Codex sandbox probe is."""
+    sup, _backend, logs = started(tmp_path, monkeypatch)
+    target = sup.targets[sup._default_target()]
+    asked: list[tuple[str, str | None]] = []
+    answer = capabilities.AGY_CANNOT
+
+    def probe(*args: Any) -> str:  # (as_user, binary)
+        asked.append((args[0], args[-1]))
+        return answer
+
+    monkeypatch.setattr(capabilities, "agy_sandbox", probe)
+    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: True)
+    view = supervisor.GateView(capabilities.Probe("/usr/bin/agy", "1.5.7", None), False, False)
+    harness = sup.cfg.harnesses["antigravity"]
+    sup._say_if_unsandboxed("plc-0003", harness, target, view)
+    sup._say_if_unsandboxed("plc-0004", harness, target, view)
+    loud = [line for line in logs if "UNSANDBOXED" in line]
+    assert [line.split(":")[0] for line in loud] == ["plc-0003", "plc-0004"]  # every start
+    assert "require_sandbox = true" in loud[0]
+    assert len(asked) == 1 and asked[0][1] == "/usr/bin/agy"  # probed once for the binary
+    sup.agy_sandbox.clear()
+    for answer in (capabilities.AGY_STARTS, capabilities.AGY_PROFILE, capabilities.AGY_UNKNOWN):
+        sup.agy_sandbox.clear()
+        logs.clear()
+        sup._say_if_unsandboxed("plc-0005", harness, target, view)
+        assert not any("UNSANDBOXED" in line for line in logs), answer
+    # `unknown` is not kept: the next start asks again, and says it aloud once the probe can
+    # tell (the review of #2119).
+    sup.agy_sandbox.clear()
+    asked.clear()
+    answer = capabilities.AGY_UNKNOWN
+    sup._say_if_unsandboxed("plc-0007", harness, target, view)
+    answer = capabilities.AGY_CANNOT
+    logs.clear()
+    sup._say_if_unsandboxed("plc-0007", harness, target, view)
+    assert len(asked) == 2 and any("UNSANDBOXED" in line for line in logs)
+    # The unshare call itself refused is as unsandboxed, and the log names the kernel or a
+    # container, not a profile (the review of #2119).
+    sup.agy_sandbox.clear()
+    answer = "refused"
+    logs.clear()
+    sup._say_if_unsandboxed("plc-0008", harness, target, view)
+    loud = [line for line in logs if "UNSANDBOXED" in line]
+    assert len(loud) == 1 and "kernel or a container" in loud[0]
+    sandboxed = supervisor.GateView(view.found, True, False)  # never asked where it is on
+    sup.agy_sandbox.clear()
+    asked.clear()
+    sup._say_if_unsandboxed("plc-0006", harness, target, sandboxed)
+    sup._say_if_unsandboxed("plc-0006", sup.cfg.harnesses["stub"], target, view)
+    assert asked == []
 
 
 def test_check_warns_about_the_agents_users_own_agy_settings(
