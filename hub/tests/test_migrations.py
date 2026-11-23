@@ -2389,13 +2389,29 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
     beta = factory.project(engine, "beta")
     factory.membership(engine, project_id, "owner", human_id=member)
     factory.membership(engine, beta, "coder", human_id=elsewhere)  # a member of beta only
+    later = factory.human(engine, "later")
     removed = factory.membership(engine, project_id, "coder", human_id=gone)
+    joined_later = factory.membership(engine, project_id, "coder", human_id=later)
     own = factory.agent(engine, project_id, member, "coder", picture=False).agent_id
     outside = factory.agent(engine, project_id, stranger, "coder", picture=False).agent_id
     other_project = factory.agent(engine, project_id, elsewhere, "coder", picture=False).agent_id
     left = factory.agent(engine, project_id, gone, "coder", picture=False).agent_id
-    with engine.begin() as conn:  # removed: the row stays, inactive (§6.2)
-        conn.execute(update(t.membership).where(t.membership.c.id == removed).values(active=None))
+    came_in_outside = factory.agent(engine, project_id, later, "coder", picture=False).agent_id
+    t0 = factory.at("2026-11-01T10:00:00Z")
+    with engine.begin() as conn:
+        conn.execute(update(t.membership).values(joined_at=t0))  # everyone joined together
+        # Left after its agent joined (review A2211, case D): the row stays (§6.2).
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == removed)
+            .values(active=None, removed_at=factory.at("2026-11-02T10:00:00Z"))
+        )
+        # Became a member only after its agent joined (case B): the history marks it.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == joined_later)
+            .values(joined_at=factory.at("2026-11-03T10:00:00Z"))
+        )
     migrate(engine)
     assert current_revision(engine) == head_revision(engine)
     with engine.connect() as conn:
@@ -2410,7 +2426,13 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
             select(t.membership.c.joined_outside).where(t.membership.c.human_id.is_not(None))
         ).scalars()
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    assert marked == {own: False, outside: True, other_project: True, left: True}
+    assert marked == {
+        own: False,
+        outside: True,
+        other_project: True,
+        left: False,  # a member when it joined: never outside, whatever came after
+        came_in_outside: True,  # its owner joined after it: outside for good (§2.3)
+    }
     assert set(humans) == {False}
     assert (project.own_approvals, project.own_agents) == (None, None)
     assert (policy.own_approvals(project), policy.own_agents(project)) == (1, "members")

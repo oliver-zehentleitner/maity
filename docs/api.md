@@ -1157,8 +1157,9 @@ from a human of the project; every other card is unchanged. The words:
   exchange when the agent's owner holds no membership of the project
   then, and never clears (`joined_outside`, not shown in any view). For
   agent memberships made before the hub kept that mark, the upgrade sets
-  it once from the owners as they stood then, so an agent whose owner
-  had already become a member by then is not marked.
+  it once from the membership history: when the owner held no membership
+  of the project at the agent's join (a removed membership keeps its
+  dates, §6.2).
 - *Outsiders' work* is a card that an outside agent holds, or whose
   current report (§6.6) an outside agent filed (`report.reported_by`).
   It is judged at each check, as the card and its members stand then:
