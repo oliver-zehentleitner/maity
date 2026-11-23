@@ -12,7 +12,9 @@ routes"): a route is open to an outsider only when its endpoint calls `reader` a
 `@outside_read`, and `ProjectRoute` answers an outsider's call to any other project route
 `not_found` before its body or query is read (`gate`). A human who
 owns an agent or a runner in the project passes the gate on `OWNER_CALLS` alone (§1.3), and
-reads not-done `security` cards no more than any outsider does (`public_cards.shown`).
+reads not-done `security` cards no more than any outsider does (`public_cards.shown`). The
+joins routes for an outsider's own agent (`OUTSIDE_JOINS`, §3.1) pass the gate only while
+`outsiders.joins_open` holds for the project.
 """
 
 from __future__ import annotations
