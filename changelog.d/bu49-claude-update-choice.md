@@ -16,3 +16,7 @@
   the checked version stays where it is and `maity runner check` warns until the checked
   version catches up. Set `track = "newest"` under `[harness.claude-code]` for the old
   behaviour.
+- docs: the hub contract (docs/api.md §15.16) measures a managed tool's `current` and
+  `rolled_back` states against the version the runner would take: `latest`, or the
+  checked version a runner holds Claude Code at under `track = "checked"`. A held runner
+  reports `current` with a `version` below `latest`. The fields are unchanged.

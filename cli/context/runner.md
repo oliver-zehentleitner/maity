@@ -2364,7 +2364,7 @@ versions daily without a check.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_warning`, `unchecked_note`, `above_checked`), `config.py` (`track`); the first review round of #2117 (the `rolled_back` cases below, reproduced with the tests' installer)
+**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_warning`, `unchecked_note`, `above_checked`), `config.py` (`track`); the first review round of #2117 (the `rolled_back` cases below, reproduced with the tests' installer); the lead's ruling of 2026-11-23 on that round's finding that docs/api.md §15.16 still measured `current` and `rolled_back` against `latest` (review A2202, P2-3)
 **See:** runner.md#how-the-checked-claude-code-version-keeps-up-with-the-runners-daily-update — ae02241e-aed4-44e3-9eb7-9550cd006fb2 — as of 2026-11-23
 **See:** runner.md#a-checked-claude-code-version-is-raised-only-on-the-probes-output-from-a-signed-in-machine — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-23
 **See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-23
@@ -2408,7 +2408,11 @@ working under both values. What this implementation chose within that
   version that is newer than the one in use: under a cap the target is
   `CHECKED`, and after a rollback forward the held version is itself in
   `skipped`. Without that condition a runner above its held version
-  reported `rolled_back` until `CHECKED` rose. A rollback and
+  reported `rolled_back` until `CHECKED` rose. The contract says the
+  same: docs/api.md §15.16 measures both states against the version the
+  runner would take, `latest` or the held version, which stays local to
+  the runner; its fields and the hub's handling did not change (the
+  lead's ruling, in this pull request). A rollback and
   `maity runner tools` work the hold out from the configuration's
   `track` at that moment, not from the last check's `held`, so right
   after a switch of `track` a rollback is not measured against the

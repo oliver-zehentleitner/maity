@@ -23047,16 +23047,25 @@ update = "daily"    # maity itself; default "never"
   version the one new sessions start with; the version it left stays on
   the machine as `previous_version`, so a second rollback goes back to
   it. After a rollback the tool reports `rolled_back` when the version
-  now in use is older than `latest`, and `current` otherwise. While it
-  is `rolled_back`, the runner does not install the version it left, or
+  now in use is older than the version the runner would take, and
+  `current` otherwise. The version the runner would take is `latest`,
+  or, when the runner holds Claude Code at its checked version (`track =
+  "checked"` in the runner's own configuration, docs/runners.md) because
+  `latest` is later than that version or cannot be compared with it, that
+  held version, which is local to the runner and not reported. A later
+  check that takes no version reports `rolled_back` only when the version
+  the runner would take is newer than the one in use and is one the
+  runner does not take again on its own, such as the version the rollback
+  left (below); otherwise it reports `current`. While it is
+  `rolled_back`, the runner does not install the version it left, or
   one that failed its version answer, again on its own, neither on the
   daily check nor on `Update now`: it takes only a version newer than
   those, which ends `rolled_back`. Taking the left version again is the
   operator's second rollback. A rollback is refused while an install or
   update of the tool runs; it can be run again once that is done, so
   neither overwrites the other. For example, with 2.1.320 in use, 2.1.308
-  kept and `latest` 2.1.320: a rollback starts new sessions on 2.1.308,
-  keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
+  kept, `latest` 2.1.320 and no hold: a rollback starts new sessions on
+  2.1.308, keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
   daily check finds 2.1.320 again and leaves it. A second rollback
   starts them on 2.1.320 again, keeps 2.1.308 and reports `current`. If
   2.1.321 appears while it is `rolled_back`, the runner installs it as
@@ -23108,10 +23117,13 @@ needs a hub that has it:
 - `version`: what new sessions start with, `null` when the tool is not
   there; `previous_version`: the version kept for a rollback, or `null`;
   `latest`: the newest version the last check found, or `null` before
-  the first check or with `update: "never"`.
-- `state`: `current` (in use is the latest the runner knows of, or no
-  check has run), `rolled_back` (in use is older than `latest` after a
-  rollback; above), `missing` (not there and `install: false`),
+  the first check or with `update: "never"`. It stays the vendor's newest
+  while the runner holds Claude Code at its checked version (above), so
+  `current` can come with a `version` below `latest`.
+- `state`: `current` (in use is not older than the version the runner
+  would take, `latest` or the held version; or no check has run),
+  `rolled_back` (after a rollback, in use is older than the version the
+  runner would take; above), `missing` (not there and `install: false`),
   `installing`, `updating`, `login_needed`, `failed`. `reason` with `failed` only:
   `installer_failed`, `version_failed` (the new version does not run;
   the one before is kept), `network`, `no_space`; `null` otherwise. The
