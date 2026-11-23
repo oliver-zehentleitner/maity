@@ -343,8 +343,11 @@ They are read in two queries, merged by seq, each seeking its own index:
 a result tied to the card by `task_id` through `ix_event_subject`
 (`project_id`, `subject_type` `task`, `subject_id`), and one tied only
 by a subject `#<n>` through `ix_event_review_pr` (`review_pr`,
-`project_id`) with the card's current pull request, then resolved to its
-card one by one; so the read is bounded by the card's own results. One
+`project_id`) with the card's current pull request; every such result
+names that one pull request, so whether it is this card's is resolved
+once per count, and only when such a result exists (the resolution reads
+the project's reported cards; once per result it would repeat that read,
+#2145 review A2429). So the read is bounded by the card's own results. One
 query with an `OR` across both would leave neither index usable. The
 index leads with `review_pr`: led by `project_id`, PostgreSQL's planner
 took it for reads filtered on the project alone (the chat sweep) and

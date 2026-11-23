@@ -292,7 +292,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   approvals on its reported head (`policy.own_approvals`): until then a
   move to `done` is `forbidden` with `details.reason: own_approvals`,
   `needed` and `counted`, and a report with `"done": true` goes to
-  `review`. `maity report` fills the
+  `review` (a `blocked` card stays blocked and goes to `review` once its
+  answer comes). `maity report` fills the
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`

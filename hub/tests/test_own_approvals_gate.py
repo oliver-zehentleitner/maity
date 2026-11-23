@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import own_approvals
+from maity_hub import own_approvals, review_delivery
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -118,6 +118,23 @@ def test_the_holders_move_from_in_progress_is_gated_too(
     assert _status(owner, card_id) == "in_progress"
 
 
+def test_the_holders_move_from_in_progress_passes_once_the_approval_is_there(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The gate refuses the move from `in_progress` without an own approval (above) and lets
+    it through with one on the reported head (#2145 review A2429)."""
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    back = outsider.patch(f"{PROJECT}/tasks/{card_id}", {"status": "in_progress"})
+    assert back.status_code == 200, back.text
+    assert _status(owner, card_id) == "in_progress"
+    assert _done(outsider, card_id).status_code == 200
+    assert _status(owner, card_id) == "done"
+
+
 def test_a_done_report_from_an_outside_holder_is_stored_and_goes_to_review(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -188,6 +205,23 @@ def test_a_later_changes_withdraws_an_approve(
     _refused(_done(judge, card_id))
 
 
+def test_a_later_comment_withdraws_an_approve_too(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Each author's latest result decides: a `comment` after an `approve` takes it back as a
+    `changes` does (#2145 review A2429)."""
+    _policy(owner, done_authority="reviewer")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    _review(judge, card_id)
+    assert _count(migrated, card_id) == 1
+    _review(judge, card_id, verdict="comment")
+    assert _count(migrated, card_id) == 0
+    _refused(_done(judge, card_id))
+
+
 def test_an_owners_own_move_counts_as_its_approval(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -238,6 +272,32 @@ def test_a_merged_card_blocked_from_review_is_gated_too(
         )
     _refused(_done(outsider, card_id))
     assert _status(owner, card_id) == "blocked"
+
+
+def test_a_done_report_on_a_blocked_card_short_of_approvals_keeps_it_blocked(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A closing report on a `blocked` card short of its own approvals is stored; the card
+    stays blocked and returns to `review`, not `done`, once its answer comes (§7; #2145
+    review A2429)."""
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    assert outsider.post(f"{PROJECT}/tasks/{card_id}/claim", {}).status_code == 200
+    asked = outsider.post(
+        f"{PROJECT}/requests",
+        {"class": "decision", "title": "Which?", "task_id": card_id, "while_open": "wait"},
+    )
+    assert asked.status_code == 201, asked.text
+    assert _status(owner, card_id) == "blocked"
+    stored = outsider.post(f"{PROJECT}/tasks/{card_id}/report", _report(done=True))
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["status"] == "blocked"
+    with migrated.connect() as conn:
+        before = conn.execute(
+            select(t.card.c.status_before_block).where(t.card.c.id == card_id)
+        ).scalar_one()
+    assert before == "review"
 
 
 # --- what counts -----------------------------------------------------------------------------
@@ -794,6 +854,33 @@ def _human_member(make_client: ClientFactory, engine: Engine, handle: str, role:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(engine, project_id, role, human_id=human.id)
     return human
+
+
+def test_the_pull_request_is_resolved_once_however_many_results_name_it(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2145 review A2429: results named by their pull request alone all name the card's own
+    pull request, so whether it is this card's is asked once per count, not once per result
+    (the resolution reads the project's reported cards). One count resolves it once, for one
+    such result as for three; with none, not at all."""
+    card_id = _outsiders_card(owner, make_client, migrated)
+    real = review_delivery._card
+    calls: list[str] = []
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        calls.append("resolve")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(review_delivery, "_card", counted)
+    assert _count(migrated, card_id) == 0 and calls == []  # no such result: no resolution
+    for role in ("reviewer", "reviewer", "tester"):
+        _subject_only(flow.agent(make_client, owner, role=role))
+    calls.clear()
+    assert _count(migrated, card_id) == 3
+    assert calls == ["resolve"]
 
 
 def test_an_approval_named_by_its_pull_request_alone_counts_on_a_move(

@@ -266,17 +266,17 @@ def _review_approvers(conn: Connection, card: Any, project: Any, head: str) -> d
             select(*columns).where(*results, e.review_pr == pr, e.subject_id.is_(None))
         ).all()
     rows.sort(key=lambda row: int(row.seq))
+    # Every row named by its pull request alone names `pr` (the second read): whether `#pr` is
+    # this card's is one resolution for all of them (§8.4), made only when there is such a row.
+    pr_is_this_card = False
+    if pr is not None and any(row.subject_id is None for row in rows):
+        named = review_delivery._card(conn, card.project_id, None, {"subject": f"#{pr}"})
+        pr_is_this_card = named is not None and named.id == card.id
     principals: dict[int, Any] = {}
     latest: dict[str, Any] = {}
     for row in rows:
-        if row.subject_id is None:  # named by its pull request alone: is it this card's?
-            if row.review_pr is None:
-                continue
-            resolved = review_delivery._card(
-                conn, card.project_id, None, {"subject": f"#{row.review_pr}"}
-            )
-            if resolved is None or resolved.id != card.id:
-                continue
+        if row.subject_id is None and not pr_is_this_card:
+            continue  # named by a pull request another card's report names now
         membership_id = int(row.actor_membership)
         if membership_id not in principals:
             principals[membership_id] = conn.execute(
