@@ -317,12 +317,13 @@ def free_port(avoid: frozenset[int] | set[int] = frozenset()) -> int:
     `avoid`. The port is closed again before it is returned, so whatever binds it next binds
     it: a round that starts a MailCatcher beside a hub starts the catcher first and avoids its
     port, so the catcher never takes the hub's (tsk-vfdn98vwa0ym)."""
-    while True:
+    for _ in range(100):  # bounded: a wrong `avoid` fails the run instead of spinning
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
         if port not in avoid:
             return port
+    raise SystemExit(f"e2e: no free port outside {sorted(avoid)} in 100 tries")
 
 
 def port_taken(port: int) -> bool:

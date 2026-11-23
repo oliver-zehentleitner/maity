@@ -378,40 +378,76 @@ def a11y_cases() -> int:
     return failed
 
 
+SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def _own_scope(node: ast.AST):
+    """Every node of a function's own body, not those of a function or class defined in it,
+    which is a scope of its own and checked as one."""
+    for child in ast.iter_child_nodes(node):
+        yield child
+        if not isinstance(child, SCOPES):
+            yield from _own_scope(child)
+
+
+def _called(node: ast.AST, name: str) -> bool:
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
+
+
 def catcher_rounds(source: str) -> list[str]:
     """What is wrong with the port order of each function of e2e.py that starts a MailCatcher:
-    the catcher must be made before any `free_port(` in that function, and every such
-    `free_port(` must pass `avoid=` naming the catcher's `.port`, so the OS cannot hand the
-    catcher the hub's port (tsk-vfdn98vwa0ym). One message per fault, naming the function."""
+    every `free_port(` in that function must come after its last `MailCatcher(`, and must
+    avoid the `.port` of every catcher, as `avoid=` or its first argument, directly or
+    through a name the function assigned it to. Then the OS cannot hand a catcher the hub's
+    port (tsk-vfdn98vwa0ym). A catcher bound to no name cannot be avoided and is a fault too.
+    Each function is its own scope: one defined inside is checked on its own. One message
+    per fault, naming the function and line."""
     faults = []
     for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name == "free_port":
             continue
-        catchers: dict[str, int] = {}  # variable name -> line of its MailCatcher()
-        ports = []
-        for inner in ast.walk(node):
-            if (isinstance(inner, ast.Assign) and isinstance(inner.value, ast.Call)
-                    and isinstance(inner.value.func, ast.Name) and inner.value.func.id == "MailCatcher"):
-                for target in inner.targets:
-                    if isinstance(target, ast.Name):
-                        catchers[target.id] = inner.lineno
-            if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "free_port":
-                ports.append(inner)
-        if not catchers or node.name == "free_port":
+        own = list(_own_scope(node))
+        made = [n for n in own if _called(n, "MailCatcher")]
+        if not made:
             continue
-        first = min(catchers.values())
-        for call in ports:
-            where = f"{node.name} (line {call.lineno})"
-            if call.lineno < first:
-                faults.append(f"{where}: free_port() before the MailCatcher of line {first}")
+        names: dict[str, int] = {}  # a catcher's variable -> line of its MailCatcher()
+        bound = set()
+        for n in own:
+            value = getattr(n, "value", None)
+            if isinstance(n, ast.Assign) and _called(value, "MailCatcher"):
+                targets = n.targets
+            elif isinstance(n, ast.AnnAssign) and _called(value, "MailCatcher"):
+                targets = [n.target]
+            elif isinstance(n, ast.withitem) and _called(n.context_expr, "MailCatcher"):
+                value, targets = n.context_expr, [n.optional_vars] if n.optional_vars else []
+            else:
                 continue
-            avoid = next((k.value for k in call.keywords if k.arg == "avoid"), None)
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    names[target.id] = value.lineno
+                    bound.add(id(value))
+        for call in made:
+            if id(call) not in bound:
+                faults.append(f"{node.name} (line {call.lineno}): a MailCatcher bound to no name, so no port can avoid it")
+        last = max(call.lineno for call in made)
+        assigned = {
+            t.id: n.value for n in own if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)
+        }
+        for call in sorted((n for n in own if _called(n, "free_port")), key=lambda c: (c.lineno, c.col_offset)):
+            where = f"{node.name} (line {call.lineno})"
+            if call.lineno < last:
+                faults.append(f"{where}: free_port() before the MailCatcher of line {last}")
+                continue
+            avoid = next((k.value for k in call.keywords if k.arg == "avoid"), call.args[0] if call.args else None)
+            if isinstance(avoid, ast.Name) and avoid.id in assigned:
+                avoid = assigned[avoid.id]
             named = {
-                n.value.id for n in ast.walk(avoid) if isinstance(n, ast.Attribute) and n.attr == "port"
-                and isinstance(n.value, ast.Name)
+                n.value.id for n in ast.walk(avoid)
+                if isinstance(n, ast.Attribute) and n.attr == "port" and isinstance(n.value, ast.Name)
             } if avoid is not None else set()
-            if not named & set(catchers):
-                faults.append(f"{where}: free_port() does not avoid the catcher's port ({sorted(catchers)})")
+            missing = sorted(set(names) - named)
+            if missing:
+                faults.append(f"{where}: free_port() does not avoid the port of {missing}")
     return faults
 
 
@@ -456,7 +492,10 @@ def port_cases(ns: dict) -> int:
     catcher.server.handle_error = lambda *_: None
     try:
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{taken}/api/v1/health", timeout=2)
+            # Straight to the loopback port: a proxy from the environment (HTTP_PROXY) must not
+            # answer in its place.
+            direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            direct.open(f"http://127.0.0.1:{taken}/api/v1/health", timeout=2)
             seen = "answered as HTTP"
         except http.client.BadStatusLine as error:
             seen = str(error)
@@ -503,6 +542,28 @@ def unguarded_round(run):
         len(found) == 2 and found[0].startswith("mail_round") and found[1].startswith("unguarded_round"),
         found,
     ))
+    # The forms review A2195 found the first guard to miss or to refuse wrongly.
+    for name, sample, want in [
+        ("an annotated catcher after its port", "def r():\n    port = free_port()\n    c: MailCatcher = MailCatcher()\n", 1),
+        ("a catcher made in a with", "def r():\n    with MailCatcher() as c:\n        port = free_port()\n", 1),
+        ("a catcher made in a with, its port avoided",
+         "def r():\n    with MailCatcher() as c:\n        port = free_port(avoid={c.port})\n", 0),
+        ("a second catcher after the port",
+         "def r():\n    a = MailCatcher()\n    port = free_port(avoid={a.port})\n    b = MailCatcher()\n", 1),
+        ("two catchers, one avoided",
+         "def r():\n    a = MailCatcher()\n    b = MailCatcher()\n    port = free_port(avoid={a.port})\n", 1),
+        ("two catchers, both avoided",
+         "def r():\n    a = MailCatcher()\n    b = MailCatcher()\n    port = free_port(avoid={a.port, b.port})\n", 0),
+        ("a catcher bound to no name", "def r():\n    use(MailCatcher())\n    port = free_port()\n", 1),
+        ("a helper defined before the catcher is its own scope",
+         "def r():\n    def helper():\n        return free_port()\n    c = MailCatcher()\n"
+         "    port = free_port(avoid={c.port})\n", 0),
+        ("avoid passed by position", "def r():\n    c = MailCatcher()\n    port = free_port({c.port})\n", 0),
+        ("avoid through a name assigned in the round",
+         "def r():\n    c = MailCatcher()\n    skip = {c.port}\n    port = free_port(avoid=skip)\n", 0),
+    ]:
+        got = catcher_rounds(sample)
+        cases.append((f"the guard: {name}", len(got) == want, got))
     failed = 0
     for name, ok, detail in cases:
         failed += not ok
