@@ -394,6 +394,16 @@ def _called(node: ast.AST, name: str) -> bool:
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name
 
 
+def catcher_functions(source: str) -> set[str]:
+    """The functions of `source` that make a MailCatcher in their own scope: what
+    `catcher_rounds` inspects, so a test can see it still finds the rounds it should."""
+    return {
+        node.name for node in ast.walk(ast.parse(source))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != "free_port"
+        and any(_called(n, "MailCatcher") for n in _own_scope(node))
+    }
+
+
 def catcher_rounds(source: str) -> list[str]:
     """What is wrong with the port order of each function of e2e.py that starts a MailCatcher:
     every `free_port(` in that function must come after its last `MailCatcher(`, and must
@@ -525,8 +535,14 @@ def port_cases(ns: dict) -> int:
         catcher.server.shutdown()
         catcher.server.server_close()
     # The guard on e2e.py itself, and that it sees the old order.
-    faults = catcher_rounds(SOURCE.read_text(encoding="utf-8"))
+    source = SOURCE.read_text(encoding="utf-8")
+    faults = catcher_rounds(source)
     cases.append(("every round of e2e.py makes its catcher first and avoids its port", not faults, faults))
+    # And that it inspects the rounds it should: a refactor that hid the catchers from it
+    # would otherwise pass with nothing checked (review A2196).
+    rounds = {"second_hub_round", "mail_factor_round", "password_reset_round"}
+    seen = catcher_functions(source)
+    cases.append(("the guard inspects the three rounds that make a catcher", rounds <= seen, sorted(seen)))
     old = """
 def mail_round(run):
     port = free_port()
@@ -555,6 +571,8 @@ def unguarded_round(run):
         ("two catchers, both avoided",
          "def r():\n    a = MailCatcher()\n    b = MailCatcher()\n    port = free_port(avoid={a.port, b.port})\n", 0),
         ("a catcher bound to no name", "def r():\n    use(MailCatcher())\n    port = free_port()\n", 1),
+        ("a catcher on an attribute", "def r(run):\n    run.catcher = MailCatcher()\n    port = free_port()\n", 1),
+        ("a catcher returned by a helper", "def make():\n    return MailCatcher()\n", 1),
         ("a helper defined before the catcher is its own scope",
          "def r():\n    def helper():\n        return free_port()\n    c = MailCatcher()\n"
          "    port = free_port(avoid={c.port})\n", 0),
