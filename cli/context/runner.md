@@ -3599,7 +3599,10 @@ directory is what `gh_env` puts first on gh's `PATH`, so no link the
 session could swap stays on the way. A link that dispatches on its own
 name (a snap's `/snap/bin/gh`, which resolves to `/usr/bin/snap`) sits in
 a directory no session writes and still starts gh. A record from an older runner, which names
-gh itself, is still taken. On an ssh target the recorded entries are the
+gh itself, is still taken. On Windows gh is found on the recorded `PATH`
+by a `PATHEXT` suffix (`gh.exe`), as Windows itself and `proc.program`
+find a program; a bare `gh` there is not installed, which the tests'
+stand-in had to follow (cli-windows on #2125). On an ssh target the recorded entries are the
 runner host's own `PATH`, searched on the target. The record is read up to
 `ghpr.RECORD_MAX` (64 KiB); a longer `PATH` is cut to its first whole
 entries when the runner writes it (review A2160 of #2125). The lookup

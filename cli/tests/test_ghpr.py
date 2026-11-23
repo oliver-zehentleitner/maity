@@ -61,7 +61,10 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     subprocess.run([git, "init", "-q", "-b", BRANCH, str(clone)], check=True)
     (clone / ".git" / "maity").mkdir()
     log = tmp_path / "gh.json"
-    gh = tmp_path / "bin" / "gh"
+    # On Windows a program on a search path is found by a PATHEXT suffix, never as a bare `gh`
+    # (proc.program, as Windows itself): the stand-in is `gh.exe` there. Tests that run it skip
+    # Windows (runs_gh); the others only need `maity gh` to find it on the recorded PATH.
+    gh = tmp_path / "bin" / ("gh.exe" if os.name == "nt" else "gh")
     gh.parent.mkdir()
     gh.write_text(
         f"#!{sys.executable}\n"
@@ -688,6 +691,39 @@ def test_find_gh_searches_the_recorded_path_at_each_call(
     elsewhere.mkdir()
     (elsewhere / "gh").symlink_to(gh)
     assert ghpr.find_gh(str(elsewhere), clone) == str(elsewhere / "gh")
+
+
+@runs_gh  # Windows' lookup simulated here; on Windows the fixture itself shows it
+def test_find_gh_on_windows_takes_gh_by_its_pathext_suffix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cli-windows failure of #2125's round 3, in Windows' terms on any system: on a search
+    path Windows finds a program only by a PATHEXT suffix (proc.program does the same), so a
+    bare `gh` as the tests' stand-in is "not installed" there, while `gh.exe` is found."""
+    from maity import proc
+
+    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV, raising=False)
+    clone = _mkdir(tmp_path / "clone")
+    bare = _mkdir(tmp_path / "bare")
+    (bare / "gh").write_text("#!/bin/sh\nexit 0\n")  # the fixture's stand-in before this fix
+    (bare / "gh").chmod(0o755)
+
+    class WindowsOs:  # os as proc.program sees it on Windows; pathlib here stays POSIX
+        name = "nt"
+
+        def __getattr__(self, attr: str) -> Any:
+            return getattr(os, attr)
+
+    monkeypatch.setattr(proc, "os", WindowsOs())
+    # Lower case: Windows matches the suffix in any case, a POSIX file system only exactly; and
+    # this system's separator, which proc.program splits PATHEXT by (`;` on Windows).
+    monkeypatch.setenv("PATHEXT", os.pathsep.join([".com", ".exe", ".bat", ".cmd"]))
+    with pytest.raises(ghpr.Refused, match="gh is not installed on the runner's PATH"):
+        ghpr.find_gh(str(bare), clone)
+    exe = _mkdir(tmp_path / "exe")
+    (exe / "gh.exe").write_text("")
+    (exe / "gh.exe").chmod(0o755)
+    assert ghpr.find_gh(str(exe), clone) == str(exe / "gh.exe")
 
 
 def _gh_world(tmp_path: Path) -> dict[str, Path]:
