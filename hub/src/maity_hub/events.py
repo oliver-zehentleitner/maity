@@ -572,11 +572,12 @@ def _hides_ticker_entries(
     """Whether a card event may take a ticker entry off its project's page (§16.9): an entry
     names a card only while `public_cards.shown` holds, which reads the card's label and
     status. A new label, or a new status of a `security` card, may end that; a claim, a
-    release, an assignment or a merge (into `done`, which only adds) never does. A hold is
-    `moderation.apply`'s."""
+    release, an assignment or a merge (into `done`, which only adds) never does. A new title
+    changes the text of the card's decision entries, which the page builds from the card
+    (`public_snapshot._text`), so it renders at once too. A hold is `moderation.apply`'s."""
     if kind == "task_updated":
         fields = payload.get("fields") or []
-        if "label" in fields:
+        if "label" in fields or "title" in fields:
             return True
         if "status" not in fields:
             return False
