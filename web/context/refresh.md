@@ -529,7 +529,7 @@ and the question before the reload catches the common case, typed text.
 **Evidence:** inferred
 **Source:** the cards tsk-qw08c8ds214g (the board's serial chain) and tsk-g776fdyg6ekc (the ended sessions on every page), from the page-load measurement under tsk-a5pxwgkgr73e (nte-6t6wyf3dna2d, nte-jkgy6vtpvgst); the lead's go for every page, 2026-11-20; docs/api.md §2.6.5 (`GET /auth/sessions`, `?ended=true`, `approved_by`)
 **See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-20
-**Revisit when:** a banner needs something from the page's view before it can read, the hub says in the active list whether an approver's chain is still live, or ops' rerun on oliver-pc01-l shows no gain
+**Revisit when:** a banner needs something from the page's view before it can read, the hub says in the active list whether an approver's chain is still live, or ops' rerun on the maintainer's machine shows no gain
 
 The page's `render()` starts the two banners' reads (the sign-in banner's sessions,
 `js/sessions.js` `bannerSessions`, and the factor banner's `GET /auth/second-factor`,

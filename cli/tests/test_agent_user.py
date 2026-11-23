@@ -103,7 +103,10 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
                         "/usr/bin:/bin", home / "logs", run=run,
                         as_user=AsUser("maity-agent"))  # fmt: skip
     backend.start("maity_maity_agent-3", tmp_path, ["stub"], {}, "plc-0003", 1)
-    assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
+    # The sessions' shell is probed as the agents' user first (A2352), then the server starts.
+    assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "sh", "-c"]
+    new = next(call for call in calls if "new-session" in call)
+    assert new[:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
     assert all(call[:5] == ["sudo", "-n", "-u", "maity-agent", "--"] for call in calls)
     assert (home / "tmux.conf").read_text().startswith("set -g update-environment")
     assert "maity-agent -- sh -c mkdir -p" in fake_sudo.read_text()

@@ -119,6 +119,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/changelog.py check
+      # Every README.<lang>.md has every heading of README.md: a section added in English fails
+      # here instead of going stale in the translations (context/process.md, the README's translations).
+      - run: python tools/readme_sync.py
       # Once a release pull request folds the hub's version into CHANGELOG.md, its upgrade page
       # docs/upgrade/<version>.md must be there and complete (docs/upgrade/README.md).
       - run: python tools/upgrade_page.py check

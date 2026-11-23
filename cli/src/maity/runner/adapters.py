@@ -1002,6 +1002,8 @@ def codex_config(ctx: Context) -> str:
     return (
         'approval_policy = "never"\n'
         'default_permissions = "maity"\n'
+        # One poll covers Maity's 600-second wait with time for the response (docs/agents.md).
+        "background_terminal_max_timeout = 660000\n"
         + (f"model_reasoning_effort = {json.dumps(effort)}\n" if effort else "")
         # A version the runner manages is never swapped by Codex itself (§15.16).
         + ("check_for_update_on_startup = false\n" if managed(ctx) else "") + "\n"

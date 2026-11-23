@@ -465,7 +465,7 @@ A navigation to the landing page or a variant that counts (`campaigns.is_view`) 
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `docs/api.md` §16.7 (#905); the card tsk-7en17gygg3gf and its notes from the coordinator, 2026-10-31 (the designer's review of the live page against the board "Landing V3 – volle Fassung", Oliver's decision to make the page look like it)
+**Source:** `docs/api.md` §16.7 (#905); the card tsk-7en17gygg3gf and its notes from the coordinator, 2026-10-31 (the designer's review of the live page against the board "Landing V3 – volle Fassung", the maintainer's decision to make the page look like it)
 **See:** landing.md#the-landing-pages-look-is-the-hubs-own-files-served-from-the-package-under-their-digest-the-page-reads-without-them — 7c22ec9b-0c71-4079-998e-a0900d395ac1 — as of 2026-10-31
 **See:** https://github.com/oliver-zehentleitner/maity — 05b29565-5505-4bab-a67f-cfacef328964 — as of 2026-10-31
 **Revisit when:** an operator needs a footer the columns cannot hold (a link that belongs to no section and no list), or the page offers more than four header links
