@@ -4929,7 +4929,8 @@ def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
     settle(sup)
     assert asked == [(sup.cfg.skills_dir, sup.cfg.state_dir, KTW["source"], KTW["commit"])]
     ((_, _, env),) = backend.started
-    assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
+    # Resolved on a local target, as the workspaces are (the review of #2147).
+    assert env["MAITY_KTW_SKILL_DIR"] == str(copy.resolve() / "skills" / "keep-the-why")
     assert sup.records["plc-0003"].skill_missing is False
     assert not any("Keep the Why" in line for line in logs)
 
@@ -4959,7 +4960,7 @@ def test_the_copy_a_session_starts_with_is_saved_before_it_starts(
 
 
 def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
-    world: Any, monkeypatch: pytest.MonkeyPatch
+    world: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """tsk-7casfxb7cn49: where the agents cannot read the runner's directory, the checked copy
     is put below their own home (skills.deliver): the agents' user's home here, the remote
@@ -4967,6 +4968,14 @@ def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
     sup, _, _, _, logs = world
     local = sup.targets["local"]
     asked: list[tuple[AsUser, Path]] = []
+    # Both homes lie behind a link on this machine (the review of #2147, A2268): the agents'
+    # user's copy here comes back resolved, the ssh host's never, since its path names a
+    # directory on that host, not this one.
+    real = tmp_path / "homes-real"
+    (real / "agents").mkdir(parents=True)
+    (real / "box").mkdir()
+    (tmp_path / "homes").symlink_to(real)
+    homes = tmp_path / "homes"
 
     def deliver(as_user: AsUser, home: Path, skills_dir: Path, state_dir: Path, source: str,
                 commit: str) -> Path:  # fmt: skip
@@ -4980,13 +4989,14 @@ def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
 
     monkeypatch.setattr(skills, "deliver", deliver)
     monkeypatch.setattr(skills, "ensure", ensure)
-    monkeypatch.setattr(config, "home_of", lambda user: Path("/home") / user)
+    monkeypatch.setattr(config, "home_of", lambda user: homes / user)
     agents = replace(local, as_user=AsUser("agents"))
-    assert sup._skill(placement(keep_the_why=KTW), agents) == Path("/home/agents/copy/plugin")
+    resolved = real.resolve() / "agents" / "copy" / "plugin"
+    assert sup._skill(placement(keep_the_why=KTW), agents) == resolved
     remote = replace(local, name="build-9", as_user=Ssh(name="build-9"),
-                     agent_files=Path("/home/box/.maity-runner"))  # fmt: skip
-    assert sup._skill(placement(keep_the_why=KTW), remote) == Path("/home/box/copy/plugin")
-    assert asked == [(agents.as_user, Path("/home/agents")), (remote.as_user, Path("/home/box"))]
+                     agent_files=homes / "box" / ".maity-runner")  # fmt: skip
+    assert sup._skill(placement(keep_the_why=KTW), remote) == homes / "box" / "copy" / "plugin"
+    assert asked == [(agents.as_user, homes / "agents"), (remote.as_user, homes / "box")]
     assert not any("Keep the Why" in line for line in logs)
 
 

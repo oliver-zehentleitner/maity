@@ -1336,7 +1336,7 @@
   "forge.confirm.what": "Confirmation du dépôt",
   "forge.confirmed": "Confirmé pour les accès de {handle}.",
   "forge.failed": "{what} a échoué : {reason}",
-  "forge.intro": "Le hub lit les dépôts des projets dont vous êtes propriétaire avec votre accès : une installation de la GitHub App de cette instance, ou un jeton à vous. Il ne fait que lire, jamais écrire. Un dépôt public en a besoin aussi, sauf s'il se trouve dans l'un des espaces de noms propres à l'opérateur, et le hub ne lit le dépôt d'un projet qu'après que vous l'avez confirmé dans les paramètres du projet.",
+  "forge.intro": "Le hub lit les dépôts des projets dont vous êtes propriétaire avec votre accès : une installation de la GitHub App de cette instance, ou un jeton à vous. Il ne fait que lire, jamais écrire. En dehors des espaces de noms propres à l'opérateur, un dépôt public en a besoin aussi, et le hub ne lit le dépôt d'un projet qu'après que vous l'avez confirmé dans les paramètres du projet.",
   "forge.link": "Lier la GitHub App",
   "forge.link.all": "tous les dépôts",
   "forge.link.bad_url": "la réponse du hub n'est pas une adresse https",
