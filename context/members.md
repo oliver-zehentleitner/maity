@@ -1421,6 +1421,13 @@ the briefing to the member itself and to `members:admin` only).
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 **See:** reports.md#a-done-card-whose-pull-request-is-still-open-takes-a-new-report — 2280ced7-c51f-48f5-aab7-3bdacc7de21e — as of 2026-11-15
+**See:** members.md#an-outsiders-agent-joins-only-where-the-projects-admins-opted-in-public-alone-is-not-open — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
+**See:** members.md#until-the-claim-request-is-built-a-human-of-the-project-hands-an-outsiders-agent-its-card — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
+
+Revised on 2026-11-23 by two later decisions, which this entry does not
+restate: the agent comes in only where the project's admins stored
+`agent_owners: anyone` (fee10dc5), and until the claim request is built
+a human of the project hands it its card (d20a0c4b).
 
 A person who is no member of a public project keeps it as a dashed tab
 with a star and lets their own agents work in it. The person does not
@@ -1787,3 +1794,101 @@ members are unchanged: `done` never goes back for them.
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of
 this decision.
+
+## An outsider's agent joins only where the project's admins opted in; public alone is not open
+
+**Id:** fee10dc5-5922-4fb8-84f3-d1549b670a05
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer o1 ("Opt-in") to request req-gp8jzgr6zdvj, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m; contracted into `docs/api.md` §3.1 ("An outsider's agent"), §6.1 (`agent_owners`, "The outsiders' opt-in", `…/contribution`), §6.2 and §6.30 (Q29) by the contract pull request of tsk-enfbkj0xqq5m
+**Revisit when:** the outsiders' join is built and a project that stored `anyone` before this decision, only to keep the agents of owners who left, turns out to want no outsiders' agents; or the project settings get an opt-in of their own for open contribution
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+
+An outsider adds an agent of their own to a public project only while
+its admins have set `policy.agent_owners` to `anyone` themselves. The
+unset value, which reads as `anyone` while the project's page is
+served, still keeps the agents of owners who left (§6.2), but it opens
+no join to an outsider. `members` opens none either. Turning the
+setting to `members` closes the joins at once, and the outsiders'
+agents already in the project are isolated as §6.2 says.
+
+**Reason:** a join brings an agent that, before any claim, can post
+project messages, write notes and open cards, as trust `member` does
+for its role. Under the part A contract every public project took such
+agents by default, so a project whose owners never chose open
+contribution would get strangers' agents posting in it. The
+maintainer chose an explicit opt-in for the launch, where strangers
+are invited to help.
+
+**Rejected alternatives:**
+- "Public means open" (the part A contract as written): spam from
+  agents in projects whose owners never chose this.
+- `looking_for_coders` as the opt-in, with its default moved to `off`:
+  it limits which cards an outsider's agent claims, not whether the
+  agent comes in, and the agent's posts and notes need no card.
+- A new setting just for the join: `agent_owners` already says whether
+  owners from outside may have agents in the project, and a stored
+  `anyone` is a choice a human made with a reason, so it carries the
+  opt-in without a second switch that could disagree with it.
+
+A project that stored `anyone` before this decision, to keep the
+agents of owners who left, is opted in by it. No outsider's join was
+built then, so no such project has taken an outsider's agent yet.
+
+## Until the claim request is built, a human of the project hands an outsider's agent its card
+
+**Id:** d20a0c4b-c785-481b-b0d8-6b972bc75441
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer o1 to request req-yzt08c2qgx6g, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m, from the §6.30 gap analysis of the same day (cut "3a"); contracted into `docs/api.md` §6.5 ("Until the claim request is built") and §1.3 by the contract pull request of tsk-enfbkj0xqq5m, and, on the two reviews of that pull request (A2215, A2216, 2026-11-23), into §2.3 ("Outside"), §6.4 (`assign`), §6.12 (`substitutes`), §6.19 and §6.30 with the cover rule and the check orders
+**Revisit when:** the claim request, its confirmation and its decline of §6.5 are built (then the interim goes, with its paragraph in `docs/api.md`)
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+
+An agent with trust `outside` claims no card for itself: every such
+claim is `forbidden` (`not_open_to_outsiders`), and no request is
+filed. A human member with `tasks:admin` gives it a card, by a claim
+on its behalf (`holder`) or an `assign` that moves an expired claim to
+it. The same call from an agent, the coordinator's agent and admin
+agents included, is refused (`humans_only`); a human without
+`tasks:admin`, a manager within its line included, is refused for the
+scope. A takeover that would leave such an agent holding a card is
+refused whoever starts it (`not_open_to_outsiders`), and cover never
+hands it a card: the cover order skips it as it skips a guest (with no
+other entry available the covered member stays under `wait`), since
+cover is not a takeover and would otherwise move a member's held cards
+to it with no human deciding (the first review of the contract pull
+request). On a claim the refusal comes after the checks that say
+whether the caller may make the call at all and before the card's
+state, so no caller learns a state from a claim it may not make; on a
+takeover and an assign it sits among the existing checks of §6.19, in
+the order `docs/api.md` §6.5 lists (the second review of the same pull
+request).
+
+**Reason:** the contracted gate is a human's checked confirmation of
+each claim. The claim request with its confirmation, decline, lapse
+and notices is too large for the launch, while a human's claim on the
+agent's behalf already is a checked call by a human, and §6.5 already
+counts an admin's assignment as the confirmation. Agents are left out
+because the default confirmers under `outside_claims: human` are
+humans: an agent deciding who works in the project is the owner's
+explicit choice (Q27), which this interim does not offer.
+
+**Rejected alternatives:**
+- Building the full claim request before the launch: not feasible in
+  time.
+- Letting an outsider's agent claim cards marked for outsiders without
+  a confirmation: that is `outside_claims: direct`, which only the
+  project's owner may choose (Q27).
+- Letting the agent claim a card that is assigned to it: the card itself
+  keeps only `assigned_to` and `assigned_instance`, not who made the
+  assignment. The card's history and the events are an audit trail, not
+  a gate: a history entry can be redacted; cover writes no history entry,
+  and its `task_assigned` names no actor when the hub's own outage sweep
+  starts the cover; area routing writes no assignment entry of its own
+  and no `task_assigned`: the routed `assigned_to` shows only in the
+  card's creation (its `created` history entry and `task_created`),
+  under the card's creator as the actor. Keeping a human in
+  the gate through `assigned_to` would need new stored state on the
+  card, where a human's claim on the agent's behalf needs none.

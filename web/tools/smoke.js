@@ -10358,7 +10358,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(fgRepo()).includes("Confirmed for the grants of @maintainer") && text(fgRepo()).includes("GitHub App installation") && !btn(fgRepo(), "Confirm this repository for my grants"),
       "forge: confirmed with the URL the owner saw; then read with the owner's installation");
     // Confirmed, its page off: the namespace owner is offered the page with one click, never switched on by
-    // itself (req-6jht73f66j1g); only where the hub would take it (§16.8).
+    // itself (req-6jht73f66j1g); only where the page would be served: not archived, no moderation
+    // hold (§16.8).
     const fgGet = win.Maity.api.get;
     const fgPatchReal = win.Maity.api.patch;
     const fgOffer = () => btn(fgRepo(), "Turn the public page on now");
@@ -15187,15 +15188,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
   const apCounts = win.Maity.notify.state.counts;
   const apCount = (a) => (a.querySelector(".count") ? text(a.querySelector(".count")) : "");
-  expect(apPages().length === 5 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
+  expect(apPages().length === 6 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
     && apPages()[1].getAttribute("href") === "#/chats" && text(apPages()[1]).startsWith("Chats")
     && apPages()[1].getAttribute("aria-current") === "page" && !apPages()[0].getAttribute("aria-current") && apAll().getAttribute("aria-current") === "page"
     && apCount(apPages()[1]) === (apCounts.chat ? String(apCounts.chat) : "") && apCount(apPages()[0]) === (apCounts.inbox ? String(apCounts.inbox) : "")
     && header.querySelector("nav.views").getAttribute("aria-label") === "Pages of all projects" && text(header.querySelector(".bar .project")) === "Everything waiting for you",
     "all projects: Chats is its second page, current, with the unread count; All projects stays current in the switcher " + JSON.stringify(apPages().map((a) => text(a))));
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
-  expect(apPages().length === 5 && text(apPages()[2]) === "Agents" && apPages()[2].getAttribute("href") === "#/agents" && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
+  expect(apPages().length === 6 && text(apPages()[2]) === "Agents" && apPages()[2].getAttribute("href") === "#/agents" && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
     && apAll().getAttribute("aria-current") === "page", "all projects: the Inbox is the first page, current on /all");
+  // Runners last, after Why, through the app's own route, not an absolute address (tsk-fznk0me1vydz).
+  // The page at an index, or null: a missing one fails the check instead of stopping the run (A2256).
+  const apPage = (i) => apPages()[i] || null;
+  const apIs = (i, label) => !!apPage(i) && text(apPage(i)) === label;
+  expect(apIs(4, "Why") && apIs(5, "Runners") && apPage(5).getAttribute("href") === "#/runners" && !apPage(5).getAttribute("aria-current"),
+    "all projects: Runners is the last page, after Why, linked to the app's /runners " + JSON.stringify(apPages().map((a) => [text(a), a.getAttribute("href")])));
+  await go("#/runners"); for (let k = 0; k < 4; k++) await tick();
+  expect(apPages().length === 6 && apIs(5, "Runners") && apPage(5).getAttribute("aria-current") === "page" && !apPage(0).getAttribute("aria-current") && apAll().getAttribute("aria-current") === "page",
+    "all projects: on /runners the Runners page is current, and All projects stays current in the switcher");
+  // An agent's All projects has neither Agents nor Runners: both are a human's, and the hub's
+  // runner routes take a human caller (A2256).
+  const apGetHuman = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? apGetHuman(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }) })) : apGetHuman(p));
+  await go("#/chats"); await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  const apAgentPages = apPages().map((a) => text(a).replace(/\d+$/, ""));
+  win.Maity.api.get = apGetHuman;
+  expect(JSON.stringify(apAgentPages) === JSON.stringify(["Inbox", "Chats", "Jour fixe", "Why"]),
+    "all projects: an agent gets no Runners page, as no Agents page " + JSON.stringify(apAgentPages));
+  await go("#/chats"); await go("#/all"); for (let k = 0; k < 4; k++) await tick();
   // Jour fixe and Why across projects (js/all-pages.js): a section per project, each from that project's own endpoint.
   const apSections = () => main.querySelectorAll("section.all-project");
   const apOf = (slug) => apSections().find((s) => s.getAttribute("data-project").endsWith("/" + slug));
@@ -17038,6 +17058,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viView = () => main.querySelector("section.view-visitor");
   // What a visitor can press: nothing but the Report control (§16.8, tsk-7ze5w6ymf7bw).
   const viPress = () => viView().querySelectorAll("button, input, select, textarea").filter((e) => !e.classList.contains("report-open"));
+  // The stored public page is a visitor's, read without a session: a signed-in reader who is no member
+  // gets the project's member views instead (the owner, 2026-11-19; the outsider's block below).
+  let viOut = true;
+  const viOutGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (viOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viOutGet(p));
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "board" && viAsked[0] === "/public/pages/stranger/tool/board"
     && text(viView()).includes("A <b>card</b>") && text(viView()).includes("A member")
@@ -17051,47 +17076,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "team" && viAsked.includes("/public/pages/stranger/tool/team")
-    && text(viView()).includes("(sam)") && text(viView()).includes("2 ×")
+    && text(viView()).includes("Sam")
     && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/team") && a.getAttribute("aria-current") === "page"),
-    "visitor: the Team page is at /team, its people listed and its tab current");
+    "visitor: the Team page is at /team, its people listed and its tab current " + JSON.stringify(viView() && text(viView()).slice(0, 200)));
   await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "card" && viAsked.includes("/public/pages/stranger/tool/tasks/tsk-1")
-    && text(viView()).startsWith("A <b>card</b>") && text(viView().querySelector(".about")).includes("Steps") && text(viView()).includes("An agent")
+    && text(viView()).includes("A <b>card</b>") && text(viView()).includes("Steps")
     && !viView().querySelector("img") && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
-    && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viPress().length,
-    "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
-  // Report what the page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it; ?report opens the form.
-  {
-    const rpPost = win.Maity.api.post, rpSent = [];
-    win.Maity.api.post = (p, body) => { if (p === "/reports") rpSent.push(body); return rpPost(p, body); };
-    const rpOpen = () => viView().querySelector("button.report-open");
-    const rpSend = async (reason) => {
-      rpOpen().click(); await tick();
-      const f = viView().querySelector("form.report-form");
-      f.querySelector("select").value = reason;
-      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-    };
-    const rpCardLabel = rpOpen() && rpOpen().getAttribute("aria-label");
-    const rpCounts = [viView().querySelectorAll(".report-open").length];
-    await rpSend("spam");
-    const rpCardSent = viView().querySelector(".report-sent");
-    const rpTargets = [];
-    for (const [hash, kind] of [["#/stranger/tool", "project"], ["#/stranger/agents/overview", "agent"]]) {
-      await go(hash); for (let k = 0; k < 4; k++) await tick();
-      if (viView() && rpOpen()) { rpCounts.push(viView().querySelectorAll(".report-open").length); await rpSend("other"); rpTargets.push(kind); }
-    }
-    win.Maity.api.post = rpPost;
-    expect(rpCardLabel === "Report this card to the instance's admins" && rpCardSent && rpCardSent.querySelector("a").getAttribute("href").endsWith("/account/reports")
-      && JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "card", id: "tsk-1", project: "stranger/tool" }, { type: "project", id: "stranger/tool" },
-        { type: "profile", id: "stranger/overview" }])
-      && rpSent[0].reason === "spam" && !("text" in rpSent[0]) && JSON.stringify(rpCounts) === "[1,1,1]",
-      "report: a public card, project and agent each send their public name, and the sent line links Your account → Reports " + JSON.stringify([rpCardLabel, rpTargets, rpSent.map((b) => b.target)]));
-    await go("#/stranger/tool?report"); for (let k = 0; k < 6; k++) await tick();
-    const rpAsked = viView() && viView().querySelector("form.report-form");
-    expect(rpAsked && rpOpen().hidden && rpOpen().getAttribute("aria-expanded") === "true",
-      "report: ?report on a public page opens the form at once (the sign-in link's way back) " + JSON.stringify([!!viView(), !!rpAsked, rpOpen() && rpOpen().hidden]));
-    await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
-  }
+    && !viPress().length,
+    "visitor: a card's own page, its Markdown drawn without raw HTML, and nothing to press " + JSON.stringify(viView() && text(viView()).slice(0, 200)));
+  // Signed in, a public card, project and agent are reported from the outsider's member views (the block below).
   const viNotes = viView().querySelectorAll("li").filter((li) => li.getAttribute("data-note"));
   expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
     && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
@@ -17100,15 +17094,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(viNotes[1]).includes("edited"), "visitor: an edited note says who edited it, when and why, the reason as text; a removed one no mark " + JSON.stringify(text(viNotes[0])));
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
-    && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
+    && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
     && !text(viView()).includes("Pull requests merged"),
-    "visitor: the overview, no unsafe link and no counter the hub left empty");
-  expect(text(viView()).includes("Recently") && text(viView()).includes("#1 <b>merged</b>") && text(viView()).includes("Decided: tsk-1")
-    && viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1")
-    && text(viView()).includes("Humans online: 1") && text(viView()).includes("Agents online: 2") && !viView().querySelector("b"),
-    "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
+    "visitor: the overview, no unsafe link and no counter the hub left empty " + JSON.stringify(viView() && text(viView()).slice(0, 300)));
+  {
+    // The figures band draws its numbers in <b>; a <b> from the hub's text would be one of these words.
+    const viSnap = [text(viView()).includes("Decided: tsk-1"), viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1"),
+      !viView().querySelectorAll("b").some((b) => ["merged", "title", "one", "x"].includes(text(b)))];
+    expect(viSnap.every(Boolean), "visitor: the overview's snapshot, the ticker as text with a merge's link, no markup from the hub's text " + JSON.stringify(viSnap));
+  }
+  viOut = false;
+  win.Maity.api.get = viOutGet;
+  await win.Maity.api.get("/auth/session");
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
+  // Signed in, an agent's public page is such an address (a project's is its member views).
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(productLine.querySelectorAll("a").length === 5, "product line: under a public address the dashboard draws");
   // From the framed sign-in to a public address: the frame stays (the visitor's page stands in it too, tsk-tp97v64vpy5z),
   // its footer in the product line's place.
@@ -17198,31 +17199,453 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "product line: from the framed sign-in to a public address, the frame stays, its footer in the line's place " + viFramed + JSON.stringify(viAfter));
   main.hasAttribute = (k) => k in main.attrs;
   main.setAttribute("data-public-page", "");
-  await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(!productLine.querySelectorAll("a").length, "product line: not under a stored public page the hub served");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(productLine.querySelectorAll("a").length === 5, "product line: back with the next view");
   delete main.hasAttribute;
-  expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
+  // The outsider's dashed tab and the starred tabs (tsk-2fxc53xqf922; docs/api.md §2.3, §5.1 "Stars", §6.30 Q2;
+  // web/context/views.md f461c919): a public project one is no member of is a dashed tab for the browser
+  // session, kept in sessionStorage; a starred one is a dashed tab among one's tabs, after start_tabs. The tab
+  // opens the project's member views, Overview, Board, Team and Why, with what an outsider may not do left out,
+  // read from the member routes the hub opens to an outsider (#2001, #2078), which the fixture hub answers as
+  // it does; never the stored public page (the owner, 2026-11-19). Three readers: an outsider, a starred
+  // outsider, and a member beside them.
+  {
+    const M_ = win.Maity;
+    const ssStore = {}, lsStore = {};
+    const ssBefore = win.sessionStorage, lsBefore = win.localStorage;
+    win.sessionStorage = { getItem: (k) => (k in ssStore ? ssStore[k] : null), setItem: (k, v) => { ssStore[k] = String(v); }, removeItem: (k) => { delete ssStore[k]; } };
+    win.localStorage = { getItem: (k) => (k in lsStore ? lsStore[k] : null), setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: (k) => { delete lsStore[k]; } };
+    const SESSION = "maity.tabs.outsider.hum-maintainer", LOCAL = "maity.tabs.hum-maintainer";
+    const MA = "prj-maity0000001", SA = "prj-sample000001", TOOL = "prj-tool00000001";
+    const otNav = () => header.querySelector("nav.switcher");
+    const otLinks = () => otNav().querySelectorAll("a");
+    const otTab = (full) => otNav().querySelectorAll("a.outsider").find((a) => a.getAttribute("data-outsider") === full) || null;
+    const otIds = () => otLinks().map((a) => a.getAttribute("data-project")).filter(Boolean).join();
+    const otSession = () => JSON.parse(ssStore[SESSION] || "[]").map((t) => t.full_name).join();
+    const otSaid = () => text(header.querySelector(".tabs-said"));
+    const otButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
+    const otItems = () => header.querySelector(".tabs-menu-box").querySelectorAll(".menu-item");
+    const otOpenMenu = async () => { const ul = header.querySelector(".tabs-menu-box").querySelector("ul"); if (!ul || ul.hidden) { otButton().click(); await tick(); } };
+    // The menu as it stands now: closed first where it is open, since its items are built when it opens.
+    const otFreshMenu = async () => { const ul = header.querySelector(".tabs-menu-box").querySelector("ul"); if (ul && !ul.hidden) { otButton().click(); await tick(); } await otOpenMenu(); };
+    const otRefusal = (why, extra) => () => Promise.reject(new M_.api.ApiError("refused", 400, "/me", "invalid", Object.assign({ fields: { starred: why } }, extra || {})));
+    const otPatches = [];
+    const otRealPatch = M_.api.patch;
+    // Every write under the project, and every report sent: an outsider writes nothing there.
+    const otWrites = [], rpSent = [];
+    const otPost = M_.api.post, otPut = M_.api.put, otDel = M_.api.del;
+    const otWrote = (method, p) => { if (String(p).startsWith("/projects/stranger")) otWrites.push(method + " " + p); };
+    M_.api.post = (p, b) => { otWrote("POST", p); if (p === "/reports") rpSent.push(b); return otPost(p, b); };
+    M_.api.put = (...a) => { otWrote("PUT", a[0]); return otPut(...a); };
+    M_.api.del = (...a) => { otWrote("DELETE", a[0]); return otDel(...a); };
+    const otRecord = (path, body) => { otWrote("PATCH", path); otPatches.push([path, body]); return otRealPatch(path, body); };
+    M_.api.patch = otRecord;
+    // The member routes an outsider reads (hub access.py `OUTSIDE_READS`, #2001 and #2078's three Why reads).
+    const OT_READS = /^\/projects\/stranger\/tool(\/members(\/[^/?]+)?|\/tasks(\/[^/?]+(\/history|\/notes)?)?|\/logo|\/banner|\/keep-the-why(\/export|\/bodies)?)?(\?.*)?$/;
+    const otFrom = viAll.length, otPublicFrom = viAsked.length;
+    const otViews = () => (header.querySelector("nav.views") ? header.querySelector("nav.views").querySelectorAll("a") : []);
+    const otShown = () => otViews().map((a) => [text(a), (a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current") === "page"]);
+    const otStar = () => (otTab("stranger/tool") && otTab("stranger/tool").parentNode.querySelector(".tab-star")) || null;
+    const rpSend = async (box, reason) => {
+      box.querySelector("button.report-open").click(); await tick();
+      const f = box.querySelector("form.report-form");
+      f.querySelector("select").value = reason;
+      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    };
+    // The project's own address is its Overview, the dashed tab current.
+    await go("#/stranger/tool"); for (let k = 0; k < 6; k++) await tick();
+    const tool = otTab("stranger/tool");
+    expect(M_.route.current().path === "/stranger/tool/overview" && main.querySelector("section.view-overview") && !viView()
+      && tool && tool.getAttribute("aria-current") === "page" && text(tool).includes("Tool") && text(tool).includes("not a member")
+      && otLinks()[otLinks().length - 1] === tool && !otLinks().some((a) => a !== tool && a.getAttribute("aria-current"))
+      && !tool.getAttribute("data-project") && !tool.attrs.draggable
+      && (tool.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/overview",
+      "outsider: a public project one is no member of is a dashed tab after the member tabs, linking to its Overview, which is drawn with the tab current "
+      + JSON.stringify([M_.route.current().path, tool && tool.getAttribute("href"), !!viView()]));
+    expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && otStar().getAttribute("aria-label") === "Star Tool" && otStar().getAttribute("title") === "Star Tool",
+      "outsider: this session's dashed tab carries an empty star of its own, the project's id known from its view");
+    expect(otSession() === "stranger/tool" && JSON.parse(ssStore[SESSION])[0].id === TOOL && !Object.keys(lsStore).some((k) => k.includes("outsider")) && !(lsStore[LOCAL] || "").includes("stranger"),
+      "outsider: the dashed tab is kept in sessionStorage with the project's id, not in localStorage " + JSON.stringify([ssStore, Object.keys(lsStore)]));
+    expect(JSON.stringify(otShown()) === JSON.stringify([["Overview", "/stranger/tool/overview", true], ["Board", "/stranger/tool/board", false],
+      ["Team", "/stranger/tool/team", false], ["Why", "/stranger/tool/why", false]]),
+      "outsider: the views are Overview, Board, Team and Why, no other " + JSON.stringify(otShown()));
+    {
+      const ov = main.querySelector("section.view-overview");
+      const counts = ov.querySelectorAll("ul.overview-counts li").map((li) => li.getAttribute("data-status") + ":" + text(li.querySelector(".n")));
+      expect(!ov.querySelector("nav.overview-tabs") && text(ov).includes("3 cards") && counts.includes("open:1") && counts.includes("in_progress:1") && counts.includes("done:1")
+        && !text(ov).includes("Waiting for you") && !text(ov).includes("Latest reports") && text(ov).includes("1 human, 2 agents") && !text(ov).includes(" online"),
+        "outsider: the Overview is its Summary, the board counted from the cards they read (the security card not among them), no requests, reports or presence "
+        + JSON.stringify(counts));
+      // Its member chips: no presence dot and no presence word, since the hub sends an outsider none.
+      const chips = ov.querySelectorAll(".member-chip");
+      expect(chips.length === 3 && chips.every((c) => !c.querySelector(".chip-dot") && !/offline|online/.test(c.getAttribute("title") || "")),
+        "outsider: the Overview's member chips carry no presence dot or word " + JSON.stringify(chips.map((c) => c.getAttribute("title"))));
+    }
+    // Report the project from its Overview (§16.8); ?report on its address opens the form there (the sign-in link's way back).
+    await rpSend(main.querySelector("section.view-overview"), "spam");
+    await go("#/stranger/tool?report"); for (let k = 0; k < 8; k++) await tick();
+    {
+      const ov = main.querySelector("section.view-overview");
+      const open = ov && ov.querySelector("button.report-open");
+      // Led on as a member is, to `overview?report` written so, never `report=` (e2e report_pages_round).
+      expect(M_.route.current().path === "/stranger/tool/overview" && /\/stranger\/tool\/overview\?report$/.test(win.location.hash)
+        && ov && ov.querySelector("form.report-form") && open && open.hidden && open.getAttribute("aria-expanded") === "true",
+        "report: ?report on a public project's address opens the form on the outsider's Overview, the address overview?report " + win.location.hash);
+    }
+    // The same from a public view's address (the Board's, Team's, Why's): it leads to the Overview's form.
+    await go("#/stranger/tool/board?report"); for (let k = 0; k < 8; k++) await tick();
+    {
+      const ov = main.querySelector("section.view-overview");
+      expect(M_.route.current().path === "/stranger/tool/overview" && ov && ov.querySelector("form.report-form"),
+        "report: ?report on a public project's Board address leads an outsider to the Overview's open form " + M_.route.current().path);
+    }
+    // Board: the cards they read, no write control.
+    await go("#/stranger/tool/board"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const bd = main.querySelector("section.view-board");
+      const cards = bd ? bd.querySelectorAll("article").map((a) => a.getAttribute("data-card")).filter(Boolean) : [];
+      expect(bd && cards.includes("tsk-t001") && cards.includes("tsk-t002") && !cards.includes("tsk-t004") && !text(main).includes("A hidden security fix")
+        && !cards.includes("tsk-t005") && !text(main).includes("A held card")
+        && otShown()[1][2] && otTab("stranger/tool").getAttribute("aria-current") === "page" && !viView(),
+        "outsider: the Board draws the cards they read, its tab and the dashed tab current, the not-done security card and the held card absent " + JSON.stringify(cards));
+      expect(!btn(main, "New card") && !bd.querySelector(".card-actions") && !bd.querySelector("article.movable") && !bd.querySelectorAll("article").some((a) => a.attrs.draggable),
+        "outsider: the Board has no write control: no New card, no .card-actions (Move, Assign, Order), no draggable card");
+      const t2 = await M_.api.get("/projects/stranger/tool/tasks/tsk-t002");
+      const held = await M_.api.get("/projects/stranger/tool/tasks/tsk-t005").then(() => "read", (err) => err.code);
+      expect(JSON.stringify(t2.related) === "[]" && held === "not_found",
+        "fixture hub: a held card is not_found to an outsider and no card they read names it " + JSON.stringify([t2.related, held]));
+    }
+    // The slot in the tab's head for the outsider's own actions ("Add your agent", its own card):
+    // there, empty, in the project's head group; no control in it yet.
+    {
+      const slot = byId("outsider-actions");
+      expect(slot && slot.getAttribute("data-slot") === "outsider-add-agent" && !slot.childNodes.length
+        && header.querySelector(".project-state").querySelector(".outsider-actions") === slot,
+        "outsider: the tab's head has the empty #outsider-actions slot in its project group");
+      // Another module fills the slot through M.outsiderActions(ctx, slot); app.js only calls it.
+      const calls = [];
+      M_.outsiderActions = (c, s) => calls.push([c, s, s.childNodes.length]);
+      await go("#/stranger/tool/overview"); for (let k = 0; k < 6; k++) await tick();
+      const now = byId("outsider-actions");
+      expect(calls.length >= 1 && calls.every(([c, s, n]) => c.outsider === true && c.slug === "stranger/tool" && n === 0 && s.getAttribute("data-slot") === "outsider-add-agent")
+        && calls[calls.length - 1][1] === now,
+        "outsider: each header drawn for an outsider calls M.outsiderActions(ctx, slot) with the empty slot it drew " + calls.length);
+      delete M_.outsiderActions;
+    }
+    // A card's panel: its notes and history read, no Watch, no Add a note; Report stays.
+    await go("#/stranger/tool/tasks/tsk-t001"); for (let k = 0; k < 8; k++) await tick();
+    {
+      const panel = main.querySelector("aside.card-panel");
+      const notes = panel ? panel.querySelectorAll("li.card-note") : [];
+      const label = panel && panel.querySelector("button.report-open") && panel.querySelector("button.report-open").getAttribute("aria-label");
+      expect(panel && text(panel).includes("Parse the config file") && notes.length === 1 && text(notes[0]).includes("The format is TOML.")
+        && !panel.querySelector("button.card-watch") && !panel.querySelector("form.card-note-form") && !panel.querySelector(".card-actions")
+        && label === "Report this card to the instance's admins",
+        "outsider: a card's panel shows its notes, with no Watch (button.card-watch), no Add a note (form.card-note-form), no .card-actions; Report stays " + label);
+      await rpSend(panel, "other");
+      const sent = panel.querySelector(".report-sent");
+      expect(sent && sent.querySelector("a").getAttribute("href").endsWith("/account/reports"), "report: the sent line links Your account → Reports");
+    }
+    await go("#/stranger/tool/tasks/tsk-t004"); for (let k = 0; k < 8; k++) await tick();
+    expect(!text(main).includes("A hidden security fix") && !text(main).includes("the hole, in detail") && !viView(),
+      "outsider: the not-done security card is not found at its own address, its text nowhere");
+    // Team: the members they read, no presence, no write control.
+    await go("#/stranger/tool/team"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const rows = main.querySelectorAll("tr.member").map((tr) => tr.getAttribute("data-member"));
+      const heads = main.querySelectorAll("th").map(text);
+      expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView() && !text(main).includes("A quiet agent")
+        && !heads.includes(M_.t("members.col.actions")) && !heads.includes(M_.t("members.col.paused")) && !main.querySelector("td.member-actions"),
+        "outsider: the Team lists the members they read, the isolated agent not among them, its tab current, no presence column " + JSON.stringify([rows, heads]));
+      expect(main.querySelectorAll("a.member-ref").some((a) => (a.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/team/hum-sam"),
+        "outsider: a member's name links to their page in the tab (M.trust.opensViews), as for a member");
+      // The fixture hub as routes/members.py answers an outsider: its allow-list of keys, the public
+      // page's picture (null here, never /avatars/…), no edge to a member they do not read.
+      const read = (await M_.api.get("/projects/stranger/tool/members")).items;
+      const mine = read.find((m) => m.id === "agt-tool-mine");
+      const extra = read.flatMap((m) => Object.keys(m)).filter((k) => !["id", "kind", "handle", "name", "display_name", "avatar_url", "deleted", "owner_id", "trust", "role",
+        "role_base", "reports_to", "cross_owner", "areas", "capabilities", "expert_for", "expert_sources", "org_owner", "website", "social", "joined_at", "manages"].includes(k));
+      expect(!extra.length && read.every((m) => m.avatar_url === null) && mine.reports_to === null && mine.cross_owner === false
+        && (await M_.api.get("/projects/stranger/tool/members/agt-tool-quiet").then(() => "read", (err) => err.code)) === "not_found",
+        "fixture hub: an outsider's member views carry the allow-listed keys alone, no picture of /avatars, no edge to the isolated agent, whose own read is not_found " + JSON.stringify(extra));
+      expect(!main.querySelector("a.members-invite-user") && !byId("members-mine") && !main.querySelector("a.member-chat") && !btn(main, "Manage")
+        && !main.querySelector("nav.team-tabs") && !main.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/agents")),
+        "outsider: the Team has no write control: no Invite user, no Only my agents, no Chat, no Manage (their own agent's neither), no Organisation tab, no way to join an agent");
+    }
+    await go("#/stranger/tool/team/agt-tool-mine"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const tabs = main.querySelectorAll("a.member-tab").map(text);
+      expect(JSON.stringify(tabs) === '["Cards"]' && !main.querySelector("a.member-chat") && !main.querySelector(".member-actions-menu") && text(main).includes("Helper"),
+        "outsider: a member's page offers Cards alone, no Chat and no Actions, their own agent's too " + JSON.stringify(tabs));
+    }
+    // Sam's page: `manages` as the hub sends an outsider (members and instances alone, counted among
+    // the members they read), said without "(… online)"; Report by the handle a stranger sends.
+    await go("#/stranger/tool/team/hum-sam"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const said = main.querySelectorAll(".member-manages").map(text).join(" | ");
+      expect(said && said.includes("1 member") && said.includes("1 instance") && !said.includes("undefined") && !said.includes("online"),
+        "outsider: a member's page says what they lead without an online count the hub does not send " + JSON.stringify(said));
+      await rpSend(main, "spam");
+      const sent = main.querySelector(".report-sent");
+      expect(rpSent.length && JSON.stringify(rpSent[rpSent.length - 1].target) === JSON.stringify({ type: "profile", id: "sam" }) && sent,
+        "report: an outsider reports a person by the handle a stranger sends (§16.8), and the hub takes it " + JSON.stringify(rpSent[rpSent.length - 1]));
+    }
+    // While Sam's own page is not served the hub answers not_found: said in words, never the code.
+    {
+      const sam = M_.api.fixtureOutsideMembers.find((x) => x.id === "hum-sam");
+      sam.page_served = false;
+      await go("#/stranger/tool/team/agt-tool-bot"); await go("#/stranger/tool/team/hum-sam"); for (let k = 0; k < 6; k++) await tick();
+      await rpSend(main, "abuse");
+      const failed = main.querySelector(".report-form") && main.querySelector(".report-form").querySelector(".send-status");
+      const said = failed ? text(failed) : "";
+      expect(said === "This person can only be reported while their public page is shown." && !said.includes("not_found") && !main.querySelector(".report-sent"),
+        "report: an outsider's report of a person whose page is not served says so in words, no (not_found) " + JSON.stringify(said));
+      sam.page_served = true;
+      rpSent.pop();
+    }
+    await go("#/stranger/tool/team/agt-tool-bot"); for (let k = 0; k < 6; k++) await tick();
+    {
+      await rpSend(main, "other");
+      const sent = main.querySelector(".report-sent");
+      expect(JSON.stringify(rpSent[rpSent.length - 1].target) === JSON.stringify({ type: "profile", id: "sam/bot" }) && sent,
+        "report: an outsider reports an agent by its global name <owner>/<handle>, and the hub takes it " + JSON.stringify(rpSent[rpSent.length - 1]));
+      // The fixture hub as reports.py answers a stranger: a member id or an unserved person's handle is not_found.
+      const code = (target) => otPost("/reports", { target, reason: "spam" }).then(() => "ok", (err) => err.code);
+      const codes = [await code({ type: "profile", id: "agt-tool-bot" }), await code({ type: "profile", id: "hum-sam" }), await code({ type: "profile", id: "sam/quiet" }),
+        await code({ type: "card", id: "tsk-t004", project: "stranger/tool" })];
+      expect(JSON.stringify(codes) === JSON.stringify(["not_found", "not_found", "not_found", "not_found"]),
+        "fixture hub: a stranger's report by member id, of a hidden agent or of a hidden card is not_found " + JSON.stringify(codes));
+    }
+    // Why while the hub does not open it to an outsider (#2078: the repository not public, none, or
+    // not in the operator's namespaces, all `not_found`): one sentence, nothing to set up or read again.
+    await go("#/stranger/tool/why"); for (let k = 0; k < 15; k++) await tick();
+    {
+      const why = main.querySelector("section.view-why");
+      const empty = why && why.querySelector(".why-outside");
+      expect(empty && text(empty) === "The Why of this project is not shown outside it." && !btn(why, "Read again") && !why.querySelector(".flag")
+        && !text(why).includes(".keep-the-why") && otShown()[3][2] && !viView(),
+        "outsider: Why answered not_found says it is not shown outside the project, no setup step, no Read again " + JSON.stringify(why && text(why)));
+    }
+    // Why once the repository is public: the project's export, and nothing to write.
+    M_.api.fixtureOutside.repository_public = true;
+    await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+    await go("#/stranger/tool/why"); for (let k = 0; k < 15; k++) await tick();
+    {
+      const why = main.querySelector("section.view-why");
+      const pressed = why ? why.querySelectorAll("button, input, select, textarea, form").map((e) => e.tagName + ":" + text(e)) : null;
+      expect(why && text(why).includes("overview page") && otShown()[3][2] && otTab("stranger/tool").getAttribute("aria-current") === "page" && !viView()
+        && viAll.slice(otFrom).includes("/projects/stranger/tool/keep-the-why/export"),
+        "outsider: Why draws the project's export, its tab and the dashed tab current " + JSON.stringify([!!why, why && text(why).slice(0, 80)]));
+      expect(JSON.stringify(pressed) === JSON.stringify(["BUTTON:Read again"]), "outsider: Why has no write control, Read again (a read in this page) alone " + JSON.stringify(pressed));
+    }
+    M_.api.fixtureOutside.repository_public = false;
+    // A view an outsider does not read is not found, never the public page; Overview's other tabs are its Summary.
+    {
+      const before = viAsked.length, wrong = [];
+      for (const at of ["inbox", "settings", "chat", "organisation"]) {
+        await go("#/stranger/tool/" + at); for (let k = 0; k < 6; k++) await tick();
+        if (!main.querySelector("section.view-unknown") || viView() || text(main).includes("A tool for tools.")) wrong.push(at);
+      }
+      expect(!wrong.length && viAsked.length === before,
+        "outsider: inbox, settings, chat and organisation are not found, never the public page " + JSON.stringify([wrong, viAsked.slice(before)]));
+      for (const at of ["overview/project", "overview/swarm"]) {
+        await go("#/stranger/tool/" + at); for (let k = 0; k < 6; k++) await tick();
+        expect(M_.route.current().path === "/stranger/tool/overview" && main.querySelector("section.view-overview") && !viView(),
+          "outsider: /" + at + " is replaced by the Overview's Summary " + M_.route.current().path);
+      }
+    }
+    {
+      // Counted: the reads under /projects/stranger/tool. Not counted: a boot's GET /bootstrap?project=,
+      // asked before /me says the reader is no member and dropped (its project parts are a member's, §5.4).
+      const reads = viAll.slice(otFrom).filter((p) => p.startsWith("/projects/stranger"));
+      expect(reads.length && reads.every((p) => OT_READS.test(p)) && !otWrites.length && viAsked.length === otPublicFrom,
+        "outsider: every read under the project's routes is one an outsider reads (a boot's /bootstrap not counted), nothing is written there, no public page is read "
+        + JSON.stringify([reads.filter((p) => !OT_READS.test(p)), otWrites, viAsked.slice(otPublicFrom)]));
+    }
+    // An agent's public page stays its page, signed in too, and reports by its global name.
+    await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
+    if (viView() && viView().querySelector("button.report-open")) await rpSend(viView(), "other");
+    expect(JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "project", id: "stranger/tool" }, { type: "card", id: "tsk-t001", project: "stranger/tool" },
+      { type: "profile", id: "sam" }, { type: "profile", id: "sam/bot" }, { type: "profile", id: "stranger/overview" }]) && rpSent[0].reason === "spam" && !("text" in rpSent[0]),
+      "report: signed in, a public project (its Overview), card (its panel) and agent each send their name " + JSON.stringify(rpSent.map((b) => b.target)));
+    // The empty star on this session's tab (§5.1): PATCH /me with `starred` whole, the project's id last; a refusal says why.
+    await go("#/stranger/tool/board"); for (let k = 0; k < 6; k++) await tick();
+    M_.api.patch = otRefusal("not_public");
+    otStar().click(); for (let k = 0; k < 3; k++) await tick();
+    expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && otSaid() === "Tool is not starred: the project is not public" && otSession() === "stranger/tool",
+      "outsider: a refused star is said, the tab stays this session's own, unstarred " + otSaid());
+    M_.api.patch = otRecord;
+    otStar().click(); for (let k = 0; k < 4; k++) await tick();
+    {
+      const sent = otPatches.slice();
+      expect(sent.length === 1 && sent[0][0] === "/me" && JSON.stringify(sent[0][1]) === JSON.stringify({ starred: [TOOL] })
+        && otTab("stranger/tool").classList.contains("starred") && otStar().getAttribute("aria-pressed") === "true" && otTab("stranger/tool").getAttribute("data-project") === TOOL
+        && otTab("stranger/tool").attrs.draggable === "true" && otTab("stranger/tool").getAttribute("aria-current") === "page"
+        && otSaid() === "Tool is starred; its tab stays in your row" && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === TOOL,
+        "outsider: the empty star sends PATCH /me {starred: [...existing, id]}, and the tab is a starred one, still current " + JSON.stringify([sent, otSaid()]));
+      // Starred, this session's own entry is gone (no stale one by its name), and the tabs menu
+      // moves it as a drag does (cd4fe2ba: nothing is drag-only); last of three, so left only.
+      expect(otSession() === "", "outsider: starring drops this session's own entry of the tab " + otSession());
+      await otFreshMenu();
+      const labels = otItems().map((i) => i.textContent);
+      expect(labels.includes("Move this tab left") && !labels.includes("Move this tab right"),
+        "outsider: the tabs menu offers Move this tab left for the current starred tab " + labels.join("|"));
+      await otFreshMenu(); otButton().click(); await tick();
+    }
+    // Two clicks on the star while the first PATCH is on its way send one PATCH (js/tabs.js `once`).
+    {
+      let release;
+      const held = [];
+      M_.api.patch = (p, b) => { held.push([p, b]); return new Promise((resolve) => { release = () => resolve(otRealPatch(p, b)); }); };
+      const star = otStar();
+      star.click(); star.click(); otStar().click(); await tick();
+      expect(held.length === 1 && otStar().disabled === true, "outsider: a second click while the star's PATCH is on its way sends nothing, the button disabled " + held.length);
+      release(); for (let k = 0; k < 4; k++) await tick();
+      M_.api.patch = otRecord;
+      expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && !otStar().disabled, "outsider: the answer draws the tab unstarred, its star enabled again");
+      otPatches.length = 0;
+      // Starred again, so the block goes on as before.
+      otStar().click(); for (let k = 0; k < 4; k++) await tick();
+      otPatches.length = 0;
+    }
+    // Unstarred again from the tab: this session's own tab, its empty star back.
+    otStar().click(); for (let k = 0; k < 4; k++) await tick();
+    expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && !otTab("stranger/tool").classList.contains("starred") && otSession() === "stranger/tool",
+      "outsider: unstarred again, the tab is this session's own with its empty star");
+    otPatches.length = 0;
+    // A member, beside the dashed tab: their own project's views keep every control, its tab is solid
+    // and carries no star, and the head has no outsider slot.
+    const memberCalls = [];
+    M_.outsiderActions = (c, s) => memberCalls.push(s);
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    delete M_.outsiderActions;
+    expect(!memberCalls.length, "member: a member's header never calls M.outsiderActions " + memberCalls.length);
+    {
+      const own = otLinks().find((a) => a.getAttribute("data-project") === MA);
+      expect(own && own.getAttribute("aria-current") === "page" && !own.classList.contains("outsider") && own.parentNode === otNav() && !own.querySelector(".tab-star")
+        && btn(main, "New card") && !byId("outsider-actions") && otTab("stranger/tool") && !otTab("stranger/tool").getAttribute("aria-current")
+        && JSON.stringify(otShown().map((v) => v[0])) !== JSON.stringify(["Overview", "Board", "Team", "Why"]),
+        "member: their project's tab is solid and current with no star, its Board keeps New card, its views are a member's, no outsider slot");
+    }
+    // A move to All projects keeps it for the session; a fresh browser session has none.
+    await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(otTab("stranger/tool") && !otTab("stranger/tool").getAttribute("aria-current")
+      && otLinks()[0].getAttribute("aria-current") === "page", "outsider: the dashed tab stays on All projects, which is current");
+    Object.keys(ssStore).forEach((k) => { delete ssStore[k]; });
+    await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(!otNav().querySelector("a.outsider") && otIds() === MA + "," + SA, "outsider: a fresh browser session starts without the dashed tabs, the member tabs kept");
+    // Closed from the tabs menu, marked there as not a member; nothing is sent.
+    await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+    await otOpenMenu();
+    const toolItem = otItems().find((i) => i.textContent === "Toolnot a member");
+    expect(toolItem && toolItem.getAttribute("aria-checked") === "true" && toolItem.querySelector(".outsider-mark"),
+      "outsider: the tabs menu lists the dashed tab, marked as not a member " + otItems().map((i) => i.textContent).join("|"));
+    toolItem.click(); await tick();
+    expect(!otTab("stranger/tool") && otSession() === "" && !otPatches.length && otSaid() === "Tool is no longer a tab",
+      "outsider: closing the dashed tab from the menu takes it out of the session, nothing sent");
+    // Starred (#1986's `starred` on /me): a fresh browser opens start_tabs, then the starred projects, dashed.
+    await otRealPatch("/me", { start_tabs: [SA], starred: [TOOL] });
+    Object.keys(ssStore).forEach((k) => { delete ssStore[k]; });
+    Object.keys(lsStore).forEach((k) => { delete lsStore[k]; });
+    // Through a project of the start set: one opened by its address gets its tab back, so not Maity.
+    await go("#/maintainer/sample/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    const starredTab = () => otTab("stranger/tool");
+    const starOf = () => (starredTab() && starredTab().parentNode.querySelector(".tab-star")) || null;
+    expect(otIds() === SA + "," + TOOL && starredTab() && starredTab().classList.contains("starred") && starredTab().attrs.draggable === "true"
+      && starOf() && starOf().getAttribute("aria-pressed") === "true" && starOf().getAttribute("aria-label") === "Remove the star from stranger/tool"
+      && JSON.parse(lsStore[LOCAL]).open.join() === SA + "," + TOOL && otSession() === "",
+      "starred: a fresh browser opens start_tabs, then the starred project as a dashed tab with a filled star " + otIds());
+    // A star added on another device: a tab at the end, as a new membership.
+    lsStore[LOCAL] = JSON.stringify({ open: [SA], known: [MA, SA] });
+    await go("#/maintainer/sample/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(otIds() === SA + "," + TOOL && JSON.parse(lsStore[LOCAL]).known.join() === MA + "," + SA + "," + TOOL,
+      "starred: a star this browser has not seen (added elsewhere) opens as the last tab, as a new membership does " + otIds());
+    // Closing a starred tab hides it here and keeps the star: no PATCH; the menu opens it again.
+    await otOpenMenu();
+    const starItem = () => otItems().find((i) => i.textContent === "stranger/toolstarred, not a member");
+    starItem().click(); await tick();
+    expect(!starredTab() && !otPatches.length && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === TOOL
+      && starItem() && starItem().getAttribute("aria-checked") === "false",
+      "starred: closing a starred tab from the menu sends nothing, the star stays, the menu lists it closed");
+    starItem().click(); await tick();
+    expect(starredTab() && otIds().endsWith(TOOL), "starred: the menu opens the starred tab again");
+    // A refusal of the unstar: said, the star stays; `member` reads /me again.
+    for (const [why, extra, words] of [["not_public", null, "the project is not public"], ["duplicate", null, "a project was named twice"],
+      ["too_many", { hidden: 2 }, "more starred projects than this hub keeps for one person (hidden while not public: 2)"],
+      ["member", null, "you are a member of it now"]]) {
+      const meReads = viAll.filter((p) => p === "/me").length;
+      M_.api.patch = otRefusal(why, extra);
+      starOf().click(); for (let k = 0; k < 3; k++) await tick();
+      expect(starOf() && starOf().getAttribute("aria-pressed") === "true" && otSaid() === "The star stays on stranger/tool: " + words
+        && (why === "member" ? viAll.filter((p) => p === "/me").length > meReads : true),
+        "starred: a refused unstar (" + why + ") is said and the star stays" + (why === "member" ? ", and /me is read again" : "") + " " + otSaid());
+    }
+    M_.api.patch = otRecord;
+    // Unstarred: PATCH /me without the project, the rest in order; the tab stays as this session's own.
+    await otRealPatch("/me", { starred: [TOOL] });
+    starOf().click(); for (let k = 0; k < 3; k++) await tick();
+    expect(otPatches.length === 1 && otPatches[0][0] === "/me" && JSON.stringify(otPatches[0][1]) === JSON.stringify({ starred: [] })
+      && starredTab() && !starredTab().classList.contains("starred") && starOf() && starOf().getAttribute("aria-pressed") === "false" && otSession() === "stranger/tool"
+      && otSaid() === "stranger/tool is no longer starred; its tab stays until you close it",
+      "starred: the star's button sends starred without the project and leaves an unstarred dashed tab for the session " + JSON.stringify(otPatches));
+    // Two starred tabs: while one star's PATCH is on its way, a click on the other's star sends
+    // nothing and says nothing (js/tabs.js `busy`, app.js); the first change ends as it would.
+    {
+      const GADGET = "prj-gadget000001";
+      await otRealPatch("/me", { starred: [TOOL, GADGET] });
+      await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+      const starIn = (full) => (otTab(full) && otTab(full).parentNode.querySelector(".tab-star")) || null;
+      expect(starIn("stranger/tool") && starIn("stranger/gadget") && starIn("stranger/gadget").getAttribute("aria-pressed") === "true",
+        "starred: two starred projects are two dashed tabs, each with its filled star");
+      let release;
+      const held = [];
+      M_.api.patch = (p, b) => { held.push([p, b]); return new Promise((resolve) => { release = () => resolve(otRealPatch(p, b)); }); };
+      starIn("stranger/tool").click(); await tick();
+      const before = otSaid();
+      starIn("stranger/gadget").click(); for (let k = 0; k < 3; k++) await tick();
+      expect(held.length === 1 && JSON.stringify(held[0][1]) === JSON.stringify({ starred: [GADGET] }) && otSaid() === before
+        && starIn("stranger/gadget").getAttribute("aria-pressed") === "true",
+        "starred: a click on another tab's star while one star's PATCH is on its way sends nothing and says nothing " + JSON.stringify([held, otSaid()]));
+      release(); for (let k = 0; k < 4; k++) await tick();
+      M_.api.patch = otRecord;
+      expect(held.length === 1 && starIn("stranger/gadget") && starIn("stranger/gadget").getAttribute("aria-pressed") === "true"
+        && !otSaid().includes("gadget") && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === GADGET,
+        "starred: the first change ends as it would, the other tab still starred " + otSaid());
+      await otRealPatch("/me", { starred: [] });
+      await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+      otPatches.length = 0;
+    }
+    // The fixture hub's refusals, as hub/stars.py's.
+    const otCode = (body) => otRealPatch("/me", body).then(() => "ok", (err) => (err.details.fields || {}).starred + (err.details.hidden !== undefined ? ":" + err.details.hidden : ""));
+    const codes = [await otCode({ starred: null }), await otCode({ starred: "x" }), await otCode({ starred: [TOOL, TOOL] }),
+      await otCode({ starred: [MA] }), await otCode({ starred: ["prj-nowhere00001"] })];
+    M_.api.fixtureStarred.max = 0;
+    codes.push(await otCode({ starred: [TOOL] }));
+    M_.api.fixtureStarred.max = 100;
+    expect(JSON.stringify(codes) === JSON.stringify(["required", "list_type", "duplicate", "member", "not_public", "too_many:0"]),
+      "fixture hub: starred refuses null, a non-list, a repeat, a membership, an unknown id and one over the bound " + JSON.stringify(codes));
+    // Back as before: no star, the start set, the session's tab closed, the stores the run had.
+    await otRealPatch("/me", { start_tabs: null, starred: [] });
+    await otFreshMenu();
+    otItems().find((i) => i.textContent === "stranger/toolnot a member").click(); await tick();
+    M_.api.patch = otRealPatch;
+    win.sessionStorage = ssBefore; win.localStorage = lsBefore;
+    if (ssBefore === undefined) delete win.sessionStorage;
+    await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+  }
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
-  // The member Overview's own address (§6.20's badge links there) shows the public overview at that
-  // address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01); its swarm tab is
-  // the members' alone, a non-member is taken to the overview.
+  // Without a session, the member Overview's own address (§6.20's badge links there) shows the public
+  // overview at that address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01).
+  // Signed in, it is the outsider's member Overview (the block above).
   const viOverview = (label) => {
     const tab = viView() && viView().querySelectorAll("a.view-tab").find((a) => a.getAttribute("aria-current") === "page");
     expect(viView() && viView().getAttribute("data-kind") === "project" && viAsked[viAsked.length - 1] === "/public/pages/stranger/tool"
       && tab && (tab.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool" && !text(main).includes("You are not a member"),
       label + " " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-2), tab && tab.getAttribute("href")]));
   };
-  for (const at of ["overview", "overview/project"]) {
-    await go("#/stranger/tool/" + at); for (let k = 0; k < 4; k++) await tick();
-    viOverview("visitor: signed in, /" + at + " of a public project one is no member of is its public overview");
-    expect(win.Maity.route.current().path === "/stranger/tool/" + at, "visitor: signed in, /" + at + " keeps its address");
-  }
-  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
-  viOverview("visitor: signed in, a non-member's /overview/swarm shows the public overview");
-  expect(win.Maity.route.current().path === "/stranger/tool/overview", "visitor: signed in, a non-member's /overview/swarm is replaced by /overview");
   // An agent may be named `overview`: its page is its own, not a project's overview.
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",

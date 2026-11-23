@@ -29,6 +29,7 @@ from maity.runner import (
     skills,
     supervisor,
     tmux,
+    tools,
     workspace,
 )
 from maity.runner.asuser import RUNNER, AsUser, Ssh
@@ -3346,6 +3347,64 @@ def started(world: Any, harness: str = "codex", mode: str = "interactive") -> No
     sup.update([placement(mode=mode, harness=harness, health=HEALTH)])
     settle(sup)
     assert SESSION in backend.live, sup.records
+
+
+@pytest.mark.parametrize(
+    ("track", "managed", "said"),
+    [("checked", False, "; to go back, install 0.39.0 yourself; or set track"),
+     ("checked", True, "; `maity runner tools rollback codex` starts new sessions on the kept"
+      " 0.39.0; or set track"),
+     ("newest", False, 'track = "newest" takes it unchecked')],
+)  # fmt: skip
+def test_the_start_log_names_a_version_above_the_checked_one_as_check_does(
+    world: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    track: str,
+    managed: bool,
+    said: str,
+) -> None:
+    """The start log's line about a version above the checked one has `check`'s text: the
+    way back under `checked`, taken from the runner's tools where it manages the tool, and a
+    note under `newest`."""
+    sup, _, _, _, logs = world
+    monkeypatch.setitem(capabilities.CHECKED, "codex", "0.39.0")
+    update = "daily" if managed else "never"
+    harness = replace(sup.cfg.harnesses["codex"], track=track, update=update)
+    harnesses = {**sup.cfg.harnesses, "codex": harness}
+    sup.cfg = replace(sup.cfg, harnesses=harnesses, tools_dir=tmp_path / "tools")
+    tools.save(sup.cfg.tools_dir, "codex", tools.ToolState(version="0.40.0",
+                                                         previous_version="0.39.0"))  # fmt: skip
+    started(world)
+    found = [line for line in logs if "0.39.0" in line and "0.40.0" in line]
+    assert len(found) == 1 and said in found[0], logs
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_the_start_log_on_an_ssh_target_names_no_local_rollback(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remote: bool
+) -> None:
+    """A Claude Code the runner manages here (`install`, `update = "daily"`) with a kept
+    checked version: on an ssh target the start log names installing it by hand, as `check`
+    does there, never the local rollback; on the local target the rollback."""
+    sup, _, _, _, logs = world
+    monkeypatch.setitem(capabilities.CHECKED, "codex", "0.39.0")
+    harness = replace(sup.cfg.harnesses["codex"], install=True, update="daily")
+    sup.cfg = replace(sup.cfg, tools_dir=tmp_path / "tools")
+    tools.save(sup.cfg.tools_dir, "codex", tools.ToolState(version="0.40.0",
+                                                         previous_version="0.39.0"))  # fmt: skip
+    target = sup.targets["local"]
+    if remote:
+        target = replace(target, name="build-9", as_user=Ssh(name="build-9"),
+                         agent_files=Path("/home/box/.maity-runner"))  # fmt: skip
+    sup._say_if_unchecked("plc-0003", harness, target, None)
+    found = [line for line in logs if "0.39.0" in line and "0.40.0" in line]
+    assert len(found) == 1, logs
+    line = found[0]
+    if remote:
+        assert "install 0.39.0 yourself" in line and "rollback" not in line, line
+    else:
+        assert "`maity runner tools rollback codex` starts new sessions" in line, line
 
 
 def test_codex_s_folder_prompt_is_answered_once_with_open_restricted(world: Any) -> None:

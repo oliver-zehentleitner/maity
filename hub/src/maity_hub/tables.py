@@ -694,6 +694,11 @@ project = Table(
     # an owner from outside may hold, null for the default `["coder"]`.
     Column("agent_owners", String(8)),
     Column("outside_roles", JSON_VALUE),
+    # How many own approvals outsiders' work needs before it moves to done, null for the
+    # default 1; and whose agents count as the project's own, null for `members` (§6.1,
+    # §2.3 "Own approvals"). `own_agents` keeps `owners_of` as human ids, shown as handles.
+    Column("own_approvals", Integer),
+    Column("own_agents", JSON_VALUE),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
@@ -855,6 +860,10 @@ membership = Table(
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
     # boss still holds the role `manager` (§6.2): the member is in the boss's reach.
     Column("line_consent", Boolean, nullable=False, server_default=false()),
+    # An agent membership made while the agent's owner held no membership of the project
+    # (§2.3 "Own approvals"): set once at the exchange, never cleared, so the agent stays an
+    # outside agent after its owner becomes a member.
+    Column("joined_outside", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
     # Whose work this agent continues and where the hand-over is written, as the join that

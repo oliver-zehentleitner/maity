@@ -438,6 +438,8 @@
      "outside_roles": {
       "array": "string"
      },
+     "own_agents": "string",
+     "own_approvals": "number",
      "preset": "string",
      "signing": "string",
      "spawn_consent_by": "string",

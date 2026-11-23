@@ -967,6 +967,10 @@
     "en": "26c77b8aa1b262c3",
     "text": "ff2f4eb3dccb654f"
   },
+  "all.page.runners": {
+    "en": "9aa56c3dab3c6957",
+    "text": "9aa56c3dab3c6957"
+  },
   "all.page.unread": {
     "en": "47193cff451f4903",
     "text": "1a55ece404eeaa53"
@@ -15723,6 +15727,10 @@
     "en": "ed7acb5465dc68aa",
     "text": "434d7335fb9709f2"
   },
+  "report.not_found.person": {
+    "en": "7c919d4eea02f65a",
+    "text": "dbdf97f39ef64bad"
+  },
   "report.open": {
     "en": "85d640066187108d",
     "text": "289caacac5731c35"
@@ -19507,6 +19515,66 @@
     "en": "1a8185ac38f28117",
     "text": "9ff771b9f913ed9a"
   },
+  "tabs.outsider": {
+    "en": "c954775e568a706b",
+    "text": "062ff09f5ecf7ee0"
+  },
+  "tabs.outsider_said": {
+    "en": "85149be017de9b85",
+    "text": "36e7de06724ece52"
+  },
+  "tabs.outsider_starred": {
+    "en": "8773fcc5468dba40",
+    "text": "c2a1db853cc390dd"
+  },
+  "tabs.outsider_starred_said": {
+    "en": "cf003902fae432f0",
+    "text": "924604344ed4e0fa"
+  },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "ff248d30cd7ab651"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "85a03dbf1e198260"
+  },
+  "tabs.star_refused.duplicate": {
+    "en": "7b81af33a1c1d982",
+    "text": "efb61c044c1abb21"
+  },
+  "tabs.star_refused.member": {
+    "en": "d24d1afa79c89404",
+    "text": "c15afa9a840710fb"
+  },
+  "tabs.star_refused.not_public": {
+    "en": "96320fcb44285a42",
+    "text": "4ce635722fa17c4d"
+  },
+  "tabs.star_refused.too_many": {
+    "en": "e67b9e539c2dea9b",
+    "text": "d1dfad3dd552da46"
+  },
+  "tabs.star_refused.too_many_hidden": {
+    "en": "4caf1d14d04ed698",
+    "text": "8a869727606cdc74"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "24fb69b9f249dfec"
+  },
+  "tabs.unstar": {
+    "en": "35927f42380e942f",
+    "text": "8fb546e5ca8443e9"
+  },
+  "tabs.unstar_failed": {
+    "en": "b5f86b4249ac9a21",
+    "text": "88895c06a8041402"
+  },
+  "tabs.unstarred": {
+    "en": "fb313301fa2007be",
+    "text": "a5a8503911c467cf"
+  },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",
     "text": "886988ccf94974f7"
@@ -21154,6 +21222,10 @@
   "why.empty.no_repository": {
     "en": "de51ee428eb36caa",
     "text": "7f821e6d73ea0cb4"
+  },
+  "why.empty.outsider": {
+    "en": "e533bb91a64c25b0",
+    "text": "6ad88df005e148aa"
   },
   "why.findings": {
     "en": "22f0b643ce2ad30e",

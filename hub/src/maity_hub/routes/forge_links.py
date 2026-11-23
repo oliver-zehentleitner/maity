@@ -18,7 +18,7 @@ from pydantic import Field
 from maity_hub import forge, forge_links, forge_tokens, wakeups
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of, settings_of
+from maity_hub.deps import AnyCaller, ForgeSetupCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found
 from maity_hub.github_app import GitHubApp
 from maity_hub.models import Strict
@@ -58,16 +58,17 @@ def start_link(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.get("/forge/github/setup")
 def setup(
     request: Request,
-    caller: AnyCaller,
+    caller: ForgeSetupCaller,  # no presence, lease or read count (§11.4)
     installation_id: int = Query(ge=1, le=2**53),
     code: str = Query(min_length=1, max_length=512),
     # Checked in the flow below: a missing or malformed state is `link_state` like any
     # other, not a 400 before the reasons apply (§11.4).
     state: str | None = None,
 ) -> Response:
-    """The forge sends the browser back here: every outcome is a 303 to the dashboard's
-    forge settings, `?error=<reason>` when the link failed, never a code, state or token
-    in the URL. A client that asks for JSON gets the reasons as 403 or 409 instead."""
+    """The forge sends the browser back here: the route's outcomes are a 303 to the
+    dashboard's forge settings, `?error=<reason>` when the link failed, never a code, state
+    or token in the URL. A client that asks for JSON gets the link, or the reasons as 403,
+    409 or 503, instead. The refusals before the route runs are as for any call (§11.4)."""
     human_id, session = _human(caller)
     wants_json = "application/json" in request.headers.get("accept", "")
     app = settings_of(request).github_app
