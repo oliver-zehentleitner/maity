@@ -594,11 +594,12 @@ existence is the namespace owner's).
 
 **Id:** 33f520b9-5aaa-4aed-96f4-e90bf3749c56
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26; the pricing remark on private organisations removed on 2026-10-31 (request req-7dq9c1xw5ka2)
-**Revisit when:** private organisations are taken up, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
+**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26; the pricing remark on private organisations removed on 2026-10-31 (request req-7dq9c1xw5ka2); re-checked 2026-11-23 when the owner adopted installations on a GitHub organisation as their owner's grant (request req-519akvezjj8z)
+**Revisit when:** private organisations are taken up, or an organisation is to hold a forge grant of its own (docs/api.md §11.4, "Organisations: Maity's and the forge's")
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
+**See:** integrations.md#an-installation-on-a-github-organisation-is-linked-by-one-of-its-owners-re-checked-by-polling-and-stays-that-humans-grant — 40057878-5f35-44fa-8b67-2e1820b59d38 — as of 2026-11-23
 
 Any approved human may create an organisation (at most five as owner
 by default, an instance limit) and becomes its first owner. Its handle
@@ -616,8 +617,10 @@ organisation is deleted only while it owns no open project, and its
 handle is never released. Its page is public only by its owners' choice
 and never lists its members. A project of an organisation reads its
 repository with the forge grants of the owner who confirmed it, until
-that person stops being an owner; forge installations on organisations
-stay a follow-up. Moderation suspends the organisation, never its
+that person stops being an owner; an installation on a forge
+organisation is one of those grants when that owner linked it as an
+owner of the forge organisation, never the Maity organisation's.
+Moderation suspends the organisation, never its
 people's accounts. Private organisations come later.
 
 **Reason:** a team's projects should not hang on one person's account,
@@ -629,8 +632,9 @@ hands while the organisation can still grow. The details follow the
 same care. An invitation answers the same way for every handle, and
 its item carries nothing that differs between a person and nobody, so
 inviting never becomes a probe for who has an account. An organisation
-holds no forge grant of its own while forge organisation installations
-are not linked; the owner who confirms the repository lends theirs and
+holds no forge grant of its own, an installation on a forge
+organisation included, which stays the grant of the owner who linked
+it; the owner who confirms the repository lends theirs and
 is named as `confirmed_by`, so whose access reads it is always one
 named person, and it stops when they stop being an owner. A suspension
 targets the organisation, never its people, since a project report
@@ -662,8 +666,10 @@ consequences followed by a join of the same person.
   else is added per project.
 - Telling the inviter that a handle is unknown: it turns the invitation
   into a probe for accounts.
-- A forge grant of the organisation itself: it needs an installation on
-  the forge organisation, which is a follow-up.
+- A forge grant of the organisation itself: whose access reads the
+  repository would no longer be one named person; an installation on a
+  forge organisation is linked as one of its owners' grants instead
+  (integrations.md, 40057878).
 - Suspending the accounts of an organisation's owners with it: it
   punishes people for a project report without a decision on each of
   them.

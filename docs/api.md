@@ -245,7 +245,7 @@ always encodes.
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; `accepts` not built yet: until then every resume of such an instance is refused so, with `details.min_cli: null`). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4; not while that link is `not_admin` and the caller passes the owner check of an installation on a forge organisation, whose link then replaces it; not built yet), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; `accepts` not built yet: until then every resume of such an instance is refused so, with `details.min_cli: null`). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
@@ -267,7 +267,7 @@ always encodes.
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
-| 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `installation_not_admin` (not built yet), `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
+| 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `installation_not_admin` and `installation_link_invalid` (not built yet), `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
 | 409 | `placement_exists` | a second active placement for (runner, clone) in a project, for one agent credential, or that creates the same new profile (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -18551,9 +18551,14 @@ every 10 minutes, and at once after a refusal):
 
 - an installation covers it when the forge names, for the repository,
   an installation of the App (`GET /repos/{owner}/{repo}/installation`
-  with the App's key) that is one of the namespace owner's active links;
-  any other installation of the App, the owner's own others included, is
-  never tried;
+  with the App's key) that is one of the namespace owner's active links,
+  and for an installation on a forge organisation only while its owner
+  check is fresh (below); a choice that rests on such a link is kept no
+  longer than the check it rests on. When the named installation is one
+  of the owner's links whose `status` is `not_admin`, the choice
+  re-checks it as below and it covers only once a check succeeded; until
+  then it serves nothing. Any other installation of the App, the owner's
+  own others included, is never tried;
 - the owner's token covers it when a read of the repository with that
   token answers it;
 - the instance token covers it when the project is in one of the
@@ -18627,8 +18632,10 @@ is private), `installation_suspended` or
 `installation_removed` (the owner's installation covered it and no
 longer does), `installation_not_admin` (the owner's installation on a
 forge organisation covered it, and the forge no longer reports the
-human who linked it as an owner of that organisation; below; not built
-yet), `token_rejected` (the owner's token was refused by the
+human who linked it as an owner of that organisation; shown to the
+human named in `confirmed_by`; below; not built yet),
+`installation_link_invalid` (the same, as the project's other
+`project:admin` readers see it; below; not built yet), `token_rejected` (the owner's token was refused by the
 forge), `unconfirmed` (a grant of the owner would cover it, but the
 owner has not confirmed this repository), `repository_moved`,
 `forge_not_github` (the repository's `forge` is not `github`). The
@@ -18666,11 +18673,10 @@ commit statuses, deployments, issues, and among the organisation
 permissions Members (read-only), with which the hub checks that the
 human who links an installation on a forge organisation is one of its
 owners (below) — and for no write permission and
-no account permission; the hub never writes to the forge (§11). An
-organisation that installed the App before it asked for Members accepts
-that permission on the forge; until it does, its installation is not
-linked (`not_organisation_admin`) and a link to it serves nothing
-(`not_admin`, below). The
+no account permission; the hub never writes to the forge (§11). A
+membership read the forge refuses because the installation lacks the
+Members permission counts as a failed owner check: at linking
+(`not_organisation_admin`) and on a re-check (`not_admin`, below). The
 App's own webhook is not used in v1; the project webhook (§17.4) stays
 as it is. Changes on the forge reach the hub by its own re-checks
 (below), not by an event.
@@ -18710,6 +18716,15 @@ repository it includes.
   - an installation on any other kind of account is refused (`403
     forbidden`, `details.reason: organisation_installation`).
 
+  The checks run in this order: the `state` (`link_state`), the
+  installation's existence (`installation_not_yours` when the forge
+  names none), the account check by kind above, and only then whether
+  the installation is linked to another human (`installation_linked`,
+  below). So for an installation on a forge organisation a human the
+  forge does not report as an owner gets `not_organisation_admin`,
+  never `installation_not_yours`, and nobody who fails the account
+  check learns whether the installation is linked.
+
   Listing the installations
   the user can access is not enough, since a member of an organisation
   with access to one repository would pass it and the hub would then
@@ -18722,7 +18737,8 @@ repository it includes.
   project of a Maity organisation is read with the grants of the owner
   who confirmed it (above), an installation on a forge organisation
   that owner linked among them. The hub keeps the forge user's id with
-  the link, for the re-checks below. The user token is used for this one check and discarded,
+  the link (`forge_user_id`), for the re-checks below; it is in no
+  answer, `GET /me/forge` included. The user token is used for this one check and discarded,
   never stored. An installation of another account is refused (`403
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
@@ -18744,7 +18760,16 @@ repository it includes.
   installation_linked`); the other human unlinks it first, or the
   installation is removed on the forge. For an installation on a forge
   organisation this holds as well: one of its owners holds the link at a
-  time, and another owner links it once that one has unlinked it.
+  time, and another owner links it once that one has unlinked it, with
+  one exception (not built yet): while the existing link's `status` is
+  `not_admin` (below), a human who passes the owner check is not refused
+  with `installation_linked`; their link replaces it. The replaced link
+  is deleted: it is gone from its human's `GET /me/forge`, who has had
+  the account record with `change: "not_admin"` since it went
+  `not_admin` and now gets one with `change: "unlinked"` (below). If
+  the former owner becomes an owner again, the replacement stands: they
+  link again, and while the new owner's link holds the installation and
+  is not `not_admin`, that is refused with `installation_linked`.
 - `GET /me/forge` (human) answers `app_configured` (whether the instance
   has a GitHub App, above) and lists the caller's links: `[{id, forge,
   installation_id, account: {login, type}, repository_selection: "all"
@@ -18757,6 +18782,10 @@ repository it includes.
   forge's, `User` or `Organization`.
   `repositories_shown` lists at most 100 full names the installation
   covers, read with an installation token when the list is requested.
+  A `not_admin` link serves nothing, this list included: its
+  `repositories_shown` is `[]`, and the hub mints an installation token
+  for it only for the owner re-check below, uses that token for the
+  re-check's reads alone and does not keep it.
 - Starting a link and storing a token need the step-up (§2.8.4); an
   unlink and a token's removal do not, since they only take access away.
 - `DELETE /me/forge/github/links/{id}` (human, the linking human)
@@ -18772,31 +18801,72 @@ reason above; the hub retries a suspended one at most every 10 minutes
 and a removed one never, until it is linked again.
 
 **An installation on a forge organisation is re-checked** (not built
-yet). Its link serves a project only while the forge still reports the
-human who linked it as an active owner of that organisation. The hub
-checks it again when it chooses the project's source ("When a source
-covers a repository" above) and on `GET /me/forge`, in both cases at
-most every 10 minutes per link, and at once after a refusal. A
-`GET /me/forge` within 10 minutes of the link's last check makes no
-call to the forge and shows the last known `status` and its
-`checked_at`. To check, the hub reads with an installation
-token the forge user by the id kept with the link, never by a
-stored login, and that user's membership in the organisation the
-installation is on, and asks for the same as at linking (`state:
-"active"`, `role: "admin"`, the organisation's id equal to the
-installation account's). The user token from linking is not used
-again: it was discarded then. When the check fails — the forge answers
-that the human is no active owner or no member, or refuses the read
-because the organisation has not granted the Members permission — the
-link's `status` becomes
-`not_admin`, the hub drops the installation's tokens it holds, and
-every project the link covered answers `probe_not_configured` with
-`details.reason: installation_not_admin` until a check succeeds again,
-which sets `status` back to `active`. A forge that does not answer the
-check changes no status. The installation's account login
-is refreshed from the same reads, so a renamed organisation keeps its
-link. Nothing is learned from the forge about the organisation beyond
-that one membership: no member list is read, kept or shown.
+yet). Its link serves a read only on an owner check that succeeded less
+than 10 minutes before, a check at which the forge still reported the
+human who linked it as an active owner of that organisation. Up to 10
+minutes after an owner loses that role on the forge, their link may
+therefore still serve; that window is accepted, since the App's events
+are not used (above).
+
+*When the hub checks.* The source choice ("When a source covers a
+repository" above) and the linking human's `GET /me/forge` check a
+link, `active` or `not_admin`, at most every 10 minutes, counted from
+its last check whatever came of it: a failed or unanswered check does
+not bring the next one forward, nor does the source choice's own
+refresh after a refused read. A `GET /me/forge` within 10 minutes of
+the link's last check makes no call to the forge and shows the last
+known `status` and its `checked_at`. Two events check at once, before
+the first read that rests on the link: a confirmation of a repository
+the link's installation covers (`…/repository/confirm`, above), and a
+source choice that newly rests on the link for a project (the project's
+previous choice rested on another source or none). Each is skipped when
+a check of the link succeeded less than 10 minutes before.
+
+*How it checks*, in this order:
+
+1. the installation, with the App's key (`GET
+   /app/installations/{installation_id}`): its account's current
+   `login` and `id`. The link's account login is updated from it, so a
+   renamed organisation keeps its link; an installation the forge
+   reports suspended or removed is handled as a refused mint (above);
+2. the forge user by the id kept with the link (`GET
+   /user/{forge_user_id}`), with an installation token of this
+   installation: that user's current login. A stored login is never
+   used;
+3. that user's membership in the organisation, with the same token
+   (`GET /orgs/{login}/memberships/{username}`, the logins from steps 1
+   and 2). The check succeeds only when the membership's `user.id` is
+   `forge_user_id`, `state` is `active`, `role` is `admin` and
+   `organization.id` is the account `id` from step 1.
+
+The user token from linking is not used again: it was discarded then.
+
+*What comes of it.* The check fails when the forge answers that the
+human is no active owner or no member (a `404` at step 2 or 3
+included), names a membership that does not meet step 3, or refuses
+step 3 because the installation lacks the Members permission. Then the
+link's `status` becomes `not_admin`, the hub drops the installation's
+tokens it holds, and the linking human gets the account record with
+`change: "not_admin"` (below). A check that succeeds sets `status` back
+to `active`, from `not_admin` too, so a restored role restores the link
+unless another owner has replaced it (above). A forge that does not
+answer, and a rate-limit answer (`403` for a spent budget, `429`),
+count as no answer: no status changes, but once the last successful
+check is 10 minutes old the link serves nothing until a check
+succeeds, and a read that would rest on it answers `probe_unavailable`.
+
+*What a project sees.* While the link is `not_admin`, the source
+choice goes on as for any installation that no longer covers the
+repository (the order at the top of this section): the confirming
+owner's own token if it covers it, then the instance token where it may
+serve. When none covers it, every read answers `probe_not_configured`
+with `details.reason: installation_not_admin` for the human named in
+`confirmed_by`, `installation_link_invalid` for the project's other
+`project:admin` readers, and `details: {}` for everyone else, as for
+every reason (above).
+
+Nothing is learned from the forge about the organisation beyond that
+one membership: no member list is read, kept or shown.
 
 **The owner's own token.** A human may store a token of their own as a
 second source, for a forge setup where an App cannot be installed.
@@ -18828,7 +18898,8 @@ source: "app" | "owner_token", change: "linked" | "unlinked" |
 "suspended" | "removed" | "not_admin" | "token_set" | "token_removed" |
 "token_rejected", login}` of that human (`login` is the forge account the
 installation or token is on, which the item's title names; never a token), which is a `security` item for
-`linked` and `token_set` and no notification otherwise.
+`linked`, `token_set` and `not_admin` (not built yet) and no
+notification otherwise.
 
 **Rate limits.** A source's reads count against that source's limit at
 the forge (an installation, the owner's token, the instance token); the
@@ -27087,7 +27158,8 @@ and by signing in; and with abuse reports (§16.8) `moderation_applied`,
 written for the account an action concerns (the instance admin hears of
 a new report through a personal request, §7); and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
-no notification otherwise; and `agents_not_listening` `{instances, holding}`
+for a link that went `not_admin` (not built yet), and no notification
+otherwise; and `agents_not_listening` `{instances, holding}`
 (§5.3), written in place of the digest request under
 `not_listening.mode: bell`.
 
@@ -27124,7 +27196,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Password changed: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`, `Second-factor codes refused for today after too many wrong ones: …` for `method: daily_limit`); `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set`, and `not_admin` (not built yet) (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Password changed: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`, `Second-factor codes refused for today after too many wrong ones: …` for `method: daily_limit`); `Forge access added: <account login> (<source>)`; `Forge access stopped: <account login> is no owner on the forge` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and

@@ -30,14 +30,15 @@ descriptions repeats the incident it is meant to prevent.
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
-**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
+**Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4; re-checked 2026-11-23 when the owner adopted installations on a GitHub organisation (the entry linked below)
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). Re-checked 2026-11-23: the contract now links an installation on a GitHub organisation for one of its owners (§11.4, not built yet); the code still refuses one (`hub/src/maity_hub/forge_links.py`, `organisation_installation`) until that is built
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
 **See:** https://github.com/oliver-zehentleitner/maity — 6af0bb67-32dd-40df-91df-df1eb03288fc — as of 2026-11-04
 **See:** integrations.md#the-instance-token-serves-only-the-operators-own-namespaces-every-other-project-connects-its-repository-itself — ce611bd9-ef89-43e2-8895-2340f87f6c6e — as of 2026-11-04
-**Revisit when:** a second forge kind comes, an installation on an organisation account is to be accepted, or the App's own webhook replaces the per-project one
+**See:** integrations.md#an-installation-on-a-github-organisation-is-linked-by-one-of-its-owners-re-checked-by-polling-and-stays-that-humans-grant — 40057878-5f35-44fa-8b67-2e1820b59d38 — as of 2026-11-23
+**Revisit when:** a second forge kind comes, or the App's own webhook replaces the per-project one
 
 A project's forge reads use the first grant that covers its repository:
 the namespace owner's linked installation of the instance's GitHub App,
@@ -49,9 +50,10 @@ owner who confirmed it), and only for a
 repository URL the owner confirmed for it with an explicit call under
 step-up; every URL change and a transfer reset that. Linking an installation checks, with the
 installing user's one-time OAuth authorisation, that the installation's
-account is that user (an installation on an organisation account is
-refused; see the organisation entry for whose grants an organisation's
-project uses). The owner's token must be fine-grained. Data read through
+account is that user, or, for an installation on a GitHub organisation,
+that the user is an active owner of that organisation (the entry linked
+above, 40057878; see the organisation entry for whose grants a Maity
+organisation's project uses). The owner's token must be fine-grained. Data read through
 an owner's grant reaches project readers only, never a page without
 sign-in, with one exception (§11.4): the bare number of merged pull
 requests on a public page may come from such a read, as long as that read
@@ -80,7 +82,8 @@ instance grows.
 - Checking only that the user can access the installation (the user's
   installation list): a member of an organisation with access to one
   repository would pass and the hub would read every repository of the
-  installation. The installation's account must be the user.
+  installation. The installation's account must be the user, or, on a
+  GitHub organisation, the user must be one of its owners (40057878).
 - Using the owner's grant for whatever URL the project names: a co-admin
   could point the project at another private repository of the owner;
   the owner confirms the URL instead.
@@ -95,32 +98,48 @@ instance grows.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner's adoption of the contract change is requested and pending; contract `docs/api.md` §11.4, §6.26
+**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); contract `docs/api.md` §11.4, §6.26
 **Verification:** uncorroborated — contract only, not built yet: the hub still refuses an organisation installation (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-23
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-23
-**Revisit when:** the owner does not adopt the contract change; the forge's events are to replace the re-check; owners other than the first need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
+**Revisit when:** the forge's events are to replace the re-check; the 10-minute window after an owner loses the role is no longer acceptable; owners need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
 
 An installation of the instance's GitHub App on a GitHub organisation
 is linked when the human completing the link is, by the forge's answer
 to their own one-time user token, an active owner of that organisation
 (role `admin`, state `active`, and the organisation's id the
-installation account's id); anyone else gets `not_organisation_admin`.
+installation account's id); anyone else gets `not_organisation_admin`,
+decided before whether the installation is linked to someone else.
 The link is that human's grant, like an installation on their own
 account: it serves their projects and the projects of a Maity
 organisation whose repository they confirmed as one of its owners
-(`confirmed_by`, unchanged). The forge user's id is kept on the link;
-the user token is still discarded. Whether the human is still an owner
-is re-checked by the hub with an installation token when it chooses a
-project's source and on the forge settings listing (`GET /me/forge`),
-in both cases at most every 10 minutes per link and at once after a
-refusal; a listing within 10 minutes of the last check makes no forge
-call and shows the last known status. A failed check sets the
-link `not_admin` and the projects' reason `installation_not_admin`
-until a check passes again. One human holds an installation's link at
-a time, as before. The App asks for the organisation permission
-Members, read-only; nothing else turns on by itself, so there is no
-instance switch. Tokens stay per installation, not per repository.
+(`confirmed_by`, unchanged). The forge user's id is kept on the link
+(`forge_user_id`, in no answer); the user token is still discarded.
+
+The link serves a read only on an owner check that succeeded less than
+10 minutes before. The hub re-checks with the App's key and an
+installation token, in a fixed order: the installation (current
+organisation login and id), the forge user by the kept id (current
+login), then that user's membership, whose user id must be the kept
+one. It checks on the source choice and on the forge settings listing
+(`GET /me/forge`) at most every 10 minutes per link, whatever the last
+check's outcome, and at once on a repository's confirmation and when a
+project's source newly rests on the link, unless a check succeeded
+within the window. A failed check sets the link `not_admin`: it mints
+nothing except for its own re-check, shows no repositories and serves
+no project; the human who confirmed the project sees
+`installation_not_admin`, other project admins the neutral
+`installation_link_invalid`, and the linking human gets a security
+item. A check that succeeds restores `active`. A forge that does not
+answer, a rate limit included, changes no status, but the link then
+serves nothing once its last success is 10 minutes old. Up to 10
+minutes after an owner loses the role, their link may still serve; that
+window is accepted. One human holds an installation's link at a time,
+but an owner's link replaces a `not_admin` one, and the replacement
+stands if the former owner becomes an owner again. The App asks for the
+organisation permission Members, read-only; nothing else turns on by
+itself, so there is no instance switch. Tokens stay per installation,
+not per repository.
 
 **Reason:** teams keep their repositories on GitHub organisations, and
 the only way to read them so far was a fine-grained token per person.
@@ -129,25 +148,39 @@ the entry linked above: the right to install the App is not enough on
 an organisation, and the installation id from the redirect is never
 trusted. Keeping the grant a person's needs no new grant holder and
 leaves the Maity organisation rule (no grant of its own, the confirming
-owner lends theirs) as it is. Polling reuses the source choice's
-existing 10-minute refresh, and nothing activates without an owner's
-deliberate link and the organisation accepting the new permission, so a
-switch would guard nothing.
+owner lends theirs) as it is. A bound on how old the check a read rests
+on may be, not only on how often it runs, is what makes the window
+after a lost role a fixed and stated one; the checks at once cover the
+moments a human newly puts the link to use. Polling within that window
+needs no new contract surface, and nothing activates without an
+owner's deliberate link, so a switch would guard nothing. Letting a
+current owner replace a `not_admin` link keeps "one human at a time"
+from becoming one former owner forever.
 
 **Rejected alternatives:**
 - The App's webhook (`installation`, `installation_repositories`,
   member removal) now: a further contract change with a signature and
   replay table of its own; polling within the existing window is
   enough for launch.
+- Re-checking at once after every refusal, as the first draft of the
+  contract said: it would call the forge on every listing of a link
+  that stays refused; the 10-minute window per link is unconditional
+  instead.
+- Letting a link keep serving on its last successful check while the
+  forge does not answer: the window after a lost role would then have
+  no fixed bound.
+- Keeping a `not_admin` link until its human unlinks it: a former
+  owner who left the organisation would block every current owner.
 - Matching a Maity organisation's name to the GitHub organisation's
   login: Maity names are first come, so anyone could register a known
   organisation's name; no name is ever matched.
 - Letting GitHub App managers (or anyone who may install the App on
   the organisation) link it: they need not be owners, and a copied
   installation id would pass with one's own code.
-- Minting installation tokens per repository: not for launch; the
-  hub's reads with a grant already stay on the project's own
-  repository. Recorded here so that it can be taken up.
+- Minting installation tokens narrowed to the one repository: not for
+  launch (the lead's ruling on question 8); the hub's reads with a
+  grant already stay on the project's own repository. Recorded here so
+  that it can be taken up.
 - An instance switch, off by default, for organisation installations:
   nothing switches on by itself without it.
 - Linking the installation to a Maity organisation instead of a person:
