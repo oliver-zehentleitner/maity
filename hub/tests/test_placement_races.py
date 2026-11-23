@@ -55,17 +55,20 @@ def test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_i
     setup: Setup, monkeypatch: pytest.MonkeyPatch  # noqa: F811
 ) -> None:
     # §6.24, §15.5: the placement read the handle as free under its lock and holds it; a join
-    # that would give the owner a profile with that handle (`create_profile`, which takes the
-    # handle's lock first) waits for it and is then refused `taken`. Without the placement's
-    # handle lock the join does not wait on the handle, and both commit.
+    # in another project of the owner that would give them a profile with that handle
+    # (`create_profile`, which takes the handle's lock first) waits for it and is then refused
+    # `taken`. The join is in another project so that it shares no project row with the
+    # placement (its `join_link` insert locks its own project's row through the foreign key):
+    # without the placement's handle lock it waits for nothing, and both commit.
     reached, go = paused(monkeypatch, placement_routes, "_exists")  # right after the handle read
-    with race(setup.engine) as r:
+    with race(setup.engine) as r:  # skips on SQLite before any setup
+        flow.project(setup.owner, "second", repository={"url": REPOSITORY})
         creating = r.run(r.first, lambda: place(setup, agent=NEW_AGENT))
         try:
             assert reached.wait(FINISH_WITHIN)  # the handle read, the placement not yet made
             joining = r.run(
                 r.second,
-                lambda: setup.owner.post("/projects/maintainer/maity/joins", {"agent": NEW_AGENT}),
+                lambda: setup.owner.post("/projects/maintainer/second/joins", {"agent": NEW_AGENT}),
             )
             assert waiting(joining)  # on the handle's lock the placement holds
         finally:
@@ -86,8 +89,6 @@ def test_two_placements_of_one_new_handle_in_two_projects_give_one_placement(
     # right before it, each holding its own project's lock; one takes the handle, the other
     # waits and then finds it reserved by the first (`taken`). Without the handle lock neither
     # waits and the owner has two placements that would create the same profile.
-    flow.project(setup.owner, "second", repository={"url": REPOSITORY})
-    assert attach(setup.owner, setup.runner, "second").status_code == 201
     meeting = meet(
         monkeypatch,
         handles,
@@ -95,7 +96,9 @@ def test_two_placements_of_one_new_handle_in_two_projects_give_one_placement(
         before=True,
         key=lambda conn, scope, handle: id(conn),
         engine=setup.engine,
-    )  # each placement's handle lock, its project's taken
+    )  # each placement's handle lock, its project's taken; skips on SQLite before any setup
+    flow.project(setup.owner, "second", repository={"url": REPOSITORY})  # takes no handle lock
+    assert attach(setup.owner, setup.runner, "second").status_code == 201
     body = {"agent": NEW_AGENT, "runner": setup.runner.id, "harness": "claude-code"}
     with race(setup.engine) as r:
         first = r.run(r.first, lambda: place(setup, agent=NEW_AGENT))
