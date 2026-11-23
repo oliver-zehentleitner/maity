@@ -1256,8 +1256,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
     `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
     the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity` and URLs of the hub, the forge and the
-    grant's `network` hosts. A grant's `allow` command list is not given to agy (agy_grants):
+    interactive start asks nothing. Allowed: `maity`, URLs of the hub, the forge and the
+    grant's `network` hosts, writes to the clone's `.git` and reads of the delivered skill.
+    A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
     left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
     tools: the clone's credential, what makes git run something (GIT_PROTECTED), the other
@@ -1267,10 +1268,17 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
     allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
+    # agy's sandbox mounts only what is allowed: a `read_file` allow read-only, a `write_file`
+    # allow read-write, and a deny wins over an allow (the agy settings entry in
+    # cli/context/runner.md). The clone's `.git` is writable so `git fetch` and commits work;
+    # its private and protected paths below stay denied.
+    allow += [f"write_file({git})"]
+    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+        allow += [f"read_file({ctx.skill})"]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
-    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+    if ctx.skill is not None:
         deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {

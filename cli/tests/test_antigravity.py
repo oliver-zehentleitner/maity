@@ -180,6 +180,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
             "allow": [
                 "command(maity)",
                 "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
+                f"write_file({git_dir})",
             ],
             "deny": [
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
@@ -218,6 +219,34 @@ def test_in_the_agent_user_layout_agy_never_writes_the_agents_copy(tmp_path: Pat
     ctx = context(tmp_path, skill=skill, as_user=AsUser("agents"))
     deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
     assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+
+
+def test_agys_sandbox_mounts_the_delivered_skill_read_only(tmp_path: Path) -> None:
+    # tsk-c16hnxm0vc37: agy's sandbox hides what no rule allows, so the skill gets a read_file
+    # allow (mounted read-only) while its write_file deny stays and wins over any allow.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    permissions = adapters.antigravity_settings(context(tmp_path, skill=skill))["permissions"]
+    assert f"read_file({skill})" in permissions["allow"]
+    assert f"write_file({skill})" in permissions["deny"]
+    assert f"write_file({skill})" not in permissions["allow"]
+    plain = adapters.antigravity_settings(context(tmp_path / "n"))["permissions"]["allow"]
+    assert not [rule for rule in plain if "skills" in rule]
+
+
+def test_agys_sandbox_mounts_the_clones_git_writable_but_not_its_private_paths(
+    tmp_path: Path,
+) -> None:
+    # tsk-c16hnxm0vc37: without a write_file allow `.git` was read-only in agy's sandbox, so
+    # `git fetch` failed; the denies of `.git/maity` and GIT_PROTECTED stay and win.
+    ctx = context(tmp_path)
+    git_dir = ctx.clone / ".git"
+    permissions = adapters.antigravity_settings(ctx)["permissions"]
+    assert f"write_file({git_dir})" in permissions["allow"]
+    assert f"read_file({git_dir})" not in permissions["allow"]
+    for tool in ("read_file", "write_file"):
+        assert f"{tool}({git_dir / 'maity'})" in permissions["deny"]
+    for name in adapters.GIT_PROTECTED:
+        assert f"write_file({git_dir / name})" in permissions["deny"]
 
 
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------

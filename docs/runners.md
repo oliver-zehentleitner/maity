@@ -315,7 +315,8 @@ The runner deletes nothing in the folder. The service's log names what it found,
 - `toolPermission: proceed-in-sandbox` and the terminal sandbox on: a command that no rule names runs inside the sandbox without asking;
 - the workspace folder trusted, so an interactive start asks nothing;
 - denied to the file tools: the clone's `.git/maity` (the agent's credential), writing `.git/config`, `.git/hooks` and the rest that makes git run something, the other clones' credentials, the runner's state and configuration, the secrets in the agents' home and agy's own sign-in;
-- allowed: `maity` and reading the hub's, the forge's and the grant's `network` hosts; the repository's `allow` command list is not applied to agy (see below).
+- allowed: `maity` and reading the hub's, the forge's and the grant's `network` hosts; the repository's `allow` command list is not applied to agy (see below);
+- allowed as well: writing the clone's `.git`, so `git fetch` and commits work in agy's sandbox (the denies above still win), and reading the Keep the Why skill the runner delivers, which agy's sandbox then shows read-only (writing it stays denied).
 
 An allowed command may leave agy's sandbox. `maity` has to, for its credential and the network, and outside the sandbox any allowed command can read the credential, as with Claude Code. A grant's `allow` command list is not applied to agy, though (see below), so for agy only `maity` runs outside the sandbox. Run every `maity` command alone; a line that chains it with another command is refused outside the sandbox.
 
