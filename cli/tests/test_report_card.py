@@ -723,6 +723,19 @@ def test_of_two_forks_branches_of_one_name_the_head_s_pull_request_is_taken(
     assert unknown is not None and unknown.number == 5
 
 
+def test_a_row_that_is_no_object_is_gh_s_odd_answer_not_a_crash(
+    tmp_path: Path, bin_dir: Path
+) -> None:
+    """A list row that is no JSON object, ahead of the head's: the head match passes over it,
+    and the answer stays a FactsError instead of an AttributeError (A2271)."""
+    rows = ["oops", {"number": 9, "headRefOid": "a" * 40, "state": "OPEN", "url": f"{REPO}/pull/9"}]
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps(rows))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "a" * 40)
+    assert found is not None and found.number == 9
+    with pytest.raises(gitfacts.FactsError):
+        gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "c" * 40)
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [

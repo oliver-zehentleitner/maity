@@ -142,7 +142,9 @@ def _pull_request(
         rows = json.loads(result.stdout or "[]")
         if not rows:
             return None
-        row = next((r for r in rows if head is not None and r.get("headRefOid") == head), rows[0])
+        # A row that is no object is passed over here and fails below as gh's odd answer.
+        mine = (r for r in rows if isinstance(r, dict) and r.get("headRefOid") == head)
+        row = next(mine, rows[0]) if head is not None else rows[0]
         return PullRequest(
             number=int(row["number"]),
             head=str(row["headRefOid"]),
