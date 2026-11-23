@@ -21,6 +21,9 @@ from typing import Any
 from ..hub import HubError, hub_base
 
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
+# The configuration `maity runner install` writes (install.CONFIG): named when the default is
+# missing, never read in its place.
+SERVICE_PATH = Path("/etc/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
@@ -395,12 +398,25 @@ def _https_url(value: Any) -> str | None:
     return None
 
 
+def _missing(path: Path) -> str:
+    """Why `path` is no configuration. Where it is the default and the service of `maity runner
+    install` has its own, the message names that one: the service's commands read it only when
+    given, never in place of the default (cli/context/runner.md)."""
+    said = f"{path}: no such file; write it first (runner design §5.1)"
+    if path == DEFAULT_PATH.expanduser() and SERVICE_PATH.is_file():
+        said += (
+            f"; the service of `maity runner install` reads {SERVICE_PATH}: pass "
+            f"--config {SERVICE_PATH}, as its user (sudo -u maity-runner -H)"
+        )
+    return said
+
+
 def load(path: Path) -> Config:
     """The configuration at `path`; ConfigError listing every problem otherwise."""
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ConfigError([f"{path}: no such file; write it first (runner design §5.1)"]) from None
+        raise ConfigError([_missing(path)]) from None
     except OSError as exc:
         raise ConfigError([f"{path}: cannot be read ({exc.strerror})"]) from None
     except tomllib.TOMLDecodeError as exc:

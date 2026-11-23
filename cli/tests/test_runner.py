@@ -1628,6 +1628,35 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert config.path_of("~/x.toml") == home / "x.toml"
 
 
+def test_missing_default_config_names_the_services(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tsk-2k0jcaxfd0ja: on a host set up by `maity runner install`, `maity runner tools` or
+    # `check` without --config looked for ~/.config/... and said only "no such file". With the
+    # service's file there, the message names it and how to pass it; it is never read instead.
+    from maity.runner import install
+
+    assert config.SERVICE_PATH == install.CONFIG
+    service = tmp_path / "etc-runner.toml"
+    monkeypatch.setattr(config, "SERVICE_PATH", service)
+    with pytest.raises(config.ConfigError) as plain:
+        config.load(config.path_of(None))
+    assert plain.value.problems == [
+        f"{config.path_of(None)}: no such file; write it first (runner design §5.1)"
+    ]
+    service.write_text("[hub]\n", encoding="utf-8")
+    with pytest.raises(config.ConfigError) as named:
+        config.load(config.path_of(None))
+    assert named.value.problems[0].endswith(
+        f"; the service of `maity runner install` reads {service}: pass --config {service}, "
+        "as its user (sudo -u maity-runner -H)"
+    )
+    # A path given by hand is the person's: its absence is said plainly.
+    with pytest.raises(config.ConfigError) as given:
+        config.load(home / "other.toml")
+    assert "--config" not in given.value.problems[0]
+
+
 def test_opencode_is_offered() -> None:
     # Offered (req-g4d2cskx6zxv): a configuration naming opencode is accepted, no longer refused
     # as "not offered yet" (cli/context/runner.md). Its modes and the Grok model are read, and

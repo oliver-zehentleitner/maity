@@ -1720,9 +1720,16 @@ sudo maity runner uninstall [--purge]
 install --global maity` does that. While the configuration still lacks
 `[limits]` or a `[harness.<id>]`, or names a key this version does not
 support yet, the service is enabled but not started, and `install`
-lists what is missing. Fix it, then `sudo systemctl start maity-runner`.
-The harness itself (installed and logged in as `maity-runner`) is yours
-to set up.
+lists what is missing, then the next steps in order: the file, `sudo
+systemctl restart maity-runner`, `maity runner check` as `maity-runner`,
+and the tools' and the forge's login as `maity-runner`. A service it
+starts gets the login steps too. The harness itself (installed and
+logged in as `maity-runner`) is yours to set up; docs/runners.md, "As a
+service on Linux", has the steps. Every other `maity runner` command
+for the service takes `--config /etc/maity-runner/runner.toml`; without
+it, where `~/.config/maity-runner/runner.toml` is missing and the
+service's file exists, the error names the service's file and how to
+pass it.
 
 Running `install` again is safe. It creates only what is missing and
 pairs only an unpaired runner; an already paired one needs no code.
