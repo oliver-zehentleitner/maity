@@ -632,13 +632,17 @@ FORK = "https://github.com/someone/widget"
 def _gh_in(bin_dir: Path, repository: str, rows: str) -> None:
     """A gh that answers `rows` only when it is asked about `repository` (`--repo`), and an
     empty list otherwise, as gh does for a repository without that pull request."""
+    if sys.platform == "win32":
+        pytest.skip("Windows starts only an .exe by a bare name, and this gh is a shell script")
     assert "'" not in rows
     script = bin_dir / "gh"
     answer = f"printf '%s\\n' '{rows}'"
     script.write_text(
         "#!/bin/sh\n"
+        "prev=\n"
         "for a do\n"
-        f'  if [ "$a" = "{repository}" ]; then {answer}; exit 0; fi\n'
+        f'  if [ "$prev" = --repo ] && [ "$a" = "{repository}" ]; then {answer}; exit 0; fi\n'
+        '  prev="$a"\n'
         "done\n"
         "printf '%s\\n' '[]'\n"
     )
@@ -709,11 +713,37 @@ def test_gh_is_asked_in_the_repository_named(tmp_path: Path, bin_dir: Path) -> N
         ("https://github.com/acme", None),  # no repository
         ("https://github.com/acme/widget/extra", None),
         ("https://github.com/-acme/widget", None),  # never an option
+        ("git@github.com:acme/widget\n.git", None),  # `$` would match before the newline
+        ("git@github.com:acme/widget\n/", None),
+        ("https://github.com/../..", None),  # path segments, never owner or repository
+        ("https://github.com/acme/..git", None),
+        ("https://github.com/./widget", None),
         ("", None),
         (None, None),
     ],
 )
-def test_the_project_s_repository_as_gh_s_repo(url: str | None, expected: str | None) -> None:
+def test_the_project_s_repository_as_gh_s_repo(
+    url: str | None, expected: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GH_HOST", raising=False)
+    assert gitfacts.gh_repository(url) == expected
+
+
+@pytest.mark.parametrize(
+    ("gh_host", "url", "expected"),
+    [
+        ("ghe.example.com", "https://ghe.example.com/acme/widget", "ghe.example.com/acme/widget"),
+        ("GHE.Example.com", "git@ghe.example.COM:acme/widget.git", "ghe.example.com/acme/widget"),
+        ("ghe.example.com", "https://github.com/acme/widget", "github.com/acme/widget"),
+        ("ghe.example.com", "https://other.example.com/acme/widget", None),
+        ("", "https://ghe.example.com/acme/widget", None),  # an empty GH_HOST is unset
+    ],
+)
+def test_gh_s_repo_on_the_gh_host(
+    gh_host: str, url: str, expected: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GH_HOST is the other host gh is asked about, its case aside."""
+    monkeypatch.setenv("GH_HOST", gh_host)
     assert gitfacts.gh_repository(url) == expected
 
 

@@ -83,7 +83,8 @@ def _git_required(cwd: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-_REPO_PATH = re.compile(r"^[A-Za-z0-9_.][A-Za-z0-9_.-]*/[A-Za-z0-9_.][A-Za-z0-9_.-]*$")
+# `\Z`, not `$`: `$` also matches before a trailing newline.
+_REPO_PATH = re.compile(r"\A[A-Za-z0-9_.][A-Za-z0-9_.-]*/[A-Za-z0-9_.][A-Za-z0-9_.-]*\Z")
 
 
 def gh_repository(url: str | None) -> str | None:
@@ -98,6 +99,8 @@ def gh_repository(url: str | None) -> str | None:
         return None
     if host not in gh_hosts() or not _REPO_PATH.match(path):
         return None
+    if any(part in (".", "..") for part in path.split("/")):
+        return None  # a path segment, never an owner or a repository
     return f"{host}/{path}"
 
 
