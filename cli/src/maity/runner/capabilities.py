@@ -38,12 +38,12 @@ _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 # The harness versions whose sandbox behaviour was checked for a call with something placed
 # in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
 # says that it was not checked.
-CHECKED = {"claude-code": "2.1.325"}
+CHECKED = {"claude-code": "2.1.330"}
 # The machines (Claude Code's names) Claude Code supports its seccomp step on, the step that
 # keeps a sandboxed command from opening a Unix socket on Linux: x64 and arm64, read from the
-# 2.1.328 and 2.1.329 binaries (ia32 is named unsupported, any other machine too). Elsewhere
-# no helper resolves and every sandboxed command runs with Unix sockets open, without a word
-# (`claude_seccomp`). Read again from the binary whenever CHECKED moves.
+# 2.1.328, 2.1.329 and 2.1.330 binaries (ia32 is named unsupported, any other machine too).
+# Elsewhere no helper resolves and every sandboxed command runs with Unix sockets open, without
+# a word (`claude_seccomp`). Read again from the binary whenever CHECKED moves.
 CLAUDE_SECCOMP_ARCHES = frozenset({"x64", "arm64"})
 
 

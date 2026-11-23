@@ -1548,7 +1548,9 @@ the line then held to one plain call (a wait's timeout goes in
 `maity wait --timeout N`). The runner
 does not rely on how Claude Code's sandbox exclusion treats a call with
 something in front of `maity`. The hook needs Claude Code 2.1.295 or
-later; the version whose sandbox was last checked is recorded, and with
+later; the version whose sandbox was last checked is recorded, and it
+moves only after `cli/tests/claude_sandbox_probe.py`, run by hand where
+Claude Code is signed in, passed for the new version. With
 another Claude Code version the runner still starts the agent, and
 `maity runner check` and the runner's log say that the version was not
 checked. A repository's grant may only add plain
