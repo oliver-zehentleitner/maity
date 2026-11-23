@@ -12356,9 +12356,16 @@ the human's choice — a project that predates the field reads as `off`,
 and a later preset change keeps the value, as it keeps `signing`.
 
 **When nothing is served.** While `badge` is `off`, for a slug the hub
-does not know, and for a project that is closed (`archived`, §6.1), the answer is `not_found` (§1.3) — the same answer
-in all three cases, as for any resource that does not exist, and never
-a `304`. The URL does not tell whether a project exists.
+does not know, for a project that is closed (`archived`, §6.1), and for
+a project that could show nothing in public whatever its page says —
+under a moderation hold (§16.8), or whose namespace owner is a person
+who is suspended, pending or deleted, or an organisation that is
+suspended or deleted — the answer is `not_found` (§1.3), the same
+answer in every case, as for any resource that does not exist, and
+never a `304`. The badge needs no public page of the project (§16.9),
+but it shows nothing that a page would not. The URL does not tell
+whether a project exists. A badge a client or a proxy cached stays
+for up to its `max-age` of 60 seconds.
 
 **What it shows.** Counts only, never a name, a handle or an avatar:
 
