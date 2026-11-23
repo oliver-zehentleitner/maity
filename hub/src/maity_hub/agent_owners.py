@@ -213,7 +213,12 @@ def settle_closed_role(conn: Connection, project: Any, row: Any, actor: Actor) -
     # Read again under the lock `fall_back` took: an agent another call already settled (now
     # `coder`, or isolated) is left as it is; only one still on `blue-team` is beyond the limits.
     row = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
-    if row.isolated_since is None and row.role == policy.OUTSIDE_CLOSED:
+    if (
+        row.active is not None
+        and row.isolated_since is None
+        and row.role == policy.OUTSIDE_CLOSED
+        and is_outside(conn, project, row)
+    ):
         isolate_by_hub(conn, project, row, actor)
 
 
