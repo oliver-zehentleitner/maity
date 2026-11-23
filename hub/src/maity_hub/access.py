@@ -214,6 +214,8 @@ OUTSIDE_READS = frozenset(
         ("GET", f"{API_PROJECT}/tasks/{{card_id}}/notes"),
         ("GET", f"{API_PROJECT}/logo"),
         ("GET", f"{API_PROJECT}/banner"),
+        # What the project allows an outsider: whether they may add an agent (§6.1).
+        ("GET", f"{API_PROJECT}/contribution"),
         # The Why view, only while the hub last found the repository public (§11.3, §11.5).
         ("GET", f"{API_PROJECT}/keep-the-why"),
         ("GET", f"{API_PROJECT}/keep-the-why/export"),

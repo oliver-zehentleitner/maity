@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    access,
     agent_owners,
     allowed_projects,
     availability,
@@ -70,7 +71,7 @@ from maity_hub.cards import open_claims
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
@@ -940,6 +941,19 @@ def _agent_for_join(
     return create_profile(
         conn, owner_id, agent.handle, agent.display_name, agent.git_identity, limit
     )
+
+
+@router.get("/projects/{owner}/{slug}/contribution")
+@access.outside_read
+def contribution(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """What the project allows an outsider (§6.1, "What the project allows"): a read for an
+    outsider of a public project and for a member alike (`access.reader`); `not_found`
+    otherwise, as for any non-member read. The answer comes from `outsiders.contribution`."""
+    with engine_of(request).begin() as conn:
+        mine = access.reader(conn, caller, slug)
+        member = isinstance(mine, Membership)
+        human = mine.principal_id if mine.kind == "human" else None
+        return JSONResponse(outsiders.contribution(conn, mine.project, human, member))
 
 
 @router.get("/projects/{owner}/{slug}/joins")

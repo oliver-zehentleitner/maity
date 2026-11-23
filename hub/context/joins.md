@@ -549,6 +549,11 @@ the claim request is built.
 - Refusing in each of `claim`, `assign` and the takeover with its own wording: the three would
   drift apart, and the interim would have to be found in three places when it goes.
 
+`GET …/contribution` (§6.1) answers from the same predicate: `members_only` while
+`joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
+the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
+
 What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
 project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
-`…/contribution` (§6.1); and the claim request of §6.5. Each is a later card.
+the contribution fields of settings not built (`looking_for_coders`, `outside_claims`,
+`sponsor_url`, the reason `blocked`); and the claim request of §6.5. Each is a later card.

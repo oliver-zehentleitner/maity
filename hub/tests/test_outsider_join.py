@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import agent_owners, clock, outsiders, probe, public_pages, scopes
+from maity_hub import agent_owners, clock, events, outsiders, probe, public_pages, scopes
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -169,6 +169,20 @@ def test_without_the_stored_anyone_no_outsider_joins(
     assert _join(outsider).status_code == 201
 
 
+def test_without_the_opt_in_a_bad_body_is_not_found_before_validation(
+    on: None, owner: flow.Human, outsider: flow.Human
+) -> None:
+    """The gate answers before the body is read (§1.3): no validation answer tells an outsider
+    what the route takes where it is closed to them. Opted in, the same body is the route's
+    `invalid`."""
+    bad = {"agent": 5, "ttl_seconds": "never"}
+    closed = outsider.post(JOINS, bad)
+    assert (closed.status_code, closed.json()) == (404, NOT_FOUND), closed.text
+    _opt_in(owner)
+    opened = outsider.post(JOINS, bad)
+    assert (opened.status_code, opened.json()["error"]["code"]) == (400, "invalid"), opened.text
+
+
 def test_a_private_project_takes_no_outsiders_agent_whatever_its_setting(
     on: None, owner: flow.Human, outsider: flow.Human
 ) -> None:
@@ -189,6 +203,65 @@ def test_joins_open_is_the_one_answer(on: None, owner: flow.Human, migrated: Eng
     outsiders.JOINS_ON = False  # restored by the fixture's monkeypatch
     with migrated.connect() as conn:
         assert outsiders.joins_open(conn, _project(migrated)) is False
+
+
+# --- what the project allows (§6.1, `…/contribution`) ------------------------------------------
+
+CONTRIBUTION = f"{P}/contribution"
+
+
+def test_contribution_tells_an_outsider_whether_they_may_add_an_agent(
+    on: None, owner: flow.Human, outsider: flow.Human
+) -> None:
+    """Without the opt-in `members_only`, with `agent_owners` as stored (`null`); with it
+    `can_join`; at the quota `limit`."""
+    closed = outsider.get(CONTRIBUTION)
+    assert closed.status_code == 200, closed.text
+    assert closed.json() == {
+        "agent_owners": None,
+        "outside_roles": ["coder"],
+        "open_cards": 0,
+        "agents_max": 3,
+        "can_join": False,
+        "reason": "members_only",
+    }
+    _policy(owner, agent_owners="anyone", member_agents_max=1)
+    opened = outsider.get(CONTRIBUTION).json()
+    assert (opened["agent_owners"], opened["can_join"], opened["reason"]) == ("anyone", True, None)
+    assert opened["agents_max"] == 1
+    assert _join(outsider).status_code == 201
+    full = outsider.get(CONTRIBUTION).json()
+    assert (full["can_join"], full["reason"]) == (False, "limit")
+
+
+def test_contribution_says_members_only_while_the_switch_is_off(
+    owner: flow.Human, outsider: flow.Human
+) -> None:
+    _opt_in(owner)
+    found = outsider.get(CONTRIBUTION)
+    assert found.status_code == 200, found.text
+    assert (found.json()["can_join"], found.json()["reason"]) == (False, "members_only")
+
+
+def test_contribution_tells_a_member_to_bring_agents_as_a_member(
+    on: None, owner: flow.Human
+) -> None:
+    _opt_in(owner)
+    found = owner.get(CONTRIBUTION)
+    assert found.status_code == 200, found.text
+    assert (found.json()["can_join"], found.json()["reason"]) == (False, "member")
+
+
+def test_contribution_of_a_project_that_is_not_public_is_not_found(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+) -> None:
+    _opt_in(owner)
+    assert owner.patch(P, {"public_page": "off"}).status_code == 200
+    for answer in (outsider.get(CONTRIBUTION), make_client().get(f"/api/v1{CONTRIBUTION}")):
+        assert answer.status_code in (401, 404), answer.text
+    hidden = outsider.get(CONTRIBUTION)
+    assert (hidden.status_code, hidden.json()) == (404, NOT_FOUND)
+    assert owner.get(CONTRIBUTION).status_code == 200  # a member still reads it
 
 
 # --- the join's limits (§3.1) -------------------------------------------------------------------
@@ -408,7 +481,7 @@ def test_the_agent_stays_while_the_opt_in_holds_and_is_isolated_under_members(
 ) -> None:
     agent = _outside_agent(make_client, owner, outsider)
     project_id = _project(migrated).id
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:  # the pass emits what it isolates
         agent_owners.reconcile(conn, project_id)
     assert _row(migrated, agent.id).isolated_since is None
     _policy(owner, agent_owners="members")

@@ -86,6 +86,42 @@ def outsider(conn: Connection, caller: Any, slug: str) -> Outsider:
     return Outsider(project, str(caller.human_id))
 
 
+def contribution(
+    conn: Connection, project: Any, human_id: str | None, member: bool
+) -> dict[str, Any]:
+    """`GET …/contribution` (§6.1, "What the project allows"), as far as it is built:
+    `agent_owners` as stored (`null` while unset), `outside_roles` an outsider's agent may hold
+    (`agent_owners.outside_role_allowed`), `open_cards` (`0`: until the claim request is
+    built, an outsider's agent claims no card, §6.5), the caller's `agents_max`
+    (`member_agents_max`; no own quota yet), and `can_join` with `reason`: `member` for a
+    member of the project, `members_only` where `joins_open` does not hold (no opt-in, or the
+    join still switched off), `limit` when the caller's agents fill the quota. Not built yet:
+    `looking_for_coders`, `outside_claims`, `sponsor_url` and the reason `blocked`."""
+    from maity_hub import policy
+    from maity_hub.routes import joins  # the member rule's count, one rule for both
+
+    limit = joins.member_agents_limit(conn, project).limit
+    reason: str | None = None
+    if member:
+        reason = "member"
+    elif not joins_open(conn, project):
+        reason = "members_only"
+    elif human_id is not None and len(joins.agents_held(conn, project.id, human_id)) >= limit:
+        reason = "limit"
+    return {
+        "agent_owners": project.agent_owners,
+        "outside_roles": [
+            role
+            for role in policy.outside_roles(project)
+            if agent_owners.outside_role_allowed(project, role, None)
+        ],
+        "open_cards": 0,
+        "agents_max": limit,
+        "can_join": reason is None,
+        "reason": reason,
+    }
+
+
 def refuse_taking(holder: Any, by: Any, *, takeover: bool = False) -> None:
     """The interim of §6.5, "Until the claim request is built" (req-yzt08c2qgx6g): the one
     check of a card coming to be held by a membership with trust `outside`. `holder` is the
@@ -118,7 +154,8 @@ def still_holds(conn: Connection, row: Any, project: Any, member: Any) -> str | 
     """An outsider's join at the exchange, under the project's lock (§3.1): what may have
     changed since it was issued. The fixed text of the first check that fails, for the log,
     or None. The creator is still no member, `joins_open` still holds, and the creator still
-    owns the profile. A first join's role is still one `role_allowed` gives and the
+    owns the profile. A first join's role is still one `agent_owners.outside_role_allowed`
+    gives, and the
     creator's agents, this join's own included, still fit `member_agents_max`. A join for an
     agent that is a member by now adds an instance only to a membership with trust
     `outside`. The profile's `allowed_projects` is checked by the exchange for every join."""
