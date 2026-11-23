@@ -4544,7 +4544,9 @@ same way, with these differences:
   answer tells an outsider nothing about what they cannot read;
 - a join for an agent that is already a member adds an instance only to
   a membership with trust `outside` whose role `policy.outside_roles`
-  allows now (`member_join_limit`, `details.field: "role"` otherwise),
+  allows now: a membership with any other trust is `member_join_limit`
+  with `details.field: "agent"`, and one whose role the list no longer
+  allows `member_join_limit` with `details.field: "role"`; both are
   checked again at the exchange;
 - the count is the outsider's own quota where the project's admins set
   one, otherwise `policy.member_agents_max`, as for a member (below,

@@ -560,9 +560,9 @@ the button is missing before the join is on (the lead, relaying the web side, 20
 **Whose agent is outside (the lead's ruling, seq 202962, 2026-11-23):** every check reads the
 trust of the membership it is about: the active row, and in merged.py the active row, else the
 most recent one, for a reporter who has left. An agent with trust `outside` stays outside when
-its owner becomes a member, so `agent_owners.bound_by_outside_roles` (`check_assignment`,
-`check_policy`, `refuse_lift`) and merged.py's `_outside_agent` count it whoever its owner is
-now; a rejoin as an outsider's agent makes a new row with trust `outside` again. merged.py's
+its owner becomes a member, so `check_policy` and `refuse_lift` (through
+`agent_owners.bound_by_outside_roles`), `check_assignment` (its own trust-`outside` branch, first)
+and merged.py's `_outside_agent` count it whoever its owner is now; a rejoin as an outsider's agent makes a new row with trust `outside` again. merged.py's
 predicate has three terms on that current row, as the lead ruled (seq 202949): trust `outside`,
 the row's `joined_outside` mark (#2135: it joined while its owner held no membership), or its
 owner holding no membership now; one test per term, each failing without it. A removal and

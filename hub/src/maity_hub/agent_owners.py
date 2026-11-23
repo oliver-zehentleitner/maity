@@ -80,9 +80,10 @@ def is_outside(conn: Connection, project: Any, row: Any) -> bool:
 
 def bound_by_outside_roles(conn: Connection, project: Any, row: Any) -> bool:
     """Whether the membership `row` is held to `outside_roles` (§6.2, §2.3 "Outside"): its own
-    trust is `outside`, whoever its owner is now, or its owner is no member. The one rule
-    `check_assignment`, `check_policy` and `refuse_lift` share; it reads the membership's own
-    trust, so a rejoin as a member's agent, §2.3's one way out of `outside`, leaves it."""
+    trust is `outside`, whoever its owner is now, or its owner is no member. `check_policy` and
+    `refuse_lift` ask it; `check_assignment` applies the same rule inline, its trust-`outside`
+    branch first, then the owner's. It reads the membership's own trust, so a rejoin as a
+    member's agent, §2.3's one way out of `outside`, leaves it."""
     return bool(row.trust == OUTSIDE or is_outside(conn, project, row))
 
 

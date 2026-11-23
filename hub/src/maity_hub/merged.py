@@ -252,7 +252,11 @@ def _outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
     current = conn.execute(
         select(t.membership.c.trust, t.membership.c.joined_outside)
         .where(t.membership.c.project_id == project.id, t.membership.c.agent_id == agent_id)
-        .order_by(t.membership.c.active.is_(True).desc(), t.membership.c.joined_at.desc())
+        .order_by(
+            t.membership.c.active.is_(True).desc(),
+            t.membership.c.joined_at.desc(),
+            t.membership.c.id.desc(),  # two rows joined in the same instant: the later row
+        )
         .limit(1)
     ).first()
     if current is not None and current.trust == OUTSIDE:
