@@ -4145,6 +4145,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "report.mine.target.person": "一个人",
   "report.mine.target.project": "一个项目",
   "report.mine.title": "你的举报",
+  "report.not_found.person": "只有在此人的公开页面显示期间才能举报此人。",
   "report.open": "举报",
   "report.reason": "原因",
   "report.reason.choose": "选择原因",

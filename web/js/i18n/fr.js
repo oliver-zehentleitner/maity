@@ -4251,6 +4251,7 @@ window.MAITY_I18N["fr"] = {
   "report.mine.target.person": "une personne",
   "report.mine.target.project": "un projet",
   "report.mine.title": "Vos signalements",
+  "report.not_found.person": "Cette personne ne peut être signalée que tant que sa page publique est affichée.",
   "report.open": "Signaler",
   "report.reason": "Motif",
   "report.reason.choose": "Choisir un motif",

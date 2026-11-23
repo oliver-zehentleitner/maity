@@ -506,15 +506,29 @@ window.Maity = window.Maity || {};
       const under = seen.filter((x) => x.parent === id);
       return { open: under.filter((x) => !CLOSED.includes(x.status)).length, total: under.length };
     };
+    // public_cards.py `_release_without`: a pull request only a hidden card reported (`task_id`) goes
+    // with its blockers (`pr`); a hidden card leaves the groups and the `tasks` of a blocker, and a
+    // group or a `group_incomplete` blocker left with fewer than two cards goes; a blocker naming a
+    // hidden `task` goes. `ready` stays as the hub computed it.
     const release = (r) => {
       if (!r || typeof r !== "object") return r;
-      const out = Object.assign({}, r);
-      if (Array.isArray(r.pull_requests)) out.pull_requests = r.pull_requests.filter((p) => !(p.cards || [p.card]).every((id) => hidden.has(id)));
-      if (Array.isArray(r.groups)) out.groups = r.groups.map(keep).filter((g) => g.length > 1);
-      if (r.readiness && Array.isArray(r.readiness.blocking)) {
-        out.readiness = Object.assign({}, r.readiness, { blocking: r.readiness.blocking.filter((b) => !hidden.has(b.card) && !(b.cards || []).some((id) => hidden.has(id))) });
-      }
-      return out;
+      const prs = r.pull_requests || [];
+      const dropped = new Set(prs.filter((p) => p.task_id && hidden.has(p.task_id)).map((p) => p.number));
+      const readiness = r.readiness || {};
+      const blocking = [];
+      (readiness.blocking || []).forEach((item) => {
+        if ((item.task && hidden.has(item.task)) || (item.pr !== undefined && dropped.has(item.pr))) return;
+        if ("tasks" in item) {
+          const rest = keep(item.tasks);
+          if (rest.length < 2) return;
+          blocking.push(Object.assign({}, item, { tasks: rest }));
+        } else blocking.push(item);
+      });
+      return Object.assign({}, r, {
+        pull_requests: prs.filter((p) => !dropped.has(p.number)),
+        groups: (r.groups || []).map(keep).filter((g) => g.length > 1),
+        readiness: Object.assign({}, readiness, { blocking }),
+      });
     };
     return seen.map((c) => Object.assign({}, c, { depends_on: keep(c.depends_on), related: keep(c.related),
       ships_with: keep(c.ships_with), parent: hidden.has(c.parent) ? null : c.parent, children: children(c.id), release: release(c.release) }));
@@ -6763,6 +6777,8 @@ window.Maity = window.Maity || {};
     fixtureStarred,
     // The outsider's public project (`stranger/tool`), its `repository_public` set by the smoke test.
     fixtureOutside: OUTSIDE_TOOL.project,
+    // Its members as the fixture keeps them, `page_served` among them, set by the smoke test.
+    fixtureOutsideMembers: OUTSIDE_TOOL.members,
     source,
     ApiError,
     // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,

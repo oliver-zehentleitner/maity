@@ -4147,6 +4147,7 @@
   "report.mine.target.person": "人",
   "report.mine.target.project": "プロジェクト",
   "report.mine.title": "あなたの報告",
+  "report.not_found.person": "この人は、公開ページが表示されている間だけ報告できます。",
   "report.open": "報告する",
   "report.reason": "理由",
   "report.reason.choose": "理由を選んでください",

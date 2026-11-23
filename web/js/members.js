@@ -1094,6 +1094,8 @@ window.Maity = window.Maity || {};
       if (wantedHead()) window.setTimeout(() => { if (first()) first().focus(); }, 0);
       else append(status.el, h("span", null, M.t("members.no_such", { id: wanted })));
     }
+    // Kept for an outsider too: they read no event feed (§2.3), so this read is how the list learns
+    // of a member who joined or left; their rows have no presence cell to update.
     ctx.every(PRESENCE_MS, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;

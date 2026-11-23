@@ -4251,6 +4251,7 @@ window.MAITY_I18N["de"] = {
   "report.mine.target.person": "eine Person",
   "report.mine.target.project": "ein Projekt",
   "report.mine.title": "Deine Meldungen",
+  "report.not_found.person": "Diese Person kann nur gemeldet werden, solange ihre öffentliche Seite angezeigt wird.",
   "report.open": "Melden",
   "report.reason": "Grund",
   "report.reason.choose": "Grund wählen",

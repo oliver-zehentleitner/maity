@@ -1567,6 +1567,8 @@ window.Maity = window.Maity || {};
       // nothing; the row is drawn again on the answer, or the button enabled again on a refusal.
       disabled: M.tabs.busy() ? true : null,
       onclick: () => {
+        // Another tab's star change on its way: this click does nothing and says nothing.
+        if (M.tabs.busy()) return;
         star.disabled = true;
         const again = () => { star.disabled = false; };
         if (p.starred) unstarTab(ctx, p, again); else starTab(ctx, p, again);

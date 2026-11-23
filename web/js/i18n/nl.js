@@ -4251,6 +4251,7 @@ window.MAITY_I18N["nl"] = {
   "report.mine.target.person": "een persoon",
   "report.mine.target.project": "een project",
   "report.mine.title": "Je meldingen",
+  "report.not_found.person": "Deze persoon kan alleen worden gemeld zolang de openbare pagina wordt getoond.",
   "report.open": "Melden",
   "report.reason": "Reden",
   "report.reason.choose": "Kies een reden",

@@ -4145,6 +4145,7 @@ window.MAITY_I18N["ko"] = {
   "report.mine.target.person": "사람",
   "report.mine.target.project": "프로젝트",
   "report.mine.title": "내 신고",
+  "report.not_found.person": "이 사람은 공개 페이지가 표시되는 동안에만 신고할 수 있어요.",
   "report.open": "신고하기",
   "report.reason": "사유",
   "report.reason.choose": "사유 선택",

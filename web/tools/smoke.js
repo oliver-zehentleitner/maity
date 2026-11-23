@@ -17317,6 +17317,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(rpSent.length && JSON.stringify(rpSent[rpSent.length - 1].target) === JSON.stringify({ type: "profile", id: "sam" }) && sent,
         "report: an outsider reports a person by the handle a stranger sends (§16.8), and the hub takes it " + JSON.stringify(rpSent[rpSent.length - 1]));
     }
+    // While Sam's own page is not served the hub answers not_found: said in words, never the code.
+    {
+      const sam = M_.api.fixtureOutsideMembers.find((x) => x.id === "hum-sam");
+      sam.page_served = false;
+      await go("#/stranger/tool/team/agt-tool-bot"); await go("#/stranger/tool/team/hum-sam"); for (let k = 0; k < 6; k++) await tick();
+      await rpSend(main, "abuse");
+      const failed = main.querySelector(".report-form") && main.querySelector(".report-form").querySelector(".send-status");
+      const said = failed ? text(failed) : "";
+      expect(said === "This person can only be reported while their public page is shown." && !said.includes("not_found") && !main.querySelector(".report-sent"),
+        "report: an outsider's report of a person whose page is not served says so in words, no (not_found) " + JSON.stringify(said));
+      sam.page_served = true;
+      rpSent.pop();
+    }
     await go("#/stranger/tool/team/agt-tool-bot"); for (let k = 0; k < 6; k++) await tick();
     {
       await rpSend(main, "other");

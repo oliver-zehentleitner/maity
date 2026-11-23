@@ -43,6 +43,7 @@ window.Maity = window.Maity || {};
 
   // target: {type, id, project?} as POST /reports takes it; what: person, agent, project, card or
   // message (the button's name). opts.signedOut: the page's path, for a link to the sign-in instead.
+  // opts.notFound: a function giving the sentence that says a `not_found` answer, instead of its code.
   // Returns {button, slot}: the caller puts the button where its view keeps its actions and the slot
   // where the form may open.
   function control(target, what, opts) {
@@ -64,7 +65,7 @@ window.Maity = window.Maity || {};
       if (refocus) button.focus();
     };
     const open = () => {
-      const f = form(n, target, label, { cancel: () => close(true), sent: (said) => { close(false); append(slot, said); said.focus(); } });
+      const f = form(n, target, label, { cancel: () => close(true), sent: (said) => { close(false); append(slot, said); said.focus(); }, notFound: o.notFound });
       append(clear(slot), f.el);
       button.hidden = true;
       button.setAttribute("aria-expanded", "true");
@@ -112,7 +113,10 @@ window.Maity = window.Maity || {};
       } catch (err) {
         busy = false;
         send.disabled = false;
-        const said = err.code ? { message: M.t("report.refusal", { reason: err.message, code: err.code }) } : err;
+        // A caller that knows what `not_found` means for its target says it in words of its own
+        // (opts.notFound: a stranger's report of a person whose page is not served, §16.8).
+        if (err.code === "not_found" && typeof hooks.notFound === "function") { status.fail("", { message: hooks.notFound() }); return; }
+        const said = err.code ?{ message: M.t("report.refusal", { reason: err.message, code: err.code }) } : err;
         // The day's limit says when it lets up (Retry-After, kept as `retry_after`); the per-target
         // limit has none, for good (§16.8).
         const wait = err.details && Number(err.details.retry_after);

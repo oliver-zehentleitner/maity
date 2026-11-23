@@ -117,9 +117,12 @@ window.Maity = window.Maity || {};
     // `<owner>/<handle>` (it is named on this public project's page, so the hub finds it), a person
     // by their handle, which the hub takes while their own page is served and answers not_found
     // otherwise; the form says that answer as it says any other.
-    const reportId = !M.trust.outsider(ctx) ? m.id : m.kind === "agent" ? m.name : m.handle;
+    const outside = M.trust.outsider(ctx);
+    const reportId = !outside ? m.id : m.kind === "agent" ? m.name : m.handle;
+    // That not_found, for a person, in words a stranger understands rather than its code (seq 201952).
+    const notFound = outside && m.kind !== "agent" ? () => M.t("report.not_found.person") : null;
     const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id && reportId
-      ? M.report.control({ type: "profile", id: reportId }, m.kind === "agent" ? "agent" : "person") : null;
+      ? M.report.control({ type: "profile", id: reportId }, m.kind === "agent" ? "agent" : "person", notFound ? { notFound } : undefined) : null;
     const heading = h("h2", { id: "member-heading", tabindex: "-1" }, m.display_name, " ", h("span", { class: "mono muted" }, "@" + M.dom.handleOf(ctx, m)));
     const el = h("div", { class: "member-head" },
       h("div", { class: "member-head-face" }, M.avatar(m, 64),

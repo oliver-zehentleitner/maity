@@ -4251,6 +4251,7 @@ window.MAITY_I18N["en"] = {
   "report.mine.target.person": "a person",
   "report.mine.target.project": "a project",
   "report.mine.title": "Your reports",
+  "report.not_found.person": "This person can only be reported while their public page is shown.",
   "report.open": "Report",
   "report.reason": "Reason",
   "report.reason.choose": "Choose a reason",
