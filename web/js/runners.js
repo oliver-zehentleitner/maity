@@ -21,6 +21,33 @@ window.Maity = window.Maity || {};
   // The CLI as published on PyPI; the runner commands are part of it.
   const CLI_INSTALL = "pipx install maity";
   const CONFIG_PATH = "~/.config/maity-runner/runner.toml";
+  // The service way (`maity runner install`, cli/src/maity/runner/install.py): its fixed
+  // paths, the home of the user it makes, and where the runner keeps the tools it installs.
+  // A command as maity-runner starts in `/` (`cd / &&`), or Claude Code in that user's home:
+  // sudo keeps the caller's directory, which maity-runner may not enter (Ubuntu's 0750
+  // homes), and Claude Code would ask to trust it (web/context/views.md).
+  const SERVICE = {
+    config: "/etc/maity-runner/runner.toml",
+    home: "/var/lib/maity-runner",
+    state: "/var/lib/maity-runner/state",
+    workspaces: "/var/lib/maity-runner/workspaces",
+    packages: "sudo apt install tmux socat bubblewrap git pipx",
+    // `postgresql` brings the server's programs; the cluster apt makes and starts with them is
+    // not what a project's scripts use (they start their own), so it is stopped (review A2146).
+    checks: "sudo apt install make python3-venv python3-dev build-essential postgresql && sudo systemctl disable --now postgresql",
+    cli: "sudo pipx install --global maity",
+    start: "sudo systemctl restart maity-runner",
+    stop: "sudo systemctl stop maity-runner",
+    check: "cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml",
+    versions: "sudo ls /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions",
+    login: "sudo -u maity-runner -H sh -c 'cd && exec /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude'",
+    forge: "cd / && sudo -u maity-runner -H gh auth login",
+    forgeGit: "cd / && sudo -u maity-runner -H gh auth setup-git",
+    // A re-pair: the runner's credential moved aside, since `pair` refuses while one is there.
+    aside: "sudo -u maity-runner mv /var/lib/maity-runner/state/credential /var/lib/maity-runner/state/credential.old",
+  };
+  // The terminal way's re-pair: the default state directory's credential moved aside.
+  const TERMINAL_ASIDE = "mv ~/.local/state/maity-runner/credential ~/.local/state/maity-runner/credential.old";
 
   // ---- plain words for what a runner advertises (shared with Project → Runners)
 
@@ -85,14 +112,25 @@ window.Maity = window.Maity || {};
     return c.backend === "ssh" ? M.t("runners.target.host", { name: target.name, line }) : M.t("runners.target.pool", { name: target.name, line });
   }
 
-  function toolLine(runner, tool) {
-    if (tool.available === false) {
-      const values = { tool: toolName(tool.id), runner: runner.name, reason: tool.reason };
-      const said = tool.reason === "binary_not_found" ? M.t("runners.tool.not_installed", values)
-        : tool.reason === "version_failed" ? M.t("runners.tool.no_version", values)
-          : tool.reason ? M.t("runners.tool.unavailable_reason", values) : M.t("runners.tool.unavailable", values);
-      return h("li", { class: "unavailable" }, said);
+  // Why a tool the runner lists is offered to no placement: its reason (§15.3) in words. A tool
+  // the runner installs itself (§15.16, `capabilities.tools`) is not found while its install
+  // runs or after it failed: that is said instead of "not installed" (review A2146).
+  function unavailableText(runner, tool) {
+    const values = { tool: toolName(tool.id), runner: runner.name, reason: tool.reason };
+    const managed = tool.reason === "binary_not_found"
+      ? ((runner.capabilities && runner.capabilities.tools) || []).find((t) => t.id === tool.id) : null;
+    if (managed && managed.state === "installing") return M.t("runners.tool.installing", values);
+    if (managed && managed.state === "failed") {
+      return M.t("runners.tool.install_failed", Object.assign({}, values, { reason: managed.reason || "?" }));
     }
+    return tool.reason === "binary_not_found" ? M.t("runners.tool.not_installed", values)
+      : tool.reason === "version_failed" ? M.t("runners.tool.no_version", values)
+        : tool.reason === "login_needed" ? M.t("runners.tool.login_needed", values)
+          : tool.reason ? M.t("runners.tool.unavailable_reason", values) : M.t("runners.tool.unavailable", values);
+  }
+
+  function toolLine(runner, tool) {
+    if (tool.available === false) return h("li", { class: "unavailable" }, unavailableText(runner, tool));
     const bounds = tool.confinement === "allowlist" ? M.t("runners.tool.allowlist")
       : tool.confinement === "pod" ? M.t("runners.tool.pod")
         : tool.confinement === "none" ? M.t("runners.tool.tests_only") : tool.confinement;
@@ -132,7 +170,7 @@ window.Maity = window.Maity || {};
       h("p", { class: "muted" }, allows(c)));
   }
 
-  M.runnerWords = { toolName, backendLabel, presenceText, presenceClass, capabilities, isolationSentence, MODES };
+  M.runnerWords = { toolName, backendLabel, presenceText, presenceClass, capabilities, isolationSentence, unavailableText, MODES };
 
   // ---- the starter configuration --------------------------------------------
 
@@ -148,15 +186,20 @@ window.Maity = window.Maity || {};
 
   // Only the keys without a default (design v2 §5.1): the runner refuses
   // unknown keys, so the less it says, the less can disagree with it.
-  function starterConfig(hubUrl, projects) {
+  // `way` "service": the file replaces the one `maity runner install` wrote, so it
+  // keeps install's state_dir (where install paired) and workspaces, and the runner
+  // installs Claude Code for its user, who has none (web/context/views.md).
+  function starterConfig(hubUrl, projects, way) {
+    const service = way === "service";
     const repos = projects.map((p) => p.repository && p.repository.url).filter(Boolean)
       .map((u) => u.replace(/^https:\/\//, "").replace(/\.git$/, "").replace(/\/$/, ""));
     return [
-      "# Maity runner: " + CONFIG_PATH,
-      "# Generated by the dashboard. It holds no secret; maity runner pair writes the credential.",
+      "# Maity runner: " + (service ? SERVICE.config : CONFIG_PATH),
+      "# Generated by the dashboard. It holds no secret; the credential is written by maity runner " + (service ? "install" : "pair") + ".",
       "",
       "[hub]",
       "url = " + q(hubUrl),
+      ...(service ? ["state_dir = " + q(SERVICE.state)] : []),
       "",
       "[limits]",
       "projects = [" + projects.map((p) => q(p.full_name)).join(", ") + "]" + (projects.length ? "" : "   # none chosen: it starts nothing until you add one"),
@@ -166,9 +209,10 @@ window.Maity = window.Maity || {};
       "kind = \"local\"",
       "",
       "[backend.local]",
-      "layout = \"single\"   # agents run as your user, together",
+      ...(service ? ["layout = \"single\"", "workspaces = " + q(SERVICE.workspaces)] : ["layout = \"single\"   # agents run as your user, together"]),
       "",
       "[harness.claude-code]",
+      ...(service ? ["install = true"] : []),
       "modes = [\"interactive\", \"supervised\"]",
       "models = [\"opus\", \"sonnet\"]",
       "",
@@ -194,25 +238,107 @@ window.Maity = window.Maity || {};
   // The command that writes the configuration. set -C: an existing one is
   // never overwritten, the shell says so; umask 077: the file decides what
   // agents may touch, so only its owner may change it.
-  const writeCommand = (config) => "mkdir -p ~/.config/maity-runner && (set -C; umask 077; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF";
+  // The service way replaces the file install wrote, a copy of it kept beside it; root's
+  // file, 0644 as install has it, since the service's user must read it. tee writes into
+  // install's existing file, so that mode stays under any umask; without install's file,
+  // cp -p fails and nothing is written (tools/starter_configs.py runs it under umask 002).
+  // Install's own file is copied aside only once: pasted again, the command keeps that copy.
+  const writeCommand = (config, way) => (way === "service"
+    ? "{ sudo test -e " + SERVICE.config + ".install || sudo cp -p " + SERVICE.config + " " + SERVICE.config + ".install; } && sudo tee " + SERVICE.config + " > /dev/null <<'EOF'\n" + config + "EOF"
+    : "mkdir -p ~/.config/maity-runner && (set -C; umask 077; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF");
+  // A word for the shell in single quotes; a quote in it closed, escaped and opened again.
+  const sq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+  // Every pairing line pipes the code in (--code-file -), never on a command line, where
+  // other users of the machine could read it; printf is the shell's own.
+  const piped = (enrollment, command) => "printf '%s\\n' " + sq(enrollment.code) + " | " + command + " " + sq(enrollment.pair_url) + " --code-file -";
+  const installLine = (enrollment) => piped(enrollment, "sudo maity runner install");
+  const pairLine = (enrollment) => piped(enrollment, "maity runner pair");
+  // The service's re-pair: pair again as maity-runner, into install's state directory.
+  const servicePairLine = (enrollment) => "cd / && " + piped(enrollment, "sudo -u maity-runner -H maity runner pair") + " --config " + SERVICE.config;
 
-  // The panel that makes a pairing end in a runner that starts.
-  function pairSteps(enrollment, config, onHide) {
-    const heredoc = config && writeCommand(config);
+  // A command to paste, with its copy button.
+  const pasteLine = (command) => [h("pre", { class: "paste-line" }, command), copyButton(() => command)];
+
+  function configStep(text, config, way) {
+    const heredoc = writeCommand(config, way);
+    return [text, h("pre", { class: "runner-config", tabindex: "0", "aria-label": M.t("runners.pair.config_label") }, config),
+      copyButton(() => config, M.t("runners.pair.copy_config")), " ", copyButton(() => heredoc, M.t("runners.pair.copy_command"))];
+  }
+
+  // In a terminal: pair, configure, check and serve as the person's own user (Linux and macOS).
+  function terminalSteps(enrollment, config) {
+    return h("ol", { class: "pair-way-terminal" },
+      h("li", null, M.t("runners.pair.install"), pasteLine(CLI_INSTALL),
+        h("p", { class: "hint" }, M.t("runners.pair.install_hint"))),
+      config ? h("li", null, configStep(M.t("runners.pair.save", { path: CONFIG_PATH }), config, "terminal"))
+        : h("li", null, M.t("runners.pair.keep_config"), " ", M.t("runners.pair.aside"), pasteLine(TERMINAL_ASIDE)),
+      h("li", { class: "pair-line-step" }, M.t("runners.pair.line", { time: formatTime(enrollment.expires_at) }), pasteLine(pairLine(enrollment))),
+      h("li", null, M.tn("runners.pair.check", { command: h("code", null, "maity runner check") })),
+      h("li", null, M.tn("runners.pair.start", { command: h("code", null, "maity runner serve") })));
+  }
+
+  // As a service (Linux, systemd): `maity runner install` makes the user, the files and the
+  // unit and pairs; the steps around it are what install cannot do (docs/runners.md).
+  function serviceSteps(enrollment, config) {
+    const line = installLine(enrollment);
+    return h("ol", { class: "pair-way-service" },
+      h("li", null, M.t("runners.pair.service.packages"), pasteLine(SERVICE.packages),
+        h("p", { class: "hint" }, M.t("runners.pair.service.packages_hint")),
+        h("p", null, M.t("runners.pair.service.checks")), pasteLine(SERVICE.checks),
+        h("p", { class: "hint" }, M.t("runners.pair.service.checks_hint"))),
+      h("li", null, M.t("runners.pair.service.cli"), pasteLine(SERVICE.cli),
+        h("p", { class: "hint" }, M.t("runners.pair.service.cli_hint"))),
+      h("li", null,
+        h("div", { class: "pair-line-step" }, M.t("runners.pair.service.install", { time: formatTime(enrollment.expires_at) }), pasteLine(line)),
+        h("p", { class: "hint" }, M.t("runners.pair.service.install_hint", { home: SERVICE.home, path: SERVICE.config }))),
+      h("li", null, configStep(M.t("runners.pair.service.save", { path: SERVICE.config }), config, "service"),
+        h("p", { class: "hint" }, M.t("runners.pair.service.save_hint"))),
+      h("li", null, M.t("runners.pair.service.start"), pasteLine(SERVICE.start)),
+      ...afterStart());
+  }
+
+  // The tool's and the forge's login, then the check: with install = true the runner installs
+  // Claude Code after its start, and check runs Claude Code headless, which needs the login.
+  const afterStart = () => [
+    h("li", null, M.t("runners.pair.service.login"), pasteLine(SERVICE.versions), pasteLine(SERVICE.login),
+      h("p", { class: "hint" }, M.t("runners.pair.service.login_hint", { home: SERVICE.home }))),
+    h("li", null, M.t("runners.pair.service.forge"), pasteLine(SERVICE.forge), pasteLine(SERVICE.forgeGit),
+      h("p", { class: "hint" }, M.t("runners.pair.service.forge_hint"))),
+    h("li", null, M.t("runners.pair.service.check"), pasteLine(SERVICE.check)),
+  ];
+
+  // A service's re-pair: the service stopped, its credential moved aside, paired again as
+  // maity-runner with install's configuration (so into install's state directory), started.
+  function serviceRepairSteps(enrollment) {
+    return h("ol", { class: "pair-way-service" },
+      h("li", null, M.t("runners.pair.service.repair_stop"), pasteLine(SERVICE.stop), pasteLine(SERVICE.aside)),
+      h("li", { class: "pair-line-step" }, M.t("runners.pair.service.repair_line", { time: formatTime(enrollment.expires_at) }), pasteLine(servicePairLine(enrollment))),
+      h("li", null, M.t("runners.pair.service.start"), pasteLine(SERVICE.start)),
+      h("li", null, M.t("runners.pair.service.check"), pasteLine(SERVICE.check)));
+  }
+
+  // The panel that makes a pairing end in a runner that starts. The person chooses the way,
+  // the service by default; the dashboard cannot tell the runner's machine from the browser's,
+  // so the person says which (web/context/views.md). A re-pair keeps its configuration
+  // (`configFor` null) and pairs again the way the runner runs.
+  function pairSteps(enrollment, configFor, onHide) {
+    const terminal = terminalSteps(enrollment, configFor && configFor("terminal"));
+    const service = configFor ? serviceSteps(enrollment, configFor("service")) : serviceRepairSteps(enrollment);
+    let choice = null;
+    if (service) {
+      terminal.hidden = true;
+      const radio = (way, label) => {
+        const input = h("input", { type: "radio", name: "pair-way", id: "pair-way-" + way, value: way,
+          onchange: () => { service.hidden = way !== "service"; terminal.hidden = way === "service"; } });
+        input.checked = way === "service";
+        return h("label", { class: "check", for: input.id }, input, " " + label);
+      };
+      choice = h("fieldset", { class: "pair-way" }, h("legend", null, M.t("runners.pair.way")),
+        radio("service", M.t("runners.pair.way_service")), radio("terminal", M.t("runners.pair.way_terminal")));
+    }
     return h("div", { class: "pair-steps flag", "aria-live": "polite" },
       h("p", null, h("strong", null, M.t("runners.pair.where"))),
-      h("ol", null,
-        h("li", null, M.t("runners.pair.install"), h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL),
-          h("p", { class: "hint" }, M.t("runners.pair.install_hint"))),
-        config
-          ? h("li", null, M.t("runners.pair.save", { path: CONFIG_PATH }),
-          h("pre", { class: "runner-config", tabindex: "0", "aria-label": M.t("runners.pair.config_label") }, config),
-          copyButton(() => config, M.t("runners.pair.copy_config")), " ", copyButton(() => heredoc, M.t("runners.pair.copy_command")))
-          : h("li", null, M.t("runners.pair.keep_config")),
-        h("li", { class: "pair-line-step" }, M.t("runners.pair.line", { time: formatTime(enrollment.expires_at) }),
-          h("pre", { class: "paste-line" }, enrollment.pair_line), copyButton(() => enrollment.pair_line)),
-        h("li", null, M.tn("runners.pair.check", { command: h("code", null, "maity runner check") })),
-        h("li", null, M.tn("runners.pair.start", { command: h("code", null, "maity runner serve") }))),
+      choice, service, terminal,
       h("p", { class: "muted pair-wait" }, M.t("runners.pair.waiting")),
       h("div", { class: "actions" }, h("button", { type: "button", onclick: onHide }, M.t("runners.hide"))));
   }
@@ -382,10 +508,10 @@ window.Maity = window.Maity || {};
         h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(panel) }, M.t("runners.hide")))));
     }
 
-    function showPairing(enrollment, config, waiting) {
+    function showPairing(enrollment, configFor, waiting) {
       waitingFor = waiting;
       clear(panel);
-      append(panel, pairSteps(enrollment, config, () => { waitingFor = null; clear(panel); }));
+      append(panel, pairSteps(enrollment, configFor, () => { waitingFor = null; clear(panel); }));
     }
 
     function pairForm() {
@@ -409,7 +535,7 @@ window.Maity = window.Maity || {};
           const chosen = adminProjects.filter((p) => attach.includes(p.full_name));
           const create = () => pairCall({ name: n, ttl_seconds: Number(ttl.value), attach });
           act(M.t("runners.busy.pairing"), M.t("runners.failed.pairing"), create,
-            (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }));
+            (enr) => showPairing(enr, (way) => starterConfig(new URL(enr.pair_url).origin, chosen, way), { name: n, expires_at: enr.expires_at }));
         },
       },
       h("h3", null, M.t("runners.pair.title")),
@@ -424,24 +550,22 @@ window.Maity = window.Maity || {};
     function drawRunners(items) {
       clear(list);
       const live = items.filter((r) => !r.removed_at);
-      if (!live.length) {
-        append(list, h("div", { class: "empty-state" }, h("p", null, M.t("runners.empty"))));
-        return;
-      }
+      if (!live.length) append(list, h("div", { class: "empty-state" }, h("p", null, M.t("runners.empty"))));
       live.forEach((r) => append(list, runnerCard(r)));
-      // The pairing on screen: say when its runner has paired and come online;
+      // The pairing on screen, also while no runner is paired yet: say when its runner has paired and come online;
       // once the line is used or expired it leaves the page.
       const wait = panel.querySelector(".pair-wait");
       if (waitingFor && wait) {
         const r = live.find((x) => (waitingFor.runner_id ? x.id === waitingFor.runner_id : x.name === waitingFor.name));
         const paired = r && r.credential_state === "active" && (!waitingFor.runner_id || (r.credential && r.credential.id) !== waitingFor.credential);
-        const step = panel.querySelector(".pair-line-step");
+        // One line step per way (the service's install line, the terminal's pair line).
+        const steps = panel.querySelectorAll(".pair-line-step");
         if (paired) {
           wait.textContent = r.presence === "online" ? M.t("runners.paired.online", { name: r.name }) : M.t("runners.paired.offline", { name: r.name });
           wait.className = "ok pair-wait";
-          if (step) append(clear(step), M.t("runners.paired.used"));
-        } else if (step && Date.parse(waitingFor.expires_at) <= Date.now()) {
-          append(clear(step), M.t("runners.paired.expired"));
+          steps.forEach((step) => append(clear(step), M.t("runners.paired.used")));
+        } else if (steps.length && Date.parse(waitingFor.expires_at) <= Date.now()) {
+          steps.forEach((step) => append(clear(step), M.t("runners.paired.expired")));
           wait.textContent = "";
         }
       }
@@ -484,4 +608,5 @@ window.Maity = window.Maity || {};
 
   M.runnerStarterConfig = starterConfig;
   M.runnerConfigCommand = writeCommand;
+  M.runnerShellWord = sq;
 })(window.Maity);

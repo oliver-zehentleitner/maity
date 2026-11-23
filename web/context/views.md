@@ -7699,3 +7699,62 @@ sent is what the page shows (review A963).
   and cost a call on every save.
 - Merging the draft into the list read again (keeping roles others added): it would hide a
   conflict on the same role; refusing and reloading says it.
+
+## Pair a runner offers the service way first, chosen by the person; its file replaces install's after install
+
+**Id:** 108b029e-4a36-4b22-ae92-f3a72afb4d7d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2k0jcaxfd0ja (the owner's request req-0d53nenzt328, 2026-11-22: a fresh Debian 13 runner host was paired by the terminal steps, had no service, and `install` then refused a hand-made `maity-runner` user; the card names the two ways, the service recommended, macOS terminal only, the file at `/etc/maity-runner/runner.toml`); `cli/src/maity/runner/install.py`. How the choice is made and the file's order and contents are the implementer's. The re-pair's ways, the order of `check`, the starting directory and the pairing lines built by the page follow review A2144 of #2123 (2026-11-23).
+**Revisit when:** `maity runner install` writes `[limits]` and a harness itself, adopts an existing user, or a launchd service exists; or the hub learns the runner host's system before pairing
+
+The Runners view's pairing panel offers two ways as radio buttons, **As a service on Linux
+(recommended)**, checked, and **In a terminal** (the only way on macOS). Both step lists are drawn
+once; the choice hides one, so the pairing line in either is cleared by the same "paired" or
+"expired" update. A re-pair offers the same two ways (review A2144 of #2123): as a service, the
+service is stopped, its credential moved aside (`pair` refuses while one is there) and `pair` run as
+`maity-runner` with `--config /etc/maity-runner/runner.toml`, so the new credential lands in
+install's state directory. Rejected: the terminal's steps only, as first built, which on a service
+paired into the person's own `~/.local/state` and left the service on its revoked credential.
+
+- **The person chooses; nothing is detected.** The browser's system says nothing about the machine
+  the runner goes on (a Mac's browser pairing a Linux server is the usual case). Rejected: choosing
+  from `navigator.platform`/`userAgentData`, which would pick the wrong way exactly then.
+- **On the service way the file is written after `install`, replacing install's file**, with a
+  copy of it kept as `runner.toml.install`. `install` writes its own file, pairs and enables the
+  service but starts it only once `[limits]` and a harness are there; the dashboard's file then
+  completes it, and a restart starts it. Rejected: writing the file first, which `install` would
+  keep (it keeps a file that differs) and start at once, but which moves the one step that can fail
+  on the person's own file (`install` refuses a file whose `state_dir` or hub is not its own) before
+  the pairing, and an `install` run again over it would only say "kept". Rejected: the terminal's
+  `set -C`, since the file to replace always exists by then.
+- **The service's file keeps install's `state_dir` and `workspaces`.** The terminal's file holds
+  only keys without a default; here the defaults resolve under the service user's home to other
+  directories than the ones install paired in, and `serve` would not find the credential.
+  `web/tools/starter_configs.py` checks both paths against install's.
+- **`install = true` for Claude Code on the service way**: the service user has no Claude Code of
+  its own, and the runner's managed copy (from the vendor, checked) is the one tool of the two it can
+  install that the starter names. The login then comes as its own step, with the managed binary's
+  path. Rejected: asking the person to install Claude Code for `maity-runner` by hand, which on the
+  host this card came from was the step that went wrong.
+- **Every pairing line pipes the code to `--code-file -`.** `printf` is a shell builtin, so the code
+  is in no process's arguments. The terminal's and the re-pair's `pair` lines are built by the
+  dashboard from the enrollment's `pair_url` and `code` too (review A2144). Rejected: showing the
+  hub's `pair_line`, which carries `--code`; changing it would be a hub change for what the page
+  can say itself. The URL and the code go in single quotes, a quote in them escaped.
+- **`check` comes last on the service way, after the tool's and the forge's login** (review A2144).
+  With `install = true`, `serve` installs Claude Code in the background after its start: a `check`
+  run before that skips the sandbox checks ("not installed yet"), and one run before the login fails
+  on its headless probe run. Rejected: `check` right after the restart, as first built.
+- **Commands as `maity-runner` start in a directory that user can enter**: `cd / &&` for `check`
+  and gh, and Claude Code in `maity-runner`'s home (`sh -c 'cd && exec …'`), since `sudo` keeps the
+  caller's directory, which an Ubuntu home (0750) keeps `maity-runner` out of, and Claude Code asks
+  to trust the folder it starts in. Rejected: `sudo -D`, which sudoers allow only with a `runcwd`
+  setting; starting Claude Code in `/`, which would make the person trust `/`.
+- **The configuration's command writes with `tee` into install's file, mode untouched.** `tee`
+  keeps an existing file's owner and mode (root, 0644, as install writes it) whatever the umask, and
+  `cp -p` fails without install's file, so nothing is written then; `starter_configs.py` runs the
+  command under umask 002 against a 0644 stand-in, twice. Install's copy is made only once
+  (`test -e … ||`), so a second paste keeps it. Rejected: a `chmod` after `tee`, which would only
+  repeat what the file already is; `cp -n`, whose exit status differs between coreutils versions.
