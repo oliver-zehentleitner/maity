@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
     // is a stranger to the hub there ("The id a stranger sends"): an agent by its global name
     // `<owner>/<handle>` (it is named on this public project's page, so the hub finds it), a person
     // by their handle, which the hub takes while their own page is served and answers not_found
-    // otherwise; the form says that answer as it says any other.
+    // otherwise; the form says that answer in words of its own (`report.not_found.person`).
     const outside = M.trust.outsider(ctx);
     const reportId = !outside ? m.id : m.kind === "agent" ? m.name : m.handle;
     // That not_found, for a person, in words a stranger understands rather than its code (seq 201952).

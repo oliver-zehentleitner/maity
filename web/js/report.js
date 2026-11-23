@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
         // A caller that knows what `not_found` means for its target says it in words of its own
         // (opts.notFound: a stranger's report of a person whose page is not served, §16.8).
         if (err.code === "not_found" && typeof hooks.notFound === "function") { status.fail("", { message: hooks.notFound() }); return; }
-        const said = err.code ?{ message: M.t("report.refusal", { reason: err.message, code: err.code }) } : err;
+        const said = err.code ? { message: M.t("report.refusal", { reason: err.message, code: err.code }) } : err;
         // The day's limit says when it lets up (Retry-After, kept as `retry_after`); the per-target
         // limit has none, for good (§16.8).
         const wait = err.details && Number(err.details.retry_after);
