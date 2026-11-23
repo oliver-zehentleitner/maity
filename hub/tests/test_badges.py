@@ -106,6 +106,44 @@ def test_hidden_badges_never_validate_a_cache(
     assert response.headers["cache-control"] == "no-store" and "etag" not in response.headers
 
 
+@pytest.mark.parametrize("standing", ["held", "suspended", "pending", "deleted"])
+def test_a_held_project_or_an_owner_out_of_standing_has_no_badge(
+    setup: tuple[flow.Human, TestClient, str], migrated: Engine, standing: str
+) -> None:
+    """§6.20: what takes a public page off takes the badge off, though the badge needs no
+    page: a moderation hold on the project, or an owner suspended, pending or deleted
+    (`public_projects.standing_of`). Answered as an unknown project is."""
+    owner, public, project_id = setup
+    enable(owner)
+    assert public.get("/badge/maintainer/maity.svg").status_code == 200
+    with migrated.begin() as conn:
+        if standing == "held":
+            conn.execute(
+                insert(t.abuse_report).values(
+                    id="rpt-badge", reporter=owner.id, account_id=owner.id,
+                    target_type="project", target_id=project_id, reason="spam",
+                    status="resolved", action="hide", created_at=clock.now(),
+                )
+            )  # fmt: skip
+            conn.execute(
+                insert(t.moderation_hold).values(
+                    report_id="rpt-badge", target_type="project", target_id=project_id,
+                    action="hide", at=clock.now(),
+                )
+            )  # fmt: skip
+        else:
+            values: dict[str, Any] = {
+                "suspended": {"suspended_at": clock.now()},
+                "pending": {"account_status": "pending"},
+                "deleted": {"deleted_at": clock.now()},
+            }[standing]
+            conn.execute(update(t.human).where(t.human.c.id == owner.id).values(**values))
+    response = public.get("/badge/maintainer/maity.svg")
+    assert response.status_code == 404, standing
+    assert response.json()["error"]["code"] == "not_found"
+    assert response.headers["cache-control"] == "no-store" and "etag" not in response.headers
+
+
 def test_active_counts_and_no_private_text(
     setup: tuple[flow.Human, TestClient, str], migrated: Engine
 ) -> None:
