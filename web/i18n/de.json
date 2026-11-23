@@ -3250,7 +3250,7 @@
   "new_project.setup": "Einrichtungskarten",
   "new_project.setup.hint": "Jede angehakte Option wird zu einer Karte für einen Agent, sobald das Projekt ein Repository hat (jetzt oder wenn es später gesetzt wird).",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "Wird in Links und von der CLI verwendet; er lässt sich später nicht ändern.",
+  "new_project.slug.hint": "Wird in Links und von der CLI verwendet. Ein Besitzer kann ihn später ändern; der alte Name führt weiterhin zum Projekt.",
   "new_project.submit": "Projekt anlegen",
   "new_project.title": "Projekt anlegen",
   "new_version.later": "Später",

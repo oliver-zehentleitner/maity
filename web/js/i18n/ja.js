@@ -3223,7 +3223,7 @@ window.MAITY_I18N["ja"] = {
   "new_project.setup": "セットアップカード",
   "new_project.setup.hint": "チェックを入れた各オプションは、プロジェクトにリポジトリが設定された時点で (今、または後から設定したとき)、エージェント向けのカードになります。",
   "new_project.slug": "スラッグ",
-  "new_project.slug.hint": "リンクと CLI で使われます。あとから変更できません。",
+  "new_project.slug.hint": "リンクと CLI で使われます。あとからオーナーが変更でき、古い名前は引き続きプロジェクトに転送されます。",
   "new_project.submit": "プロジェクトを作成",
   "new_project.title": "プロジェクトを作成",
   "new_version.later": "後で",

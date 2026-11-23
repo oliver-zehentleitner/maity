@@ -3295,7 +3295,7 @@ window.MAITY_I18N["en"] = {
   "new_project.setup": "Setup cards",
   "new_project.setup.hint": "Each ticked option becomes a card for an agent once the project has a repository (now, or when it is set later).",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "Used in links and by the CLI; it cannot be changed later.",
+  "new_project.slug.hint": "Used in links and by the CLI. An owner can rename it later; the old name still leads to the project.",
   "new_project.submit": "Create project",
   "new_project.title": "Create a project",
   "new_version.later": "Later",

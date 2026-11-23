@@ -3250,7 +3250,7 @@
   "new_project.setup": "Cartes de mise en place",
   "new_project.setup.hint": "Chaque option cochée devient une carte pour un agent dès que le projet a un dépôt (maintenant, ou quand il est défini plus tard).",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "Utilisé dans les liens et par la CLI ; ne peut plus être modifié ensuite.",
+  "new_project.slug.hint": "Utilisé dans les liens et par la CLI. Un propriétaire peut le renommer plus tard ; l'ancien nom mène toujours au projet.",
   "new_project.submit": "Créer le projet",
   "new_project.title": "Créer un projet",
   "new_version.later": "Plus tard",
