@@ -560,3 +560,42 @@ byte every 0.5 s held a 2-second deadline for 15 s; it did not cover the headers
 either. Reusing `outbound._body` itself: it belongs to outbound's own
 connection (pinned address, its `Refused` errors, gzip), while the forge reads
 go through urllib's opener with the redirect guard.
+
+## A fork's pull request is not compared with the project's branch of its name
+
+**Id:** 141edd24-0c3c-413e-8efe-7e7e2761231c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-k0x4jn4y4ykg (delivery from a fork), the fix the lead approved through the coordinator, 2026-11-23; docs/api.md §6.6; `probe.observe_report`, `hub/tests/test_merged_closes.py`
+**Revisit when:** a report says which repository its branch is in
+
+When the probe has read the report's pull request and its head is in another
+repository than the project's (`head_repo`, a fork), the branch of the
+reported name in the project's repository is not compared with the report's
+`remote_head`; `observed.branch_head_sha` still shows what that read found.
+Before, a fork report beside a project branch of the same name was a
+`mismatch`: the admins were woken, and the merge was never told to the done
+authority. A report without a pull request read yet is still compared as
+before, since nothing then says where its branch is. A renamed or
+transferred project repository does not make its own pull request look like
+a fork: `head_repo` is compared by name with the project's URL, reads at the
+old URL stop at the forge's redirect until an admin sets the new URL
+(`forge._SameHostOnly`), and setting it deletes the project's stored
+observations (`routes/projects.py`). At most a read already under way then
+is stored afterwards and, until it ages out, hides the branch comparison:
+a missing signal, never a close, since `merged._not_its_own` counts such a
+pull request as not the card's own.
+
+**Reason:** the head repository the forge names on the pull request is the
+one fact the hub already reads that says the branch is not the project's;
+the change stays inside the probe, and every observation stored before the
+hub kept `head_repo` is compared as before.
+
+**Rejected alternatives:** a field on the report naming the repository the
+branch was pushed to (the CLI reads it from the branch's remote): it would
+cover a fork report before its pull request exists too, but needs a CLI
+change, a contract field, a stored value and an answer for older CLIs that
+do not send it, for a gap the pull request read already closes once there
+is one (the rationale is the coder's reading; the lead approved the
+narrower fix).

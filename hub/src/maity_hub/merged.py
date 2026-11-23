@@ -134,7 +134,9 @@ def _reported_branch(report: dict[str, Any]) -> str | None:
     return rest if remote and rest else None
 
 
-def _own_repository(project: Any) -> str | None:
+def own_repository(project: Any) -> str | None:
+    """The project's repository as `owner/repo`, lowercased; None when the forge does not
+    cover its URL."""
     try:
         return forge.repository_of(project.repository_url or "").lower()
     except forge.NotCoveredError:
@@ -152,7 +154,7 @@ def _not_its_own(conn: Connection, card: Any, project: Any) -> list[str]:
     # a branch read finds or misses, since a branch deleted after its merge is no
     # mismatch and any branch can be pushed to the merged head.
     head_ref, head_repo = data.get("head_ref"), data.get("head_repo")
-    own = _own_repository(project)
+    own = own_repository(project)
     if (
         not isinstance(head_ref, str)
         or head_ref != _reported_branch(report)
