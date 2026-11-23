@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -401,3 +402,153 @@ def test_a_narrower_list_in_the_call_that_switches_to_members_is_not_refused(
     both = _set(owner, agent_owners="members", outside_roles=["coder"])
     assert both.status_code == 200, both.text
     assert _isolated(migrated, worker)
+
+
+# --- blue-team: closed to outside owners' agents (B.1 of §6.30), with a fall back to coder -----
+
+
+def _store_list(engine: Engine, roles: list[str]) -> None:
+    """A list as a project stored it while `blue-team` was allowed: written as it was then."""
+    with engine.begin() as conn:
+        conn.execute(update(t.project).values(outside_roles=roles))
+
+
+def _stored_list(engine: Engine) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(select(t.project.c.outside_roles)).scalar_one()
+
+
+def _owner_gone(engine: Engine, human_id: str) -> None:
+    """The owner's membership ended without the hub's pass having run since: the state a
+    deploy finds an agent on `blue-team` in, from before the role closed."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == human_id)
+            .values(active=None, removed_at=clock.now())
+        )
+
+
+def _notices(engine: Engine, human_id: str) -> list[Any]:
+    with engine.connect() as conn:
+        return list(
+            conn.execute(
+                select(t.request).where(
+                    t.request.c.filed_by == "hub", t.request.c.to_human == human_id
+                )
+            ).all()
+        )
+
+
+def _role_changes(engine: Engine, agent_id: str) -> list[dict[str, Any]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.event.c.payload).where(t.event.c.kind == "member_updated")
+        ).scalars()
+        return [p for p in rows if p.get("id") == agent_id and "role" in p.get("changed", [])]
+
+
+def test_blue_team_is_not_allowed_on_the_list(owner: flow.Human) -> None:
+    """`blue-team` is `invalid` in `outside_roles` (§6.1; B.1 of §6.30), as `manager`, `ops` and
+    `proxy` are; the roles that work stay allowed."""
+    assert _fields(_set(owner, outside_roles=["coder", "blue-team"])) == {
+        "outside_roles": "role_not_allowed"
+    }
+    assert _set(owner, outside_roles=["coder", "writer", "expert"]).status_code == 200
+
+
+def test_the_reviewing_and_testing_roles_stay_closed_until_they_carry_no_done_authority(
+    owner: flow.Human,
+) -> None:
+    """Not built yet (docs/api.md §6.1 `outside_roles`): the contract opens them together with
+    the rule that withholds their done authority from an outside owner's agent, and until that
+    rule is built they stay `invalid` (hub/context/isolation.md)."""
+    for role in ("reviewer", "tester", "red-team", "purple-team"):
+        assert _fields(_set(owner, outside_roles=["coder", role])) == {
+            "outside_roles": "role_not_allowed"
+        }, role
+
+
+def test_a_stored_list_reads_without_blue_team_and_the_next_write_stores_it_so(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """A list stored while `blue-team` was allowed reads without it, and the next write of the
+    policy, of any of its fields, stores it so (§6.1; no migration)."""
+    _store_list(migrated, ["coder", "blue-team", "designer"])
+    assert owner.get(PROJECT).json()["policy"]["outside_roles"] == ["coder", "designer"]
+    assert _stored_list(migrated) == ["coder", "blue-team", "designer"]  # read only
+    assert _set(owner, agent_owners="anyone").status_code == 200  # another field
+    assert _stored_list(migrated) == ["coder", "designer"]
+
+
+def test_a_blue_team_agent_falls_back_to_coder_when_its_owner_leaves(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.2: under `anyone`, with `coder` on the list, an agent on `blue-team` whose owner left
+    continues as a coder instead of being isolated: a role change as a PATCH makes it, and a
+    personal notice to its owner naming the old role."""
+    friend = _friend(make_client, migrated)
+    agent = factory.agent(migrated, _project(migrated), friend.id, "blue-team").agent_id
+    _set(owner, agent_owners="anyone")  # the default list: `coder`
+    assert _remove(owner, migrated, friend.id).status_code == 200
+    row = _row(migrated, agent)
+    assert (row.trust, row.role, row.role_base) == ("member", "coder", "coder")
+    assert row.isolated_since is None
+    changed = _role_changes(migrated, agent)
+    assert changed and set(changed[-1]["changed"]) >= {"role", "role_base"}
+    told = [n for n in _notices(migrated, friend.id) if "continues as a coder" in n.title]
+    assert told and "Old role: `blue-team`." in told[0].summary
+
+
+def test_a_blue_team_agent_without_coder_on_the_list_is_isolated(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    agent = factory.agent(migrated, _project(migrated), friend.id, "blue-team").agent_id
+    _set(owner, agent_owners="anyone", outside_roles=["designer"])
+    _remove(owner, migrated, friend.id)
+    assert _isolated(migrated, agent)
+    assert _row(migrated, agent).role == "blue-team"
+
+
+def test_resume_settles_a_blue_team_agent_before_the_packet(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """At the agent's next `POST /me/resume`, before the packet is built (§6.2): the packet
+    already names `coder`."""
+    friend = _friend(make_client, migrated)
+    made = factory.agent(migrated, _project(migrated), friend.id, "blue-team")
+    _set(owner, agent_owners="anyone")
+    _owner_gone(migrated, friend.id)  # no pass ran: still on blue-team
+    assert _row(migrated, made.agent_id).role == "blue-team"
+    agent = flow.Agent(make_client(), made.value, made.credential_id, made.agent_id, made.instance)
+    packet = agent.resume()
+    assert packet.status_code == 200, packet.text
+    assert packet.json()["membership"]["role"] == "coder"
+    assert _row(migrated, made.agent_id).role == "coder"
+
+
+def test_resume_isolates_a_blue_team_agent_that_may_not_fall_back(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    made = factory.agent(migrated, _project(migrated), friend.id, "blue-team")
+    _set(owner, agent_owners="anyone", outside_roles=["designer"])
+    _owner_gone(migrated, friend.id)
+    agent = flow.Agent(make_client(), made.value, made.credential_id, made.agent_id, made.instance)
+    agent.resume()
+    assert _isolated(migrated, made.agent_id)
+
+
+def test_a_narrower_list_is_not_refused_for_a_blue_team_agent(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.2: `details.fields.outside_roles: "outside_owner"` does not count an agent on
+    `blue-team`; the pass after the change settles it."""
+    friend = _friend(make_client, migrated)
+    made = factory.agent(migrated, _project(migrated), friend.id, "blue-team")
+    _set(owner, agent_owners="anyone", outside_roles=["coder", "designer"])
+    _owner_gone(migrated, friend.id)
+    narrowed = _set(owner, outside_roles=["coder"])
+    assert narrowed.status_code == 200, narrowed.text
+    assert _row(migrated, made.agent_id).role == "coder"  # the pass after the change

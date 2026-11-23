@@ -171,6 +171,47 @@ carry neither `tasks:review` nor `tasks:test`, and the hub never moved a card on
 - Reading `public_page` alone for the default: a suspended or hidden project stays `on` in its column while it has
   no page, so its outsiders would keep working in a project nobody can see.
 
+## An outside owner's agent: `blue-team` closed with a fall back to `coder`, the reviewing and testing roles not yet open
+
+**Id:** 284bc59b-215b-401e-97fe-4deae711515d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-mqzhnmf4bak6; docs/api.md §6.1 `outside_roles`, §6.2 "An agent whose owner is no member" and B.1 of §6.30 as they stood at main 314d5465; the plan and the lead's go, 2026-11-23 (seq 206654); the code at that commit (`policy.OUTSIDE_BASES`, `cards.has_done_authority`, `scopes._granted`)
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-23
+**Revisit when:** the rule that gives an outside owner's agent no done authority by a reviewing or testing role is built (then open those roles in `policy.OUTSIDE_BASES` and drop the contract's "not built yet"), or the dashboard's leave confirmation gets a line for an agent that continues as a coder
+
+The contract closes `blue-team` to an outside owner's agent and opens `reviewer`, `tester`, `red-team`,
+`purple-team` and the project roles on `reviewer` or `tester`, each such role held without done authority. The
+hub builds the first half: `blue-team` is `invalid` in `outside_roles`, a stored list reads without it (the next
+policy write stores it so), and an agent on it with trust `member` or `guest` whose owner is no member falls back
+to `coder` where `coder` is listed, in `reconcile` (owner leaves, policy change) and at `POST /me/resume` before
+the packet (`agent_owners.settle_closed_role`), else it is isolated. The fall back goes through
+`members.apply_patch` with the hub as actor, so the event, the rules bump, the dropped signatures and the ended
+connections are exactly a `PATCH`'s, and the owner gets a personal notice (`isolation.tell_owner`). A narrower
+list is not refused for such an agent (`check_policy` skips it); the pass after the change settles it.
+
+The second half is marked "not built yet" in the contract and stays closed: `has_done_authority` and `sign`
+read only the scopes, and trust `outside` gets the member's scopes for its role (`scopes._granted`), so an
+outside `reviewer` would carry `tasks:review` and could move a project member's card to done. The entry above
+(382a0e40) relies on the opposite, that the roles an outside agent may hold carry neither scope.
+
+**Reason:** opening the reviewing and testing roles before the rule that strips their done authority would hand
+an outsider the say over the project's own cards, which is what the contract's own condition exists to prevent;
+the own-approvals gate (#2145) covers only the outsiders' work, not a member's card an outside reviewer moves.
+Building through `apply_patch` rather than a direct update keeps one path for a role change, so nothing a `PATCH`
+ends (a signature, a bridge, a manager's line) is left behind by the hub's own change.
+
+**Rejected alternatives:**
+- Opening the reviewing and testing roles now with the contract's text: rejected, the done-authority rule is not
+  built and the gap would be live at once (above).
+- Building the done-authority rule in this change: left to its own card, a cross-cutting change to the done
+  paths (`has_done_authority`, `sign`, `merged`) that needs its own review; the lead chose the "not built yet"
+  mark (seq 206654).
+- Rewriting stored roles by a migration: the contract says no migration; the read and the resume settle it.
+- A leave confirmation that says "isolated" for a `blue-team` agent: false where it falls back; it names no
+  agent's fate there instead, until a catalog line for "continues as a coder" exists (contract marks it not built).
+
 ## A reader's effective windows: its own, and for a bridge's read also the bridge's, through one function
 
 **Id:** c5ef8337-6ad3-40d5-b0af-298d9a1b38ec
