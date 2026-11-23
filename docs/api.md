@@ -11230,7 +11230,7 @@ go with the `kind`. An issue or pull request number above 2147483647 is
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `POST /projects/{owner}/{slug}/tasks/{id}/links` | `tasks:write` | `{kind: issue\|pr\|commit, forge_url}` or `{kind: url, url, label?}`; `201` with the link; on any card the caller can read |
-| `DELETE /projects/{owner}/{slug}/tasks/{id}/links/{link_id}` | the link's adder, the card's holder or creator, `tasks:admin` | `200` with the removed link |
+| `DELETE /projects/{owner}/{slug}/tasks/{id}/links/{link_id}` | `tasks:admin`, or `tasks:write` and the link's adder, the holding instance (§6.4) or the card's creator | `200` with the removed link; a link removed already answers the same, from the removal's history entry, to a caller this rule lets remove it whose history shows that entry (isolation windows, §6.2, §6.15), and to anyone else `not_found`, as a link that never was |
 
 `POST /projects/{owner}/{slug}/tasks` also takes `links` (the same request
 shapes, at most 20). Links are not part of `PATCH`: one link per call,

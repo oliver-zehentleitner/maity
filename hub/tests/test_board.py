@@ -14,7 +14,10 @@ from maity_hub import tables as t
 from maity_hub.board import links, notes
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_isolation import isolate
+from tests.test_isolation_windows import lift as lift_hiding
 from tests.test_tasks import task
+from tests.test_team_rules import _pair
 
 REPOSITORY = "https://github.com/oliver-zehentleitner/maity"
 ISSUE = f"{REPOSITORY}/issues/41"
@@ -794,6 +797,93 @@ def test_a_link_the_card_was_created_with_is_removed_twice_like_any_other(
     assert (removed.status_code, removed.json()) == (200, initial)
     again = owner.delete(path.removeprefix("/api/v1"))
     assert (again.status_code, again.json()) == (200, initial)
+
+
+def _link_path(card: dict[str, Any], link_id: str) -> str:
+    return f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/links/{link_id}"
+
+
+def test_the_holding_instance_removes_a_link_and_a_sibling_instance_does_not(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    holding, sibling = _pair(make_client, owner)
+    card = task(owner)
+    claimed = holding.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    first = link(owner, card, kind="url", url="https://example.com/a").json()
+    second = link(owner, card, kind="url", url="https://example.com/b").json()
+    refused = sibling.client.delete(_link_path(card, first["id"]), headers=sibling.auth)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["scope"] == "tasks:admin"
+    removed = holding.client.delete(_link_path(card, second["id"]), headers=holding.auth)
+    assert (removed.status_code, removed.json()) == (200, second)
+
+
+def test_a_member_with_tasks_write_removes_its_link_and_a_guest_does_not(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    member = flow.agent(make_client, owner)
+    card = task(owner)
+    added = link(member, card, kind="url", url="https://example.com/a").json()
+    removed = member.client.delete(_link_path(card, added["id"]), headers=member.auth)
+    assert (removed.status_code, removed.json()) == (200, added)
+    # Lowered to guest, it removes neither the link it added nor one on a card it created.
+    own_card = task(member)
+    own = link(member, card, kind="url", url="https://example.com/b").json()
+    on_own_card = link(owner, own_card, kind="url", url="https://example.com/c").json()
+    lowered = owner.patch(f"/projects/maintainer/maity/members/{member.id}", {"trust": "guest"})
+    assert lowered.status_code == 200, lowered.text
+    for target, link_id in ((card, own["id"]), (own_card, on_own_card["id"])):
+        refused = member.client.delete(_link_path(target, link_id), headers=member.auth)
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["details"]["scope"] == "tasks:write"
+    assert len(owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"]) == 1
+
+
+def test_an_admin_expert_without_tasks_write_removes_a_link_it_did_not_add(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    expert = flow.agent(make_client, owner, trust="admin", role="expert", areas=["docs/"])
+    card = task(owner)
+    added = link(owner, card, kind="url", url="https://example.com/a").json()
+    removed = expert.client.delete(_link_path(card, added["id"]), headers=expert.auth)
+    assert (removed.status_code, removed.json()) == (200, added)
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"] == []
+
+
+def test_a_removed_link_answers_whom_the_rule_lets_remove_it_and_no_one_else(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    adder = flow.agent(make_client, owner)
+    other = flow.agent(make_client, owner)
+    card = task(owner)
+    added = link(adder, card, kind="url", url="https://example.com/a").json()
+    path = _link_path(card, added["id"])
+    assert owner.delete(path.removeprefix("/api/v1")).status_code == 200
+    again = adder.client.delete(path, headers=adder.auth)
+    assert (again.status_code, again.json()) == (200, added)
+    unknown = other.client.delete(_link_path(card, "lnk-000000000000"), headers=other.auth)
+    outside = other.client.delete(path, headers=other.auth)
+    assert outside.status_code == unknown.status_code == 404
+    assert outside.json() == unknown.json()
+
+
+def test_a_link_removed_in_a_hidden_window_answers_as_an_unknown_one(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")  # tasks:admin, any link
+    card = task(owner)
+    added = link(admin, card, kind="url", url="https://example.com/a").json()
+    path = _link_path(card, added["id"])
+    isolate(owner, admin.id)
+    assert owner.delete(path.removeprefix("/api/v1")).status_code == 200
+    assert lift_hiding(owner, admin, hide=True).status_code == 200
+    again = owner.delete(path.removeprefix("/api/v1"))
+    assert (again.status_code, again.json()) == (200, added)
+    unknown = admin.client.delete(_link_path(card, "lnk-000000000000"), headers=admin.auth)
+    hidden = admin.client.delete(path, headers=admin.auth)
+    assert hidden.status_code == unknown.status_code == 404
+    assert hidden.json() == unknown.json()
 
 
 # --- commit links (§6.13) -------------------------------------------------------------------
