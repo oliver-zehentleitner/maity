@@ -12,7 +12,7 @@ lookup that finds nothing refuses: `invalid` for a project the instance is not a
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from sqlalchemy import Connection, Select, select
@@ -20,7 +20,13 @@ from sqlalchemy import Connection, Select, select
 from maity_hub import events, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.auth.caller import Caller, attachment_in, attachments, refuse_if_isolated
+from maity_hub.auth.caller import (
+    Caller,
+    attachment_in,
+    attachments,
+    in_attachment,
+    refuse_if_isolated,
+)
 from maity_hub.errors import ApiError, invalid, unauthenticated
 
 PROJECT_MAX = 300  # an `<owner>/<slug>`; anything longer names no project
@@ -46,12 +52,47 @@ def named(conn: Connection, caller: Caller, project: str) -> Any:
     return refuse_if_isolated(attachment)
 
 
-def every(conn: Connection, caller: Caller, project: str | None) -> list[Any]:
+def every(conn: Connection, caller: Caller, project: str | None) -> tuple[list[Any], bool]:
     """The attachments a write without a project applies to: the one `project` names, else
-    every live attachment that is not isolated; `isolated` when every one is."""
+    every live attachment that is not isolated; `isolated` when every one is, `unauthenticated`
+    when there is none or the credential was revoked since the call was authenticated. Beside
+    them, from the same read, whether the write answers one member view: `project` named, or
+    one live attachment (an isolated one counts)."""
     if project is not None:
-        return [named(conn, caller, project)]
-    return free(conn, caller.credential_id or "")
+        return [named(conn, caller, project)], True
+    credential_id = caller.credential_id or ""
+    still_live(conn, credential_id)
+    live = attachments(conn, credential_id)
+    return _free(live), len(live) == 1
+
+
+def per_attachment(
+    conn: Connection,
+    caller: Caller,
+    project: str | None,
+    change: Callable[[Caller, Any], int],
+) -> tuple[list[int], bool]:
+    """An agent's own write outside a project (§5.3, "Per project"): `change(here, attachment)`
+    in the project named, or in every attachment that is not isolated (`every`), all or
+    nothing: a refusal in one changes nothing anywhere and, when the write is not single, names
+    its project in `details.project` (`in_project`). `here` is the caller in that attachment;
+    `change` answers the membership id it wrote. Returns those ids and whether the write is
+    single, for the route's `members_outcome`."""
+    targets, single = every(conn, caller, project)
+    # Every project up front, in id order, as a revocation takes them (§6.17): the loop below
+    # goes by attach order, and a lock inside it would invert that order.
+    events.lock_projects(conn, (a.project_id for a in targets))
+    # Read again under those locks: an isolation or a detach in between is not written past.
+    targets = recheck(conn, caller, targets, project)
+    ids: list[int] = []
+    for attachment in targets:
+        try:
+            ids.append(change(in_attachment(caller, attachment), attachment))
+        except ApiError as error:
+            if single:
+                raise
+            raise in_project(error, conn, attachment.project_id) from None
+    return ids, single
 
 
 def still_live(conn: Connection, credential_id: str) -> None:
@@ -66,16 +107,10 @@ def still_live(conn: Connection, credential_id: str) -> None:
         raise unauthenticated()
 
 
-def free(conn: Connection, credential_id: str) -> list[Any]:
-    """Every live attachment of the credential that is not isolated, refused as `every` is
-    when there is none: also the replay of a write `every` answered (§1.5), which must refuse
-    as the request would, never answering an empty list or a credential revoked since it
-    was authenticated."""
-    still_live(conn, credential_id)
-    return _free(attachments(conn, credential_id))
-
-
 def _free(live: list[Any]) -> list[Any]:
+    """The attachments of `live` that are not isolated: `unauthenticated` when there is none
+    at all, `isolated` when every one is. A replay refuses through it as its request would
+    (`free_held`, §1.5), never answering an empty list."""
     if not live:  # detached from everything since the call was authenticated
         raise unauthenticated()
     found = [a for a in live if a.isolated_since is None]
@@ -133,11 +168,6 @@ def one(conn: Connection, caller: Caller, project: str | None) -> Any:
     if len(live) > 1:
         raise invalid({"project": "required"}, "name the project: the instance is in several")
     return refuse_if_isolated(live[0])
-
-
-def single(conn: Connection, caller: Caller, project: str | None) -> bool:
-    """Whether a write answers one member view: `project` named, or one live attachment."""
-    return project is not None or len(_live(conn, caller)) == 1
 
 
 def membership_of(conn: Connection, caller: Caller, attachment: Any) -> Membership:
