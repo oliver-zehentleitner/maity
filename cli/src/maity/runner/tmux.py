@@ -3,8 +3,15 @@
 
 A tmux server hands its own environment to every session, and `new-session -e` only adds to
 it, so the server is started under `env -i` with a fixed environment: HOME, PATH =
-`agent_path`, LANG, TERM. `SSH_AUTH_SOCK`, `MAITY_STATE_DIR`, the runner's own variables and
-whatever the service manager set never reach an agent. The configuration file the server
+`agent_path`, SHELL, LANG, TERM. SHELL is `/bin/bash` where the agents' host has it, else
+`/bin/sh` (`Tmux.session_shell`): tmux gives each pane `SHELL` = its `default-shell`, which it
+takes from the SHELL it started with and otherwise from the account's passwd shell, and the
+service account's is `/usr/sbin/nologin` (install.py), so OpenCode, which runs its commands
+through that shell, got "This account is currently not available." for every one
+(tsk-fjq2k0sx1n3r). Every start also sets `default-shell` in the same tmux call, so a server
+an older runner started gives a new session that shell too. `SSH_AUTH_SOCK`,
+`MAITY_STATE_DIR`, the runner's own variables and whatever the service manager set never
+reach an agent. The configuration file the server
 reads sets `update-environment` empty (a client attaching later passes nothing on) and
 `remain-on-exit` (an exited agent's status stays readable until the runner collects it).
 
@@ -34,6 +41,10 @@ FORMAT = (
     "#{@maity_placement}\t#{@maity_generation}\t#{window_index}.#{pane_index}"
 )
 TIMEOUT = 15.0
+# The SHELL every session gets: bash where the host has it, else POSIX sh, never the
+# account's own shell (nologin for the service account, so nobody can log in as it).
+BASH, SH = "/bin/bash", "/bin/sh"
+NOT_A_SHELL = frozenset(("nologin", "false"))  # what `runner check` refuses as SHELL
 
 Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
 
@@ -199,6 +210,7 @@ class Tmux:
     run: Runner = _run
     as_user: AsUser = AsUser()  # the agents' user: the server is theirs (§7.6)
     log_keep: int = 10 * 1024 * 1024  # limits.log_keep_bytes: the most a pane log holds
+    shell: str | None = None  # the sessions' SHELL once looked up (session_shell)
 
     def _tmux(self, *args: str) -> list[str]:
         return ["tmux", "-S", str(self.socket), *args]
@@ -219,11 +231,30 @@ class Tmux:
             raise TmuxError(f"`tmux {' '.join(words)}` failed: {done.stderr.strip()[:200]}")
         return done.stdout
 
+    def session_shell(self) -> str:
+        """The SHELL every session gets: `/bin/bash` where the agents' host can run it, else
+        `/bin/sh`. Looked up where the sessions run (over ssh on an ssh host) and kept once
+        the host answered; a look that fails gives `/bin/sh` this time and is tried again."""
+        if self.shell is not None:
+            return self.shell
+        if self.as_user.here:
+            self.shell = BASH if os.access(BASH, os.X_OK) else SH
+            return self.shell
+        try:
+            done = self._exec(["test", "-x", BASH])
+        except (OSError, subprocess.TimeoutExpired):
+            return SH
+        if done.returncode == SSH_UNREACHABLE:
+            return SH
+        self.shell = BASH if done.returncode == 0 else SH
+        return self.shell
+
     def environment(self) -> list[str]:
         """The server's whole environment: what every agent session starts with."""
         return [
             f"HOME={self.home}",
             f"PATH={self.agent_path}",
+            f"SHELL={self.session_shell()}",
             "LANG=C.UTF-8",
             "TERM=xterm-256color",
         ]
@@ -278,9 +309,13 @@ class Tmux:
             # `maity runner logcap` takes only an existing runner file (runner_own_file).
             self.as_user.write(log, "")
         extra = [arg for key, value in env.items() for arg in ("-e", f"{key}={value}")]
+        # A pane's SHELL is tmux's `default-shell`, not the -e or server value: set it in the
+        # same call, so a server an older runner started without SHELL (and so with the
+        # account's nologin) gives this session the right one too.
         command = [
             "env", "-i", *self.environment(),
             "tmux", "-S", str(self.socket), "-f", str(self.conf),
+            "set-option", "-g", "default-shell", self.session_shell(), ";",
             "new-session", "-d", "-s", name, "-c", str(cwd),
             *extra, "--", *argv,
         ]  # fmt: skip

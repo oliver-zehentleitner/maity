@@ -9,6 +9,7 @@ import sys
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import fakehub
 import pytest
@@ -1790,6 +1791,45 @@ def test_check_warns_when_the_host_lacks_what_a_grant_needs(
     report = commands.Report()
     commands._check_grant_programs(report, cfg, str(bin_dir))
     assert report.lines == []
+
+
+@pytest.mark.parametrize("target", ["/usr/sbin/nologin", "/bin/false"])
+def test_check_names_the_sessions_shell_and_refuses_one_that_runs_no_command(
+    monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """tsk-fjq2k0sx1n3r: the sessions' SHELL is named, and one that is or links to nologin or
+    false is an error, here and on an ssh host."""
+    from maity.runner import tmux
+
+    shell = tmux.BASH if os.access(tmux.BASH, os.X_OK) else tmux.SH
+    report = commands.Report()
+    commands._check_session_shell(report, RUNNER)
+    assert report.lines == [("ok", f"sessions get SHELL={shell}, not the account's login shell")]
+
+    monkeypatch.setattr(os.path, "realpath", lambda path: target)
+    report = commands.Report()
+    commands._check_session_shell(report, RUNNER)
+    monkeypatch.undo()
+    ((level, text),) = report.lines
+    assert level == "error" and f"SHELL={shell} ({target})" in text
+
+    import subprocess
+
+    class Remote(AsUser):
+        @property
+        def here(self) -> bool:
+            return False
+
+        def run(self, argv: Any, *args: Any, **kwargs: Any) -> Any:
+            answer = {"/bin/bash": 1, "/bin/sh": 0}.get(argv[-1], 0)
+            out = f"{target}\n" if argv[0] == "readlink" else ""
+            return subprocess.CompletedProcess(list(argv), answer, out, "")
+
+    report = commands.Report()
+    commands._check_session_shell(report, Remote(), "host-a: ")
+    ((level, text),) = report.lines
+    assert level == "error"
+    assert text.startswith(f"host-a: sessions would get SHELL=/bin/sh ({target})")
 
 
 GRANT_RAW = {

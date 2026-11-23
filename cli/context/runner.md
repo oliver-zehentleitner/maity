@@ -7374,3 +7374,71 @@ socket room of the scratch's `tmp` is unchanged.
 - Keeping a running placement's former scratch across its restart: nothing
   in a scratch is unsaved work, and one path rule for every start keeps the
   former layout to measuring, removing and denying what is left.
+
+## The service account's login shell stays nologin
+
+**Id:** 04049caf-6525-4bf7-a6a2-82da77e477fe
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fjq2k0sx1n3r (the fix it states: keep the account shell at nologin, so no login is possible)
+**Revisit when:** the service account is made a login account for another reason, or `install` stops making the account
+
+`maity runner install` makes the service account with
+`--shell /usr/sbin/nologin` (`install.py`), and the fix for the sessions'
+shell leaves it so. The sessions get their shell from the environment the
+runner builds instead (next entry).
+
+**Reason:** a login shell on the service account would allow logging in as
+the account that holds the runner's credential and the agents' logins.
+
+**Rejected alternative:** changing the account's shell to `/bin/sh` or
+`/bin/bash`, which would have fixed the sessions as well, rejected for the
+login it opens.
+
+## Every session gets SHELL `/bin/bash`, else `/bin/sh`, and tmux's `default-shell` with it
+
+**Id:** cc4a3c0e-77f1-4852-b940-3a0f7c0f5303
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-fjq2k0sx1n3r (on agents03 every command of the Grok placements xai-001, xai-002 and xai-005 answered "This account is currently not available.", exit 1, and they never joined); tmux's manual and spawn code on `default-shell`; the code of `tmux.py`
+**See:** runner.md#the-service-accounts-login-shell-stays-nologin — 04049caf-6525-4bf7-a6a2-82da77e477fe — as of 2026-11-23
+**Revisit when:** a harness needs a shell of its own choosing, a supported host has neither `/bin/bash` nor `/bin/sh`, or sessions stop going through tmux
+
+`Tmux.environment` (the one environment every session of every harness
+starts with, local, agent_user and ssh) carries `SHELL=/bin/bash` where the
+agents' host can run it, else `SHELL=/bin/sh`, looked up on that host (over
+ssh for an ssh target), and every start sets tmux's `default-shell` to the
+same value in the same tmux call. `runner check` names the value and calls
+it an error when it is or links to nologin or false.
+
+What is confirmed and what is derived: the symptom and the nologin account
+are from the card. That OpenCode's commands go through the session's shell
+is the card's diagnosis; that tmux is what handed the panes nologin is
+derived: tmux takes `default-shell` from the SHELL it starts with and, under
+`env -i` without one, from the account's passwd shell, and gives each pane
+`SHELL` from `default-shell` (its manual for the first part, its spawn code
+for the second). Not reproduced here:
+the sandbox the change was written in refuses Unix sockets, so the real-tmux
+test of a server started with another shell did not run.
+
+**Reason:** the fix belongs where every harness goes through, and only the
+tmux environment is common to all of them; a per-harness variable would
+leave the next harness that runs commands through its shell with the same
+failure. bash first because harnesses that run commands through a shell
+expect bash-like behaviour more often than plain POSIX sh; `/bin/sh` is the
+fallback that every POSIX host has. `default-shell` is set at every start
+because a running tmux server keeps the shell it started with: the runner
+adopts sessions across its own restart, so after an upgrade a server an
+older runner started would go on handing new sessions nologin until every
+session on it ended.
+
+**Rejected alternatives:**
+- The harness's own shell (a per-harness setting): no harness here names
+  one, and it would be one more setting per harness for the same value.
+- `SHELL` only through `new-session -e`: as read from tmux's spawn code,
+  a pane's `SHELL` is set from `default-shell` after the `-e` values, so it
+  would not win (not checked against a live tmux).
+- Changing the account's shell: see the constraint above.
