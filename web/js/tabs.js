@@ -127,8 +127,10 @@ window.Maity = window.Maity || {};
     const starred = starredRows(ctx);
     const byId = new Map(ctx.projects.concat(starred).map((p) => [p.id, p]));
     const tabs = state(ctx).open.map((id) => byId.get(id)).filter(Boolean);
-    const taken = (full) => ctx.projects.some((p) => p.full_name === full) || starred.some((s) => s.full_name === full);
-    return tabs.concat(readOutsiders(ctx.me).filter((t) => !taken(t.full_name)).map((t) => outsiderRow(t, false)));
+    // A session tab a membership or a star covers now, by its id where it has one (a rename keeps
+    // the id), else by its full name.
+    const taken = (t) => ctx.projects.concat(starred).some((p) => (t.id && p.id === t.id) || p.full_name === t.full_name);
+    return tabs.concat(readOutsiders(ctx.me).filter((t) => !taken(t)).map((t) => outsiderRow(t, false)));
   }
   // The tabs that have a place the row moves: the member and starred ones (this session's own
   // stay last, after them).
@@ -171,30 +173,49 @@ window.Maity = window.Maity || {};
     writeOutsiders(ctx.me, readOutsiders(ctx.me).filter((t) => t.full_name !== full));
   }
 
+  // One `starred` change at a time: `PATCH /me` sends the list whole, so a second click while the
+  // first is on its way would send a list built from the old one. A call meanwhile gets the
+  // change already on its way (app.js also disables the star's button until it is answered).
+  let starring = null;
+  const once = (fn) => {
+    if (starring) return starring;
+    starring = fn().finally(() => { starring = null; });
+    return starring;
+  };
+  const busy = () => !!starring;
+
   // Takes the star off (§5.1): `starred` again whole, without the project, the rest in its
   // order. The tab stays as this session's own until it is closed. A refusal leaves both.
-  async function unstar(ctx, row) {
-    const list = (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).map((s) => s.id).filter((id) => id !== row.id);
-    const answer = await M.api.patch("/me", { starred: list });
-    const now = answer && answer.member && Array.isArray(answer.member.starred) ? answer.member.starred
-      : ctx.me.starred.filter((s) => s.id !== row.id);
-    const outsiders = readOutsiders(ctx.me);
-    if (!outsiders.some((t) => t.full_name === row.full_name)) {
-      writeOutsiders(ctx.me, outsiders.concat({ full_name: row.full_name, name: row.name !== row.full_name ? row.name : null, id: row.id || null }));
-    }
-    ctx.me.starred = now;
-    return now;
+  function unstar(ctx, row) {
+    return once(async () => {
+      const list = (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).map((s) => s.id).filter((id) => id !== row.id);
+      const answer = await M.api.patch("/me", { starred: list });
+      const now = answer && answer.member && Array.isArray(answer.member.starred) ? answer.member.starred
+        : ctx.me.starred.filter((s) => s.id !== row.id);
+      const outsiders = readOutsiders(ctx.me);
+      if (!outsiders.some((t) => (row.id && t.id === row.id) || t.full_name === row.full_name)) {
+        writeOutsiders(ctx.me, outsiders.concat({ full_name: row.full_name, name: row.name !== row.full_name ? row.name : null, id: row.id || null }));
+      }
+      ctx.me.starred = now;
+      return now;
+    });
   }
   // Stars this session's tab of a project (§5.1): `starred` again whole, the project's id last.
   // The answer's list is the row's from then on: the project is a starred tab, appended where
-  // this browser had not known it (state's `known` rule). A refusal changes nothing.
-  async function star(ctx, row) {
-    const list = (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).map((s) => s.id).filter((id) => id !== row.id).concat(row.id);
-    const answer = await M.api.patch("/me", { starred: list });
-    const now = answer && answer.member && Array.isArray(answer.member.starred) ? answer.member.starred
-      : (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).concat({ id: row.id, full_name: row.full_name });
-    ctx.me.starred = now;
-    return now;
+  // this browser had not known it (state's `known` rule), and this session's own entry of it is
+  // dropped, so no stale one comes back under another name. A refusal changes nothing.
+  function star(ctx, row) {
+    return once(async () => {
+      const list = (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).map((s) => s.id).filter((id) => id !== row.id).concat(row.id);
+      const answer = await M.api.patch("/me", { starred: list });
+      const now = answer && answer.member && Array.isArray(answer.member.starred) ? answer.member.starred
+        : (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).concat({ id: row.id, full_name: row.full_name });
+      ctx.me.starred = now;
+      const outsiders = readOutsiders(ctx.me);
+      const rest = outsiders.filter((t) => !((row.id && t.id === row.id) || t.full_name === row.full_name));
+      if (rest.length !== outsiders.length) writeOutsiders(ctx.me, rest);
+      return now;
+    });
   }
 
   // Moves a tab by `step` places (the keyboard, the menu), or before
@@ -251,5 +272,5 @@ window.Maity = window.Maity || {};
     store(filterKey(me), on ? "1" : null);
   }
 
-  M.tabs = { open, row, placed, starredClosed, isOpen, setOpen, visit, closeOutsider, unstar, star, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed };
+  M.tabs = { open, row, placed, starredClosed, isOpen, setOpen, visit, closeOutsider, unstar, star, busy, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed };
 })(window.Maity);
