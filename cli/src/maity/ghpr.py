@@ -24,10 +24,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from maity import clonecheck, gitfacts, inclone, onboarding
+from maity import clonecheck, gitfacts, inclone, onboarding, proc
 
 # What the runner writes for a clone whose repository's grant has `pull_requests = true`:
-# the repository (`host/owner/name`) and the gh it found, one per line. Empty: not granted.
+# the repository (`host/owner/name`) and the runner's PATH, where `maity gh` looks gh up at
+# each call (an older runner wrote the gh it found), one per line. Empty: not granted.
 # A record of the runner's, in its directory for the agent (`clonecheck.runner_record`); only
 # for Codex, which is never granted pull requests, at PULL_REQUESTS_PATH in the clone.
 PULL_REQUESTS = "pull_requests"
@@ -210,10 +211,34 @@ def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
         )
     if len(lines) != 2 or not REPOSITORY.fullmatch(lines[0]):
         raise Refused(f"the runner's record {PULL_REQUESTS} is not one it writes")
-    program = lines[1]
-    if not (os.path.isabs(program) and os.path.isfile(program) and os.access(program, os.X_OK)):
-        raise Refused(f"the gh the runner recorded ({program}) is not a program here")
-    return lines[0], program
+    return lines[0], find_gh(lines[1], root, dot_git)
+
+
+def find_gh(recorded: str, root: Path, dot_git: int | None = None) -> str:
+    """gh, looked up at this call on the PATH the runner recorded (`adapters.
+    pull_requests_record`), never on the session's own PATH, so a gh installed after the
+    session started is found without a restart (tsk-2k0jcaxfd0ja, point 15). The checks stay
+    those of a gh recorded at the start: only absolute entries are searched (`proc.program`),
+    the record is the runner's and not writable by the session, and a gh found inside the
+    clone or the placement's scratch, which the session can write, is refused. A record of an
+    older runner names gh itself: that path is taken under the same checks."""
+    if os.path.isabs(recorded) and os.path.isfile(recorded):
+        program: str | None = recorded if os.access(recorded, os.X_OK) else None
+        if program is None:
+            raise Refused(f"the gh the runner recorded ({recorded}) is not a program here")
+    else:
+        program = proc.program("gh", recorded)
+        if program is None:
+            raise Refused(
+                f"gh is not installed on the runner's PATH ({recorded}); once the runner's "
+                "operator installs it, `maity gh` finds it at its next call"
+            )
+    found = Path(program).resolve()
+    writable = [root, inclone.recorded_scratch(root, dot_git)]
+    for place in (p for p in writable if p is not None):
+        if found.is_relative_to(Path(place).resolve()):
+            raise Refused(f"the gh found ({program}) lies in {place}, which this session can write")
+    return program
 
 
 def lead_granted(root: Path, dot_git: int | None = None) -> None:

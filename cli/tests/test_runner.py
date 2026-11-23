@@ -1713,7 +1713,8 @@ def test_check_warns_when_the_host_lacks_what_a_grant_needs(
     said = [text for level, text in report.lines if level == "warn"]
     assert len(said) == 2 and not report.failed, said
     assert said[0].startswith("repositories.github.com/ow/pr: allow 'make *': `make` is not on")
-    assert "gh is not on the runner's PATH" in said[1] and "restart the placements" in said[1]
+    assert "gh is not on the runner's PATH" in said[1] and "restart" not in said[1]
+    assert "sessions find it at their next call" in said[1]
     # gh there, no login stored where `maity gh` finds it.
     monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
     report = commands.Report()

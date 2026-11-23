@@ -63,6 +63,40 @@ def test_it_stops_the_server_it_started(run: dict[str, str]) -> None:
     assert not Path(run["FAKE_UP"]).exists()
 
 
+SYSTEM_PATH = "/usr/bin:/bin"
+
+
+@pytest.mark.skipif(
+    shutil.which("pg_ctl", path=SYSTEM_PATH) is not None, reason="a pg_ctl on the system path"
+)
+def test_without_pg_bin_the_newest_debian_server_directory_is_taken(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """tsk-2k0jcaxfd0ja, point 14: with no pg_ctl on PATH and MAITY_PG_BIN unset, the script
+    takes Debian's newest /usr/lib/postgresql/<version>/bin that has a pg_ctl, by number (16
+    after 9.6), skipping one without it (17) and a name that is no version."""
+    lib = tmp_path / "postgresql"
+    newest = lib / "16" / "bin"
+    newest.mkdir(parents=True)
+    for tool in ("pg_ctl", "initdb", "psql"):
+        (Path(run["MAITY_PG_BIN"]) / tool).rename(newest / tool)
+    wrong = '#!/bin/sh\necho "wrong $0" >> "$FAKE_LOG"\nexit 1\n'
+    for other in ("9.6", "abc"):
+        (lib / other / "bin").mkdir(parents=True)
+        (lib / other / "bin" / "pg_ctl").write_text(wrong)
+        (lib / other / "bin" / "pg_ctl").chmod(0o755)
+    (lib / "17").mkdir()
+    env = {k: v for k, v in run.items() if k != "MAITY_PG_BIN"}
+    env.update(MAITY_PG_LIB=str(lib), PATH=SYSTEM_PATH)
+    subprocess.run([SCRIPT, "true"], env=env, check=True)
+    assert len(calls(env, "start")) == 1 and len(calls(env, "stop")) == 1
+    assert "wrong" not in Path(env["FAKE_LOG"]).read_text()
+    # Nothing there: the script names MAITY_PG_BIN, as before.
+    env["MAITY_PG_LIB"] = str(tmp_path / "none")
+    done = subprocess.run([SCRIPT, "true"], env=env, capture_output=True, text=True)
+    assert done.returncode == 2 and "set MAITY_PG_BIN" in done.stderr
+
+
 def test_a_server_that_was_up_keeps_running(run: dict[str, str]) -> None:
     Path(run["FAKE_UP"]).touch()
     subprocess.run([SCRIPT, "true"], env=run, check=True)

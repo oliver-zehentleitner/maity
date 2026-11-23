@@ -635,14 +635,19 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
 
 # What install cannot do, said in the order it has to be done (tsk-2k0jcaxfd0ja: a fresh host
 # was left with a configuration that never started and tools nobody had logged in).
-CHECK_AS_RUNNER = f"sudo -u {USER} -H maity runner check --config {CONFIG}"
+# The check comes after the logins: with install = true the tool is installed after the
+# start, and check's probe runs Claude Code headless, which needs its login (review A2144 of
+# the dialog's PR). Commands as the service's user start where it may enter: sudo keeps the
+# caller's directory, which an Ubuntu home (0750) keeps it out of.
+CHECK_AS_RUNNER = f"cd / && sudo -u {USER} -H maity runner check --config {CONFIG}"
 LOGIN_STEPS = (
     f"next: log each tool in as {USER} (with install = true the runner installs it first, "
     f"under {HOME}/.local/share/maity-runner/tools/<tool>/versions/<version>/; "
-    f"Claude Code: sudo -u {USER} -H <that>/bin/claude, then /login; "
-    f"Codex: sudo -u {USER} -H <that>/codex/bin/codex login), "
+    f"Claude Code: sudo -u {USER} -H sh -c 'cd && exec <that>/bin/claude', then /login; "
+    f"Codex: sudo -u {USER} -H sh -c 'cd && exec <that>/codex/bin/codex login'), "
     f"and the forge for git push and maity gh "
-    f"(sudo -u {USER} -H gh auth login, then gh auth setup-git the same way)",
+    f"(cd / && sudo -u {USER} -H gh auth login, then gh auth setup-git the same way)",
+    f"then: {CHECK_AS_RUNNER}",
     'the steps in full: docs/runners.md, "As a service on Linux"',
 )
 
@@ -654,9 +659,9 @@ def next_steps() -> list[str]:
         f"on this machine, or that the runner installs (install = true: claude-code and codex "
         f"only), to {CONFIG}; keep its state_dir and workspaces",
         f"  2. sudo systemctl restart {SERVICE}",
-        f"  3. {CHECK_AS_RUNNER}",
-        f"  4. {LOGIN_STEPS[0].removeprefix('next: ')}",
-        LOGIN_STEPS[1],
+        f"  3. {LOGIN_STEPS[0].removeprefix('next: ')}",
+        f"  4. {CHECK_AS_RUNNER}",
+        LOGIN_STEPS[2],
     ]
 
 

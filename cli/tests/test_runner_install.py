@@ -169,16 +169,19 @@ def test_an_incomplete_configuration_enables_but_does_not_start(
     err = capsys.readouterr().err
     assert "not started" in err and "  limits: required\n" in err and "  harness: required\n" in err
     # The next steps in the order they have to be done (tsk-2k0jcaxfd0ja): the file, the
-    # restart, the check as the service's user, the tools' and the forge's login.
+    # restart, the tools' and the forge's login, then the check as the service's user (its
+    # probe run needs the login), each from a directory that user can enter.
     steps = err[err.index("next, in this order:") :]
     order = [
         "1. add [limits]",
         "keep its state_dir and workspaces",
         "2. sudo systemctl restart maity-runner",
-        "3. sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml",
-        "4. log each tool in as maity-runner",
+        "3. log each tool in as maity-runner",
         "/var/lib/maity-runner/.local/share/maity-runner/tools/<tool>/versions/<version>/",
-        "gh auth login",
+        "sh -c 'cd && exec <that>/bin/claude'",
+        "cd / && sudo -u maity-runner -H gh auth login",
+        "4. cd / && sudo -u maity-runner -H maity runner check --config "
+        "/etc/maity-runner/runner.toml",
         'docs/runners.md, "As a service on Linux"',
     ]
     places = [steps.index(part) for part in order]
@@ -194,6 +197,7 @@ def test_a_started_service_names_the_logins(
     err = capsys.readouterr().err
     assert "started maity-runner" in err and "next: log each tool in as maity-runner" in err
     assert "gh auth setup-git" in err and "next, in this order:" not in err
+    assert err.index("gh auth setup-git") < err.index("then: cd / && sudo -u maity-runner -H")
 
 
 def test_existing_files_are_kept_unless_force(tmp_path: Path) -> None:

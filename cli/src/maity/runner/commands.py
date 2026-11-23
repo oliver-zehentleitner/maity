@@ -493,13 +493,12 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
         if not grant.pull_requests:
             continue
         if proc.program("gh") is None:
-            # adapters.pull_requests_record: the record names the gh found when a session
-            # starts; without one it is empty and `maity gh` says the grant has none.
+            # `maity gh` looks gh up on the runner's PATH at each call (ghpr.find_gh): once
+            # gh is installed, running sessions find it without a restart.
             report.warn(
                 f"repositories.{name}: pull_requests = true, but gh is not on the runner's PATH, "
-                "so no session gets `maity gh` (it says the repository grants no pull "
-                "requests); install gh, then restart the placements: a session takes gh as it "
-                "was when it started"
+                "so `maity gh` refuses until it is installed; install gh (sessions find it at "
+                "their next call)"
             )
         elif not (agents_home / ".config" / "gh" / "hosts.yml").is_file():
             report.warn(

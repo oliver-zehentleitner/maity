@@ -80,7 +80,8 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
     # The runner's records, in its directory for the agent, never in the clone.
     (private / clonecheck.GIT_PATH.name).write_text(git + "\n")
-    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh}\n")
+    # The runner's PATH, where `maity gh` looks gh up at each call (point 15).
+    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh.parent}\n")
     monkeypatch.chdir(clone)
     return {"clone": clone, "log": log, "gh": str(gh), "record": private / ghpr.PULL_REQUESTS}
 
@@ -603,6 +604,82 @@ def test_a_record_in_the_clone_is_never_read(placed: dict[str, Any], tmp_path: P
     placed["record"].unlink()  # without the runner's record: no grant, never the clone's
     assert cli.main(["gh", "pr", "view", "7"]) == 4
     assert not (tmp_path / "decoy-ran").exists()
+
+
+@runs_gh
+def test_a_gh_installed_after_the_start_is_found_at_the_next_call(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Point 15 of tsk-2k0jcaxfd0ja: the runner records its PATH, not the gh it found, and
+    `maity gh` looks gh up there at each call. Before gh is installed it refuses and says so;
+    once it is there, the same session runs it, with no restart."""
+    gh = Path(placed["gh"])
+    later = gh.parent.parent / "later-bin"
+    later.mkdir()
+    placed["record"].write_text(f"{REPOSITORY}\n{later}\n")
+    err = refused(["gh", "pr", "view", "7"], capsys)
+    assert "gh is not installed on the runner's PATH" in err and ran(placed) is None
+    os.rename(gh, later / "gh")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert ran(placed) is not None
+
+
+@runs_gh
+def test_the_lookup_takes_no_relative_entry_and_no_gh_the_session_can_write(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The checks of a gh recorded at the start stay (lotse's condition on point 15): a
+    relative entry is never searched, and a gh inside the clone, which the session writes, is
+    refused even where the recorded PATH names its directory. Nothing runs."""
+    clone: Path = placed["clone"]
+    planted = clone / "bin"
+    planted.mkdir()
+    decoy = planted / "gh"
+    decoy.write_text(f"#!{sys.executable}\nopen({str(clone / 'decoy-ran')!r}, 'w')\n")
+    decoy.chmod(0o755)
+    placed["record"].write_text(f"{REPOSITORY}\nbin\n")  # relative: the clone is the cwd
+    assert "gh is not installed on the runner's PATH" in refused(["gh", "pr", "view", "7"], capsys)
+    placed["record"].write_text(f"{REPOSITORY}\n{planted}\n")
+    assert "which this session can write" in refused(["gh", "pr", "view", "7"], capsys)
+    assert not (clone / "decoy-ran").exists() and ran(placed) is None
+
+
+@runs_gh
+def test_find_gh_searches_the_recorded_path_at_each_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`find_gh` alone, with no git: missing first, found once installed, an older record's
+    own path taken, a gh inside the clone refused, a relative entry never searched."""
+    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV, raising=False)
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    with pytest.raises(ghpr.Refused, match="gh is not installed on the runner's PATH"):
+        ghpr.find_gh(str(bin_dir), clone)
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    assert ghpr.find_gh(str(bin_dir), clone) == str(gh)
+    assert ghpr.find_gh(str(gh), clone) == str(gh)
+    planted = clone / "bin"
+    planted.mkdir()
+    (planted / "gh").write_text("#!/bin/sh\nexit 0\n")
+    (planted / "gh").chmod(0o755)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(f"{planted}{os.pathsep}{bin_dir}", clone)
+    monkeypatch.chdir(clone)
+    with pytest.raises(ghpr.Refused, match="gh is not installed"):
+        ghpr.find_gh("bin", clone)
+
+
+@runs_gh
+def test_an_older_runners_record_naming_gh_itself_still_works(placed: dict[str, Any]) -> None:
+    """A session started by a runner from before point 15 has gh's own path in the record:
+    it is taken as before."""
+    placed["record"].write_text(f"{REPOSITORY}\n{placed['gh']}\n")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert ran(placed) is not None
 
 
 @walks  # `opened_git` yields a descriptor only where maity walks
