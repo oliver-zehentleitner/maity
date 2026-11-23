@@ -1021,7 +1021,15 @@ Code, allow rules and hooks in the runner user's own Claude Code settings
 that every agent would inherit, a Claude Code version other than the one
 its sandbox was checked with (a warning), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
-(`--offline` skips it). A minimal configuration:
+(`--offline` skips it). On the local backend it also warns about what the
+host lacks for the configuration: an `agent_path` entry that does not
+exist (naming the agents' real home when the entry lies under a home that
+is not there, such as `/home/maity-runner` for the service's user, whose
+home is `/var/lib/maity-runner`), a program a repository's `allow` rule
+names that is not on `agent_path` (`make` for `make *`), gh missing from
+the runner's `PATH` for a grant with `pull_requests = true` (`maity gh`
+finds it at its next call once installed), and gh without a login stored
+for the agents' user (`~/.config/gh/hosts.yml`). A minimal configuration:
 
 ```toml
 [hub]
@@ -1121,8 +1129,10 @@ The agents then run `maity gh pr create --title <title> --body-file <file>`
 Without `--json`, `pr view` prints the number, title, state, branches,
 author, link and description as text (and the comments with
 `--comments`); with `--json` it prints gh's JSON as gh gives it.
-These run outside the sandbox, with the gh the runner found on its `PATH`
-and the login of the agents' user under `HOME`, always on the repository
+These run outside the sandbox, with the gh found at each call on the
+`PATH` the runner recorded at the session's start (a gh installed later is
+found without a restart; one inside the clone or the placement's scratch
+is refused), and the login of the agents' user under `HOME`, always on the repository
 of the placement's clone (`--repo` comes from the runner, never from the
 command line). gh runs in an empty directory of its own and gets only
 `HOME`, the locale, the temporary directory, proxy and certificate
@@ -1237,8 +1247,8 @@ Open gaps:
 - Without the harness's sandbox (opencode, Claude Code outside Linux
   and macOS, or on Linux without bwrap and socat) the deny rules are no boundary: repository
   code can run gh or rewrite the runner's record of the repository.
-- On an ssh target, gh must be at the path the runner found on its own
-  host, or `maity gh` refuses.
+- On an ssh target, gh must be in a directory of the runner's own `PATH`
+  (the runner's host's), or `maity gh` refuses.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
@@ -1248,7 +1258,11 @@ standard error. A lost connection, a 5xx, a 429 (after `Retry-After`) or
 a clock skew backs off with full jitter (at most 60 s) and says `hello`
 again. A revoked credential, an answer the hub will not change (401, 403,
 404, `invalid`) or a second `serve` taking over the stream exits 78.
-SIGTERM exits 0. In every case the agents keep running.
+SIGTERM exits 0. In every case the agents keep running. A placement from
+a hub that names no Keep the Why skill at all (no `keep_the_why` field: a
+hub of 0.1.0a10 or older) gets a log line at its start saying that the
+runner delivers none, and how to install the skill by hand
+([`docs/runners.md`](../docs/runners.md#the-keep-the-why-skill)).
 
 ```sh
 maity runner serve            # in the foreground; as a service: `sudo maity runner install`
@@ -1720,9 +1734,21 @@ sudo maity runner uninstall [--purge]
 install --global maity` does that. While the configuration still lacks
 `[limits]` or a `[harness.<id>]`, or names a key this version does not
 support yet, the service is enabled but not started, and `install`
-lists what is missing. Fix it, then `sudo systemctl start maity-runner`.
-The harness itself (installed and logged in as `maity-runner`) is yours
-to set up.
+lists what is missing, then the next steps in order: the file, `sudo
+systemctl restart maity-runner`, the tools' and the forge's login as
+`maity-runner`, and then `maity runner check` as that user (its probe run
+needs the tool's login), each command as `maity-runner` started in a
+directory that user can enter. A service it starts gets the login and
+check steps too, and `install` then runs a first `check` itself, before
+any login: a tool not installed yet, or Claude Code's probe run without
+its login, shows up there, and that check's exit is `install`'s. Run
+`check` again after the logins. The harness itself (installed and
+logged in as `maity-runner`) is yours to set up; docs/runners.md, "As a
+service on Linux", has the steps. Every other `maity runner` command
+for the service takes `--config /etc/maity-runner/runner.toml`; without
+it, where `~/.config/maity-runner/runner.toml` is missing and the
+service's file exists, the error names the service's file and how to
+pass it.
 
 Running `install` again is safe. It creates only what is missing and
 pairs only an unpaired runner; an already paired one needs no code.
