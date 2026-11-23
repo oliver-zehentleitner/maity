@@ -75,7 +75,8 @@ discussion: only the runner's owner may give a placement's go.
 
 **Id:** 22e17362-56cb-4bf7-94fa-c245119e6eac
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** a35d39cd-b7ca-4cd8-941d-a420ba73336e
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.1 and §15.6 (contract #137), 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — 97a02556-475b-4041-8db5-6ce845ceb7fa — as of 2026-10-22
@@ -100,6 +101,32 @@ among the kept fields since the contract owner's ruling on #185 (#186).
 **Rejected alternative:** only the runner's owner gives the go (the open
 question this replaces). Not chosen by the maintainer; the policy names a
 class of answerer, not one person.
+
+## Only the runner's owner answers a placement's consent request
+
+**Id:** a35d39cd-b7ca-4cd8-941d-a420ba73336e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.6, the maintainer's decision of 2026-11-16 (tsk-qgmz0yrc3g5x)
+**See:** https://github.com/oliver-zehentleitner/maity — 320a6e51-5a65-4684-8da8-df911d4273c1 — as of 2026-11-16
+**See:** placements.md#a-placements-consent-needs-a-human-unless-the-project-says-otherwise — 22e17362-56cb-4bf7-94fa-c245119e6eac — as of 2026-11-16
+
+An agent's placement proposal under `consent` files a personal request to
+the runner's owner (`human:<id>`), answered only by that human directly
+under `/requests/{id}/answer`; `policy.spawn_consent_by` is kept and no
+longer read for placements. Creating, changing the spec of, moving onto,
+starting, restarting and nudging a placement is refused off the runner's
+side with `forbidden`, `details.reason: runner_owner_only`.
+
+**Reason:** the project-wide rule that only a runner's owner places agents
+on it (see the root entry); a project request answered by
+`requests:answer` could be given by a human who does not own the runner.
+
+**Rejected alternative:** keep the project request and check the answerer
+against the runner's owner. The owner need not be a member of the
+project, and a project request does not reach a non-member; the personal
+request does, and it already has an answer route of its own.
 
 ## A runner's stop revokes its agents' credentials when they are next used
 
@@ -133,6 +160,112 @@ tell the owner the truth at any time.
 - Revoking at once and leaving the grace to the agent's stop request.
   The agent could not park its work: its next call, the checkpoint
   included, would already be refused.
+
+## An owner's stop locks the runner's projects before it reads their placements
+
+**Id:** 0474abb0-ecd1-459f-a1d2-80fa9aaea5e5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the owner's stop over retained clones (`docs/api.md` §15.3), 2026-11-13
+**See:** placements.md#a-runners-stop-revokes-its-agents-credentials-when-they-are-next-used — 61d651db-f260-4baf-9af2-498d711d0492 — as of 2026-11-13
+**Revisit when:** a pickup's exchange stops taking its project's lock first, or another caller of `apply` holds project locks before it
+
+`runner_revoke.apply` takes `events.lock_project` on every project it acts
+in, in the order of their ids, after the caller's lock on the runner's row
+and before it reads any placement. Under the owner's `agents: "stop"` those
+are the attached projects plus every project where a placement of the
+runner is active or still has its clone on the machine; the stop then
+revokes each credential such a placement names.
+
+**Reason:** a pickup's exchange takes its project's lock first and checks
+its placement and the runner under it. With the stop's reads under the same
+lock, an exchange either committed its credential before the stop reads the
+placement, or waits and then finds the placement closed or the runner's
+credential gone. The order runner row, then projects by id, is the one
+attaching and removing already take. The account's deletion locks its
+namespace's projects before its runners, so it takes the projects the removal
+of its runners will lock (`runner_revoke.projects_to_lock`) in the same
+id-ordered pass as its namespace's: two deletions with clones in each other's
+namespace then wait for one another instead of deadlocking, and `apply` only
+takes locks the deletion already holds.
+
+**Rejected alternative:** reading the placements first and re-reading each
+`credential_id` after locking. It needs a second read per placement, and
+the set of placements read before the lock could still miss one the
+exchange was changing; locking first leaves one read that is right.
+
+## Every change of a runner locks its live credential before its row
+
+**Id:** d4a8c42e-5a12-4e72-a16e-efc7b4c88d57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8s3fgn5bsyjr, from the review of pull request #1768 (the revoke route locked the runner row before its credential), 2026-11-14; the review of pull request #1823 (1020 on MariaDB 11.8 from the credential lock through a subquery), 2026-11-15; `hub/tests/test_runner_revoke.py`: `test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking`
+**See:** reports.md#a-suspension-takes-the-account-lock-first-every-issue-waits-for-it — 525c4922-109b-418f-82e2-0b02b285b946 — as of 2026-11-14
+**Revisit when:** a runner's own call stops writing its credential's row before the runner's, or a new path locks a runner row and then writes its credential, or MariaDB stops failing a locking read whose subquery saw an older row (1020)
+
+Every authenticated runner call writes its credential's row and then the
+runner's (`auth/caller.py`, and `hello` again in its own transaction). Every
+change of a runner that goes on to revoke or rewrite the credential takes
+the two in the same order through one helper, `runners.lock`: the
+unrevoked credentials first, then the runner rows, each in the order of
+their ids. Its users are the owner's revoke and removal (`_own_runner`
+with `lock`), a re-pair's exchange (`_consume`), the account's deletion
+and the suspension. The project locks of an owner's stop follow both.
+
+`hello` also runs its transaction again after a deadlock (`db.retrying`),
+as the authentication before it and the owner's routes (`idempotency.run`)
+do. A credential that turns live between the
+change's credential lock and its row lock (a re-pair whose new key
+committed in between) is still written under the row lock, out of the
+order; the retry covers that window.
+
+`runners.lock` reads the runners' ids first, without a lock, and locks
+the credentials by that list of ids, not through a subquery of the
+runners. On MariaDB with `innodb_snapshot_isolation` (on by default
+since 11.6, off on CI's 11.4) the subquery reads the runners in a
+snapshot taken when the statement starts; when the statement waits for a
+runner's call that then writes its runner row and commits, the locking
+read fails with 1020 (record changed since last read), which no retry
+covers. A literal list has no snapshot to compare with. The last read
+locks the runner rows by `where` again, not by the list: a runner that
+`where` selects only after the first read is still locked and returned,
+only without its credential locked first. Of the callers, the owner's
+revoke and removal and a re-pair select one runner by its id, which no
+other transaction creates, so for them the two reads choose the same
+runner. The account's deletion and the suspension select every runner of
+the account; a runner a concurrent first pair creates in between is
+still removed or stopped, and its credential is written out of the
+order, which at worst is a deadlock that the retry covers.
+
+The suspension locks, for its runners, exactly what the owner's stop locks
+(`runner_revoke.projects_to_lock`), plus the projects of the account's own
+live agent credentials. Its own list also took every project where a
+runner ever had a placement. A placement whose clone was reported removed
+gives the stop nothing to close or revoke there, so nothing in the
+suspension writes in such a project.
+
+**Reason:** two writers that take the same two rows in opposite orders
+can each hold one and wait for the other; PostgreSQL and MariaDB then
+abort one of them. The route retried, but `hello` failed with an error.
+The runner's call cannot take the runner row first without a lock on
+every call, and the credential is the row each call already writes first.
+
+**Rejected alternatives:**
+- Only giving `hello` the retry: the inversion stays, and every new
+  caller of the two rows has to remember to retry.
+- Locking the credentials through a subquery of the runners (the first
+  version of `runners.lock`): one statement, but 1020 on MariaDB 11.6
+  and later, which every caller would have to retry.
+- Adding 1020 to `db.TRANSIENT`: it would retry every 1020, also one that
+  is a lost update in code that read before it locked, and the shape
+  that avoids it costs one plain read.
+- Re-reading the live credential after the row lock and locking a new one
+  then: that lock is out of the order again; one retried transaction is
+  simpler.
+- Keeping the suspension's wider project list: a second copy of the rule
+  that drifts from `apply`'s, and locks taken for projects nobody writes.
 
 ## `runner_revoke.due` reads two kinds of credential row, so its `getattr` stays
 
@@ -190,16 +323,18 @@ Meanwhile that human may give the handle to another agent. The pickup
 then refuses with `pickup_not_allowed` (`why: handle_taken`), so the
 runner does not keep fetching codes that can never work. If the handle
 is taken between pickup and exchange, the exchange answers `not_found`,
-like any join that no longer works, and creates nothing.
+like any join that no longer works, and creates nothing. A `POST /agents`
+or a join that runs while the placement is being created no longer gets
+the handle too: the creation holds the handle's lock (the next entry).
 
 The exchange checks the pickup again under the project lock. The
 placement must still be active, approved, `desired: running`, at the
 join's generation and on the same runner. The runner must not be
 removed and must hold a live credential. A member's pickup, or a rejoin,
 also needs the membership still active. Otherwise the answer is
-`not_found`. Stopping or closing the placement, and revoking or removing
-the runner, also revoke its unused pickup joins
-(`placements.revoke_unused_joins`). A rejoin refuses an instance that
+`not_found`. Stopping or closing the placement, and revoking,
+re-pairing or removing the runner or suspending its owner, also revoke
+its unused pickup joins (`placements.revoke_unused_joins`). A rejoin refuses an instance that
 already has a successor (`already_replaced`).
 
 **Reason:** a profile created at pickup time would exist before any agent
@@ -227,6 +362,126 @@ keep a live join code in the database.
   whoever holds the link that the human has an agent of that name. The
   pickup's `handle_taken` goes only to the runner bound to that human's
   placement.
+
+## A new profile's placement reads its handle under the handle's lock, after the project's
+
+**Id:** af889d2e-167b-449a-87d2-83f31f04eb51
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`; `hub/tests/test_placement_races.py` (a join, another project's placement and a rename against the placement, tsk-gt0htv1xp3p9); a review probe of the pull request on PostgreSQL 17 and MariaDB 11.8, 2026-11-23, which forced the rename/placement deadlock; a second review probe on PostgreSQL 16, 2026-11-23, which found the deadlock through the owner's `human` row between a placement and `POST /agents` or a join
+**Verification:** corroborated — a review probe of the pull request (PostgreSQL 17, MariaDB 11.8) forced the rename-against-placement deadlock: the database aborted one side, the retry ran, and the rename answered 200 and the placement 400 `taken`; review probes on PostgreSQL 16 forced the deadlock between a placement and `POST /agents` through the owner's `human` row: the retry ran, and the side that waited second won (201) while the other ended 400 `taken`
+**See:** placements.md#a-pickups-join-creates-a-new-profile-at-the-exchange-and-the-pickup-stores-nothing-to-replay — cf956bec-8b32-4ae3-8ba6-73e3afe33e89 — as of 2026-11-23
+**See:** handles.md#a-rename-and-a-creation-take-a-lock-on-the-handle-they-want-not-one-on-the-whole-scope — ddfd0481-7a0a-4ebd-8a33-fc5e5c2787e1 — as of 2026-11-23
+**Revisit when:** a pickup's exchange stops taking the project's lock before `create_profile`, join creation starts taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, `POST /agents` starts taking a project's lock, `create_profile` stops locking the owner's `human` row before the handle's lock (or takes it after), or `placement.created_by` stops referencing `human`
+
+Creating a placement that will create a profile (`{"agent":{"handle",
+"display_name"}}`) takes `handles.lock` on the owner's scope and the
+handle before it asks `handles.holder`, as `handles.ensure_free` does.
+Before, it read the holder without the lock: a `POST /agents` of the same
+owner and handle running at the same time saw neither the other's profile
+nor the placement, both committed, and only the runner's pickup found the
+clash (`handle_taken`). Now that `POST /agents` (or a join naming the
+handle) waits for the placement and is refused `taken`, the placement
+counting as the reservation (§6.24).
+
+The handle's lock comes after the project's: the creation already holds
+`lock_project` (and, for an admitted profile, the profile's row before it),
+and a pickup's exchange calls `create_profile`, which takes the handle's
+lock, under its project's lock too (`_consume`). Join creation does not:
+it calls `create_profile` first and takes the project's lock only
+afterwards, when the role is a project role (`validate_assignment`) or the
+member rule counts its slot. With a built-in role under `members:admin`
+it takes no explicit project lock, but its `join_link` insert checks the
+foreign key to the project and takes a shared lock on the project's row,
+which waits for a placement that holds that row. Such a join that already
+holds the handle can therefore form the same cycle (a review finding, read
+from the code). A profile's rename takes the handle's lock and then its
+`member_updated` events lock the projects of its memberships. So join
+creation and a rename take the opposite order to the placement; the
+database aborts such a deadlock and `idempotency.run` runs the loser again.
+
+A second cycle runs through the owner's `human` row, not the project's.
+While `max_agents_per_human` caps the owner (the default does),
+`create_profile` locks that row for its count (`_refuse_over_agents`)
+before it takes the handle's lock, on every path that gives a new profile
+other than the exchange: `POST /agents` and join creation alike. The
+placement's `INSERT INTO placement` takes the foreign key's shared lock on
+the same row through `created_by`, after it holds the handle's lock. So a
+`POST /agents` or a join that holds the owner's row and waits for the
+handle deadlocks with the placement that holds the handle and waits for
+the row, although `POST /agents` takes no project lock; the database
+aborts one and `idempotency.run` runs it again, and the retry finds the
+handle taken by the side that committed: in review probes on PostgreSQL
+16, 2026-11-23, the placement won (201, the other 400 `taken`) when
+`POST /agents` or the join waited first, and `POST /agents` won (201, the
+placement 400 `taken`) when the placement waited first on the owner's row.
+
+Tests: `test_a_rename_and_a_new_profiles_placement_of_one_handle_deadlock_and_one_wins`
+forces the rename pair. The join test
+(`test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_it_reserved`)
+switches the agent limit off and runs the join in another project, so that
+neither cycle forms: it shows the join waiting on the handle's lock alone,
+with no retry. The join's project-row cycle and the owner-row cycle are
+read from the code and seen in that probe, not driven by a test of their
+own.
+
+**Reason:** the placement reserves the handle for its owner (§6.24), so
+its check has to hold until it commits, like every other path that gives a
+handle; a clash found only at the pickup leaves a placement that can never
+run. The lead decided to take the lock in this branch, after the project's
+(confirmed). That this order is the exchange's and inverts against join
+creation and a rename is read from the code (inferred): the first version
+of this entry said join creation shared it, which a review found wrong.
+
+**Rejected alternative:** taking the handle's lock before the project's
+(the order of join creation and a rename). It would invert the order
+against the pickup's exchange, which creates the profile of this very
+placement's handle in the same project, instead. Either order inverts
+against one path, and every path runs under `idempotency.run` or
+`db.retrying`, so the order the placement already shared with its own
+exchange stayed.
+
+## Every runner credential revocation carries its consequences; a re-pair keeps what is closing
+
+**Id:** e0dcc15d-55a3-4503-b3bc-8707d12c1bc4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit's finding on runner credentials (tsk-mrt77xgrexx4), the lead's answers to its open questions and the review of pull request #1768, 2026-11-13
+**Revisit when:** a runner credential is revoked on a new path, the re-pair stops handing the placements over to the new credential, or the "revoke and tell" helper of the runner clean-up lands
+
+`revoke_runner_credential` calls `placements.runner_credential_gone`
+itself: the runner's unused pickups are revoked, and its closing
+placements close at once, since no live credential is left to report
+their end. A re-pair passes `replaced=True`: the pickups still end with
+the credential that fetched them, but a closing placement stays closing,
+because the new credential takes over the same placements (§15.3) and
+reports the end. A suspension of the owner also stops each of the owner's
+runners as the owner's `agents: "stop"` does, whatever the projects'
+`on_runner_revoke`, like the deletion of the account. It revokes the
+account's own agent credentials first (`suspended`), so the stop reaches
+only other humans' agents (`runner_revoked`), with no human named as
+having revoked them (`by` None): the hub acts, not the suspended person.
+
+**Reason:** before, each caller had to remember the second call. The
+revoke route and the leak path did; the suspension and the re-pair did
+not, so a closing placement stayed closing until someone deleted it, and
+a pickup fetched with the old credential stayed usable after a re-pair.
+One call in the function every path uses cannot be forgotten. A
+suspension ends everything the account holds at once, as its deletion
+does, so the runners' placements end with it, not by each project's rule.
+
+**Rejected alternatives:**
+- Keeping the separate call and adding it to the two missing callers:
+  the next new path would miss it again.
+- Closing the closing placements on a re-pair too: the new credential
+  can still report their end, and §15.3 says the re-pair hands the same
+  placements over.
+- Leaving the re-pair's pickups alive: the contract and the docstring
+  say a pickup ends with the credential that fetched it.
+- Applying each project's rule on a suspension: under `keep` the
+  placements on the suspended account's runners would run on.
 
 ## A supervised session's long-poll is not woken by what only `all` names
 
@@ -526,7 +781,7 @@ removes nothing a person might still need, and the question stays open:
   "Revocation stops the placement" names every path; its workspace bullet
   says a start that came in meanwhile "joins anew" with `rejoin` set. A
   stop would undo that start, so this one revocation leaves `desired`
-  as it is (`leaks.revoke(stops_placements=False)`).
+  as it is (`revocation.revoke(stops_placements=False)`).
 - **`rejoin` set by a removal bumps no `generation`.** The field table
   says every `rejoin` does; the route's own rule names only `rejoin` and
   `workspace_epoch`, and a new generation would restart a running agent.
@@ -544,3 +799,310 @@ removes nothing a person might still need, and the question stays open:
   placement.** The clock runs on after the close, and a change of the
   time moves the deadline; any other change there stays
   `invalid_transition`.
+
+## A new profile's placement re-checks its creator at the pickup and the exchange
+
+**Id:** ac153895-7fbe-49a5-adad-6e5403d4fd6f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-rk6k5qz2qr3t (hardening: grants follow the member's current standing), which offers both ways; the invitation rule of docs/api.md §3.4 (`invitations.issuer_holds`)
+**Revisit when:** placements gain a creator other than a project member (an org-level placement), or the invitation rule (§3.4) changes
+
+A placement that creates a new agent profile stores the profile's trust
+and role when it is made, and the runner's pickup mints the join from
+them with the placement's creator as `created_by`. At the pickup and
+again at the exchange the hub asks `invitations.issuer_holds` of that
+creator and profile, as for an invitation: an active member with
+`members:admin`, and trust `owner` for trust `admin` or the role
+`proxy`. A pickup refused this way is `creator_lacks_authority`; an
+exchange answers `not_found` as every join that no longer works. A
+signature on a card follows the same idea (`cards.standing`): it counts
+while its signer may give it, and `cards.drop_signatures` clears it on
+every path that lowers a member's standing: a trust or role change, a
+project role's new base, the end of an organisation's raised trust, a
+removal or an isolation. Every path that gives standing back also
+clears before it writes (the members PATCH, a role's new base, the
+trust an organisation's ownership raises, the lift of an isolation),
+so a raise never counts a signature some other path left behind.
+
+**Reason:** a grant should not outlive the authority that made it; the
+invitation already behaves this way, and one predicate keeps the two
+paths alike.
+
+**Rejected alternatives:** closing such placements when the creator's
+trust or role changes (the card's other option): it needs a hook in
+every path that lowers a member's standing (patch, removal, isolation,
+suspension, organisation changes), and a path missed would leave the
+grant open, while a check at use covers them all. A placement that
+names an existing member is not re-checked: it creates nothing, and the
+member's own standing is the membership's. For signatures, one shared setter
+for trust, role and role base: the writes differ too much (one member,
+every member of a role, the hub's own change) for one function to carry
+them, so each calls the same clearing step instead.
+
+## Who revoked decides with the reason whether anyone but the owner may rejoin
+
+**Id:** 44fe553d-74c0-495d-80c4-e1af00a65f57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8hq77ns50kyf (the lead's security review of 2026-11-13: "a revocation by a person, or because of a leak, is never undone by anyone else"); the contract's restart row (docs/api.md §15.6)
+**Revisit when:** a new revocation reason is added that the hub sets without a person, or the member routes stop taking a free-text reason
+
+A rejoin (`restart` with `rejoin: true`) gives the agent a new credential.
+The agent profile's owner may ask for one after any revocation. Anyone else
+with the restart's right, the runner's owner or a proposing agent, may only
+after a revocation no person chose for that agent: the hub's own after the
+runner removed the clone (`workspace_removed` with `revoked_by` null) or the
+runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
+that owner). Everything else is `forbidden` with `details.reason:
+"owner_only"` (`placements.undone_by_anyone`). The check runs on every
+start of a placement whose credential is revoked, not only on `rejoin:
+true` and not only once a `rejoin` is stored: a `rejoin` the clone's removal
+stores is carried out by a `restart` with `{}` or a `PATCH desired:
+running` too (`routes/placements._check_rejoin`). A removal reported for a running
+placement whose credential was revoked that way stores the `rejoin` and
+stops the placement as well (`placements._removed`, no new `generation`),
+so the rejoin waits for a start the check lets through.
+
+**Reason:** a revocation is how a person stops their agent, and a leak's
+revocation ends a credential someone else may hold. Undoing either by a new
+credential is the owner's decision, as every new instance passes a human.
+
+**Rejected alternatives:** deciding by `revoked_reason` alone: a person
+revoking through the member routes writes the reason freely, so
+`"workspace_removed"` typed by a person would pass. Letting only the owner
+rejoin after any revocation: a removed clone revokes the credential on the
+runner's own report, and its placement is meant to join anew at its next
+start (§15.5) without waiting for the owner. Not storing `rejoin` on the
+removal when the credential was already revoked otherwise: the owner's
+next plain start should still join anew. A check at the start alone,
+once a `rejoin` is stored: the check runs whether a `rejoin` is stored or
+not, and the removal stops a placement that runs. A check at the runner's pickup instead: the pickup
+cannot tell whose start it carries out, so it would refuse the owner's
+own rejoin, or need a stored record of who started; the start already
+knows who asks.
+
+## A reset is a restart with `fresh_session`, stored as the generation it made
+
+**Id:** 37b4b9a1-a0f0-4f6f-bb26-b607590ffa18
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r4apvj4kbf3a (the owner's request in chat, 2026-11-19, for a Reset beside Restart on a placement held as `failed`/`hung`/`idle`; the card fixes the shape: "a restart with a fresh-session flag"); the contract, docs/api.md §15.5, §15.6, §15.7, §15.14
+**Revisit when:** the runner keeps the harness's session id per placement (§15.14, "The session continues"), or a second kind of restart needs a flag of its own
+
+A reset is `POST …/placements/{id}/restart` with `fresh_session: true`:
+everything a restart is (the same right, a new `generation`, `desired:
+running`, a cleared `crash_loop`, combinable with `rejoin`), and the new
+generation starts the harness on a fresh session instead of resuming the
+last one. The hub stores the generation the reset made
+(`placement.fresh_session_generation`, never cleared) and every view reads
+`fresh_session` as that generation being the current one
+(`placements.fresh_session`). A plain restart or a change of spec moves
+the generation and so ends the reset without a write of its own; a stop
+and a start keep the generation, and the reset still holds for its start.
+A runner's report takes `sessions` (§15.7), stored only when sent.
+
+**Reason:** a restart already carries everything a reset needs (who may,
+the generation the runner acts on, the hung hold it lifts); only what the
+start does with the harness's conversation differs. The hold that brought
+the card (`hung`/`idle` until the generation moves) is lifted the same way.
+A generation instead of a boolean leaves no flag to clear on every other
+path that bumps the generation (spec changes, settling a proposal, a
+plain restart), where a forgotten clear would make a later restart drop
+the conversation unasked.
+
+**Rejected alternatives:** a route of its own (`…/reset`): a second copy of
+the restart's rights, proposal settling, flapping and rejoin checks for
+one boolean. A boolean column cleared by every generation bump: each path
+that bumps the generation would have to know about it. Leaving it to a
+replacement with `handover: none` (§15.14): not built, and it makes a new
+placement and clone, where the owner wants the same clone and branches.
+
+## A profile that is not a member yet is admitted by its placement
+
+**Id:** 2f6d6292-c1df-4853-9405-e29be0140e15
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation); the lead's and the review lead's ruling on review A1826 (the stored `reports_to`, the profile lock first); the review lead's ruling on review A1833 (the lock only on the caller's own profiles); `hub/tests/test_join_pickup.py`: `test_a_members_placement_reports_only_to_a_manager_still_theirs`, `test_an_admitting_placement_locks_the_profile_before_the_project`, `test_a_placement_naming_another_owners_profile_takes_no_lock_on_it`
+**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, the new-instance rule of §3.1 changes, a member's own join starts re-checking `reports_to` at its exchange, a profile's deletion stops taking the profile's lock before any project's, or a profile's owner can change
+**See:** placements.md#a-new-profiles-placement-re-checks-its-creator-at-the-pickup-and-the-exchange — ac153895-7fbe-49a5-adad-6e5403d4fd6f — as of 2026-11-20
+
+A human who owns a profile with no active membership in the project
+places it by `{"agent":{"id"}}`, with the right they would need to create
+its first join (`members:admin`, or trust `member` under "Bringing your
+own agent") and on a runner of their own. The placement takes the first
+join's fields and stores them in `new_profile` beside the new column
+`placement.agent_id`; the pickup mints a first join (neither
+`new_instance` nor `replaces`), and its exchange makes the membership. A
+profile that is a member by the pickup or the exchange (by a line, or
+another placement's exchange) gets an instance instead, by the new-instance
+rule against that membership (`max_instances`, else `instance_quota`),
+and only while the creator may add one to it as a `new_instance` join
+would: `members:admin`, with trust `owner` for an admin or proxy member,
+or under "Bringing your own agent" a membership within its limits. Join
+and placement share one check of the fields (`routes.joins.assignment`,
+`first_join_fields`) and one recheck of the creator at the pickup and the
+exchange (`routes.joins.admission_holds`), read against the policy as it
+is then: `member_agents` turned `off` after a member's placement ends it
+(`creator_lacks_authority` at the pickup, `not_found` at the exchange),
+its pickup join already handed out included; one made with
+`members:admin` is unaffected. Under "Bringing your own agent" that
+recheck also reads the stored `reports_to` (a membership row id): it must
+still be the creator or an agent of the creator's with the role
+`manager` in the project (`_reports_within_limits`, the same query as at
+creation), else the same answers. A member's own join keeps its
+reporting line at the exchange (`_recheck_member_rule` does not read it),
+on purpose. The creation of an admitting placement locks the profile
+first, then the project (`_lock_named_profile`, then `lock_project`),
+the order join creation, the exchange and the profile's deletion take,
+but only a profile of the caller's own: it reads the owner first without
+a lock and locks only when that is the caller, the locking read itself
+also bound to `owner_id`. Another owner's profile is never locked, and
+`_admitted` answers it `not_yours` before any lock; the caller's own is
+read again under the lock (`_named_profile`: not deleted, else
+`not_found`). The admitting right under "Bringing your
+own agent" covers creating the placement only: a spec change by `PATCH`
+still needs `members:admin` and the runner, while `desired` stays the
+profile owner's. Removing or isolating the membership closes the
+profile's placements still without a credential (`membership_removed`,
+`membership_isolated`). A placement that admits the profile makes it in
+use (§6.3): a bare `DELETE` is refused with `profile_in_use` and changes
+nothing, and only `?cascade=true` deletes it, closing those placements
+at once with `removed`, on the owner's authority alone (no
+`members:admin`, the owner as the event's actor), their unused pickups
+revoked.
+
+**Reason:** the placement already carries the owner's consent, and a
+profile made on its own should not need a join line to reach a runner
+of the owner's (confirmed: the owner's decision and the approved
+contract). One check for both ways, so a placement gives nothing a join
+could not. Unlike a member's own join, which survives `member_agents`
+turned `off`, a placement acts on its creator's continuing authority,
+while a join already handed out does not, so its pickup and exchange
+read that authority as it is then. The reporting target is part of that
+authority: a member names only themselves or their own manager, so a
+manager moved off the role or gone while the placement waited voids the
+stored line, at the pickup and at the exchange alike. The asymmetry with
+a member's own join, whose exchange recheck leaves `reports_to` alone,
+is deliberate and for the same reason: that join was handed out already
+and is not re-made on the creator's authority, the placement's join is
+(confirmed: the lead's and the review lead's ruling on review A1826,
+which withdrew the earlier reading that the admission need not re-check
+`reports_to` because a join's recheck does not). The profile lock comes
+first because deletion takes it first and then counts the admitting
+placements as the profile's use: with the creation in the same order,
+either the deletion sees the new placement (a bare `DELETE` refuses, a
+cascade closes it) or the creation sees the tombstone (`not_found`),
+never an active placement for a deleted profile (confirmed: the same
+ruling; a race test on PostgreSQL and MariaDB, the statement order on
+SQLite). Such a placement could never run, as the exchange refuses a
+deleted profile (`live_profile`), yet it would hold one of the project's
+`max_placements` and one of the creator's `member_agents_max`
+(`agents_held` counts the admitting placements of every profile the
+owner owns, deleted ones included) until closed by hand. SQLite
+serialises writers, so only PostgreSQL and MariaDB showed the race. The
+lock covers only the caller's own profiles because only those are ever
+admitted (§15.6), and any human member may name any profile's id: a lock
+taken before the ownership check would let one member hold another
+person's profile for a whole transaction, stalling that owner's join
+creation, exchange and `DELETE` (confirmed: the review lead's ruling on
+review A1833; `test_a_placement_naming_another_owners_profile_takes_no_lock_on_it`).
+The owner is read before the locking read, not left to an `owner_id`
+condition on it alone, because InnoDB under repeatable read keeps the
+lock on a row it reads by its key even when the rest of the condition
+then drops it (inferred: InnoDB's documented locking, not shown by a
+test here); a profile's owner never changes, so that read cannot go
+stale. And the placement was made under the
+right to a first join, not to a further instance, so an instance needs
+the creator's right to that one (confirmed: the contract's ruling,
+docs/api.md §3.1 and §15.9, commit cd3a12da). Closing with `removed` on
+deletion, a spec change kept to `members:admin`, and an isolation closing
+the waiting placements as a removal does are the lead's rulings on review
+A1796, whose contract text follows on the contract branch (confirmed;
+`removed` was an open reading before, as the contract names no reason).
+
+**Rejected alternatives:** a join line first, exchanged by hand, then a
+placement of the member: rejected by the owner's decision; the reason
+beyond "only the owner decides where their agent joins" is not
+recorded. A separate admit endpoint: rejected in the approved contract;
+why is not recorded, the hub's reading is that it would copy the join's
+checks a second time (inferred). Reusing `new_handle` with the profile's
+handle instead of a new column: its unique key per project would refuse
+the second placement of one profile, which the contract lets add an
+instance. Re-reading the profile under the project lock only: the
+deletion takes the profile's lock first, then the projects of the
+profile's active memberships and of its active admitting placements
+(`delete_profile`, then `placements.profile_deleted`), all chosen from
+what it reads at that moment. A placement being created in a project
+where the profile has neither, such as its first placement anywhere,
+gives the deletion no project to lock, so only the profile's lock
+serialises the two. Keeping the admission's
+recheck symmetric with a member's own join, whose exchange leaves
+`reports_to` alone: a join already handed out does not act on its
+creator's continuing authority, the placement's join does (the ruling
+on review A1826 above).
+
+## The runner's session read takes pause, dormancy and the episode from the placement's project
+
+**Id:** 17941eb5-af86-4341-b53f-e1ef9ef82b74
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hub PR A (#2088, card tsk-yzj829xdmqyy), commits b81a9deb and 391f2b6f; the reviewer's proposal in that pull request's review; the lead's ruling there to keep `detached_at IS NULL`; docs/api.md §15.8, §6.17; `placements.py` `runner_sessions`
+**See:** instances.md#an-instances-projects-are-rows-of-instance_attachment-pause-dormancy-the-commitment-and-the-handover-numbers-live-on-the-row — 8d07cc82-f612-4e24-aebe-72683131671b — as of 2026-11-21
+**See:** events.md#an-episode-of-not-listening-lives-on-the-session-checked-by-a-minute-worker — 0cbc3037-5834-4a6d-b518-ae640fb47046 — as of 2026-11-21
+**Revisit when:** hub PR D writes `detached_at`: a detached instance's placement then stops showing pause and dormancy but may still show an episode from its position row, and PR D must decide whether it should
+
+`runner_sessions` (§15.8) reads the instance's pause and dormancy from its live attachment for
+the placement's (credential, membership), and the not-listening episode from the open session's
+`agent_session_project` row in the placement's membership. It reads the episode in the same
+statement that finds the open session, as an outer join limited to the page's memberships, so
+the page still costs a fixed number of statements. The keys (credential_id, membership_id) on
+`instance_attachment` and (session_id, membership_id) on `agent_session_project` keep the join
+from multiplying values. "Live" here means `detached_at IS NULL` only: a revoked credential's
+pause and dormancy still show, as the credential row's did under #2079.
+
+**Reason:** #2088 moved pause, dormancy and the episode off `credential` and `agent_session`
+(§6.17). #2079's reads of the credential columns broke #2088's PostgreSQL shards, and once an
+instance can be in several projects these values exist only per project.
+
+**Rejected alternatives:**
+- Keep reading the `credential` columns: they are gone with #2088.
+- A third statement for the position rows: it would work, but the open-session statement
+  already has the session ids, and the join adds no statement.
+- `attached_now()`, which also drops revoked credentials: it would change #2079's answer for a
+  revoked instance whose placement still closes. The lead ruled to keep `detached_at IS NULL`.
+
+## A runner that reports `seq` 2^31-1 stops its placement's reports, accepted
+
+**Id:** a6584a9d-47cb-472a-abfc-6f0f0f988f57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N7 of a review: "a context entry is enough"); `routes/runner.py` `Status.seq`, `placements.report`
+**Revisit when:** a placement's reports can come from anyone but its own runner, the hub adds a way to reset `reported_seq` (a new generation, a re-pair, the owner), `seq` gets a wider bound, or a runner is seen stuck this way
+
+A status report (`POST /runner/placements/{id}/status`, §15.8) is a
+compare-and-set on `seq`: `placements.report` applies it only when `seq`
+is above the stored `reported_seq`, and answers anything else as a
+resend that changes nothing. `seq` may be at most 2^31-1 (`Status.seq`).
+A runner that sends that value once has spent the counter: every later
+report of that placement is a no-op, its state stays frozen as of that
+report. Nothing resets `reported_seq` and the counter does not wrap.
+
+**Reason:** only the runner bound to the placement can report on it, so
+a runner that does this (a bug, or on purpose) harms only its own
+placements; the owner sees the placement stop moving and can close it and
+place again, which starts a new placement at `reported_seq` 0
+(`placements.create`). A placement frozen while it runs takes two
+`DELETE`s: the first only sets it closing (`close_uniform`), and the
+runner's report of its end is then a no-op too; the second closes it at
+once, the escape for a runner that never reports (§15.5). The lead accepted that risk and decided an entry
+here is enough.
+
+**Rejected alternatives:** unknown; a reset path and a wraparound are
+named only as what the hub does not have, not as options weighed.

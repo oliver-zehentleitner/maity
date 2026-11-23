@@ -23,10 +23,9 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import clock, instance_counts, public_projects
 from maity_hub import tables as t
-from maity_hub.seen import SEEN_EVERY
+from maity_hub.seen import ONLINE, SEEN_EVERY
 
 TTL = timedelta(minutes=5)
-ONLINE = timedelta(seconds=120)
 WEEK = timedelta(days=7)
 
 _lock = threading.Lock()
@@ -55,27 +54,30 @@ def compute(conn: Connection) -> dict[str, Any]:
     ).scalar_one()
     # Instances behind the agents and the online agents, by the one counting rule
     # (instance_counts.sql_counted / sql_online, the member views' rule over the rows).
-    live = t.credential.join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+    # One row per project an instance is in: DISTINCT credentials, so an instance in two
+    # projects counts once (hub/context/instances.md 2da029d4).
+    live = instance_counts.sql_from()
     counted = instance_counts.sql_counted()
     awake = instance_counts.sql_online(now, ONLINE)
+    one_each = func.count(func.distinct(t.credential.c.id))
     agents_online = conn.execute(
         select(func.count(func.distinct(t.membership.c.agent_id)))
         .select_from(live)
         .where(counted, awake)
     ).scalar_one()
-    instances = conn.execute(select(func.count()).select_from(live).where(counted)).scalar_one()
+    instances = conn.execute(select(one_each).select_from(live).where(counted)).scalar_one()
     instances_online = conn.execute(
-        select(func.count()).select_from(live).where(counted, awake)
+        select(one_each).select_from(live).where(counted, awake)
     ).scalar_one()
-    pages = [
-        project
-        for project in conn.execute(
-            select(t.project).where(
-                t.project.c.public_page == "on", t.project.c.state != "archived"
+    p = t.project.c
+    pages = public_projects.served_of(
+        conn,
+        conn.execute(
+            select(p.id, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+                p.public_page == "on", p.state != "archived"
             )
-        )
-        if public_projects.served(conn, project)
-    ]
+        ).all(),
+    )
     done = conn.execute(
         select(func.count()).where(t.card.c.status == "done", t.card.c.closed_at >= now - WEEK)
     ).scalar_one()

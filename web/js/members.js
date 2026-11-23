@@ -49,6 +49,7 @@ window.Maity = window.Maity || {};
     "bridge:role": () => M.t("bridges.refused.proxy"),
     "bridge:already": () => M.t("bridges.refused.already"),
     "purpose:invalid": () => M.t("bridges.refused.purpose"),
+    "purpose:plain_line": () => M.t("bridges.refused.purpose_plain_line"),
     // §6.2 "An expert's fields".
     "expert_for:expert_only": () => M.t("members.expert.refused.expert_only"),
     "expert_sources:expert_only": () => M.t("members.expert.refused.expert_only"),
@@ -224,7 +225,9 @@ window.Maity = window.Maity || {};
     }
 
     // One's own agent, as a human: its rulebook, credentials and picture are theirs (§6.18, §6.10).
-    const ownAgent = (m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
+    // An outsider (docs/api.md §2.3) sets nothing here, not even for an agent of their own: the
+    // project's own views of it are read-only for them.
+    const ownAgent = (m) => M.trust.writes(ctx) && m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
 
     // An agent's credentials, read when its row first opens and kept across
     // redraws; a failed read costs that row its list, not the view.
@@ -589,11 +592,6 @@ window.Maity = window.Maity || {};
     // now (trust member, member_agents on, the membership within the member
     // limits), to a role a member join could give, a project role on such a base
     // included. Otherwise, and for its areas always, the line says who sets them.
-    const projectRoles = [];
-    let rolesAsked = false;
-    let rolesKnown = false;
-    // Every picker drawn before the roles arrive takes them in when they do.
-    const roleFills = new Set();
     function rolePart(m, memberPath) {
       if (!ownAgent(m) || m.removed_at || ctx.canAdmin) return null;
       const id = "owner-role-" + m.id;
@@ -607,24 +605,16 @@ window.Maity = window.Maity || {};
           h("p", { class: "muted owner-role-fixed" }, M.t("members.owner_role.fixed", { role: M.trust.roleLabel(m.role) })), areas);
       }
       const pick = keyed("owner-role:" + m.id, h("select", { id }));
+      // The project's own roles on a base a member join may give (§2.3), read once per view.
+      const memberBase = (list) => list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base));
+      let own = memberBase(M.trust.projectRoles(ctx, (list) => { own = memberBase(list); if (own.length) fill(); }));
       const fill = () => {
-        const offered = M.trust.MEMBER_ROLES.concat(projectRoles.filter((r) => !M.trust.MEMBER_ROLES.includes(r)));
+        const offered = M.trust.MEMBER_ROLES.concat(own.map((x) => x.name));
         if (!offered.includes(m.role)) offered.push(m.role);
-        M.trust.fillRoles(pick, offered, pick.value || m.role, m.role);
+        M.trust.fillRoles(pick, offered, pick.value || m.role, m.role, own);
       };
       const help = M.trust.roleHint(pick);
       fill();
-      // The project's own roles on a base a member join may give (§2.3), read once.
-      if (!rolesKnown) roleFills.add(fill);
-      if (!rolesAsked) {
-        rolesAsked = true;
-        const settle = () => { rolesKnown = true; const waiting = [...roleFills]; roleFills.clear(); return waiting; };
-        M.api.get(ctx.base + "/roles").then((r) => {
-          ((r && r.custom) || []).filter((x) => M.trust.MEMBER_ROLES.includes(x.base)).forEach((x) => projectRoles.push(x.name));
-          const waiting = settle();
-          if (projectRoles.length) waiting.forEach((f) => f());
-        }).catch(settle);
-      }
       const save = h("button", { type: "submit", class: "small" }, M.t("members.owner_role.save"));
       return h("form", {
         class: "inline-form owner-role",
@@ -734,18 +724,21 @@ window.Maity = window.Maity || {};
   // the list with that member's Manage row open, for an admin.
   // The Team page's tabs (context/members.md f0ca2279): Members, this
   // list, and Organisation (js/org.js), each at its own project view.
-  M.teamTabs = (ctx, chosen) => M.tabBar("team-tabs", M.t("team.tabs.label"),
-    [["team", ctx.link("team"), M.t("team.tab.members")], ["organisation", ctx.link("organisation"), M.t("team.tab.organisation")]], chosen);
+  // An outsider (docs/api.md §2.3) has Members alone: Organisation is no view of theirs, and one
+  // tab is no row of tabs.
+  M.teamTabs = (ctx, chosen) => (M.trust.outsider(ctx) ? null : M.tabBar("team-tabs", M.t("team.tabs.label"),
+    [["team", ctx.link("team"), M.t("team.tab.members")], ["organisation", ctx.link("organisation"), M.t("team.tab.organisation")]], chosen));
 
   // The Team page's head (js/page-head.js, tsk-vkyp71qp95n9), as the Agents page's: the heading,
   // Invite user and Join an agent at the right end, the tabs under them. Join an agent is the same
-  // menu as there, its panels opening here. A guest brings no agent (§3.1). Returns the nodes.
+  // button as there, its panel opening here. A guest brings no agent (§3.1). Returns the nodes.
   M.teamHead = (ctx, chosen) => {
     const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
-    const { memberAdds, mayAdd } = M.bringing(ctx);
-    const menu = ctx.me.kind === "human" && mayAdd ? M.joinMenu(ctx, { member: memberAdds }) : null;
-    return [M.pageHead({ title: M.t("members.title"), actions: [inviteUser, menu ? menu.el : null], tabs: M.teamTabs(ctx, chosen) }), menu ? menu.slot : null];
+    // An outsider brings no agent into a project they are no member of.
+    const { memberAdds, mayAdd } = M.trust.writes(ctx) ? M.bringing(ctx) : { memberAdds: null, mayAdd: false };
+    const joining = ctx.me.kind === "human" && mayAdd ? M.joinButton(ctx, { member: memberAdds }) : null;
+    return [M.pageHead({ title: M.t("members.title"), actions: [inviteUser, joining ? joining.el : null], tabs: M.teamTabs(ctx, chosen) }), joining ? joining.slot : null];
   };
 
   M.views.members = async function (ctx, root, args) {
@@ -851,12 +844,14 @@ window.Maity = window.Maity || {};
       const role = keyed("role:" + m.id, h("select", { id: id("role") }));
       // The role proxy goes with trust admin only (proxy_needs_admin): with any
       // other trust it is not offered, and a proxy whose trust changes becomes a coder.
+      // The project's own roles follow the built-in ones, on any base (§2.3).
+      let own = M.trust.projectRoles(ctx, (list) => { own = list; fillRoles(); });
       const fillRoles = () => {
         const wanted = role.value || (draft.role !== undefined ? draft.role : m.role);
         const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
-        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk);
+        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk).concat(own.map((x) => x.name));
         if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
-        M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder");
+        M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder", own);
       };
       const roleHelp = M.trust.roleHint(role);
       fillRoles();
@@ -956,7 +951,8 @@ window.Maity = window.Maity || {};
     // A chat per entry: one's own agent's direct chat, anyone else a group
     // chat with them chosen (§9.2).
     function chatLink(m) {
-      if (m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human") return null;
+      // An outsider (docs/api.md §2.3) has no chat in the project.
+      if (m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" || !M.trust.writes(ctx)) return null;
       // A group chat as the Chat list offers one (js/chat.js): not in a closed
       // project, not for a human guest (§2.3, §9.2).
       const groupOk = groupsServed && !M.trust.guest(ctx) && ctx.project.state !== "archived";
@@ -994,13 +990,15 @@ window.Maity = window.Maity || {};
 
     function table(kind, list, columns) {
       const headingId = "members-" + kind;
+      // An outsider has no action on a member (§2.3): no Actions column, rather than an empty one.
+      const acts = M.trust.writes(ctx);
       return [h("h3", { id: headingId }, kind === "human" ? M.t("members.humans", { count: list.length }) : M.t("members.agents", { count: list.length })),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
               h("th", { scope: "col", role: "columnheader" }, M.t("members.col.name")),
               columns.map((c) => h("th", { scope: "col", role: "columnheader" }, c.title)),
-              h("th", { scope: "col", role: "columnheader" }, M.t("members.col.actions")))),
+              acts ? h("th", { scope: "col", role: "columnheader" }, M.t("members.col.actions")) : null)),
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
@@ -1011,7 +1009,7 @@ window.Maity = window.Maity || {};
                   if (c.presence) presenceCells.set(m.id, td);
                   return td;
                 }),
-                h("td", { class: "member-actions", "data-label": M.t("members.col.actions"), role: "cell" }, chatLink(m),
+                !acts ? null : h("td", { class: "member-actions", "data-label": M.t("members.col.actions"), role: "cell" }, chatLink(m),
                   !ctx.canAdmin && !P.ownAgent(m) ? null : keyed("manage:" + m.id, h("button", {
                     type: "button",
                     class: "small",
@@ -1031,11 +1029,12 @@ window.Maity = window.Maity || {};
     // owns, without the humans; remembered per viewer in this browser.
     const mineKey = "maity.members.mine." + ctx.me.id;
     let mineOnly = false;
-    if (ctx.me.kind === "human") {
+    // An outsider's own agents are no part of this filter: it keeps what they manage here.
+    if (ctx.me.kind === "human" && M.trust.writes(ctx)) {
       try { mineOnly = window.localStorage.getItem(mineKey) === "1"; } catch (err) { mineOnly = false; }
     }
     function mineFilter() {
-      if (ctx.me.kind !== "human") return null;
+      if (ctx.me.kind !== "human" || !M.trust.writes(ctx)) return null;
       const box = keyed("mine", h("input", { type: "checkbox", id: "members-mine" }));
       box.checked = mineOnly;
       box.addEventListener("change", () => {
@@ -1061,8 +1060,11 @@ window.Maity = window.Maity || {};
       const ktw = { title: M.t("members.col.ktw"), cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
       const fresh = h("div");
-      append(fresh, mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
-        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
+      // An outsider reads no presence and no pause (§2.3, OUTSIDE_MEMBER_KEYS): no column for either.
+      const seen = M.trust.outsider(ctx) ? [] : [presence];
+      const pauses = M.trust.outsider(ctx) ? [] : [paused];
+      append(fresh, mineFilter(), mineOnly ? null : table("human", humans, [role].concat(seen, [joined])),
+        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner].concat(seen, [joined], pauses, hasKtw ? [ktw] : []))
           : [h("h3", { id: "members-agent" }, M.t("members.agents", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
       M.dom.keepImages(box, fresh);
       append(clear(box), Array.from(fresh.childNodes));
@@ -1077,7 +1079,8 @@ window.Maity = window.Maity || {};
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,
       // A guest brings no agent (§3.1): no way there said to them.
-      ownHere || (ctx.me.kind === "human" && !M.trust.guest(ctx))
+      // Nor an outsider, who joins no agent to a project they are no member of.
+      M.trust.writes(ctx) && (ownHere || (ctx.me.kind === "human" && !M.trust.guest(ctx)))
         ? [" ", h("a", { href: ctx.link("agents") }, ownHere ? M.t("members.agents_link.own") : M.t("members.agents_link.add"))] : null),
       status.el, box);
     draw();
@@ -1091,6 +1094,8 @@ window.Maity = window.Maity || {};
       if (wantedHead()) window.setTimeout(() => { if (first()) first().focus(); }, 0);
       else append(status.el, h("span", null, M.t("members.no_such", { id: wanted })));
     }
+    // Kept for an outsider too: they read no event feed (§2.3), so this read is how the list learns
+    // of a member who joined or left; their rows have no presence cell to update.
     ctx.every(PRESENCE_MS, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;

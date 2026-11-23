@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, or_, select, update
+from pydantic import AwareDatetime, TypeAdapter, ValidationError
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import allowed_projects, availability, avatars, clock, events, mentions, namespace
@@ -32,7 +34,10 @@ from maity_hub.runners import attached_project_ids, human_actor, live_credential
 from maity_hub.runners import audience as runner_audience
 from maity_hub.views import principal_id, ts
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 MODES = ("interactive", "supervised")
 STATES = (
     "pending",
@@ -57,6 +62,11 @@ REASONS: dict[str, tuple[str, ...]] = {
     "join_failed": ("failed",),
     "crash_loop": ("failed",),
     "hung": ("exited", "failed"),  # §15.14: the runner ended a run that produced nothing
+    # §15.14: the harness's own exits as far as its adapter recognises them
+    "network": ("exited",),
+    "context_full": ("exited", "failed"),
+    "auth": ("failed",),
+    "harness_config": ("failed",),
     "quota": ("rate_limited", "exited", "failed"),
     "agent_credential_revoked": ("failed",),
     "oom_killed": ("failed", "exited"),
@@ -64,6 +74,8 @@ REASONS: dict[str, tuple[str, ...]] = {
     "image_pull": ("failed", "exited"),
     "stopped_by_hub": ("stopped",),
     "adopted": ("running",),
+    # §15.16: a session an older `maity` started, ended at its idle point and resumed
+    "updated": ("exited",),
     "orphaned": ("stopped",),
 }
 # `join_failed`'s detail is the hub's own error code (§15.7): any code in this form, matched
@@ -90,21 +102,58 @@ DETAILS: dict[str, tuple[str, str]] = {
     "workspace_unrecorded": ("reason", "workspace_in_use"),
     "locked_by_process": ("reason", "workspace_in_use"),
     "not_a_plain_clone": ("reason", "workspace_in_use"),
+    "workspace_in_repository": ("reason", "workspace_in_use"),
+    "workspace_not_bare": ("reason", "workspace_in_use"),
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
+    # Started without the Keep the Why skill the placement names (§15.5): it could not be fetched.
+    "keep_the_why_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),
     "idle": ("reason", "hung"),
     "tool": ("reason", "hung"),
+    # The runner's watch (§15.14): a session that stayed not listening, or never joined.
+    "not_listening": ("reason", "hung"),
+    "never_joined": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "effort_unsupported": ("reason", "harness_refused"),
+    "target_unknown": ("reason", "harness_refused"),
+    "codex_host_too_old": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
 }
+# A finding (§15.7): what the runner's watch concluded, and the signals it saw. Closed lists.
+FINDING_CAUSES = (
+    "harness_exited",
+    "not_waiting",
+    "wait_deaf",
+    "never_joined",
+    "usage_limit",
+    "login_invalid",
+    "pickup_refused",
+    "unknown",
+)
+PANE_CODES = ("usage_limit", "login_prompt")
+SIGNAL_VALUES: dict[str, tuple[str, ...]] = {
+    "process": ("alive", "gone"),
+    "below": ("waiting", "working", "idle", "unknown"),
+    "login": ("ok", "needed", "unknown"),
+}
+SIGNAL_KEYS = ("process", "exit_code", "below", "pane_match", "login", "pickup_code")
+PANE_MATCH_MAX = 8
+# The runner's own log lines in a finding (§15.7): at most 200, each 1 to 1024 bytes of
+# printable ASCII, 24 KiB together.
+LOG_LINES_MAX = 200
+LOG_LINE_BYTES = 1024
+LOG_TOTAL_BYTES = 24 * 1024
+TIMESTAMP: TypeAdapter[datetime] = TypeAdapter(AwareDatetime)
+# The form §1.1 gives every timestamp, `2026-10-21T13:41:10Z`; ASCII digits only, `fullmatch`.
+WIRE_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 RUNNING_STATES = ("starting", "running", "stopping")
 # Closing at once tells a running agent, except where it never ran or cannot listen:
 # a refused or withdrawn proposal, and a removed membership (§15.10).
 STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed", "runner_revoked")
 CLOSED_LIST_DAYS = 30
-SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
+SPEC_FIELDS = ("harness", "mode", "model", "effort", "target", "stop_grace_seconds")
 # The clone after a stop or a close (§15.5).
 RETENTIONS = ("immediate", "3h", "24h", "7d")
 WORKSPACE_STATES = ("retained", "removed", "kept")
@@ -149,12 +198,25 @@ def is_current(placement: Any) -> bool:
     return report is not None and report.get("observed_generation") == placement.generation
 
 
+def agent_of(conn: Connection, placement: Any) -> str | None:
+    """The profile a placement runs: its membership's, or the one it admits that was not a
+    member when placed (§15.6); None for a profile still to be created."""
+    if placement.membership_id is None:
+        admitted: str | None = placement.agent_id
+        return admitted
+    found: str = conn.execute(
+        select(t.membership.c.agent_id).where(t.membership.c.id == placement.membership_id)
+    ).scalar_one()
+    return found
+
+
 def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
-    if placement.membership_id is not None:
+    if placement.membership_id is not None or placement.agent_id is not None:
+        profile = t.agent_profile.c
         found = conn.execute(
-            select(t.agent_profile.c.id, t.agent_profile.c.handle, t.agent_profile.c.display_name)
-            .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-            .where(t.membership.c.id == placement.membership_id)
+            select(profile.id, profile.handle, profile.display_name).where(
+                profile.id == agent_of(conn, placement)
+            )
         ).one()
         return {
             "id": found.id,
@@ -170,6 +232,18 @@ def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
         "display_name": (placement.new_profile or {}).get("display_name"),
         "avatar_url": None,
     }
+
+
+def _agent_ref(conn: Connection, placement: Any) -> tuple[str | None, str]:
+    """The agent's id and handle alone, as its runner reads them (§15.8): the runner gets no
+    name, display name or picture, so none is read on a route every runner polls."""
+    if placement.membership_id is not None or placement.agent_id is not None:
+        profile = t.agent_profile.c
+        found = conn.execute(
+            select(profile.id, profile.handle).where(profile.id == agent_of(conn, placement))
+        ).one()
+        return found.id, found.handle
+    return None, placement.new_handle
 
 
 def _name(conn: Connection, placement: Any, handle: str) -> str:
@@ -193,13 +267,12 @@ def profile_owner_of(conn: Connection, values: dict[str, Any]) -> str:
 
 def profile_owner(conn: Connection, placement: Any) -> str:
     """The human who owns the agent profile; for a profile still to be made, its creator."""
-    if placement.membership_id is None:
+    agent_id = agent_of(conn, placement)
+    if agent_id is None:
         creator: str = placement.created_by
         return creator
     owner: str = conn.execute(
-        select(t.agent_profile.c.owner_id)
-        .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-        .where(t.membership.c.id == placement.membership_id)
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar_one()
     return owner
 
@@ -230,13 +303,32 @@ def _continues(conn: Connection, placement: Any) -> bool:
     )
 
 
+def instance_of(conn: Connection, credential_id: str | None) -> str | None:
+    """The instance a placement runs (§15.5): its credential's id, `null` before the first
+    pickup's exchange."""
+    if credential_id is None:
+        return None
+    found: str | None = conn.execute(
+        select(t.credential.c.instance).where(t.credential.c.id == credential_id)
+    ).scalar_one_or_none()
+    return found
+
+
 def _principal(conn: Connection, membership_id: int | None) -> str | None:
     return None if membership_id is None else principal_id(conn, membership_id)
 
 
-def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) -> dict[str, Any]:
+def fresh_session(placement: Any) -> bool:
+    """Whether the current generation is a reset's (§15.6): it starts on a fresh session."""
+    return bool(placement.fresh_session_generation == placement.generation)
+
+
+def view(
+    conn: Connection, placement: Any, *, viewer_id: str, briefing: bool, logs: bool = False
+) -> dict[str, Any]:
     """The placement as humans and agents read it (§15.5). `viewer_id` decides the
-    runner owner's fields; `briefing` whether a profile still to be made shows it."""
+    runner owner's fields; `briefing` whether a profile still to be made shows it; `logs`
+    whether a finding in `reported` keeps the runner's log lines (`reads_logs`, §15.7)."""
     runner = _runner(conn, placement.runner_id)
     project_name = namespace.name_of(conn, placement.project_id)
     approved = placement.approval_status
@@ -250,6 +342,7 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
+        "effort": placement.effort,
         "workspace": {
             "clone": placement.clone,
             "branch": placement.branch,
@@ -258,6 +351,7 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "desired": placement.desired,
         "generation": placement.generation,
         "rejoin": placement.rejoin,
+        "fresh_session": fresh_session(placement),
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
@@ -268,16 +362,19 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
             "pending_change": placement.pending_change,
         },
         "credential_id": placement.credential_id,
+        "instance": instance_of(conn, placement.credential_id),
         "reported_current": is_current(placement),
         "active": placement.active is True,
         "closed_at": ts(placement.closed_at),
         "closed_reason": placement.closed_reason,
         "created_by": placement.created_by,
         "proposed_by": _principal(conn, placement.proposed_by),
+        # Placed by someone but the runner's owner, before only its owner could (§15.5).
+        "foreign": profile_owner(conn, placement) != runner.owner_id,
         "created_at": ts(placement.created_at),
         "updated_by": placement.updated_by,
         "updated_at": ts(placement.updated_at),
-        "reported": _shown_report(placement.reported),
+        "reported": shown_report(placement.reported, logs=logs),
     }
     if placement.membership_id is None and briefing:
         found["briefing"] = (placement.new_profile or {}).get("briefing")
@@ -285,6 +382,23 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         found["session_hint"] = placement.session_hint
         found["logs_hint"] = f"maity runner logs {placement.id}"
     return found
+
+
+def owner_line(conn: Connection, placement: Any) -> dict[str, Any]:
+    """The runner owner's line (§15.3): where an agent runs on their runner and who placed
+    it, nothing else of the placement or its project, since the owner need not be a
+    member there. It is what the runner on the owner's machine holds already."""
+    runner = _runner(conn, placement.runner_id)
+    return {
+        "id": placement.id,
+        "project": namespace.name_of(conn, placement.project_id),
+        "agent": {"handle": _agent(conn, placement)["handle"]},
+        "instance": instance_of(conn, placement.credential_id),
+        "desired": placement.desired,
+        "state": (placement.reported or {}).get("state"),
+        "foreign": profile_owner(conn, placement) != runner.owner_id,
+        "created_at": ts(placement.created_at),
+    }
 
 
 def workspace_outcome(placement: Any) -> dict[str, Any] | None:
@@ -316,19 +430,171 @@ def held(placement: Any) -> bool:
     return stopped_or_closed(placement) and placement.workspace_state in HELD
 
 
-def _shown_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
+def shown_report(report: dict[str, Any] | None, *, logs: bool) -> dict[str, Any] | None:
+    """`reported` as a reader sees it; without `logs` a finding comes without its `log`."""
     if report is None:
         return None
-    return {k: v for k, v in report.items() if k not in ("seq", "session_hint")}
+    shown = {k: v for k, v in report.items() if k not in ("seq", "session_hint")}
+    if not logs and shown.get("finding") is not None:
+        shown["finding"] = without_log(shown["finding"])
+    return shown
 
 
-def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
+def without_log(finding: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A finding without the runner's log lines (§15.7): what every reader but three gets,
+    and what the `placement_reported` event carries."""
+    if finding is None:
+        return None
+    return {k: v for k, v in finding.items() if k != "log"}
+
+
+def reads_logs(
+    conn: Connection, placement: Any, *, principal_id: str, trust: str, bridged: bool
+) -> bool:
+    """Whether a caller reads a finding's `log` (§15.5, §15.7): the runner's owner, the agent
+    profile's owner, and the project's members with trust `owner` or `admin`; never through a
+    bridge (`Maity-For`), whoever it serves."""
+    if bridged:
+        return False
+    if trust in ("owner", "admin"):
+        return True
+    runner_owner = conn.execute(
+        select(t.runner.c.owner_id).where(t.runner.c.id == placement.runner_id)
+    ).scalar()
+    return principal_id in (runner_owner, profile_owner(conn, placement))
+
+
+# --- the agent's session, as the runner reads it (§15.8) ----------------------------------
+
+
+def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[str, Any] | None]:
+    """Per placement its `session` (§15.8): when the newest session of its credential
+    started, the episode of not listening that runs now, and whether the instance or the
+    membership is paused and the instance dormant; `null` for a foreign placement, whose agent
+    profile the runner's owner does not own. Computed at each read, for the whole page in a
+    fixed number of statements whatever its rows; nothing of it is stored or an event."""
+    if not placements:
+        return {}
+    runner_ids = {p.runner_id for p in placements}
+    runner_owners = dict(
+        conn.execute(
+            select(t.runner.c.id, t.runner.c.owner_id).where(t.runner.c.id.in_(runner_ids))
+        ).all()
+    )
+    membership_ids = {p.membership_id for p in placements if p.membership_id is not None}
+    members = {
+        m.id: m
+        for m in conn.execute(
+            select(
+                t.membership.c.id,
+                t.membership.c.paused_since,
+                t.membership.c.availability_state,
+                t.agent_profile.c.owner_id,
+            )
+            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+            .where(t.membership.c.id.in_(membership_ids))
+        )
+    }
+    credential_ids = {p.credential_id for p in placements if p.credential_id is not None}
+    # The instance's pause and dormancy in the placement's project: its attachment there
+    # (§6.17). Live attachments only; a revoked credential's attachment still counts, as the
+    # credential row's pause and dormancy did before an instance could sit in several projects.
+    a = t.instance_attachment.c
+    attachments = {
+        (r.credential_id, r.membership_id): r
+        for r in conn.execute(
+            select(a.credential_id, a.membership_id, a.paused_since, a.dormant_since).where(
+                a.credential_id.in_(credential_ids),
+                a.membership_id.in_(membership_ids),
+                a.detached_at.is_(None),
+            )
+        )
+    }
+    s = t.agent_session.c
+    started = dict(
+        conn.execute(
+            select(s.credential_id, func.max(s.started_at))
+            .where(s.credential_id.in_(credential_ids))
+            .group_by(s.credential_id)
+        ).all()
+    )
+    # The open session of each credential, and its not-listening episode per project of the
+    # page (`agent_session_project`, §5.3), in the same one read.
+    sp = t.agent_session_project.c
+    live: dict[str, Any] = {}
+    episodes: dict[tuple[str, int], datetime] = {}
+    for r in conn.execute(
+        select(s.credential_id, s.supervisor, sp.membership_id, sp.not_listening_since)
+        .outerjoin(
+            t.agent_session_project,
+            and_(sp.session_id == s.id, sp.membership_id.in_(membership_ids)),
+        )
+        .where(s.credential_id.in_(credential_ids), s.live.is_(True), s.ended_at.is_(None))
+    ):
+        live[r.credential_id] = r
+        if r.not_listening_since is not None:
+            episodes[(r.credential_id, r.membership_id)] = r.not_listening_since
+    # §5.3 asks whether *an* active placement names the credential, not the row shown: a
+    # closed placement's credential carried over to an active one (`carried_credential`).
+    named_active = set(
+        conn.execute(
+            select(t.placement.c.credential_id).where(
+                t.placement.c.credential_id.in_(credential_ids), t.placement.c.active.is_(True)
+            )
+        ).scalars()
+    )
+    found: dict[str, dict[str, Any] | None] = {}
+    for p in placements:
+        member = members.get(p.membership_id)
+        owner = member.owner_id if member is not None else p.created_by
+        if owner != runner_owners.get(p.runner_id):
+            found[p.id] = None  # a foreign placement: its agent is not the runner owner's
+            continue
+        attachment = attachments.get((p.credential_id, p.membership_id))
+        paused = (member is not None and member.paused_since is not None) or (
+            attachment is not None and attachment.paused_since is not None
+        )
+        session = live.get(p.credential_id)
+        since = episodes.get((p.credential_id, p.membership_id))
+        # §5.3's exclusions, also before the worker's next pass has ended the episode.
+        if (
+            paused
+            or (member is not None and (member.availability_state or "available") != "available")
+            or (
+                session is not None
+                and session.supervisor is not None
+                and p.credential_id in named_active
+            )
+        ):
+            since = None
+        found[p.id] = {
+            "started_at": clock.rfc3339_or_none(started.get(p.credential_id)),
+            "not_listening_since": clock.rfc3339_or_none(since),
+            "paused": paused,
+            "dormant": attachment is not None and attachment.dormant_since is not None,
+        }
+    return found
+
+
+def for_runner(
+    conn: Connection,
+    placement: Any,
+    skill: dict[str, str],
+    sessions: dict[str, dict[str, Any] | None] | None = None,
+) -> dict[str, Any]:
     """A placement as its runner reads it (§15.8): never the briefing, the approval or
-    who created it."""
+    who created it. `skill` is the Keep the Why skill the instance names
+    (ktw_skill.for_runner), given only for a project that uses Keep the Why. `sessions` is
+    `runner_sessions` of the page the placement is read in; without it the placement's own
+    is computed."""
+    if sessions is None or placement.id not in sessions:
+        sessions = runner_sessions(conn, [placement])
     project = conn.execute(
-        select(t.project.c.repository_url).where(t.project.c.id == placement.project_id)
+        select(t.project.c.repository_url, t.project.c.keep_the_why).where(
+            t.project.c.id == placement.project_id
+        )
     ).one()
-    agent = _agent(conn, placement)
+    agent_id, handle = _agent_ref(conn, placement)
     found: dict[str, Any] = {
         "id": placement.id,
         # The full name, the fixed id the runner keys the clone on, and the earlier full
@@ -339,14 +605,16 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
         "generation": placement.generation,
         "desired": placement.desired,
         "agent": {
-            "id": agent["id"],
-            "handle": agent["handle"],
+            "id": agent_id,
+            "handle": handle,
             "member": placement.membership_id is not None,
             "credential_expected": placement.credential_id is not None,
         },
+        "instance": instance_of(conn, placement.credential_id),  # §15.5
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
+        "effort": placement.effort,
         "target": placement.target,
         "workspace": {
             "clone": placement.clone,
@@ -354,9 +622,14 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
             "repository": project.repository_url,
         },
         "rejoin": placement.rejoin,
+        "fresh_session": fresh_session(placement),
+        # The skill the runner delivers to the session, fetched at this commit (§15.5).
+        "keep_the_why": dict(skill) if project.keep_the_why else None,
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
+        # What the hub knows of the agent behind it, for the runner's watch (§15.8, §15.14).
+        "session": sessions[placement.id],
         "seq": placement.reported_seq,
     }
     if stopped_or_closed(placement):
@@ -438,6 +711,7 @@ def request_summary(conn: Connection, placement_id: str | None) -> dict[str, Any
         "runner_name": runner.name,
         "harness": spec["harness"],
         "model": spec["model"],
+        "effort": spec["effort"],
         "mode": spec["mode"],
         "target": spec["target"],
         "isolation": _isolation(runner.capabilities, spec["target"]),
@@ -445,6 +719,16 @@ def request_summary(conn: Connection, placement_id: str | None) -> dict[str, Any
 
 
 def _isolation(capabilities: dict[str, Any] | None, target: str | None) -> dict[str, Any] | None:
+    """The chosen target's `isolation` without the OS `user`: the request is read by the
+    agent's owner and the project's admins, and the user is the runner owner's configuration
+    (§15.3, as `runners.without_user` keeps it from them in the runner view)."""
+    found = _target_isolation(capabilities, target)
+    return None if found is None else {k: v for k, v in found.items() if k != "user"}
+
+
+def _target_isolation(
+    capabilities: dict[str, Any] | None, target: str | None
+) -> dict[str, Any] | None:
     targets = (capabilities or {}).get("targets") or []
     if target is None and len(targets) == 1:
         isolation: dict[str, Any] | None = targets[0].get("isolation")
@@ -464,10 +748,12 @@ def view_spec(placement: Any) -> dict[str, Any]:
 # --- what a runner offers (§15.3) ----------------------------------------------------------
 
 
-def check_offered(
-    runner: Any, harness: str, mode: str, model: str | None, target: str | None
-) -> None:
-    """Refuse a spec outside what the runner last advertised; never a grant (§15.3)."""
+def check_offered(runner: Any, spec: dict[str, Any]) -> None:
+    """Refuse a spec outside what the runner last advertised; never a grant (§15.3). A
+    runner from before `efforts` advertises none, so a named effort is refused there, never
+    sent to a runner that would drop it (tsk-0fr0xzy2ce95)."""
+    harness, mode, model, target = spec["harness"], spec["mode"], spec["model"], spec["target"]
+    effort = spec.get("effort")
     capabilities = runner.capabilities or {}
     offers = [h for h in capabilities.get("harnesses") or [] if h.get("available")]
     names = {x.get("name") for x in capabilities.get("targets") or []}
@@ -476,14 +762,16 @@ def check_offered(
         offer is not None
         and mode in (offer.get("modes") or [])
         and (model is None or model in (offer.get("models") or []))
+        and (effort is None or effort in (offer.get("efforts") or []))
         and (target is None or (target in names and target in (offer.get("targets") or [])))
     )
     if not ok:
-        offered = [{k: h.get(k) for k in ("id", "modes", "models", "targets")} for h in offers]
+        keys = ("id", "modes", "models", "efforts", "targets")
+        offered = [{k: h.get(k) for k in keys} for h in offers]
         raise Refusal(
             409,
             "harness_not_offered",
-            "the runner does not offer this harness, mode, model or target",
+            "the runner does not offer this harness, mode, model, effort or target",
             {"offered": offered},
         )
 
@@ -641,7 +929,103 @@ def carried_credential(
     revoked = conn.execute(
         select(t.credential.c.revoked_at).where(t.credential.c.id == latest)
     ).scalar()
-    return None if revoked is not None else latest
+    if revoked is not None:
+        return None
+    # One placement per instance (§15.5): a credential another active placement runs stays
+    # with it, and this one joins as an instance of its own.
+    named = conn.execute(
+        select(t.placement.c.id).where(
+            t.placement.c.credential_id == latest, t.placement.c.active.is_(True)
+        )
+    ).first()
+    return None if named is not None else latest
+
+
+def free_clone(
+    conn: Connection, project_id: str, runner_id: str, membership_id: int | None, handle: str
+) -> str:
+    """The clone a placement gets when it names none (§15.5): the first of `<handle>`,
+    `<handle>-2`, `<handle>-3`, … on that runner that no active placement of the project
+    names, and that no closed placement of another membership names whose clone the runner
+    has not reported removed. A clone this membership left there is taken up again."""
+    rows = conn.execute(
+        select(
+            t.placement.c.clone,
+            t.placement.c.membership_id,
+            t.placement.c.active,
+            t.placement.c.workspace_state,
+        ).where(
+            t.placement.c.project_id == project_id,
+            t.placement.c.runner_id == runner_id,
+            or_(t.placement.c.clone == handle, t.placement.c.clone.like(f"{handle}-%")),
+        )
+    ).all()
+    taken = {
+        r.clone
+        for r in rows
+        if r.active is True
+        or (
+            (membership_id is None or r.membership_id != membership_id)
+            and r.workspace_state != "removed"
+        )
+    }
+    n = 1
+    while True:
+        clone = handle if n == 1 else f"{handle}-{n}"
+        if clone not in taken:
+            return clone
+        n += 1
+
+
+def instances_held(conn: Connection, membership_id: int) -> int:
+    """What a membership holds of its `max_instances` (§15.5, §6.31): its active instances,
+    joined by hand or by a pickup, plus its active placements that hold no live credential
+    yet (before their first pickup, or waiting to rejoin), which will each start one. The
+    count a placement's creation meets and the limits overview shows."""
+    from maity_hub import instances
+
+    live = (
+        select(t.credential.c.id)
+        .select_from(instances.credential_join())
+        .where(t.instance_attachment.c.membership_id == membership_id, instances.attached_now())
+    )
+    waiting = conn.execute(
+        select(func.count())
+        .select_from(t.placement)
+        .where(
+            t.placement.c.membership_id == membership_id,
+            t.placement.c.active.is_(True),
+            or_(t.placement.c.credential_id.is_(None), t.placement.c.credential_id.not_in(live)),
+        )
+    ).scalar_one()
+    return instances.active_count(conn, membership_id) + int(waiting)
+
+
+def refuse_over_instances(
+    conn: Connection, member: Any, *, adding: int, caller_id: str | None = None
+) -> None:
+    """`instance_quota` with the quota details (§6.31) when a placement would bring the
+    membership past `max_instances` in effect (§15.5), the same ceiling a join meets
+    (`instances.refuse_over_quota`): what it holds (`instances_held`) plus `adding`. The
+    ceiling's value is shown to the agent profile's owner; `caller_id` names the caller."""
+    from maity_hub import ceilings, instances
+
+    count = instances_held(conn, member.id)
+    project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    limit, owner = instances.max_instances_limit(conn, member, project)
+    if count + adding > limit.limit:
+        raise ApiError(
+            409,
+            "instance_quota",
+            "the agent runs as many instances as its rulebook allows",
+            ceilings.details(
+                limit,
+                count,
+                namespace.full_name(conn, project),
+                sees_ceiling=caller_id is not None and caller_id == owner,
+                member_id=member.agent_id,
+            ),
+        )
 
 
 def set_desired(
@@ -664,6 +1048,7 @@ def set_desired(
     if desired == "stopped" and tell_agent:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
+    availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -694,18 +1079,31 @@ def approve(conn: Connection, placement: Any, actor: Actor | None, by: str | Non
 
 
 def restart(
-    conn: Connection, placement: Any, rejoin: bool, actor: Actor | None, by: str | None
+    conn: Connection,
+    placement: Any,
+    rejoin: bool,
+    actor: Actor | None,
+    by: str | None,
+    *,
+    fresh_session: bool = False,
 ) -> Any:
+    """A restart; `fresh_session` makes it a reset (§15.6): the new generation starts the
+    harness on a fresh session instead of resuming the last one."""
+    generation = placement.generation + 1
+    fresh = {"fresh_session_generation": generation} if fresh_session else {}
     changed = _write(
         conn,
         placement.id,
         by,
-        generation=placement.generation + 1,
+        generation=generation,
         desired="running",
         rejoin=rejoin or placement.rejoin,
+        **fresh,
         **OUTCOME_CLEARED,
     )
     announce(conn, placement.id, "placement_updated", actor)
+    if placement.desired != "running":
+        availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -763,6 +1161,8 @@ def close_uniform(
     if stopping:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
+    if stopping:
+        availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -800,8 +1200,29 @@ def forget_boss(conn: Connection, project_id: str, membership_id: int) -> None:
             )
 
 
+def _membership_and_waiting(conn: Connection, membership_id: int) -> list[Any]:
+    """A membership's active placements, and the project's placements of its profile that
+    hold no credential yet, those made while it was not a member included (§6.2): a removal
+    or an isolation is not undone by a placement still waiting for its pickup."""
+    member = conn.execute(
+        select(t.membership.c.project_id, t.membership.c.agent_id).where(
+            t.membership.c.id == membership_id
+        )
+    ).one()
+    closing = active_rows(conn, t.placement.c.membership_id == membership_id)
+    if member.agent_id is not None:
+        closing += active_rows(
+            conn,
+            t.placement.c.project_id == member.project_id,
+            t.placement.c.agent_id == member.agent_id,
+            t.placement.c.membership_id.is_(None),
+            t.placement.c.credential_id.is_(None),
+        )
+    return closing
+
+
 def membership_removed(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
-    for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
+    for placement in _membership_and_waiting(conn, membership_id):
         withdraw_open_request(conn, placement, "the membership was removed", actor)
         close_now(conn, placement, "membership_removed", actor, by)
     # Its proposals go with it, a placement's and every other kind's (`proposals`): a go
@@ -822,8 +1243,9 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
 
 def membership_isolated(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
     """An isolated agent's placements close at once, as for a removal; lifting the
-    isolation does not reopen them (§6.2, §15.5)."""
-    for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
+    isolation does not reopen them (§6.2, §15.5). The project's placements of its profile
+    still waiting for a credential close with them."""
+    for placement in _membership_and_waiting(conn, membership_id):
         withdraw_open_request(conn, placement, "the agent was isolated", actor)
         close_now(conn, placement, "membership_isolated", actor, by)
 
@@ -842,6 +1264,21 @@ def creator_left(
     ):
         withdraw_open_request(conn, placement, "the proposer left the project", actor)
         close_now(conn, placement, "withdrawn", actor, by)
+
+
+def profile_deleted(
+    conn: Connection, agent_id: str, actor_in: Callable[[str], Actor], by: str
+) -> None:
+    """A deleted profile is never placed again (§6.3): the placements that admit it while
+    it is not a member yet close at once, as a removal (`removed`). The runner never ran an
+    agent for them; those of its memberships close with the memberships' removal."""
+    for placement in active_rows(
+        conn, t.placement.c.agent_id == agent_id, t.placement.c.membership_id.is_(None)
+    ):
+        events.lock_project(conn, placement.project_id)
+        actor = actor_in(placement.project_id)
+        withdraw_open_request(conn, placement, "the profile was deleted", actor)
+        close_now(conn, row(conn, placement.id), "removed", actor, by)
 
 
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:
@@ -894,10 +1331,16 @@ def revoke_unused_joins(conn: Connection, *where: Any) -> None:
     )
 
 
-def runner_credential_gone(conn: Connection, runner_id: str, by: str | None) -> None:
-    """A runner without a live credential reports nothing: what was closing closes now.
-    Its unused pickups end with the credential that fetched them (§15.9)."""
+def runner_credential_gone(
+    conn: Connection, runner_id: str, by: str | None, *, replaced: bool = False
+) -> None:
+    """The runner's credential was revoked (`revoke_runner_credential` calls this). Its
+    unused pickups end with the credential that fetched them (§15.9). A runner without a
+    live credential reports nothing: what was closing closes now. A re-pair (`replaced`)
+    leaves it closing, as its new credential takes over the same placements (§15.3)."""
     revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
+    if replaced:
+        return
     for placement in active_rows(
         conn, t.placement.c.runner_id == runner_id, t.placement.c.closing.isnot(None)
     ):
@@ -976,7 +1419,7 @@ def _still_allowed(conn: Connection, placement: Any) -> None:
         raise allowed_projects.not_allowed()  # nobody gives a go for what cannot start (§6.3)
     spec = {**view_spec(placement), **(placement.pending_change or {})}
     runner = _runner(conn, placement.runner_id)
-    check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])
+    check_offered(runner, spec)
     check_repository(runner, project.repository_url)
 
 
@@ -1000,6 +1443,184 @@ def clamp_since(since: datetime, previous: dict[str, Any] | None, now: datetime)
     if floor is not None and since < floor:
         return floor
     return min(since, now)
+
+
+def runner_quota(runner_id: str, quota: dict[str, Any]) -> dict[str, Any]:
+    """A `capacity` report's `quota` as the quota details of §6.31: the runner's own limit,
+    which only its owner lifts, in its configuration (`raise.path` null, `field` its key)."""
+    target = quota["scope"] == "target"
+    scope: dict[str, Any] = {"scope": quota["scope"], "runner": runner_id}
+    if target:
+        scope["target"] = quota["target"]
+    return {
+        "name": "max_agents",
+        "limit": quota["max"],
+        "count": quota["count"],
+        "max": quota["max"],
+        **scope,
+        "source": "runner",
+        "raise": {
+            "right": "runner_owner",
+            "path": None,
+            "field": "backend.ssh.hosts[].max_agents" if target else "limits.max_agents",
+        },
+    }
+
+
+def _timestamp(value: Any) -> bool:
+    """A timestamp in the wire form of §1.1: RFC 3339 in UTC, `Z`, second precision. The form
+    is checked before the parse, which alone also takes an epoch, an offset or no zone."""
+    if not isinstance(value, str) or not WIRE_TIMESTAMP.fullmatch(value):
+        return False
+    try:
+        TIMESTAMP.validate_python(value)
+    except ValidationError:
+        return False
+    return True
+
+
+def _exit_code(value: Any) -> bool:
+    return value is None or (
+        isinstance(value, int) and not isinstance(value, bool) and -(2**31) <= value < 2**31
+    )
+
+
+def check_finding(finding: Any) -> dict[str, str]:
+    """A report's `finding` against §15.7: the lists and the forms only, not whether the
+    signals fit the cause. Returns `details.fields` (dotted paths), empty when it holds. A key
+    the contract does not name is refused as any unknown field of a body is
+    (`extra_forbidden`)."""
+    if finding is None:
+        return {}
+    if not isinstance(finding, dict):
+        return {"finding": "invalid"}
+    errors: dict[str, str] = {}
+    for key in finding:
+        if key not in ("cause", "seen_at", "signals", "log"):
+            errors[f"finding.{key}"] = "extra_forbidden"
+    if "cause" not in finding:
+        errors["finding.cause"] = "required"
+    elif finding["cause"] not in FINDING_CAUSES:
+        errors["finding.cause"] = "unknown"
+    if "seen_at" not in finding:
+        errors["finding.seen_at"] = "required"
+    elif not _timestamp(finding["seen_at"]):
+        errors["finding.seen_at"] = "invalid"
+    if "signals" not in finding:
+        errors["finding.signals"] = "required"
+    else:
+        errors.update(_check_signals(finding["signals"]))
+    if "log" in finding:
+        errors.update(_check_log(finding["log"]))
+    return errors
+
+
+def _check_signals(signals: Any) -> dict[str, str]:
+    if not isinstance(signals, dict):
+        return {"finding.signals": "invalid"}
+    errors: dict[str, str] = {}
+    for key in signals:
+        if key not in SIGNAL_KEYS:
+            errors[f"finding.signals.{key}"] = "extra_forbidden"
+    for key in SIGNAL_KEYS:
+        path = f"finding.signals.{key}"
+        if key not in signals:
+            errors[path] = "required"
+            continue
+        value = signals[key]
+        if key in SIGNAL_VALUES:
+            if value not in SIGNAL_VALUES[key]:
+                errors[path] = "unknown"
+        elif key == "exit_code":
+            if not _exit_code(value):
+                errors[path] = "invalid"
+        elif key == "pickup_code":
+            if value is not None and not (
+                isinstance(value, str) and JOIN_DETAIL_CODE.fullmatch(value)
+            ):
+                errors[path] = "format"
+        elif not isinstance(value, list):  # pane_match
+            errors[path] = "invalid"
+        elif len(value) > PANE_MATCH_MAX:
+            errors[path] = "too_many"
+        elif any(code not in PANE_CODES for code in value):
+            errors[path] = "unknown"
+        elif len(set(value)) != len(value):
+            errors[path] = "duplicate"
+    return errors
+
+
+PRINTABLE = re.compile(r"[\x20-\x7e]+")
+
+
+def _check_log(log: Any) -> dict[str, str]:
+    """`finding.log` (§15.7): at most 200 entries of `{at, line}`, each line 1 to 1024 bytes
+    of printable ASCII, 24 KiB together."""
+    if not isinstance(log, list):
+        return {"finding.log": "invalid"}
+    if len(log) > LOG_LINES_MAX:
+        return {"finding.log": "too_many"}
+    errors: dict[str, str] = {}
+    total = 0
+    for index, entry in enumerate(log):
+        path = f"finding.log.{index}"
+        if not isinstance(entry, dict):
+            errors[path] = "invalid"
+            continue
+        for key in entry:
+            if key not in ("at", "line"):
+                errors[f"{path}.{key}"] = "extra_forbidden"
+        if "at" not in entry:
+            errors[f"{path}.at"] = "required"
+        elif not _timestamp(entry["at"]):
+            errors[f"{path}.at"] = "invalid"
+        line = entry.get("line")
+        if "line" not in entry:
+            errors[f"{path}.line"] = "required"
+        elif not isinstance(line, str):
+            errors[f"{path}.line"] = "invalid"
+        elif line == "":
+            errors[f"{path}.line"] = "empty"
+        elif not PRINTABLE.fullmatch(line):
+            errors[f"{path}.line"] = "format"
+        elif len(line) > LOG_LINE_BYTES:  # printable ASCII: one byte a character
+            errors[f"{path}.line"] = "too_long"
+        else:
+            total += len(line)
+    if total > LOG_TOTAL_BYTES:
+        errors["finding.log"] = "too_large"
+    return errors
+
+
+def stored_finding(finding: dict[str, Any] | None, now: datetime) -> dict[str, Any] | None:
+    """A validated finding (`routes.runner.check_finding`) as `reported` keeps it: as sent,
+    its times in the hub's form, a `seen_at` after hub time set to hub time (§15.7)."""
+    if finding is None:
+        return None
+    signals = finding["signals"]
+    stored: dict[str, Any] = {
+        "cause": finding["cause"],
+        "seen_at": clock.rfc3339(min(_parsed(finding["seen_at"]), now)),
+        "signals": {
+            "process": signals["process"],
+            "exit_code": signals["exit_code"],
+            "below": signals["below"],
+            "pane_match": list(signals["pane_match"]),
+            "login": signals["login"],
+            "pickup_code": signals["pickup_code"],
+        },
+    }
+    if "log" in finding:
+        stored["log"] = [
+            {"at": clock.rfc3339(_parsed(entry["at"])), "line": entry["line"]}
+            for entry in finding["log"]
+        ]
+    return stored
+
+
+def _parsed(value: str) -> datetime:
+    parsed: datetime = TIMESTAMP.validate_python(value)
+    return parsed
 
 
 def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor) -> Any:
@@ -1028,8 +1649,14 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         "deadline_at": _stamp(body.get("deadline_at")),
         "since": clock.rfc3339(clamp_since(body["since"], placement.reported, now)),
         "target": body["target"],
+        # What the runner found (§15.7), stored as sent; `null` when the report has none.
+        "finding": stored_finding(body.get("finding"), now),
         "reported_at": clock.rfc3339(now),
     }
+    if body.get("sessions") is not None:
+        fields["sessions"] = body["sessions"]
+    if body.get("quota") is not None:
+        fields["quota"] = runner_quota(placement.runner_id, body["quota"])
     values: dict[str, Any] = {"reported_seq": body["seq"]}
     if current:
         values["reported"] = fields
@@ -1054,6 +1681,8 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
                     "retry_at",
                 )
             },
+            # Never with its `log` (§15.7, §15.10): the event goes to every reader of events.
+            "finding": without_log(fields["finding"]),
         },
         actor=actor,
         subject=("placement", placement.id),
@@ -1209,7 +1838,11 @@ def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor:
     credential whose file was in it is revoked, unless another running placement names it;
     an active placement rejoins at its next start, in a new clone of the next epoch, and so
     does every other active placement that names the revoked credential (a stopped
-    successor that took it over would otherwise start on a dead credential)."""
+    successor that took it over would otherwise start on a dead credential). After a
+    revocation only the profile's owner may undo, a running placement is also stopped: its
+    rejoin waits for a start that `routes/placements._check_rejoin` lets through (§15.5).
+    The others never run here (`_named_elsewhere`)."""
+    waits = owner_only_revocation(conn, placement)
     values: dict[str, Any] = {
         **OUTCOME_CLEARED,
         "workspace_state": "removed",
@@ -1223,10 +1856,49 @@ def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor:
     conn.execute(update(t.placement).where(t.placement.c.id == placement.id).values(**values))
     if placement.credential_id is not None and not _named_elsewhere(conn, placement):
         _revoke_removed(conn, placement, actor)
-        for other in _rejoin_the_others(conn, placement):
+        for other in _rejoin_the_others(conn, placement):  # none of them runs
             announce(conn, other, "placement_updated", actor)
+    current = row(conn, placement.id)
+    if waits and current.active is True and current.desired == "running":
+        # The stop says it (`placement_updated`); the agent cannot read a stop any more.
+        return set_desired(conn, current, "stopped", actor, None, tell_agent=False)
     announce(conn, placement.id, "placement_updated", actor)
-    return row(conn, placement.id)
+    return current
+
+
+def owner_only_revocation(conn: Connection, placement: Any) -> bool:
+    """The credential the placement names is revoked, and only the agent profile's owner
+    may undo that revocation (`undone_by_anyone`)."""
+    if placement.credential_id is None:
+        return False
+    revoked = conn.execute(
+        select(
+            t.credential.c.revoked_at, t.credential.c.revoked_by, t.credential.c.revoked_reason
+        ).where(t.credential.c.id == placement.credential_id)
+    ).first()
+    if revoked is None or revoked.revoked_at is None:
+        return False
+    runner = conn.execute(
+        select(t.runner.c.owner_id).where(t.runner.c.id == placement.runner_id)
+    ).first()
+    return not undone_by_anyone(revoked, runner)
+
+
+def undone_by_anyone(revoked: Any, runner: Any) -> bool:
+    """Whether a revoked credential may be replaced by a rejoin of someone other than the
+    agent's owner (§15.6): only where no person chose to end that agent. The runner removed
+    the clone (`workspace_removed`, revoked by the hub itself), or the runner's owner revoked
+    the runner and its agents' credentials with it (`runner_revoked`, by that owner). A
+    revocation by a person through the member routes, a leak's or a suspension's is the
+    owner's to undo alone. The reason alone decides nothing: a person revoking writes it
+    freely (`auth.revocation.revoke`), so who revoked is checked with it."""
+    from maity_hub import runner_revoke  # it imports this module
+
+    if revoked.revoked_reason == "workspace_removed":
+        return revoked.revoked_by is None
+    if revoked.revoked_reason == runner_revoke.REASON:
+        return runner is not None and revoked.revoked_by == runner.owner_id
+    return False
 
 
 def _rejoin_the_others(conn: Connection, placement: Any) -> list[str]:
@@ -1250,7 +1922,12 @@ def _rejoin_the_others(conn: Connection, placement: Any) -> list[str]:
 
 
 def _named_elsewhere(conn: Connection, placement: Any) -> bool:
-    """Another running placement names the credential: its clone still holds the file."""
+    """Another running placement names the credential: its clone still holds the file.
+
+    One active placement per credential (`uq_placement_credential_id_active`, one placement
+    per instance) means it cannot find a match while the reported placement is itself
+    active; it stays as a defensive check there. It does find one for a closed placement
+    whose successor took the credential over and runs on it."""
     p = t.placement.c
     found = conn.execute(
         select(p.id).where(
@@ -1266,14 +1943,19 @@ def _named_elsewhere(conn: Connection, placement: Any) -> bool:
 def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
     """`revoked_reason: workspace_removed` (§10), told like any revocation (§15.10). The
     placement is not stopped by it: a start that came in meanwhile joins anew (`rejoin`)."""
-    from maity_hub.auth.leaks import revoke
+    from maity_hub.auth.revocation import revoke
 
     if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
         return
+    # Told in the project of the instance's attachment to the placement's membership (§6.17).
+    a = t.instance_attachment
     member = conn.execute(
         select(t.membership.c.project_id, t.membership.c.agent_id)
-        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
-        .where(t.credential.c.id == placement.credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(
+            a.c.credential_id == placement.credential_id,
+            a.c.membership_id == placement.membership_id,
+        )
     ).one()
     events.emit(
         conn,

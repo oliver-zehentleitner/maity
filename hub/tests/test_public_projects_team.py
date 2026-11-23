@@ -55,16 +55,17 @@ def test_every_member_is_named_with_a_link_to_their_page_whatever_their_profile(
 ) -> None:
     assert world.anna.patch("/me", {"public_profile": False}).status_code == 200
     text = shown(world.anyone)
-    assert "<h2>People</h2>" in text
+    assert "<h2>Team</h2>" in text
     for handle in ("anna", "ben", "maintainer"):
-        assert f'<li><a href="/{handle}">Human {handle}</a></li>' in text
+        assert f'<a class="mcard" href="/{handle}">' in text
+        assert f"<b>Human {handle}</b><small>@{handle}</small>" in text
 
 
 def test_an_agent_is_named_whatever_its_owner_s_profile_says(world: World) -> None:
     assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
     text = shown(world.anyone)
     agent = world.bot.get("/me").json()["member"]
-    assert f"<li>{agent['display_name']} ({agent['handle']})</li>" in text
+    assert f"<b>{agent['display_name']}</b><small>@{agent['handle']}</small>" in text
     assert "more agent" not in text
 
 
@@ -75,7 +76,7 @@ def test_several_agents_are_all_named_and_none_only_counted(
     second = flow.agent(pages(make_client), world.owner, "maity", role="reviewer")
     text = shown(world.anyone)
     for client in (world.bot, second):
-        assert f"({client.get('/me').json()['member']['handle']})</li>" in text
+        assert f"<small>@{client.get('/me').json()['member']['handle']}</small>" in text
     assert "more agent" not in text
     data = world.anyone.get(f"/api/v1/public/pages{PATH}").json()["data"]
     assert "other_agents" not in data and len(data["agents"]) == 2
@@ -96,11 +97,11 @@ def test_an_agent_that_joins_or_whose_profile_is_deleted_changes_the_page_at_onc
     world.owner.patch("/me", {"public_profile": True})
     joined = flow.agent(pages(make_client), world.owner, "maity", role="reviewer")
     handle = joined.get("/me").json()["member"]["handle"]
-    assert f"({handle})" in shown(world.anyone)
+    assert f"<small>@{handle}</small>" in shown(world.anyone)
     agent_id = joined.get("/me").json()["member"]["id"]
     deleted = world.owner.delete(f"/agents/{agent_id}?cascade=true")
     assert deleted.status_code in (200, 204), deleted.text
-    assert f"({handle})" not in shown(world.anyone)
+    assert f"<small>@{handle}</small>" not in shown(world.anyone)
 
 
 def test_under_interval_a_removal_is_at_once_and_a_new_entry_waits(
@@ -123,9 +124,11 @@ def test_under_interval_a_removal_is_at_once_and_a_new_entry_waits(
         pages(make_client, public_pages_render="interval"), world.owner, "maity", role="reviewer"
     )
     handle = joined.get("/me").json()["member"]["handle"]
-    assert f"({handle})" not in shown(world.anyone)  # a new entry waits for the run
+    assert f"<small>@{handle}</small>" not in shown(world.anyone)  # a new entry waits for the run
     public_pages.render_all(migrated, hub)
-    assert f"({handle})" in shown(world.anyone) and "Human anna" in shown(world.anyone)
+    assert f"<small>@{handle}</small>" in shown(world.anyone) and "Human anna" in shown(
+        world.anyone
+    )
     removed = world.owner.delete(f"/projects/maintainer/maity/members/{world.anna.id}")
     assert removed.status_code in (200, 204), removed.text
     assert "Human anna" not in shown(world.anyone)  # taken off at once, whatever the mode
@@ -134,11 +137,11 @@ def test_under_interval_a_removal_is_at_once_and_a_new_entry_waits(
 def test_an_agent_s_new_display_name_is_on_the_page_at_once(world: World) -> None:
     world.owner.patch("/me", {"public_profile": True})
     agent = world.bot.get("/me").json()["member"]
-    assert f"<li>{agent['display_name']} ({agent['handle']})</li>" in shown(world.anyone)
+    assert f"<b>{agent['display_name']}</b><small>@{agent['handle']}</small>" in shown(world.anyone)
     renamed = world.owner.patch(f"/agents/{agent['id']}", {"display_name": "Renamed Agent"})
     assert renamed.status_code == 200, renamed.text
     text = shown(world.anyone)
-    assert f"<li>Renamed Agent ({agent['handle']})</li>" in text
+    assert f"<b>Renamed Agent</b><small>@{agent['handle']}</small>" in text
     assert agent["display_name"] not in text
 
 
@@ -147,7 +150,7 @@ def test_an_agent_profile_under_a_hold_is_no_more_named_and_comes_back_with_the_
 ) -> None:
     world.owner.patch("/me", {"public_profile": True})
     agent = world.bot.get("/me").json()["member"]
-    assert f"({agent['handle']})" in shown(world.anyone)
+    assert f"<small>@{agent['handle']}</small>" in shown(world.anyone)
     made = world.anna.post(
         "/reports", {"target": {"type": "profile", "id": agent["id"]}, "reason": "spam"}
     )
@@ -155,9 +158,9 @@ def test_an_agent_profile_under_a_hold_is_no_more_named_and_comes_back_with_the_
     path = f"/admin/reports/{made.json()['id']}/resolve"
     assert world.owner.post(path, {"action": "hide"}).status_code == 200
     text = shown(world.anyone)
-    assert f"({agent['handle']})" not in text and "more agent" not in text
+    assert f"<small>@{agent['handle']}</small>" not in text and "more agent" not in text
     assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
-    assert f"({agent['handle']})" in shown(world.anyone)
+    assert f"<small>@{agent['handle']}</small>" in shown(world.anyone)
 
 
 def test_an_isolated_agent_is_neither_named_nor_counted_and_comes_back_when_it_is_lifted(
@@ -165,16 +168,17 @@ def test_an_isolated_agent_is_neither_named_nor_counted_and_comes_back_when_it_i
 ) -> None:
     world.owner.patch("/me", {"public_profile": True})
     agent = world.bot.get("/me").json()["member"]
-    assert f"({agent['handle']})" in shown(world.anyone)
+    assert f"<small>@{agent['handle']}</small>" in shown(world.anyone)
     path = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
     isolated = world.owner.post(path, {"reason": "it rewrote the release notes"})
     assert isolated.status_code == 200, isolated.text
     text = shown(world.anyone)
-    assert f"({agent['handle']})" not in text and "more agent" not in text
-    assert "<h2>Agents</h2>" not in text
+    assert f"<small>@{agent['handle']}</small>" not in text and "more agent" not in text
+    team = text.split('<section class="sec team-cards">')[1].split("</section>")[0]
+    assert "/agents/" not in team
     lifted = world.owner.delete(path)
     assert lifted.status_code == 200, lifted.text
-    assert f"({agent['handle']})" in shown(world.anyone)
+    assert f"<small>@{agent['handle']}</small>" in shown(world.anyone)
 
 
 def test_a_person_under_a_hold_or_a_suspension_leaves_the_project_page(world: World) -> None:

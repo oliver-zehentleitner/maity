@@ -439,7 +439,9 @@ place the hourly digest began with (messages.md,
 reach no open page, and pages opened before and after it would show different sets,
 so the request is refiled on every change instead: the answered request is always
 what its page showed, and an answer from a stale page is `request_not_open`. The cost
-is at most one withdrawal and one filing per human and hour. The records belong to
+is at most one withdrawal and one filing per human and hour; each filing is a new inbox
+item, mailed at once under the default `inbox` `immediate` and listed in the bell
+(`docs/api.md` §5.3, §18.1, §18.4). The records belong to
 the human who answered, since a new owner of the profile has seen nothing. A running
 episode also stays silenced by its own start, since a busy instance keeps calling and
 the owner already saw that episode. Eight review rounds each found a transition the
@@ -475,7 +477,7 @@ change; refiling on every change removes the gap between shown and recorded
 altogether. Refiling only when a listed last call changes, and rewriting a change of
 kind or `since` in place: fewer inbox items, but two kinds of change again, and a
 page opened before such a rewrite would differ from the one answered; the cost of
-refiling is at most one item per human and hour.
+refiling is at most one item per human and hour, with its mail and its bell entry.
 
 
 ## A sign-in is no notification: the Notifications page shows the current sessions instead

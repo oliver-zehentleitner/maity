@@ -16,18 +16,27 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import account_deletion, catalog, clock
+from maity_hub import account_deletion, catalog, clock, write_guard
 from maity_hub import tables as t
-from maity_hub.auth import email_links, passwords, second_factor, sessions, sign_in_settings
+from maity_hub.auth import (
+    email_links,
+    known_sources,
+    passwords,
+    second_factor,
+    sessions,
+    sign_in_settings,
+)
 from maity_hub.auth import password_resets as resets
 from maity_hub.config import Settings
 from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address, outbox
 from maity_hub.notifications import preferences, records
+from maity_hub.notifications.address import void_pending_address
 from maity_hub.routes import auth
 from maity_hub.routes.auth import Strict
 from maity_hub.routes.email_sign_in import _anonymous
+from maity_hub.text_language import text_language
 
 router = APIRouter(prefix="/auth/password-reset")
 LIMITS = resets.RequestLimits()
@@ -71,10 +80,12 @@ def request_reset(
 ) -> JSONResponse:
     _anonymous(request)
     hub, engine = settings_of(request), engine_of(request)
+    address.prepare(engine, hub.secret_key)  # the key of the address's counts, before reading it
     with engine.begin() as conn:
         _enabled(conn, hub)
+        keyed = known_sources.address_key(conn, body.address.strip().casefold())
     origin = origin_of(request)
-    wait, allowed = LIMITS.take(body.address, origin.address)
+    wait, allowed = LIMITS.take(keyed, origin.limit_key)
     if wait:
         raise rate_limited(wait)
     if allowed:
@@ -138,6 +149,10 @@ def deliver(
         ).scalar()
         if human_id is None:
             return
+        # The account's lock first, shared, as the link's `POST` takes it (`_live`): the mail
+        # has no session to take it, and a deletion of the account takes it exclusively before
+        # anything else, so the two run one after the other.
+        write_guard.share(conn, human_id)
         email_links.lock_human(conn, human_id)
         found = _eligible(conn, hub, human_id)
         # The address may have changed after the lookup without a lock.
@@ -150,7 +165,7 @@ def deliver(
         if issued is None:
             return
         token = resets.token(key, human_id, issued, human.password_generation, row.epoch)
-        language = preferences.text_language(conn, human_id)
+        language = text_language(conn, human_id)
         browser, system = sessions.describe(user_agent)
         words = catalog.section("password_reset", language)
         mail_only = (
@@ -186,6 +201,14 @@ def _live(conn: Connection, hub: Settings, token: str, *, lock: bool) -> tuple[A
     if payload is None:
         return None
     if lock:
+        # The account's lock first, shared, as every write of the human takes it: the
+        # deletion's confirmation takes it exclusively before any other (`write_guard`), so
+        # the two run one after the other. Then the factor's row before the human's, the
+        # order every second-factor check takes (`second_factor.check`, which `_code_right`
+        # calls later): without it a reset and a wrong code elsewhere could each hold the row
+        # the other waits for.
+        write_guard.share(conn, payload["h"])
+        second_factor.factor_of(conn, payload["h"], lock=True)
         email_links.lock_human(conn, payload["h"])  # issue, guesses and use, one at a time
     row = resets.live(conn, payload)
     human = conn.execute(select(t.human).where(t.human.c.id == payload["h"])).first()
@@ -216,7 +239,7 @@ def _factor(conn: Connection, hub: Settings, human_id: str) -> str | None:
 
 
 def _page_limit(request: Request) -> None:
-    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).address)  # shared with the login
+    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).limit_key)  # shared with the login
     if wait:
         raise rate_limited(wait)
 
@@ -300,7 +323,12 @@ def _code_right(
     if body.code is None and body.recovery_code is None:
         return False  # no guess: refused, neither compared nor counted
     used = second_factor.check(
-        conn, hub, human_id, code=body.code, recovery_code=body.recovery_code
+        conn,
+        hub,
+        human_id,
+        code=body.code,
+        recovery_code=body.recovery_code,
+        seen=(ip, browser, system),
     )
     if used is not None:
         return True
@@ -329,6 +357,6 @@ def _reset(
     resets.password_changed(conn, human_id)  # the generation moves, the open links die
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
     email_links.void_human(conn, human_id)
-    preferences.void_pending_address(conn, human_id)
+    void_pending_address(conn, human_id)
     account_deletion.withdraw(conn, human_id, ENDED_BY)
     records.write(conn, human_id, "password_reset", {"ip": ip, "browser": browser, "os": system})

@@ -815,7 +815,7 @@ def load_catalog(path):
 
 # Literals that read as words but stay as they are in every language: the strict-mode
 # directive, product names, the brand in a page title, keys as a browser names them.
-NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
+NOT_PROSE = {"use strict", " · Maity", "Codex", "Antigravity", "Hermes", "Kimi Code", "Cline", "Claude Code", "OpenCode",
              "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
              "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
              "badge ok", "reply primary", "nofollow ugc",
@@ -839,8 +839,17 @@ CODE_BEFORE = re.compile(
 TEXT_BEFORE = re.compile(
     r"""(?:\.textContent\s*=\s*|\btitle["']?\s*[:=]\s*|placeholder["']?\s*[:=]\s*|aria-label["']?\s*[:=]\s*|\blabel["']?\s*:\s*|alt["']?\s*:\s*
          |\bh\([^;\n]*(?:null|\}),\s*)$""", re.X)
-# A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`.
-CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|<<'|\s&&\s|\$\(""")
+# A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`, `||`,
+# `sudo` with an option or one of the commands the dialogs run, `sudo apt install` with three
+# or more package names and nothing else, `printf` with its quoted format, `mv` of a path.
+# Not a ` | ` or a word after `sudo`: "yes | no", "then | sudo " and "sudo is required" are
+# prose (web/context/rendering.md, "What counts as prose").
+CONFIG_OR_SHELL = re.compile(
+    r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|^mv\s+[~/]|<<'|\s(&&|\|\|)\s|\$\(
+        |^\{\s+sudo\s|^sudo\s+apt\s+install(\s+[a-z0-9][a-z0-9.+-]*){3,}$
+        |^sudo\s+(-[a-zA-Z]\s|(cp|ls|maity|mv|pipx|systemctl|tee|test)\s)|^printf\s'""",
+    re.X,
+)
 # A comment in a generated file with words in it: the person reads it, whatever the line is.
 WORDS_IN_COMMENT = re.compile(r"(?:^|\s)#\s+[A-Za-z]+\s+[A-Za-z]")
 HTML_NAMES = {"a", "button", "input", "select", "textarea", "form", "label", "summary", "details", "li", "ul", "ol",
@@ -1615,8 +1624,10 @@ def asks_first(code, at, src=None):
     head = code[:m.start()]
     named = re.search(r"\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*$", head)
     if named:
-        # The name M.stepUp.run is given must be this binding: the nearest declaration of that
-        # name in the blocks around the run, not another one of the same name (xyfr at #1547).
+        # The name M.stepUp.run is given must be this binding: the `const` or `let` of that name
+        # seen at the run (declaration_of: walking out from the block around the run, the first
+        # block that declares it; there the last before the run, else the first), not another one
+        # of the same name (xyfr at #1547).
         name = named.group(1)
         blocks = brace_blocks(code)
         return any(declaration_of(code, blocks, name, r.start()) == named.start(1)

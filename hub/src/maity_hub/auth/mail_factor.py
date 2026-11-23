@@ -25,8 +25,9 @@ from maity_hub.config import Settings
 from maity_hub.errors import ApiError, rate_limited
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import verified_row
 from maity_hub.ratelimit import Limiter
+from maity_hub.text_language import text_language
 
 LIFETIME = timedelta(minutes=15)  # a mail-factor session's life, and the link's and code's
 PER_SESSION = 3  # mails one session may be sent, the first included
@@ -58,8 +59,8 @@ def mail_ready(conn: Connection, hub: Settings) -> bool:
 
 def address_of(conn: Connection, human_id: str) -> Any:
     """The human's notification row when its address is verified, else None. Kept for
-    `second_factor`, which moves to `preferences.verified_row` after #1756."""
-    return preferences.verified_row(conn, human_id)
+    `second_factor`, which moves to `address.verified_row` after #1756."""
+    return verified_row(conn, human_id)
 
 
 def ever_had_address(conn: Connection, human_id: str) -> bool:
@@ -122,7 +123,7 @@ def send(
     key = _key(hub)
     if key is None or not mail_ready(conn, hub):
         raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
-    address = preferences.verified_row(conn, row.human_id)
+    address = verified_row(conn, row.human_id)
     if address is None:
         raise ApiError(409, "address_unverified", "the account has no verified address")
     now = clock.now()
@@ -154,7 +155,7 @@ def send(
         raise rate_limited(left)
     BY_HUMAN.hit(row.human_id)  # after the update: the loser of a race has sent nothing
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-    language = preferences.text_language(conn, row.human_id)
+    language = text_language(conn, row.human_id)
     link = (
         f"{hub.public_url.rstrip('/')}/sign-in/second-factor/email#{token}" if with_link else None
     )
@@ -171,7 +172,7 @@ def send(
     )
     outbox.enqueue(
         conn,
-        kind="sign_in",  # a late code is useless: over its budget it is dropped, not held
+        kind="second_factor",  # a late code is useless: over its budget it is dropped, not held
         to=address.address,
         human_id=row.human_id,
         subject=catalog.section("factor", language)["subject"],
@@ -230,7 +231,7 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
     """Mail the admin in session `row` the code that turns `email` on (§2.8.8, "Turning it on"):
     proof that a mail of this hub arrived, not just that the server took it."""
     key = _key(hub)
-    address = preferences.verified_row(conn, row.human_id)
+    address = verified_row(conn, row.human_id)
     if key is None or address is None:  # the caller refused both before it came here
         raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
     wait = BY_HUMAN.hit(row.human_id)
@@ -246,10 +247,10 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
             mail_sent_at=clock.now(),
         )
     )
-    words = catalog.section("factor", preferences.text_language(conn, row.human_id))
+    words = catalog.section("factor", text_language(conn, row.human_id))
     outbox.enqueue(
         conn,
-        kind="sign_in",
+        kind="second_factor",
         to=address.address,
         human_id=row.human_id,
         subject=words["confirm_subject"],
@@ -270,7 +271,7 @@ def check_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str, co
 def address_hint(conn: Connection, human_id: str) -> str | None:
     """The verified address as the second step may show it: its first character and its domain
     (§2.8.7). None without one."""
-    row = preferences.verified_row(conn, human_id)
+    row = verified_row(conn, human_id)
     if row is None:
         return None
     local, _, domain = str(row.address).rpartition("@")

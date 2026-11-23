@@ -45,19 +45,21 @@ the card cannot drift from what the reader computes.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of `released_at` (card "hub: released_at for the launch state, its probe hook and the rules text"), 2026-10-29; contract in `docs/api.md` §6.1
+**Source:** implementation of `released_at` (card "hub: released_at for the launch state, its probe hook and the rules text"), 2026-10-29; contract in `docs/api.md` §6.1; narrowed on 2026-11-17 by the owner's decision req-xt164pkgs20b to final versions
 **See:** https://github.com/oliver-zehentleitner/maity — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
+**See:** releases.md#a-release-cards-version-is-its-tags-version-semver-or-canonical-pep-440-only-a-final-version-marks-the-project-released — 1ef92894-f9b7-4b44-9fe8-6936fc010bd3 — as of 2026-11-17
 
 `probe.observe` sets `released_at` in the same transaction that stores a
-tag observation with `found: true`, when the tag is `v<version>` of any
-release card of the project, open, done or cancelled. Migration 0097
+tag observation with `found: true`, when the tag is `v<version>` of a
+release card of the project, open, done or cancelled, whose version is
+final (no pre-release part; since 2026-11-17, see 1ef92894). Migration 0097
 fills older projects from the stored tag observations. The cache keeps
 only the latest read of each ref, so the time it takes is when the tag
 was last seen, not when it was first found. No earlier time is recorded
 anywhere.
 
 **Reason:** the contract ties the mark to the first time the probe finds
-a release tag, whether or not the release card is done. A tag can be read
+a final release tag, whether or not the release card is done. A tag can be read
 by the release round, by `GET /probe?tag=` or after its card closed. Only
 the one place every read passes through sees all of them.
 
@@ -122,3 +124,51 @@ is ready, through the same steps as `PATCH` and report: a second copy of
 the §6.7 gate and of `releases.close` that can drift from the first, for a
 card the releaser closes after the checklist anyway. A shared `close_card`
 for all close paths stays with the G2 refactor card.
+
+## A release card's version is its tag's version, SemVer or canonical PEP 440; only a final version marks the project released
+
+**Id:** 1ef92894-f9b7-4b44-9fe8-6936fc010bd3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decision on card tsk-2t82evzkxwym, 2026-11-16; the owner's decision req-xt164pkgs20b (option o1), 2026-11-17; contract in `docs/api.md` §6.1 and §6.7
+**See:** releases.md#the-released-mark-is-set-where-the-probe-stores-a-found-tag-not-in-the-release-round — 953b2971-7942-42b1-a71a-7ff9c688213b — as of 2026-11-17
+
+A release card's `version` is the version its tag carries, without the `v`:
+SemVer as before, or PEP 440 in its canonical form with three numbers and
+an optional `a`, `b` or `rc` pre-release (`releases.valid_version`). The tag
+the probe looks for stays `v` + version as given. Versions are compared as
+text: `0.1.0-alpha.4` and `0.1.0a4` are two releases. Anything else is
+refused as `not_a_version`, the code renamed from `not_semver`, which no
+document or client named.
+
+Only a final version marks the project released (owner decision,
+req-xt164pkgs20b, 2026-11-17): `probe._mark_released` sets `released_at`
+only when the found tag is `v` + a version with no pre-release part
+(`releases.is_final`: no SemVer `-…`, no PEP 440 `a`, `b` or `rc`). An
+alpha, beta or rc tag is still found and shown on its card, but never sets
+the mark. Migration 0097, which already ran, is left as it was.
+
+**Reason:** the repository tags its releases PEP 440 (`v0.1.0a8`), so a
+SemVer-only card named a tag that never exists and the probe never found
+it. Taking the tag's own spelling keeps one string in pyproject, chart,
+tag, changelog and card, and changes none of the places that build the
+tag. The forge lookup is exact text, so only the canonical spelling is
+accepted. Once pre-release tags are found, the released mark must not
+follow them: it turns on the released rules and is never cleared.
+
+**Rejected alternatives:**
+- (b) A mapping table in the hub (`-alpha.N` → `aN`): rules the contract
+  must spell out, cases it cannot answer (`-alpha`, `-dev.…`), a wrong tag
+  for projects that tag SemVer, and a card still not showing the release's
+  real name.
+- All of PEP 440 with normalization: the tag lookup is exact text, so a
+  spelling PEP 440 rewrites names a tag that is not there.
+- An equivalence rule between the two syntaxes: the mapping table again,
+  and the unique key over cancelled and done cards would forbid a
+  `0.1.0a8` card beside the old `0.1.0-alpha.8`.
+- `.postN` / `.devN` refused for now (the lead's decision); they can be
+  added later without breaking anyone.
+- Any found release tag marks the project released, the prior behaviour:
+  rejected because a pre-release tag such as `v0.1.0a8` would turn on the
+  released rules irreversibly, before any final release.

@@ -133,7 +133,8 @@ The project's **state** is one of `plan`, `build`, `review`, `launch` and
 needs the owner. `archived` refuses new cards and claims. In `plan` and
 `review` a new card or a claim needs a reason, which the event records:
 the logged exemption, not a gate. **Released** is a separate mark, set
-once when the hub first sees a release tag of the project; from then on
+once when the hub first sees a final release tag of the project (a
+pre-release tag never sets it); from then on
 the project's rules include the released rules (§6.1).
 
 The **policy** fields, such as who may claim, who may close a card, who
@@ -407,7 +408,8 @@ Every sign-in issues a fresh session id. Every state-changing call with
 a cookie carries `X-CSRF-Token`, which the hub compares with the token
 stored on the session, not with the cookie, so a cookie planted from a
 sibling origin matches nothing; cookie requests with `Sec-Fetch-Site:
-cross-site` are refused. When a request carries both a cookie and an
+cross-site` are refused, except the forge's setup callback as a top-level
+navigation (§2.1), whose single-use `state` protects it instead. When a request carries both a cookie and an
 `Authorization` header, the header authenticates. Sign-in is limited
 per source address; wrong passwords count per account, and past their
 limit only a known source keeps the password (§2.1). An agent or runner
@@ -477,12 +479,11 @@ row that changes state records the credential's instance.
 - **The tension.** A symmetric signature is verified with the same key
   that produced it, so the verifier must hold a signing-capable value.
   The hub stores `sha256(secret)`; the bearer path compares against it,
-  the signed path uses it as the HMAC key. Stated plainly: a copy of the
-  database can therefore sign as every agent, with the same rights a
-  bearer call would have, and the database is protected accordingly. An
-  encrypted verifier column with a key from the hub's environment is the
-  first security item after V1 (the CLI's scheme is unchanged by it);
-  asymmetric keys — the CLI holding a private key, the hub only a public
+  the signed path uses it as the HMAC key. With the instance key
+  `MAITY_SECRET_KEY` it is stored sealed (`auth/verifiers.py`), so a copy
+  of the database alone signs as nobody; without the key it is stored as
+  it is, and a copy of the database signs as every agent. The CLI's
+  scheme is unchanged by it. Asymmetric keys — the CLI holding a private key, the hub only a public
   one — would remove the tension entirely at the price of a signing
   primitive the standard library lacks; section 13 records them as the revisit
   condition.
@@ -741,7 +742,9 @@ The hub stores its state through SQLAlchemy Core `Table` definitions on
 one metadata (`hub/src/maity_hub/tables.py`), with Core statements and
 no ORM mapping (`hub/context/persistence.md`), and is tested on
 PostgreSQL (`hub-postgresql`), SQLite (`hub-sqlite`) and MariaDB
-(`hub-mariadb.yml`, after every push to main). The alternative, stdlib
+(`hub-mariadb.yml`, after every push to main: 11.4, and a subset on 11.8;
+the supported versions are in `docs/install/README.md`, "Database
+versions"). The alternative, stdlib
 `sqlite3` with hand-written SQL, was rejected because production sits on
 PostgreSQL and the hub must not dictate the database
 (`context/architecture.md`).
@@ -914,9 +917,8 @@ made:
   `credentials:admin`, the human-only part of `members:admin`) on human
   memberships only, so that an admin agent cannot widen its own
   authority: built so and proposed in §2.3 ʰ; the maintainer decides.
-- The stored HMAC verifier: the cost is stated (section 4.6); the
-  encrypted column with a key from the environment is the first security
-  item after V1, asymmetric keys the revisit; the maintainer's
+- The stored HMAC verifier: sealed with the instance key when the
+  instance has one (section 4.6), asymmetric keys the revisit; the maintainer's
   "end-to-end encryption" requirement is settled as transport security.
 - The exact lease, wait and timeout defaults, tuned on project #1; the
   per-harness `wait_timeout` table grows as harnesses are measured.

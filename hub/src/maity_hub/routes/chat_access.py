@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from maity_hub import chat_access, chat_gate, chat_rules, events, idempotency
+from maity_hub import chat_access, chat_access_history, chat_gate, chat_rules, events, idempotency
 from maity_hub.db import retrying
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import forbidden, humans_only
@@ -24,6 +24,7 @@ router = APIRouter()
 idempotency.register("chat_access", idempotency.plain(chat_access.replayed), idempotency.own)
 
 CACHE = "private, no-store"
+PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
 class AllowIn(Strict):
@@ -76,11 +77,24 @@ def listing(request: Request, caller: AnyCaller, agent: str | None = None) -> JS
     return JSONResponse(body, headers={"Cache-Control": CACHE})
 
 
+@router.get("/me/chat-access/history")
+def history(
+    request: Request,
+    caller: AnyCaller,
+    limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
+    cursor: str | None = None,
+) -> JSONResponse:
+    """The caller's own history of the lists and of their answers (§9.6, "History")."""
+    me = _caller(caller)
+    with engine_of(request).connect() as conn:
+        body = chat_access_history.listing(conn, me, limit, cursor)
+    return JSONResponse(body, headers={"Cache-Control": CACHE})
+
+
 @router.post("/me/chat-access/allow")
 def create_allow(body: AllowIn, request: Request, caller: AnyCaller) -> JSONResponse:
     me = _caller(caller)
     sent = _sent(body)
-    chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"))
 
     def action(conn: Connection) -> idempotency.Outcome:
         with chat_rules.announcing(conn, me):
@@ -113,7 +127,6 @@ def patch_allow(
 def create_deny(body: DenyIn, request: Request, caller: AnyCaller) -> JSONResponse:
     me = _caller(caller)
     sent = _sent(body)
-    chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"), sent.get("human_id"))
 
     def action(conn: Connection) -> idempotency.Outcome:
         with chat_rules.announcing(conn, me):

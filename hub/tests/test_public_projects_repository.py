@@ -65,7 +65,7 @@ def test_the_url_is_on_the_page_while_the_forge_says_public(
     look(migrated)
     assert stored(migrated) is True
     text = page(make_client)
-    assert f'<a href="{URL}" rel="nofollow ugc">{URL}</a>' in text
+    assert f'<a class="btn btn-secondary" href="{URL}" rel="nofollow ugc" title="{URL}">' in text
     # it turns private: the page loses the URL in the same round
     github.answers["/repos/acme/maity"] = {"full_name": "acme/maity", "private": True}
     look(migrated)

@@ -200,7 +200,7 @@ class PrePushTest(unittest.TestCase):
             MAITY_HOOK_PYTHON=str(self.tmp / "nowhere" / "python"),
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("make -C hub install", result.stderr)
+        self.assertIn("make -C hub dev", result.stderr)
 
     # ktw-lint (tsk-nb0f9gq7qyrb).
 

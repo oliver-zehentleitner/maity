@@ -36,6 +36,7 @@ def installed(name: str) -> bool:
 # paging: `{"close": n, "at": [r, p]}` closes pull request n and `{"open": pr, "at": [r, p]}` opens
 # pr as the newest (first) right before page p of read r (calls.txt counts the reads), and a page
 # has a next one when the list is longer than the pages so far at the time it is served.
+# `{"reverse": r}` serves read r in the reverse order, the same pull requests each once.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
@@ -71,7 +72,10 @@ FAKE_GH = textwrap.dedent(
     calls.write_text("call\\n" * read)
     fail = next((p["fail_page"] for p in prs if "fail_page" in p), None)
     events = [p for p in prs if "at" in p]
-    prs = [p for p in prs if "fail_page" not in p and "at" not in p]
+    reverse = {p["reverse"] for p in prs if "reverse" in p}
+    prs = [p for p in prs if "fail_page" not in p and "at" not in p and "reverse" not in p]
+    if read in reverse:
+        prs.reverse()
     def state(when):
         now = list(prs)
         for event in events:
@@ -432,6 +436,9 @@ class OverlapTest(unittest.TestCase):
             "closed between reads": [nine, *filler(150), seven, {"close": 9, "at": [2, 1]}],
             # #7 opens, closes and opens again in step with both reads: the two reads are the
             # same line for line, each with a pull request twice and without #7.
+            # The second read holds the same pull requests, each once, in another order: as
+            # sets the reads are equal, as text they differ.
+            "reordered between reads": [seven, *filler(150), {"reverse": 2}],
             "same churn in both reads": [
                 *filler(150),
                 {"open": seven, "at": [1, 2]},
@@ -515,7 +522,13 @@ class OverlapTest(unittest.TestCase):
                 got = self.run_check([prs[0]], "en", extra={"GH_HOST": "other.example"})
                 self.assertEqual(got.returncode, 1, got.stderr)
                 self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
-        for url in ("/srv/git/acme/widgets.git", "file://localhost/srv/git/acme/widgets.git"):
+        for url in (
+            "/srv/git/acme/widgets.git",
+            "file://localhost/srv/git/acme/widgets.git",
+            # The scheme in any case: a loopback host here is no proxy (tsk-dest4a10zfw9).
+            "FILE://localhost/srv/git/acme/widgets.git",
+            "File://127.0.0.1/srv/git/acme/widgets.git",
+        ):
             with self.subTest(url=url):
                 self.set_origin(url)
                 got = self.run_check([prs[0]], "en")

@@ -1,0 +1,238 @@
+/* The sections of the signed-out public pages, as the hub stores them (public_design.py) and the
+   dashboard draws them over it (web/js/visitor.js), from the approved
+   mockup's pp.css (tsk-zp0vqj9wm37x, tsk-9482zxza3gs3): a page hero in the landing's dark zone, a
+   band of figures, a tab bar across the page, sections of cards (the Overview's, and the Board,
+   Team, Organisation and Why tabs'). One set of rules for the project, person and agent pages.
+
+   One of the frame's stylesheets under /assets/landing/ (docs/api.md §16.7.5), linked after
+   landing.css and public-pages.css by the hub's frame (render.public_frame) and by the dashboard
+   while the frame stands (web/js/site-chrome.js): the tokens (--bg, --surface, --text, --muted, --border, --accent, --chip, --live
+   ...) and the classes .wrap, .hero, .dz, .btn, .stat, .eyebrow are landing.css's, and .sec and .pmark
+   are public-pages.css's, shared with the hub's /explore. Names that the dashboard's app.css also
+   uses (.dot) are scoped to the part that draws them. */
+
+/* ---- crumb, chips, avatars ------------------------------------------------------------- */
+.crumb { margin: 0 0 14px; font: 500 13px/1.4 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.crumb a:hover { color: var(--text); text-decoration: underline; }
+.chip { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--chip);
+  color: var(--chip-text); font: 600 12.5px/1 var(--font); white-space: nowrap; }
+.chip.role { height: 21px; padding: 0 8px; font-size: 11.5px; background: var(--surface2); color: var(--muted); text-transform: capitalize; }
+.chip.state { height: 28px; padding: 0 12px; font-size: 13px; }
+.av { display: inline-flex; flex: none; object-fit: cover; background: var(--surface2); }
+.av.hu { border-radius: 50%; }
+.av.ag { border-radius: 24%; }
+.av.ini { align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; background: var(--chip); color: var(--chip-text); }
+/* the mockup's sizes, as classes: the dashboard's policy refuses a style attribute */
+.av-30 { width: 30px; height: 30px; font-size: 11px; }
+.av-44 { width: 44px; height: 44px; font-size: 17px; }
+.pmark.sm { width: 44px; height: 44px; border-radius: 12px; font-size: 21px; }
+.ico { width: 18px; height: 18px; flex: none; }
+/* the online dot, where the hero's panel and a member's card draw it */
+:is(.ph-live, .mcard) .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px var(--live-ring); }
+
+/* ---- the page hero: the landing's dark hero (.hero.dz), shorter ------------------------- */
+/* The dashboard's own tokens that the about text's Markdown uses and the dark zone does not set
+   (css/app.css: a fenced block's .md-code and its Copy button, a `button`, take --surface-2,
+   .md-copied --ok): their dark values here, or the block keeps the light app's ground under the
+   dark zone's light text (~2.2:1). Inline code gets no ground here: the about text is `.sub.about`,
+   not `.md`, so `.md code` does not apply; it stays on the hero's ground in the text's colour. */
+.phero { --surface-2: var(--surface2); --ok: #7ee2a0; }
+.phero .wrap { grid-template-columns: minmax(0, 1.35fr) minmax(0, .65fr); padding-top: 56px; padding-bottom: 60px; align-items: end; }
+.ph-main { min-width: 0; }
+.ph-title { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ph-title h1 { font-size: 3.6rem; line-height: 1.05; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.phero .sub { margin: 18px 0 0; font-size: 1.15rem; }
+.phero .sub > :first-child { margin-top: 0; }
+.phero .sub > :last-child { margin-bottom: 0; }
+.phero .sub a { color: var(--text); }
+.phero .cta:not(:has(a)) { display: none; }
+.phero .cta-slot:empty { display: none; }
+.phero .cta-slot { display: contents; }
+.plinks { margin: 18px 0 0; font-size: 14.5px; color: var(--muted); overflow-wrap: anywhere; }
+.plinks a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 4px; }
+.phero .report-row { margin: 18px 0 0; }
+.phero .report-row .report-open { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: transparent; color: var(--muted); font-size: 13px; text-decoration: none; }
+.phero .report-row .report-open:hover { color: var(--text); border-color: var(--muted); }
+/* "Right now": who is online, beside the title */
+.ph-live { background: rgba(255, 255, 255, .04); border: 1px solid var(--border); border-radius: 18px; padding: 20px 22px; min-width: 0; }
+.ph-live .eyebrow { margin: 0; }
+.ph-live .big { margin: 10px 0 14px; font: 600 17px/1.3 var(--font); display: flex; align-items: center; gap: 10px; }
+.ph-live .muted { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+.stack { display: flex; align-items: center; }
+.stack > a, .stack > span[role="img"] { display: inline-flex; border-radius: 50%; }
+.stack .av { border: 2px solid #0b0f14; margin-right: -8px; }
+.stack > a:hover .av { border-color: var(--muted); }
+.stack .more { margin-left: 16px; font: 600 13px var(--font); color: var(--muted); }
+
+/* ---- the figures band ---------------------------------------------------------------- */
+.band { background: var(--surface); border-bottom: 1px solid var(--border); }
+.band .wrap { padding-top: 26px; padding-bottom: 26px; }
+.stats5, .stats4 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px 28px; }
+.stats4 { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+.band .stat b { color: var(--text); opacity: 1; }
+.stat small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+/* ---- the tab bar across the page ----------------------------------------------------- */
+.ptabs { background: var(--surface); border-bottom: 1px solid var(--border); }
+.ptabs .wrap { display: flex; gap: 4px; }
+.ptabs a { padding: 14px 14px 12px; font-weight: 600; font-size: 15px; color: var(--muted); border-bottom: 2px solid transparent; text-decoration: none; }
+.ptabs a:hover { color: var(--text); }
+.ptabs a[aria-current="page"], .ptabs a.on { color: var(--text); border-color: var(--accent); }
+.ptabs a:focus-visible { outline-offset: -3px; }
+/* the view under the bar: the stored pages' look (public-pages.css), less space above it than under a title */
+.public-view > .stored-page { padding-top: 28px; }
+/* its column lines up with the hero, the band and the bar: the landing's .wrap, not the narrower stored page */
+.public-view > .stored-page > .wrap { max-width: 1180px; }
+
+/* ---- sections ------------------------------------------------------------------------ */
+.sec.alt { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.sec-h { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.sec-h h2 { font-size: 2rem; margin: 0; }
+.sec-h p { margin: 0; }
+.more-l { margin-left: auto; font-weight: 600; color: var(--accent); text-decoration: none; }
+/* members as cards */
+.mgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.mcard { position: relative; display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 14px; background: var(--surface);
+  border: 1px solid var(--border); color: var(--text); text-decoration: none; box-shadow: 0 1px 2px var(--shadow); min-width: 0; }
+.sec.alt .mcard { background: var(--bg); }
+.mc-t { display: flex; flex-direction: column; min-width: 0; }
+.mc-t b { font-size: 14.5px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-t small { font: 400 12px/1.4 var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-m { display: flex; gap: 8px; align-items: center; margin-top: 5px; flex-wrap: wrap; }
+.mc-m .h { font-size: 12px; color: var(--muted); }
+.mcard .dot { position: absolute; top: 12px; right: 12px; width: 8px; height: 8px; }
+a.mcard:hover, a.pr:hover { border-color: var(--muted); }
+/* the online dot stands in the corner: a long name stops short of it */
+.mcard:has(> .dot) { padding-right: 28px; }
+/* pull requests as cards, decisions as a list under them */
+.prgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pr { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); text-decoration: none; min-width: 0; }
+.pr-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.pr .num { font: 600 13px var(--font-mono); color: var(--accent); }
+.pr .merged { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: #8250df; color: #fff; font-weight: 600; font-size: 11px; }
+.pr time { margin-left: auto; color: var(--muted); }
+.pr b { font-size: 14.5px; line-height: 1.35; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pr small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.dec { list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--border); }
+.dec li { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.dec time { flex: none; width: 13.5em; color: var(--muted); }
+
+/* ---- the Board, Team, Organisation and Why tabs (part 3) ------------------------------- */
+/* Each tab one section across the page under the bar (js/visitor.js, tabSection), less space above
+   it than between the Overview's sections; a part's own heading an h3 under the section's h2. */
+.public-view > .ptabs + .tab-sec { padding-top: 36px; }
+.tab-sec h3 { font: 700 1.15rem/1.3 var(--font-display); margin: 32px 0 14px; }
+.tab-sec .sec-h + h3 { margin-top: 0; }
+/* Board: the app's columns (css/app.css: the grid, sideways on a phone), drawn as panels of cards */
+.board-sec .columns { gap: 14px; }
+.board-sec .column { gap: 10px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.board-sec .column > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font: 700 1rem/1.3 var(--font-display); }
+.board-sec .column > h3::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.board-sec .column[data-status="open"] > h3::before { background: var(--accent); }
+.board-sec .column[data-status="in_progress"] > h3::before { background: var(--plan, #8250df); }
+.board-sec .column[data-status="blocked"] > h3::before { background: var(--bad, #cf222e); }
+.board-sec .column[data-status="review"] > h3::before { background: var(--warn, #bf8700); }
+.board-sec .column[data-status="done"] > h3::before { background: var(--live); }
+.board-sec .card { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border);
+  box-shadow: 0 1px 2px var(--shadow); color: var(--text); font-size: 13px; }
+.board-sec .card header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.board-sec .card-id { font: 600 12px/1.4 var(--font-mono); color: var(--accent); text-decoration: none; }
+.board-sec .card-id:hover { text-decoration: underline; }
+.board-sec .card h4 { margin: 0; font: 600 14.5px/1.35 var(--font); letter-spacing: normal; text-transform: none; color: var(--text); overflow-wrap: anywhere; }
+.board-sec .card > :last-child:not(h4) { color: var(--muted); }
+.board-sec .card a:not(.card-id) { color: var(--text); }
+.chip.label { height: 20px; padding: 0 8px; font-size: 11px; }
+/* Team: the Overview's cards; those it only counts as a number with its role chip */
+.role-counts { display: flex; flex-wrap: wrap; gap: 10px 22px; list-style: none; margin: 0; padding: 0; }
+.role-counts li { display: inline-flex; align-items: center; gap: 8px; }
+.role-counts b { font: 700 1.25rem/1 var(--font-display); }
+/* Organisation: the tree, each node a small card, the lines to those who report to it at its left */
+.otree ul { list-style: none; margin: 0; padding: 0; }
+.otree ul ul { margin-left: 22px; padding-left: 20px; border-left: 2px solid var(--border); }
+.otree li { margin: 10px 0 0; }
+.onode { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; padding: 8px 12px 8px 8px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; box-shadow: 0 1px 2px var(--shadow); min-width: 0; }
+.onode .mc-t b { font-size: 14px; }
+.onode.anon { padding: 8px 12px; border-style: dashed; box-shadow: none; }
+a.onode:hover { border-color: var(--muted); }
+/* Why: the family as the Overview's cards with a letter, what needs attention as lines with a chip */
+.why-sec .mcard .mc-t small { font-family: var(--font-mono); }
+.chip.status { height: 21px; padding: 0 8px; font-size: 11.5px; }
+.dec.att { margin-top: 0; }
+.dec.att li { align-items: center; }
+.dec.att a { color: var(--text); }
+
+/* ---- a person's and an agent's page (tsk-2t7efzj1p8zt) ------------------------------- */
+/* The mockup's person.html and agent.html: the picture beside the name in the same dark hero, the
+   figures under it with their eyebrow, the projects as tile cards, a person's agents as the
+   Overview's member cards in the lighter section. */
+.av-22 { width: 22px; height: 22px; font-size: 10px; }
+.av-128 { width: 128px; height: 128px; font-size: 52px; }
+.uhero .wrap { display: flex; align-items: center; gap: 32px; padding-top: 56px; padding-bottom: 56px; }
+.uhero .wrap > .av { border: 3px solid rgba(255, 255, 255, .12); }
+.uh-main { min-width: 0; }
+.uhero .crumb { margin-bottom: 8px; }
+.uhero h1 { font-size: 3.2rem; line-height: 1.05; margin: 0; overflow-wrap: anywhere; }
+.uhero .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin: 12px 0 0; color: var(--muted); font-size: 14.5px; }
+.uhero .meta .hdl { font-family: var(--font-mono); }
+.uhero .meta .on { display: inline-flex; align-items: center; gap: 7px; color: var(--live); font-weight: 600; }
+.uhero .meta .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px var(--live-ring); }
+.uhero .owner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--muted); font-size: 14.5px; }
+.uhero .owner a, .uhero .owner > span { display: inline-flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; }
+.uhero .owner a:hover b { text-decoration: underline; }
+.uhero .bio { margin: 16px 0 0; max-width: 42rem; font-size: 1.1rem; overflow-wrap: anywhere; }
+.uhero .web { display: inline-block; margin: 10px 0 0; color: var(--accent); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.uhero .web:hover { text-decoration: underline; }
+.socs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+.soc { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: rgba(255, 255, 255, .04); color: var(--text); font-size: 12.5px; text-decoration: none; overflow-wrap: anywhere; }
+.soc .net { color: var(--muted); font-weight: 600; }
+a.soc:hover { border-color: var(--muted); }
+.uhero .facts { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 14px 0 0; }
+.uhero .facts div { display: flex; gap: 8px; }
+.uhero .facts dt { color: var(--muted); }
+.uhero .facts dd { margin: 0; }
+.uhero .report-row { margin: 18px 0 0; }
+.uhero .report-row .report-open { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: transparent; color: var(--muted); font-size: 13px; text-decoration: none; }
+.uhero .report-row .report-open:hover { color: var(--text); border-color: var(--muted); }
+.profile-view .band .eyebrow { margin: 0; }
+/* projects as tile cards */
+.pgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pcard { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); text-decoration: none; box-shadow: 0 1px 2px var(--shadow); min-width: 0; }
+.pcard .mc-t { flex: 1 1 auto; }
+.pcard .mc-t small { font-family: var(--font-mono); }
+a.pcard:hover { border-color: var(--muted); }
+
+/* ---- phone --------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .uhero .wrap { flex-direction: column; align-items: flex-start; gap: 18px; padding-top: 28px; padding-bottom: 32px; }
+  .uhero h1 { font-size: 2.4rem; }
+  .av-128 { width: 96px; height: 96px; font-size: 40px; }
+  .pgrid { grid-template-columns: minmax(0, 1fr); }
+  .phero .wrap { grid-template-columns: minmax(0, 1fr); gap: 22px; padding-top: 28px; padding-bottom: 32px; }
+  .ph-title { gap: 12px; }
+  .ph-title h1 { font-size: 2.5rem; }
+  .phero .sub { font-size: 1.02rem; }
+  .phero .cta .btn { flex: 1 1 100%; justify-content: center; }
+  .stats5 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 14px; }
+  .stats4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .band .stat b { font-size: 1.5rem; }
+  .band .stat .label { font-size: .82rem; line-height: 1.3; display: block; }
+  .stat small { font-size: 11px; }
+  .ptabs .wrap { overflow-x: auto; scrollbar-width: thin; }
+  .ptabs a { padding: 12px 10px 10px; font-size: 14px; white-space: nowrap; }
+  .sec-h h2 { font-size: 1.6rem; }
+  .more-l { margin-left: 0; flex-basis: 100%; }
+  .mgrid, .prgrid { grid-template-columns: minmax(0, 1fr); }
+  .otree ul ul { margin-left: 10px; padding-left: 12px; }
+  .public-view > .ptabs + .tab-sec { padding-top: 24px; }
+  .dec li { flex-direction: column; gap: 2px; }
+  .dec time { width: auto; }
+  .dec.att li { align-items: flex-start; gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { .phero .btn { transition: none; } }

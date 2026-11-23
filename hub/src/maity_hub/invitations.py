@@ -31,6 +31,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_line
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 from maity_hub.scopes import has_scope
@@ -92,11 +93,11 @@ def view(
         "created_by": row.created_by,
         "created_at": clock.rfc3339(row.created_at),
         "expires_at": clock.rfc3339(row.expires_at),
-        "used_at": _ts(row.used_at),
+        "used_at": clock.rfc3339_or_none(row.used_at),
         "used_by": row.used_by,
-        "revoked_at": _ts(row.revoked_at),
-        "voided_at": _ts(row.voided_at),
-        "declined_at": _ts(row.declined_at),
+        "revoked_at": clock.rfc3339_or_none(row.revoked_at),
+        "voided_at": clock.rfc3339_or_none(row.voided_at),
+        "declined_at": clock.rfc3339_or_none(row.declined_at),
         "via": row.via,
     }
     if url is not None:
@@ -115,10 +116,6 @@ def handles_now(conn: Connection, rows: Sequence[Any]) -> dict[str, str]:
     return {row.id: current[row.invitee_id] for row in rows if row.invitee_id in current}
 
 
-def _ts(value: datetime | None) -> str | None:
-    return clock.rfc3339(value) if value is not None else None
-
-
 def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> bool:
     """Trust `owner` or `admin`, and the role `proxy`, need the issuer to hold trust
     `owner`; the others `members:admin`. `issuer_base` is the issuer's `role_base`."""
@@ -128,12 +125,16 @@ def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> boo
 
 
 def issuer_holds(conn: Connection, row: Any) -> bool:
-    """Whether the issuer is still an active human member with the authority it needs."""
+    """Whether the issuer is still an active human member with the authority it needs, and
+    an account not suspended (§16.8)."""
     issuer = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role_base).where(
+        select(t.membership.c.trust, t.membership.c.role_base)
+        .join(t.human, t.human.c.id == t.membership.c.human_id)
+        .where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
+            t.human.c.suspended_at.is_(None),
         )
     ).first()
     return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role_base)
@@ -296,7 +297,7 @@ def admit(
     the caller's transaction under the project's lock, once every check of accept passed
     (§3.4). Their other open invitations by handle to this project end with it. Returns the
     new member's view."""
-    from maity_hub import project_roles, restricted, start_tabs
+    from maity_hub import project_roles, restricted, stars, start_tabs
     from maity_hub.views import member_view
 
     now = clock.now()
@@ -322,6 +323,7 @@ def admit(
     assert key is not None
     membership_id = int(key[0])
     start_tabs.append(conn, human_id, row.project_id)  # it opens as the last tab (§5.1)
+    stars.drop(conn, human_id, row.project_id)  # a membership tab from now on (§5.1 "Stars")
     actor = actor_of(membership_id)
     use(conn, row, human_id, actor)
     joined(conn, row.project_id, human_id, actor, keep=row.id)
@@ -472,9 +474,12 @@ def file_request(
     name; returns its id."""
     from maity_hub.routes.requests import file_to_human
 
-    inviter = conn.execute(
-        select(t.human.c.display_name).where(t.human.c.id == caller.human_id)
-    ).scalar()
+    found = conn.execute(
+        select(t.human.c.display_name, t.human.c.handle).where(t.human.c.id == caller.human_id)
+    ).one()
+    # By name and handle, as the invitation page shows the inviter (§3.4): a name alone can
+    # be anyone's. On one line, whatever was stored before the rule (§1.7.1).
+    inviter = f"{plain_line(found.display_name or '')} (@{found.handle})".lstrip()
     summary = (
         f"{inviter} invites you to the project {project_name} as {role} with trust {trust}. "
         "You become a member only if you say go."

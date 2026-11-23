@@ -208,8 +208,8 @@ def _render(topics: list[dict[str, Any]], handles: dict[str, str]) -> str:
 # --- the statement (§20.5 step 1) -------------------------------------------------------------
 
 
-def _is_moderator(round_row: Any, mine: Any) -> bool:
-    return bool(mine.principal_id == round_row.moderator["member_id"])
+def _is_moderator(conn: Connection, round_row: Any, mine: Any) -> bool:
+    return circle.moderates(conn, round_row, mine)
 
 
 def _answerers(conn: Connection, round_row: Any) -> set[str]:
@@ -229,7 +229,7 @@ def submit_statement(
 ) -> Any:
     lock_project(conn, round_row.project_id)
     round_row = _reload(conn, round_row.id)
-    if not _is_moderator(round_row, mine):
+    if not _is_moderator(conn, round_row, mine):
         raise refused("not_moderator", "only the round's moderator writes the statement")
     if chat_gate.moderator_held(conn, round_row.conversation_id, mine.id):
         raise refused("waiting", "the moderator waits for its owner's yes (§9.6)")
@@ -402,8 +402,10 @@ def add_step(
 ) -> Any:
     lock_project(conn, round_row.project_id)
     round_row = _reload(conn, round_row.id)
-    if not _is_moderator(round_row, mine):
+    if not _is_moderator(conn, round_row, mine):
         raise refused("not_moderator", "only the round's moderator adds a step")
+    if chat_gate.moderator_held(conn, round_row.conversation_id, mine.id):
+        raise refused("waiting", "the moderator waits for its owner's yes (§9.6)")
     steps = round_row.steps or []
     step = current_step(round_row)
     further = [s for s in steps if s["kind"] == "further"]

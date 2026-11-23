@@ -34,7 +34,9 @@ KEPT = {"Afaraf", "العربية", "Deutsch", "English", "français", "日本�
 
 # Names in the fixtures that are also a word of the catalog: as data they would be taken
 # out with the catalog's texts, and then count as a text of the interface.
-FIXTURE_NAMES = {"Reviewer", "OZ Team"}
+# "Tool" is the outsider's public project `stranger/tool` (js/api.js OUTSIDE_TOOL) and the
+# catalog's placements.new.tool.
+FIXTURE_NAMES = {"Reviewer", "OZ Team", "Tool"}
 
 COLLECT = """() => {
   const SKIP = new Set(["SCRIPT", "STYLE", "CODE", "PRE", "KBD", "SAMP", "TIME", "TEMPLATE", "NOSCRIPT"]);

@@ -33,6 +33,8 @@ class FakeGitHub:
         # The token sees the repository: a 404 below it is a missing ref.
         self.answers: dict[str, Any] = {"/repos/acme/maity": {"full_name": "acme/maity"}}
         self.calls: list[str] = []
+        # A pull request's body by number, kept across `pull` (`name`): the cards it names.
+        self.bodies: dict[int, str] = {}
 
     def __call__(self, path: str) -> Any:
         self.calls.append(path)
@@ -42,21 +44,40 @@ class FakeGitHub:
             raise answer
         return answer
 
-    def pull(self, number: int, head: str = SHA, merged: bool = False, **extra: Any) -> None:
+    def pull(
+        self,
+        number: int,
+        head: str = SHA,
+        merged: bool = False,
+        ref: str = "agent-b/probe",
+        repo: str = "acme/maity",
+        **extra: Any,
+    ) -> None:
+        """A pull request from `ref` in `repo`; a merged one merged an hour from now, so after
+        any report a test sends first (§6.6)."""
+        merged_at = clock.rfc3339(clock.now() + timedelta(hours=1)) if merged else None
         self.answers[f"/repos/acme/maity/pulls/{number}"] = {
             "html_url": f"https://github.com/acme/maity/pull/{number}",
             "title": f"PR {number}",
+            "body": self.bodies.get(number),
             "state": "closed" if merged else "open",
             "draft": False,
-            "head": {"sha": head},
+            "head": {"sha": head, "ref": ref, "repo": {"full_name": repo}},
             "base": {"ref": "main"},
             "mergeable": None if merged else True,
             "mergeable_state": "clean",
-            "merged_at": "2026-10-21T12:00:00Z" if merged else None,
+            "merged_at": merged_at,
             "merge_commit_sha": "f" * 40,
             **extra,
         }
         self.runs(head, [("ci / sqlite", "success")])
+
+    def name(self, number: int, card_id: str) -> None:
+        """The pull request's body names the card, now and on every later `pull`."""
+        self.bodies[number] = f"Closes {card_id}."
+        answer = self.answers.get(f"/repos/acme/maity/pulls/{number}")
+        if isinstance(answer, dict):
+            answer["body"] = self.bodies[number]
 
     def runs(self, sha: str, runs: list[tuple[str, str | None]]) -> None:
         self.answers[f"/repos/acme/maity/commits/{sha}/check-runs"] = {
@@ -144,7 +165,10 @@ def test_without_a_token_the_probe_is_not_configured(owner: flow.Human) -> None:
 
 
 def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: FakeGitHub) -> None:
-    github.pull(3)
+    github.pull(3, title="hub: the probe (tsk-0001aaaabbbb, TSK-0002CCCCDDDD)")
+    github.answers["/repos/acme/maity/pulls/3"][
+        "body"
+    ] = "Also tsk-0001aaaabbbb and ctr-0003eeeeffff; not xtsk-3, tsk-4-5 or hum-0004gggghhhh."
     body = owner.get("/projects/maintainer/maity/probe?pr=3").json()
     assert (body["forge"], body["repository"], body["fresh"]) == ("github", "acme/maity", True)
     assert (body["branch"], body["tag"], body["commit"]) == (None, None, None)
@@ -152,10 +176,13 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
         "number": 3,
         "found": True,
         "url": "https://github.com/acme/maity/pull/3",
-        "title": "PR 3",
+        "title": "hub: the probe (tsk-0001aaaabbbb, TSK-0002CCCCDDDD)",
         "state": "open",
         "draft": False,
         "head_sha": SHA,
+        "head_ref": "agent-b/probe",
+        "head_repo": "acme/maity",
+        "card_ids": ["tsk-0001aaaabbbb", "tsk-0002ccccdddd", "ctr-0003eeeeffff"],
         "base": "main",
         "mergeable": "mergeable",
         "checks": "success",
@@ -245,6 +272,54 @@ def test_the_first_found_release_tag_marks_the_project_released_for_good(
     owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "next"})
     assert _project(migrated).released_at == marked.released_at
     assert len([e for e in _events(migrated, "state_changed") if "released_at" in e.payload]) == 1
+
+
+def test_a_pep440_release_finds_its_tag(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.7: a release `0.1.0a4` looks for the tag `v0.1.0a4`, the way the repository
+    tags its releases; a pre-release tag found does not mark the project released (§6.1)."""
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "0.1.0a4", "kind": "release", "release": {"version": "0.1.0a4"}},
+    )
+    assert release.status_code == 201, release.text
+    github.tag("v0.1.0a4")
+    project_id = _project(migrated).id
+    probe.observe_release(migrated, READER, project_id)
+    assert "/repos/acme/maity/git/ref/tags/v0.1.0a4" in github.calls
+    tag = owner.get(f"/projects/maintainer/maity/tasks/{release.json()['id']}").json()["release"][
+        "tag"
+    ]
+    assert (tag["name"], tag["found"], tag["sha"]) == ("v0.1.0a4", True, SHA)
+    assert _project(migrated).released_at is None
+
+
+def test_a_semver_pre_release_tag_does_not_mark_the_project_released(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.1: a found `v1.0.0-rc.1` leaves `released_at` null; the final `v1.0.0` after it
+    sets it."""
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "1.0.0-rc.1", "kind": "release", "release": {"version": "1.0.0-rc.1"}},
+    ).json()
+    github.tag("v1.0.0-rc.1")
+    project_id = _project(migrated).id
+    probe.observe_release(migrated, READER, project_id)
+    assert owner.get(f"/projects/maintainer/maity/tasks/{release['id']}").json()["release"]["tag"][
+        "found"
+    ]
+    assert _project(migrated).released_at is None
+    assert not [e for e in _events(migrated, "state_changed") if "released_at" in e.payload]
+    owner.patch(f"/projects/maintainer/maity/tasks/{release['id']}", {"status": "cancelled"})
+    owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "1.0.0", "kind": "release", "release": {"version": "1.0.0"}},
+    )
+    github.tag("v1.0.0")
+    probe.observe_release(migrated, READER, project_id, max_age=0)
+    assert _project(migrated).released_at is not None
 
 
 def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub) -> None:
@@ -1059,6 +1134,46 @@ def test_a_project_no_source_covers_is_asked_once_a_round(
     assert _observed(migrated, other) == before  # nor is its report read again
     lines = [r.getMessage() for r in caplog.records if "no_grant" in r.getMessage()]
     assert lines == [f"probe: project {other_project}: no source covers the repository (no_grant)"]
+
+
+def test_a_project_whose_stored_url_names_no_repository_ends_only_its_own_turn(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A URL stored before the write checked it (`https://github.com/acme/`) is refused at
+    the forge's door (§6.1); the round goes on with the other projects, as for one no
+    source covers, and does not end at that project."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _reported_card(owner, make_client)
+    other = _other_project_report(owner, make_client, github)
+    assert probe.observe_report(migrated, READER, other) is True
+    with migrated.connect() as conn:
+        other_project = conn.execute(
+            select(t.card.c.project_id).where(t.card.c.id == other)
+        ).scalar_one()
+    releases: list[str] = []
+    links: list[str] = []
+
+    def short_url(_engine: Engine, fg: Any, project_id: str) -> None:
+        releases.append(project_id)
+        if project_id == other_project:  # the read the stored URL would make, as made:
+            # through the real `_get`, with the operator's token and no grant
+            assert fg.token is not None and fg.granted is None
+            repository = forge.repository_of("https://github.com/acme/")
+            REAL_GET(fg, f"/repos/{repository}/releases?per_page=1")
+
+    monkeypatch.setattr(probe, "observe_release", short_url)
+    monkeypatch.setattr(probe, "observe_links", lambda _e, _f, p: links.append(p))
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    for _ in range(2):  # whichever project the round starts at
+        links.clear()
+        probe.sweep(migrated, READER)
+        assert other_project not in links and len(links) == 1, links
+    assert not any("/repos/acme//" in call for call in github.calls)
 
 
 def test_a_merge_round_goes_on_past_a_project_no_source_covers(

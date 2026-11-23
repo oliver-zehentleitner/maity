@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 from types import TracebackType
 
@@ -26,18 +26,50 @@ Mark = float | datetime | None  # what `place` recorded: a moment, or a fixed wi
 EXACT_UP_TO = 20
 
 
+def estimate_wait(
+    current: int, previous: int, elapsed: float, count: int, limit: int, seconds: float
+) -> int:
+    """Seconds until a sliding window estimated from two fixed ones (`current` + `previous` ×
+    what still overlaps) with `count` more fits `limit` again; `current` holds those `count`
+    already, `elapsed` is how far into the current window `now` is (0 to 1). Within this window
+    the previous one's weight falls; when even an empty previous window would not make room,
+    the wait runs into the next window, where this window's attempts are the previous ones and
+    fall in turn."""
+    remaining = (1 - elapsed) * seconds
+    if current <= limit and previous > 0:
+        fits_at = 1 - (limit - current) / previous  # the fraction of this window
+        if fits_at < 1:
+            return max(1, math.ceil((fits_at - elapsed) * seconds))
+    before = current - count  # what this window already held, the next window's previous
+    if before <= 0:
+        return max(1, math.ceil(remaining))
+    fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
+    return max(1, math.ceil(remaining + fits_at * seconds))
+
+
 class Limiter:
     def __init__(
-        self, limit: int, window_seconds: float, *, name: str, local: bool = False
+        self,
+        limit: int,
+        window_seconds: float,
+        *,
+        name: str,
+        local: bool = False,
+        exact: bool = False,
     ) -> None:
         self.limit = limit
         self.window = window_seconds
         self.name = name  # the bucket the counts share across replicas
-        self.exact = limit <= EXACT_UP_TO  # across replicas: a row per attempt
+        # Across replicas a row per attempt: always up to EXACT_UP_TO, and above it where a
+        # stated bound must hold in any window, not only as the two-window estimate.
+        self.always_exact = exact
+        self.exact = exact or limit <= EXACT_UP_TO
         # Counted in this process only, never in `shared_counts`: a limit asked of every call
         # of a route (MAITY_ROUTE_LIMITS) would otherwise write to the database each time.
         self.local = local
-        self._hits: dict[str, deque[float]] = {}
+        # In the order of each key's newest attempt, the oldest first: the keys to forget are
+        # always at the front (`_prune`).
+        self._hits: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = threading.Lock()
 
     def configure(self, limit: int, window_seconds: float) -> None:
@@ -47,7 +79,7 @@ class Limiter:
         others count; the shared rows age out with the window."""
         self.limit = limit
         self.window = window_seconds
-        self.exact = limit <= EXACT_UP_TO
+        self.exact = self.always_exact or limit <= EXACT_UP_TO
         with self._lock:
             self._hits.clear()
 
@@ -68,9 +100,11 @@ class Limiter:
             return self._shared_take(key, count)[0]
         return self._take_at(key, count, time.monotonic())
 
-    def _shared_take(self, key: str, count: int) -> tuple[int, datetime]:
+    def _shared_take(
+        self, key: str, count: int, at: datetime | None = None
+    ) -> tuple[int, datetime]:
         if self.exact:
-            log, at = shared_counts.log_take(self.name, key, self.window, count, self.limit)
+            log, at = shared_counts.log_take(self.name, key, self.window, count, self.limit, at=at)
             return (0, at) if at is not None else (self._log_wait(log, count), log.now)
         window = shared_counts.add(self.name, key, self.window, count)
         if window.estimate() <= self.limit:
@@ -79,21 +113,9 @@ class Limiter:
         return self._wait(window, count), window.start
 
     def _wait(self, window: shared_counts.Window, count: int) -> int:
-        """Seconds until the estimate with `count` more fits the limit again. `window.current`
-        holds those `count` already. Within this window the previous one's weight falls; when
-        even an empty previous window would not make room, the wait runs into the next window,
-        where this window's attempts are the previous ones and fall in turn."""
-        limit, current, previous = self.limit, window.current, window.previous
-        remaining = (1 - window.elapsed) * self.window
-        if current <= limit and previous > 0:
-            fits_at = 1 - (limit - current) / previous  # the fraction of this window
-            if fits_at < 1:
-                return max(1, math.ceil((fits_at - window.elapsed) * self.window))
-        before = current - count  # what this window already held, the next window's previous
-        if before <= 0:
-            return max(1, math.ceil(remaining))
-        fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
-        return max(1, math.ceil(remaining + fits_at * self.window))
+        return estimate_wait(
+            window.current, window.previous, window.elapsed, count, self.limit, self.window
+        )
 
     def _log_wait(self, log: shared_counts.Log, count: int) -> int:
         """Seconds until enough attempts of an exact log have left the window for `count`
@@ -109,8 +131,7 @@ class Limiter:
     def _take_at(self, key: str, count: int, now: float) -> int:
         """`take` at a moment the caller read from the clock."""
         with self._lock:
-            if len(self._hits) > 1024:
-                self._prune(now)
+            self._prune(now)
             hits = self._hits.setdefault(key, deque())
             while hits and hits[0] <= now - self.window:
                 hits.popleft()
@@ -118,17 +139,33 @@ class Limiter:
             if over > 0:  # at most len(hits), as `count` is at most the limit
                 return max(1, math.ceil(hits[over - 1] + self.window - now))
             hits.extend([now] * count)
+            self._hits.move_to_end(key)
             return 0
 
-    def place(self, key: str, count: int = 1) -> tuple[int, Mark]:
+    def place(self, key: str, count: int = 1, *, at: Mark = None) -> tuple[int, Mark]:
         """Like `take`, and the mark of the attempts it recorded (None when refused), for
-        `release` to give back exactly those later: work that did not happen after all."""
+        `release` to give back exactly those later: work that did not happen after all.
+
+        `at`, another exact limiter's mark from `place`, records the attempts at that moment
+        instead of now, so that they leave the window together with those (the mark that a
+        network holds a place, `email_links.recipient_over`). Only for a limit of 1, where an
+        attempt at a later moment refuses it anyway: an earlier moment behind a later one
+        would break the order the window relies on. Checked here: the limit of 1, and the
+        kind of moment (shared: an exact limit and a time; in the process: its own clock).
+        Not checked: that `at` came from an exact limiter's `place` and is past, which the
+        caller holds to."""
         if count > self.limit:
             raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
+        if at is not None and self.limit != 1:
+            raise ValueError(f"{self.name}: `at` needs a limit of 1, not {self.limit}")
         if self._shared():
-            wait, start = self._shared_take(key, count)
+            if at is not None and not (self.exact and isinstance(at, datetime)):
+                raise ValueError(f"{self.name}: `at` needs an exact limit and a recorded moment")
+            wait, start = self._shared_take(key, count, at if isinstance(at, datetime) else None)
             return wait, (None if wait else start)
-        now = time.monotonic()
+        if at is not None and not isinstance(at, float):
+            raise ValueError(f"{self.name}: `at` must be a moment this process recorded")
+        now = time.monotonic() if at is None else at
         wait = self._take_at(key, count, now)
         return wait, (None if wait else now)
 
@@ -179,12 +216,23 @@ class Limiter:
                 return max(1, math.ceil(hits[0] + self.window - now))
             return 0
 
-    def _prune(self, now: float) -> None:
-        """Forget keys with no attempt inside the window; every new handle or
-        address would otherwise stay in memory for good."""
-        stale = [k for k, hits in self._hits.items() if not hits or hits[-1] <= now - self.window]
-        for key in stale:
+    def _prune(self, now: float) -> int:
+        """Forget keys with no attempt inside the window; every new handle or address would
+        otherwise stay in memory for good. Only from the front, where the oldest newest attempt
+        is, up to the first key still inside the window: the keys behind it were hit later, so
+        each attempt costs the keys it forgets and one look more, never a pass over all of
+        them. A key whose newest attempt was given back (`release`) may stay behind a live
+        one a little longer; it is forgotten when the keys before it are. Returns how many
+        keys were looked at."""
+        looked = 0
+        edge = now - self.window
+        while self._hits:
+            looked += 1
+            key, hits = next(iter(self._hits.items()))
+            if hits and hits[-1] > edge:
+                break
             del self._hits[key]
+        return looked
 
     def __len__(self) -> int:
         return len(self._hits)

@@ -18,6 +18,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
 from maity_hub.errors import invalid
+from maity_hub.plain_text import plain
 
 VISIBILITY = ("private", "friends", "colleagues", "friends_and_colleagues", "everyone")
 NETWORKS = ("github", "gitlab", "x", "mastodon", "bluesky", "linkedin", "discord")
@@ -50,6 +51,10 @@ def _dns(host: str) -> bool:
 def normalised(network: str, name: str) -> str | None:
     """The name as stored, or None when it is not of its form: the host of a Mastodon name and
     a Bluesky handle are lower-cased, every other name is stored as given."""
+    # Before lower-casing: `str.lower` maps U+212A (KELVIN SIGN) to ASCII "k", which would store
+    # a different host or handle. A Unicode host is refused; an IDN only in its `xn--` form.
+    if network in ("mastodon", "bluesky") and not name.isascii():
+        return None
     if network == "mastodon":
         user, _, host = name[1:].partition("@") if name.startswith("@") else ("", "", "")
         host = host.lower()
@@ -71,13 +76,18 @@ def website_problem(value: str, max_length: int = WEBSITE_MAX) -> str | None:
     links (§6.11) take the same rule with their own length (`project_links`)."""
     if len(value) > max_length:
         return "too_long"
-    if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value):
+    if any(c.isspace() for c in value) or not plain(value):  # §1.7.1, as a link's URL
         return "format"
     try:
         parts = urlsplit(value)
         host = parts.hostname
         parts.port  # noqa: B018  (a port that is no number raises)
     except ValueError:
+        return "format"
+    # Before case-folding: `hostname` is lower-cased, and `str.lower` maps U+212A (KELVIN SIGN)
+    # to ASCII "k", which would accept a different host. A Unicode host is refused; an IDN is
+    # accepted only already written in its `xn--` form.
+    if not parts.netloc.isascii():
         return "format"
     # `netloc` is the host alone: no user part, no port, no IPv6 brackets.
     if parts.scheme != "https" or not host or parts.netloc.lower() != host or not _dns(host):
@@ -136,13 +146,14 @@ def address(network: str, name: str) -> str | None:
     return None
 
 
+def _names(social: dict[str, str] | None) -> dict[str, str]:
+    """The stored names of the networks the hub knows, by network."""
+    return {network: name for network, name in (social or {}).items() if network in NETWORKS}
+
+
 def built(social: dict[str, str] | None) -> dict[str, str]:
     """Each network's link, and for Discord the name as text."""
-    return {
-        network: address(network, name) or name
-        for network, name in (social or {}).items()
-        if network in NETWORKS
-    }
+    return {network: address(network, name) or name for network, name in _names(social).items()}
 
 
 @dataclass(frozen=True)
@@ -224,3 +235,13 @@ def announce(conn: Connection, human_id: str) -> None:
 def shown(human: Any) -> dict[str, Any]:
     """`website` and `social` as a reader sees them."""
     return {"website": human.website, "social": built(human.social)}
+
+
+def public(conn: Connection, human: Any) -> dict[str, Any] | None:
+    """`website` and `social` as a visitor with no account sees them (the person's page,
+    §16.9): `admitted` for the anonymous reader decides, and `social` keeps the names, from
+    which the page builds each link with `address`. None while the value does not admit that
+    reader."""
+    if human.id not in admitted(conn, {human.id: human.links_visible}, Reader(None)):
+        return None
+    return {"website": human.website, "social": _names(human.social)}

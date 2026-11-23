@@ -31,6 +31,7 @@
 - group: Self-hosting
   pages:
     - {src: docs/install/README.md, title: Installing a hub}
+    - {src: docs/upgrade/README.md, title: Upgrade pages}
 
 - group: Runners
   pages:

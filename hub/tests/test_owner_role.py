@@ -74,10 +74,8 @@ def test_ops_and_proxy_are_beyond_the_member_limits(
 def test_a_project_role_on_a_member_base_is_taken_one_on_ops_is_not(
     owner: flow.Human, friend: flow.Human, make_client: ClientFactory
 ) -> None:
-    roles = owner.client.put(
-        f"/api/v1{PROJECT}/roles",
-        json={"custom": [{"name": "docs", "base": "writer"}, {"name": "deployer", "base": "ops"}]},
-        headers={"X-CSRF-Token": owner.csrf},
+    roles = flow.put_roles(
+        owner, PROJECT, [{"name": "docs", "base": "writer"}, {"name": "deployer", "base": "ops"}]
     )
     assert roles.status_code == 200, roles.text
     agent = brought(friend, make_client)

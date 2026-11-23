@@ -21,6 +21,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
+from maity_hub.plain_text import plain
 
 MAX_LINKS = 20
 URL_MAX = 2048
@@ -75,8 +76,10 @@ class ForgeRef:
 
 
 def _plain_https(url: str, field: str) -> urllib.parse.SplitResult:
-    """`https`, a host, no user info; what every link URL must be."""
-    if len(url) > URL_MAX or any(c.isspace() or ord(c) < 0x20 for c in url):
+    """`https`, a host, no user info; what every link URL must be. No white space and
+    nothing the plain-text rule refuses (§1.7.1), in the path too: a hidden character
+    would make the link another than it reads."""
+    if len(url) > URL_MAX or any(c.isspace() for c in url) or not plain(url):
         raise LinkError(field, "not_a_url")
     try:
         parts = urllib.parse.urlsplit(url)
@@ -145,15 +148,15 @@ def check_url(url: str) -> str:
 def check_label(label: str | None) -> str | None:
     if label is None:
         return None
-    if len(label) > LABEL_MAX or any(ord(c) < 0x20 for c in label):
+    if len(label) > LABEL_MAX or not plain(label):
         raise LinkError("label", "too_long" if len(label) > LABEL_MAX else "control_character")
     return label
 
 
 def is_own_repository(ref: ForgeRef, repository_url: str | None) -> bool:
     """Only the project's repository is ever read (§6.13)."""
-    if repository_url is None:
-        return False
+    if repository_url is None or forge.kind_of(repository_url) != ref.forge:
+        return False  # the same owner/name on another host is another repository
     return forge.repository_of(repository_url).lower() == ref.repository.lower()
 
 
@@ -369,8 +372,8 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
 
     with engine.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-        if project.repository_url is None:
-            return 0
+        if project.repository_url is None or forge.kind_of(project.repository_url) != "github":
+            return 0  # a forge link is read only on GitHub (§6.13, §11)
         own = forge.repository_of(project.repository_url).lower()
         wanted = [r for r in due(conn, project_id) if (r.repository or "").lower() == own]
     fg = fg.for_project(project_id)  # the source that covers this project (§11.4)

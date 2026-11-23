@@ -13,12 +13,13 @@ import pytest
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import OperationalError
 
-from maity_hub import avatar_generated, avatars, clock, images
+from maity_hub import avatar_generated, avatars, clock, images, middleware
 from maity_hub import tables as t
 from maity_hub.auth import credentials
-from maity_hub.auth.caller import RequestFacts, authenticate
+from maity_hub.auth.caller import RequestFacts, attachment_in, authenticate, settle_in_project
+from maity_hub.ids import new_id
 from maity_hub.net import Origin
-from tests import factory
+from tests import factory, flow, statements
 from tests.conftest import ClientFactory
 
 
@@ -89,6 +90,7 @@ def test_bearer_over_tls_answers_the_agents_me(
             agent.agent_id, images.etag(avatar_generated.draw(agent.agent_id))
         ),
         "owner_id": agent.owner_id,
+        "instance": agent.instance,  # the calling instance (§5.1, §6.17)
         "avatar_source": "generated",
         "avatar_motif": None,
     }
@@ -102,6 +104,10 @@ def test_bearer_over_tls_answers_the_agents_me(
             "trust": "member",
             "role": "coder",
             "logo": {"available": False, "etag": None},
+            # the membership's and the instance's there (§5.1, §6.17)
+            "isolated": None,
+            "paused": None,
+            "dormant": None,
         }
     ]
     assert "open_requests" not in body["projects"][0]
@@ -456,6 +462,7 @@ def test_the_long_poll_does_not_renew_leases(agent: factory.Agent, migrated: Eng
     facts = RequestFacts(
         method="GET",
         raw_path=b"/api/v1/projects/maintainer/maity/events",
+        path="/api/v1/projects/maintainer/maity/events",
         raw_query=b"wait=55",
         headers={"authorization": f"Bearer {agent.value}"},
         cookies={},
@@ -465,7 +472,9 @@ def test_the_long_poll_does_not_renew_leases(agent: factory.Agent, migrated: Eng
     )
     clock.set_source(lambda: start + timedelta(hours=1))
     with migrated.begin() as conn:
-        caller = authenticate(conn, facts, renew_leases=False)
+        caller = authenticate(conn, facts)
+        attachment = attachment_in(conn, caller, project_id)  # the route's project
+        caller = settle_in_project(conn, caller, attachment, facts, renew_leases=False)
     assert caller.session_id == agent.session_id
     with migrated.connect() as conn:
         lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
@@ -579,10 +588,183 @@ def test_an_unknown_id_is_unauthenticated_on_both_paths(
     make_client: ClientFactory, agent: factory.Agent
 ) -> None:
     headers = signed(agent, "GET", "/api/v1/me")
-    headers["Authorization"] = "Maity-HMAC crd-nobody"
+    headers["Authorization"] = f"Maity-HMAC {new_id('credential')}"
     assert make_client().get("/api/v1/me", headers=headers).headers["Maity-Error"] == (
         "unauthenticated"
     )
+
+
+# Raw header values: Starlette decodes them as latin-1, so a UTF-8 `é` arrives as two
+# characters and a latin-1 one as one. Each is no id the hub could have issued (`ids.new_id`).
+MALFORMED_CREDENTIAL_IDS = [
+    b"crd-nobody",
+    b"crd-" + b"0" * 10 + b"\xc3\xa9",  # UTF-8, twelve characters as decoded
+    b"crd-" + b"0" * 11 + b"\xe9",  # latin-1
+    b"crd-" + b"0" * 13,
+    b"crd-" + b"0" * 4096,
+    b"agt-" + b"0" * 12,
+    b"CRD-" + b"0" * 12,
+    b"crd_" + b"0" * 12,
+    b"crd-" + b"u" * 12,  # no u in Crockford base32
+    b"crd-" + b"A" * 12,
+    b"crd-" + b"0" * 10 + b"-_",
+    b"rcrd-" + b"0" * 13,
+    b"rcrd-" + b"i" * 12,
+    b"rcrd-" + b"0" * 10 + b"\xc3\xa9",
+    pytest.param(b"", id="empty"),  # `Maity-HMAC ` and nothing after it
+]
+
+# What differs from one request to the next whatever the answer: the hub's clock
+# (`middleware._with_headers`) and a server's `Date`. `Server-Timing` goes only to the instance
+# admin's signed-in session (`timing.ServerTiming`), never to these callers.
+PER_REQUEST_HEADERS = {"maity-server-time", "date"}
+
+
+def _comparable(headers: Any) -> list[tuple[str, str]]:
+    """Every header of an answer but those of `PER_REQUEST_HEADERS`, its name in lower case:
+    from a client's response or from the raw pairs an ASGI `http.response.start` carries."""
+    pairs = headers.multi_items() if hasattr(headers, "multi_items") else headers
+    kept: list[tuple[str, str]] = []
+    for name, value in pairs:
+        name = name.decode("latin-1") if isinstance(name, bytes) else name
+        value = value.decode("latin-1") if isinstance(value, bytes) else value
+        if name.lower() not in PER_REQUEST_HEADERS:
+            kept.append((name.lower(), value))
+    return sorted(kept)
+
+
+def _presenting(
+    make_client: ClientFactory, engine: Engine, agent: factory.Agent, credential_id: bytes
+) -> tuple[Any, bool]:
+    """A signed `GET /me`, valid but for the credential id it presents; and whether a
+    credential row was asked for (`caller._credential`, `caller._runner_credential`)."""
+    sent: list[str] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement.lower())
+
+    headers: Any = signed(agent, "GET", "/api/v1/me")
+    headers["Authorization"] = b"Maity-HMAC " + credential_id
+    client = make_client()
+    with statements.listening(engine, heard):
+        response = client.get("/api/v1/me", headers=headers)
+    return response, any("credential.verifier" in s for s in sent)
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_CREDENTIAL_IDS)
+def test_a_malformed_signed_credential_id_answers_as_an_unknown_one_without_a_query(
+    make_client: ClientFactory, migrated: Engine, agent: factory.Agent, malformed: bytes
+) -> None:
+    kind = "runner_credential" if malformed.startswith(b"rcrd-") else "credential"
+    unknown, looked_up = _presenting(make_client, migrated, agent, new_id(kind).encode())
+    assert unknown.status_code == 401 and looked_up  # well-formed: still looked up
+    assert unknown.headers["Maity-Error"] == "unauthenticated"
+    response, looked_up = _presenting(make_client, migrated, agent, malformed)
+    assert response.status_code == 401, response.text
+    assert response.headers["Maity-Error"] == "unauthenticated"
+    assert response.json() == unknown.json()
+    assert response.content == unknown.content
+    assert _comparable(response.headers) == _comparable(unknown.headers)
+    assert not looked_up
+
+
+def _uploading(
+    make_client: ClientFactory, engine: Engine, agent: factory.Agent, credential_id: bytes
+) -> tuple[int, list[tuple[bytes, bytes]], bytes, bool]:
+    """A signed attachment upload, valid but for the credential id it presents, whose declared
+    body is over the default cap, driven at the hub itself: the route's larger cap sends it
+    through the large-body precheck (`middleware._body_cap`, `caller.precheck`), and the body
+    is never handed over, so only an answer before the body is read can come back. Its status,
+    headers and body, and whether a credential row was asked for."""
+    path = "/api/v1/projects/maintainer/maity/attachments"
+    headers = signed(agent, "POST", path, "name=big.bin")
+    del headers["Authorization"]
+    queried: list[str] = []
+    sent: list[dict[str, Any]] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        queried.append(statement.lower())
+
+    async def never_read() -> dict[str, object]:
+        raise AssertionError("the body was read before the caller was known")
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": path, "raw_path": path.encode(), "root_path": "",
+        "query_string": b"name=big.bin", "server": ("hub.example", 443),
+        "client": ("203.0.113.7", 1),
+        "headers": [
+            (b"host", b"hub.example"),
+            (b"content-type", b"application/octet-stream"),
+            (b"content-length", str(middleware.BODY_CAP + 1).encode()),
+            (b"authorization", b"Maity-HMAC " + credential_id),
+            *[(name.lower().encode(), value.encode()) for name, value in headers.items()],
+        ],
+    }  # fmt: skip
+    client = make_client()
+    with statements.listening(engine, heard):
+        flow.drive(client, scope, never_read, send)
+    start = sent[0]
+    body = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+    looked_up = any("credential.verifier" in s for s in queried)
+    return start["status"], start["headers"], body, looked_up
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_CREDENTIAL_IDS)
+def test_a_malformed_credential_id_is_refused_by_the_large_body_precheck_without_a_query(
+    make_client: ClientFactory, migrated: Engine, agent: factory.Agent, malformed: bytes
+) -> None:
+    kind = "runner_credential" if malformed.startswith(b"rcrd-") else "credential"
+    status, headers, body, looked_up = _uploading(
+        make_client, migrated, agent, new_id(kind).encode()
+    )
+    assert status == 401 and looked_up  # well-formed: still looked up
+    assert dict(headers)[b"maity-error"] == b"unauthenticated"
+    refused = _uploading(make_client, migrated, agent, malformed)
+    assert refused[0] == 401, refused[2]
+    assert dict(refused[1])[b"maity-error"] == b"unauthenticated"
+    assert refused[2] == body
+    assert _comparable(refused[1]) == _comparable(headers)
+    assert not refused[3]
+
+
+# Fixed values, not `new_id`: every pytest-xdist worker must collect the same test ids.
+# `crd-zzzzzzzzzzzz` has the issued form (`ids.has_shape`) but no row in a fresh database;
+# a bearer value may name a runner credential too (`caller._possessed`), refused only after it.
+@pytest.mark.parametrize(
+    ("credential_id", "looked_up"),
+    [
+        ("agt-" + "0" * 12, False),
+        ("crd-" + "0" * 13, False),
+        ("crd-" + "z" * 12, True),
+        ("rcrd-" + "0" * 13, False),
+        ("rcrd-" + "z" * 12, True),
+    ],
+    ids=[
+        "agent-prefix",
+        "thirteen-characters",
+        "well-formed-unknown",
+        "runner-thirteen-characters",
+        "runner-well-formed-unknown",
+    ],
+)
+def test_a_bearer_credential_id_of_no_issued_form_is_not_looked_up(
+    make_client: ClientFactory, migrated: Engine, credential_id: str, looked_up: bool
+) -> None:
+    sent: list[str] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement.lower())
+
+    client = make_client()
+    value = f"mty1.{credential_id}.{'C' * 43}"
+    with statements.listening(migrated, heard):
+        response = client.get("/api/v1/me", headers={"Authorization": f"Bearer {value}"})
+    assert response.headers["Maity-Error"] == "unauthenticated"
+    assert any("credential.verifier" in s for s in sent) is looked_up
 
 
 # --- nonces shared by every replica (PostgreSQL, hub/context/replicas.md 1c65bb74) -----------

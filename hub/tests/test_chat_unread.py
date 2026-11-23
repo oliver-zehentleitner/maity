@@ -234,6 +234,7 @@ def test_nothing_while_no_instance_listens(room: Room) -> None:
     for session_id, wait in r.waits:
         listening.closed(session_id, wait)
     r.waits.clear()
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     r.say(r.owner, "anyone?")
     r.at(11)
     assert chat_unread.sweep(r.engine) == []
@@ -367,6 +368,7 @@ def test_offline_agents_read_no_message_however_much_is_unread(room: Room) -> No
     for session_id, wait in r.waits:
         listening.closed(session_id, wait)
     r.waits.clear()
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     for n in range(40):
         r.say(r.owner, f"long message {n} " + "x" * 2000)
     for minute in (11, 12, 13):
@@ -417,7 +419,9 @@ def test_a_listening_agent_reads_each_message_once_and_no_body_at_all(
 def _credential_of(r: Room, agent: flow.Agent, **values: Any) -> None:
     with r.engine.begin() as conn:
         conn.execute(
-            update(t.credential).where(t.credential.c.id == agent.credential_id).values(**values)
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.credential_id == agent.credential_id)
+            .values(**values)
         )
 
 
@@ -522,6 +526,7 @@ def test_one_agents_open_cycle_does_not_hold_back_another_agents_nudge(room: Roo
     first, second = r.agents
     session_id, wait = r.waits.pop(0)  # the first agent stops listening for a while
     listening.closed(session_id, wait)
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     r.say(r.owner, "one")
     r.read(first)  # the first agent's mark: "one"
     r.at(1)

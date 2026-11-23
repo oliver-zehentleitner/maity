@@ -313,6 +313,25 @@ def test_a_reviewers_pause_and_edge_wait_for_a_humans_go(
     assert seat.status_code == 202, seat.text
 
 
+def test_an_isolated_managers_change_is_refused_at_the_go(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine
+) -> None:
+    # §2.3, §6.2: the go acts on the manager's reach, which an isolated manager has not.
+    manager = team["manager"]
+    reviewer = factory.agent(migrated, _project_id(migrated), owner.id, "reviewer").agent_id
+    _set(migrated, reviewer, reports_to=manager.id)
+    request = member(manager, reviewer, {"paused": {"reason": "too many cards"}}).json()
+    _set(migrated, manager.id, isolated_since=clock.now())
+    refused = owner.post(f"{PROJECT}/requests/{request['id']}/answer", {"reply_id": "go"})
+    _not_in_line_conflict(refused)
+    assert owner.get(f"{PROJECT}/members/{reviewer}").json()["paused"] is None
+
+
+def _not_in_line_conflict(response: Any) -> None:
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "not_in_line"
+
+
 def test_a_managers_consented_line_change_never_makes_a_cross_owner_edge(
     owner: flow.Human, team: dict[str, Any], migrated: Engine
 ) -> None:

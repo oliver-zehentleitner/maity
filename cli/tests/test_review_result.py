@@ -7,14 +7,16 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import fakehub
 import pytest
+from conftest import posix
 
-from maity import citecheck, cli, proc, state
+from maity import citecheck, cli, clonecheck, proc, state
 
 P = "/api/v1/projects/oliver/maity"
 REVIEW = {
@@ -465,3 +467,148 @@ def test_a_cite_with_two_problems_counts_once(
     err = capsys.readouterr().err
     assert "not sent: 1 cite(s)" in err
     assert err.count("review.cites.0 b.txt:1: ") == 2  # too long, and on line 2
+
+
+@posix  # under a placement a named file is read only where descriptors walk (not Windows)
+@pytest.mark.parametrize(
+    ("cite", "sent"),
+    [
+        ({"path": "b.txt", "line": 2, "quote": "second"}, True),
+        ({"path": "b.txt", "line": 1, "quote": "second"}, False),
+    ],
+)
+def test_under_a_placement_the_cites_are_checked_in_the_clone_from_its_folder(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    cite: dict[str, object],
+    sent: bool,
+) -> None:
+    """agy works in the workspace folder that holds the clone as `repo` (§15.5): the cites
+    stand or fall in the runner's clone, not in the folder, which is no clone."""
+    _commit("b.txt", "first\nsecond\n")
+    clone = Path.cwd()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    # A runner's clone is plain (clonecheck): the fixture's redirect to its local remote goes;
+    # the cite check needs no remote.
+    subprocess.run(["git", "config", "--remove-section", "url." + str(clone.parent / "remote.git")],
+                   check=True)  # fmt: skip
+    # Under a placement maity reads a named file only inside the clone (inclone).
+    (clone / "review.json").write_text(
+        json.dumps({"subject": "#1", "head": head, "verdict": "approve", "cites": [cite]})
+    )
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    private = clone.parent / "agent-git"
+    private.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    (private / "git").write_text(git)  # the git the runner recorded for the clone
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    monkeypatch.chdir(clone.parent)
+    review = os.path.join(clone.name, "review.json")
+    result = cli.main(_say("Approve.", "--review-file", review))
+    err = capsys.readouterr().err
+    assert "not checked" not in err
+    if sent:
+        assert result == cli.EXIT_OK, err
+    else:
+        assert result == cli.EXIT_ERROR
+        assert "it stands on line 2" in err
+
+
+def test_under_a_placement_whose_clone_cannot_be_named_nothing_is_sent(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`MAITY_PLACEMENT` without `GIT_COMMON_DIR`: the cites are not checked from the current
+    directory instead (cli/context/runner.md b4a8030d); the review is refused, unsent."""
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.delenv("GIT_COMMON_DIR", raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(REVIEW)))
+    before = len(fake.seen)
+    result = cli.main(_say("Approve.", "--review-file", "-"))
+    err = capsys.readouterr().err
+    assert result == cli.EXIT_ERROR, err
+    assert "without GIT_COMMON_DIR" in err and "not checked" not in err
+    assert not [s for s in fake.seen[before:] if s.method == "POST"]
+
+
+@posix  # under a placement a named file is read only where descriptors walk (not Windows)
+def test_under_a_placement_a_clone_its_git_refuses_sends_nothing(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The runner's clone, but one maity's git does not run in (clonecheck): not "no clone
+    here", so the review is not sent unchecked (cli/context/commands.md 7f3c1e52)."""
+    _commit("b.txt", "first\nsecond\n")
+    clone = Path.cwd()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    subprocess.run(["git", "config", "--remove-section", "url." + str(clone.parent / "remote.git")],
+                   check=True)  # fmt: skip
+    # A key that runs code: maity's git refuses the clone (clonecheck.UNSUPPORTED_KEYS).
+    subprocess.run(["git", "config", "core.fsmonitor", "true"], check=True)
+    cite = {"path": "b.txt", "line": 2, "quote": "second"}
+    (clone / "review.json").write_text(
+        json.dumps({"subject": "#1", "head": head, "verdict": "approve", "cites": [cite]})
+    )
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    private = clone.parent / "agent-git"
+    private.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    (private / "git").write_text(git)
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    before = len(fake.seen)
+    result = cli.main(_say("Approve.", "--review-file", "review.json"))
+    err = capsys.readouterr().err
+    assert result == cli.EXIT_ERROR, err
+    assert "not sent: the review's cites cannot be checked: maity runs no git here" in err
+    assert not [s for s in fake.seen[before:] if s.method == "POST"]
+
+
+def test_in_reply_to_sends_the_seq_of_the_review_order(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """`--in-reply-to SEQ` sends `in_reply_to` (§8.4, §13); the hub then wakes the instance
+    that sent the order, and checks the seq itself."""
+    (tmp_path / "review.json").write_text(json.dumps(REVIEW))
+    argv = _say("Approve.", "--review-file", str(tmp_path / "review.json"), "--in-reply-to", "41")
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["in_reply_to"] == 41
+    # Without the flag the body carries no `in_reply_to`.
+    assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == 0
+    assert "in_reply_to" not in fake.signed()[-1].json()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["say", "agt-a", "Hi", "--type", "notice", "--in-reply-to", "41"],
+        ["say", "Hi", "--type", "update", "--task", "tsk-0001", "--in-reply-to", "41"],
+    ],
+)
+def test_in_reply_to_goes_with_review_result_only(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "--in-reply-to goes with --type review_result only" in capsys.readouterr().err
+    assert not fake.signed()

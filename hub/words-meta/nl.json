@@ -175,6 +175,22 @@
     "en": "9d1a4d7e2b6e1f5d",
     "text": "f40395844acf931d"
   },
+  "mail.address_changed_body": {
+    "en": "219a6f021ae9f584",
+    "text": "4d4766c377ec6d0e"
+  },
+  "mail.address_from": {
+    "en": "047165494d34f84b",
+    "text": "328fcb205b1c32ef"
+  },
+  "mail.address_removed_body": {
+    "en": "032acd3da7bab9bb",
+    "text": "7a58373aa7e61728"
+  },
+  "mail.address_subject": {
+    "en": "db411d71ce3e92da",
+    "text": "f5d3359fce1857a6"
+  },
   "mail.more": {
     "en": "a1cd32796e7e9005",
     "text": "555c05a04cea5c5e"
@@ -182,6 +198,14 @@
   "mail.only": {
     "en": "fb2c1b804e84d045",
     "text": "72430d053947205a"
+  },
+  "mail.password_changed_body": {
+    "en": "8e4865d52bb35e96",
+    "text": "b219b6627a410a35"
+  },
+  "mail.password_changed_subject": {
+    "en": "5aa6b47a36ce0294",
+    "text": "ea4f08b897f3d5b6"
   },
   "mail.password_reset_body": {
     "en": "5004d5be0f096351",
@@ -211,9 +235,25 @@
     "en": "dfaef747e184ddf6",
     "text": "01c5000103663239"
   },
+  "mail.two_factor_unlock": {
+    "en": "995dd8064280fd52",
+    "text": "e6ef54681d347f12"
+  },
+  "mail.unknown_ip": {
+    "en": "e56c65d7188c79cc",
+    "text": "9face2142762848e"
+  },
   "mail.updates": {
     "en": "ee72d97604a9a40d",
     "text": "ee72d97604a9a40d"
+  },
+  "mail.verify_body": {
+    "en": "dbf48469793468cf",
+    "text": "51bebe3fb8da6246"
+  },
+  "mail.verify_subject": {
+    "en": "749bdc78cabbe4a2",
+    "text": "0245e95dd2967bc0"
   },
   "mail.wrote": {
     "en": "3cff4d92714ec5c4",
@@ -282,6 +322,22 @@
   "mail_links.reset_title": {
     "en": "c5c9e3b89352c1fb",
     "text": "10852a1bffd3c1fb"
+  },
+  "mail_links.unlock_button": {
+    "en": "0788b25c317236d9",
+    "text": "edca64542bf04176"
+  },
+  "mail_links.unlock_done": {
+    "en": "4a4c4be87b43a687",
+    "text": "375735aa64ce4a9b"
+  },
+  "mail_links.unlock_text": {
+    "en": "65cb2f5b13615dda",
+    "text": "41c4dd010e1be7c5"
+  },
+  "mail_links.unlock_title": {
+    "en": "6d5b94747eff0c3d",
+    "text": "7be812ed5b646635"
   },
   "mail_links.unsub_button": {
     "en": "370a9b159d6a6096",
@@ -375,6 +431,10 @@
     "en": "ad5753822b4df1d6",
     "text": "e5a7bab2ecfce033"
   },
+  "notify.password_changed": {
+    "en": "08c9b83ce4702c09",
+    "text": "cef79d91bdf15148"
+  },
   "notify.password_reset": {
     "en": "ee4080c05d6b2f77",
     "text": "4a13d1f82f651cf8"
@@ -410,6 +470,10 @@
   "notify.tf_failed": {
     "en": "bc7de30f70be93d7",
     "text": "80b63684e9e81029"
+  },
+  "notify.tf_failed_daily": {
+    "en": "d20886a54077ab35",
+    "text": "adda622040efd2d2"
   },
   "notify.tf_failed_reset": {
     "en": "d0522e314340645f",
@@ -458,6 +522,10 @@
   "product.bug": {
     "en": "191903c61492ea38",
     "text": "a26b79d41268cdba"
+  },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "1a0e215f10f8144c"
   },
   "product.love": {
     "en": "96fa5228627bef6a",

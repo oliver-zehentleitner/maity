@@ -7,7 +7,7 @@ under the position key, with the human's id and the purpose as associated data a
 version inside. The key comes from `MAITY_SECRET_KEY` (HKDF) when it is set, else from a
 random key the hub stores at first use; changing the instance key invalidates every
 position. A vector whose inline form would pass the cap is stored, and the position is
-a sealed handle to it.
+a sealed handle to it, kept 30 days after its last use (`retention`).
 """
 
 from __future__ import annotations

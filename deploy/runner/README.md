@@ -16,6 +16,8 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
   once, both binding the host port 5432 for their service container (`ports: 127.0.0.1:5432`).
 - Each service sets `PYTEST_ARGS=-n 2` in its unit: two workers per job, six on the machine's
   eight cores. Hosted runners keep `-n auto`.
+- `hub-sqlite` and `hub-postgresql` are matrices of three shards each (`hub-sqlite (1)` to `(3)`); on
+  the one runner of their type the three shards run one after another, on hosted runners side by side.
 - `HUB_RUNNER_TYPES` (optional, a space-separated list of `sqlite`, `pg`, `maria`) names the jobs that go to the machine; unset or empty means
   all three. A job whose type is not listed stays hosted: with a runner for one type only, the other two jobs do not wait for a runner
   that is not there.
@@ -125,7 +127,9 @@ So the machine is capped, not trusted:
 4. For each instance, as root, with no job running (it restarts the service if it is running and never starts one; the script refuses otherwise unless
    `FORCE=1`): `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> install-python.sh`. The jobs use
    `actions/setup-python` for 3.12, which has no Python for Debian and would fail; the script installs 3.12 with
-   uv as the runner user, puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
+   uv as the runner user (uv itself from its release tarball, checked against the pinned `UV_SHA256` before it
+   runs; a different `UV_VERSION` needs its own checksum; an existing uv, e.g. from the old `curl | sh` setup, is left
+   untouched, so whoever wants the pinned one deletes the runner user's `~/.local/bin/uv` first), puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
    "externally managed" marker from that private copy (without it `pip install` fails in the jobs), and replaces
    the stored `.path`.
 5. `systemctl enable --now maity-runner@pg` (the instance(s) you installed, one at a time); GitHub shows it as Idle.

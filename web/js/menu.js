@@ -15,6 +15,11 @@ window.Maity = window.Maity || {};
   const { h, append, clear } = M.dom;
   const SVG = "http://www.w3.org/2000/svg";
   let serial = 0;
+  // A menu's id is made up anew for every draw: this prefix and the serial. M.isMenuId tells one
+  // apart, so a view comparing two draws (js/board.js, M.dom.sameTree) need not know the format.
+  const MENU_ID_PREFIX = "menu-";
+  const MENU_ID = new RegExp("^" + MENU_ID_PREFIX + "\\d+$");
+  M.isMenuId = (value) => MENU_ID.test(value);
   // Each menu by its button, so that a view which draws a menu anew can open the new one where the
   // old one stood open (M.menuOf): the board's redraws that no action of the reader starts.
   const MENUS = new WeakMap();
@@ -131,13 +136,15 @@ window.Maity = window.Maity || {};
     svg.firstChild.setAttribute("fill-rule", "evenodd");
     return svg;
   }
-  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, lock, theme: themeIcon };
+  // A filled five-pointed star for a starred project's tab (§5.1 "Stars"); the text colour.
+  const star = (size) => bars(size, "M12 2.5l2.85 6.1 6.65.75-4.95 4.5 1.35 6.6L12 17.1l-5.9 3.35 1.35-6.6-4.95-4.5 6.65-.75z");
+  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, lock, star, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }
   M.menuButton = function (spec) {
     serial += 1;
-    const id = "menu-" + serial;
+    const id = MENU_ID_PREFIX + serial;
     const list = h("ul", { class: "menu", id, role: "menu", "aria-label": spec.listLabel || spec.label });
     list.hidden = true;
     const button = h("button", {
