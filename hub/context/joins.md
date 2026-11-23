@@ -583,3 +583,30 @@ What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outs
 project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
 the contribution fields of settings not built (`looking_for_coders`, `outside_claims`,
 `sponsor_url`, the reason `blocked`); and the claim request of §6.5. Each is a later card.
+
+## Accepting an invitation asks for good standing right after the pending account, before the token
+
+**Id:** f4b665b4-06fd-4cd2-9ed0-477a6f9ef560
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-j9sq38x3zvym, 2026-11-23; docs/api.md §3.4 "Accepting" and "Limits and secrecy", §2.6.5, §1.3; `routes/invitations.py` `accept_invitation`; `auth/sessions.py` `good_standing`
+**Revisit when:** §3.4 names an order for the accept's refusals, or a `go` on an invitation by handle (§3.4 "By handle") is held to good standing as well
+
+`POST /invitations/{token}/accept` reads the calling session and refuses one that is not in good
+standing (`forbidden`, `details.reason: not_in_good_standing`) right after the pending account
+(`account_pending`) and before the token is looked up. The test is `auth.sessions.good_standing`,
+the one every other call of §1.3's `not_in_good_standing` list asks; the route has none of its own.
+
+**Reason:** §3.4 says accepting needs a session in good standing, but names no order. Checked
+first, the refusal is the same for every token, so such a session learns nothing about the token,
+as a pending account learns nothing (§2.7.5); and none of the later refusals that change the
+invitation (an address-bound one used up by a member, one voided for its issuer) runs for it.
+§3.4 keeps its named refusals for "a valid token by a signed-in person"; this one is about the
+session, not the token.
+
+**Rejected alternatives:**
+- Checking in `_accept`, beside the other named refusals: a session not in good standing would
+  then learn whether a token is open, and an accept from it could still use up or void the
+  invitation before it is refused.
+- A test of its own for the invitation: two tests of the same rule could drift apart.
