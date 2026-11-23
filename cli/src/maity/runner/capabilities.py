@@ -262,15 +262,64 @@ def claude_hooks_line(why: str) -> str:
             " agents are not started until the setting is removed")  # fmt: skip
 
 
-def unchecked(harness_id: str, version: str | None) -> str | None:
+def above_checked(harness_id: str, version: str | None) -> bool:
+    """Whether `version` is later than the harness's CHECKED, read as the sandbox gate reads a
+    version: only a SemVer version counts, a prerelease sorts before its release (so
+    `2.1.326-rc.1` is above 2.1.325, `2.1.325-rc.1` is not), build metadata does not count. An
+    unknown or unreadable version, or a harness with no checked version, is not above."""
+    checked = _RELEASE.fullmatch(CHECKED.get(harness_id) or "")
+    found = _RELEASE.fullmatch(version or "")
+    if checked is None or found is None:
+        return False
+    release = tuple(int(part) for part in found.groups()[:3])
+    return release > tuple(int(part) for part in checked.groups()[:3])
+
+
+def unchecked(harness_id: str, version: str | None, track: str = "checked") -> str | None:
     """A warning when `version` of the harness is not the one its sandbox was checked with,
-    or None."""
+    or None. With `track = "newest"` a version above the checked one is no warning: the
+    operator chose it, and `unchecked_note` names it instead (docs/runners.md)."""
     checked = CHECKED.get(harness_id)
     if checked is None or version == checked:
+        return None
+    if track == "newest" and above_checked(harness_id, version):
         return None
     return (f"harness {harness_id}: its sandbox was checked with {checked}, this is"
             f" {version or 'an unknown version'}; whether a call with something in front of"
             " `maity` stays in the sandbox is not checked for it")  # fmt: skip
+
+
+def unchecked_warning(
+    harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> str | None:
+    """`unchecked` with the way back, for a version above the checked one under
+    `track = "checked"`; the one text `maity runner check`, an ssh host's check and the
+    runner's start log give. `tools_dir` is None where the runner manages no tool (an ssh
+    host): there the way back is to install the checked version by hand."""
+    warning = unchecked(harness.id, version, harness.track)
+    if warning is None or not above_checked(harness.id, version):
+        return warning
+    checked = CHECKED[harness.id]
+    if tools_dir is None or not (harness.install or harness.update != "never"):
+        warning += f"; to go back, install {checked} yourself"
+    else:
+        warning += f"; the runner's update takes at most {checked} and does not go back"
+        kept = tools.load(tools_dir, harness.id).previous_version
+        if kept is not None and not above_checked(harness.id, kept):
+            warning += (f"; `maity runner tools rollback {harness.id}` starts new sessions"
+                        f" on the kept {kept}")  # fmt: skip
+        else:
+            warning += f"; no version at or below {checked} is kept for a rollback"
+    return warning + '; or set track = "newest" to keep it'
+
+
+def unchecked_note(harness_id: str, version: str | None, track: str) -> str | None:
+    """A note, not a warning, for a version above the checked one under `track = "newest"`;
+    None otherwise."""
+    if track != "newest" or not above_checked(harness_id, version):
+        return None
+    return (f"harness {harness_id}: {version} is newer than {CHECKED[harness_id]}, the version"
+            ' its sandbox was checked with; track = "newest" takes it unchecked')  # fmt: skip
 
 
 def ascii_text(value: str, limit: int = 200) -> str:

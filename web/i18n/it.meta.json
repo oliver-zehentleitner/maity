@@ -15715,6 +15715,10 @@
     "en": "ed7acb5465dc68aa",
     "text": "a83912da2ad4a606"
   },
+  "report.not_found.person": {
+    "en": "7c919d4eea02f65a",
+    "text": "05b47d9e9443d963"
+  },
   "report.open": {
     "en": "85d640066187108d",
     "text": "30f9fe2735d9bbd6"
@@ -19499,6 +19503,66 @@
     "en": "1a8185ac38f28117",
     "text": "9774cf9bd6bbcbdd"
   },
+  "tabs.outsider": {
+    "en": "c954775e568a706b",
+    "text": "f4c7cfef1cc4bddd"
+  },
+  "tabs.outsider_said": {
+    "en": "85149be017de9b85",
+    "text": "8c0205d51d8fb1a6"
+  },
+  "tabs.outsider_starred": {
+    "en": "8773fcc5468dba40",
+    "text": "f6d3fb1407f05895"
+  },
+  "tabs.outsider_starred_said": {
+    "en": "cf003902fae432f0",
+    "text": "c966b741afae7053"
+  },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "6988d4d23eae75c3"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "54064107f27f810b"
+  },
+  "tabs.star_refused.duplicate": {
+    "en": "7b81af33a1c1d982",
+    "text": "e1662f6c96bf706e"
+  },
+  "tabs.star_refused.member": {
+    "en": "d24d1afa79c89404",
+    "text": "c78651b514da97d7"
+  },
+  "tabs.star_refused.not_public": {
+    "en": "96320fcb44285a42",
+    "text": "dcd2cfcaecf73cd8"
+  },
+  "tabs.star_refused.too_many": {
+    "en": "e67b9e539c2dea9b",
+    "text": "3703a7374bcdd052"
+  },
+  "tabs.star_refused.too_many_hidden": {
+    "en": "4caf1d14d04ed698",
+    "text": "562dad6a3608feb4"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "bd10270e0fb1a70e"
+  },
+  "tabs.unstar": {
+    "en": "35927f42380e942f",
+    "text": "5faa9f05a5f6d929"
+  },
+  "tabs.unstar_failed": {
+    "en": "b5f86b4249ac9a21",
+    "text": "1e1641c5a25f0b0e"
+  },
+  "tabs.unstarred": {
+    "en": "fb313301fa2007be",
+    "text": "65c87365d09695da"
+  },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",
     "text": "ab619d9eeb61168a"
@@ -21146,6 +21210,10 @@
   "why.empty.no_repository": {
     "en": "de51ee428eb36caa",
     "text": "8086ca0765b0c35d"
+  },
+  "why.empty.outsider": {
+    "en": "e533bb91a64c25b0",
+    "text": "5c9f39d48bf3c13e"
   },
   "why.findings": {
     "en": "22f0b643ce2ad30e",
