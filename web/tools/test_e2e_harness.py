@@ -7,16 +7,23 @@ on stand-in answers. Python standard library only: python3 web/tools/test_e2e_ha
 
 import ast
 import contextlib
+import email
+import email.policy
 import fcntl
+import http.client
 import io
 import json
 import os
 import re
+import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import urllib.request
+from email.message import EmailMessage
 from pathlib import Path
 
 SOURCE = Path(__file__).with_name("e2e.py")
@@ -27,6 +34,7 @@ WANTED = {
     "clean_environment",
     "LOCK_PATH", "_machine_lock", "open_lock_file", "take_machine_lock",
     "BOOT_HEAD", "BootHeads",
+    "free_port", "port_taken", "MailCatcher",
 }
 
 
@@ -41,7 +49,11 @@ def load() -> dict:
     found = {n.name if isinstance(n, (ast.FunctionDef, ast.ClassDef)) else n.targets[0].id for n in nodes}
     if found != WANTED:
         sys.exit(f"e2e.py lacks {sorted(WANTED - found)}")
-    namespace = {"re": re, "json": json, "sys": sys, "Path": Path, "Run": object, "os": os, "fcntl": fcntl, "time": time}
+    namespace = {
+        "re": re, "json": json, "sys": sys, "Path": Path, "Run": object, "os": os, "fcntl": fcntl,
+        "time": time, "socket": socket, "socketserver": socketserver, "threading": threading,
+        "email": email, "EmailMessage": EmailMessage,
+    }
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), "exec"), namespace)
     return namespace
 
@@ -366,6 +378,138 @@ def a11y_cases() -> int:
     return failed
 
 
+def catcher_rounds(source: str) -> list[str]:
+    """What is wrong with the port order of each function of e2e.py that starts a MailCatcher:
+    the catcher must be made before any `free_port(` in that function, and every such
+    `free_port(` must pass `avoid=` naming the catcher's `.port`, so the OS cannot hand the
+    catcher the hub's port (tsk-vfdn98vwa0ym). One message per fault, naming the function."""
+    faults = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        catchers: dict[str, int] = {}  # variable name -> line of its MailCatcher()
+        ports = []
+        for inner in ast.walk(node):
+            if (isinstance(inner, ast.Assign) and isinstance(inner.value, ast.Call)
+                    and isinstance(inner.value.func, ast.Name) and inner.value.func.id == "MailCatcher"):
+                for target in inner.targets:
+                    if isinstance(target, ast.Name):
+                        catchers[target.id] = inner.lineno
+            if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "free_port":
+                ports.append(inner)
+        if not catchers or node.name == "free_port":
+            continue
+        first = min(catchers.values())
+        for call in ports:
+            where = f"{node.name} (line {call.lineno})"
+            if call.lineno < first:
+                faults.append(f"{where}: free_port() before the MailCatcher of line {first}")
+                continue
+            avoid = next((k.value for k in call.keywords if k.arg == "avoid"), None)
+            named = {
+                n.value.id for n in ast.walk(avoid) if isinstance(n, ast.Attribute) and n.attr == "port"
+                and isinstance(n.value, ast.Name)
+            } if avoid is not None else set()
+            if not named & set(catchers):
+                faults.append(f"{where}: free_port() does not avoid the catcher's port ({sorted(catchers)})")
+    return faults
+
+
+class _Ports:
+    """A stand-in for the socket module whose bind(("127.0.0.1", 0)) hands back the given
+    ports in turn, as the OS could."""
+
+    def __init__(self, ports: list[int]):
+        self.ports = list(ports)
+
+    def socket(self):
+        outer = self
+
+        class One:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def bind(self, _address):
+                self.port = outer.ports.pop(0)
+
+            def getsockname(self):
+                return ("127.0.0.1", self.port)
+
+        return One()
+
+
+def port_cases(ns: dict) -> int:
+    """tsk-vfdn98vwa0ym: a MailCatcher on the port free_port gave the hub answers the hub's
+    health check (the CI failure of job 137502570723); free_port(avoid=) never returns the
+    catcher's port; a listening catcher's port is never free; every round of e2e.py makes its
+    catcher before it picks the hub's port, and avoids the catcher's."""
+    cases = []
+    # The old order, forced: free_port picks P and closes it, then a catcher binds P, as the OS
+    # could do for a catcher on port 0. The hub's health check then reaches the catcher.
+    taken = ns["free_port"]()
+    catcher = ns["MailCatcher"](port=taken)
+    # The client hangs up on the SMTP greeting, so the catcher's next write breaks its pipe:
+    # expected here, and not worth a traceback on the output.
+    catcher.server.handle_error = lambda *_: None
+    try:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{taken}/api/v1/health", timeout=2)
+            seen = "answered as HTTP"
+        except http.client.BadStatusLine as error:
+            seen = str(error)
+        cases.append(("the old order: a catcher on the hub's port answers its health check",
+                      "220 e2e catcher" in seen, seen))
+    finally:
+        catcher.server.shutdown()
+        catcher.server.server_close()
+    # The new order: the catcher listens first.
+    catcher = ns["MailCatcher"]()
+    try:
+        cases.append(("a listening catcher's port is not free", ns["port_taken"](catcher.port), catcher.port))
+        real = ns["socket"]
+        try:
+            other = catcher.port + 1 if catcher.port < 65535 else catcher.port - 1
+            ns["socket"] = _Ports([catcher.port, other])
+            got = ns["free_port"](avoid={catcher.port})
+            cases.append(("free_port asks again when the OS hands back a port it avoids", got == other, got))
+            ns["socket"] = _Ports([catcher.port])
+            cases.append(("free_port without avoid takes what the OS gives",
+                          ns["free_port"]() == catcher.port, catcher.port))
+        finally:
+            ns["socket"] = real
+        picked = {ns["free_port"](avoid={catcher.port}) for _ in range(50)}
+        cases.append(("50 real picks never give the catcher's port", catcher.port not in picked, catcher.port))
+    finally:
+        catcher.server.shutdown()
+        catcher.server.server_close()
+    # The guard on e2e.py itself, and that it sees the old order.
+    faults = catcher_rounds(SOURCE.read_text(encoding="utf-8"))
+    cases.append(("every round of e2e.py makes its catcher first and avoids its port", not faults, faults))
+    old = """
+def mail_round(run):
+    port = free_port()
+    catcher = MailCatcher()
+
+def unguarded_round(run):
+    mailer = MailCatcher()
+    port = free_port()
+"""
+    found = catcher_rounds(old)
+    cases.append((
+        "the guard names each round with the old order or no avoid",
+        len(found) == 2 and found[0].startswith("mail_round") and found[1].startswith("unguarded_round"),
+        found,
+    ))
+    failed = 0
+    for name, ok, detail in cases:
+        failed += not ok
+        print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {detail}"))
+    return failed
+
+
 def main() -> int:
     ns = load()
     cases = [
@@ -385,6 +529,7 @@ def main() -> int:
     failed += environment_cases(ns)
     failed += lock_cases(ns)
     failed += a11y_cases()
+    failed += port_cases(ns)
     print("all ok" if not failed else f"{failed} failure(s)")
     return 1 if failed else 0
 
