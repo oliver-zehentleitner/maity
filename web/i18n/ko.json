@@ -264,6 +264,7 @@
   "all.page.no_projects": "아직 프로젝트가 없어요.",
   "all.page.reading": "읽는 중…",
   "all.page.unread": "이 프로젝트를 읽지 못했어요: {reason}",
+  "all.page.runners": "러너",
   "all.page.why": "Why",
   "all.pages": "모든 프로젝트의 페이지",
   "all.why.intro": "내 프로젝트별 Keep the Why: 내보내기 내용과 확인이 필요한 항목.",

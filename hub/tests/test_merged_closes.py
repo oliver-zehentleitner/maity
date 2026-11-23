@@ -18,7 +18,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_probe import READER, REPO, TOKEN, FakeGitHub, _report
+from tests.test_probe import OTHER, READER, REPO, TOKEN, FakeGitHub, _report
 
 BASE = "/projects/maintainer/maity"
 
@@ -604,6 +604,20 @@ def test_a_pull_request_from_a_fork_closes_nothing(
     github.pull(7, merged=True, repo="someone/maity")
     _, card_id = _reported(github, owner, make_client)
     probe.observe_report(migrated, READER, card_id)
+    assert _closed_or_why(migrated, card_id) == (False, ["head_ref"])
+
+
+@pytest.mark.usefixtures("admin_auto")
+def test_a_fork_pull_request_is_no_mismatch_beside_a_project_branch_of_its_name(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The reported branch lives in the fork; a branch of the same name in the project's own
+    repository is another branch, so its head contradicts nothing (tsk-k0x4jn4y4ykg)."""
+    github.pull(7, merged=True, repo="someone/maity")
+    github.branch("agent-b/probe", head=OTHER)  # the project's own, unrelated branch
+    _, card_id = _reported(github, owner, make_client)
+    probe.observe_report(migrated, READER, card_id)
+    assert _card(owner, card_id)["report"]["mismatch"] is False
     assert _closed_or_why(migrated, card_id) == (False, ["head_ref"])
 
 

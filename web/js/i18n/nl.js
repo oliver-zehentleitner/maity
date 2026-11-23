@@ -279,6 +279,7 @@ window.MAITY_I18N["nl"] = {
   "all.page.jour_fixe": "Vast overleg",
   "all.page.no_projects": "Je zit nog in geen project.",
   "all.page.reading": "Lezen…",
+  "all.page.runners": "Runners",
   "all.page.unread": "Dit project kon niet worden gelezen: {reason}",
   "all.page.why": "Why",
   "all.pages": "Pagina's van alle projecten",

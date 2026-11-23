@@ -453,3 +453,34 @@ reads what was pushed.
 - Resolving the effective push URL and ref: it repeats git's push logic
   (refspec matching, URL rewriting) in maity for configurations a runner's
   clone never has; refusing them is the smaller and safer rule.
+
+## gh looks for the pull request in the project's repository the hub names
+
+**Id:** 9bf7b445-c20d-4d95-a6e8-3d1a86413a9a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-k0x4jn4y4ykg (delivery from a fork), the fix the lead approved through the coordinator, 2026-11-23; `cli/src/maity/gitfacts.py` (`gh_repository`), `cli/src/maity/cli.py` (`_resume`, `cmd_report`)
+**Revisit when:** a project's repository is not on a host gh is asked about but `report` should still find its pull request, or the resume packet stops naming the repository
+
+`collect()` passes `--repo <host>/<owner>/<repo>` to `gh pr list` when the
+state names the project's repository: each resume stores
+`project.repository.url` from the packet as `repository` and drops it when
+the packet names none. Without it, or for a URL that is not one repository on
+a host gh is asked about (`gh_hosts`), gh picks the repository from the
+clone's remotes, as before.
+
+**Reason:** in a fork's clone whose only remote is the fork, gh asked the
+fork, which does not have the pull request, and the report went out as "no
+pull request" with no error. The project's repository is what the hub
+compares a report with (the probe reads only that one), so the pull request
+is looked for there.
+
+**Rejected alternatives:**
+- Telling a fork's agent to add an `upstream` remote or run
+  `gh repo set-default`: it depends on gh's choice of repository among the
+  remotes, and an agent that skips the step gets a silent "no pull request".
+- Reading the repository from the last resume packet kept on disk
+  (`LAST_PACKET`): it is kept for `--full`, and a field in the state is what
+  `report` already reads (`keep_the_why_required`). The rationale for both
+  is the coder's reading.

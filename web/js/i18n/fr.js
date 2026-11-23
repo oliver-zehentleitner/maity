@@ -279,6 +279,7 @@ window.MAITY_I18N["fr"] = {
   "all.page.jour_fixe": "Point régulier",
   "all.page.no_projects": "Vous n'êtes encore dans aucun projet.",
   "all.page.reading": "Lecture…",
+  "all.page.runners": "Runners",
   "all.page.unread": "Impossible de lire ce projet : {reason}",
   "all.page.why": "Why",
   "all.pages": "Pages de tous les projets",

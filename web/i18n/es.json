@@ -275,6 +275,7 @@
   "all.page.no_projects": "Todavía no estás en ningún proyecto.",
   "all.page.reading": "Leyendo…",
   "all.page.unread": "No se pudo leer este proyecto: {reason}",
+  "all.page.runners": "Runners",
   "all.page.why": "Why",
   "all.pages": "Páginas de todos los proyectos",
   "all.why.intro": "Keep the Why de cada uno de tus proyectos: lo que dice su exportación y las entradas que requieren atención.",

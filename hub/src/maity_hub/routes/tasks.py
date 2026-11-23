@@ -33,6 +33,7 @@ from maity_hub import (
     merged,
     moderation,
     namespace,
+    outsiders,
     paging,
     project_roles,
     ranks,
@@ -1598,6 +1599,7 @@ def claim(
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
+        holder_row = mine.row
         instance = mine.instance
         session_id = caller.session_id
         if body.holder is not None and body.holder not in (
@@ -1611,9 +1613,15 @@ def claim(
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
+            # Before the holder's instance, as §6.5's interim orders it ("Until the claim
+            # request is built"): only a human with tasks:admin gives an outsider's agent a card.
+            outsiders.refuse_taking(holder_row, mine)
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
+        # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
+        # after the scope, the project's state and the card's existence, before its state.
+        outsiders.refuse_taking(holder_row, mine)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -1970,6 +1978,8 @@ def assign(
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
+            # Before the holder's instance is chosen (§6.5, "Until the claim request is built").
+            outsiders.refuse_taking(assignee_row, mine)
             instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
             _refuse_paused(conn, assignee, instance)
             values.update(

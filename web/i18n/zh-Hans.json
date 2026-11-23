@@ -264,6 +264,7 @@
   "all.page.no_projects": "你还不在任何项目中。",
   "all.page.reading": "正在读取…",
   "all.page.unread": "无法读取此项目：{reason}",
+  "all.page.runners": "运行器",
   "all.page.why": "Why",
   "all.pages": "所有项目的页面",
   "all.why.intro": "你每个项目的 Keep the Why：其导出内容所述，以及需要关注的条目。",

@@ -81,6 +81,7 @@ NOT_LISTS = {
     "/projects/{}/{}/attachments/{}/content": "a file",
     "/projects/{}/{}/banner": "a picture",
     "/projects/{}/{}/contract": "a text",
+    "/projects/{}/{}/contribution": "what the project allows; `outside_roles`: the policy's own",
     "/projects/{}/{}/conversations/{}": "one chat; `participants`: its own",
     "/projects/{}/{}/events/{}": "one event",
     "/projects/{}/{}/forge/webhook": "a setting",
@@ -124,6 +125,7 @@ LIST_KEYS: dict[str, set[str]] = {
     "/me/forge": {"links"},
     "/me/notification-settings": {"kinds"},
     "/projects/{}/{}": {"aliases"},
+    "/projects/{}/{}/contribution": {"outside_roles"},
     "/projects/{}/{}/conversations/{}": {"participants"},
     "/projects/{}/{}/members/{}": {
         "aliases",

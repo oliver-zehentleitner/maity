@@ -709,7 +709,7 @@ writable surface and no write that leaves the scratch.
 **Status:** active
 **Evidence:** inferred
 **Verification:** corroborated — the make/read/remove discipline, the owner, mode and no-follow checks, the per-user parent owned 0700, the hiding of that parent from the sandboxed Codex and Claude Code placements, the end-to-end `--review-file` read through a production-made scratch, and the clean removal of a scratch holding read-only or unsearchable directories are covered by unit tests (`tests/test_scratchop.py`, the supervisor lifecycle in `tests/test_supervisor.py`, and the review-file read through the recorded scratch in `tests/test_placed_reads.py`); a live agy placement posting a `review_result` with the scratch is not yet observed and is still needed
-**Source:** card tsk-bbhcekjk2mgm and the dispatcher's approved design; the finding that agy's sandbox makes the workspace and the beside-clone `.scratch` read-only while the host's shared temp directory is writable from inside the sandbox, confirmed by a reviewer's live probe; the ownership question resolved by the dispatcher
+**Source:** card tsk-bbhcekjk2mgm and the dispatcher's approved design; the finding that agy's sandbox makes the workspace and the beside-clone `.scratch` read-only while the host's shared temp directory is writable from inside the sandbox, confirmed by a reviewer's live probe; the ownership question resolved by the dispatcher; docs-sourced, added 2026-11-23 (card tsk-c16hnxm0vc37): https://antigravity.google/docs/sandbox ("Workspace folders and paths allowed under write_file are mounted read-write."; "On macOS and Linux, anything not explicitly mounted is invisible inside the sandbox."), which disagrees with the probe — see the open conflict below; that doc sentence is uncorroborated until a live probe by an agy reviewer after the release
 **See:** runner.md — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-19
 **Revisit when:** agy's sandbox gains a writable beside-clone location, a harness other than agy needs a scratch its sandbox cannot write beside the clone, or the per-user temp parent is given a cleanup for stale placements
 
@@ -772,6 +772,17 @@ no-follow guard, as its being outside any per-placement control allows): a
 host that does not set those bits on its shared temp directory weakens that
 assumption, which is why the location is the conventional sticky shared temp
 directory and not an arbitrary one.
+
+Open conflict (2026-11-23, not resolved): the reviewer's live probe found the
+workspace read-only in agy's sandbox, while agy's sandbox documentation says
+"Workspace folders and paths allowed under write_file are mounted read-write."
+Both are recorded; neither is taken as the stale one. Why they differ is
+unknown; one possible explanation, unverified, is that agy's workspace folder
+is not `repo/` (agy starts in the folder above the clone). Either way the
+clone's `.git` stays read-only by agy's sandbox policy: two agy reviewers
+found it so in live sessions (2026-11-23), and the runner gives it no
+`write_file` allow until a live probe shows that the denies inside a
+writable `.git` hold (the agy settings entry, af2e96d9).
 
 **Reason:** the recorded-scratch machinery already draws the boundary this
 needs — a placement-owned writable directory the runner records, that
@@ -1177,9 +1188,10 @@ different lines, read as "cannot start".
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; the test runs of agy 1.5.7 in the notes of card tsk-e062xzrgfxxc; agy's built-in documentation of its rule forms; `agy --settings <file> agents` in a home of its own, which refuses unknown settings and values but not malformed rules
+**Verification:** uncorroborated — the `read_file` allow for the skill (2026-11-23) rests on agy's documentation only; no live agy session has run with it yet (a probe by an agy reviewer after the release is still needed)
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; the test runs of agy 1.5.7 in the notes of card tsk-e062xzrgfxxc; agy's built-in documentation of its rule forms; `agy --settings <file> agents` in a home of its own, which refuses unknown settings and values but not malformed rules; for the skill allow and the `.git` ruling (card tsk-c16hnxm0vc37, lotse's ruling on the review of PR #2147, 2026-11-23, docs-sourced, read by the coordinator): https://antigravity.google/docs/sandbox ("On macOS and Linux, anything not explicitly mounted is invisible inside the sandbox."; "Paths allowed under read_file are mounted read-only."; "Workspace folders and paths allowed under write_file are mounted read-write.") and https://antigravity.google/docs/permissions ("Paths granted under read_file dynamically populate the sandbox's read-only filesystem allowlist."; "Deny > Ask > Allow."; "Deny read implies deny write."); the symptoms reported by two agy reviewers (an empty skill directory, a read-only `repo/.git`)
 **See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
-**Revisit when:** a real session shows a rule form not matching as assumed, or git cannot reach the forge from agy's sandbox
+**Revisit when:** a real session shows a rule form not matching as assumed, or git cannot reach the forge from agy's sandbox; a live agy session shows the skill unreadable despite its allow, or a sandboxed command still asking for the skill; a live probe shows whether `.git`'s denies hold inside a writable `.git`
 
 Details of the settings §15.3 describes, chosen in the code:
 
@@ -1208,8 +1220,39 @@ Details of the settings §15.3 describes, chosen in the code:
 - `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
   `git --exec-path`, `gh`); git is not allowed at all and runs in the
   sandbox, as §15.3 lists only `maity` and the grant.
+- The delivered Keep the Why skill gets a `read_file` allow and keeps its
+  `write_file` deny (2026-11-23). agy's sandbox shows only what a rule
+  mounts, so with the deny alone the skill directory came up empty in the
+  sandbox; a `read_file` allow mounts it read-only, and the deny still wins
+  over any allow. Open: the docs do not say whether the `read_file` allow
+  also removes the approval prompt for a sandboxed command reading the
+  skill, or only for agy's file tool. Open as well: whether agy matches a
+  `read_file` rule on path-segment boundaries is unverified, so a sibling
+  whose path starts with the rule's (`<key>/plugin` followed by more
+  characters) might be readable too. The exposure is small: it is read
+  only, and the copy's directory holds only what the runner made in its
+  own skill store (its manifest beside `plugin`). The live probe checks it. The path is the resolved one on a local
+  target (2026-11-23, the review of PR #2147), so the rule, the session's
+  `MAITY_KTW_SKILL_DIR` and the mount name the same directory.
+- The clone's `.git` gets no `write_file` allow (2026-11-23): agy gets no
+  `write_file` allow at all. `.git` stays read-only as agy's sandbox
+  mounts it (the probe recorded in 8ec06e26; reported again by two agy
+  reviewers, whose `git fetch` failed there), and the agents use a scratch
+  clone instead. Opening it waits for a live probe: a disposable placement
+  given such an allow checks that `.git/hooks`, `.git/config` and
+  `.git/maity` stay unwritable, since agy does not document whether a
+  write deny inside a writable mount still holds. That probe is its own
+  card, not yet filed.
 
 **Rejected alternatives:**
+- Dropping the skill's `write_file` deny so the directory shows again: the
+  skill is the runner's checked copy and must not be written, and a
+  `read_file` allow alone mounts it read-only.
+- A `write_file` allow for the clone's `.git` now, unprobed (first in PR
+  #2147, taken out on lotse's ruling): if the denies inside it did not
+  hold, `.git/hooks` and `.git/config` would be writable from the sandbox,
+  and what they name runs outside it. The workaround for a read-only `.git`,
+  a scratch clone, costs only time.
 - Denying all of `~/.gemini` to agy as well: it could break agy's own
   sandboxed scratch, unseen.
 - Mapping grants with agy's `regex:` form to keep Claude Code's exact
@@ -1325,7 +1368,8 @@ and runs in agy's sandbox like every unlisted command. An entry with another
 `*` (`a *.py`, `npm run test:*`) is left out without a word, as before, since
 a rule word is matched on its own. So agy now gets no `command(...)` allow
 from a grant's command list at all: only `command(maity)`, the `read_url`
-hosts and the file and command denies stand. The same `allow` command list
+hosts, the delivered skill's `read_file` allow (added 2026-11-23, af2e96d9)
+and the file and command denies stand. The same `allow` command list
 reaches Claude Code unchanged, OpenCode takes it into its own rules, and
 Codex does not get it (79837674-493a-43dd-8670-e8b163309bca).
 
@@ -1420,7 +1464,9 @@ so a `runner.toml` naming `[harness.antigravity]` is accepted by
 `maity runner check` and `serve` instead of refused. agy is offered again.
 
 Re-offering does **not** widen agy's grants: agy still gets only
-`command(maity)` plus the `read_url` hosts, and the exact and ` *` prefix
+`command(maity)` plus the `read_url` hosts (and, since 2026-11-23, a
+`read_file` allow on the delivered skill, af2e96d9: a read of the runner's
+own copy, no command), and the exact and ` *` prefix
 command grants dropped in "agy command grants are dropped, exact and prefix"
 (f8a7b727) stay dropped. The only grant reaching outside agy's sandbox is the
 one `command(maity)` the runner cannot confine from its own settings — the
@@ -4099,6 +4145,42 @@ without the agent having to remember a flag in every session.
   the configuration write fails, so a deny would refuse a push that
   works; the prompt names them instead.
 
+## The CLI tests drop the shell's git variables, so a placed session runs them without writing its clone's `.git/config`
+
+**Id:** 09b8806b-ad72-484a-8891-3c24570cf770
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e00g3ydhq2xc (CLI tests erroring at setup in a placed Claude Code session, 2026-11-13); design note on card tsk-0byeaemhpfx3 and the lead's decision on it, 2026-11-23; reproduced on main in a placed session (`test_state.py`, the `clone` fixture's `git init --bare`)
+**See:** runner.md#git-in-a-sandboxed-session-works-without-writing-gitconfig — 82e70deb-7cf9-4ea1-be2f-137186b20b2d — as of 2026-11-23
+**Revisit when:** the runner stops pinning the session's git through the environment, or a test needs a session's git variable it does not set itself
+
+The autouse `_isolate` fixture drops every `GIT_*` of the shell before a
+test (`conftest.isolate_git`) and sets only `GIT_CONFIG_GLOBAL` and
+`GIT_CONFIG_NOSYSTEM`. A test that needs a session's variable sets it
+itself: `placed` sets `GIT_COMMON_DIR`. The cause: a runner session sets
+`GIT_COMMON_DIR` and `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` for its whole
+run, and the fixtures' git inherited them. So `git init --bare`, `config` and `push -u` in the
+`clone` fixture went to the session's own clone, whose `.git/config` the
+sandbox keeps unwritable, and almost every CLI test errored at setup.
+
+**Reason:** a test's git must reach only the repositories the test makes.
+Outside a sandbox, a shell that sets these variables would let the
+fixtures' keys land in the repository they name without an error.
+
+**Rejected alternatives:**
+- A per-placement sandbox allowance that lets the session write
+  `.git/config` (tsk-0byeaemhpfx3): it would plant the fixtures' keys (an
+  `insteadOf`, an upstream) in the agent's real clone, which the clone
+  check then refuses, and it would open hooks and `core.fsmonitor` outside
+  the sandbox (82e70deb).
+- Dropping only the runner's own variables (`GIT_COMMON_DIR`,
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`): other `GIT_*` reach a test's git
+  the same way. `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` redirect
+  it, and `GIT_CONFIG_PARAMETERS`, which Claude Code's sandbox sets in a
+  placed session for its network proxy (seen in that session's
+  environment), configures it.
+
 ## The sandbox's placeholders are hidden in `.git/info/exclude`
 
 **Id:** c4c60f8e-d87f-44f6-bce6-97f2d5671af8
@@ -6294,7 +6376,10 @@ designed: every sandbox is denied that directory (`supervisor._private`),
 so a copy there could only be read through an allow re-opened inside the
 deny. Below the home, the copy is in no deny list, and the session's
 existing rules simply name it: `Read` on it, the `Edit` deny, the
-sandbox's `denyWrite` and agy's `write_file` deny. No allow is widened.
+sandbox's `denyWrite` and agy's `write_file` deny. No allow is widened
+for that location, with one later exception: agy gets a `read_file` allow
+on the copy (2026-11-23, tsk-c16hnxm0vc37), since its sandbox shows only
+what a rule mounts and the copy came up empty there (af2e96d9).
 
 **The same-uid exposure, stated and not solved:** the agents'-side copy is
 owned by the agents' user, as everything on the agents' side is. A process

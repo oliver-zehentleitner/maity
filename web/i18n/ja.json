@@ -264,6 +264,7 @@
   "all.page.no_projects": "まだどのプロジェクトにも参加していません。",
   "all.page.reading": "読み込み中…",
   "all.page.unread": "このプロジェクトを読み込めませんでした: {reason}",
+  "all.page.runners": "ランナー",
   "all.page.why": "Why",
   "all.pages": "全プロジェクトのページ",
   "all.why.intro": "各プロジェクトの Keep the Why です。エクスポートの内容と、対応が必要なエントリを表示します。",

@@ -268,6 +268,7 @@ window.MAITY_I18N["ko"] = {
   "all.page.jour_fixe": "정기 회의",
   "all.page.no_projects": "아직 프로젝트가 없어요.",
   "all.page.reading": "읽는 중…",
+  "all.page.runners": "러너",
   "all.page.unread": "이 프로젝트를 읽지 못했어요: {reason}",
   "all.page.why": "Why",
   "all.pages": "모든 프로젝트의 페이지",
