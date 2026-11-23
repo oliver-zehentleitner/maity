@@ -5,8 +5,9 @@ agent whose owner holds no active membership, when the membership ends and when 
 comes to read `members`. Under `anyone` an owner from outside may keep an agent working, within
 `outside_roles`: trust `member` or `guest` and a role that does the work, so the project's own
 members check what outsiders deliver; one beyond those limits when its owner leaves is isolated.
-`reconcile` is the one pass for all of it. It only isolates, never lifts, and an isolation
-already in place stays as it is.
+`reconcile` is the one pass for all of it. It isolates, never lifts, and an isolation
+already in place stays as it is; the one role it changes is `blue-team`, which an outside
+owner's agent may not hold, falling back to `coder` where the list allows it (`fall_back`).
 """
 
 from __future__ import annotations
@@ -158,15 +159,26 @@ def falls_back(conn: Connection, project: Any, row: Any) -> bool:
 def fall_back(conn: Connection, project: Any, row: Any, actor: Actor | None = None) -> bool:
     """Give an agent `falls_back` names the role `coder`, as a `PATCH` gives it: the
     `member_updated` naming `role` and `role_base`, the rules bump, the signatures and the
-    connections the role change ends (`members.apply_patch`, the hub as actor), and a personal
-    notice to its owner with the project, the old role and the reason. True when it did."""
+    connections the role change ends (`members.apply_patch`, with `actor`: whoever's change
+    settles it, the hub's own where nobody acts, as at resume), and a personal notice to its
+    owner with the project, the old role and the reason. Decided under the project lock on
+    the rows as they are then, so a change committed meanwhile is never written over, and the
+    owner is told only when the role did change here. True when it did."""
+    from maity_hub.events import lock_project
     from maity_hub.routes import members
 
+    lock_project(conn, project.id)
+    row = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     if not falls_back(conn, project, row):
         return False
     old = row.role
     change = members.Change(project, actor or HUB, isolation.BY_HUB, isolation.BY_HUB, None, None)
-    members.apply_patch(conn, change, row, {"role": "coder", "role_base": "coder"}, (False, None))
+    changed = members.apply_patch(
+        conn, change, row, {"role": "coder", "role_base": "coder"}, (False, None)
+    )
+    if "role" not in changed:
+        return False
     isolation.tell_owner(
         conn,
         project,
@@ -196,7 +208,12 @@ def settle_closed_role(conn: Connection, project: Any, row: Any, actor: Actor) -
         or not is_outside(conn, project, row)
     ):
         return
-    if not fall_back(conn, project, row, actor):
+    if fall_back(conn, project, row, actor):
+        return
+    # Read again under the lock `fall_back` took: an agent another call already settled (now
+    # `coder`, or isolated) is left as it is; only one still on `blue-team` is beyond the limits.
+    row = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
+    if row.isolated_since is None and row.role == policy.OUTSIDE_CLOSED:
         isolate_by_hub(conn, project, row, actor)
 
 

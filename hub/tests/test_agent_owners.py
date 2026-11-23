@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import agent_owners, clock, events
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -538,6 +538,43 @@ def test_resume_isolates_a_blue_team_agent_that_may_not_fall_back(
     agent = flow.Agent(make_client(), made.value, made.credential_id, made.agent_id, made.instance)
     agent.resume()
     assert _isolated(migrated, made.agent_id)
+
+
+def test_the_fall_back_decides_on_the_rows_as_they_are_under_the_lock(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """#2165 review A2393: a caller holding a row read before the lock (a second resume, or a
+    change committed meanwhile) neither tells the owner twice, nor isolates an agent another
+    call already settled, nor writes over a role an admin set in between."""
+    friend = _friend(make_client, migrated)
+    made = factory.agent(migrated, _project(migrated), friend.id, "blue-team")
+    _set(owner, agent_owners="anyone")
+    _owner_gone(migrated, friend.id)
+    stale = _row(migrated, made.agent_id)  # still on blue-team
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+    with events.transaction(migrated) as conn:
+        agent_owners.settle_closed_role(conn, project, stale, agent_owners.HUB)
+    with events.transaction(migrated) as conn:  # a second resume that read the row before
+        agent_owners.settle_closed_role(conn, project, stale, agent_owners.HUB)
+    row = _row(migrated, made.agent_id)
+    assert (row.role, row.isolated_since) == ("coder", None)
+    told = [n for n in _notices(migrated, friend.id) if "continues as a coder" in n.title]
+    assert len(told) == 1
+    with migrated.begin() as conn:  # an admin's change, committed after `stale` was read
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == made.agent_id)
+            .values(role="blue-team", role_base="blue-team")
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == made.agent_id)
+            .values(role="designer", role_base="designer")
+        )
+    with events.transaction(migrated) as conn:
+        assert not agent_owners.fall_back(conn, project, stale, agent_owners.HUB)
+    assert _row(migrated, made.agent_id).role == "designer"
 
 
 def test_a_narrower_list_is_not_refused_for_a_blue_team_agent(

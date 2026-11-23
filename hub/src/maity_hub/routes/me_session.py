@@ -304,8 +304,12 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         events.lock_project(conn, mine.project.id)
         # An outside owner's agent on `blue-team`, a role closed to it since, falls back to
         # `coder` or is isolated before the packet is built (§6.2), so the packet says which.
-        agent_owners.settle_closed_role(conn, mine.project, mine.row, agent_owners.HUB)
+        # Decided on the membership and the project as they are under the lock: a change
+        # committed between the read above and the lock is never written over.
         mine = _own_membership(conn, caller)
+        if mine.row.isolated_since is None and mine.row.active is not None:
+            agent_owners.settle_closed_role(conn, mine.project, mine.row, agent_owners.HUB)
+            mine = _own_membership(conn, caller)
         if mine.row.isolated_since is not None:
             return _isolated_packet(conn, mine, caller)
         now = clock.now()

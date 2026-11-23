@@ -157,6 +157,11 @@ after the other), the owner's `go` on a waiting change (checked again as things 
 in `outside_roles` keeps a base that works and cannot be removed) and a narrower `outside_roles` (refused while
 an outsider at work holds a role it leaves out, unless the same call switches the project to `members`).
 
+**Amended 2026-11-23 (tsk-mqzhnmf4bak6, #2165):** "It only isolates" and the narrower-list refusal above no longer
+hold as written. `reconcile` also changes one role: an outside owner's agent on `blue-team` with trust `member` or
+`guest` falls back to `coder` first where the list allows it, and a narrower `outside_roles` is not refused for
+such an agent, whom the pass after the change settles (284bc59b-215b-401e-97fe-4deae711515d).
+
 **Reason:** the answer depends on rows in three places (the setting, the public page and the memberships), so
 isolating at each write would repeat the rule and miss one; one idempotent pass called after each write cannot
 disagree with itself. The lift check (`refuse_lift`) reads the same rule, so an admin cannot undo what the next
@@ -187,8 +192,12 @@ hub builds the first half: `blue-team` is `invalid` in `outside_roles`, a stored
 policy write stores it so), and an agent on it with trust `member` or `guest` whose owner is no member falls back
 to `coder` where `coder` is listed, in `reconcile` (owner leaves, policy change) and at `POST /me/resume` before
 the packet (`agent_owners.settle_closed_role`), else it is isolated. The fall back goes through
-`members.apply_patch` with the hub as actor, so the event, the rules bump, the dropped signatures and the ended
-connections are exactly a `PATCH`'s, and the owner gets a personal notice (`isolation.tell_owner`). A narrower
+`members.apply_patch` with the actor of the change that settles it (the human who removed the owner or changed
+the policy; the hub's own at resume and where nobody acts, as `isolate_by_hub` does), so the event, the rules
+bump, the dropped signatures and the ended connections are exactly a `PATCH`'s, and the owner gets a personal
+notice (`isolation.tell_owner`). It is decided under the project lock on the rows as they are then, and the
+notice goes out only when the role did change there, so a change committed meanwhile is never written over and
+two resumes tell the owner once (#2165 review A2393). A narrower
 list is not refused for such an agent (`check_policy` skips it); the pass after the change settles it.
 
 The second half is marked "not built yet" in the contract and stays closed: `has_done_authority` and `sign`
