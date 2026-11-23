@@ -4113,8 +4113,8 @@ The autouse `_isolate` fixture drops every `GIT_*` of the shell before a
 test (`conftest.isolate_git`) and sets only `GIT_CONFIG_GLOBAL` and
 `GIT_CONFIG_NOSYSTEM`. A test that needs a session's variable sets it
 itself: `placed` sets `GIT_COMMON_DIR`. The cause: a runner session sets
-`GIT_COMMON_DIR` and `GIT_CONFIG_*` for its whole run, and the fixtures'
-git inherited them. So `git init --bare`, `config` and `push -u` in the
+`GIT_COMMON_DIR` and `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` for its whole
+run, and the fixtures' git inherited them. So `git init --bare`, `config` and `push -u` in the
 `clone` fixture went to the session's own clone, whose `.git/config` the
 sandbox keeps unwritable, and almost every CLI test errored at setup.
 
@@ -4128,9 +4128,12 @@ fixtures' keys land in the repository they name without an error.
   `insteadOf`, an upstream) in the agent's real clone, which the clone
   check then refuses, and it would open hooks and `core.fsmonitor` outside
   the sandbox (82e70deb).
-- Dropping only `GIT_COMMON_DIR` and `GIT_CONFIG_*`: any other `GIT_*` in a
-  shell (`GIT_DIR`, `GIT_INDEX_FILE`, the proxy's `GIT_CONFIG_PARAMETERS`)
-  redirects or configures a test's git the same way.
+- Dropping only the runner's own variables (`GIT_COMMON_DIR`,
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`): other `GIT_*` reach a test's git
+  the same way. `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` redirect
+  it, and `GIT_CONFIG_PARAMETERS`, which Claude Code's sandbox sets in a
+  placed session for its network proxy (seen in that session's
+  environment), configures it.
 
 ## The sandbox's placeholders are hidden in `.git/info/exclude`
 

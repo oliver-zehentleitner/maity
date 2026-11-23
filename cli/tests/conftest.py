@@ -125,10 +125,11 @@ def fake_opencode(
 def isolate_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """Drop every GIT_* of the shell, and the developer's global and system git config.
 
-    A runner session's GIT_COMMON_DIR and GIT_CONFIG_* (and the sandbox's
-    GIT_CONFIG_PARAMETERS) would send every test's git to the session's own clone; any other
-    GIT_* (GIT_DIR, GIT_INDEX_FILE, ...) redirects it the same way. A test that needs one sets
-    it itself (`placed` sets GIT_COMMON_DIR)."""
+    A runner session's GIT_COMMON_DIR sends every test's git to the session's own clone, and
+    its GIT_CONFIG_COUNT/KEY_n/VALUE_n add configuration there. Any other GIT_* does the same:
+    GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE redirect it, and GIT_CONFIG_PARAMETERS, which
+    Claude Code's sandbox sets for its proxy, configures it. A test that needs one sets it
+    itself (`placed` sets GIT_COMMON_DIR)."""
     for name in list(os.environ):
         if name.startswith("GIT_"):
             monkeypatch.delenv(name)

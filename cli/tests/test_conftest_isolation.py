@@ -30,6 +30,7 @@ def test_a_tests_git_writes_into_its_own_repository_only(
     monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", str(tmp_path / "hooks"))
     monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'user.name=leak'")
+    monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
 
     isolate_git(monkeypatch)
     remote = tmp_path / "remote.git"
@@ -41,3 +42,8 @@ def test_a_tests_git_writes_into_its_own_repository_only(
     assert git(remote, "config", "--get", "test.key") == "value"
     with pytest.raises(subprocess.CalledProcessError):
         git(remote, "config", "--get", "core.hooksPath")
+    # GIT_CONFIG_PARAMETERS, which the sandbox sets, must not leak either.
+    with pytest.raises(subprocess.CalledProcessError):
+        git(remote, "config", "--get", "user.name")
+    # GIT_DIR must not take a test's git to the decoy either.
+    assert Path(git(remote, "rev-parse", "--absolute-git-dir")) == remote.resolve()
