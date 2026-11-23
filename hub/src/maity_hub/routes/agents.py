@@ -148,7 +148,7 @@ def _refuse_over_agents(conn: Connection, owner_id: str, limit: int | None) -> N
 def list_agents(
     request: Request, caller: HumanCaller, allowed_in: str | None = None
 ) -> JSONResponse:
-    if allowed_in is not None and namespace.FULL_NAME.match(allowed_in) is None:
+    if allowed_in is not None and namespace.FULL_NAME.fullmatch(allowed_in) is None:
         raise invalid({"allowed_in": "format"}, "allowed_in is a project's <owner>/<slug>")
     with engine_of(request).begin() as conn:
         rows = conn.execute(

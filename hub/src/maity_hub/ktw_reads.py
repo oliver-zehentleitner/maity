@@ -309,7 +309,7 @@ def _before_outside_read(reader: forge.Forge, project_id: str, repository: str) 
     is dropped so the reads that follow ask again too. Not public, or no answer:
     `forge.NotCoveredError`, nothing read and nothing stored; a spent budget raises
     `forge.ForgeUnavailableError` with `retry_at`."""
-    reader._forget(repository)
+    reader.forget_visibility(repository)
     _require_live(reader, (project_id, repository.lower()))
 
 

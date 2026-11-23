@@ -32,11 +32,12 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth.caller import Caller
+from maity_hub.chunks import chunks
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.text_language import text_language
-from maity_hub.views import principal_id, ts
+from maity_hub.views import handles_of, principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
 REASONS = ("spam", "abuse", "illegal", "prompt_injection", "impersonation", "other")
@@ -65,19 +66,7 @@ def account_of(conn: Connection, caller: Caller) -> str:
 
 
 def _handle(conn: Connection, principal: str | None) -> str | None:
-    return None if principal is None else _handles(conn, [principal]).get(principal)
-
-
-def _handles(conn: Connection, principals: Iterable[str | None]) -> dict[str, str]:
-    """principal id → handle, an agent's or a human's, one query per kind for a list."""
-    wanted = {p for p in principals if p is not None}
-    agents = {p for p in wanted if p.startswith("agt-")}
-    found: dict[str, str] = {}
-    for table, ids in ((t.agent_profile, agents), (t.human, wanted - agents)):
-        if ids:
-            rows = conn.execute(select(table.c.id, table.c.handle).where(table.c.id.in_(ids)))
-            found.update({row.id: str(row.handle) for row in rows if row.handle is not None})
-    return found
+    return None if principal is None else handles_of(conn, [principal]).get(principal)
 
 
 def _author(conn: Connection, principal: str | None) -> dict[str, Any]:
@@ -111,23 +100,15 @@ def _page(conn: Connection, pages: bool, path: str, view: str) -> Any:
     ).first()
 
 
-# What one IN list of paths carries at most, as `export.CHUNK` (which cannot be imported here:
-# `export` imports this module): far below every engine's limit on bound parameters, and above
-# the paths of a normal page, so a list still reads its pages in one statement.
-PATHS_PER_QUERY = 500
-
-
 def _pages_at(conn: Connection, pages: bool, paths: Iterable[str]) -> dict[str, Any]:
     """path → stored page (`view`, `target_id`, `data`) for each of `paths` that has one, while
     the instance serves pages (`_page` for a list: a path is the key). One query for every
-    `PATHS_PER_QUERY` paths: an agent's projects add a path each, however short the page."""
-    wanted = sorted(set(paths))
-    if not pages or not wanted:
+    `chunks.CHUNK` paths: an agent's projects add a path each, however short the page."""
+    if not pages:
         return {}
     p = t.public_page.c
     found: dict[str, Any] = {}
-    for start in range(0, len(wanted), PATHS_PER_QUERY):
-        chunk = wanted[start : start + PATHS_PER_QUERY]
+    for chunk in chunks(paths):
         rows = conn.execute(select(p.path, p.view, p.target_id, p.data).where(p.path.in_(chunk)))
         found.update({row.path: row for row in rows})
     return found
@@ -705,7 +686,7 @@ def admin_view(conn: Connection, row: Any, *, snapshot: bool) -> dict[str, Any]:
 def admin_views(conn: Connection, rows: Sequence[Any], *, snapshot: bool) -> list[dict[str, Any]]:
     """`admin_view` for several rows: the projects' names and the reporters' handles read
     once for all of them."""
-    handles = _handles(conn, [row.reporter for row in rows])
+    handles = handles_of(conn, [row.reporter for row in rows])
     views = []
     for row, own in zip(rows, own_views(conn, rows), strict=True):
         shown = {
