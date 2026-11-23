@@ -396,6 +396,25 @@ def test_the_set_notice_names_no_member_and_skips_those_it_names(
     assert _notices(owner) == []  # the member who entered is not told of itself
 
 
+def test_the_set_notice_skips_the_human_who_changed_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§18.1: a human's own actions never notify them, the set's change as any other."""
+    anna = _member(make_client, migrated, "anna")
+    bert = _member(make_client, migrated, "bert")
+    assert (
+        _setting(owner, {"mode": "nobody_except", "members": [anna.id, owner.id]}).status_code
+        == 200
+    )
+    assert _notices(anna) == [] and _notices(owner) == []  # both named by the first change
+    widened = _setting(owner, {"mode": "nobody_except", "members": [anna.id, owner.id, bert.id]})
+    assert widened.status_code == 200
+    [notice] = _notices(anna)  # in the set, not named: told
+    assert notice["title"] == "The restricted-access set changed"
+    assert _notices(bert) == []  # named
+    assert _notices(owner) == []  # in the set, not named, but the one who changed it
+
+
 # --- the guide --------------------------------------------------------------------------------
 
 

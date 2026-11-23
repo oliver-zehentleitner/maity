@@ -342,7 +342,10 @@ def _set_changed(
     seq = events.emit(
         conn, project.id, KIND, [SET_TOKEN], payload, actor=actor, restricted_list=sorted(listed)
     )
-    _notify(conn, project.id, None, seq, sorted(listed), named)
+    # The members it names are not told of themselves, nor the member who made the change
+    # of its own (§18.1).
+    own = {actor.membership_id} if getattr(actor, "membership_id", None) is not None else set()
+    _notify(conn, project.id, None, seq, sorted(listed), named | own)
     return seq
 
 
