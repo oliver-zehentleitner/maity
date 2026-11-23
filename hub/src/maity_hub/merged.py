@@ -5,7 +5,8 @@ on a card in `review`, the hub emits `task_merged` once per report: it wakes the
 authority, and under `merged_closes: auto` with `done_authority` `holder` or `admin`
 the hub moves the card to `done` itself, unless a dependency or child is open, a
 takeover of it is objected or escalated, or it is a release card (the releaser closes
-those after the checklist, §6.7), or the pull request is not the card's own: its head
+those after the checklist, §6.7), or it is outsiders' work without its own approvals
+(§2.3, `own_approvals`), or the pull request is not the card's own: its head
 branch as the forge names it is not the reported one or lives in another repository, its
 title and body do not name the card, it was merged before the report named it, or
 another card names it or was closed by it (`_not_its_own`). A card `blocked` from
