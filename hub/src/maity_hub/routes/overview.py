@@ -55,8 +55,15 @@ def _addressed_sql(mine: Membership) -> ColumnElement[bool]:
     ]
     if mine.trust == "owner":
         own_right.append(r.to_kind == "owner")
-    elif mine.role_base == "proxy":  # it relays what is addressed to the owner (§2.3, §7)
-        own_right.append(and_(r.to_kind == "owner", r.status == "open"))
+    elif mine.role_base == "proxy" and mine.trust == "admin":
+        # `inbox.relays_for_owner`: it relays what is addressed to the owner (§2.3, §7). A
+        # bridge consent has a `proposal`, which keeps it out of the rows read here.
+        own_right.append(
+            and_(
+                r.status == "open",
+                or_(r.to_kind == "owner", and_(r.to_kind == "role", r.to_role == "trust:owner")),
+            )
+        )
     not_forwarded = and_(
         r.holder_member.is_(None), or_(r.holder_pool.is_(None), r.holder_pool.is_(False))
     )

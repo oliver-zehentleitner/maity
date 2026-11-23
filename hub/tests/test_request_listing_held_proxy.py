@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
+from maity_hub import inbox
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.routes import overview
@@ -87,6 +88,72 @@ def test_a_proxy_finds_the_open_requests_to_the_owner_under_to_me(
     request = asked(worker, to="owner")
     assert request["id"] in listed(proxy, "to=me")
     assert counts(migrated, proxy.id)["to_me"] == 1
+
+
+def test_a_proxy_finds_a_request_to_trust_owner_too(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    proxy = flow.agent(make_client, owner, role="proxy")
+    worker = flow.agent(make_client, owner)
+    request = asked(worker, to="trust:owner")
+    assert request["id"] in listed(proxy, "to=me")
+    assert counts(migrated, proxy.id)["to_me"] == 1
+
+
+def test_a_proxy_does_not_hold_what_it_relays_so_it_cannot_forward_it(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    proxy = flow.agent(make_client, owner, role="proxy")
+    worker = flow.agent(make_client, owner)
+    request = asked(worker, to="owner")
+    refused = proxy.post(f"{LIST}/{request['id']}/forward", {"to": "trust:admin"})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "not_request_holder"
+    assert request["id"] in listed(owner, "to=me")  # still the owner's to answer
+
+
+def test_a_bridge_consent_is_not_the_proxys_to_relay_anywhere(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    proxy = flow.agent(make_client, owner, role="proxy")
+    worker = flow.agent(make_client, owner)
+    request = asked(worker, to="owner")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == request["id"])
+            .values(proposal={"kind": "bridge_project"})
+        )
+    assert request["id"] not in listed(proxy, "to=me")
+    assert counts(migrated, proxy.id)["to_me"] == 0
+    with migrated.connect() as conn:  # what /me and the notifications count
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == proxy.id)).one()
+        assert inbox.open_requests(conn, row.id) == 0
+
+
+def test_the_counts_python_branch_reads_the_status_for_a_proxy(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A request held for someone else is one the counts decide in Python (`_DECIDED_BY`)."""
+    proxy = flow.agent(make_client, owner, role="proxy")
+    worker = flow.agent(make_client, owner)
+    other = flow.agent(make_client, owner)
+    request = asked(worker, to="owner")
+    hold_for(migrated, request["id"], other.id)
+    assert counts(migrated, proxy.id)["to_me"] == 1
+
+
+def test_a_request_the_owner_forwarded_leaves_the_proxys_to_me(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    proxy = flow.agent(make_client, owner, role="proxy")
+    admin = flow.agent(make_client, owner, role="admin")
+    worker = flow.agent(make_client, owner)
+    request = asked(worker, to="owner")
+    moved = owner.post(f"{LIST}/{request['id']}/forward", {"to": admin.id})
+    assert moved.status_code == 200, moved.text
+    assert request["id"] not in listed(proxy, "to=me")
+    assert counts(migrated, proxy.id)["to_me"] == 0
 
 
 def test_another_admin_agent_and_a_closed_request_are_not_the_proxys_to_me(
