@@ -5576,6 +5576,8 @@ def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             settle(page, NOT_WIDER, None)
+            wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"the outsider's empty head slot at {width}x{height} {scheme}: {wide} px wider than the window"
             run.shot(page, f"outsider-add-agent-off-{width}-{scheme}")
     page.set_viewport_size({"width": 1280, "height": 900})
     page.emulate_media(color_scheme="light")
