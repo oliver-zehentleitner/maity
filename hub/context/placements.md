@@ -369,7 +369,8 @@ keep a live join code in the database.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`; `hub/tests/test_placement_races.py` (a join, another project's placement and a rename against the placement, tsk-gt0htv1xp3p9); a review probe of the pull request on PostgreSQL 17 and MariaDB 11.8, 2026-11-23, which forced the rename/placement deadlock
+**Verification:** corroborated — a review probe of the pull request (PostgreSQL 17, MariaDB 11.8) forced the rename-against-placement deadlock: the database aborted one side, the retry ran, and the rename answered 200 and the placement 400 `taken`
 **See:** placements.md#a-pickups-join-creates-a-new-profile-at-the-exchange-and-the-pickup-stores-nothing-to-replay — cf956bec-8b32-4ae3-8ba6-73e3afe33e89 — as of 2026-11-23
 **See:** handles.md#a-rename-and-a-creation-take-a-lock-on-the-handle-they-want-not-one-on-the-whole-scope — ddfd0481-7a0a-4ebd-8a33-fc5e5c2787e1 — as of 2026-11-23
 **Revisit when:** a pickup's exchange stops taking the project's lock before `create_profile`, join creation starts taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, or `POST /agents` starts taking a project's lock
@@ -390,13 +391,19 @@ and a pickup's exchange calls `create_profile`, which takes the handle's
 lock, under its project's lock too (`_consume`). Join creation does not:
 it calls `create_profile` first and takes the project's lock only
 afterwards, when the role is a project role (`validate_assignment`) or the
-member rule counts its slot; with a built-in role under `members:admin` it
-takes none. A profile's rename takes the handle's lock and then its
+member rule counts its slot. With a built-in role under `members:admin`
+it takes no explicit project lock, but its `join_link` insert checks the
+foreign key to the project and takes a shared lock on the project's row,
+which waits for a placement that holds that row. Such a join that already
+holds the handle can therefore form the same cycle (a review finding, read
+from the code). A profile's rename takes the handle's lock and then its
 `member_updated` events lock the projects of its memberships. So join
 creation and a rename take the opposite order to the placement; the
-database aborts such a deadlock and `idempotency.run` runs the loser again
-(read from the code; no test drives either pair). `POST /agents` takes no
-project lock, so it never waits in the other direction.
+database aborts such a deadlock and `idempotency.run` runs the loser again.
+A test forces the rename pair
+(`test_a_rename_and_a_new_profiles_placement_of_one_handle_deadlock_and_one_wins`);
+the join pair is read from the code. `POST /agents` takes no project lock,
+so it never waits in the other direction.
 
 **Reason:** the placement reserves the handle for its owner (§6.24), so
 its check has to hold until it commits, like every other path that gives a
