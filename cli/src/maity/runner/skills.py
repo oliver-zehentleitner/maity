@@ -22,8 +22,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
-import stat
 import subprocess
 import tempfile
 import threading
@@ -36,12 +34,11 @@ from .. import proc, state
 from . import skillop
 from .asuser import AsUser
 
-NAME = "keep-the-why"
-COMMIT = re.compile(r"[0-9a-f]{40}")
-MANIFEST = "manifest.json"
-PLUGIN = "plugin"
-MAX_FILES = 200
-MAX_BYTES = 4 * 1024 * 1024  # the whole skill; 0.20.3 is well under 1 MiB
+# The skill's names and bounds, one set for the runner's copy and the agents' (skillop).
+NAME, MANIFEST, PLUGIN = skillop.NAME, skillop.MANIFEST, skillop.PLUGIN
+MAX_FILES, MAX_BYTES, MANIFEST_MAX = skillop.MAX_FILES, skillop.MAX_BYTES, skillop.MANIFEST_MAX
+KEY, COMMIT = skillop.KEY, skillop.COMMIT
+key = skillop.copy_key  # the cached copy's directory name
 FETCH_TIMEOUT = 120.0
 _BLOB_MODES = ("100644", "100755")  # links (120000) and submodules (160000) are refused
 # Only https: the source is the hub's, the transport the runner's choice.
@@ -52,23 +49,20 @@ class Unavailable(Exception):
     """The skill could not be fetched or checked; the message is for the runner's log."""
 
 
-KEY = re.compile(r"[0-9a-f]{40}-[0-9a-f]{16}")
-
-
-def key(source: str, commit: str) -> str:
-    """The cached copy's directory name: the commit and the source together, so one commit at
-    another path of a tree is another copy (the review of #2056)."""
-    return f"{commit}-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:16]}"
-
-
 def plugin_root(skills_dir: Path, source: str, commit: str) -> Path:
     """What `--plugin-dir` names for this source at this commit."""
     return skills_dir / NAME / key(source, commit) / PLUGIN
 
 
+def skill_in(plugin: Path) -> Path:
+    """The skill itself (`SKILL.md` and its references) in the plugin root `plugin`, as
+    `MAITY_KTW_SKILL_DIR` names it (adapters.skill_env)."""
+    return plugin / "skills" / NAME
+
+
 def skill_dir(skills_dir: Path, source: str, commit: str) -> Path:
-    """The skill itself (`SKILL.md` and its references), as `MAITY_KTW_SKILL_DIR` names it."""
-    return plugin_root(skills_dir, source, commit) / "skills" / NAME
+    """`skill_in` the runner's copy of this source at this commit."""
+    return skill_in(plugin_root(skills_dir, source, commit))
 
 
 def named(placement: Mapping[str, Any]) -> tuple[str, str] | None:
@@ -171,9 +165,6 @@ def _record(state_dir: Path, name: str, digest: str) -> None:
             raise Unavailable(f"cannot record the skill's copy in {state_dir}: {exc}") from None
 
 
-MANIFEST_MAX = 64 * 1024
-
-
 def verify(copy: Path, source: str, commit: str) -> str:
     """The copy of `source` at `commit`, as its manifest says, and every file the manifest
     names, with its hash, and nothing else: the copy, its plugin
@@ -270,31 +261,12 @@ def copies(skills_dir: Path, state_dir: Path) -> list[tuple[str, str, str, str]]
 
 
 def _read(path: Path, limit: int) -> bytes:
-    """A regular file's bytes, at most `limit` of them; refused rather than waited on or
-    followed. The type is checked on the descriptor, so nothing swapped in between counts."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    """skillop.read_path: a regular file's bytes, at most `limit` of them, refused rather than
+    waited on or followed; Unavailable otherwise."""
     try:
-        fd = os.open(path, flags)
-    except OSError:
-        raise Unavailable(f"{path} in the skill's copy cannot be opened as a plain file") from None
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            raise Unavailable(f"{path} in the skill's copy is not a plain file")
-        if info.st_size > limit:
-            raise Unavailable(f"the skill's copy is larger than {MAX_BYTES} bytes")
-        chunks: list[bytes] = []
-        size = 0
-        while chunk := os.read(fd, 65536):
-            size += len(chunk)
-            if size > limit:
-                raise Unavailable(f"the skill's copy is larger than {MAX_BYTES} bytes")
-            chunks.append(chunk)
-        return b"".join(chunks)
-    except OSError:
-        raise Unavailable(f"{path} in the skill's copy cannot be read") from None
-    finally:
-        os.close(fd)
+        return skillop.read_path(path, limit)
+    except skillop.Mismatch as exc:
+        raise Unavailable(str(exc)) from None
 
 
 def _sha256(path: Path) -> str:
@@ -353,7 +325,7 @@ def _fetch(git_dir: Path, repository: str, commit: str, path: str, into: Path) -
         raise Unavailable(f"commit {commit} has no {path}/")
     if len(entries) > MAX_FILES:
         raise Unavailable(f"the skill has more than {MAX_FILES} files")
-    target = into / PLUGIN / "skills" / NAME
+    target = skill_in(into / PLUGIN)
     total = 0
     for entry in entries:
         meta, _, name = entry.partition("\t")
@@ -426,7 +398,7 @@ def remove_unused(skills_dir: Path, keep: set[str], failed: list[str] | None = N
     are still removed, so the caller can forget exactly the ones that went."""
     removed: list[str] = []
     try:
-        parent = os.open(skills_dir / NAME, skillop._FOLDER | skillop._NOFOLLOW)
+        parent = os.open(skills_dir / NAME, skillop.FOLDER | skillop.NOFOLLOW)
     except FileNotFoundError:
         return removed
     try:

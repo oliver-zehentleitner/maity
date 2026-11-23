@@ -330,13 +330,14 @@ def command(
     repository: str,
     gh: str,
     opened: clonecheck.Opened | None = None,
-) -> tuple[list[str], bytes | None]:
+) -> tuple[list[str], bytes | None, str | None]:
     """gh's argument list, built here option by option (`--name=value`, so no value is read
-    as an option), with the recorded repository, and what goes to its standard input. The
-    head branch and the pull request to view are always named: gh reads nothing from git."""
+    as an option), with the recorded repository, what goes to its standard input, and for an
+    edit the number of the pull request it changes (None otherwise). The head branch and the
+    pull request to view are always named: gh reads nothing from git."""
     argv = [gh, args.gh_group, args.gh_command, f"--repo={repository}"]
     if args.gh_group == "run":
-        return _run_command(args, argv), None
+        return _run_command(args, argv), None, None
     if args.gh_command == "merge":
         if not NUMBER.fullmatch(args.selector):
             raise Refused(f"{args.selector!r}: a merge names the pull request by its number")
@@ -346,11 +347,11 @@ def command(
             raise Refused("--subject: one line of text")
         argv += ["--squash", f"--match-head-commit={args.head_commit}",
                  f"--subject={args.subject}", "--body-file=-", "--", args.selector]  # fmt: skip
-        return argv, _lead_body(args, root, opened)
+        return argv, _lead_body(args, root, opened).encode("utf-8"), None
     if args.gh_command == "edit":
         return _edit_command(args, root, repository, gh, opened)
     if args.gh_command == "ready":
-        return [*argv, "--", _selector(args, root)], None
+        return [*argv, "--", _selector(args, root)], None, None
     if args.gh_command == "create":
         argv.append(f"--title={args.title}")
         stdin = _body(args, root, opened)
@@ -363,7 +364,7 @@ def command(
                 argv.append(f"--{name}={value}")
         if args.draft:
             argv.append("--draft")
-        return argv, stdin
+        return argv, stdin, None
     if args.json_fields is not None:
         if not JSON_FIELDS.fullmatch(args.json_fields):
             raise Refused(f"--json {args.json_fields!r}: field names and commas only")
@@ -374,7 +375,7 @@ def command(
         fields = [*VIEW_FIELDS, *(["comments"] if args.comments else [])]
         argv.append(f"--json={','.join(fields)}")
     argv += ["--", _selector(args, root)]
-    return argv, None
+    return argv, None, None
 
 
 def _edit_command(
@@ -383,28 +384,38 @@ def _edit_command(
     repository: str,
     gh: str,
     opened: clonecheck.Opened | None,
-) -> tuple[list[str], bytes]:
+) -> tuple[list[str], bytes, str]:
     """`pr edit` as one REST call through gh (tsk-bmknv06ps0c6): `PATCH
     repos/<owner>/<name>/pulls/<number>` with a JSON object on stdin that holds the body and,
     when given, the title, and nothing else. Not `gh pr edit`: older gh versions ask the forge
     for `projectCards` (Projects classic) there, which the forge refuses, so the edit failed and
     set nothing. The host, owner and name come only from the pinned repository; a branch is
-    turned into its pull request's number first (`pr_number`), and only the number is used."""
+    turned into its pull request's number first (`pr_number`), and only the number is used;
+    it is returned with the call, for the line `run` prints."""
     fields: dict[str, str] = {}
     if args.title is not None:
         if not args.title.strip() or not args.title.isprintable():
             raise Refused("--title: one line of text")
         fields["title"] = args.title
-    try:
-        fields["body"] = _lead_body(args, root, opened).decode("utf-8")
-    except UnicodeDecodeError:  # _lead_body's text, so not reached; kept for the types
-        raise Refused("the body is not UTF-8 text") from None
+    fields["body"] = _lead_body(args, root, opened)
     selector = _selector(args, root)
     number = selector if NUMBER.fullmatch(selector) else pr_number(gh, repository, selector)
     host, owner, name = repository.split("/")
     argv = [gh, "api", f"--hostname={host}", "--method=PATCH",
             f"repos/{owner}/{name}/pulls/{number}", "--input=-"]  # fmt: skip
-    return argv, json.dumps(fields).encode("utf-8")
+    return argv, json.dumps(fields).encode("utf-8"), number
+
+
+def _gh_json(gh: str, argv: list[str], cwd: str) -> Any:
+    """gh's answer to `argv`, run in `cwd` with `gh_env`, as JSON; None when gh failed or
+    answered no JSON."""
+    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built by the caller
+        argv, cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
+    )
+    try:
+        return json.loads(done.stdout) if done.returncode == 0 else None
+    except ValueError:
+        return None
 
 
 def pr_number(gh: str, repository: str, branch: str) -> str:
@@ -413,13 +424,7 @@ def pr_number(gh: str, repository: str, branch: str) -> str:
     gh answers with a whole number a pull request can have."""
     argv = [gh, "pr", "view", f"--repo={repository}", "--json=number", "--", branch]
     with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
-        done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
-            argv, cwd=empty, env=gh_env(os.environ, gh), check=False, capture_output=True
-        )
-    try:
-        answer = json.loads(done.stdout) if done.returncode == 0 else None
-    except ValueError:
-        answer = None
+        answer = _gh_json(gh, argv, empty)
     number = answer.get("number") if isinstance(answer, dict) else None
     if type(number) is not int or not NUMBER.fullmatch(str(number)):
         raise Refused(
@@ -472,9 +477,9 @@ def _body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None
     return body
 
 
-def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None) -> bytes:
-    """A merge's or an edit's body (`_body`) without its footer lines (`strip_footer`); how
-    many went is said on stderr, so the lead sees it."""
+def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None) -> str:
+    """A merge's or an edit's body (`_body`) as text, without its footer lines
+    (`strip_footer`); how many went is said on stderr, so the lead sees it."""
     try:
         text = _body(args, root, opened).decode("utf-8")
     except UnicodeDecodeError:
@@ -482,7 +487,7 @@ def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened |
     kept, dropped = strip_footer(text)
     if dropped:
         sys.stderr.write(f"maity: left out {dropped} footer line(s) of the body\n")
-    return kept.encode("utf-8")
+    return kept
 
 
 def _run_command(args: argparse.Namespace, argv: list[str]) -> list[str]:
@@ -603,7 +608,7 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
             if is_lead(args):
                 lead_granted(root, dot_git)
                 check_role(role_of, root, opened)
-            argv, stdin = command(args, root, repository, gh, opened)
+            argv, stdin, edited = command(args, root, repository, gh, opened)
     except clonecheck.Refused as exc:
         raise Refused(str(exc)) from None
     text, log = as_text(args), as_log(args)
@@ -620,9 +625,8 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
         )
     # Every answer of gh is printed cleaned (review A1721 of #2054): a confirmation can echo a
     # title or a branch someone else wrote, on either stream.
-    edit = args.gh_group == "pr" and args.gh_command == "edit" and done.returncode == 0
-    if edit:  # one line, also when gh printed nothing; its number ends the PATCH path
-        sys.stdout.write(_edited(done.stdout, argv[4].rsplit("/", 1)[-1]))
+    if edited is not None and done.returncode == 0:  # one line, also when gh printed nothing
+        sys.stdout.write(_edited(done.stdout, edited))
         sys.stdout.flush()
     elif done.stdout:
         out = _readable(done.stdout) if text else _tail(done.stdout) if log else _clean(done.stdout)
@@ -659,13 +663,7 @@ def direct_merge_only(gh: str, repository: str, number: str, head: str, cwd: str
     host, owner, name = repository.split("/")
     argv = [gh, "api", "graphql", f"--hostname={host}", "-f", f"query={MERGE_QUERY}",
             "-f", f"owner={owner}", "-f", f"name={name}", "-F", f"number={number}"]  # fmt: skip
-    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
-        argv, cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
-    )
-    try:
-        answer = json.loads(done.stdout) if done.returncode == 0 else None
-    except ValueError:
-        answer = None
+    answer = _gh_json(gh, argv, cwd)
     pr: Any = None
     if isinstance(answer, dict) and "errors" not in answer:
         data = answer.get("data")
