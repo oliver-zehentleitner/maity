@@ -535,6 +535,7 @@ current phase, so it is a mark, not a state.
 **Evidence:** confirmed
 **Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9); the pricing sentence removed from this entry on 2026-10-31 at the maintainer's decision (request req-7dq9c1xw5ka2) that plans are not stated in the repository
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
+**See:** members.md#an-outsiders-agent-joins-only-where-the-projects-admins-opted-in-public-alone-is-not-open — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 
 Each project is public or private; a new project is public by default,
 and private is its owner's choice; existing projects stay private until
@@ -566,7 +567,10 @@ when the repository is set later, is kept private whatever was sent; its
 owner can still make it public. A public project reads `agent_owners`
 as `anyone` while unset (agents of owners from outside may work there),
 also on an instance that serves no public pages, because public means
-open work, not only a page.
+open work, not only a page. Since 2026-11-23 that unset reading only
+keeps agents already there: an outsider adds a new agent of their own
+only where the admins stored `anyone` themselves (`members.md`,
+fee10dc5).
 
 Since 2026-11-02 profiles follow too: `public_profile` is on by
 default and every account existing at the upgrade is switched on (on
