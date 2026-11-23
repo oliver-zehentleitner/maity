@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Engine, select
+import pytest
+from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
-from maity_hub.auth import sign_in_settings
+from maity_hub.auth import device_codes, sign_in_settings
 from maity_hub.routes import email_sign_in
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -53,12 +54,17 @@ def _code_status(engine: Engine, human_id: str) -> str:
     return status
 
 
+@pytest.mark.parametrize("state", ["waiting", "redeemed", "approved"])
 def test_a_password_change_voids_the_calling_sessions_own_device_code(
-    make_client: ClientFactory, migrated: Engine
+    make_client: ClientFactory, migrated: Engine, state: str
 ) -> None:
     desk = flow.human(make_client, migrated)
     assert desk.post("/auth/device-codes").status_code == 201
-    assert _code_status(migrated, desk.id) == "waiting"
+    with migrated.begin() as conn:  # each open state (`device_codes.OPEN`)
+        conn.execute(
+            update(t.device_code).where(t.device_code.c.human_id == desk.id).values(status=state)
+        )
+    assert state in device_codes.OPEN
     changed = desk.post(
         "/auth/password", {"current": factory.PASSWORD, "new": "another long password"}
     )
@@ -91,6 +97,12 @@ def _refusal(answer: Any) -> tuple[int, str, bytes]:
     return answer.status_code, answer.headers.get("Maity-Error", ""), answer.content
 
 
+def _method_disabled(answer: Any) -> None:
+    assert answer.status_code == 403, answer.text
+    assert answer.headers["Maity-Error"] == "forbidden"
+    assert answer.json()["error"]["details"]["reason"] == "method_disabled"
+
+
 def test_a_disabled_link_page_answers_the_same_for_a_real_and_a_forged_token(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -100,8 +112,8 @@ def test_a_disabled_link_page_answers_the_same_for_a_real_and_a_forged_token(
     _off(client, migrated, human)
     real = client.get(url)
     forged = client.get("/mail/sign-in/not-a-token")
-    assert real.status_code == 403
-    assert real.headers["Maity-Error"] == "forbidden"
+    _method_disabled(real)
+    _method_disabled(forged)
     assert _refusal(real) == _refusal(forged)
 
 
@@ -122,8 +134,8 @@ def test_a_disabled_link_form_answers_the_same_for_a_real_and_a_forged_token(
     }
     real = client.post(url, content=f"form={form}", headers=headers)
     forged = client.post("/mail/sign-in/not-a-token", content=f"form={form}", headers=headers)
-    assert real.status_code == 403
-    assert real.headers["Maity-Error"] == "forbidden"
+    _method_disabled(real)
+    _method_disabled(forged)
     assert _refusal(real) == _refusal(forged)
 
 
