@@ -578,11 +578,13 @@ def _agent_values(
     # owner a profile with this handle waits for this placement and then finds it reserved,
     # instead of both committing and the pickup refusing it later (`handle_taken`). The
     # handle's lock comes after the project's, the order a pickup's exchange takes
-    # (`create_profile` under `lock_project`); `POST /agents` takes no project lock. Join
-    # creation (`create_profile`, then a project role's or the member rule's project lock)
-    # and a profile's rename (the handle's lock, then its events lock the projects) take the
-    # other order: such a deadlock is aborted by the database and the loser runs again
-    # (`idempotency.run`).
+    # (`create_profile` under `lock_project`). Join creation (`create_profile`, then a
+    # project role's or the member rule's project lock, or its `join_link` insert's foreign
+    # key on the project row) and a profile's rename (the handle's lock, then its events lock
+    # the projects) take the other order. `POST /agents` and a join also lock the owner's
+    # `human` row for the agent limit before the handle's lock, a row this placement's insert
+    # key-shares through `created_by` after it. Each such deadlock is aborted by the database
+    # and the loser runs again (`idempotency.run`).
     handles.lock(conn, handles.scope_of(mine.principal_id), body.agent.handle)
     held = handles.holder(conn, mine.principal_id, body.agent.handle)
     if held is not None and held != "placement":

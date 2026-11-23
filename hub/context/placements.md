@@ -369,10 +369,11 @@ keep a live join code in the database.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`; `hub/tests/test_placement_races.py` (a join, another project's placement and a rename against the placement, tsk-gt0htv1xp3p9); a review probe of the pull request on PostgreSQL 17 and MariaDB 11.8, 2026-11-23, which forced the rename/placement deadlock; a second review probe on PostgreSQL 16, 2026-11-23, which found the deadlock through the owner's `human` row between a placement and `POST /agents` or a join
+**Verification:** corroborated — a review probe of the pull request (PostgreSQL 17, MariaDB 11.8) forced the rename-against-placement deadlock: the database aborted one side, the retry ran, and the rename answered 200 and the placement 400 `taken`; review probes on PostgreSQL 16 forced the deadlock between a placement and `POST /agents` through the owner's `human` row: the retry ran, and the side that waited second won (201) while the other ended 400 `taken`
 **See:** placements.md#a-pickups-join-creates-a-new-profile-at-the-exchange-and-the-pickup-stores-nothing-to-replay — cf956bec-8b32-4ae3-8ba6-73e3afe33e89 — as of 2026-11-23
 **See:** handles.md#a-rename-and-a-creation-take-a-lock-on-the-handle-they-want-not-one-on-the-whole-scope — ddfd0481-7a0a-4ebd-8a33-fc5e5c2787e1 — as of 2026-11-23
-**Revisit when:** a pickup's exchange stops taking the project's lock before `create_profile`, join creation starts taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, or `POST /agents` starts taking a project's lock
+**Revisit when:** a pickup's exchange stops taking the project's lock before `create_profile`, join creation starts taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, `POST /agents` starts taking a project's lock, `create_profile` stops locking the owner's `human` row before the handle's lock (or takes it after), or `placement.created_by` stops referencing `human`
 
 Creating a placement that will create a profile (`{"agent":{"handle",
 "display_name"}}`) takes `handles.lock` on the owner's scope and the
@@ -390,13 +391,40 @@ and a pickup's exchange calls `create_profile`, which takes the handle's
 lock, under its project's lock too (`_consume`). Join creation does not:
 it calls `create_profile` first and takes the project's lock only
 afterwards, when the role is a project role (`validate_assignment`) or the
-member rule counts its slot; with a built-in role under `members:admin` it
-takes none. A profile's rename takes the handle's lock and then its
+member rule counts its slot. With a built-in role under `members:admin`
+it takes no explicit project lock, but its `join_link` insert checks the
+foreign key to the project and takes a shared lock on the project's row,
+which waits for a placement that holds that row. Such a join that already
+holds the handle can therefore form the same cycle (a review finding, read
+from the code). A profile's rename takes the handle's lock and then its
 `member_updated` events lock the projects of its memberships. So join
 creation and a rename take the opposite order to the placement; the
-database aborts such a deadlock and `idempotency.run` runs the loser again
-(read from the code; no test drives either pair). `POST /agents` takes no
-project lock, so it never waits in the other direction.
+database aborts such a deadlock and `idempotency.run` runs the loser again.
+
+A second cycle runs through the owner's `human` row, not the project's.
+While `max_agents_per_human` caps the owner (the default does),
+`create_profile` locks that row for its count (`_refuse_over_agents`)
+before it takes the handle's lock, on every path that gives a new profile
+other than the exchange: `POST /agents` and join creation alike. The
+placement's `INSERT INTO placement` takes the foreign key's shared lock on
+the same row through `created_by`, after it holds the handle's lock. So a
+`POST /agents` or a join that holds the owner's row and waits for the
+handle deadlocks with the placement that holds the handle and waits for
+the row, although `POST /agents` takes no project lock; the database
+aborts one and `idempotency.run` runs it again, and the retry finds the
+handle taken by the side that committed: in review probes on PostgreSQL
+16, 2026-11-23, the placement won (201, the other 400 `taken`) when
+`POST /agents` or the join waited first, and `POST /agents` won (201, the
+placement 400 `taken`) when the placement waited first on the owner's row.
+
+Tests: `test_a_rename_and_a_new_profiles_placement_of_one_handle_deadlock_and_one_wins`
+forces the rename pair. The join test
+(`test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_it_reserved`)
+switches the agent limit off and runs the join in another project, so that
+neither cycle forms: it shows the join waiting on the handle's lock alone,
+with no retry. The join's project-row cycle and the owner-row cycle are
+read from the code and seen in that probe, not driven by a test of their
+own.
 
 **Reason:** the placement reserves the handle for its owner (§6.24), so
 its check has to hold until it commits, like every other path that gives a
