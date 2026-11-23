@@ -11036,7 +11036,10 @@ coordinates (§6.1); when it is not `available` beyond its grace, and its
   goes to `trust:owner`.
 
 A coordinator under `substitute` is covered like any member, and its
-cover makes the substitute the coordinator for these rules too; the
+cover makes the substitute the coordinator for these rules too. A
+substitute whose membership has ended (removed or left, §6.2) is not
+`available` for these rules from that moment, as for area routing above;
+the
 `coordinator_substitute` field covers the coordinator role alone, without
 handing over its cards.
 
