@@ -12,7 +12,7 @@ import fakehub
 import pytest
 from conftest import fake_gh, git
 
-from maity import cli
+from maity import cli, gitfacts, state
 
 TASK = "/api/v1/projects/oliver/maity/tasks/tsk-0004"
 REPO = "https://github.com/acme/widget"
@@ -622,3 +622,109 @@ def test_the_stacked_rule_starts_only_once_the_last_report_names_the_first(
     _gh_view(bin_dir, _head(joined), "OPEN")
     _card(fake, report=report)
     assert _report() == cli.EXIT_OK and _sent(fake)
+
+
+# --- a fork's clone (tsk-k0x4jn4y4ykg) -------------------------------------------------------
+
+FORK = "https://github.com/someone/widget"
+
+
+def _gh_in(bin_dir: Path, repository: str, rows: str) -> None:
+    """A gh that answers `rows` only when it is asked about `repository` (`--repo`), and an
+    empty list otherwise, as gh does for a repository without that pull request."""
+    assert "'" not in rows
+    script = bin_dir / "gh"
+    answer = f"printf '%s\\n' '{rows}'"
+    script.write_text(
+        "#!/bin/sh\n"
+        "for a do\n"
+        f'  if [ "$a" = "{repository}" ]; then {answer}; exit 0; fi\n'
+        "done\n"
+        "printf '%s\\n' '[]'\n"
+    )
+    script.chmod(0o755)
+
+
+def _forked(joined: Path, repository: str | None) -> None:
+    """The clone's origin is the fork; the state names the project's repository, as a resume
+    stores it."""
+    clone = joined.parent.parent
+    git(clone, "remote", "set-url", "origin", FORK)
+    git(clone, "config", f"url.{clone.parent / 'remote.git'}.insteadOf", FORK)
+    data = state.load_state(joined)
+    if repository is None:
+        data.pop("repository", None)
+    else:
+        data["repository"] = repository
+    state.save_state(joined, data)
+
+
+def test_a_fork_s_clone_reports_the_pull_request_in_the_project_s_repository(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    """The clone's origin is the fork, so gh would look there; `--repo` sends it to the
+    project's repository, where the pull request from the fork is."""
+    head = _head(joined)
+    row = {"number": 12, "headRefOid": head, "state": "OPEN", "url": f"{REPO}/pull/12",
+           "title": "Leases (tsk-0004)"}  # fmt: skip
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps([row]))
+    _forked(joined, REPO)
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    body = _report_body(fake)
+    assert body["pr_status"] == "found"
+    assert body["pr"] == {"number": 12, "url": f"{REPO}/pull/12", "head": head, "state": "open"}
+    assert body["upstream"] == "origin/work" and body["remote_head"] == head
+
+
+def test_without_the_project_s_repository_gh_picks_as_before(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    """A state from before the resume stored it, or a project without a repository: no
+    `--repo`, so gh answers for the repository it picks (here: none with the pull request)."""
+    row = {"number": 12, "headRefOid": _head(joined), "state": "OPEN", "url": f"{REPO}/pull/12"}
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps([row]))
+    _forked(joined, None)
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    assert _report_body(fake)["pr_status"] == "none"
+
+
+def test_gh_is_asked_in_the_repository_named(tmp_path: Path, bin_dir: Path) -> None:
+    """Without a clone: `--repo` reaches gh, and without it gh answers for its own pick."""
+    row = {"number": 12, "headRefOid": "f" * 40, "state": "OPEN", "url": f"{REPO}/pull/12"}
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps([row]))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget")
+    assert found is not None and (found.number, found.url) == (12, f"{REPO}/pull/12")
+    assert gitfacts._pull_request(tmp_path, "work") is None
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://github.com/acme/widget", "github.com/acme/widget"),
+        ("https://github.com/acme/widget.git", "github.com/acme/widget"),
+        ("git@github.com:acme/widget.git", "github.com/acme/widget"),
+        ("https://gitlab.com/acme/widget", None),  # gh is never sent to another host
+        ("https://github.com/acme", None),  # no repository
+        ("https://github.com/acme/widget/extra", None),
+        ("https://github.com/-acme/widget", None),  # never an option
+        ("", None),
+        (None, None),
+    ],
+)
+def test_the_project_s_repository_as_gh_s_repo(url: str | None, expected: str | None) -> None:
+    assert gitfacts.gh_repository(url) == expected
+
+
+@pytest.mark.parametrize("project", [{"repository": {"url": REPO}}, {}])
+def test_resume_remembers_the_project_s_repository(
+    project: dict[str, Any], joined: Path, fake: fakehub.FakeHub
+) -> None:
+    data = state.load_state(joined)
+    data["repository"] = "https://github.com/acme/old"
+    state.save_state(joined, data)
+    resume = {"session": {"id": "ses-b-0005"}, "events": {"cursor": 1}, "project": project}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda s: (200, resume)
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    assert state.load_state(joined).get("repository") == (REPO if project else None)
