@@ -7,6 +7,7 @@ card returns to review with the same report."""
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -15,7 +16,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import events, forge, merged, probe
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_probe import READER, REPO, TOKEN, FakeGitHub, _report
 
@@ -817,3 +818,96 @@ def test_a_team_wake_rule_still_picks_the_instances() -> None:
     )
     assert events.wakes(row, reviewer, "agt-r", instance="lead")
     assert not events.wakes(row, reviewer, "agt-r", instance="other")
+
+
+# --- outsiders' work (§2.3 "Own approvals"; tsk-997vnv5efkw9) -----------------------------------
+
+
+def _owned_by(engine: Engine, agent_id: str, human_id: str) -> None:
+    """The agent's profile now belongs to `human_id` (an owner outside the project or not)."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent_id)
+            .values(owner_id=human_id)
+        )
+
+
+def _stranger(make_client: ClientFactory, engine: Engine) -> flow.Human:
+    """A human who holds no membership of the project."""
+    return flow.human(make_client, engine, "stranger")
+
+
+def test_auto_never_closes_outsiders_work_on_a_merge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.6: `auto` acts as `notify` on outsiders' work without its own approvals on the
+    reported head; the hub counts none yet, so the done authority closes it."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(github, owner, make_client)
+    _owned_by(migrated, agent.id, _stranger(make_client, migrated).id)
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert (told.payload["closed"], told.payload["blocked_by"]) == (False, ["own_approvals"])
+    assert _card(owner, card_id)["status"] == "review"
+    assert any(agent.id in x for x in told.audience)  # the done authority under `holder`
+
+
+def test_auto_never_closes_a_card_whose_current_report_an_outsider_filed(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Outsiders' work is also a card whose current report an outside agent filed, while
+    one of the project's own holds it (§2.3)."""
+    _policy(owner, done_authority="admin", merged_closes="auto")
+    github.pull(7, merged=True)
+    _, card_id = _reported(github, owner, make_client)
+    outsider = flow.agent(make_client, owner)
+    _owned_by(migrated, outsider.id, _stranger(make_client, migrated).id)
+    with migrated.begin() as conn:
+        report = conn.execute(select(t.card.c.report).where(t.card.c.id == card_id)).scalar_one()
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card_id)
+            .values(report={**report, "reported_by": outsider.id})
+        )
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert (told.payload["closed"], told.payload["blocked_by"]) == (False, ["own_approvals"])
+    assert _card(owner, card_id)["status"] == "review"
+
+
+def test_auto_judges_outsiders_work_as_the_members_stand_at_the_merge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Judged at each check (§2.3): an agent whose owner is a member when the merge is
+    seen is the project's own, and `auto` closes its card as before."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(github, owner, make_client)
+    stranger = _stranger(make_client, migrated)
+    _owned_by(migrated, agent.id, stranger.id)
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "member", human_id=stranger.id)
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert told.payload["closed"] is True and "blocked_by" not in told.payload
+    assert _card(owner, card_id)["status"] == "done"
+
+
+def test_an_agent_without_a_profile_counts_as_an_outsider(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Nothing shows such an agent is the project's own, so its report keeps the card open."""
+    _policy(owner, done_authority="admin", merged_closes="auto")
+    github.pull(7, merged=True)
+    _, card_id = _reported(github, owner, make_client)
+    with migrated.begin() as conn:
+        card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+        project = conn.execute(select(t.project)).one()
+        changed = SimpleNamespace(
+            claim_holder=None, report={**card.report, "reported_by": "agt-gone"}
+        )
+        assert merged.outsiders_work(conn, changed, project)
+        assert not merged.outsiders_work(conn, card, project)
