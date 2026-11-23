@@ -118,9 +118,9 @@ an instance may be attached to several projects (§6.17), one membership in each
 stays on the membership, so it is now one per project the instance is in. `POST /me/limit`
 from an agent writes the membership the `project` it names is attached through, or, without
 `project`, every live attachment's membership that is not isolated, all or nothing
-(`routes/limit.py`, `attached.every`), with each project locked first in the order of their
-ids. The decision and its reason hold per membership: a runner's limit still belongs to one
-placement, and a placement is in one project.
+(`routes/limit.py` through `attached.per_attachment`, as `PATCH /me`), with each project
+locked first in the order of their ids. The decision and its reason hold per membership: a
+runner's limit still belongs to one placement, and a placement is in one project.
 
 ## A cover run is named by its start; on return every item of it loses `cover`
 
