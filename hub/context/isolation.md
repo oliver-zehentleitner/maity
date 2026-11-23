@@ -249,8 +249,13 @@ says so too (§2.3).
 **Rejected alternatives:**
 - Trust `outside` alone as the record: it marks only the outsider's join,
   not the agents of owners from outside that came in under `anyone`.
-- Reading the membership history (when the owner joined against when the
-  agent did): the hub keeps no such history for an owner who left and
-  came back, and the check would need it on every move to `done`.
+- Reading the membership history (whether the owner held a membership
+  when the agent's membership began): the rows are kept, a removed one
+  with its `joined_at` and `removed_at` and a rejoin as a new row, but
+  rebuilding those intervals across rows for every agent on every move to
+  `done` is more queries and more ways to get it wrong than one value
+  read under the project lock at the exchange, where the answer is
+  certain. (Corrected on the review of #2135: an earlier version said the
+  hub kept no such history.)
 - Clearing the mark when the owner joins: that is exactly the case §2.3
   wants kept outside.

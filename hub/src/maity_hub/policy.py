@@ -101,6 +101,9 @@ OUTSIDE_DEFAULT = ["coder"]
 # Own approvals for outsiders' work (§6.1, §2.3 "Own approvals"): at least one, no upper
 # bound; whose agents count as the project's own.
 OWN_APPROVALS_DEFAULT = 1
+# The column's width on PostgreSQL and MariaDB (a 32-bit integer): any count a project can
+# reach, and a larger one is `out_of_range`, not a database error.
+OWN_APPROVALS_MAX = 2_147_483_647
 OWN_AGENTS = ("owners", "members")
 OWN_AGENTS_DEFAULT = "members"
 OWNERS_OF = "owners_of"
@@ -183,6 +186,29 @@ def own_approvals(project: Any) -> int:
     """`policy.own_approvals` (§6.1): the stored number, 1 for a project that predates it."""
     stored = project.own_approvals
     return OWN_APPROVALS_DEFAULT if stored is None else int(stored)
+
+
+def shown(conn: Any, value: dict[str, Any]) -> dict[str, Any]:
+    """A policy object as it leaves the hub (a view, the resume packet, `policy_changed`):
+    `own_agents` names the picked people by their current handles, never by id (§6.1)."""
+    return {**value, "own_agents": own_agents_shown(conn, value["own_agents"])}
+
+
+def own_agents_shown(conn: Any, value: Any) -> Any:
+    """`policy.own_agents` as shown: `{"owners_of": [handle, ...]}` for the stored ids."""
+    if not isinstance(value, dict):
+        return value
+    ids = list(value.get(OWNERS_OF) or [])
+    if not ids:
+        return {OWNERS_OF: []}
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    found = dict(
+        conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids))).all()
+    )
+    return {OWNERS_OF: [found[i] for i in ids if i in found]}
 
 
 def own_agents(project: Any) -> str | dict[str, list[str]]:

@@ -2381,11 +2381,21 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
     rev = "20261123140000_own_approvals"
     migrate(engine)
     downgrade(engine, _before(engine, rev))
+    from sqlalchemy import update
+
     member, stranger = factory.human(engine, "member"), factory.human(engine, "stranger")
+    elsewhere, gone = factory.human(engine, "elsewhere"), factory.human(engine, "gone")
     project_id = factory.project(engine, "alpha")
+    beta = factory.project(engine, "beta")
     factory.membership(engine, project_id, "owner", human_id=member)
+    factory.membership(engine, beta, "coder", human_id=elsewhere)  # a member of beta only
+    removed = factory.membership(engine, project_id, "coder", human_id=gone)
     own = factory.agent(engine, project_id, member, "coder", picture=False).agent_id
     outside = factory.agent(engine, project_id, stranger, "coder", picture=False).agent_id
+    other_project = factory.agent(engine, project_id, elsewhere, "coder", picture=False).agent_id
+    left = factory.agent(engine, project_id, gone, "coder", picture=False).agent_id
+    with engine.begin() as conn:  # removed: the row stays, inactive (§6.2)
+        conn.execute(update(t.membership).where(t.membership.c.id == removed).values(active=None))
     migrate(engine)
     assert current_revision(engine) == head_revision(engine)
     with engine.connect() as conn:
@@ -2400,7 +2410,7 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
             select(t.membership.c.joined_outside).where(t.membership.c.human_id.is_not(None))
         ).scalars()
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    assert marked == {own: False, outside: True}
+    assert marked == {own: False, outside: True, other_project: True, left: True}
     assert set(humans) == {False}
     assert (project.own_approvals, project.own_agents) == (None, None)
     assert (policy.own_approvals(project), policy.own_agents(project)) == (1, "members")

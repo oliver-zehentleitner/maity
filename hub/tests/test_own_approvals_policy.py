@@ -7,10 +7,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
+from maity_hub import clock, handles
 from maity_hub import tables as t
-from maity_hub.routes import joins
+from maity_hub.events import Actor
+from maity_hub.routes import joins, projects
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -175,3 +177,104 @@ def test_the_exchange_marks_an_agent_whose_owner_holds_no_membership(
         assert joins._owner_outside(conn, project_id, outside) is True
         assert joins._owner_outside(conn, project_id, inside) is False
         assert joins._owner_outside(conn, project_id, "agt-gone") is True
+
+
+def test_the_exchange_stores_what_its_check_says(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through the exchange's own insert (review of #2135): what `_owner_outside` answers
+    under the project lock is what the membership keeps. No join can reach an owner who is
+    no member today (the exchange refuses a join whose creator left, `issuer_holds`); the
+    outsider's join of tsk-enfbkj0xqq5m will, so the check is made to say so here."""
+    created = flow.join(owner, "maity")
+    monkeypatch.setattr(joins, "_owner_outside", lambda conn, project_id, agent_id: True)
+    answer = flow.exchange(make_client(), created)
+    assert answer.status_code == 201, answer.text
+    agent_id = answer.headers["Maity-Member-Id"]
+    with migrated.connect() as conn:
+        marked = conn.execute(
+            select(t.membership.c.joined_outside).where(t.membership.c.agent_id == agent_id)
+        ).scalar_one()
+    assert marked is True
+
+
+# --- the review of #2135 ------------------------------------------------------------------
+
+
+def test_own_approvals_stays_within_the_columns_width(owner: flow.Human) -> None:
+    for wrong in (2_147_483_648, 10**20):
+        assert _fields(_set(owner, own_approvals=wrong)) == {"own_approvals": "out_of_range"}
+    assert _set(owner, own_approvals=2_147_483_647).status_code == 200
+
+
+def test_own_agents_edge_cases(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    picked = _member(make_client, migrated, "picked")
+    with migrated.begin() as conn:  # an alias of a current member names that member
+        conn.execute(
+            t.handle_alias.insert().values(
+                scope=handles.HUMANS,
+                handle="old-picked",
+                human_id=picked.id,
+                live=True,
+                created_at=clock.now(),
+            )
+        )
+    done = _set(owner, own_agents={"owners_of": ["old-picked"]})
+    assert done.status_code == 200, done.text
+    assert done.json()["policy"]["own_agents"] == {"owners_of": ["picked"]}
+    empty = _set(owner, own_agents={"owners_of": []})
+    assert empty.status_code == 200 and empty.json()["policy"]["own_agents"] == {"owners_of": []}
+    many = [f"h{n}" for n in range(201)]
+    assert _fields(_set(owner, own_agents={"owners_of": many})) == {"own_agents": "too_many"}
+    assert _fields(_set(owner, own_agents=None)) == {"own_agents": "unknown"}
+    missing = owner.patch(PROJECT, {"policy": {"own_approvals": 2}})
+    assert _fields(missing) == {"reason": "required"}
+
+
+def test_a_suspended_or_pending_account_answers_as_an_unknown_handle(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    gone = _member(make_client, migrated, "gone")
+    waiting = _member(make_client, migrated, "waiting")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human).where(t.human.c.id == gone.id).values(suspended_at=clock.now())
+        )
+        conn.execute(
+            update(t.human).where(t.human.c.id == waiting.id).values(account_status="pending")
+        )
+    for handle in ("gone", "waiting", "nobody-at-all"):
+        assert _fields(_set(owner, own_agents={"owners_of": [handle]})) == {
+            "own_agents": "unknown_handle"
+        }
+
+
+def test_every_way_out_names_the_picked_people_by_handle(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The resume packet, a seat's reset on a removal and a moderation hide show `owners_of`
+    by handle, as the view and the PATCH's `policy_changed` do (review of #2135)."""
+    _member(make_client, migrated, "picked")
+    assert _set(owner, own_agents={"owners_of": ["picked"]}).status_code == 200
+    agent = flow.agent(make_client, owner, role="admin")
+    packet = agent.resume(harness="Claude Code", harness_version="2.1", model="m").json()
+    assert packet["project"]["policy"]["own_agents"] == {"owners_of": ["picked"]}
+    assert _set(owner, coordinator=agent.id).status_code == 200
+    assert owner.delete(f"{PROJECT}/members/{agent.id}").status_code == 200
+    project_id = _project(migrated)
+    with migrated.begin() as conn:
+        projects.hide_by_moderation(conn, project_id, "hidden", Actor(None))
+    with migrated.connect() as conn:
+        changes = conn.execute(
+            select(t.event.c.payload)
+            .where(t.event.c.kind == "policy_changed")
+            .order_by(t.event.c.seq)
+        ).scalars()
+        seen = [(c["old"]["own_agents"], c["new"]["own_agents"]) for c in changes]
+    assert seen[-2:] == [({"owners_of": ["picked"]},) * 2] * 2
+    assert all("hum-" not in str(pair) for pair in seen)
