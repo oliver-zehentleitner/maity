@@ -164,7 +164,11 @@ they have no right to left out (`js/trust.js`: `outsider(ctx)` and
 `writes(ctx)` beside the trust helpers, which already answer no for a
 reader with no trust: no card created, moved, assigned or watched, no
 note added or edited, no member managed, invited or chatted with, no
-agent joined; Report stays). A member's name links to their page there
+agent joined; Report stays, naming a person or an agent as a stranger
+does, §16.8: a handle, a global name). What the hub sends an outsider
+less is left out, not drawn empty: no presence dot or word, no online
+count in what a member leads, no Actions or Paused column, no link to
+answer a request a card waits for. A member's name links to their page there
 (`opensViews(ctx)`, `ctx.outsideViews`), which a group chat read along
 (`/observe`, also `ctx.outsider`) keeps unlinked; card and request ids
 in text stay unlinked for both, since an id can lead into a view closed
@@ -187,6 +191,10 @@ in the nav itself (`NAV`'s `outsider: true`), Why's included, so one
 flag takes a view out; every other route of the project, the inbox,
 chat and settings among them, is the dashboard's "not found", and a
 project the hub does not let them read is "not a member", as before.
+The project's own address leads an outsider to its Overview; a public
+page's Report coming back with `?report` at that address or at a public
+view's (Board, Team, Organisation, Why) leads to `overview?report`, the
+Overview's form open, as it does for a member.
 The bootstrap bundle and the event feed are a member's (§5.4, §8.3):
 an outsider's views read on their own and offer no reload on events.
 
