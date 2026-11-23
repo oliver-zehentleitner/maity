@@ -708,9 +708,9 @@ writable surface and no write that leaves the scratch.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred — the command `codex app-server daemon stop` is as the card names it and has not been checked on a host; ops is checking
-**Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh
+**Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh; the review of #2175 (A2463) and the lead's ruling on it: no signal fallback in slice 1, one deadline over the whole stop
 **See:** runner.md — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
-**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close) lands
+**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close, and a fallback for a daemon that does not stop) lands
 
 At every Codex start, interactive or supervised, first or restart, the
 runner stops the app-server daemon that an earlier start left in the
@@ -719,17 +719,12 @@ placement's `CODEX_HOME` (`codexd.stop_codex_daemon`, called from
 after the skill and before `_context`, which removes the old TMPDIR leaf,
 and before the launch writes the new `config.toml`. The stop is
 `codex app-server daemon stop` with the probed binary, run as the agents'
-user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment,
-within 15 s. Where it exits non-zero or does not answer on the runner's
-own host, the runner signals the processes of the agents' uid whose
-environment holds exactly that `CODEX_HOME` (the resolved path), or whose
-command line names the home as a whole path: SIGTERM, SIGKILL after 5 s,
-a whole process group only when every member of it matches. In the
-`single` layout that runs in the runner's own process; in `agent_user` it
-runs as the agents' user through `python -I -m maity.runner.codexd`, which
-can read that uid's `/proc/<pid>/environ`. On an ssh host only the command
-runs. A home not there yet has no daemon to stop. Anything that fails is
-one log line, and the start goes on.
+user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment, on
+every target. One deadline of 20 s covers it: up to 5 s to check that the
+home is there, and the stop gets what is left, at least 1 s. A home not
+there yet has no daemon to stop; a home that cannot be checked is not
+stopped. A stop that exits non-zero, does not answer or cannot run is one
+log line, and the start goes on. The runner signals no process itself.
 
 **Reason:** Codex 0.171 runs its turns in a managed daemon per `CODEX_HOME` that it
 detaches from the TUI's process group. The runner ends a session with a
@@ -747,8 +742,12 @@ sandboxed command of the restarted session panicked.
 - Refusing the placement where the stop fails. The lead prefers an open
   start over a blocked one, and the next start tries the stop again.
 - Killing every codex process of the agents' user. Other placements share
-  that user, and their daemons are theirs; the exact home match keeps them
-  apart.
+  that user, and their daemons are theirs.
+- A signal fallback by CODEX_HOME in the environment or arguments, for the
+  processes of the agents' uid: no proof of ownership against another
+  process of that uid, a stale group snapshot or a reused pid (review of
+  #2175); deferred to slice 2 with an identity Codex records, checked with
+  a pidfd.
 
 ## agy's scratch lives under the host's shared temp directory, not beside the clone
 

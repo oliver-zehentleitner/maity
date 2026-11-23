@@ -1,17 +1,13 @@
 """A Codex start stops the app-server daemon an earlier start left in the placement's
-codex-home (runner/codexd.py, card tsk-n6sajs3gyh8h): `codex app-server daemon stop`, else on
-this host the processes that name that CODEX_HOME; a failed stop is logged, never refused."""
+codex-home (runner/codexd.py, card tsk-n6sajs3gyh8h): `codex app-server daemon stop` within
+one deadline; a failed stop is logged, never refused."""
 
 from __future__ import annotations
 
-import shutil
-import signal
 import subprocess
-import sys
-import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from test_supervisor import (
@@ -103,7 +99,7 @@ def test_a_codex_start_stops_the_daemon_left_in_its_codex_home(world: Any, tmp_p
 
 
 def test_a_failing_daemon_stop_does_not_refuse_the_start(world: Any, tmp_path: Path) -> None:
-    sup, _, reports, _, logs = world
+    sup, backend, reports, _, logs = world
     fake_codex(tmp_path / "codex", tmp_path / "calls.log", stop_exit=1)
     started(world)
     restart(world)
@@ -112,7 +108,9 @@ def test_a_failing_daemon_stop_does_not_refuse_the_start(world: Any, tmp_path: P
     assert calls[-2:] == [f"app-server daemon stop|{home}", f"launch|{home}"]
     failed = [line for line in logs if "`codex app-server daemon stop` exited 1" in line]
     assert len(failed) == 1, logs
-    assert failed[0].startswith("plc-0003: ") and failed[0].endswith("the start goes on")
+    assert failed[0] == "plc-0003: `codex app-server daemon stop` exited 1; the start goes on"
+    assert not any("fallback" in line for line in logs), logs  # nothing is signalled
+    assert len(backend.started) == 2  # the start went on
     assert all(b["state"] != "failed" for _, b in reports.sent)
 
 
@@ -139,39 +137,88 @@ def test_a_stop_with_a_binary_outside_the_tests_tmp_dir_fails_the_test(
     codex_guard.clear()
 
 
-def _exec_done(pid: int, home: Path) -> None:
-    """Wait until the child runs with its own environment: before its exec it has ours."""
-    wanted = f"CODEX_HOME={home}".encode()
-    deadline = time.monotonic() + 5
-    while wanted not in Path(f"/proc/{pid}/environ").read_bytes():
-        assert time.monotonic() < deadline, "the child never exec'd"
-        time.sleep(0.01)
+def test_a_slow_home_check_is_bounded_and_does_not_refuse_the_start(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A home check that does not answer gets at most CHECK_TIMEOUT, then no stop is tried
+    (the home's state is unknown) and the start goes on. Here, the runner's own side, the
+    check is replaced; the agents' side's `test -d` is the next test."""
+    sup, backend, _, _, logs = world
+    asked: list[float] = []
+
+    def slow(as_user: Any, home: Path, timeout: float) -> bool:
+        asked.append(timeout)
+        raise subprocess.TimeoutExpired(["test", "-d", str(home)], timeout)
+
+    started(world)
+    monkeypatch.setattr(codexd, "check_home", slow)
+    restart(world)
+    assert asked and all(t <= codexd.CHECK_TIMEOUT for t in asked)
+    calls = (tmp_path / "calls.log").read_text().splitlines()
+    assert not any(line.startswith("app-server daemon stop") for line in calls)
+    assert len(backend.started) == 2
+    said = [line for line in logs if "the codex-home cannot be checked (timeout)" in line]
+    assert len(said) == 1 and said[0].endswith("the start goes on"), logs
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="the fallback reads /proc")
-def test_the_fallback_signals_only_this_placements_daemon(tmp_path: Path) -> None:
-    """Two processes of this uid, each in a group of its own: one with this placement's
-    CODEX_HOME, one with another placement's home whose path starts with the same letters.
-    Only the first is ended; the home is named through a link and still matches resolved."""
-    mine, theirs = tmp_path / "a" / "codex-home", tmp_path / "a" / "codex-home-2"
-    mine.mkdir(parents=True)
-    theirs.mkdir()
-    (tmp_path / "link").symlink_to(tmp_path / "a")
-    sleep = shutil.which("sleep")
-    assert sleep is not None
-    children = [
-        subprocess.Popen([sleep, "60"], env={"CODEX_HOME": str(home)}, start_new_session=True)
-        for home in (mine, theirs)
-    ]
-    try:
-        for child, home in zip(children, (mine, theirs), strict=True):
-            _exec_done(child.pid, home)
-        found = codexd.stop_by_home(str(tmp_path / "link" / "codex-home"), grace=0.2)
-        assert children[0].wait(timeout=5) == -signal.SIGTERM
-        assert children[1].poll() is None  # another placement's daemon runs on
-        assert found == {"termed": 1, "killed": 0}
-    finally:
-        for child in children:
-            if child.poll() is None:
-                child.kill()
-                child.wait(timeout=5)
+def test_the_agents_side_home_check_is_a_bounded_test_d(tmp_path: Path) -> None:
+    """On the agents' side the check is a `test -d` given the check's timeout, and a timeout
+    there is raised on to `stop_codex_daemon`, which logs it."""
+
+    def no_answer() -> int:
+        raise subprocess.TimeoutExpired(["test"], codexd.CHECK_TIMEOUT)
+
+    agents = AgentsSide(no_answer)
+    with pytest.raises(subprocess.TimeoutExpired):
+        codexd.check_home(cast(Any, agents), tmp_path / "h", codexd.CHECK_TIMEOUT)
+    assert agents.runs == [(["test", "-d", str(tmp_path / "h")], codexd.CHECK_TIMEOUT)]
+
+
+class AgentsSide:
+    """An AsUser of the agents' side (not direct): `run` records each argv with its timeout,
+    answers `test -d` through `check` (exit 0 by default) and the stop with exit 0."""
+
+    direct = False
+    here = True
+
+    def __init__(self, check: Callable[[], int] = lambda: 0) -> None:
+        self.check = check
+        self.runs: list[tuple[list[str], float]] = []
+
+    def run(self, argv: Sequence[str], timeout: float = 60.0) -> subprocess.CompletedProcess[str]:
+        self.runs.append((list(argv), timeout))
+        code = self.check() if argv[0] == "test" else 0
+        return subprocess.CompletedProcess(list(argv), code, "", "")
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+@pytest.mark.parametrize("took", [codexd.CHECK_TIMEOUT - 0.5, codexd.DEADLINE + 30.0])
+def test_the_stop_gets_what_is_left_of_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, took: float
+) -> None:
+    """The check and the stop share DEADLINE: a check that took `took` leaves the stop
+    DEADLINE - took, and never less than MIN_STOP (1 s)."""
+    clock = FakeClock()
+    monkeypatch.setattr(codexd, "time", clock)
+
+    def check() -> int:
+        clock.now += took
+        return 0
+
+    agents = AgentsSide(check)
+    logs: list[str] = []
+    binary = tmp_path / "codex"  # under tmp_path: conftest's guard lets it through
+    codexd.stop_codex_daemon(cast(Any, agents), str(binary), tmp_path / "h", tmp_path,
+                             "/usr/bin", logs.append)  # fmt: skip
+    (check_argv, check_timeout), (stop_argv, stop_timeout) = agents.runs
+    assert check_argv[:2] == ["test", "-d"] and check_timeout == codexd.CHECK_TIMEOUT
+    assert stop_argv[-4:] == [str(binary), "app-server", "daemon", "stop"]
+    assert stop_timeout == max(codexd.MIN_STOP, codexd.DEADLINE - took)
+    assert stop_timeout >= 1.0 and logs == []
