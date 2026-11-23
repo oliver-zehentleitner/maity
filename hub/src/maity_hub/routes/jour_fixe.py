@@ -257,9 +257,11 @@ def _answer_project(conn: Connection, answer_id: str) -> str | None:
 
 
 def _reads_round(conn: Connection, mine: Any, round_id: str) -> bool:
-    """A replay of a round's write passes the round's own read (§20.7): its circle."""
+    """A replay of a round's write passes the round's own read: its circle (§20.7), and not a
+    round that opened in one of the caller's hidden isolation windows (§6.2), as `_round`.
+    The answers' and the posts' replays come through here as well."""
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).first()
-    return row is not None and circle.reads(conn, row, mine)
+    return row is not None and _reads(conn, row, mine, views.Hidden.of(conn, mine))
 
 
 def _reads_answers_round(conn: Connection, mine: Any, answer_id: str) -> bool:

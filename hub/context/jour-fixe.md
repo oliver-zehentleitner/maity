@@ -431,7 +431,9 @@ whose `opened_at` lies in a window is gone for the agent as a whole: left out of
 (`_round`), its answers and writes included, even for what the round did after the lift. A round opened before
 the isolation stays, without the statement, the posts and the report made in the window; its status and times
 are the state it finds. The decision is taken in one place for the routes, `_views` and `_reads`, so a write's
-answer and a replay follow it as the reads do.
+answer and a replay follow it as the reads do. The replays' read gates (`_reads_round`, which the answer's and the
+post's gates call too) ask `_reads` as well, so a replay of a round that opened in a window is `not_found`
+before anything is loaded, like the round's `GET`.
 
 **Reason:** a round opened while the agent was out is one it was never a member for, and its later parts only
 make sense with the hidden beginning. Answers carry no time of arrival on purpose (§20.4), so only the
@@ -444,4 +446,6 @@ whole-round rule can keep the window's answers out.
   owner's series).
 
 **Not covered:** a post's own replay (`_replay_post`) answers the agent with a post it wrote itself, which an
-isolated agent cannot write inside a window.
+isolated agent cannot write inside a window; its gate still drops a round that opened in one. A report's replay
+(`report_view`) names the requests and cards its report filed even when `reported_at` lies in a window: only
+the report's own writer replays it, and an isolated agent writes no report.

@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
-from maity_hub import clock, listening
+from maity_hub import clock, idempotency, listening
+from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_isolation import isolate
@@ -106,3 +107,92 @@ def test_a_plain_lift_leaves_the_round_readable(
     assert held.statement().status_code == 201
     assert lift(owner, watcher).status_code == 200
     assert _reads(watcher, held.id)["got"]["statement"] is not None
+
+
+# --- a replay's read gate (§1.5) holds the round to the same windows ----------------------------
+
+
+def _held_round(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime], hide: bool
+) -> tuple[Any, Round, dict[str, str]]:
+    """`watcher` isolated while a round opens, gets a statement, a post and a report, then
+    lifted (`hide` or not). The ids each round-shaped replay type names for that round."""
+    watcher = flow.agent(make_client, owner, role="admin")
+    watcher.resume()
+    isolate(owner, watcher.id)
+    held = Round(owner, make_client, migrated, now)
+    assert held.statement().status_code == 201
+    posted = held.post(held.lead, "response")
+    assert posted.status_code == 201, posted.text
+    held.tick()
+    assert report(held).status_code == 200
+    assert lift(owner, watcher, hide=hide).status_code == 200
+    with migrated.connect() as conn:
+        answer_id = conn.execute(
+            select(t.jour_fixe_answer.c.id).where(
+                t.jour_fixe_answer.c.round_id == held.id, t.jour_fixe_answer.c.anonymous.is_(False)
+            )
+        ).scalar_one()
+    refs = {
+        "jour_fixe_round": held.id,
+        "jour_fixe_report": held.id,
+        "jour_fixe_answer": answer_id,
+        "jour_fixe_post": f"{held.id}/{posted.json()['id']}",
+    }
+    return watcher, held, refs
+
+
+def _agent_caller(migrated: Engine, owner: flow.Human, agent: Any) -> Any:
+    from maity_hub.auth.caller import Caller
+
+    with migrated.connect() as conn:
+        row = conn.execute(
+            select(t.membership.c.id, t.membership.c.project_id).where(
+                t.membership.c.agent_id == agent.id
+            )
+        ).one()
+    return Caller(
+        kind="agent",
+        via="bearer",
+        agent_id=agent.id,
+        owner_id=owner.id,
+        membership_id=row.id,
+        project_id=row.project_id,
+    )
+
+
+def test_every_round_shaped_replay_type_has_a_window_case(make_client: ClientFactory) -> None:
+    make_client()
+    rounds = {"jour_fixe_round", "jour_fixe_report", "jour_fixe_answer", "jour_fixe_post"}
+    assert {n for n in idempotency.LOADERS if n.startswith("jour_fixe_")} - rounds == {
+        "jour_fixe_series",
+        "jour_fixe_grant",
+    }
+
+
+@pytest.mark.parametrize("hide", [True, False])
+def test_a_replay_of_a_round_in_the_hidden_window_is_not_found_to_the_agent(
+    hide: bool,
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    now: list[datetime],
+) -> None:
+    """The replay gates of the round, its report, an answer and a post pass the same read as
+    `GET …/rounds/{id}`: a round that opened in a hidden window is `not_found` to the agent,
+    while the human admin still passes. After a plain lift the agent passes as well."""
+    from maity_hub.auth.caller import Caller
+
+    watcher, held, refs = _held_round(owner, make_client, migrated, now, hide)
+    agent = _agent_caller(migrated, owner, watcher)
+    admin = Caller(kind="human", via="cookie", human_id=owner.id)
+    assert watcher.get(rounds_path(held.id)).status_code == (404 if hide else 200)
+    with migrated.connect() as conn:
+        seen = {
+            kind: (
+                idempotency.LOADERS[kind].may_see(conn, ref, admin),
+                idempotency.LOADERS[kind].may_see(conn, ref, agent),
+            )
+            for kind, ref in refs.items()
+        }
+    assert seen == {kind: (True, not hide) for kind in refs}

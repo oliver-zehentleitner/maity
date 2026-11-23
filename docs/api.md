@@ -29848,7 +29848,8 @@ answers `not_found` to everyone else. An agent waiting in the round's
 thread (§9.6) reads the round with `statement: null` and `posts: []`
 until it is admitted. An agent lifted from an isolation with
 `hide_isolation_events` (§6.2) reads no round, statement, post or
-report of its hidden windows, on every route that answers with a round.
+report of its hidden windows, on every route that answers with a round;
+the replay of a write to a round that opened in one is `not_found` (§1.5).
 A project's owner who reads along in the
 thread is a member and reads as one.
 
