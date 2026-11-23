@@ -1257,7 +1257,7 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
     the sandbox without asking; the sandbox on; the workspace folder trusted, so an
     interactive start asks nothing. Allowed: `maity`, URLs of the hub, the forge and the
-    grant's `network` hosts, writes to the clone's `.git` and reads of the delivered skill.
+    grant's `network` hosts, and reads of the delivered skill.
     A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
     left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
@@ -1268,11 +1268,10 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
     allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
-    # agy's sandbox mounts only what is allowed: a `read_file` allow read-only, a `write_file`
-    # allow read-write, and a deny wins over an allow (the agy settings entry in
-    # cli/context/runner.md). The clone's `.git` is writable so `git fetch` and commits work;
-    # its private and protected paths below stay denied.
-    allow += [f"write_file({git})"]
+    # agy's sandbox shows only what a rule mounts: a `read_file` allow mounts the delivered skill
+    # read-only, and its write deny below still wins (the agy settings entry in
+    # cli/context/runner.md). No `write_file` allow is given: the clone's `.git` stays as agy's
+    # sandbox mounts it until a live probe shows its denies hold inside a writable mount.
     if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
         allow += [f"read_file({ctx.skill})"]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]

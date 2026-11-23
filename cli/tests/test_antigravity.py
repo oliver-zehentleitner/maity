@@ -180,7 +180,6 @@ def test_the_settings_profile(tmp_path: Path) -> None:
             "allow": [
                 "command(maity)",
                 "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
-                f"write_file({git_dir})",
             ],
             "deny": [
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
@@ -233,31 +232,20 @@ def test_agys_sandbox_mounts_the_delivered_skill_read_only(tmp_path: Path) -> No
     assert not [rule for rule in plain if "skills" in rule]
 
 
-def test_agys_sandbox_mounts_the_clones_git_writable_but_not_its_private_paths(
-    tmp_path: Path,
-) -> None:
-    # tsk-c16hnxm0vc37: without a write_file allow `.git` was read-only in agy's sandbox, so
-    # `git fetch` failed; the denies of `.git/maity` and GIT_PROTECTED stay and win.
-    ctx = context(tmp_path)
-    git_dir = ctx.clone / ".git"
-    permissions = adapters.antigravity_settings(ctx)["permissions"]
-    assert f"write_file({git_dir})" in permissions["allow"]
-    assert f"read_file({git_dir})" not in permissions["allow"]
-    for tool in ("read_file", "write_file"):
-        assert f"{tool}({git_dir / 'maity'})" in permissions["deny"]
-    for name in adapters.GIT_PROTECTED:
-        assert f"write_file({git_dir / name})" in permissions["deny"]
-    # Spelled out, so neither a wider `.git` allow nor a shorter GIT_PROTECTED opens them.
-    for name in ("config", "config.worktree", "hooks", "info", "objects/info/alternates"):
-        assert f"write_file({git_dir / name})" in permissions["deny"]
-        protected = git_dir / name
-        assert not [
-            rule
-            for rule in permissions["allow"]
-            if rule.startswith("write_file(")
-            and (Path(rule[len("write_file(") : -1]) == protected
-                 or protected in Path(rule[len("write_file(") : -1]).parents)
-        ]  # fmt: skip
+def test_agys_git_denies_stand_and_no_write_allow_is_given(tmp_path: Path) -> None:
+    # tsk-c16hnxm0vc37: `.git` stays as agy's sandbox mounts it until a live probe shows that a
+    # write deny inside a writable mount holds, so agy gets no `write_file` allow at all; a
+    # skill read allow does not change that. The names are spelled out, not read from
+    # GIT_PROTECTED, so a shorter tuple fails here too.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    for ctx in (context(tmp_path / "plain"), context(tmp_path / "skilled", skill=skill)):
+        git_dir = ctx.clone / ".git"
+        permissions = adapters.antigravity_settings(ctx)["permissions"]
+        assert not [rule for rule in permissions["allow"] if rule.startswith("write_file(")]
+        for tool in ("read_file", "write_file"):
+            assert f"{tool}({git_dir / 'maity'})" in permissions["deny"]
+        for name in ("config", "config.worktree", "hooks", "info", "objects/info/alternates"):
+            assert f"write_file({git_dir / name})" in permissions["deny"]
 
 
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
