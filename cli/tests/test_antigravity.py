@@ -247,6 +247,17 @@ def test_agys_sandbox_mounts_the_clones_git_writable_but_not_its_private_paths(
         assert f"{tool}({git_dir / 'maity'})" in permissions["deny"]
     for name in adapters.GIT_PROTECTED:
         assert f"write_file({git_dir / name})" in permissions["deny"]
+    # Spelled out, so neither a wider `.git` allow nor a shorter GIT_PROTECTED opens them.
+    for name in ("config", "config.worktree", "hooks", "info", "objects/info/alternates"):
+        assert f"write_file({git_dir / name})" in permissions["deny"]
+        protected = git_dir / name
+        assert not [
+            rule
+            for rule in permissions["allow"]
+            if rule.startswith("write_file(")
+            and (Path(rule[len("write_file(") : -1]) == protected
+                 or protected in Path(rule[len("write_file(") : -1]).parents)
+        ]  # fmt: skip
 
 
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
