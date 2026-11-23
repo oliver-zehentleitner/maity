@@ -57,7 +57,7 @@ def test_own_approvals_is_a_number_of_at_least_one(owner: flow.Human) -> None:
     done = _set(owner, own_approvals=3)
     assert done.status_code == 200, done.text
     assert done.json()["policy"]["own_approvals"] == 3
-    assert _set(owner, own_approvals=1000).status_code == 200  # no upper bound (§6.1)
+    assert _set(owner, own_approvals=1000).status_code == 200  # any count up to the bound (§6.1)
 
 
 def test_a_preset_change_keeps_both_fields(
@@ -236,11 +236,12 @@ def test_own_agents_edge_cases(
     assert _fields(missing) == {"reason": "required"}
 
 
-def test_a_suspended_or_pending_account_answers_as_an_unknown_handle(
+def test_a_suspended_pending_or_deleted_account_answers_as_an_unknown_handle(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     gone = _member(make_client, migrated, "gone")
     waiting = _member(make_client, migrated, "waiting")
+    deleted = _member(make_client, migrated, "deleted")
     with migrated.begin() as conn:
         conn.execute(
             update(t.human).where(t.human.c.id == gone.id).values(suspended_at=clock.now())
@@ -248,7 +249,10 @@ def test_a_suspended_or_pending_account_answers_as_an_unknown_handle(
         conn.execute(
             update(t.human).where(t.human.c.id == waiting.id).values(account_status="pending")
         )
-    for handle in ("gone", "waiting", "nobody-at-all"):
+        conn.execute(
+            update(t.human).where(t.human.c.id == deleted.id).values(deleted_at=clock.now())
+        )
+    for handle in ("gone", "waiting", "deleted", "nobody-at-all"):
         assert _fields(_set(owner, own_agents={"owners_of": [handle]})) == {
             "own_agents": "unknown_handle"
         }

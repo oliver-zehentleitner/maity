@@ -693,7 +693,7 @@ def _apply_policy(
         proposed["outside_roles"] = roles
     if "own_approvals" in change.model_fields_set:
         count = change.own_approvals
-        # An integer of at least 1, no upper bound; a bool is no number here (§6.1).
+        # An integer from 1 to the column's width; a bool is no number here (§6.1).
         if (
             isinstance(count, bool)
             or not isinstance(count, int)
