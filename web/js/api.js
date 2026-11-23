@@ -451,7 +451,95 @@ window.Maity = window.Maity || {};
       state: "open", resolution: null, edited: null, version: 1, created_at: "2026-11-18T09:00:00Z" }] },
     history: { "tsk-t001": [{ id: "hst-t001", at: "2026-11-10T09:00:00Z", actor: { member_id: "hum-sam", handle: "sam", kind: "human", session_id: null },
       field: "created", before: null, after: { title: "Parse the config file" }, diff: null }] },
+    // An outsider's agent (§6.1 "What the project allows", "The outsiders' opt-in"; §3.1 "An
+    // outsider's agent"), as H1 (tsk-enfbkj0xqq5m) contracts it: the policy's `agent_owners` as
+    // stored (`null` unset: no opt-in, so `members_only`, as the hub answers while its
+    // outsiders.JOINS_ON is off), `outside_roles`, `member_agents_max`, this outsider's own quota
+    // (`agents_max`, null for none), whether the admins blocked them, and the joins they created.
+    // The smoke test sets the states through `fixtureOutsideJoins`.
+    joins: { agent_owners: null, outside_roles: ["coder", "writer"], member_agents_max: 3, agents_max: null, blocked: false, items: [] },
   };
+  // A join's answer (§3.1): the line is made up here and shown once, as the hub would.
+  // §3.2 "The install line": only the join, or installs when missing and joins, per platform.
+  function joinAnswer(id, agentId, project, expires) {
+    const url = "https://maity.example/j/FIXTURE-" + id;
+    return {
+      id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
+        join: "maity join " + url + " --code FIXT-URE0-0000",
+        posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
+        windows: "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
+      },
+      agent_id: agentId, project, expires_at: expires,
+    };
+  }
+  // §3.1: the caller's distinct agent profiles in the project, a membership's or an open first join's.
+  function outsideAgentCount() {
+    const mine = new Set(OUTSIDE_TOOL.members.filter((x) => x.kind === "agent" && x.owner_id === me().member.id).map((x) => x.id));
+    OUTSIDE_TOOL.joins.items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.new_instance && !j.replaces
+      && Date.parse(j.expires_at) > Date.now()).forEach((j) => mine.add(j.agent_id));
+    return mine.size;
+  }
+  const outsideQuota = () => (OUTSIDE_TOOL.joins.agents_max === null ? OUTSIDE_TOOL.joins.member_agents_max : OUTSIDE_TOOL.joins.agents_max);
+  // GET …/contribution (§6.1): the reasons in the contract's order, `member` never for an outsider;
+  // `open_cards` 0 while the interim of §6.5 holds.
+  function outsideContribution() {
+    const j = OUTSIDE_TOOL.joins;
+    const reason = j.agent_owners !== "anyone" ? "members_only" : j.blocked ? "blocked" : outsideAgentCount() >= outsideQuota() ? "limit" : null;
+    return { agent_owners: j.agent_owners, outside_roles: j.outside_roles.slice(), looking_for_coders: "per_card", outside_claims: "human",
+      sponsor_url: null, open_cards: 0, agents_max: outsideQuota(), can_join: reason === null, reason };
+  }
+  // The joins routes for an agent of the outsider's own (§3.1 "An outsider's agent"): `not_found`
+  // without the opt-in; otherwise the limits of "Bringing your own agent", trust `outside` the only
+  // value, a role from `outside_roles`, reports_to the caller, no areas or capabilities, the quota,
+  // and `blocked`. GET and DELETE see the caller's own joins only.
+  function outsideJoins(method, rest, body, path) {
+    const j = OUTSIDE_TOOL.joins;
+    if (j.agent_owners !== "anyone") fail(404, "not_found", "Not found", path);
+    const own = j.items.filter((x) => x.created_by === me().member.id);
+    if (method === "GET" && rest === "/joins") return { items: own, next_cursor: null };
+    if (method === "DELETE" && rest !== "/joins") {
+      const x = own.find((y) => y.id === decodeURIComponent(rest.slice("/joins/".length)));
+      if (!x) fail(404, "not_found", "Not found", path);
+      if (!x.revoked_at) {
+        const from = x.used_at ? "used" : Date.parse(x.expires_at) <= Date.now() ? "expired" : null;
+        if (from) fail(409, "invalid_transition", "the join is " + from, path, { from, to: "revoked" });
+        x.revoked_at = nowIso();
+      }
+      return x;
+    }
+    if (method !== "POST" || rest !== "/joins") fail(404, "not_found", "Not found", path);
+    if (j.blocked) fail(403, "forbidden", "the project's admins blocked you from adding agents", path, { reason: "blocked" });
+    const limit = (field) => fail(403, "forbidden", "not within the limits of an outsider's agent", path, { reason: "member_join_limit", field });
+    const profiles = fixtures()["agents.json"].items;
+    if (body.agent && body.agent.id && !profiles.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
+    if (body.trust !== undefined && body.trust !== "outside") limit("trust");
+    if (!j.outside_roles.includes(body.role || "coder")) limit("role");
+    if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
+    if ((body.areas || []).length) limit("areas");
+    if ((body.capabilities || []).length) limit("capabilities");
+    const member = body.agent && body.agent.id ? OUTSIDE_TOOL.members.find((x) => x.id === body.agent.id) : null;
+    const held = body.agent && body.agent.id && j.items.some((x) => x.agent_id === body.agent.id && x.created_by === me().member.id && !x.used_at && !x.revoked_at);
+    if (!member && !held && outsideAgentCount() >= outsideQuota()) {
+      fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max: outsideQuota() });
+    }
+    if (!member && (body.new_instance != null || body.replaces != null)) {
+      fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
+    }
+    let agentId = body.agent && body.agent.id;
+    if (!agentId) {
+      if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
+      if (profiles.some((a) => a.owner_id === me().member.id && a.handle === body.agent.handle && !a.deleted_at)) fail(400, "invalid", "the handle is taken", path, { fields: { handle: "taken" } });
+      agentId = localId("agt");
+      profiles.push({ id: agentId, handle: body.agent.handle, name: me().member.handle + "/" + body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
+        owner_id: me().member.id, git_identity: null, memberships: [], created_at: nowIso() });
+    }
+    const id = localId("join");
+    const expires = new Date(Date.now() + Math.min(body.ttl_seconds || 900, 3600) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    j.items.unshift({ id, agent_id: agentId, trust: "outside", role: body.role || "coder", reports_to: me().member.id, created_by: me().member.id,
+      created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
+      new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null, takes_over: null, handover: null });
+    return joinAnswer(id, agentId, OUTSIDE_TOOL.project.full_name, expires);
+  }
   // routes/projects.py `OUTSIDE_PROJECT_KEYS`: the project view's keys an outsider reads, `settings`
   // with `language` alone and `links` as the public page shows them (one into the repository's own
   // path only while the repository was found public, `null` otherwise).
@@ -559,12 +647,16 @@ window.Maity = window.Maity || {};
     try { return OUTSIDE_TOOL.project.full_name === decodeURIComponent(owner) + "/" + decodeURIComponent(slug); } catch (err) { return false; }
   };
   // The answer to a call under /projects/stranger/tool, or undefined for any other path.
-  function outsideRead(method, asked, query, fullPath) {
+  function outsideRead(method, asked, query, fullPath, body) {
     const m = /^\/projects\/([^/]+)\/([^/]+)(\/.*)?$/.exec(asked);
     if (!m || !outsideFull(m[1], m[2])) return undefined;
     const gone = () => fail(404, "not_found", "Not found", fullPath);
-    if (me().member.kind !== "human" || method !== "GET") gone();
+    if (me().member.kind !== "human") gone();
     const rest = m[3] || "";
+    // The joins routes and what the project allows (§3.1, §6.1), the H1 routes (above).
+    if (rest === "/joins" || /^\/joins\/[^/]+$/.test(rest)) return outsideJoins(method, rest, body || {}, fullPath);
+    if (method !== "GET") gone();
+    if (rest === "/contribution") return outsideContribution();
     // GET /projects/{owner}/{slug}
     if (rest === "") return outsideProjectView();
     // GET …/members and …/members/{member_id}
@@ -5439,9 +5531,41 @@ window.Maity = window.Maity || {};
       if (!card) fail(404, "not_found", "no such card", path);
       if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assignee)) fail(400, "invalid", "not a member", path, { fields: { assignee: "not_a_member" } });
       if (card.claim && !card.claim.expired && card.claim.holder !== body.assignee) fail(409, "lease_active", "the claim's lease is live", path);
+      // §6.5 "Until the claim request is built": an expired claim moves to an agent with trust
+      // `outside` only by a human with tasks:admin.
+      const to = file(m[1], "members.json", path).items.find((x) => x.id === body.assignee);
+      if (card.claim && card.claim.expired && to.trust === "outside" && me().member.kind !== "human") {
+        fail(403, "forbidden", "only a human hands a card to an outsider's agent", path, { reason: "humans_only" });
+      }
       card.assigned_to = body.assignee;
       if (card.claim && card.claim.expired) card.claim = Object.assign({}, card.claim, { holder: body.assignee, expired: false });
       card.updated_at = nowIso();
+      return card;
+    }],
+    // §6.5: a claim, the caller's own or an admin's with `holder` naming a member (by its id, or an
+    // instance as `<id>#<instance>`), with the refusals of "Until the claim request is built" where
+    // that section puts them: an agent with trust `outside` claims nothing itself
+    // (`not_open_to_outsiders`); `holder` needs tasks:admin (`details.scope`), resolves to a member
+    // that is no guest (`invalid`), and gives an outsider's agent a card only from a human
+    // (`humans_only`); then the card's state.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/claim$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      if (body.holder == null && trustIn(m[1]) === "outside") {
+        if (!card) fail(404, "not_found", "no such card", path);
+        fail(403, "forbidden", "an outsider's agent takes no card itself for now", path, { reason: "not_open_to_outsiders" });
+      }
+      if (body.holder != null && !tasksAdmin(m[1])) fail(403, "forbidden", "claiming for another needs tasks:admin", path, { scope: "tasks:admin" });
+      if (!card) fail(404, "not_found", "no such card", path);
+      const [holderId, instance] = String(body.holder == null ? me().member.id : body.holder).split("#");
+      const holder = file(m[1], "members.json", path).items.find((x) => x.id === holderId && !x.removed_at);
+      if (!holder || holder.trust === "guest") fail(400, "invalid", "the holder is no member who may hold a card", path, { fields: { holder: holder ? "guest" : "not_a_member" } });
+      if (holder.trust === "outside" && me().member.kind !== "human") fail(403, "forbidden", "only a human hands a card to an outsider's agent", path, { reason: "humans_only" });
+      if (card.claim) fail(409, "already_claimed", "the card is held", path, { holder: card.claim.holder, instance: card.claim.instance || null, lease_until: card.claim.lease_until, expired: !!card.claim.expired });
+      if (card.status !== "open") fail(409, "invalid_transition", "only an open card is claimed", path, { from: card.status, to: "in_progress" });
+      const at = nowIso();
+      card.claim = { holder: holderId, instance: instance || null, session_id: null, since: at, lease_until: new Date(Date.now() + 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"), expired: false };
+      card.status = "in_progress";
+      card.updated_at = at;
       return card;
     }],
     // §6.4 card order: the card placed within its status column, under the
@@ -6007,22 +6131,13 @@ window.Maity = window.Maity || {};
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
-      const url = "https://maity.example/j/FIXTURE-" + id;
       file(m[1], "joins.json", path).items.unshift({
         id, agent_id: agentId, trust: body.trust || "member", role: body.role || "coder", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
         takes_over: body.takes_over || null, handover,
       });
-      // §3.2 "The install line": only the join, or installs when missing and joins, per platform.
-      return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
-          join: "maity join " + url + " --code FIXT-URE0-0000",
-          posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
-          windows: "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
-        },
-        agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
-      };
+      return joinAnswer(id, agentId, fullOf(m[1]), expires);
     }],
     ["DELETE", /^\/projects\/([^/]+)\/joins\/([^/]+)$/, (m, body, path) => {
       const j = file(m[1], "joins.json", path).items.find((x) => x.id === m[2]);
@@ -6497,7 +6612,7 @@ window.Maity = window.Maity || {};
       if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
       if (stepUpOwed(method, path, body)) fail(403, "forbidden", "this call needs your second factor first", fullPath, { reason: "step_up_required" });
       // A public project read from outside (§2.3): its own routes, before any other.
-      const outside = outsideRead(method, path, query, fullPath);
+      const outside = outsideRead(method, path, query, fullPath, body);
       if (outside !== undefined) return JSON.parse(JSON.stringify(outside));
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
@@ -6782,6 +6897,8 @@ window.Maity = window.Maity || {};
     fixtureOutside: OUTSIDE_TOOL.project,
     // Its members as the fixture keeps them, `page_served` among them, set by the smoke test.
     fixtureOutsideMembers: OUTSIDE_TOOL.members,
+    // Its policy for an outsider's agent and the outsider's joins (§6.1, §3.1), set by the smoke test.
+    fixtureOutsideJoins: OUTSIDE_TOOL.joins,
     source,
     ApiError,
     // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,
