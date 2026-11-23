@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 TRUSTS = ("owner", "admin", "member", "guest")
+# An outsider's agent (§2.3 "Outside", §3.1 "An outsider's agent"): a trust of its own, never
+# in `TRUSTS`, the list a PATCH, an invitation or any other join may set. Only the outsider's
+# join gives it (`outsiders`), and nothing changes it afterwards. A check that names a trust
+# and not this one refuses it (fail closed).
+OUTSIDE = "outside"
 # The tokens a request, a message or a setting names (§7, §8.2): `trust:<trust>`
 # for the two governing trusts, `role:<role>` for every role.
 TOKEN_TRUSTS = ("owner", "admin")
@@ -111,6 +116,10 @@ def _granted(trust: str, role: str) -> set[str]:
         raise ValueError(f"no built-in role {role!r}: pass a project role's role_base")
     if trust == "guest":
         return set(_GUEST)
+    if trust == OUTSIDE:
+        # What trust `member` holds for the role, never more (§2.3 "Outside"): no governance
+        # scope, no `line:lead`, and no `requests:answer` a proxy would add.
+        return set(_ROLE_SCOPES[role]) - {"line:lead"}
     granted = set(_ROLE_SCOPES[role])
     if role == "proxy":
         # A proxy relays answers. It holds no other governance scope of its own: the owner's

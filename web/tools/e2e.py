@@ -312,10 +312,18 @@ def axe_source(cache: Path) -> str:
         return member.read().decode("utf-8")
 
 
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def free_port(avoid: frozenset[int] | set[int] = frozenset()) -> int:
+    """A port nothing listens on now, asked of the OS, and asked again while it is one in
+    `avoid`. The port is closed again before it is returned, so whatever binds it next binds
+    it: a round that starts a MailCatcher beside a hub starts the catcher first and avoids its
+    port, so the catcher never takes the hub's (tsk-vfdn98vwa0ym)."""
+    for _ in range(100):  # bounded: a wrong `avoid` fails the run instead of spinning
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        if port not in avoid:
+            return port
+    raise SystemExit(f"e2e: no free port outside {sorted(avoid)} in 100 tries")
 
 
 def port_taken(port: int) -> bool:
@@ -467,9 +475,11 @@ def start_hub(
 class MailCatcher:
     """A plain SMTP listener on 127.0.0.1 that keeps what it receives, so a round reads the
     mail the real hub sent. The standard library's has gone (`smtpd`, Python 3.12), and this
-    is little enough not to add a dependency to the e2e."""
+    is little enough not to add a dependency to the e2e. It listens from the moment it is
+    made, on a port the OS picks (or `port`, which test_e2e_harness uses to force a
+    collision), so a hub's port is chosen after it: `free_port(avoid={catcher.port})`."""
 
-    def __init__(self) -> None:
+    def __init__(self, port: int = 0) -> None:
         self.mails: list[tuple[list[str], EmailMessage]] = []
         catcher = self
 
@@ -499,7 +509,7 @@ class MailCatcher:
                 self.wfile.write(text.encode() + b"\r\n")
 
         socketserver.ThreadingTCPServer.allow_reuse_address = True
-        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Session)
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", port), Session)
         self.server.daemon_threads = True
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -560,7 +570,44 @@ def stop_hub(hub: subprocess.Popen) -> None:
             hub.wait()
 
 
+BOOT_HEAD = "/api/v1/me/notifications?limit=0"
+
+
+class BootHeads:
+    """The notifications heads a page asked beside its GET /bootstrap (tsk-zf3wd9t5gjab).
+
+    The dashboard asks the head before it knows the session, so a visitor's 401, the 403 of a
+    session that owes the second factor and the 503 of a running maintenance window are expected
+    there, and the page drops them. Such a head is told apart by its order alone: asked while that
+    page's /bootstrap is still out. Every later head, the page's own second ask once the session is
+    read among them, is judged as any answer. A head is forgotten once it answered or failed.
+    """
+
+    def __init__(self) -> None:
+        self.out = 0
+        self.early: set = set()
+
+    def asked(self, path: str, key) -> None:
+        if path.startswith("/api/v1/bootstrap"):
+            self.out += 1
+        elif path == BOOT_HEAD and self.out:
+            self.early.add(key)
+
+    def ended(self, path: str, key=None) -> None:
+        if path.startswith("/api/v1/bootstrap") and self.out:
+            self.out -= 1
+        self.early.discard(key)
+
+    def excused(self, path: str, status: int, key) -> bool:
+        return status in (401, 403, 503) and path == BOOT_HEAD and key in self.early
+
+
 def watch_page(run: Run, page: Page) -> None:
+    heads = BootHeads()
+
+    def request(req) -> None:
+        heads.asked(req.url.split(run.base, 1)[-1], req)
+
     def console(msg) -> None:
         # Chromium logs every answer of 400 or more as "Failed to load
         # resource: the server responded with a status of …"; those are judged
@@ -569,6 +616,7 @@ def watch_page(run: Run, page: Page) -> None:
             run.problems.append(f"console error: {msg.text}")
 
     def request_failed(req) -> None:
+        heads.ended(req.url.split(run.base, 1)[-1], req)
         # A navigation or a re-render may cancel a request the page no longer needs.
         if req.failure != "net::ERR_ABORTED":
             run.problems.append(f"{req.method} {req.url} failed: {req.failure}")
@@ -577,12 +625,16 @@ def watch_page(run: Run, page: Page) -> None:
         path = resp.url.split(run.base, 1)[-1]
         if path.startswith("/api/v1/"):
             run.recent.append(resp)
-        # Signed out, the page asks /auth/session first and expects 401.
+        excused = heads.excused(path, resp.status, resp.request)
+        heads.ended(path, resp.request)
+        # Signed out, the page asks /auth/session first and expects 401; the boot's early
+        # notifications head may meet the same, or a running window's 503 (BootHeads).
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
-        ):
+        ) and not excused:
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
+    page.on("request", request)
     page.on("console", console)
     page.on("pageerror", lambda err: run.problems.append(f"page error: {err}"))
     page.on("response", response)
@@ -609,6 +661,8 @@ SETTINGS_TABS = {
     "Members and agents": "settings/members",
     "Way of working": "settings/work",
     "Moderation": "settings/moderation",
+    # The project's runners (tsk-ert2k23kr5m4): a view of its own, no panel of forms.
+    "Runners": "settings/runners",
     "Mine": "settings/mine",
 }
 
@@ -725,19 +779,31 @@ def bootstrap_boot(run: Run, page: Page) -> None:
     singles = {f"{base}/maintenance", f"{base}/auth/session", f"{base}/me", f"{base}/projects/owner/e2e-alpha",
                f"{base}/projects/owner/e2e-alpha/members", f"{base}/projects/owner/e2e-alpha/events?after=latest&wait=0"}
     asked: list[str] = []
+    # Whether /bootstrap had answered when each notifications head was asked (tsk-zf3wd9t5gjab).
+    bundle = {"answered": False}
+    heads: list[bool] = []
 
     def record(r) -> None:
         path = r.url.split("://", 1)[1].split("/", 1)[1]
         if path.startswith("api/v1/"):
             asked.append("/" + path)
+        if "/" + path == BOOT_HEAD:
+            heads.append(bundle["answered"])
+
+    def answered(resp) -> None:
+        if BOOTSTRAP.search(resp.url):
+            bundle["answered"] = True
 
     page.on("request", record)
+    page.on("response", answered)
     try:
         page.goto(f"{run.base}/owner/e2e-alpha/board")
         expect(page.locator("main section.view-board")).to_be_visible()
         boot = [a for a in asked if a.startswith(f"{base}/bootstrap")]
         assert boot == [f"{base}/bootstrap?project=owner/e2e-alpha"], asked
         assert not singles.intersection(asked), f"single reads beside the bundle: {sorted(singles.intersection(asked))}"
+        # The notifications head is asked beside the bundle, not after its answer.
+        assert heads[:1] == [False], f"the first notifications head was asked after the bundle answered: {heads} {asked}"
         asked.clear()
 
         def older_hub(route) -> None:
@@ -755,6 +821,7 @@ def bootstrap_boot(run: Run, page: Page) -> None:
             page.unroute(BOOTSTRAP, older_hub)
     finally:
         page.remove_listener("request", record)
+        page.remove_listener("response", answered)
 
 
 def no_problems(run: Run, where: str) -> None:
@@ -924,6 +991,7 @@ def main() -> int:
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
+                    outsider_tab_round(run, browser)
                     public_first_paint_round(run, browser)
                     stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
@@ -2735,8 +2803,8 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     without either, as the forge step checks exactly that absence (`secret_key_missing`)."""
     second = work / "second-hub"
     second.mkdir()
-    port = free_port()
     catcher = MailCatcher()
+    port = free_port(avoid={catcher.port})
     extra = {
         "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
         "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
@@ -3153,8 +3221,8 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     and a session from before the switch is asked for a mailed code at its next sensitive call."""
     third = work / "mail-factor-hub"
     third.mkdir()
-    port = free_port()
     catcher = MailCatcher()
+    port = free_port(avoid={catcher.port})
     extra = {
         "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
         "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
@@ -3316,8 +3384,8 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
     code; the human's own switch stops the mail."""
     home = work / "password-reset-hub"
     home.mkdir()
-    port = free_port()
     catcher = MailCatcher()
+    port = free_port(avoid={catcher.port})
     extra = {
         "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
         "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
@@ -3540,6 +3608,11 @@ def read_limit_round(run: Run, browser, work: Path, artifacts: Path) -> None:
                 assert burned["body"]["error"]["code"] == "rate_limited", burned
                 assert burned["retry"] and int(burned["retry"]) >= 1, burned
                 retry = int(burned["retry"])
+                print(
+                    f"   {what}: burn attempt {attempt} refused on read {burned['reads']}, "
+                    f"Retry-After {retry}",
+                    flush=True,
+                )
                 if retry >= REFUSED_FOR_AT_LEAST:
                     return page, burned
                 assert attempt == 1, (
@@ -3547,6 +3620,8 @@ def read_limit_round(run: Run, browser, work: Path, artifacts: Path) -> None:
                     f"under {REFUSED_FOR_AT_LEAST}"
                 )
                 page.wait_for_function(READS_AGAIN_JS, polling=250, timeout=TIMEOUT_MS)
+                # Closed here, so the finally below does not close it a second time.
+                contexts.remove(context)
                 context.close()
             raise AssertionError(f"{what}: no refused session")
 
@@ -5078,14 +5153,25 @@ def join_reports_layout(run: Run, browser) -> None:
                 context.close()
 
 
+def pairing_of(line: str) -> tuple[str, str]:
+    """The URL and the code a pairing line of the dialog carries: the code piped in with
+    printf, never on the command line, and the URL after `pair` or `install`."""
+    words = shlex.split(line)
+    assert "--code" not in words and words[-1] != "--code", words
+    at = words.index("printf")
+    assert words[at + 1] == "%s\\n" and words[at + 3] == "|" and "--code-file" in words, words
+    command = next(i for i, w in enumerate(words) if w in ("pair", "install") and i > at)
+    assert words[command - 2 : command] == ["maity", "runner"], words
+    return words[command + 1], words[at + 2]
+
+
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
     """What `maity runner pair` does on the runner host: the exchange of §15.2."""
-    words = shlex.split(pair_line)
-    assert words[:3] == ["maity", "runner", "pair"] and words[4] == "--code", words
-    token = words[3].rstrip("/").rsplit("/", 1)[-1]
+    url, code = pairing_of(pair_line)
+    token = url.rstrip("/").rsplit("/", 1)[-1]
     request = urllib.request.Request(
         run.base + "/api/v1/runners/pair/" + token,
-        data=json.dumps({"code": words[5], "client": "maity-e2e/1"}).encode(),
+        data=json.dumps({"code": code, "client": "maity-e2e/1"}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -5115,16 +5201,48 @@ def runners_step(run: Run, page: Page) -> None:
     expect(view).to_contain_text("No runner yet.")
     page.locator("#pair-name").fill("e2e-runner")
     page.get_by_role("button", name="Create the pairing line", exact=True).click()
-    steps = page.locator(".pair-steps")
-    expect(steps).to_contain_text("maity runner pair")
-    config = page.locator(".runner-config").inner_text()
+    # Two ways (tsk-2k0jcaxfd0ja): the service on Linux is chosen first, the terminal's steps hidden.
+    service = page.locator(".pair-way-service")
+    terminal = page.locator(".pair-way-terminal")
+    expect(page.get_by_label("As a service on Linux (recommended)", exact=True)).to_be_checked()
+    expect(service).to_be_visible()
+    expect(terminal).to_be_hidden()
+    expect(service).to_contain_text("sudo pipx install --global maity")
+    install_line = service.locator("pre.paste-line").nth(3).inner_text()
+    assert install_line.startswith("printf '%s\\n' '") and " | sudo maity runner install " in install_line, install_line
+    assert install_line.endswith(" --code-file -"), install_line
+    # The check comes after the tool's and the forge's login (review A2144), the last line.
+    lines = service.locator("pre.paste-line").all_inner_texts()
+    assert lines[-1] == (
+        "cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml"
+    ), lines
+    service_config = service.locator(".runner-config").inner_text()
+    assert 'state_dir = "/var/lib/maity-runner/state"' in service_config, service_config
+    assert f'url = "{run.base}"' in service_config and "install = true" in service_config, service_config
+    run.shot(page, "runners-pairing-service")
+    run.a11y(page, "runners, pairing as a service")
+    # On a phone the service's long commands wrap; the page does not widen.
+    page.set_viewport_size({"width": 390, "height": 844})
+    widths = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+    assert widths[0] <= widths[1], f"the service's steps widen the page on a phone: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.get_by_label("In a terminal, to try it out (the only way on macOS)", exact=True).check()
+    expect(terminal).to_be_visible()
+    expect(service).to_be_hidden()
+    expect(terminal).to_contain_text("maity runner pair")
+    config = terminal.locator(".runner-config").inner_text()
     assert f'url = "{run.base}"' in config and '"owner/e2e-alpha"' in config and '"owner/e2e-beta"' in config, (
         config
     )
-    pair_line = steps.locator("pre.paste-line").nth(1).inner_text()
-    assert pair_line.startswith("maity runner pair ") and pair_line not in config, pair_line
+    pair_line = terminal.locator("pre.paste-line").nth(1).inner_text()
+    assert " | maity runner pair " in pair_line and pair_line not in config, pair_line
+    # The install line and the pair line carry the same pairing: the URL and code of one enrollment.
+    assert pairing_of(pair_line) == pairing_of(install_line), (pair_line, install_line)
     run.shot(page, "runners-pairing")
     run.a11y(page, "runners, pairing")
+    page.get_by_label("As a service on Linux (recommended)", exact=True).check()
+    expect(service).to_be_visible()
+    expect(terminal).to_be_hidden()
     status, headers, credential = pair_exchange(run, pair_line)
     assert status == 201 and credential.startswith("mty1.rcrd-"), (status, credential[:12])
     assert headers.get("maity-runner-id", "").startswith("rnr-"), headers
@@ -5147,7 +5265,11 @@ def runners_step(run: Run, page: Page) -> None:
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     card.get_by_role("button", name="Re-pair", exact=True).click()
     expect(page.locator(".pair-steps")).to_contain_text("Keep your existing configuration")
-    repair = page.locator(".pair-steps pre.paste-line").nth(1).inner_text()
+    # A re-pair offers the service's way first: pair again as maity-runner with install's file.
+    expect(page.locator(".pair-way-service")).to_be_visible()
+    repair = page.locator(".pair-way-service .pair-line-step pre.paste-line").inner_text()
+    assert " | sudo -u maity-runner -H maity runner pair " in repair, repair
+    assert repair.endswith(" --config /etc/maity-runner/runner.toml"), repair
     status, headers2, _ = pair_exchange(run, repair)
     assert status == 201 and headers2["maity-runner-id"] == headers["maity-runner-id"], headers2
     page.goto(f"{run.base}/all")
@@ -5384,7 +5506,10 @@ def report_pages_round(run: Run, browser) -> None:
         assert href == expected or href.startswith(expected + "&"), f"{path}: Report links to {href!r}, not {expected!r}"
         link.click()
         fill_sign_in(page, address, password)
-        expect(page).to_have_url(re.compile(re.escape(run.base + path + "?report") + "$"))
+        # The reporter is an outsider of e2e-alpha (§2.3): its own address leads to its Overview,
+        # whose form opens, as a member's does, written `overview?report` (never `report=`).
+        landed = path + "/overview" if path == "/owner/e2e-alpha" else path
+        expect(page).to_have_url(re.compile(re.escape(run.base + landed + "?report") + "$"))
         # The form is open, named for what this page shows; its button hides while it is.
         expect(page.get_by_role("form", name=button, exact=True)).to_be_visible()
         if path == "/owner":
@@ -5406,15 +5531,136 @@ def report_pages_round(run: Run, browser) -> None:
     agent.click()
     expect(page).to_have_url(re.compile(r"/owner/agents/e2e-agent$"))
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
-    # A project the reader is no member of shows its public page under the reader's own header
-    # (§16.9), which is none of "All projects": neither that link nor its Inbox tab is current
-    # (tsk-c9xzrzdcw8sb, the Inbox tab was marked).
+    # A project the reader is no member of never shows its public page signed in (the owner,
+    # 2026-11-19, web/context/views.md f461c919): its address goes to its Overview, a member view
+    # read through the hub's outsider read (#2001); outsider_tab_round goes on from there.
     page.goto(run.base + "/owner/e2e-alpha")
-    expect(page.locator("section.view-visitor")).to_be_visible()
-    expect(page.locator("header nav.switcher a[href='/all']")).to_be_visible()
-    expect(page.locator("header nav.switcher [aria-current], header nav.views [aria-current]")).to_have_count(0)
-    run.shot(page, "visitor-project-signed-in")
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
+    expect(page.locator("#main section.view-overview")).to_have_count(1)
+    expect(page.locator("section.view-visitor")).to_have_count(0)
+    run.shot(page, "outsider-project-signed-in")
     no_problems(run, "report pages")
+    context.close()
+
+
+OUTSIDER_TAB = "header nav.switcher a.outsider[data-outsider='owner/e2e-alpha']"
+DASHED = ("(s) => { const e = document.querySelector(s);"
+          " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
+
+
+def outsider_tab_round(run: Run, browser) -> None:
+    """The outsider's dashed tab and a starred tab (docs/api.md §2.3, §5.1 "Stars", §6.30 Q2;
+    tsk-2fxc53xqf922; web/context/views.md f461c919), on the hub, for REPORTER, who is no member
+    of e2e-alpha (report_pages_round made them).
+
+    The hub reads a public project to an outsider (#2001, #2078): a signed-in non-member at the
+    project's address is taken to its Overview, drawn with the dashed tab current, and never gets
+    the public page (no `section.view-visitor`, no `GET /public/pages/…`); the Board has no New
+    card, the head's `#outsider-actions` slot is there and takes no room, and Why draws either the
+    project's Why or the outsider's one sentence, whichever the hub's answer is. Every control
+    the views leave out is the smoke test's, against the fixture hub.
+    Starred through `PATCH /me`, the project is a dashed tab with a filled star linking to its
+    Overview, at 1280 and 390 px in both schemes, axe clean; its button takes the star off, `/me`
+    then lists none, and the tab stays for that browser tab's session with an empty star, through
+    a reload, not into another browser tab (sessionStorage)."""
+    run.step("outsider tab: the member views in a dashed tab, never the public page; a starred tab is dashed with a star that unstars")
+    handle, name, address, password = REPORTER
+    context, page = new_page(run, browser)
+    public_reads: list[str] = []
+    page.on("request", lambda req: public_reads.append(req.url) if "/api/v1/public/pages/" in req.url else None)
+    page.goto(run.base + "/login")
+    fill_sign_in(page, address, password)
+    expect(page.locator("header .me")).to_contain_text(name)
+    tab = page.locator(OUTSIDER_TAB)
+    page.goto(run.base + "/owner/e2e-alpha")
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
+    expect(page.locator("#main section.view-overview")).to_have_count(1)
+    expect(page.locator("section.view-visitor")).to_have_count(0)
+    expect(tab).to_have_attribute("aria-current", "page")
+    expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
+    settle(page, DASHED, OUTSIDER_TAB)
+    assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the outsider's tab is not dashed"
+    # The slot for the outsider's own actions: in the head, empty, taking no room.
+    slot = page.locator("header .project-state #outsider-actions")
+    expect(slot).to_have_count(1)
+    expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
+    expect(slot).to_be_hidden()
+    run.shot(page, "outsider-tab-overview")
+    run.a11y(page, "an outsider's Overview in the dashed tab")
+    # This session's unstarred tab at phone width: no wider than the window (its hidden words
+    # positioned inside the tab, which is not draggable).
+    page.set_viewport_size({"width": 390, "height": 844})
+    settle(page, NOT_WIDER, None)
+    wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert wide <= 0, f"the unstarred dashed tab at 390x844: {wide} px wider than the window"
+    run.shot(page, "outsider-tab-session-390")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(run.base + "/owner/e2e-alpha/board")
+    expect(page.locator("#main section.view-board")).to_have_count(1)
+    expect(page.get_by_role("button", name="New card", exact=True)).to_have_count(0)
+    page.goto(run.base + "/owner/e2e-alpha/why")
+    # The outsider's sentence (.why-outside, a .why-empty), the member empty state, or the Why itself.
+    expect(page.locator("#main section.view-why .why-empty, #main section.view-why .why-main").first).to_be_visible()
+    assert not public_reads, f"a signed-in non-member read the public page: {public_reads}"
+
+    # Starred (#1986's `starred` on /me): the project's id from its agent's clone.
+    project_id = run.api(run.work / "clone-alpha", "GET", "/projects/owner/e2e-alpha")["id"]
+    headers = {**_csrf(page), "Content-Type": "application/json"}
+    starred = page.request.patch(f"{run.base}/api/v1/me", headers=headers, data=json.dumps({"starred": [project_id]}))
+    assert starred.status == 200, (starred.status, starred.text())
+    assert [s["id"] for s in starred.json()["member"]["starred"]] == [project_id], starred.text()
+    fresh = context.new_page()
+    watch_page(run, fresh)
+    fresh.goto(run.base + "/all")
+    star_tab = fresh.locator(OUTSIDER_TAB)
+    star = fresh.locator("header nav.switcher .outsider-tab button.tab-star")
+    expect(star_tab).to_have_class(re.compile(r"\bstarred\b"))
+    expect(star_tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
+    expect(star).to_have_attribute("aria-pressed", "true")
+    expect(star).to_have_accessible_name("Remove the star from owner/e2e-alpha")
+    for width, height in ((1280, 900), (390, 844)):
+        fresh.set_viewport_size({"width": width, "height": height})
+        for scheme in ("light", "dark"):
+            fresh.emulate_media(color_scheme=scheme)
+            where = f"the starred dashed tab at {width}x{height} {scheme}"
+            fresh.goto(run.base + "/all")
+            expect(star_tab).to_have_count(1)
+            # The dashed edge as the stylesheet draws it, waited for before it is read once (tsk-z4ps7cg7ve25).
+            settle(fresh, DASHED, OUTSIDER_TAB)
+            assert star_tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", f"{where}: not dashed"
+            box = star.bounding_box()
+            assert box and box["width"] >= 24 and box["height"] >= 24, f"{where}: the star's target is {box}"
+            settle(fresh, NOT_WIDER, None)
+            wide = fresh.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            run.shot(fresh, f"outsider-tab-starred-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(fresh, "a starred dashed tab")
+    fresh.set_viewport_size({"width": 1280, "height": 900})
+    fresh.emulate_media(color_scheme="light")
+    star.click()
+    expect(fresh.locator("header .tabs-said")).to_have_text("owner/e2e-alpha is no longer starred; its tab stays until you close it")
+    expect(star_tab).to_have_count(1)
+    expect(star_tab).not_to_have_class(re.compile(r"\bstarred\b"))
+    # This browser tab's own now, with the empty star that stars it again (its id kept).
+    expect(star).to_have_attribute("aria-pressed", "false")
+    expect(star).to_have_accessible_name("Star owner/e2e-alpha")
+    me = fresh.request.get(f"{run.base}/api/v1/me").json()
+    assert me["member"]["starred"] == [], me["member"]["starred"]
+    # The browser session's: through a reload, not in another browser tab.
+    fresh.reload()
+    expect(star_tab).to_have_count(1)
+    other = context.new_page()
+    watch_page(run, other)
+    other.goto(run.base + "/all")
+    expect(other.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
+    expect(other.locator(OUTSIDER_TAB)).to_have_count(0)
+    other.close()
+    fresh.close()
+    # Why's read answers an outsider not_found while the hub has not found the repository public
+    # (§2.3, #2078), as on this hub: asked for, and said in the view's one sentence; no problem.
+    run.problems[:] = [p for p in run.problems if p != "GET /api/v1/projects/owner/e2e-alpha/keep-the-why/export answered 404"]
+    no_problems(run, "outsider tab")
     context.close()
 
 
@@ -6294,11 +6540,23 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
 
 def project_runners_step(run: Run, page: Page, name: str) -> None:
-    """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
+    """Settings → Runners (docs/api.md §15.4, §16.11, tsk-ert2k23kr5m4): allow and detach a paired
+    runner on the Settings tab; the old /<owner>/<slug>/runners is gone, without a redirect."""
+    run.step("project runners: the old address is the hub's 404 and the dashboard's not found, no redirect")
+    got = page.goto(f"{run.base}/owner/e2e-alpha/runners")
+    assert got is not None and got.status == 404, got and got.status
+    run.problems[:] = [p for p in run.problems if p != "GET /owner/e2e-alpha/runners answered 404"]
+    expect(page.locator("main section.view-unknown")).to_contain_text("Page not found")
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/runners$"))
+    expect(page.locator("article.runner")).to_have_count(0)
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
-    page.get_by_role("link", name="This project's runners", exact=True).click()
-    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/runners$"))
-    view = page.locator("main section.view-runners")
+    # Not in the project's row of tabs; a tab of Settings.
+    expect(page.locator("nav.views").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
+    expect(page.locator("main a[href$='/owner/e2e-alpha/runners']")).to_have_count(0)
+    page.locator("main nav.settings-tabs").get_by_role("link", name="Runners", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/settings/runners$"))
+    expect(page.locator("main nav.settings-tabs a[aria-current='page']")).to_have_text("Runners")
+    view = page.locator("main section.view-settings section.project-runners")
     expect(view.locator("h2").first).to_be_visible()
     run.step("project runners: allow the paired runner in a project and detach it")
     card = view.locator("article.runner", has=page.get_by_role("heading", name=name))
@@ -6323,7 +6581,7 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
     run.a11y(page, "project runners")
     bootstrap_boot(run, page)
     start_on_runner_form(run, page, name)
-    page.goto(f"{run.base}/owner/e2e-alpha/runners")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings/runners")
     expect(card).to_contain_text("no agent running here")
     detach()
     expect(view).to_contain_text("No runner is allowed in this project yet.")
@@ -6470,6 +6728,9 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     expect(runner_options.first).to_contain_text(name + " · offline")
     expect(fields.locator("#placement-new-tool option")).to_have_count(0)
     expect(form).to_contain_text("The runner offers no tool there that is installed.")
+    # Why there is none, under the empty choice (tsk-2k0jcaxfd0ja): the answer above names
+    # repositories and no harness.
+    expect(form.locator(".placement-new-no-tool-why")).to_have_text("The runner's configuration names no tool for this target.")
     # What a placement does not take is hidden; the button says what it does.
     expect(form.locator("#join-ttl")).to_be_hidden()
     start = form.get_by_role("button", name="Start on the runner", exact=True)
@@ -6576,7 +6837,7 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     run.a11y(page, "chats across projects")
     run.step("all projects: Inbox, Chats and Agents lead its pages; Inbox leads back to the requests")
     pages = page.locator("header nav.views a")
-    expect(pages).to_have_count(5)
+    expect(pages).to_have_count(6)
     expect(pages.nth(1)).to_have_attribute("aria-current", "page")
     expect(page.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
     pages.nth(0).click()
@@ -6597,6 +6858,15 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     # These projects have no Keep the Why export: the hub says so with a 409, and the page says it too.
     expect(page.locator("main section.view-all-why")).to_contain_text("publishes no Keep the Why export")
     run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
+    run.step("all projects: Runners is the last page, after Why, and opens the runners page (tsk-fznk0me1vydz)")
+    runners = page.locator("header nav.views a").nth(5)
+    expect(runners).to_have_text("Runners")
+    expect(runners).to_have_attribute("href", "/runners")
+    runners.click()
+    expect(page).to_have_url(re.compile(r"/runners$"))
+    expect(page.locator("main section.view-runners")).to_be_visible()
+    expect(page.locator("header nav.views a").nth(5)).to_have_attribute("aria-current", "page")
+    expect(page.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
     page.locator("header nav.views a").nth(0).click()
     expect(page).to_have_url(re.compile(r"/all$"))
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
@@ -7261,7 +7531,7 @@ def registration_admin_step(run: Run, page: Page) -> None:
 def project_links_step(run: Run, page: Page) -> None:
     """The project's own links (docs/api.md §6.11): set in Project settings against the real
     hub, shown beside the state in the header, refused at the field where the hub refuses them."""
-    run.step("links: an issues link set in Project settings, shown in the header; a port refused at its field")
+    run.step("links: an issues and a docs link set in Project settings, shown in the header; a port refused at its field")
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
     form = page.locator("form.links-form")
     expect(form).to_be_visible()
@@ -7272,11 +7542,15 @@ def project_links_step(run: Run, page: Page) -> None:
     run.problems = [p for p in run.problems if p != refused]
     page.locator("#link-wiki").fill("")
     page.locator("#link-issues").fill("https://issues.example.org/e2e")
+    page.locator("#link-docs").fill("https://docs.example.org/e2e")
     form.get_by_role("button", name="Save the links", exact=True).click()
     expect(page.locator("main")).to_contain_text("Links saved.")
     issues = page.locator("header .project-state a.header-link", has_text="Issues")
     expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
     expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    docs = page.locator("header .project-state a.header-link", has_text="Docs")
+    expect(docs).to_have_attribute("href", "https://docs.example.org/e2e")
+    expect(docs).to_have_attribute("aria-label", "Docs (opens in a new tab)")
     # On a phone the links are one row that scrolls sideways; the state stays in sight beside it,
     # scrolled to either end (the maintainer, tsk-m9ew7v609fq0).
     page.set_viewport_size({"width": 360, "height": 780})
@@ -7309,7 +7583,8 @@ def project_links_step(run: Run, page: Page) -> None:
                 expect(actions).to_have_attribute("aria-label", "Actions on GitHub (opens in a new tab)")
                 row = page.evaluate("""() => Array.from(document.querySelectorAll('header .project-links > a'))
                   .map((a) => [a.textContent.trim(), Math.round(a.getBoundingClientRect().top)])""")
-                assert [t for t, _ in row][:4] == ["Repository", "Actions", "Pull Requests", "Issues"], f"the links' order at {width} px {scheme}: {row}"
+                # Docs after the issues link, before Chat and Why (tsk-qeftb8bg0yt6), on the row at phone width.
+                assert [t for t, _ in row][:5] == ["Repository", "Actions", "Pull Requests", "Issues", "Docs"], f"the links' order at {width} px {scheme}: {row}"
                 assert len({top for _, top in row}) == 1, f"the project's links wrap at {width} px {scheme}: {row}"
                 width_now = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
                 assert width_now[0] <= width_now[1], f"the page scrolls sideways at {width} px {scheme}: {width_now}"
@@ -8433,6 +8708,7 @@ SETTINGS_SECTIONS = {
     "Way of working": ["Who closes a card", "Memory", "Keep the Why commitment", "Keep the Why personal settings",
                        "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
+    "Runners": [],
     "Mine": ["Your absence"],
 }
 
@@ -8450,7 +8726,10 @@ def settings_tabs_step(run: Run, page: Page) -> None:
         expect(page).to_have_url(re.compile(re.escape("/owner/e2e-alpha/" + path) + "$"))
         expect(nav.locator("a.view-tab")).to_have_text(list(SETTINGS_TABS))
         expect(nav.locator('a[aria-current="page"]')).to_have_text(tab)
-        expect(page.locator("main h2.panel-title").first).to_be_visible()
+        if tab == "Runners":
+            expect(page.locator("main section.view-settings section.project-runners")).to_be_visible()
+        else:
+            expect(page.locator("main h2.panel-title").first).to_be_visible()
         page.wait_for_timeout(300)  # Mine reads the member's settings; the public page its owner
         titles = page.locator("main h2.panel-title").all_inner_texts()
         for title in titles:

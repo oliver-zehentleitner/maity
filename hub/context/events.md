@@ -233,6 +233,14 @@ project lock and file or withdraw requests on the long-poll's hot path;
 the worker keeps the read path cheap. A table of episodes of its own:
 more than one row per session is never needed.
 
+**Updated 2026-11-21 (tsk-yzj829xdmqyy):** the episode's three columns and
+`acknowledged_seq` moved from `agent_session` to `agent_session_project`, one
+row per session and project (migration `20261121120000_inst_attach`), as the
+lead ruled on the card: not listening and the event position are per project
+under the contract of one instance in several projects (§5.3). The reason
+above holds for that row: an episode belongs to one session in one project and
+ends with it.
+
 ## A supervised session is left out of not listening only while an active placement names its credential
 
 **Id:** cb4184b4-d420-4205-b0d9-d8338e92ec65

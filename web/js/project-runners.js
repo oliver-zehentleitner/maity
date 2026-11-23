@@ -1,4 +1,5 @@
-// (9) Project → Runners (/<owner>/<slug>/runners, project:admin): the runners
+// (9) Settings → Runners (/<owner>/<slug>/settings/runners, project:admin; the
+// old /<owner>/<slug>/runners is gone, tsk-ert2k23kr5m4): the runners
 // allowed to start agents for this project (docs/api.md §15.4). Allowing
 // one is the grant; its own configuration still decides what it starts.
 // Detaching closes the agents it runs here. Capabilities are shown in the
@@ -12,10 +13,13 @@ window.Maity = window.Maity || {};
 
   const PRESENCE_MS = 30000;
 
-  M.views.projectRunners = async function (ctx, root) {
+  M.projectRunners = M.projectRunners || {};
+  // The tab's content under the Settings heading and tab row (js/app.js, M.views.settings).
+  M.projectRunners.tab = async function (ctx, root) {
     const words = M.runnerWords;
     const status = M.statusLine();
-    const list = h("div", { class: "runners" });
+    // Full width in the Settings column, as the dashboard's lists are (web/context/views.md).
+    const list = h("div", { class: "runners full-width" });
     const allow = h("div", { class: "allow-runner" });
     const projectName = ctx.project.name || ctx.slug;
 
@@ -149,9 +153,10 @@ window.Maity = window.Maity || {};
       draw(a.items, mine.items);
     }
 
-    append(root, h("h2", null, M.t("prunners.title")),
+    append(root, h("section", { class: "project-runners", "aria-labelledby": "prunners-title" },
+      h("h2", { id: "prunners-title" }, M.t("prunners.title")),
       h("p", { class: "muted" }, M.t("prunners.hint", { project: projectName })),
-      allow, status.el, list);
+      allow, status.el, list));
     draw(attached.items, (await M.api.getAll("/runners")).items);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).
     ctx.every(PRESENCE_MS, () => reload().catch((err) => status.fail(M.t("prunners.refresh_failed"), err)));

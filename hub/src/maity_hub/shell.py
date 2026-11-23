@@ -328,8 +328,6 @@ class AssetFiles(StaticFiles):
         return Response(body, status_code=status_code, media_type=form.media_type, headers=headers)
 
 
-# The dashboard's invitation page, `/invite/{token}` (§16.11): the token is in its path.
-INVITE = "/invite/"
 BASE = b'<base href="/assets/">'
 _HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
 _SOCIAL_IMAGE = re.compile(rb'(property="og:image" content=")(brand/[^"]+")')
@@ -466,7 +464,8 @@ class ShellRoute(BaseRoute):
             # Split as sent, an encoded slash in its segment. A server without `raw_path` (uvicorn
             # always sends it) falls back to the decoded path, where `%2F` would split.
             raw = scope.get("raw_path")
-            if paths.never_a_page(raw.decode("latin-1") if raw else scope.get("path", "")):
+            sent = raw.decode("latin-1") if raw else scope.get("path", "")
+            if paths.never_a_page(sent):
                 # No page has such an address, whatever exists: `404`, the shell as the body, so
                 # that the dashboard still draws its "not found" (§16.11).
                 response = shell_response(self.web_dir, self.public_url, status_code=404)
@@ -477,9 +476,10 @@ class ShellRoute(BaseRoute):
                 )
             if response is None:
                 response = shell_response(self.web_dir, self.public_url)
-            if scope.get("path", "").startswith(INVITE):
+            if paths.is_invitation(sent):
                 # The invitation's token is in the path: from the shell's first request on,
-                # nothing sends it on in a `Referer` (§16.13), maintenance window or not.
+                # nothing sends it on in a `Referer` (§16.13), maintenance window or not. At
+                # every address the dashboard draws as one, `//invite/{token}` included.
                 response.headers["Referrer-Policy"] = "no-referrer"
         else:
             response = error_response(404, "not_found", "no such resource")

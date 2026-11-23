@@ -9,9 +9,10 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Protocol
 
+import sqlalchemy as sa
 from sqlalchemy import Connection, Engine, delete, insert, inspect, select, update
 
-from maity_hub import avatars, clock, handle_register, namespace
+from maity_hub import avatars, clock, handle_register, namespace, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.passwords import hash_password
@@ -125,6 +126,7 @@ def human(engine: Engine, handle: str | None = None) -> str:
     owner (§6.25): asked for again, it is that human."""
     human_id = new_id("human")
     registered = _has_register(engine)  # not inside the transaction: SQLite has one writer
+    lockable = inspect(engine).has_table("account_lock")  # from 0076 on
     with engine.begin() as conn:
         if handle == "maintainer":
             found = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
@@ -139,6 +141,8 @@ def human(engine: Engine, handle: str | None = None) -> str:
                 created_at=clock.now(),
             )
         )
+        if lockable:
+            write_guard.make_row(conn, human_id)
         if registered:
             handle_register.claim(conn, handle or human_id, handle_register.HUMAN, human_id)
     return human_id
@@ -326,33 +330,141 @@ def agent(
     credential_id = new_id("credential")
     value, verifier = credentials.issue(credential_id)
     session_id = new_id("session") if with_session else None
+    attached = _has_attachments(engine)  # not inside the transaction: SQLite has one writer
+    session = {
+        "id": session_id,
+        "credential_id": credential_id,
+        "harness": "Claude Code",
+        "model": "claude-opus-5-5",
+        "started_at": clock.now(),
+        "last_seen_at": clock.now(),
+        "live": True,
+    }
     with engine.begin() as conn:
-        conn.execute(
-            insert(t.credential).values(
-                id=credential_id,
-                membership_id=membership_id,
-                instance=instance,
-                verifier=verifier,
-                created_at=clock.now(),
-            )
-        )
-        if session_id:
+        if attached:
             conn.execute(
-                insert(t.agent_session).values(
-                    id=session_id,
-                    credential_id=credential_id,
-                    membership_id=membership_id,
-                    harness="Claude Code",
-                    model="claude-opus-5-5",
-                    started_at=clock.now(),
-                    last_seen_at=clock.now(),
-                    acknowledged_seq=0,
-                    live=True,
+                insert(t.credential).values(
+                    id=credential_id,
+                    agent_id=agent_id,
+                    instance=instance,
+                    verifier=verifier,
+                    created_at=clock.now(),
                 )
             )
+            conn.execute(
+                insert(t.instance_attachment).values(
+                    credential_id=credential_id,
+                    membership_id=membership_id,
+                    instance=instance,
+                    attached_at=clock.now(),
+                )
+            )
+            if session_id:
+                conn.execute(insert(t.agent_session).values(**session))
+                conn.execute(
+                    insert(t.agent_session_project).values(
+                        session_id=session_id, membership_id=membership_id, acknowledged_seq=0
+                    )
+                )
+        else:  # below 20261121120000_inst_attach: the instance sat in one membership
+            conn.execute(
+                insert(_OLD_CREDENTIAL).values(
+                    id=credential_id,
+                    membership_id=membership_id,
+                    instance=instance,
+                    verifier=verifier,
+                    created_at=clock.now(),
+                )
+            )
+            if session_id:
+                conn.execute(
+                    insert(_OLD_SESSION).values(
+                        **session, membership_id=membership_id, acknowledged_seq=0
+                    )
+                )
     return Agent(
         agent_id, owner_id, membership_id, credential_id, value, verifier, session_id, instance
     )
+
+
+# `credential` and `agent_session` as they were before 20261121120000_inst_attach, for a
+# database a migration test holds below it.
+_OLD_CREDENTIAL = sa.table(
+    "credential",
+    sa.column("id"),
+    sa.column("membership_id"),
+    sa.column("instance"),
+    sa.column("verifier"),
+    sa.column("created_at"),
+)
+_OLD_SESSION = sa.table(
+    "agent_session",
+    sa.column("id"),
+    sa.column("credential_id"),
+    sa.column("membership_id"),
+    sa.column("harness"),
+    sa.column("model"),
+    sa.column("started_at"),
+    sa.column("last_seen_at"),
+    sa.column("acknowledged_seq"),
+    sa.column("live"),
+)
+
+
+def _has_attachments(engine: Engine) -> bool:
+    """Whether the database is at a revision with `instance_attachment` (§6.17)."""
+    return inspect(engine).has_table("instance_attachment")
+
+
+def attach(
+    engine: Engine,
+    agent: Any,
+    project_id: str,
+    role: str = "member",
+    *,
+    trust: str | None = None,
+    attached_at: datetime | None = None,
+) -> int:
+    """Attach `agent`'s instance (an `Agent` here or a `flow.Agent`) to `project_id` as well
+    (§6.17, "One instance in several projects"): a membership of the same profile there (the
+    one it has, if any), its attachment and, for the live session, a position row at 0.
+    Returns the membership id."""
+    agent_id = agent.agent_id if isinstance(agent, Agent) else agent.id
+    with engine.begin() as conn:
+        found = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.agent_id == agent_id,
+                t.membership.c.active.is_(True),
+            )
+        ).scalar()
+    membership_id = (
+        int(found)
+        if found is not None
+        else membership(engine, project_id, role, trust, agent_id=agent_id)
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.instance_attachment).values(
+                credential_id=agent.credential_id,
+                membership_id=membership_id,
+                instance=agent.instance,
+                attached_at=attached_at or clock.now(),
+            )
+        )
+        live = conn.execute(
+            select(t.agent_session.c.id).where(
+                t.agent_session.c.credential_id == agent.credential_id,
+                t.agent_session.c.live.is_(True),
+            )
+        ).scalar()
+        if live is not None:
+            conn.execute(
+                insert(t.agent_session_project).values(
+                    session_id=live, membership_id=membership_id, acknowledged_seq=0
+                )
+            )
+    return membership_id
 
 
 def card(engine: Engine, project_id: str, created_by: int, **values: Any) -> str:

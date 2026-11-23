@@ -33,9 +33,11 @@ NEVER = [
     "/someone/project/board/a/b/c/d",
     "/inbox/a/b/c/d/e/f",
     "/observe/someone/project/why/a/b/c",
-    # A project's view word that is no view, `members` included, and `/<handle>/agents`.
+    # A project's view word that is no view, `members` and `runners` included, and
+    # `/<handle>/agents`.
     "/someone/project/nope",
     "/someone/project/members",
+    "/someone/project/runners",  # the Settings tab `settings/runners` since tsk-ert2k23kr5m4
     "/someone/project/%zz",
     "/someone/agents",
 ]

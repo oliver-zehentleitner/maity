@@ -60,7 +60,7 @@ def _enabled(conn: Connection, hub: Settings) -> None:
 def _anonymous(request: Request) -> None:
     anonymous.entry(request)
     presented = request.cookies.get(SESSION_COOKIE)
-    if not presented:
+    if not presented or not presented.isascii():  # a non-ASCII value names no session
         return
     with engine_of(request).connect() as conn:
         row = conn.execute(

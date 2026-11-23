@@ -26,6 +26,17 @@ leases while it works.
 included — one commit fewer per call, but a failed call would then erase
 the evidence that the caller is alive.
 
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** for an agent these side effects are no longer
+written inside `authenticate`. An instance may be attached to several projects (§6.17), and
+which memberships a call is present in depends on the route's project, so `authenticate`
+resolves only the credential, its profile and its owner, and `deps._resolve`'s `confine`
+writes the agent's last use, presence, session and leases after it
+(`auth.caller.settle_in_project` in the route's project's attachment alone,
+`settle_project_less` in every live attachment that is not isolated). Both run in the same
+transaction as the authentication (`deps.authenticated`), which still commits before the
+endpoint's own, so the decision and its reason hold unchanged. A human's and a runner's side
+effects stay inside `authenticate`.
+
 ## A runner caller is confined in one place, before any route runs
 
 **Id:** 1d62b2f2-abdb-4470-91dd-8de0517f21b9
@@ -518,6 +529,50 @@ the window holds nothing of the request.
   spends it.
 - Moving the nonces into the database on every engine: a table and a write per signed request on the
   engines that run one replica, for what one comparison solves.
+
+
+## A refused request keeps its nonce spent: the nonce is claimed again after the rollback
+
+**Id:** fbc8c3e0-d945-4237-89dc-0a4cc8e1282d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-thjx5bdqnq9f; review of pull request #2074; checked on 2026-11-20 on SQLite and PostgreSQL with `tests/test_refused_nonce.py`
+**See:** auth.md#a-request-run-again-after-a-deadlock-is-still-the-first-user-of-its-nonce — 05c462cb-0a99-41e7-98d3-c226c085a697 — as of 2026-11-20
+**Revisit when:** the nonce claim moves out of the authentication transaction, or the process's nonce window goes away; or the hub runs behind another HTTP server: the canonical string relies on no line feed appearing in a header value or in the raw path, which the current server refuses
+
+A signed request spends its nonce inside the authentication transaction, and several refusals
+come after that in the same transaction: an isolated agent, a read past the limit, another
+project, a bridge's `Maity-For` refusal, a runner outside `/runner/*`. Their rollback undid the
+spend on PostgreSQL, where the nonce is a row; in the process's window (SQLite, MariaDB) it
+stayed spent. Now `RequestFacts.nonces_spent` keeps what the request spent in the database
+across its runs, and `deps.authenticated` claims those nonces again in a committed transaction
+of their own whenever the authentication ends in an exception, before the refusal is answered
+(`caller.keep_nonces_spent`). A nonce the process's window holds is not recorded, so a refusal
+on SQLite or MariaDB opens no such transaction. If the claim again still fails after its
+retries, a warning without nonce or credential is logged and the original refusal is answered
+all the same, never a 500; that nonce then stays unspent on PostgreSQL, as it was before. That
+is the accepted limit, set in the pull request's review: the refusal never turns into a 500.
+
+**Reason:** a refused request sent again unchanged inside the timestamp window was accepted on
+PostgreSQL once the refusal's condition had ended, while SQLite and MariaDB answered
+`nonce_reused`: the engines disagreed, and a refusal is no reason to hand a nonce back (05c462cb
+already rejects giving one back). Claiming again on the error path changes nothing on the
+accepted path, the one every signed request takes: no extra commit, no second connection. It
+lives in the one function every authentication runs through, beside the two other writes that
+commit on their own after a refusal (a due runner revocation, an ended second-factor session),
+and it leaves 05c462cb intact: a deadlock's retry still rolls the claim back and is the first
+user again. A copy of the request that arrives while the original is still authenticating, or
+between its rollback and the new claim, can claim the nonce first; it meets the same state, and
+so the same refusal, unless the refusal's condition ends within that time.
+
+**Rejected alternative:** claiming the nonce in its own committed transaction before the rest
+of the authentication. It closes that window too, but costs every signed request one more
+transaction; claiming it from inside the authentication transaction would hold two pooled
+connections per request (a pool exhausted by requests each waiting for their second), and
+claiming it before the transaction would mean verifying the signature in a transaction of its
+own first. A committed claim would also make a deadlock's retry find its own nonce spent on
+PostgreSQL, which needs the request identity 05c462cb gives only the process's window.
 
 
 ## A sign-in's confirmation is stored on its session, carried over from the read marks once
@@ -1138,3 +1193,116 @@ to every address; a loud failure shows a path that forgot `prepare`.
 - `RequestLimits.take` and `recipient_over` taking a connection and the address: every unit test
   of the limits would need a database and a pepper, for a key they treat as an opaque string.
 - Reusing `known_sources.fingerprint` (purpose `sign_in.known_source`): one key for two uses.
+
+## Single-use mail links have one implementation, the table a parameter
+
+**Id:** 3b8e5f21-9c47-4d6a-b0e3-71a2c9d84f56
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pfjwgw5e94k1 (item 1 of the clean-up audit tsk-f5sdcgr7vzj0); `hub/src/maity_hub/auth/single_use.py`; tests in `test_single_use.py`, each for `email_sign_in` and `password_reset`, and the limiters' names pinned in `test_request_limits_keep_their_names`
+**Revisit when:** a third kind of mailed single-use link comes, or one of the two needs a step of its own inside issuing, using or voiding that a column to clear cannot express
+
+`auth/single_use.py` holds, once, what the sign-in link (`email_sign_in`) and the password reset
+(`password_reset`) share: the human row lock (`lock_human`), issuing (`start`: under that lock,
+None when a newer row from the same source exists or the request outlived a row's life, else
+the earlier unused row from that source is voided; `add`: the new row; `issue`: both with a
+fresh nonce), `use`, `void_human`, `void_open`, and `RequestLimits(prefix)` with the recipient's
+limits (`recipient_over`, `RECIPIENT_*`). A `Kind` names the table, a row's life and the columns
+a spent row clears with `used_at`: `email_sign_in` clears `code_mac`, so a used or voided link's
+code dies with it. The statements, their order and the locks are those the two modules had.
+`email_links` keeps the code, its MAC, the per-day count of wrong codes, `live` and the mail,
+and draws the code between `start` and `add`, as before; `password_resets` keeps the token,
+`live`, the password generation and the wrong codes at resets. Both keep their former names as
+thin wrappers or re-exports (`RequestLimits` a subclass that passes `auth.email_links` or
+`auth.password_resets`), so callers, tests and their monkeypatches are unchanged, and
+`single_use` imports neither module. Nothing changes for users.
+
+**Reason:** the two modules held the same issue, use and void code and the same nine limiters,
+so a fix to one (a lock, a condition of single use) could miss the other on a security path.
+The limiters' names key the shared counts (`rate_count`): built from the same prefix, they stay
+exactly as they were, so no count starts again; the test pins every name. The audit's claim
+that use and the voids differ only in the table did not hold: the sign-in row also clears
+`code_mac`, hence `Kind.cleared`. `live` stays in each module, as the two read a row by
+different keys (a nonce hash or a browser's pending value; a token's nonce and human).
+
+**Rejected alternatives:**
+- One `issue` with a callback for the kind's columns: the sign-in code is drawn (and the day's
+  row read or written) after the void and before the insert, and also returned; a callback
+  hides that step and its statement. `start` and `add` keep it visible in `email_links.issue`.
+- Updating every caller to `single_use` and deleting the old names: a larger diff on a security
+  path for no change in behaviour, and the conftest finds the limiters through the routes'
+  `LIMITS` either way.
+- Clearing `code_mac` chosen by the table's columns rather than named in `Kind`: implicit, and a
+  later column of that name in another table would be cleared unasked.
+- `RequestLimits` taking a full name per limiter: nine strings per path to keep in step, where
+  one prefix cannot drift.
+
+## The forge's setup callback is the one cross-site cookie call, and only as a top-level navigation
+
+**Id:** e3a7c1d5-4b62-4f09-9a8e-2c6d1f7b5034
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2vtm39ykr7k4 from the lead (found by the maintainer's own test of a11, ops 3yc2); docs/api.md §2.1, §11.4; `caller.CROSS_SITE_NAVIGATIONS`, `_cross_site_allowed`, `deps.forge_setup_caller`; tests in `test_forge_links.py` (the cross-site section) and `test_permitted_calls.py`
+**Revisit when:** another forge or OAuth callback lands on the hub, or browsers stop sending `Sec-Fetch-*` on navigations
+**See:** auth.md#the-permitted-call-allowlists-share-one-format-and-one-matcher-each-gate-keeping-the-path-it-reads — a8fd69cb-de04-4977-af4e-90a06ddc6415 — as of 2026-11-23
+
+`_cookie_headers` refuses a cookie request with `Sec-Fetch-Site: cross-site` (§2.1) except
+`GET /forge/github/setup` with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`. The
+call is a `Calls` list of one entry (`CROSS_SITE_NAVIGATIONS`), matched on the raw request
+path as the isolated agent's gate is, so a percent-encoded spelling the router would still
+route there stays refused. The route authenticates its caller without side effects
+(`deps.forge_setup_caller`: `seen=False`, `renew_leases=False`, `counted=False`): no presence
+is written, no lease renewed and no read counted, on any path to it. Those flags reach only the
+cookie path, so `forge_setup_caller` first refuses an `Authorization` or `Maity-For` header
+(`humans_only`, as `presence_caller` does) before any credential is looked up: an agent's
+credential would otherwise have its last use (`last_used_at`), its presence (`last_seen_at` of
+the membership, and of its live session if it has one) and its read count moved, and a
+runner's or a bridge's (`Maity-For`) its read count. Its `state` (256 bits, stored as a hash,
+bound to the session, 15 minutes, used once) is checked before any forge read or write; the
+route's outcomes, and the refusals before it runs, are listed in §11.4.
+
+**Reason:** the setup is an OAuth-style callback: GitHub sends the browser back after the
+installation, so the request comes from github.com and is `cross-site` by design. §2.1 refused
+every such cookie request while §11.4 had the browser arrive exactly that way, so linking an
+installation in a browser always failed with `csrf_mismatch` on a11; the tests called the route
+without `Sec-Fetch-Site` and never saw it. On this route the `state` does what the site check
+does elsewhere: a request another site starts cannot carry a state of the victim's session,
+and a state of the attacker's own session is `link_state` for anyone else. The exception stays
+this narrow because a request the hub lets through cross-site carries the victim's cookie
+(`SameSite=Lax` sends it on a top-level `GET` navigation): one method and path, as a top-level
+navigation only. `SameSite=Lax` already withholds the cookie from a cross-site `fetch`, frame
+or form's `POST`; the navigation test refuses those as well, as defence in depth, should a
+browser or a later cookie setting send it after all.
+
+A navigation another site forces onto the setup changes nothing before its `state` refuses it:
+the caller is authenticated without presence, lease renewal or read count, so the attacker
+cannot keep a victim's session alive, show them online or renew their claims' leases by
+sending them there, nor spend their reads. The route loses nothing by it: it is only reached by
+the forge's redirect, once per link, so the same-origin path changing too costs nothing; the
+human's next dashboard call writes presence and renews leases as always.
+
+**Rejected alternatives:**
+- Letting every cross-site `GET` through: every read route would then answer with the cookie to
+  a navigation another site starts, and the authentication's own effects (presence, the
+  renewal of leases, the read count) would follow; the site check would protect nothing.
+- Accepting `same-site` only: GitHub is never the hub's site, so the callback would still fail.
+- Relying on `SameSite=Lax` alone, without the `Sec-Fetch-Site` gate: it sends the cookie on
+  every cross-site top-level `GET` navigation, to every route, so it does not decide the
+  navigation case at all; that is why §2.1 checks `Sec-Fetch-Site` on top of it.
+- Dropping the check for the route altogether, `fetch` and frames included: no forge redirect
+  needs a `fetch`, a frame or another method. `SameSite=Lax` would still withhold the cookie
+  from them, but the gate refusing them too keeps a second barrier should that ever change,
+  and the exception should admit only what the callback is.
+- Matching the decoded path (as the router does): it would also admit `set%75p` and other
+  spellings no forge redirect sends; the raw path is the narrower test.
+- Accepting the effects of the ordinary authentication (`current_caller`: presence written at
+  most once a minute, the leases of open claims renewed, the read counted against the session)
+  on a forced navigation before the `state` refuses it: a navigation another site forces should
+  leave no trace on the victim's session, and the route, only reached by the forge's redirect,
+  loses nothing without them.
+- Also requiring `Sec-Fetch-User: ?1`: not every browser sends it, and the forge's return need
+  not be user-activated (the forge may redirect back without a fresh user gesture), so
+  requiring it would refuse real links; it would add nothing the single-use, session-bound
+  `state` does not already protect.

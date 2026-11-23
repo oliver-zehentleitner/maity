@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from dataclasses import replace
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Path, Request
@@ -72,6 +73,7 @@ class MessageIn(Written):
     conversation_id: str | None = None
     to_instance: str | None = None  # a direct chat message to one instance of the agent (§9.1)
     review: Any = None  # a `review_result`'s object (§8.4), checked in `post_message`
+    in_reply_to: Any = None  # the seq a `review_result` answers (§8.4), checked by hand
 
     @field_validator("body")
     @classmethod
@@ -108,10 +110,10 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
     return event_views(conn, [row], reader)[0]
 
 
-def _reads_event(conn: Connection, mine: Membership, seq: str) -> bool:
-    """What `GET …/events/{seq}` reads (§8.9): the event list's own read, bounded to this one
-    `seq`, so a replay shows an event only to whom that read serves it now."""
-    number = int(seq)
+def _single_read(conn: Connection, mine: Membership, number: int, carried: bool) -> list[Any]:
+    """What `GET …/events/{seq}` serves (§8.9): the event list's own read, bounded to this one
+    `seq`; the event's row, or nothing for whoever may not read it now. `carried`: a bridge's
+    read for the agent (`Maity-For`, §2.3)."""
     rows, _, _ = events.read(
         conn,
         mine.project.id,
@@ -120,9 +122,17 @@ def _reads_event(conn: Connection, mine: Membership, seq: str) -> bool:
         number - 1,
         1,
         until=number,
-        carried=mine.bridged,  # `Maity-For` (§2.3)
+        carried=carried,
     )
-    if rows:
+    return list(rows)
+
+
+def _reads_event(conn: Connection, mine: Membership, seq: str) -> bool:
+    """Whether an idempotent replay shows the event: what `GET …/events/{seq}` reads (§8.9),
+    so a replay shows an event only to whom that read serves it now, and a group chat's message
+    to whom that chat's history serves it."""
+    number = int(seq)
+    if _single_read(conn, mine, number, mine.bridged):
         return True
     # A group chat's message is also read through the chat's history, as its redaction
     # counts it (`_redact_in_group`): someone added later redacts an earlier message there.
@@ -449,15 +459,8 @@ def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSON
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)  # not a member here: `not_found`, as for any seq
         mine.require("project:read")
-        rows, _, _ = events.read(
-            conn,
-            mine.project.id,
-            mine.row,
-            mine.principal_id,
-            number - 1,
-            1,
-            until=number,
-            carried=getattr(caller, "bridge", None) is not None,  # `Maity-For` (§2.3)
+        rows = _single_read(
+            conn, mine, number, getattr(caller, "bridge", None) is not None  # `Maity-For`
         )
         if not rows:
             raise not_found()
@@ -552,14 +555,17 @@ def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
 
 
 def _acknowledge(conn: Connection, caller: Caller, after: int) -> None:
-    """`after=N` acknowledges everything up to N for this session (§8.3)."""
+    """`after=N` acknowledges everything up to N for this session in the caller's project
+    (§8.3): its position row there."""
     if caller.session_id is None or after <= 0:
         return
+    position = t.agent_session_project
     conn.execute(
-        update(t.agent_session)
+        update(position)
         .where(
-            t.agent_session.c.id == caller.session_id,
-            t.agent_session.c.acknowledged_seq < after,
+            position.c.session_id == caller.session_id,
+            position.c.membership_id == caller.membership_id,
+            position.c.acknowledged_seq < after,
         )
         .values(acknowledged_seq=after)
     )
@@ -606,6 +612,18 @@ def post_message(
             raise invalid(problems)
     elif body.review is not None:
         raise invalid({"review": "not_allowed"})
+    if body.type == "review_result":
+        # Who it reaches depends on state another writer changes under the project's lock: the
+        # restricted-access setting and set (§6.1), a card's restriction (§6.4), a member's
+        # state. So that lock is taken before any of it is read, and the project and the
+        # sender's own row are read again under it (`_locked`): what decides the audience is
+        # then what holds when the event is written (§8.4). The sender's own scope is checked
+        # again on that row: a trust or role change committed before the lock, after the
+        # route's check on the row read first, decides whether it may post at all.
+        mine = _locked(conn, mine)
+        mine.require("events:post")
+    # Presence, not value: an explicit null is refused like any other non-integer (§8.4).
+    answered = _answered(conn, mine, body) if "in_reply_to" in body.model_fields_set else None
     if body.to_instance is not None and (
         body.type != "chat"
         or (body.conversation_id is not None and group_chats.is_group(body.conversation_id))
@@ -759,7 +777,7 @@ def post_message(
     # side, so they reach it through the gate, and leave the list where it holds them.
     derived: dict[str, int] = {}
     if review is not None:
-        audience, passes = _deliver_review(conn, mine, body.task_id, review, audience)
+        audience, passes = _deliver_review(conn, mine, body.task_id, review, audience, answered)
     elif body.type == "update" and body.task_id is not None:
         watching = card_watches.at_write(conn, body.task_id)
         agents = _watching_agents(conn, watching)
@@ -790,8 +808,9 @@ def post_message(
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
     if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
         payload["to_instance"] = body.to_instance
-    if review is not None:  # what a review result judged and read (§8.4)
+    if review is not None:  # what a review result judged and read, and what it answers (§8.4)
         payload["review"] = review
+        payload["in_reply_to"] = answered.seq if answered is not None else None
     seq = events.emit(
         conn,
         mine.project.id,
@@ -825,30 +844,85 @@ def _watching_agents(conn: Connection, watching: list[int]) -> dict[str, int]:
     }
 
 
+def _locked(conn: Connection, mine: Membership) -> Membership:
+    """The caller's membership with the project row and its own row as read under the
+    project lock, as `tasks._locked`: a setting, a restriction or a member's state committed
+    before this is seen, and none commits after it until the event is written."""
+    project = events.lock_project(conn, mine.project.id)
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
+    ).first()
+    if row is None:  # the membership ended meanwhile
+        raise not_found()
+    return replace(mine, project=project, row=row)
+
+
+def _answered(conn: Connection, mine: Membership, body: MessageIn) -> Any:
+    """The event row a message's `in_reply_to` names (§8.4): only a `review_result` takes it;
+    a positive integer; a message of this project that is no conversation's (a redacted one
+    included: the event keeps its conversation and its actor) and that the sender reads under
+    §8.9's rule now. One it cannot read answers as one that does not exist."""
+    if body.type != "review_result":
+        raise invalid({"in_reply_to": "not_allowed"})
+    value = body.in_reply_to
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise invalid({"in_reply_to": "format"})
+    row = (
+        conn.execute(
+            select(t.event).where(t.event.c.seq == value, t.event.c.project_id == mine.project.id)
+        ).first()
+        if value <= SEQ_MAX
+        else None
+    )
+    # The single-event read alone (§8.9), without a replay's group-history fallback: a group
+    # chat message seen only through that history is no event this sender reads here.
+    if row is None or not _single_read(conn, mine, value, mine.bridged):
+        raise invalid({"in_reply_to": "unknown_event"})
+    if row.kind != "message" or row.conversation_id is not None:
+        raise invalid({"in_reply_to": "not_a_message"})
+    return row
+
+
 def _deliver_review(
     conn: Connection,
     mine: Membership,
     task_id: str | None,
     review: dict[str, Any],
     audience: list[str],
+    answered: Any = None,
 ) -> tuple[list[str], list[str]]:
-    """A review result's author and both leads (§8.4), and those members: the card's own flow,
-    which the §9.6 gate leaves open; without a resolved card (neither `task_id` nor the
-    exact-PR subject names one, §8.4) only the leads. The author's instance takes
-    the place of the author's `member:` token that `to` or a mention put in the audience, and is
-    added unless the audience holds that same instance token. A member token (a lead, or an
+    """A review result's author, the orderer (the author of the message `in_reply_to` names,
+    `answered`) and both leads (§8.4), and those members: the card's own flow, which the §9.6
+    gate leaves open; without a resolved card (neither `task_id` nor the exact-PR subject names
+    one, §8.4) only the orderer and the leads. The author's and the orderer's instances take
+    the place of their member's `member:` token that `to` or a mention put in the audience, and
+    each is added unless the audience holds that same instance token. A member token (a lead, or an
     author whose card was claimed for the team) is added unless `to` or a mention reaches the
     member already: one of its role or trust tokens, or a token of its own. `all` counts for
     neither: it does not wake a supervised member, and beside it an added token wakes only such
     a one. One that then reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
-    found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
+
+    # An orderer whose message reached the sender only through `all`, a role or a trust token
+    # has no exemption from the gate (§8.4): it is added only where the gate would let the
+    # sender reach it anyway, and never held, so its owner is not asked for a consent the
+    # sender did not seek by addressing it. It is judged before recipients are de-duplicated,
+    # so an orderer left out does not displace a lead of the same member (review A1882).
+    def admits(r: review_delivery.Recipient) -> bool:
+        return not chat_gate.hold(conn, mine.project.id, mine, "review_result", [r.token])[1]
+
+    found = review_delivery.recipients(
+        conn, mine.project, sender, task_id, review, answered, mine.instance, admits
+    )
+    # The reviewer means the author and the orderer: the member id would wake other instances
+    # by the agent's `wake` rule (§6.18). The payload's `to` stays as written.
+    meant: dict[str, list[str]] = {}
     for r in found:
         if r.token.startswith("instance:"):
-            # The reviewer means the author: the member id would wake other instances by the
-            # agent's `wake` rule (§6.18). The payload's `to` stays as written.
-            member = f"member:{r.member_id}"
-            audience = [r.token if token == member else token for token in audience]
+            meant.setdefault(f"member:{r.member_id}", []).append(r.token)
+    audience = list(
+        dict.fromkeys(replaced for token in audience for replaced in meant.get(token, [token]))
+    )
     roles = _roles(conn, mine.project.id, [r.member_id for r in found])
     reached_members = {
         token.split(":", 1)[1].split("#", 1)[0]
@@ -870,7 +944,7 @@ def _deliver_review(
     audience = list(dict.fromkeys([*audience, *added]))
     if set(audience) <= {f"member:{mine.principal_id}"}:
         raise invalid({"to": "required"}, "a review result that reaches nobody but its sender")
-    return audience, [r.member_id for r in found]
+    return audience, [r.member_id for r in found if r.ungated]
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:

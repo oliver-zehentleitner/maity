@@ -23,6 +23,7 @@ from sqlalchemy import Connection, delete, func, insert, inspect, select
 
 from maity_hub import clock, paths
 from maity_hub import tables as t
+from maity_hub.chunks import chunks
 from maity_hub.errors import ApiError, rate_limited
 
 PREFIX = "/api/v1/projects/"
@@ -30,15 +31,41 @@ PREFIX = "/api/v1/projects/"
 # together at most 3 per 24 hours per project.
 CHANGES_PER_DAY = 3
 DAY_SECONDS = 24 * 3600
-FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
+# A project's full name `<owner>/<slug>`, the whole text: use `fullmatch`. `\Z`, not `$`, so
+# that even a `match` never passes a trailing newline ("a/b\n" names no project).
+FULL_NAME = re.compile(r"\A([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})\Z")
 
 
 class ProjectRoute(APIRoute):
     """A route under `/projects/{owner}/{slug}`: its `slug` path parameter becomes the full
-    name `<owner>/<slug>` before the dependencies and the endpoint read it."""
+    name `<owner>/<slug>` before the dependencies and the endpoint read it.
+
+    A route under `/api/v1/projects/{owner}/{slug}` that is not one of `access.OUTSIDE_READS`
+    for the request's method first passes `access.gate`: a public project's outsider is
+    answered `not_found` there, before FastAPI reads the body or the query (§2.3), an owner of
+    an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3). One
+    of `access.PUBLIC_REPOSITORY_READS` passes the gate too, which opens it to an outsider only
+    while the project's stored `repository_public` is true, the instance's token serves the
+    project's namespace (the operator's own, §11.4), and the forge's answer on the repository,
+    asked live when the kept one is too old, says it is public, all before the query is read."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()
+        from maity_hub import access  # access resolves projects through this module
+
+        # The route's template as the app serves it. FastAPI keeps an included router behind
+        # its own object (hub/context/namespace.md), so `self.path` is the router's own path,
+        # below the prefix `access.API` the API's routers are included with; a FastAPI that
+        # copied the route on inclusion gave it the prefix. Both name one template here, so
+        # the gate holds on either: reading `self.path` alone left every project route
+        # ungated under FastAPI 0.159.
+        path = self.path if self.path.startswith(access.API + "/") else access.API + self.path
+        below = path.startswith(access.API_PROJECT + "/")
+        project_route = path == access.API_PROJECT or below
+        readable = frozenset(m for m, p in access.OUTSIDE_READS if p == path)
+        owned = frozenset(m for m, p in access.OWNER_CALLS if p == path)
+        joining = frozenset(m for m, p in access.OUTSIDE_JOINS if p == path)
+        conditional = frozenset(m for m, p in access.PUBLIC_REPOSITORY_READS if p == path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}
@@ -46,6 +73,12 @@ class ProjectRoute(APIRoute):
                 params = dict(params)
                 params["slug"] = f"{params.pop('owner')}/{params['slug']}"
                 request.scope["path_params"] = params
+            if project_route and request.method in conditional:
+                await access.gate(request, public_repository_read=True)
+            elif project_route and request.method not in readable:
+                await access.gate(
+                    request, request.method in owned, outside_join=request.method in joining
+                )
             return await inner(request)
 
         return handler
@@ -69,7 +102,7 @@ def route_words(paths: Iterable[str]) -> frozenset[str]:
 # word stays reserved even if its route were ever left out of the schema.
 ROUTE_WORDS = frozenset(
     {
-        "attachments", "banner", "conversations", "credentials", "events", "forge",
+        "attachments", "banner", "contribution", "conversations", "credentials", "events", "forge",
         "invitations", "joins", "jour-fixe", "keep-the-why", "limits", "logo", "me", "members",
         "memory", "messages", "placements", "probe", "repository", "requests", "roles", "rules",
         "runners", "swarm", "takeovers", "tasks", "ticker", "transfer",
@@ -128,8 +161,9 @@ def resolve_owner(conn: Connection, handle: str) -> str | None:
 
 def resolve(conn: Connection, full_name: str) -> Any | None:
     """The project row `<owner>/<slug>` names: by its current name or one of its aliases. At
-    most one matches, since a full name once used belongs to one project (§6.25)."""
-    found = FULL_NAME.match(full_name)
+    most one matches, since a full name once used belongs to one project (§6.25). The whole
+    text must be the name; anything else, a project id included, names none."""
+    found = FULL_NAME.fullmatch(full_name)
     if found is None:
         return None
     owner_id = resolve_owner(conn, found[1])
@@ -185,16 +219,18 @@ def aliases_of(conn: Connection, project_id: str) -> list[str]:
 
 
 def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
-    """project id → full name, in one query, for lists."""
-    ids = list(set(project_ids))
-    if not ids:
-        return {}
-    rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug, owner_handle().label("handle"))
-        .select_from(join_owner(t.project))
-        .where(t.project.c.id.in_(ids))
-    ).all()
-    return {row.id: f"{row.handle}/{row.slug}" for row in rows}
+    """project id → full name, for lists: one query for every `chunks.CHUNK` ids, so a list
+    over every project with a public page (`/explore`, which no quota bounds) stays below the
+    engine's limit on bound parameters."""
+    names: dict[str, str] = {}
+    for ids in chunks(project_ids):
+        rows = conn.execute(
+            select(t.project.c.id, t.project.c.slug, owner_handle().label("handle"))
+            .select_from(join_owner(t.project))
+            .where(t.project.c.id.in_(ids))
+        )
+        names.update({row.id: f"{row.handle}/{row.slug}" for row in rows})
+    return names
 
 
 def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = None) -> bool:

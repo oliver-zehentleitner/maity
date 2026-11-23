@@ -68,6 +68,31 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
     assert taken.json()["error"]["details"]["fields"] == {"slug": "taken"}
 
 
+@pytest.mark.parametrize("name", ["maintainer/maity", "maintainer/old"])
+def test_a_full_name_with_a_trailing_newline_names_no_project(
+    owner: flow.Human, migrated: Engine, name: str
+) -> None:
+    """The whole text is `<owner>/<slug>` (§6.25): `$` let `match` pass a trailing newline,
+    so `namespace.resolve` found the project for "maintainer/maity\\n". The current name and
+    an alias alike; `FULL_NAME` refuses it under `match` as well as `fullmatch`."""
+    project = flow.project(owner, "maity")
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.project_alias).values(
+                project_id=project["id"],
+                **namespace.owner_values(owner.id),
+                slug="old",
+                created_at=clock.now(),
+            )
+        )
+    with migrated.connect() as conn:
+        found = namespace.resolve(conn, name)
+        assert found is not None and found.id == project["id"]
+        assert namespace.resolve(conn, f"{name}\n") is None
+    assert namespace.FULL_NAME.match(f"{name}\n") is None
+    assert namespace.FULL_NAME.fullmatch(f"{name}\n") is None
+
+
 def test_the_one_owner_join_names_projects_and_aliases_of_either_owner(migrated: Engine) -> None:
     """`name_of` and `aliases_of` are the batch readers with one id, over one owner join: a
     human's and an organisation's project by the owner's current handle, aliases oldest first,

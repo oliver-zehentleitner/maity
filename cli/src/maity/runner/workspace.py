@@ -63,6 +63,15 @@ TMP_SCRATCH_HARNESSES = ("antigravity",)
 # these placements are given the parent and have the runner pre-create it (supervisor): agy owns
 # it and makes its own, while opencode and stub open no such rule and are given nothing to hide.
 TMP_SCRATCH_PARENT_HIDERS = ("claude-code", "codex")
+# The hiders that get a short TMPDIR of their own, `tmp` in a leaf under that hidden parent,
+# where the scratch's `tmp` leaves no room for a socket (supervisor._tmpdir), the leaf's `tmp`
+# re-opened in their sandbox for them alone (adapters). Codex since tsk-0zb9mgzmbwn4 (Codex
+# 0.171.0 writes it, live 2026-11-20). Claude Code since tsk-k7svzz2p4v7y: its sandbox writes the
+# re-opened `tmp` once the parent is denied for reading only, and a sibling leaf stays out of
+# reach under the empty mount of that read deny (Claude Code 2.1.329, live 2026-11-21, probe P4);
+# Claude Code's own temp files and socket go in the leaf itself, beside the re-opened `tmp`
+# (adapters.own_tmp_env).
+OWN_TMPDIR_HARNESSES = ("codex", "claude-code")
 # Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`
 # carries against other host users is met in scratchop.tmp_make (a per-user parent owned 0700,
 # owner-checked, no-follow); it is not met against other placements of the same host user, a
@@ -150,17 +159,31 @@ def _no_rule_glob(path: Path) -> None:
         )
 
 
-def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> Path:
+def scratch_of(
+    root: Path, project: str, placement_id: str, host: str = "", former: bool = False
+) -> Path:
     """The placement's scratch under `root` (§15.5), built from validated tokens and kept
-    inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
-    to write, and the runner reaches it only from the root down (scratchop)."""
-    if not (TOKEN.match(project) and SCRATCH_ID.match(placement_id)):
+    inside `root` as a clone's path is (locate): `<root>/.scratch/<project>/<placement id>`,
+    under the one holder every Claude Code sandbox denies (scratch_holder_of,
+    tsk-c7zzd440x8pn). `former`: the shape before it, `<root>/<project>/.scratch/<placement id>`,
+    which a host whose `maity` has no holder op keeps, and which is still measured and removed
+    where a placement made it. Not resolved: what is there is the agents' to write, and the
+    runner reaches it only from the root down (scratchop)."""
+    if not (TOKEN.fullmatch(project) and SCRATCH_ID.fullmatch(placement_id)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     base = root if host else root.resolve()
-    path = base / project / SCRATCH / placement_id
+    if former:
+        path = base / project / SCRATCH / placement_id
+    else:
+        path = base / SCRATCH / project / placement_id
     if not host:
         _no_rule_glob(path)  # the resolved root feeds the scratch's Read/Edit/Write rules
     return path
+
+
+def scratch_holder_of(root: Path, host: str = "") -> Path:
+    """The holder of every scratch under `root`, `<root>/.scratch` (scratch_of)."""
+    return (root if host else root.resolve()) / SCRATCH
 
 
 def uses_folder(harness_id: str) -> bool:
@@ -202,7 +225,7 @@ def locate(root: Path, project: str, clone: str, host: str = "", folder: bool = 
     """The clone's path under `root` (for `folder`, the workspace folder's). On an ssh host
     `root` is a remote path, validated by the configuration and never resolved here; the
     tokens cannot leave it either way."""
-    if not (TOKEN.match(project) and TOKEN.match(clone)):
+    if not (TOKEN.fullmatch(project) and TOKEN.fullmatch(clone)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     if host:
         return Workspace(root / project / clone, project, clone, host, folder)

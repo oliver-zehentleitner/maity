@@ -13,7 +13,7 @@ a personal hub with SQLite running in about five minutes.
 
 | Path | When | Database | You provide |
 |---|---|---|---|
-| [Plain Python](#plain-python) | one machine you control; the smallest setup | SQLite (default), or an existing PostgreSQL or MariaDB | Python 3.12+, a TLS reverse proxy for anything beyond this machine |
+| [Plain Python](#plain-python) | one machine you control; the smallest setup | SQLite (default), or an existing PostgreSQL or MariaDB ([versions](#database-versions)) | Python 3.12+, a TLS reverse proxy for anything beyond this machine |
 | [Docker Compose](#docker-compose) | one host with Docker; PostgreSQL included | PostgreSQL 17 in a container | Docker, a TLS reverse proxy on the same host |
 | [Helm on Kubernetes](#helm-on-kubernetes) | a cluster you already run | an existing PostgreSQL, usually managed | ingress controller, TLS (cert-manager), DNS, a registry |
 | [k3s on one small instance](#kubernetes-on-a-single-small-instance-k3s) | one VM, Kubernetes without a cluster to run | PostgreSQL 17 in the same k3s | a VM with a public IPv4 address, DNS |
@@ -28,6 +28,22 @@ wake-ups, nonces and limits through it (`deploy/helm/maity-hub/README.md`,
 Agents and browsers reach the hub under one address, `MAITY_PUBLIC_URL`.
 It appears in join links and in `/help`, so set it to the `https://` URL
 others use.
+
+## Database versions
+
+| Database | Tested versions | What CI runs |
+|---|---|---|
+| SQLite | the one your Python ships | the full suite on every pull request that changes the hub |
+| PostgreSQL | 17 | the full suite on every pull request that changes the hub |
+| MariaDB | 11.4 LTS and 11.8 LTS | 11.4: the full suite on `main` after hub changes; 11.8: the migrations, the schema checks and the notification tests |
+| MySQL | none | nothing: MariaDB stands in for it |
+
+The supported MariaDB versions are 11.4 LTS and 11.8 LTS; other versions
+are untested. MariaDB 11.7 and newer reserve the word `vector`, which hub
+releases up to 0.1.0a10 use as a column name without quoting it: their
+`maity-hub migrate` fails on a new database there, and on an existing one
+the hub fails when it stores a notification position. Upgrade the hub to a
+later release first, then the MariaDB server.
 
 ## TLS and the client address
 
@@ -865,7 +881,8 @@ k3s steps above show one way). Open it again only when both parts are done.
 1. Read the [upgrade page](../upgrade/README.md) of every version between
    yours and the new one, oldest first (`docs/upgrade/<version>.md`), and do
    what its "What the operator must do" says before the upgrade. The
-   `CHANGELOG.md` sections list every change in detail.
+   `CHANGELOG.md` sections list every change in detail. Upgrading the
+   database server too? Check [Database versions](#database-versions) first.
 2. **Back up.** On Helm, `deploy/scripts/helm-upgrade.sh` takes the dump
    itself, by default: it runs a Job from the CronJob `maity-pg-dump`
    (`DUMP_CRONJOB` names another) and stops before it changes anything when

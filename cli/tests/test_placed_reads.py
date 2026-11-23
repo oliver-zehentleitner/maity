@@ -54,22 +54,6 @@ COMMANDS: dict[str, Callable[[str], list[str]]] = {
 walks = pytest.mark.skipif(not inclone.WALKS, reason="no dir_fd or O_NOFOLLOW: refused here")
 
 
-@pytest.fixture
-def placed(
-    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
-    """The joined clone (the working directory) under a placement, with the variables the
-    runner sets for a session."""
-    clone = Path.cwd()
-    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
-    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
-    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
-    private = tmp_path / "agent" / "git"
-    private.mkdir(parents=True)
-    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
-    return clone
-
-
 def secret(tmp_path: Path, name: str = "secret.txt") -> Path:
     """A file outside the clone, with the marker."""
     outside = tmp_path / "outside"
@@ -229,6 +213,104 @@ def test_a_file_in_the_recorded_scratch_is_read_and_sent(
 
 @posix
 @walks
+@pytest.mark.parametrize("layout", ["runner-dir", "codex"])
+def test_a_body_file_in_a_scratch_subdirectory_beside_tmpdir_is_read(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
+) -> None:
+    """tsk-x6wvgna4w95x: a file in `<scratch>/sub/`, a sibling of the session's TMPDIR
+    (`<scratch>/tmp`), is read for `--body-file`, `--review-file` and `--attach` like one under
+    TMPDIR: the whole recorded scratch counts, not TMPDIR alone. Also with the record where a
+    Codex placement keeps it, the clone's `.git/maity` (IN_CLONE)."""
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    (room / "tmp").mkdir(parents=True)
+    (room / "sub").mkdir()
+    monkeypatch.setenv("TMPDIR", str(room / "tmp"))
+    if layout == "codex":
+        monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, clonecheck.IN_CLONE)
+        private = placed / ".git" / "maity"
+        private.mkdir(exist_ok=True)
+    else:
+        private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    (room / "sub" / "body.md").write_bytes(b"from a scratch subdirectory\n")
+    (room / "tmp" / "body.md").write_bytes(b"from TMPDIR\n")
+    for flag in ("--body-file", "--review-file"):
+        assert cli._read_text_file(str(room / "sub" / "body.md"), flag) == (
+            "from a scratch subdirectory\n"
+        )
+        assert cli._read_text_file(str(room / "tmp" / "body.md"), flag) == "from TMPDIR\n"
+    assert cli._read_upload(str(room / "sub" / "body.md"), "--attach") == (
+        b"from a scratch subdirectory\n"
+    )
+    # Relative to a working directory inside the scratch, as `cd $MAITY_SCRATCH` leaves it.
+    monkeypatch.chdir(room / "sub")
+    assert cli._read_text_file("body.md", "--body-file") == "from a scratch subdirectory\n"
+
+
+# Codex's profile hides the workspaces root and the scratch's holder from reading ("none") and
+# opens the scratch again: a path passes through them, a directory open for reading does not.
+# A search-only directory (0o111) is the closest stand-in outside bwrap; root reads it anyway.
+hides_from_reading = pytest.mark.skipif(
+    not hasattr(os, "O_PATH") or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="needs O_PATH, and a user a search-only directory keeps from reading",
+)
+
+
+@posix
+@walks
+@hides_from_reading
+@pytest.mark.parametrize("hidden", ["workspaces", "holder", "both"])
+def test_a_scratch_whose_parents_cannot_be_read_is_still_read(
+    placed: Path, tmp_path: Path, hidden: str
+) -> None:
+    """tsk-x6wvgna4w95x, tsk-vt5hye6a6k6v: under Codex every file in the scratch was refused
+    ("the way to the placement's scratch (…) is not plain directories"; live probe A1718 on
+    maity 0.1.0a17), because the walk from `/` opened each parent for reading. Red on
+    530b070e. Now each parent is only passed through, as the agent's own shell does."""
+    room = scratch_recorded(tmp_path)
+    (room / "sub").mkdir()
+    (room / "sub" / "body.md").write_bytes(b"behind a parent nobody may read\n")
+    workspaces, holder = room.parent.parent.parent, room.parent
+    shut = {"workspaces": [workspaces], "holder": [holder], "both": [workspaces, holder]}[hidden]
+    for directory in shut:
+        directory.chmod(0o111)
+    try:
+        given = str(room / "sub" / "body.md")
+        for flag in ("--body-file", "--review-file"):
+            assert cli._read_text_file(given, flag) == "behind a parent nobody may read\n"
+        assert cli._read_upload(given, "--attach") == b"behind a parent nobody may read\n"
+    finally:
+        for directory in shut:
+            directory.chmod(0o755)
+
+
+@posix
+@walks
+@hides_from_reading
+def test_a_link_on_the_way_is_refused_behind_a_parent_that_cannot_be_read(
+    placed: Path, tmp_path: Path
+) -> None:
+    """Passing a parent through instead of reading it keeps the walk's boundary: a link on
+    the way to the scratch is still refused, also below a search-only directory."""
+    real = tmp_path / "elsewhere" / ".scratch" / "plc-0003"
+    real.mkdir(parents=True)
+    (real / "body.json").write_bytes(CONTENT)
+    workspaces = tmp_path / "ws"
+    workspaces.mkdir()
+    (workspaces / "maity").symlink_to(tmp_path / "elsewhere")
+    room = workspaces / "maity" / ".scratch" / "plc-0003"
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    workspaces.chmod(0o111)
+    try:
+        with pytest.raises(cli.UsageError, match="not plain directories"):
+            cli._read_text_file(str(room / "body.json"), "--body-file")
+    finally:
+        workspaces.chmod(0o755)
+
+
+@posix
+@walks
 @pytest.mark.parametrize("way", ["beside", "link", "linked-scratch", "linked-holder",
                                  "linked-project", "linked-workspaces", "no-record",
                                  "empty-record", "record-in-clone"])  # fmt: skip
@@ -305,9 +387,16 @@ def test_the_changelog_states_the_agy_scratch_residual_honestly() -> None:
     """The residual wording does not overclaim same-user isolation (review round 3): the agy
     scratch is not said to be reachable only by the owning placement, and the accepted same-user
     exposure is named. Red on dc826d9b, whose changelog claimed an unlistable parent and an
-    unguessable name only the owning placement could reach."""
-    changelog = Path(__file__).resolve().parents[2] / "changelog.d"
-    text = (changelog / "agent-g-agy-writable-scratch.md").read_text(encoding="utf-8")
+    unguessable name only the owning placement could reach. The agy writable-scratch fragment
+    was folded into CHANGELOG.md's 0.1.0a10 release section, so the assertions read that section."""
+    changelog = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+    lines = changelog.read_text(encoding="utf-8").splitlines(keepends=True)
+    start = next(i for i, ln in enumerate(lines) if ln.startswith("## [0.1.0a10]"))
+    end = next(
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
+        len(lines),
+    )
+    text = "".join(lines[start:end])
     assert "only the owning placement" not in text
     assert "unlistable" not in text and "unguessable" not in text
     assert "same host user" in text  # the accepted residual is stated

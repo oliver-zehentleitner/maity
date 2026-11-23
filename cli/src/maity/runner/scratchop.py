@@ -1,7 +1,8 @@
 """A placement's scratch, made, measured and removed where the agents run (§15.5).
 
-The scratch lies in `<workspaces>/<project_id>/.scratch/<placement id>`, and the agents can
-write the project's directory: any directory on the way may have been replaced by a link.
+The scratch lies in `<workspaces>/.scratch/<project_id>/<placement id>` (formerly
+`<workspaces>/<project_id>/.scratch/<placement id>`, still measured and removed), and the agents
+can write below the root: any directory on the way may have been replaced by a link.
 Every operation is anchored at the workspaces root it is given (`under`), and works only
 on a placement's scratch below it: that directory is opened, and each one below it is
 opened from the one before without following a link, so a name swapped for a link after any
@@ -15,7 +16,8 @@ when the agents are its own user; through sudo or on an ssh host it starts this 
 there (`python -I -m maity.runner.scratchop`, `maity runner scratchop`), which prints its
 answer as one JSON line.
 
-Only the standard library: the module runs with `-I` on the agents' side.
+Imports only the standard library and maity modules that do the same (today `maity.clonecheck`,
+for the placement id pattern): the module runs with `-I` on the agents' side.
 """
 
 from __future__ import annotations
@@ -31,7 +33,9 @@ import sys
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import PurePath
 
-OPS = ("make", "size", "remove")
+from maity.clonecheck import PLACEMENT_ID as PLACEMENT_ID
+
+OPS = ("make", "size", "remove", "holder")
 # agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of): a per-user
 # parent `maity-scratch-<uid>` (TMP_PARENT_MODE) owned by the user agy runs as, and a
 # per-placement leaf (TMP_LEAF) owned private by that user (TMP_LEAF_MODE). The leaf name is a
@@ -52,10 +56,15 @@ TMP_LEAF_MODE = 0o700
 TMP_OPS = ("make", "size", "remove")
 # A clone's or project's name as the runner takes it (workspace.locate).
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-# A placement's scratch (§15.5): `<workspaces>/<project_id>/.scratch/<placement id>`. A clone's
-# name starts with a letter or digit (TOKEN), so `.scratch` is never one.
+# A placement's scratch (§15.5): `<workspaces>/.scratch/<project_id>/<placement id>`, every
+# scratch under the one holder `<workspaces>/.scratch` (tsk-c7zzd440x8pn), which the runner makes
+# and a Claude Code sandbox denies whole before opening its own scratch again. The former shape,
+# `<workspaces>/<project_id>/.scratch/<placement id>`, is still taken for size and remove until
+# the placements that made it are gone. A clone's name starts with a letter or digit (TOKEN), so
+# `.scratch` is never a clone or a project.
 SCRATCH = ".scratch"
-SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
+# A placement id, as the supervisor takes it: the one pattern, matched in full.
+SCRATCH_ID = PLACEMENT_ID
 LINK = 4  # the exit code for a link (or no directory) on the way: nothing was done
 _FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
 # A path descriptor opens a directory without needing read or search on it (O_PATH, Linux), so
@@ -88,17 +97,55 @@ def supported() -> bool:
     )  # fmt: skip
 
 
-def _below(path: str, under: str) -> list[str]:
+def _below(path: str, under: str, former: bool = False) -> list[str]:
     """The names from `under` down to `path`, which must be a scratch's path and nothing
-    else: `<under>/<project>/.scratch/<placement id>`."""
+    else: `<under>/.scratch/<project>/<placement id>`, each level matched literally (the holder
+    name, TOKEN, SCRATCH_ID). With `former` (size and remove only) the former shape
+    `<under>/<project>/.scratch/<placement id>` is taken too."""
     try:
         names = PurePath(path).relative_to(PurePath(under)).parts
     except ValueError:
         raise OSError(f"{path} is not inside {under}") from None
-    if not (len(names) == 3 and TOKEN.fullmatch(names[0]) and names[1] == SCRATCH
-            and SCRATCH_ID.fullmatch(names[2])):  # fmt: skip
-        raise OSError(f"{path} is not a placement's scratch under {under}")
-    return list(names)
+    wrong = OSError(f"{path} is not a placement's scratch under {under}")
+    if len(names) != 3 or not SCRATCH_ID.fullmatch(names[2]):
+        raise wrong
+    new = names[0] == SCRATCH and TOKEN.fullmatch(names[1])
+    old = former and names[1] == SCRATCH and TOKEN.fullmatch(names[0])
+    if new or old:
+        return list(names)
+    raise wrong
+
+
+def _holder(root_fd: int, make: bool) -> int:
+    """The holder `<root>/.scratch`, opened from the open workspaces root without following a
+    link and checked to be a directory of this user (`make`: created 0700 when missing).
+    OnTheWay for a link, not a directory, or another user's: nothing is made in it."""
+    if make:
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(SCRATCH, 0o700, dir_fd=root_fd)
+    # Another user's holder whose mode keeps us out (0700) is said as OnTheWay too, not as a
+    # bare permission error (A2073).
+    fd = _open_nofollow(root_fd, SCRATCH, _uid(None))
+    if os.fstat(fd).st_uid != _uid(None):
+        os.close(fd)
+        raise OnTheWay(f"{SCRATCH} is another user's directory; not used")
+    return fd
+
+
+def holder(under: str, path: str) -> dict[str, object]:
+    """The holder of every scratch (`path` must be `<under>/.scratch`), made 0700 when missing
+    and checked at each start: a real directory of this user, reached without following a link
+    (OnTheWay otherwise). An ssh host whose `maity` predates this op answers with a usage error,
+    which the runner reads as the former layout there."""
+    try:
+        parts = PurePath(path).relative_to(PurePath(under)).parts
+    except ValueError:
+        raise OSError(f"{path} is not inside {under}") from None
+    if parts != (SCRATCH,):
+        raise OSError(f"{path} is not the scratch holder under {under}")
+    with _opened(under, [], make=False) as root:
+        os.close(_holder(root, make=True))
+    return {"result": "made"}
 
 
 def _step(fd: int, name: str, make: int | None) -> int:
@@ -148,13 +195,149 @@ def _size(fd: int) -> int:
 def make(under: str, path: str) -> dict[str, object]:
     """The scratch at `path` with `tmp` in it, made as needed below the workspaces root,
     which must be there (the runner makes it with the clone)."""
-    with _opened(under, [*_below(path, under), "tmp"], make=True):
-        return {"result": "made"}
+    names = _below(path, under)
+    with _opened(under, [], make=False) as root:
+        holder_fd = _holder(root, make=True)  # checked at every make: this user's, no link
+        fd = holder_fd
+        try:
+            for name in [*names[1:], "tmp"]:
+                inner = _step(fd, name, 0o700)
+                if fd != holder_fd:
+                    os.close(fd)
+                fd = inner
+        finally:  # the one opened last too, when a step on the way fails (A2045)
+            if fd != holder_fd:
+                os.close(fd)
+            os.close(holder_fd)
+    with _opened(under, names, make=False) as scratch:
+        # The scratch itself private too, not only its `tmp`: mkdir left it to the umask.
+        if stat.S_IMODE(os.fstat(scratch).st_mode) != 0o700:
+            os.fchmod(scratch, 0o700)
+    return {"result": "made"}
+
+
+# --- the test clusters' passwords (hub/scripts/with_postgres.sh, MAITY_PG_PASSWORD) -----------
+#
+# One holder under the workspaces root, `<root>/.maity-pg`, 0700 and owned by the agents' user,
+# with one file per placement (`<holder>/<placement id>`, 0600, 64 hex digits, drawn once and
+# kept across restarts, removed with the placement). The holder is outside every scratch and
+# clone and its path never changes, so every sandbox is denied it from its first start; the
+# session never reads the file: the runner's `pgenv` launcher reads it outside the sandbox and
+# hands the value to the session in its process environment (the review of #2032).
+PG_HOLDER = ".maity-pg"
+
+
+def _pg_parts(path: str, under: str) -> list[str]:
+    """`<under>/.maity-pg` or `<under>/.maity-pg/<placement id>`, and nothing else."""
+    try:
+        names = list(PurePath(path).relative_to(PurePath(under)).parts)
+    except ValueError:
+        raise OSError(f"{path} is not inside {under}") from None
+    if (
+        not names
+        or names[0] != PG_HOLDER
+        or len(names) > 2
+        or (len(names) == 2 and not SCRATCH_ID.fullmatch(names[1]))
+    ):
+        raise OSError(f"{path} is not the test clusters' password holder or a file in it")
+    return names
+
+
+@contextlib.contextmanager
+def _pg_holder(under: str, make: bool) -> Iterator[int]:
+    """The holder's descriptor, opened from the workspaces root without following a link and
+    checked to be a directory of this user, set to exactly 0700 (`make`: created when missing).
+    OnTheWay for a link, not a directory, or another user's."""
+    with _opened(under, [], make=False) as root:
+        if make:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(PG_HOLDER, 0o700, dir_fd=root)
+        fd = _step(root, PG_HOLDER, None)
+        try:
+            found = os.fstat(fd)
+            if found.st_uid != _uid(None):
+                raise OnTheWay(f"{PG_HOLDER} is another user's directory; not used")
+            if make and stat.S_IMODE(found.st_mode) != 0o700:
+                os.fchmod(fd, 0o700)
+            yield fd
+        finally:
+            os.close(fd)
+
+
+def _pg_vouched(dir_fd: int, name: str) -> bool:
+    """Whether `name` in the open holder is a regular file of this user, 0600, with one link."""
+    found = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    return (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
+            and stat.S_IMODE(found.st_mode) == 0o600 and found.st_nlink == 1)  # fmt: skip
+
+
+def pg_make(under: str, path: str) -> dict[str, object]:
+    """The holder (`path` the holder itself) or the holder and the placement's password file
+    in it (`path` the file): made 0600 without following a link when missing, a file already
+    there kept as it is. `pg_pass`: whether the file is one this op vouches for (a link or
+    anything else at the name is left untouched and gives False)."""
+    names = _pg_parts(path, under)
+    with _pg_holder(under, make=True) as holder:
+        if len(names) == 1:
+            return {"result": "made"}
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        try:
+            fd = os.open(names[1], flags, 0o600, dir_fd=holder)
+        except FileExistsError:
+            return {"result": "made", "pg_pass": _pg_vouched(holder, names[1])}
+        with os.fdopen(fd, "w") as handle:
+            os.fchmod(handle.fileno(), 0o600)  # the mode asked for is subject to the umask
+            handle.write(secrets.token_hex(32) + "\n")
+        return {"result": "made", "pg_pass": True}
+
+
+def pg_remove(under: str, path: str) -> dict[str, object]:
+    """The placement's password file removed by its name in the holder (a link there goes, not
+    what it points to); `missing` when there is none, or no holder."""
+    names = _pg_parts(path, under)
+    if len(names) != 2:
+        raise OSError(f"{path} is not a password file")
+    try:
+        with _pg_holder(under, make=False) as holder:
+            os.unlink(names[1], dir_fd=holder)
+    except FileNotFoundError:
+        return {"result": "missing"}
+    return {"result": "removed"}
+
+
+PG_PASSWORD = re.compile(r"[A-Za-z0-9._~-]{1,256}")
+
+
+def pg_read(under: str, path: str) -> str | None:
+    """The placement's password, read from the holder without following a link; None when the
+    file is missing or not one pg_make would vouch for, or its first line is no password; also
+    for a path that is not a placement's file in the holder, or a holder that is a link."""
+    try:
+        names = _pg_parts(path, under)
+        if len(names) != 2:
+            return None
+        with _pg_holder(under, make=False) as holder:
+            # Opened first, then checked on the descriptor itself: nothing swapped in between a
+            # check and the open is read, and a FIFO planted at the name does not block.
+            flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(names[1], flags | getattr(os, "O_CLOEXEC", 0), dir_fd=holder)
+            try:  # the descriptor closed on every path, a directory planted at the name too
+                found = os.fstat(fd)
+                if not (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
+                        and stat.S_IMODE(found.st_mode) == 0o600
+                        and found.st_nlink == 1):  # fmt: skip
+                    return None
+                first = os.read(fd, 512).decode("ascii", "replace").split("\n", 1)[0]
+            finally:
+                os.close(fd)
+    except OSError:
+        return None
+    return first if PG_PASSWORD.fullmatch(first) else None
 
 
 def size(under: str, path: str) -> dict[str, object]:
-    """The bytes under the scratch at `path`; `missing` when there is none."""
-    names = _below(path, under)
+    """The bytes under the scratch at `path`, of either shape; `missing` when there is none."""
+    names = _below(path, under, former=True)
     try:
         with _opened(under, names[:-1], make=False) as parent:
             fd = _step(parent, names[-1], None)
@@ -167,10 +350,26 @@ def size(under: str, path: str) -> dict[str, object]:
 
 
 def remove(under: str, path: str) -> dict[str, object]:
-    """The scratch at `path` removed from its open parent, with its size before; `missing`
-    when there is none."""
-    names = _below(path, under)
+    """The scratch at `path`, of either shape, removed from its open parent, with its size
+    before; `missing` when there is none. Only the scratch goes: the project's directory in the
+    holder stays, even empty, since a start may be making a scratch in it (no lock is shared).
+    In the holder shape the holder is checked first, as `make` checks it: a link or another
+    user's directory there is OnTheWay, and nothing is removed through it (A2068). The way down
+    continues from the checked holder's descriptor, as in `make`, so the holder cannot be
+    swapped between the check and the removal (A2073)."""
+    names = _below(path, under, former=True)
     try:
+        if names[0] == SCRATCH:
+            with _opened(under, [], make=False) as root:
+                holder_fd = _holder(root, make=False)
+                try:
+                    project = _step(holder_fd, names[1], None)
+                finally:
+                    os.close(holder_fd)
+                try:
+                    return _remove_in(project, names[-1])
+                finally:
+                    os.close(project)
         with _opened(under, names[:-1], make=False) as parent:
             return _remove_in(parent, names[-1])
     except FileNotFoundError:  # no root, project or `.scratch` either: no scratch
@@ -612,7 +811,7 @@ def run(op: str, under: str, path: str) -> dict[str, object]:
         raise OSError(f"unknown operation {op}")
     if not supported():
         raise OSError("this system cannot open a directory without following links")
-    return {"make": make, "size": size, "remove": remove}[op](under, path)
+    return {"make": make, "size": size, "remove": remove, "holder": holder}[op](under, path)
 
 
 def _emit(call: Callable[[], dict[str, object]]) -> int:
@@ -658,6 +857,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "codex":
         return _main_codex(args[1:])
+    if args and args[0] in ("pgmake", "pgremove"):
+        if len(args) != 4 or args[1] != "--under":
+            print("usage: scratchop pgmake|pgremove --under DIR PATH", file=sys.stderr)
+            return 2
+        if not supported():
+            print("scratch: this system cannot open a directory without following links",
+                  file=sys.stderr)  # fmt: skip
+            return 1
+        pg_op = pg_make if args[0] == "pgmake" else pg_remove
+        return _emit(lambda: pg_op(args[2], args[3]))
     if args and args[0] == "tmpparent":
         if len(args) != 2:
             print("usage: scratchop tmpparent PATH", file=sys.stderr)
@@ -670,7 +879,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         op = args[0].removeprefix("tmp")
         return _emit(lambda: tmp_run(op, args[1]))
     if len(args) != 4 or args[1] != "--under" or args[0] not in OPS:
-        print("usage: scratchop make|size|remove --under DIR PATH", file=sys.stderr)
+        print("usage: scratchop make|size|remove|holder --under DIR PATH", file=sys.stderr)
         return 2
     op, _flag, under, path = args
     return _emit(lambda: run(op, under, path))

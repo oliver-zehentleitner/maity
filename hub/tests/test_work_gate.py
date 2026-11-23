@@ -408,6 +408,175 @@ def test_a_review_result_reaches_the_author_and_the_leads_ungated(
     assert loose["payload"]["held"] == [theirs.id]
 
 
+def test_a_review_results_orderer_passes_the_gate(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The orderer, the author of the message `in_reply_to` names (§8.4), is part of the card's
+    own flow: it wrote to the reviewer first, so the gate leaves it open (tsk-9ytv9jmscmdr)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    theirs.resume()
+    task_id = card(owner)
+    asked = send(theirs, writer.id, body="please review #7")["seq"]
+    # Without `in_reply_to` the same result to that agent is held (as above).
+    assert held_for(writer, "review_result", theirs.id, task_id)["payload"]["held"] == [theirs.id]
+    answered = writer.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": theirs.id,
+            "body": "please look",
+            "review": REVIEW,
+            "in_reply_to": asked,
+        },
+    )
+    assert answered.status_code == 201, answered.text
+    assert answered.json()["payload"]["held"] == []
+    assert answered.json()["seq"] in seqs(theirs)
+
+
+def answer_order(who: Any, asked: int, task_id: str, to: str) -> dict[str, Any]:
+    answered = who.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": to,
+            "task_id": task_id,
+            "body": "reviewed",
+            "review": REVIEW,
+            "in_reply_to": asked,
+        },
+    )
+    assert answered.status_code == 201, answered.text
+    found: dict[str, Any] = answered.json()
+    return found
+
+
+def audience_of(engine: Engine, seq: int) -> list[str]:
+    with engine.connect() as conn:
+        found: list[str] = conn.execute(
+            select(t.event.c.audience).where(t.event.c.seq == seq)
+        ).scalar_one()
+    return found
+
+
+def test_an_orderer_passes_the_gate_only_for_an_order_addressed_to_the_sender(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The arbiter's ruling on review A1859: the orderer's §9.6 exemption needs the answered
+    message's `to` to name the sender, or a mention of it. An order that reached the sender
+    only through `all` gives none: the orderer is then added only where the gate lets the
+    sender reach it, and is neither added nor held here (§8.4)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    theirs.resume()
+    task_id = card(owner)
+    broadcast = send(theirs, "all", body="please review #7")["seq"]
+    result = answer_order(writer, broadcast, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert all(theirs.id not in token for token in audience_of(migrated, result["seq"]))
+    assert result["seq"] not in seqs(theirs)
+    # The same agent's order to the sender directly: the orderer is added and passes.
+    direct = send(theirs, writer.id, body="please review #7")["seq"]
+    result = answer_order(writer, direct, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert f"instance:{theirs.id}#{theirs.instance}" in audience_of(migrated, result["seq"])
+    assert result["seq"] in seqs(theirs)
+    # A mention of the sender in an order to `all` counts as addressing it.
+    mentioned = send(theirs, "all", body=f"@{writer.handle} please review #7")["seq"]
+    result = answer_order(writer, mentioned, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert result["seq"] in seqs(theirs)
+
+
+def test_an_orderer_left_out_by_the_gate_keeps_its_delivery_as_the_authors_lead(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """Review A1882, point 1: `theirs` leads the card's author, an agent of the same owner, and
+    ordered the review through `all`. As the orderer the gate would hold it, so it is left out
+    (§8.4); as the author's lead it is the card's own flow and still gets the result. The
+    orderer is judged before recipients are de-duplicated, so it cannot displace the lead."""
+    theirs, writer, other = sides["theirs"], sides["writer"], sides["other"]
+    theirs.resume()
+    author = flow.agent(make_client, other)
+    author.resume()
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, author.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[author.id])
+            .values(reports_to=rows[theirs.id])
+        )
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == task_id)
+            .values(claim_holder=rows[author.id], claim_instance=author.instance)
+        )
+    broadcast = send(theirs, "all", body="please review #7")["seq"]
+    result = answer_order(writer, broadcast, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    got = audience_of(migrated, result["seq"])
+    assert f"member:{theirs.id}" in got
+    assert f"instance:{theirs.id}#{theirs.instance}" not in got
+    assert result["seq"] in seqs(theirs)
+    assert result["seq"] in woken(migrated, theirs.id)
+
+
+def test_a_review_results_lead_of_another_owner_is_reached_only_through_the_gate(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The reviewer `mine` reports to `theirs`, an agent of another owner: the hub does not add
+    that lead (§8.4), so it is no part of the card's own flow, and a `to` or a mention naming
+    it passes the gate as anyone's does (§9.6): held without its owner's yes, reached with it
+    (tsk-95kvvd03fgs4)."""
+    theirs, mine, other = sides["theirs"], sides["mine"], sides["other"]
+    author = flow.agent(make_client, owner)
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, mine.id, author.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[mine.id])
+            .values(reports_to=rows[theirs.id])
+        )
+        conn.execute(
+            update(t.card).where(t.card.c.id == task_id).values(claim_holder=rows[author.id])
+        )
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == theirs.id)
+        ).scalar_one()
+    sent = work(mine, "review_result", None, task_id, reviewed=True)
+    assert sent.status_code == 201, sent.text
+    plain = sent.json()
+    assert plain["payload"]["held"] == []
+    assert plain["seq"] not in seqs(theirs) and plain["seq"] not in woken(migrated, theirs.id)
+    named = work(mine, "review_result", theirs.id, task_id, reviewed=True)
+    mentioned = work(mine, "review_result", None, task_id, f"see @{handle}", reviewed=True)
+    for message in (named, mentioned):
+        assert message.status_code == 201, message.text
+        assert message.json()["payload"]["held"] == [theirs.id]
+        assert message.json()["seq"] not in seqs(theirs)
+    allow(other, agents=[theirs.id], owner_id=owner.id)
+    admitted = work(mine, "review_result", theirs.id, task_id, reviewed=True)
+    assert admitted.status_code == 201, admitted.text
+    assert admitted.json()["payload"]["held"] == []
+    assert admitted.json()["seq"] in seqs(theirs)
+    assert admitted.json()["seq"] in woken(migrated, theirs.id)
+
+
 @pytest.mark.parametrize("change", ["unwatch", "watch"])
 def test_the_gate_and_the_watcher_list_read_the_watchers_once(
     change: str,

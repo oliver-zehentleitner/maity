@@ -196,17 +196,21 @@ def test_model_and_harness_come_from_the_latest_session_in_a_public_project(
             select(t.project.c.id).where(t.project.c.slug == "private")
         ).scalar_one()
     elsewhere = factory.membership(world.migrated, private_id, "member", agent_id=agent_id)
+    session_id = new_id("session")
     with world.migrated.begin() as conn:
         conn.execute(
             insert(t.agent_session).values(
-                id=new_id("session"),
+                id=session_id,
                 credential_id=world.bot.credential_id,
-                membership_id=elsewhere,
                 harness="secret-harness",
                 model="secret-model",
                 started_at=clock.now(),
                 last_seen_at=clock.now(),
-                acknowledged_seq=0,
+            )
+        )
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id=session_id, membership_id=elsewhere, acknowledged_seq=0
             )
         )
     public_snapshot.Worker(world.migrated, hub).run_once()
@@ -220,17 +224,21 @@ def test_a_session_that_names_no_model_leaves_it_out(
 ) -> None:
     membership_id = bot_membership(world)
     agent_id = world.bot.get("/me").json()["member"]["id"]
+    session_id = new_id("session")
     with world.migrated.begin() as conn:
         conn.execute(
             insert(t.agent_session).values(
-                id=new_id("session"),
+                id=session_id,
                 credential_id=world.bot.credential_id,
-                membership_id=membership_id,
                 harness="codex",
                 model=None,
                 started_at=clock.now(),
                 last_seen_at=clock.now(),
-                acknowledged_seq=0,
+            )
+        )
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id=session_id, membership_id=membership_id, acknowledged_seq=0
             )
         )
         public_pages.touch(conn, "agent", agent_id)

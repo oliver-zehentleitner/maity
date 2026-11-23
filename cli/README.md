@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a16 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a18 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -237,7 +237,13 @@ into the repository unasked: `AGENTS.md` is usually tracked, and a block
 written by the join would end up in the next commit. `--harness`,
 `--harness-version` and `--model` are remembered for later `resume` calls.
 An agent that joined through the join page with `curl` runs
-`maity resume --hub <url>` once. `--join-file FILE` (or `-` for stdin)
+`maity resume --hub <url>` once. A clone's hub is fixed once its state
+names one: there `--hub` (on `resume` and on `maity help`) passes only
+for the same origin (scheme, host and port; case and an explicit default
+port do not matter, the path is ignored), and any other origin is refused
+with exit 4 before anything is written or sent. The message names the
+stored hub's origin; the hub changes only by a new join.
+`--join-file FILE` (or `-` for stdin)
 reads the URL and the code as two lines, so neither is on a command
 line; `--no-resume` stores the credential and opens no session; and
 `--client NAME` says what made the join (the runner sends
@@ -592,8 +598,16 @@ maity placement start agent-f --runner rnr-0002 --tool codex --mode supervised \
   --reason "a second pair of hands on web/"     # under consent: prints the request id
 maity placement stop agent-f --grace 60
 maity placement restart agent-f
+maity placement restart agent-f --fresh-session # a reset: a fresh harness session
 maity placement stop agent-f#wqe2               # one of agent-f's placements
 ```
+
+`restart --fresh-session` is a reset (`fresh_session: true`, `docs/api.md`
+§15.6), the dashboard's **Reset**: the agent starts on a fresh session of
+its tool instead of resuming the last conversation, in the same clone with
+its branches. It takes the same right as a restart and combines with
+`--rejoin`. Today a plain restart already starts fresh too;
+`--fresh-session` is the one that stays fresh once a restart resumes.
 
 An agent is named by its handle or member id, and a placement by its id.
 An exact id wins. A name that matches more than one member or placement is
@@ -630,6 +644,23 @@ maity roles --json     # the hub's answer
 
 It only reads. A project's own roles are set by a human with `project:admin`,
 in the dashboard (Settings → Members and agents → Roles).
+
+## UUID
+
+`maity uuid` prints a UUID version 4 from the operating system's randomness
+(Python's `uuid.uuid4()`, which reads `os.urandom`), lowercase, and a newline.
+It calls no hub and reads no state: it works in any directory, joined or not,
+with no credential. Use it for a Keep the Why entry's Id where a harness
+sandbox refuses `uuidgen` or `cat /proc/sys/kernel/random/uuid`; in a runner
+placement it is the one UUID source, since the runner allows no UUID command
+of its own:
+
+```sh
+maity uuid         # one UUID
+maity uuid -n 5    # five, one per line
+```
+
+`-n` takes 1 to 1000; anything else is a usage error (exit 2).
 
 ## Profile
 
@@ -960,6 +991,11 @@ The runner service starts and stops agents on this machine for a hub
 ([`docs/api.md`](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) §15). It never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
 own configuration.
 
+`runner` is taken only as the first argument: nothing may come before it,
+neither a global option (`--for`) nor `--`. `maity --for x runner …` and
+`maity -- runner …` are refused with exit 2 before anything runs; every
+other command keeps its global options.
+
 ```sh
 maity runner pair https://<hub>/r/<token> --code K3PF-9QZD-1MWA   # or --code-file - (stdin)
 maity runner check                                               # exits 1 on any error
@@ -983,9 +1019,18 @@ the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
 that every agent would inherit, a Claude Code version other than the one
-its sandbox was checked with (a warning), a configuration file others could
+its sandbox was checked with (a warning; a newer one only a note under
+`track = "newest"`), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
-(`--offline` skips it). A minimal configuration:
+(`--offline` skips it). On the local backend it also warns about what the
+host lacks for the configuration: an `agent_path` entry that does not
+exist (naming the agents' real home when the entry lies under a home that
+is not there, such as `/home/maity-runner` for the service's user, whose
+home is `/var/lib/maity-runner`), a program a repository's `allow` rule
+names that is not on `agent_path` (`make` for `make *`), gh missing from
+the runner's `PATH` for a grant with `pull_requests = true` (`maity gh`
+finds it at its next call once installed), and gh without a login stored
+for the agents' user (`~/.config/gh/hosts.yml`). A minimal configuration:
 
 ```toml
 [hub]
@@ -1019,6 +1064,11 @@ manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
 GitHub, and refuses otherwise. `maity runner tools` lists the versions,
 `maity runner tools rollback <tool>` swaps the kept one in for new
 sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`track` under `[harness.claude-code]` chooses what its update takes:
+`"checked"` (the default) at most the version whose sandbox was checked,
+never going back on its own from a newer one, `"newest"` every new
+release, which `check` notes as unchecked
+([`docs/runners.md`](../docs/runners.md#which-claude-code-version-the-update-takes)).
 `[maity] update` is not carried out yet; `check` and `serve` refuse it.
 
 Repository entries and the project's repository URL are compared after
@@ -1085,8 +1135,10 @@ The agents then run `maity gh pr create --title <title> --body-file <file>`
 Without `--json`, `pr view` prints the number, title, state, branches,
 author, link and description as text (and the comments with
 `--comments`); with `--json` it prints gh's JSON as gh gives it.
-These run outside the sandbox, with the gh the runner found on its `PATH`
-and the login of the agents' user under `HOME`, always on the repository
+These run outside the sandbox, with the gh found at each call on the
+`PATH` the runner recorded at the session's start (a gh installed later is
+found without a restart; one inside the clone or the placement's scratch
+is refused), and the login of the agents' user under `HOME`, always on the repository
 of the placement's clone (`--repo` comes from the runner, never from the
 command line). gh runs in an empty directory of its own and gets only
 `HOME`, the locale, the temporary directory, proxy and certificate
@@ -1115,6 +1167,84 @@ sandbox off, such a grant refuses the Codex start. `maity runner check`
 and the runner's log at each start name what a Codex placement does not
 get.
 
+For a lead that runs as a placement, add `lead` beside `pull_requests`:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+pull_requests = true
+lead = true
+```
+
+A placed member whose role the hub names `manager`, or a project role
+built on manager, then also runs:
+
+- `maity gh pr merge <number> --match-head-commit <sha> --subject <text>
+  --body-file <file>` (or `--body <text>`): a squash merge, always. The
+  pull request goes by number only, and `--match-head-commit` takes the
+  head's full 40-character sha and is required, so a merge without it is
+  refused before anything runs, and gh refuses a head that moved since.
+  There is no other merge method, no `--admin`, `--auto` or
+  `--delete-branch`. Only a direct merge: maity first reads GitHub's
+  merge-queue state for the pull request (`gh api graphql`, one fixed
+  query) and refuses unless the base branch requires no merge queue, the
+  pull request is in none and its head is the one named; a read that
+  fails or answers anything else refuses too. A queue, whether a ruleset
+  or a branch protection rule requires it, would choose the method and
+  could merge later, so the squash and the head named would no longer
+  hold. Whole lines
+  of the body that are a `Co-Authored-By:` trailer (in any case) or a
+  "Generated with [tool](link)" or "Generated by [tool](link)" footer are
+  left out, and maity says how many. Text inside a line is never changed.
+- `maity gh pr edit [<number> | <branch>] [--title <text>] --body-file
+  <file>` (or `--body <text>`): the title and the body, nothing else. The
+  body loses the same footer lines. maity sets them with one REST call
+  through gh (`gh api --method=PATCH repos/<owner>/<repo>/pulls/<number>`
+  on the clone's own repository, the title and body as JSON on standard
+  input), not with `gh pr edit`, which in older gh versions asks the forge
+  for a field it no longer serves and fails; so any gh with `api` works. A
+  branch is first turned into its pull request's number (`gh pr view
+  --json number`). maity prints which pull request changed, as one line;
+  when gh's answer is not the pull request, a fixed line says the edit was
+  sent and may have taken effect, and never repeats gh's answer.
+- `maity gh pr ready [<number> | <branch>]`: marks a draft ready for review.
+- `maity gh run list --commit <sha>`: the runs of a commit as gh's JSON
+  (id, workflow, name, event, status, conclusion, head, time).
+- `maity gh run view <run id> [--job <job id>]`: the run with its jobs by
+  name, as gh's JSON, so a required job such as `ci-ok` is read from the
+  head's own run. With `--log-failed`: the failed steps' log, cleaned of
+  control characters and cut to its last 400 lines. maity says when it cut
+  the log, and how many lines it had. With `--job`, gh reads the run that
+  job belongs to and does not use the run id given, so the job id alone
+  decides which run is shown. Run and job ids are digits, up to 19.
+
+At each of these calls maity reads the caller's role from the hub with
+the session's credential, never from the resume packet or a member id
+in local state: `GET /me` names the member the hub authenticated, and
+that member's own view gives the role's base (`role_base`). The base
+must be `manager`, so a project role built on manager counts and one
+built on any other role does not, whatever its name. maity also
+refuses when the hub does not answer, when `/me` does not list this
+project, for an isolated member, when `MAITY_STATE_DIR` is set (the
+runner never sets it), and when the runner's directory for the agent is
+not this placement's (`…/agents/<placement id>/git`, reached with no link
+on the way, all three directories the agents' user's and none writable by
+group or others; the runner keeps `agents/` at 0700 itself, also under a
+umask of 002).
+The session they sign with is the placement's own: its `state.json` and
+credential are read through the clone's `.git` as maity checked it,
+each opened from the one before without following a link and each a
+private file or directory of this user's, before any request is built.
+On a system where maity cannot open files that way (Windows) the lead
+commands are refused. These commands are refused under `--for`. Everything gh prints, on either
+stream, reaches the terminal cleaned of the control characters a
+terminal acts on, since a confirmation can echo a title someone else
+wrote. These checks hold where the harness's sandbox holds; on agy and
+opencode, which are no boundary between placements, they are no
+boundary either. Without `lead = true` they are refused, as they are without
+`pull_requests`, which `maity runner check` warns about. The repository,
+the environment and the empty directory are those of `pr create`. A
+Codex placement gets no `lead`, as it gets no `pull_requests`.
+
 Open gaps:
 
 - `git push` in the sandbox reads the same login, so code an allowed
@@ -1123,8 +1253,8 @@ Open gaps:
 - Without the harness's sandbox (opencode, Claude Code outside Linux
   and macOS, or on Linux without bwrap and socat) the deny rules are no boundary: repository
   code can run gh or rewrite the runner's record of the repository.
-- On an ssh target, gh must be at the path the runner found on its own
-  host, or `maity gh` refuses.
+- On an ssh target, gh must be in a directory of the runner's own `PATH`
+  (the runner's host's), or `maity gh` refuses.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
@@ -1134,7 +1264,11 @@ standard error. A lost connection, a 5xx, a 429 (after `Retry-After`) or
 a clock skew backs off with full jitter (at most 60 s) and says `hello`
 again. A revoked credential, an answer the hub will not change (401, 403,
 404, `invalid`) or a second `serve` taking over the stream exits 78.
-SIGTERM exits 0. In every case the agents keep running.
+SIGTERM exits 0. In every case the agents keep running. A placement from
+a hub that names no Keep the Why skill at all (no `keep_the_why` field: a
+hub of 0.1.0a10 or older) gets a log line at its start saying that the
+runner delivers none, and how to install the skill by hand
+([`docs/runners.md`](../docs/runners.md#the-keep-the-why-skill)).
 
 ```sh
 maity runner serve            # in the foreground; as a service: `sudo maity runner install`
@@ -1183,7 +1317,10 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   last conversation (`--continue`). `crash_cap` such ends in a row,
   with no `maity wait` seen in between, hold the placement as
   `failed`/`hung`. The minutes are
-  30 and 10 until the hub sends the owner's health settings. Attaching
+  30 and 10 until the hub sends the owner's health settings. A reset
+  from the hub (a restart with `fresh_session`, docs/api.md §15.6)
+  starts the next generation on a fresh session instead, whatever the
+  harness, and the runner's log says so (`reset: a fresh session`). Attaching
   to the session pauses the check, so the runner never types while you
   are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
@@ -1219,7 +1356,12 @@ project's own harness configuration is never loaded:
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
   configuration. A `supervised` placement also gets `AskUserQuestion` as a
   bare deny rule: nobody answers a headless run, so the tool is not
-  offered. Before an `interactive` start the runner marks the
+  offered. Every placement gets `EnterWorktree` as a bare deny rule and
+  `git worktree` denied, and from Claude Code 2.1.50 a `WorktreeCreate`
+  hook that fails (with `disableAllHooks` set to `false`), so the session
+  makes no git worktree in its clone, where one would stop maity's git.
+  The hook rests on Claude Code's documented behaviour and was not
+  confirmed on the hosted version. Before an `interactive` start the runner marks the
   clone as trusted in the agents' Claude Code configuration
   (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
   Code's own saves take; see `cli/context/runner.md` for the one case in
@@ -1331,7 +1473,10 @@ project's own harness configuration is never loaded:
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  sign-in; `maity`, the hub's, forge's and `network` hosts and reading
+  the delivered Keep the Why skill allowed (writing it denied; agy's
+  documentation says its sandbox then mounts it read-only, not yet
+  confirmed in a live session). The
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may
@@ -1404,16 +1549,26 @@ needs it.
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 **Claude Code's sandbox and injected text.** maity runs outside Claude
-Code's sandbox, as a plain `maity …` call. Checked with Claude Code
-2.1.318: a command, a variable or a PATH placed in front of that call
-does not run outside the sandbox (the runner's permission rules refuse
-it, and past them it runs inside). This is the harness's behaviour, not
-a contract: with another Claude Code version the runner still starts the
-agent, and `maity runner check` and the runner's log say that the
-version was not checked. A repository's grant may only add plain
+Code's sandbox, as a plain `maity …` call. The runner's hook keeps a
+placed session to that one plain call: a line with a command, a wrapper
+or a path in front of `maity` is refused before it runs, and only
+assignments to `NO_COLOR`, `LANG`, `LC_*` or `TZ` may stand before it,
+the line then held to one plain call (a wait's timeout goes in
+`maity wait --timeout N`). The runner
+does not rely on how Claude Code's sandbox exclusion treats a call with
+something in front of `maity`. The hook needs Claude Code 2.1.295 or
+later; the version whose sandbox was last checked is recorded, and it
+moves only after `cli/tests/claude_sandbox_probe.py`, run by hand where
+Claude Code is signed in, passed for the new version. A runner that
+updates Claude Code installs at most that version unless its
+`track = "newest"`. With another Claude Code version the runner still
+starts the agent, and `maity runner check` and the runner's log say that
+the version was not checked: a warning, or a note for a newer one under
+`track = "newest"`. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
-is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
+is read. Not covered: Codex. Where the hook does not hold, such a call
+could run as the
 operator's account in the `single` layout, as the agents' user's account
 in `agent_user`. Run agents that read untrusted text (issues, pull
 requests, web pages) in the `agent_user` layout, which keeps your own
@@ -1592,9 +1747,21 @@ sudo maity runner uninstall [--purge]
 install --global maity` does that. While the configuration still lacks
 `[limits]` or a `[harness.<id>]`, or names a key this version does not
 support yet, the service is enabled but not started, and `install`
-lists what is missing. Fix it, then `sudo systemctl start maity-runner`.
-The harness itself (installed and logged in as `maity-runner`) is yours
-to set up.
+lists what is missing, then the next steps in order: the file, `sudo
+systemctl restart maity-runner`, the tools' and the forge's login as
+`maity-runner`, and then `maity runner check` as that user (its probe run
+needs the tool's login), each command as `maity-runner` started in a
+directory that user can enter. A service it starts gets the login and
+check steps too, and `install` then runs a first `check` itself, before
+any login: a tool not installed yet, or Claude Code's probe run without
+its login, shows up there, and that check's exit is `install`'s. Run
+`check` again after the logins. The harness itself (installed and
+logged in as `maity-runner`) is yours to set up; docs/runners.md, "As a
+service on Linux", has the steps. Every other `maity runner` command
+for the service takes `--config /etc/maity-runner/runner.toml`; without
+it, where `~/.config/maity-runner/runner.toml` is missing and the
+service's file exists, the error names the service's file and how to
+pass it.
 
 Running `install` again is safe. It creates only what is missing and
 pairs only an unpaired runner; an already paired one needs no code.

@@ -10,6 +10,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -204,6 +207,9 @@
      "social": {
       "object": {}
      },
+     "starred": {
+      "array": null
+     },
      "start_tabs": "null",
      "terms": "null",
      "timezone": "null",
@@ -389,6 +395,7 @@
     "object": {
      "chat": "null",
      "discussions": "null",
+     "docs": "null",
      "issues": "null",
      "wiki": "null"
     }
@@ -431,6 +438,8 @@
      "outside_roles": {
       "array": "string"
      },
+     "own_agents": "string",
+     "own_approvals": "number",
      "preset": "string",
      "signing": "string",
      "spawn_consent_by": "string",
@@ -1440,6 +1449,9 @@
            "available": "boolean",
            "confinement": "string",
            "default_mode": "string",
+           "efforts": {
+            "array": null
+           },
            "id": "string",
            "models": {
             "array": "string"
@@ -1526,6 +1538,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"

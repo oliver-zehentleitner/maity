@@ -5,9 +5,12 @@ NODE ?= node
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers, and that ci.yml runs the web job for every file
-# check.py reads outside web/; Python standard library only.
+# check.py reads outside web/, and the shell's files within their budget
+# (tools/shell-budget.json); Python standard library only.
 check:
 	$(PYTHON) tools/check.py
+	$(PYTHON) tools/shell_budget.py
+	$(PYTHON) tools/test_shell_budget.py
 	$(PYTHON) tools/test_e2e_harness.py
 	$(PYTHON) tools/test_i18n_check.py
 	$(PYTHON) tools/test_step_up_check.py
@@ -37,7 +40,9 @@ skeletons:
 
 # Behaviour smoke test against a DOM shim; needs a node binary, no packages.
 # It runs in one of the account's run slots (../tools/run_slot.sh, at most two
-# smoke or PostgreSQL runs at a time); `make smoke SLOT=` runs it without one.
+# smoke or PostgreSQL runs at a time). `make smoke SLOT=` runs it without one, only for a
+# machine where nothing else runs tests; where the slot directory cannot be written, the
+# script warns and runs it without a slot by itself.
 SLOT ?= ../tools/run_slot.sh
 
 smoke:

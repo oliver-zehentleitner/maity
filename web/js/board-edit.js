@@ -151,17 +151,23 @@ window.Maity = window.Maity || {};
     ["down", () => M.t("cards.place.down")],
     ["bottom", () => M.t("cards.place.bottom")],
   ];
-  function orderControl(ctx, c, column, place) {
-    if (!orderable(ctx, c) || column.length < 2) return null;
-    const at = column.findIndex((x) => x.id === c.id);
-    if (at < 0) return null;
-    const last = column.length - 1;
-    const bodies = {
-      top: at > 0 ? { to: "top" } : null,
-      up: at > 0 ? { before: column[at - 1].id } : null,
-      down: at < last ? { after: column[at + 1].id } : null,
-      bottom: at < last ? { to: "bottom" } : null,
+  // columnOf(c): its column as the board shows it now. A click reads the neighbours again: the
+  // board's late draw may keep a part drawn before (the opened card's, tsk-3b2t7hwc352s) while a
+  // card arrived beside it.
+  function orderControl(ctx, c, columnOf, place) {
+    const bodiesIn = (column) => {
+      const at = column.findIndex((x) => x.id === c.id);
+      if (column.length < 2 || at < 0) return null;
+      const last = column.length - 1;
+      return {
+        top: at > 0 ? { to: "top" } : null,
+        up: at > 0 ? { before: column[at - 1].id } : null,
+        down: at < last ? { after: column[at + 1].id } : null,
+        bottom: at < last ? { to: "bottom" } : null,
+      };
     };
+    const bodies = orderable(ctx, c) ? bodiesIn(columnOf(c)) : null;
+    if (!bodies) return null;
     return h("div", { class: "card-order", role: "group", "aria-label": M.t("cards.place.label") },
       PLACES.map(([way, word]) => {
         const label = word();
@@ -173,7 +179,7 @@ window.Maity = window.Maity || {};
           title: label,
           "data-focus": key,
           disabled: bodies[way] ? null : true,
-          onclick: bodies[way] ? () => place(c, bodies[way], key) : null,
+          onclick: bodies[way] ? () => { const now = bodiesIn(columnOf(c)); if (now && now[way]) place(c, now[way], key); } : null,
         }, arrow(way));
       }));
   }
