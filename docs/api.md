@@ -4615,8 +4615,8 @@ other settings say (`agent_owners` included):
   "An outsider's agent"), their open joins are void at the exchange, and
   `GET …/contribution` says `reason: blocked` (§6.1). Without the
   opt-in the joins routes answer them `not_found` and `…/contribution`
-  says `members_only`, as for any outsider, so a closed project tells
-  nobody whether they are blocked there.
+  says `members_only`, as for any outsider, so a project without the
+  opt-in tells nobody whether they are blocked there.
   Lifting the block restores nothing that was removed; lifting one that
   is not set answers `204`. A block and a quota stay with the project
   while the person is a member and apply again when they are an
