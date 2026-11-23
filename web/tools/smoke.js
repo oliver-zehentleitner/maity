@@ -10364,11 +10364,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const fgOffer = () => btn(fgRepo(), "Turn the public page on now");
     let fgPage = "off";
     let fgExtra = {};
+    let fgAs = {};  // who reads: an agent's kind, and an organisation role on the members list
     win.Maity.api.get = (p) => (p === "/projects/maintainer/maity"
       ? fgGet(p).then((x) => Object.assign({}, x, { public_page: fgPage }, fgExtra, fgExtra.repository ? { repository: Object.assign({}, x.repository, fgExtra.repository) } : {}))
-      : fgGet(p));
-    const fgShown = async (extra) => {
+      : p === "/me" && fgAs.kind
+        ? fgGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: fgAs.kind }) }))
+        : p === "/projects/maintainer/maity/members" && "orgOwner" in fgAs
+          ? fgGet(p).then((x) => Object.assign({}, x, { items: x.items.map((m) => (m.id === "hum-maintainer" ? Object.assign({}, m, { org_owner: fgAs.orgOwner }) : m)) }))
+          : fgGet(p));
+    const fgShown = async (extra, as) => {
       fgExtra = extra || {};
+      fgAs = as || {};
       await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
       return !!fgOffer();
     };
@@ -10380,9 +10386,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const fgNoneArchived = !(await fgShown({ state: "archived" }));
     const fgNoneHeld = !(await fgShown({ moderation: { action: "hide" } }));
     const fgNoneOther = !(await fgShown({ owner: { id: "hum-someone", handle: "someone" } }));
-    expect(fgOn && fgOnText && fgNoneOn && fgNoneUnconfirmed && fgNoneArchived && fgNoneHeld && fgNoneOther,
-      "forge: the page offered after a confirm with the page off, to the namespace owner only; not with the page on, unconfirmed, archived, held or to another owner "
-      + JSON.stringify([fgOn, fgOnText, fgNoneOn, fgNoneUnconfirmed, fgNoneArchived, fgNoneHeld, fgNoneOther]));
+    // An agent, even one the view names as the namespace's owner, is never offered it: the hub
+    // answers humans_only (A2221 P3-1).
+    const fgNoneAgent = !(await fgShown({}, { kind: "agent" }));
+    // An organisation's project: its owners are offered it, an admin who is no owner of it not (A2221 P3-2).
+    const fgOrg = { owner: { id: "org-acme", handle: "acme" } };
+    const fgOrgOwner = await fgShown(fgOrg, { orgOwner: true });
+    const fgNoneOrgAdmin = !(await fgShown(fgOrg, { orgOwner: false }));
+    expect(fgOn && fgOnText && fgNoneOn && fgNoneUnconfirmed && fgNoneArchived && fgNoneHeld && fgNoneOther && fgNoneAgent && fgOrgOwner && fgNoneOrgAdmin,
+      "forge: the page offered after a confirm with the page off, to the namespace owner only (an organisation's owners); not with the page on, unconfirmed, archived, held, to another owner, an agent or an organisation's admin "
+      + JSON.stringify([fgOn, fgOnText, fgNoneOn, fgNoneUnconfirmed, fgNoneArchived, fgNoneHeld, fgNoneOther, fgNoneAgent, fgOrgOwner, fgNoneOrgAdmin]));
     // A refusal is said in words, and the offer stays.
     win.Maity.api.patch = (p, b) => (p === "/projects/maintainer/maity"
       ? Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "org_role" })) : fgPatchReal(p, b));

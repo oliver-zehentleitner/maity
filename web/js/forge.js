@@ -218,7 +218,8 @@ window.Maity = window.Maity || {};
     }, M.t("forge.confirm"));
     // Once the repository is confirmed, the namespace owner is offered the public page with one
     // click (req-6jht73f66j1g, the maintainer's decision): an offer, never switched on by itself,
-    // and only where the hub would take it (not archived, no moderation hold, §16.8).
+    // and only where the page would be served (not archived, no moderation hold, §16.8). Only a
+    // human may change it (the hub answers an agent humans_only).
     const p = ctx.project;
     const offer = save && repo.owner_confirmed && namespaceOwner && ctx.me.kind === "human"
       && p.public_page !== "on" && p.state !== "archived" && !p.moderation
