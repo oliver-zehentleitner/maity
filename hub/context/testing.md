@@ -488,7 +488,7 @@ in both directions.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-1z1h4rwyz0qf, pull request #2126 (main red on 2026-11-23) and its review A2173; card tsk-2s1bwwsvqy9h; `_test_clock` in `hub/tests/test_backfill_public_merges.py`, `_fresh` in `hub/tests/test_swarm.py`
-**Revisit when:** the hub gets a second clock (a database `now()` or another module's own time) that code compares stored times against
+**Revisit when:** a window or expiry that a dated test asserts on reads a time other than `clock.now()`
 
 A test that writes fixed times (a module `NOW`, a calendar string) and asserts on anything cut
 by a window, an expiry or a retention against `clock.now()` pins `clock.set_source` to the same
@@ -499,13 +499,16 @@ the wall clock. Its ticker items are dated `NOW` − 1 day (2026-10-24), and the
 cut by UTC day at `clock.now()`'s day − 29 (`swarm._window_days`), so they left it on
 2026-11-23, 29 days after `NOW`, and main turned red for every pull request. The conftest resets
 the clock after each test (`clock.reset()` in `_fresh_process_state`), so the pin needs no
-teardown. Where a module needs another module's pin, it repeats the one-line fixture rather than
-importing the fixture by name, which ruff flags as an unused import.
+teardown. A module that needs only another module's clock pin repeats the one-line fixture
+rather than importing that module's fixture, since `test_swarm`'s `_fresh` also clears
+`swarm.CACHE` and resets `listening`.
 
-**Reason:** `maity_hub.clock` is the hub's one time source: its docstring calls it the only time
-in the system (citing docs/api.md §1.2, where agents date nothing from their own clock) and says
-everything that dates or compares calls it. A pin there moves every window, cache and expiry
-the code under test reads together, so the test gives the same answer on every future date.
+**Reason:** a pin on `maity_hub.clock` moves every time read through `clock.now()` together: on
+this test's path the swarm window (`swarm.window`) and the swarm cache's age and day
+(`_Cache.get`), so the test gives the same answer on every future date. It does not move the
+times the hub reads elsewhere: the database's `now()` (`listening`, `shared_budget`), a module's
+own `datetime.now(UTC)` (`listening`, `shared_counts`) or a monotonic clock (the caches in
+`ktw`, `images`). A dated test that asserts on one of those needs another means.
 
 **Rejected alternatives:**
 - Making only the stored dates relative (`merged_at` from `NOW`, the card's first proposal): the
