@@ -6,11 +6,13 @@ default 1; `project.own_agents` is `owners`, `members` or `{"owners_of": [human 
 for `members`. `membership.joined_outside` marks an agent membership made while the agent's
 owner held no membership of the project; it is never cleared.
 
-Existing rows are set once from the owners as they stand now: an agent membership whose
-owner holds no active membership of its project is marked. An agent whose owner became a
-member before this migration ran is not marked, since nothing recorded how it joined. The
-rows are read and written in Python, not by one `UPDATE … WHERE NOT EXISTS (SELECT … FROM
-membership)`, which MariaDB refuses for the table it updates.
+Existing rows are set from the membership history, as the exchange would have set them: an
+agent membership is marked when its owner held no membership of its project at the agent's
+`joined_at`. A removal keeps its row with `joined_at` and `removed_at`, and a rejoin is a
+new row, so no owner row spanning that moment means the owner was no member then; an agent
+whose profile is gone is marked too. One set-based `UPDATE … WHERE NOT EXISTS`, which
+PostgreSQL, MariaDB (11.4 checked) and SQLite all take for the table they update
+(hub/context/persistence.md 319da070).
 
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
@@ -33,7 +35,6 @@ depends_on: str | Sequence[str] | None = None
 JSON_VALUE = sa.JSON(none_as_null=True).with_variant(
     postgresql.JSONB(none_as_null=True), "postgresql"
 )
-CHUNK = 500
 
 
 def upgrade() -> None:
@@ -48,43 +49,35 @@ def upgrade() -> None:
 
 
 def _mark_existing() -> None:
-    conn = op.get_bind()
     membership = sa.table(
         "membership",
-        sa.column("id", sa.Integer),
         sa.column("project_id", sa.String),
         sa.column("human_id", sa.String),
         sa.column("agent_id", sa.String),
-        sa.column("active", sa.Boolean),
+        sa.column("joined_at", sa.DateTime),
+        sa.column("removed_at", sa.DateTime),
         sa.column("joined_outside", sa.Boolean),
     )
     profile = sa.table(
         "agent_profile", sa.column("id", sa.String), sa.column("owner_id", sa.String)
     )
-    agents = conn.execute(
-        sa.select(membership.c.id, membership.c.project_id, profile.c.owner_id)
-        .select_from(membership.outerjoin(profile, profile.c.id == membership.c.agent_id))
-        .where(membership.c.agent_id.is_not(None))
-    ).all()
-    members = {
-        (row.project_id, row.human_id)
-        for row in conn.execute(
-            sa.select(membership.c.project_id, membership.c.human_id).where(
-                membership.c.human_id.is_not(None), membership.c.active.is_(True)
-            )
+    owner = membership.alias("owner_row")
+    held_then = (
+        sa.select(sa.literal(1))
+        .select_from(profile.join(owner, owner.c.human_id == profile.c.owner_id))
+        .where(
+            profile.c.id == membership.c.agent_id,
+            owner.c.project_id == membership.c.project_id,
+            owner.c.joined_at <= membership.c.joined_at,
+            sa.or_(owner.c.removed_at.is_(None), owner.c.removed_at > membership.c.joined_at),
         )
-    }
-    marked = [
-        row.id
-        for row in agents
-        if row.owner_id is None or (row.project_id, row.owner_id) not in members
-    ]
-    for start in range(0, len(marked), CHUNK):
-        conn.execute(
-            sa.update(membership)
-            .where(membership.c.id.in_(marked[start : start + CHUNK]))
-            .values(joined_outside=True)
-        )
+        .correlate(membership)
+    )
+    op.get_bind().execute(
+        sa.update(membership)
+        .where(membership.c.agent_id.is_not(None), ~sa.exists(held_then))
+        .values(joined_outside=True)
+    )
 
 
 def downgrade() -> None:

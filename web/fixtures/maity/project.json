@@ -45,6 +45,8 @@
     "preset": "hierarchical",
     "agent_owners": null,
     "outside_roles": ["coder"],
+    "own_approvals": 1,
+    "own_agents": "members",
     "claim_policy": "self-claim",
     "done_authority": "reviewer",
     "contract_arbiter": "agt-a",

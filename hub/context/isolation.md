@@ -233,24 +233,33 @@ holds no membership of the project, read under the project lock, and is
 never cleared. With trust `outside` it answers §2.3's "an outsider's
 agent whose owner has since become a member", which the owner's current
 membership alone cannot. The migration sets it once for existing agent
-memberships from the owners as they stand then.
+memberships from the membership history: marked when the owner held no
+membership of the project at the agent's `joined_at`, in one set-based
+`UPDATE … WHERE NOT EXISTS`.
 
 **Reason:** an agent that came in under `agent_owners: anyone` holds trust
 `member` or `guest`, and trust `outside` (the outsider's join) never marks
-it; once its owner joins, nothing else shows how it came in. One boolean
-on the membership is the smallest record, written where the membership is
-made, and needs no history table.
+it. Membership rows are never deleted: a removal keeps the row with its
+`joined_at` and `removed_at`, and a rejoin is a new row, so the history
+shows whether the owner was a member when the agent joined. Reading it on
+every move to `done` would cost queries each time; one boolean on the
+membership reads it once, at the exchange under the project lock and in
+the upgrade, and needs no history table.
 
-**Lost by the migration:** an agent whose owner had already become a
-member before the column existed is not marked, since nothing recorded
-how it joined; such an agent counts as the project's own. The contract
-says so too (§2.3).
+**Lost by the migration:** nothing the rows keep. An owner who was a
+member when the agent joined and left since does not make the agent
+outside; one who joined only after the agent does. (The first version of
+this entry and of the migration read only the owners' current
+memberships and called the history lost; corrected on the review of
+#2135, A2211 and A2212.)
 
 **Rejected alternatives:**
 - Trust `outside` alone as the record: it marks only the outsider's join,
   not the agents of owners from outside that came in under `anyone`.
-- Reading the membership history (when the owner joined against when the
-  agent did): the hub keeps no such history for an owner who left and
-  came back, and the check would need it on every move to `done`.
+- Reading the membership history at each check instead of the mark: the
+  rows are there, but every move to `done` would rebuild the intervals
+  across rows for each agent of the card; the mark reads them once.
+- Backfilling from the owners' current memberships: it misses an agent
+  whose owner joined after it and marks one whose owner left after it.
 - Clearing the mark when the owner joins: that is exactly the case §2.3
   wants kept outside.

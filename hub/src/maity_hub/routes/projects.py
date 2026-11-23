@@ -309,11 +309,30 @@ def _checked_own_agents(conn: Connection, project: Any, given: Any) -> Any:
         human_id = handles.human_id_of(conn, handle)
         if human_id is None:
             return "unknown_handle"
-        if human_id not in held and not _human_member(conn, project.id, human_id):
-            return "not_a_member"
+        if human_id not in held:
+            # A pending, suspended or deleted account answers as a name nobody has, as
+            # elsewhere, so the refusal tells nothing about the account (review of #2135).
+            if not _active_account(conn, human_id):
+                return "unknown_handle"
+            if not _human_member(conn, project.id, human_id):
+                return "not_a_member"
         if human_id not in picked:
             picked.append(human_id)
     return {policy.OWNERS_OF: picked}
+
+
+def _active_account(conn: Connection, human_id: str) -> bool:
+    row = conn.execute(
+        select(t.human.c.account_status, t.human.c.deleted_at, t.human.c.suspended_at).where(
+            t.human.c.id == human_id
+        )
+    ).first()
+    return (
+        row is not None
+        and row.account_status == "active"
+        and row.deleted_at is None
+        and row.suspended_at is None
+    )
 
 
 def _human_member(conn: Connection, project_id: str, human_id: str) -> bool:
@@ -327,22 +346,6 @@ def _human_member(conn: Connection, project_id: str, human_id: str) -> bool:
         ).first()
         is not None
     )
-
-
-def _policy_shown(conn: Connection, value: dict[str, Any]) -> dict[str, Any]:
-    """A policy object as an event shows it: `own_agents` by handle, as the view does."""
-    return {**value, "own_agents": own_agents_view(conn, value["own_agents"])}
-
-
-def own_agents_view(conn: Connection, value: Any) -> Any:
-    """`policy.own_agents` as shown (§6.1): the picked people by their current handles."""
-    if not isinstance(value, dict):
-        return value
-    ids = list(value.get(policy.OWNERS_OF) or [])
-    found = dict(
-        conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids))).all()
-    )
-    return {policy.OWNERS_OF: [found[i] for i in ids if i in found]}
 
 
 def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode: str) -> str | None:
@@ -480,7 +483,11 @@ def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Ac
         project,
         "policy_changed",
         BROADCAST,
-        {"old": current, "new": new, "reason": reason},
+        {
+            "old": policy.shown(conn, current),
+            "new": policy.shown(conn, new),
+            "reason": reason,
+        },
         actor=actor,
     )
 
@@ -687,7 +694,11 @@ def _apply_policy(
     if "own_approvals" in change.model_fields_set:
         count = change.own_approvals
         # An integer of at least 1, no upper bound; a bool is no number here (§6.1).
-        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 1 <= count <= policy.OWN_APPROVALS_MAX
+        ):
             errors["own_approvals"] = "out_of_range"  # named plain, as outside_roles (§6.1)
         else:
             proposed["own_approvals"] = count
@@ -882,7 +893,7 @@ def _serve_restricted(
         conn, project, _reader(conn, project, request) if isinstance(mine, _Unread) else mine
     )
     # Every member read passes here: `own_agents` names the picked people by handle (§6.1).
-    view["policy"]["own_agents"] = own_agents_view(conn, view["policy"]["own_agents"])
+    view["policy"] = policy.shown(conn, view["policy"])
     return view
 
 
@@ -1475,9 +1486,9 @@ def patch_project(
                 "policy_changed",
                 BROADCAST,
                 {
-                    "old": _policy_shown(conn, policy.of(project)),
+                    "old": policy.shown(conn, policy.of(project)),
                     "new": {
-                        **_policy_shown(conn, policy.of(project)),
+                        **policy.shown(conn, policy.of(project)),
                         "keep_the_why": explicit["keep_the_why_policy"],
                     },
                     "reason": body.reason,
@@ -1501,8 +1512,8 @@ def patch_project(
                 "policy_changed",
                 BROADCAST,
                 {
-                    "old": _policy_shown(conn, policy.of(project)),
-                    "new": _policy_shown(conn, new_policy),
+                    "old": policy.shown(conn, policy.of(project)),
+                    "new": policy.shown(conn, new_policy),
                     "reason": body.reason,
                 },
                 actor=actor,
@@ -1691,7 +1702,7 @@ HUMANS_ONLY_POLICY = {
     "agent_owners",  # whether an agent's owner must be a member (§6.1, §6.2)
     "outside_roles",
     "own_approvals",  # set by a human with project:admin (§6.1)
-    "own_agents",  # set by a human with trust owner (§6.1, `_refuse_own_agents`)
+    "own_agents",  # set by a human with trust owner (§6.1, checked in `_authorise_patch`)
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
