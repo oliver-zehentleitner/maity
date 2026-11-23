@@ -33,6 +33,7 @@ from maity_hub import (
     merged,
     moderation,
     namespace,
+    own_approvals,
     paging,
     project_roles,
     ranks,
@@ -1376,6 +1377,21 @@ def patch_task(
             if card.status == "review" and body.status == "in_progress":
                 values["approvals"] = None  # a signature covers the work it was given on (§6.4)
             if signed is None or cards.signed_by_two(signed, _revision(card)):
+                if body.status == "done":
+                    # §2.3 "Own approvals": every move of outsiders' work to done, the
+                    # signature that completes `approvals` included, after the done
+                    # authority's check; a human's own move counts as one approval first.
+                    own_approvals.gate(
+                        conn,
+                        SimpleNamespace(
+                            **{
+                                **card._mapping,
+                                **({"approvals": signed} if signed is not None else {}),
+                            }
+                        ),
+                        mine.project,
+                        mine.principal_id if mine.kind == "human" else None,
+                    )
                 values["status"] = body.status
                 if body.status in cards.CLOSED:
                     values.update(_closing(card))
@@ -2248,6 +2264,16 @@ def report(
             "mismatch": None if body.code else False,
             "revision": revision,
         }
+        if closing:
+            # §2.3, §6.6: on outsiders' work short of its own approvals, a `done` from the
+            # done authority is stored and moves the card to review, not done. Judged on the
+            # card as this report leaves it; a human's own move counts as one approval.
+            reported = SimpleNamespace(
+                **{**card._mapping, "report": stored, "approvals": signatures}
+            )
+            mover = mine.principal_id if mine.kind == "human" else None
+            if own_approvals.missing(conn, reported, mine.project, mover)[0]:
+                closing = False
         values: dict[str, Any] = {
             "report": stored,
             "approvals": signatures,

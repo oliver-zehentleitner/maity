@@ -854,6 +854,39 @@ def test_auto_never_closes_outsiders_work_on_a_merge(
     assert any(agent.id in x for x in told.audience)  # the done authority under `holder`
 
 
+def test_auto_closes_outsiders_work_once_it_has_its_own_approval(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.6: with its own approvals on the reported head, a merge under `auto` closes
+    outsiders' work as any other card (tsk-3ggnhdmgmkf3)."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(github, owner, make_client)
+    _owned_by(migrated, agent.id, _stranger(make_client, migrated).id)
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    approved = reviewer.post(
+        f"{BASE}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": "all",
+            "body": "Approved.",
+            "task_id": card_id,
+            "review": {
+                "subject": "#7",
+                "head": _report()["head"],
+                "verdict": "approve",
+                "cites": [{"path": "docs/api.md", "line": 1, "quote": "x"}],
+            },
+        },
+    )
+    assert approved.status_code == 201, approved.text
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert told.payload["closed"] is True and "blocked_by" not in told.payload
+    assert _card(owner, card_id)["status"] == "done"
+
+
 def test_auto_never_closes_a_card_whose_current_report_an_outsider_filed(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:

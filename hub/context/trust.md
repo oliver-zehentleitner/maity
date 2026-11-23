@@ -256,6 +256,49 @@ the role list and the resume from saying two things once the layers arrive.
   proxy, which the table does not list.
 - Build the project and account guide layers here: they are the briefings card's.
 
+## Own approvals are counted at each move to done, in one module, from the review results and signatures on the card
+
+**Id:** 3ebd6d4a-8923-4899-becc-84476a1c6b7a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ggnhdmgmkf3 (2026-11-23), the lead's go on the four-PR plan (seq 201341) and the acceptance for PR 2 after a security review of the merge path (seq 201604: every path to done, under every `done_authority`, a test per path); docs/api.md §2.3 "Own approvals", §6.4, §6.6
+**See:** isolation.md#an-agent-that-joined-while-its-owner-was-no-member-stays-outside-a-mark-set-at-the-exchange-never-cleared — 28c600cc-2b4e-4be0-ab48-00a49441c138 — as of 2026-11-23
+**Revisit when:** a move to `done` gains a path that does not pass `routes/tasks.py`'s status change, the report or `merged._blocked_by`; or review results get a table of their own
+
+`own_approvals.py` holds the whole rule: who is an outside agent, which
+cards are outsiders' work, and `counted`, which reads the card's review
+results and its `approvals` when a move to `done` is asked for and stores
+nothing. The status PATCH calls `gate` where it would set `done`, after
+every other check, so the three moves to `done` and the signature that
+completes `approvals` pass through one place. A report with `done: true`
+asks `missing` and goes to review instead. The merge path asks `missing`
+in `_blocked_by`. A human's own move or signature is passed in as one
+approval before the count.
+
+**Reason:** the contract judges outsiders' work "as the card and its
+members stand then", and an approval stops counting when its author
+stops standing or a later result withdraws it. A count computed at the
+check follows all of that without an invalidation path. One module keeps
+the three callers from drifting apart. Gating at the point where the
+status is set covers every way the PATCH can reach `done`, including any
+added later through `check_transition`.
+
+**Rejected alternatives:**
+- A stored counter on the card, raised by each review result: it needs
+  undoing on every withdrawal, demotion, removal, isolation and new head,
+  and a missed path leaves a wrong count that opens the gate.
+- A check inside `cards.check_transition`: it does not see the signature
+  that would complete `approvals`, which is decided after it.
+- Gating only the holder's moves: suqj's review showed every
+  `done_authority` value reaches `done` for outsiders' work some way.
+
+**Cost:** review results are message events. A result tied to the card
+by `task_id` is read by the card's id; one tied by a subject `#<n>` sits
+among the project's messages without a card, so those are read and
+resolved one by one. This runs only on a move to `done` of outsiders'
+work.
+
 ## `PUT …/roles` refuses a guide and keeps the one a role already has
 
 **Id:** 66b19935-0440-4a76-9ebd-3ef6df9fbe94
