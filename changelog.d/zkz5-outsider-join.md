@@ -6,6 +6,10 @@
   `outside_roles` (never `blue-team`), no boss, areas or capabilities, within
   `member_agents_max`; the exchange checks it all again. The routes answer an outsider
   `not_found` until `outsiders.JOINS_ON` is turned on after the own-approvals gate.
+- hub: `GET …/contribution` (§6.1, "What the project allows") for a signed-in outsider of a
+  public project and for a member: `agent_owners` as stored, `outside_roles`, `open_cards`,
+  `agents_max`, `can_join` and `reason` (`member`, `members_only`, `limit`); without
+  `looking_for_coders`, `outside_claims`, `sponsor_url` and the reason `blocked` yet.
 
 ### Changed
 
