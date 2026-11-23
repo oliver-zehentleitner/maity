@@ -503,6 +503,10 @@ class Supervisor:
     # Held across a snapshot of the records and its write (save), so a `_start` worker's save
     # before its session starts is never overwritten by an older snapshot (the review of #2093).
     records_save_lock: threading.Lock = field(default_factory=threading.Lock)
+    # What `capabilities.agy_sandbox` answered, per target name and agy binary, for the
+    # service's lifetime as the Codex sandbox probe is: after changing the host's AppArmor or
+    # agy's profile, restart the runner (tsk-xjy2d5617sar).
+    agy_sandbox: dict[tuple[str, str], str] = field(default_factory=dict)
     # The runner's own lines about each placement, for a finding's `log` (§15.7, "The runner's
     # log lines"): in memory only, dropped when the placement is closed.
     notes: watch.Notes = field(default_factory=watch.Notes)
@@ -2093,6 +2097,52 @@ class Supervisor:
             target.seccomp = found
         return found
 
+    def _agy_sandbox(self, target: Target, binary: str | None) -> str:
+        """`capabilities.agy_sandbox` for `target` and agy's `binary`, kept per pair for the
+        service's lifetime; on a platform where agy has no terminal sandbox it is not asked
+        (that is no host fault the start can name). `unknown` is not kept: a one-off timeout
+        would keep every later start quiet where the next probe says `cannot`, so the next
+        start asks again. The lock is not held across the probe, so first starts that overlap
+        may each ask once; the first answer kept is used from then on (the review of #2119)."""
+        if target.as_user.direct and not capabilities.agy_sandbox_platform():
+            return capabilities.AGY_UNKNOWN
+        key = (target.name, binary or "")
+        with self.lock:
+            known = self.agy_sandbox.get(key)
+        if known is not None:
+            return known
+        state = capabilities.agy_sandbox(target.as_user, binary)
+        if state == capabilities.AGY_UNKNOWN:
+            return state
+        with self.lock:
+            return self.agy_sandbox.setdefault(key, state)
+
+    def _say_if_unsandboxed(
+        self, pid: str, harness: config.Harness, target: Target, view: GateView | None
+    ) -> None:
+        """An agy start on a host where its terminal sandbox cannot start: it got through the
+        gate because `require_sandbox` is unset (agy's default) or false, so it is said aloud at
+        every such start attempt, before the launch and so worded as what the session will do,
+        never silently (lotse's ruling on tsk-xjy2d5617sar). Its report stays `sandbox_unavailable`,
+        as on every agy start. Nothing is said where the probe saw the namespaces start, found
+        a profile named for agy, or could not tell."""
+        if harness.id != "antigravity" or (view is not None and view.sandbox):
+            return
+        found = view.found if view is not None else None
+        state = self._agy_sandbox(target, found.path if found else None)
+        if state not in capabilities.AGY_UNSANDBOXED:
+            return
+        why = (
+            "the kernel or a container refuses user namespaces"
+            if state == capabilities.AGY_REFUSED
+            else "the namespaces it needs are refused and no AppArmor profile lifts that"
+        )
+        self.log(
+            f"{pid}: WARNING: starting this agy placement, its commands will run UNSANDBOXED: "
+            f"agy's terminal sandbox cannot start on {target.name} ({why}); set "
+            "require_sandbox = true under [harness.antigravity] to refuse such starts"
+        )
+
     def _wait(self, rec: Record, why: str, name: str) -> int:
         if rec.waiting != why:
             rec.waiting = why
@@ -2197,6 +2247,7 @@ class Supervisor:
                 with self.lock:  # stopped or moved on while the task was queued
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
+            self._say_if_unsandboxed(p["id"], harness, target, view)
             # A Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
             # would read as unsupported and refuse the start (worktree, §15.5): clear it first, by
             # file operations only (the runner runs no git in an existing clone). Only this agent's

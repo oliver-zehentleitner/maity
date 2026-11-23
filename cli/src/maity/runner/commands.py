@@ -666,7 +666,7 @@ def _check_harness(
         )
         _check_user_skill(report, as_user)
     if harness.id == "antigravity":
-        _check_antigravity(report, harness, as_user, agent_path)
+        _check_antigravity(report, harness, as_user, binary=found.path)
     if harness.id == "opencode":
         _check_opencode(report, harness, layout)
         _check_opencode_flags(report, harness, found.path, agent_path, as_user)
@@ -751,24 +751,59 @@ def _check_opencode_flags(
             report.ok(f"{where}harness opencode: `{command}` takes the {mode} start's flags")
 
 
+_AGY_UNTIL = (
+    "Until then require_sandbox = true under [harness.antigravity] refuses agy's starts; unset "
+    "or false, they go ahead unsandboxed and each says so in the log. Either way this stays an "
+    "error"
+)
+
+
 def _check_antigravity(
-    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
-    where: str = "",
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, where: str = "",
+    binary: str | None = None,
 ) -> None:  # fmt: skip
-    """agy's sandbox (reported off; the namespaces it needs as a diagnostic), its sign-in,
-    and what of the agents' user's own agy settings every agent inherits (§15.3)."""
+    """agy's sandbox (reported off; whether it can start as a diagnostic, an error where it
+    cannot, tsk-xjy2d5617sar), its sign-in, and what of the agents' user's own agy settings
+    every agent inherits (§15.3)."""
     here = not where  # an ssh host is Linux
+    state = None
     if here and not capabilities.agy_sandbox_platform():
         report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
-    elif capabilities.agy_namespaces(agent_path, as_user):
+    else:
+        state = capabilities.agy_sandbox(as_user, binary)
+    if state == capabilities.AGY_STARTS:
         report.ok(
             f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
             "agy's sandbox start not verified"
         )
-    else:
+    elif state == capabilities.AGY_PROFILE:
         report.warn(
-            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs do not "
-            "start (or no `unshare`); agy would run commands unsandboxed"
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs are "
+            "refused here, but an AppArmor profile named for agy is loaded, which may grant agy "
+            "its own; not verified (what it attaches to and allows cannot be read unprivileged)"
+        )
+    elif state == capabilities.AGY_CANNOT:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "user namespace's uid_map, gid_map or setgroups write is refused (AppArmor's "
+            "restriction of unprivileged user namespaces) and no AppArmor profile lifts that, "
+            "so agy runs commands unsandboxed. On Ubuntu an AppArmor profile for agy clears "
+            "this: named `agy`, attached to agy's real path, allowing `userns`, loaded as root, "
+            "then a restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_REFUSED:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "kernel or a container refuses user namespaces to the agents' user (the unshare "
+            "call itself is refused: a sysctl such as kernel.unprivileged_userns_clone, or a "
+            "container's seccomp), so agy runs commands unsandboxed. An AppArmor profile for "
+            "agy does not clear this; allowing unprivileged user namespaces there does "
+            "(docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_UNKNOWN:
+        report.warn(
+            f"{where}harness antigravity: whether agy's terminal sandbox can start is not "
+            "checked (no `unshare`, or the probe could not tell)"
         )
     line = (
         f"{where}harness antigravity: sandbox reported off: the runner has not seen agy's "
@@ -1283,7 +1318,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             if harness.id == "claude-code":
                 _check_worktree_guard(report, as_user, f"{name}: ", probe.version)
             if harness.id == "antigravity":
-                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
+                _check_antigravity(report, harness, as_user, f"{name}: ", probe.path)
             if harness.id == "opencode":
                 _check_opencode(report, harness, where=f"{name}: ")
                 _check_opencode_flags(
