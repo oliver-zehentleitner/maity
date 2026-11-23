@@ -3429,6 +3429,29 @@ of `maity runner unit`.
 Every call that touches the system goes through one `Host` seam, so the tests
 run without root or systemd.
 
+## Without `--config`, a missing default names the service's file; it is never read in its place
+
+**Id:** 65dba095-8677-48cd-baf3-e6ff9e7c3ad8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2k0jcaxfd0ja, point 9 ("should find `/etc/maity-runner/runner.toml` or say to pass it"; on a fresh Debian host `maity runner tools` without `--config` failed on the service layout); `cli/src/maity/runner/config.py` (`_missing`). The choice between the two is the implementer's.
+**Revisit when:** `maity runner` learns which configuration a running service uses (for example from the unit), or a user-level service layout exists
+
+When `~/.config/maity-runner/runner.toml` is missing, no `--config` and no
+`MAITY_RUNNER_CONFIG` was given, and `/etc/maity-runner/runner.toml` exists,
+the error names that file and says to pass `--config` as `maity-runner`.
+The commands still read only the default.
+
+- Rejected: falling back to `/etc/maity-runner/runner.toml`. The person
+  running the command may be another user than the service's (an operator
+  with a terminal runner of their own, or root), and `stop-all`, `gc --yes`
+  or `tools rollback` would then act on the service's state with that user's
+  rights and home; the state directory and the tools directory resolve under
+  `~` of whoever runs it. Naming the file keeps the choice with the person.
+- Rejected: leaving the message as it was. It sent the person to write a
+  file that the service does not read.
+
 ## A failed clone says why in the runner's log, not in the report
 
 **Id:** e814c00b-fde7-4c0a-a3ca-f7b3510900df
