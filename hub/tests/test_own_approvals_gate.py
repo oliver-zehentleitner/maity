@@ -492,6 +492,48 @@ def test_a_suspended_human_neither_approves_nor_makes_its_agents_own(
         assert not own_approvals._own_agent(conn, project, agent_id, set())
 
 
+@pytest.mark.parametrize("gone", ["suspended_at", "deleted_at"])
+def test_an_agent_whose_owner_is_suspended_or_deleted_counts_as_outside(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, gone: str
+) -> None:
+    """Its card is outsiders' work and its move to `done` is gated, failing closed (the lead's
+    ruling of 2026-11-23)."""
+    _policy(owner, done_authority="admin")
+    member = _human_member(make_client, migrated, f"will-be-{gone[:4]}", "coder")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    agent_id = factory.agent(migrated, project_id, member.id, "coder").agent_id
+    card_id = _card(owner)
+    with migrated.begin() as conn:  # it holds the card and reported it
+        holder = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent_id)
+        ).scalar_one()
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card_id)
+            .values(
+                status="review",
+                claim_holder=holder,
+                report={"head": SHA, "reported_by": agent_id, "revision": 1},
+            )
+        )
+    with migrated.connect() as conn:
+        card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+        project = conn.execute(select(t.project)).one()
+        assert not own_approvals.outsiders_work(conn, card, project)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == member.id)
+            .values(**{gone: factory.at("2026-11-22T10:00:00Z")})
+        )
+    with migrated.connect() as conn:
+        card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+        project = conn.execute(select(t.project)).one()
+        assert own_approvals.outside_agent(conn, project, agent_id)
+        assert own_approvals.missing(conn, card, project) == (1, 0)
+
+
 def test_a_signature_counts_only_for_the_slot_its_signer_still_may_sign(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

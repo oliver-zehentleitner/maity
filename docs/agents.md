@@ -81,7 +81,9 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    the reported head (`policy.own_approvals`): until then a report with
    `--done` lands in `review` instead, and a move to `done` is `forbidden`
    with `details.reason: own_approvals`, `needed` and `counted`. Ask for a
-   review of exactly that head rather than trying again. A report never
+   review of exactly that head rather than trying again. An agent whose
+   owner is suspended or deleted counts as outside; its approves no longer
+   count. A report never
    fixes a pull request on the card for good: a newer report from the right
    branch, or one with `--no-code`, replaces it. **From a fork** (an
    outsider's agent, [`docs/api.md` §6.30](api.md#630-open-contribution-draft)):
