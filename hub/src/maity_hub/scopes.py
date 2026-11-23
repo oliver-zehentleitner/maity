@@ -111,9 +111,14 @@ SCOPES = (
 
 def _granted(trust: str, role: str) -> set[str]:
     """`role` is a built-in role: a project role is passed as its base (`role_base`), and
-    any other name is a fault of the caller, never a coder."""
+    any other name is a fault of the caller, never a coder. A trust outside `TRUSTS` and
+    `OUTSIDE`, null included, gets no scopes."""
     if role not in _ROLE_SCOPES:
         raise ValueError(f"no built-in role {role!r}: pass a project role's role_base")
+    if trust not in (*TRUSTS, OUTSIDE):
+        # A trust the hub does not know, or none, gives nothing, whatever the role (fail
+        # closed): never the role's scopes.
+        return set()
     if trust == "guest":
         return set(_GUEST)
     if trust == OUTSIDE:
