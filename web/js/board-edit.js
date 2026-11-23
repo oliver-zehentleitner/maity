@@ -32,8 +32,22 @@ window.Maity = window.Maity || {};
     missing: () => M.t("cards.refused.missing"),
   };
   const refusal = (code) => (Object.hasOwn(REFUSALS, code) ? REFUSALS[code]() : null);
+  // The refusals of handing a card to an outsider's agent while the claim request is not built
+  // (docs/api.md §6.5 "Until the claim request is built"), in words: the agent's own claim, a call
+  // from an agent, a human without tasks:admin.
+  const FORBIDDEN = {
+    not_open_to_outsiders: () => M.t("cards.refused.not_open_to_outsiders"),
+    humans_only: () => M.t("cards.refused.humans_only"),
+  };
+  function forbidden(err) {
+    const d = (err.code === "forbidden" && err.details) || null;
+    if (!d) return null;
+    if (Object.hasOwn(FORBIDDEN, d.reason || "")) return FORBIDDEN[d.reason]();
+    return !d.reason && d.scope === "tasks:admin" ? M.t("cards.refused.tasks_admin") : null;
+  }
 
   function said(err) {
+    if (forbidden(err)) return { message: forbidden(err) };
     // A parent waits for its subtasks (§6.4): the open ones by id.
     const kids = err.code === "dependencies_open" && err.details && err.details.children;
     if (kids && kids.length) {
@@ -203,9 +217,14 @@ window.Maity = window.Maity || {};
 
   // Assign or reassign: a menu of the project's members, by handle, the
   // full name as the tooltip; picking one assigns at once.
-  function assignControl(ctx, c, assign) {
+  // handOver(c, member, focusKey): an open card nobody holds, claimed for an outsider's agent
+  // (docs/api.md §6.5 "Until the claim request is built"): such an agent takes no card itself, and
+  // an assign alone gives it no claim, so the menu also offers the claim with `holder`. An expired
+  // claim moves to it by the assign above. The hub decides; its refusal is said in words (said).
+  function assignControl(ctx, c, assign, handOver) {
     if (!isAdmin(ctx) || CLOSED.has(c.status)) return null;
     const word = c.assigned_to ? M.t("cards.reassign") : M.t("cards.assign");
+    const free = !!handOver && c.status === "open" && !c.claim;
     const menu = M.menuButton({
       label: c.assigned_to ? M.t("cards.reassign.label", { id: c.id }) : M.t("cards.assign.label", { id: c.id }),
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
@@ -215,7 +234,12 @@ window.Maity = window.Maity || {};
         label: [M.avatar(m, 16), " @" + M.dom.handleOf(ctx, m)],
         title: m.display_name,
         onSelect: () => assign(c, m.id, "assign:" + c.id),
-      })),
+      })).concat(free ? ctx.members.filter((m) => m.kind === "agent" && m.trust === "outside" && !m.removed_at).map((m) => ({
+        key: "claim-for:" + m.id,
+        label: [M.avatar(m, 16), " ", M.t("cards.claim_for", { handle: M.dom.handleOf(ctx, m) })],
+        title: m.display_name,
+        onSelect: () => handOver(c, m, "assign:" + c.id),
+      })) : []),
     });
     menu.button.setAttribute("data-focus", "assign:" + c.id);
     menu.el.className = "menu-box card-assign";

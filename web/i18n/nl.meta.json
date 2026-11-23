@@ -1563,6 +1563,18 @@
     "en": "89fa136908846c6b",
     "text": "0da7d7a650f247fc"
   },
+  "board.claim_for.busy": {
+    "en": "0385dd7c49e50091",
+    "text": "f3290aa449af9206"
+  },
+  "board.claim_for.done": {
+    "en": "ede8e762c76c457e",
+    "text": "8f54e64c9f3d9348"
+  },
+  "board.claim_for.failed": {
+    "en": "7b7c2cd238073bb7",
+    "text": "d84d51f93f37bc58"
+  },
   "board.closed.failed": {
     "en": "76ff07448abbd4a4",
     "text": "caf2e33bdea09f71"
@@ -2751,6 +2763,10 @@
     "en": "0ccf3532a4a1e18b",
     "text": "9565e07693cf7e5a"
   },
+  "cards.claim_for": {
+    "en": "4440b3017b2785d4",
+    "text": "9e2cd499190ca8cd"
+  },
   "cards.column.blocked": {
     "en": "c0ee434b7aa8dedc",
     "text": "f2d20e479a0b2087"
@@ -2959,6 +2975,10 @@
     "en": "5dbecb696e153ff0",
     "text": "9b1281b19365f6bc"
   },
+  "cards.refused.humans_only": {
+    "en": "22d8ce42a6288aef",
+    "text": "c3e1d69ac140e890"
+  },
   "cards.refused.invalid_transition": {
     "en": "fc91d0183a098be3",
     "text": "a9e27ce4baa60a77"
@@ -2979,6 +2999,10 @@
     "en": "ca10ba106157a953",
     "text": "e364aaf16ccfdc5e"
   },
+  "cards.refused.not_open_to_outsiders": {
+    "en": "1a00c2735888374f",
+    "text": "0b94f11925018642"
+  },
   "cards.refused.project_closed": {
     "en": "4205ad383022da26",
     "text": "9d87e9db1fb261c3"
@@ -2998,6 +3022,10 @@
   "cards.refused.subtasks_and_deps": {
     "en": "e93f2c3881226d23",
     "text": "eb4a971d3a6de562"
+  },
+  "cards.refused.tasks_admin": {
+    "en": "df0f7e647ea9a5d4",
+    "text": "90effd9ce275b6d5"
   },
   "cards.refused.unknown": {
     "en": "63f07dba790acba0",
@@ -7942,6 +7970,10 @@
   "join.field.handover": {
     "en": "8d28a5f16e6a31c7",
     "text": "4c54b7303d56267a"
+  },
+  "join.field.outsider_hint": {
+    "en": "6a3bd85ffd63b3dd",
+    "text": "486522bfcd2d0304"
   },
   "join.field.own_hint": {
     "en": "a79fceb9b8208c11",
@@ -12958,6 +12990,26 @@
   "orgs.title": {
     "en": "b58edddaa8f66d6d",
     "text": "b05d50496ff4a7bc"
+  },
+  "outsider.add_agent": {
+    "en": "fcabf74d411347ee",
+    "text": "6b5226edc5be5e27"
+  },
+  "outsider.join.closed": {
+    "en": "9c89e4b1d48d49e1",
+    "text": "041a69b6d90f73da"
+  },
+  "outsider.join.role": {
+    "en": "f24b9087d8951d8a",
+    "text": "dd6cb3e6ab379f42"
+  },
+  "outsider.reason.blocked": {
+    "en": "903a7ae9cc8ff6d8",
+    "text": "786191325db72256"
+  },
+  "outsider.reason.limit": {
+    "en": "4d8377b7c79c42b8",
+    "text": "f87649d53c0db19f"
   },
   "overview.badge.agents_online": {
     "en": "21dc1a4560871eb4",
