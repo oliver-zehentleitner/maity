@@ -10,9 +10,17 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import flow
-from tests.test_swarm import owner, project_id, public_prs, ticker_merge  # noqa: F401
+from tests.test_swarm import (  # noqa: F401
+    MERGED_AT,
+    NOW,
+    owner,
+    project_id,
+    public_prs,
+    ticker_merge,
+)
 
 spec = importlib.util.spec_from_file_location(
     "backfill_public_merges",
@@ -24,6 +32,15 @@ sys.modules[spec.name] = backfill  # a dataclass looks its module up while it is
 spec.loader.exec_module(backfill)
 
 URL = "https://github.com/maintainer/maity"
+
+
+@pytest.fixture(autouse=True)
+def _test_clock() -> None:
+    """`ticker_merge` dates its items from test_swarm's NOW and `public_prs` cuts its window at
+    the clock: without test_swarm's clock (its autouse fixture is not imported here) the window
+    ended on the calendar day, and the items fell out of it 30 days after NOW (tsk-1z1h4rwyz0qf).
+    The conftest resets the clock after each test."""
+    clock.set_source(lambda: NOW)
 
 
 @pytest.fixture
@@ -60,7 +77,7 @@ def test_old_merges_count_after_the_run_and_flagged_ones_stay_as_they_were(
     assert public_prs(migrated, project_id) == 3
     found = merges(migrated)
     assert found[12] == {**found[12], "public": True, backfill.MARK: "2026-11-02"}
-    assert found[14] == {"pr": 14, "merged_at": "2026-10-20T00:00:00Z", "public": False}
+    assert found[14] == {"pr": 14, "merged_at": MERGED_AT, "public": False}
     assert backfill.run(migrated, named, change=True, undo=False, stamp="later") == 0
 
 
@@ -116,7 +133,7 @@ def test_the_script_changes_nothing_unless_every_project_matches(
     bad = [named.project_id, "someone/else", URL]
     args = ["--project", *good, "--project", *bad, "--apply"]
     assert backfill.main(args) == 2
-    assert merges(migrated)[12] == {"pr": 12, "merged_at": "2026-10-20T00:00:00Z"}
+    assert merges(migrated)[12] == {"pr": 12, "merged_at": MERGED_AT}
     assert backfill.main(["--project", *good, "--apply"]) == 0
     assert merges(migrated)[12]["public"] is True
 
