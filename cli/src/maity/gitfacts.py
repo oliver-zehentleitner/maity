@@ -78,8 +78,11 @@ def _git(cwd: Path, *args: str) -> str | None:
 
 def _last_line(stderr: str) -> str:
     """The last line of git's or gh's error output, without a credential: both repeat the
-    remote's URL as configured, a token in it included."""
-    return without_userinfo(stderr.strip().splitlines()[-1]) if stderr.strip() else "no output"
+    remote's URL as configured, a token in it included, and may repeat a proxy's credentials
+    (`_proxy_secrets`). The whole output is scrubbed before a line of it is picked, so a
+    credential that spans lines goes whole."""
+    text = without_secrets(stderr, _proxy_secrets()).strip()
+    return text.splitlines()[-1] if text else "no output"
 
 
 def _git_required(cwd: Path, *args: str) -> str:
@@ -284,13 +287,23 @@ def _branch(cwd: Path) -> str | None:
     return ref.removeprefix("refs/heads/")
 
 
+def _secret_pieces(secret: str) -> set[str]:
+    """`secret`, every prefix of it that ends before a `/`, `?` or `#`, and every one of its
+    lines: the parts of a credential git or curl may show on their own when it does not parse
+    as a URL's userinfo. Empty pieces are left out."""
+    pieces = {secret, *secret.splitlines()}
+    pieces |= {secret[:i] for i, char in enumerate(secret) if char in "/?#"}
+    return {piece for piece in pieces if piece}
+
+
 def _proxy_secrets() -> list[str]:
     """The userinfo of every proxy variable git keeps under a placement (clonecheck.ENV_PROXY),
-    as set and percent-decoded, and its password alone: git and curl may repeat a proxy in
-    their errors, one set without a scheme too (`user:pass@proxy:3128`), which
-    `without_userinfo` does not recognize. The userinfo is what comes before the last `@` of the
-    part before the first `/`, and also before the last `@` of the whole value: an unencoded `/`
-    in a password or an `@` in a path then leaves no credential in, at worst more is taken out."""
+    and its password alone, each with its pieces (`_secret_pieces`), as set and
+    percent-decoded: git and curl may repeat a proxy's credentials in their errors, in whatever
+    shape the proxy was set, which `without_userinfo` alone does not recognize. The userinfo is
+    what comes before the last `@` of the part before the first `/`, and also before the last
+    `@` of the whole value, so neither a character of the password nor of the path keeps a
+    credential in; at worst more is taken out."""
     from maity import clonecheck  # imports onboarding and proc; kept out of this module's load
 
     secrets: list[str] = []
@@ -305,8 +318,8 @@ def _proxy_secrets() -> list[str]:
                 continue
             password = userinfo.partition(":")[2]
             for secret in (userinfo, password):
-                if secret:
-                    secrets += [secret, urllib.parse.unquote(secret)]
+                for piece in _secret_pieces(secret):
+                    secrets += [piece, urllib.parse.unquote(piece)]
     return secrets
 
 
@@ -315,7 +328,7 @@ def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
     the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
     a line naming exactly `ref` counts. A refusal of maity's git is a FactsError as anywhere
     else; a lookup that ran and failed or timed out is RemoteUnread, its message without the
-    proxy's credentials (`_proxy_secrets`)."""
+    proxy's credentials (`_proxy_secrets`; `_last_line` for git's own error)."""
     try:
         result = proc.run([*proc.GIT, "ls-remote", "--heads", "--", remote, ref], cwd)
     except proc.ToolRefused as exc:  # a ToolError too, so caught first
@@ -323,8 +336,7 @@ def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
     except proc.ToolError as exc:
         raise RemoteUnread(without_secrets(str(exc), _proxy_secrets())) from exc
     if result.returncode != 0:
-        error = f"git ls-remote failed: {_last_line(result.stderr)}"
-        raise RemoteUnread(without_secrets(error, _proxy_secrets()))
+        raise RemoteUnread(f"git ls-remote failed: {_last_line(result.stderr)}")
     for line in result.stdout.strip().splitlines():
         sha, _, name = line.partition("\t")
         if name == ref:

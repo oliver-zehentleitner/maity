@@ -162,6 +162,45 @@ def test_a_git_error_that_repeats_the_proxy_loses_its_credentials(
     assert "SECRETPW" not in facts.remote_error
 
 
+def _lookup_says(monkeypatch: pytest.MonkeyPatch, stderr: str) -> None:
+    """`git ls-remote` fails with `stderr`; every other call runs as it is."""
+    real = proc.run
+
+    def fake(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "ls-remote" in cmd:
+            return subprocess.CompletedProcess(cmd, 128, "", stderr)
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", fake)
+
+
+def test_a_proxy_password_with_a_slash_loses_its_prefix_too(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://agent:PRE7Q/FIXSECRET@proxy.invalid:3128")
+    _lookup_says(
+        monkeypatch,
+        "fatal: unable to access 'https://github.com/acme/widget/': Unsupported proxy syntax "
+        "in 'agent:PRE7Q'\n",
+    )
+    error = gitfacts.collect(clone).remote_error
+    assert error is not None and error.startswith("git ls-remote failed")
+    assert "PRE7Q" not in error and "FIXSECRET" not in error
+
+
+def test_a_proxy_password_with_a_newline_is_scrubbed_across_lines(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://u:TOK1A\nTOK2B@proxy.invalid:3128")
+    _lookup_says(
+        monkeypatch,
+        "fatal: credential url cannot be parsed: http://u:TOK1A\nTOK2B@proxy.invalid:3128\n",
+    )
+    error = gitfacts.collect(clone).remote_error
+    assert error is not None and error.startswith("git ls-remote failed")
+    assert "TOK1A" not in error and "TOK2B" not in error
+
+
 @posix
 def test_the_runner_prints_a_claimed_clones_origin_without_the_token(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]

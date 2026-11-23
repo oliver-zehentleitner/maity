@@ -283,11 +283,10 @@ with that head does not stand in: its head says nothing about the branch now,
 which may have moved since it was closed. Only when none stands in do the
 linked pull requests it read with another head or closed refuse. Without one,
 or with a card that cannot be read, the failure stays an error, never "does not
-exist; push it", since the branch may well be there. The lookup's error goes
-into that error and to standard error without the credentials of the proxy
-variables git keeps under a placement (`gitfacts._proxy_secrets`), as set and
-percent-decoded, a proxy set without a scheme (`user:pass@host:port`) included,
-which the URL redaction alone does not recognize.
+exist; push it", since the branch may well be there. The proxy credentials of
+the variables git keeps under a placement (`gitfacts._proxy_secrets`) are
+scrubbed from the whole error before a line of it is shown, in any shape the
+proxy was set in.
 
 What decides here is the hub's record that the card links the pull request, and
 the probe's read of it, not a GitHub lookup by the branch's name. A link is
