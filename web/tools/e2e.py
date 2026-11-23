@@ -5142,14 +5142,25 @@ def join_reports_layout(run: Run, browser) -> None:
                 context.close()
 
 
+def pairing_of(line: str) -> tuple[str, str]:
+    """The URL and the code a pairing line of the dialog carries: the code piped in with
+    printf, never on the command line, and the URL after `pair` or `install`."""
+    words = shlex.split(line)
+    assert "--code" not in words and words[-1] != "--code", words
+    at = words.index("printf")
+    assert words[at + 1] == "%s\\n" and words[at + 3] == "|" and "--code-file" in words, words
+    command = next(i for i, w in enumerate(words) if w in ("pair", "install") and i > at)
+    assert words[command - 2 : command] == ["maity", "runner"], words
+    return words[command + 1], words[at + 2]
+
+
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
     """What `maity runner pair` does on the runner host: the exchange of §15.2."""
-    words = shlex.split(pair_line)
-    assert words[:3] == ["maity", "runner", "pair"] and words[4] == "--code", words
-    token = words[3].rstrip("/").rsplit("/", 1)[-1]
+    url, code = pairing_of(pair_line)
+    token = url.rstrip("/").rsplit("/", 1)[-1]
     request = urllib.request.Request(
         run.base + "/api/v1/runners/pair/" + token,
-        data=json.dumps({"code": words[5], "client": "maity-e2e/1"}).encode(),
+        data=json.dumps({"code": code, "client": "maity-e2e/1"}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -5179,16 +5190,48 @@ def runners_step(run: Run, page: Page) -> None:
     expect(view).to_contain_text("No runner yet.")
     page.locator("#pair-name").fill("e2e-runner")
     page.get_by_role("button", name="Create the pairing line", exact=True).click()
-    steps = page.locator(".pair-steps")
-    expect(steps).to_contain_text("maity runner pair")
-    config = page.locator(".runner-config").inner_text()
+    # Two ways (tsk-2k0jcaxfd0ja): the service on Linux is chosen first, the terminal's steps hidden.
+    service = page.locator(".pair-way-service")
+    terminal = page.locator(".pair-way-terminal")
+    expect(page.get_by_label("As a service on Linux (recommended)", exact=True)).to_be_checked()
+    expect(service).to_be_visible()
+    expect(terminal).to_be_hidden()
+    expect(service).to_contain_text("sudo pipx install --global maity")
+    install_line = service.locator("pre.paste-line").nth(3).inner_text()
+    assert install_line.startswith("printf '%s\\n' '") and " | sudo maity runner install " in install_line, install_line
+    assert install_line.endswith(" --code-file -"), install_line
+    # The check comes after the tool's and the forge's login (review A2144), the last line.
+    lines = service.locator("pre.paste-line").all_inner_texts()
+    assert lines[-1] == (
+        "cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml"
+    ), lines
+    service_config = service.locator(".runner-config").inner_text()
+    assert 'state_dir = "/var/lib/maity-runner/state"' in service_config, service_config
+    assert f'url = "{run.base}"' in service_config and "install = true" in service_config, service_config
+    run.shot(page, "runners-pairing-service")
+    run.a11y(page, "runners, pairing as a service")
+    # On a phone the service's long commands wrap; the page does not widen.
+    page.set_viewport_size({"width": 390, "height": 844})
+    widths = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+    assert widths[0] <= widths[1], f"the service's steps widen the page on a phone: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.get_by_label("In a terminal, to try it out (the only way on macOS)", exact=True).check()
+    expect(terminal).to_be_visible()
+    expect(service).to_be_hidden()
+    expect(terminal).to_contain_text("maity runner pair")
+    config = terminal.locator(".runner-config").inner_text()
     assert f'url = "{run.base}"' in config and '"owner/e2e-alpha"' in config and '"owner/e2e-beta"' in config, (
         config
     )
-    pair_line = steps.locator("pre.paste-line").nth(1).inner_text()
-    assert pair_line.startswith("maity runner pair ") and pair_line not in config, pair_line
+    pair_line = terminal.locator("pre.paste-line").nth(1).inner_text()
+    assert " | maity runner pair " in pair_line and pair_line not in config, pair_line
+    # The install line and the pair line carry the same pairing: the URL and code of one enrollment.
+    assert pairing_of(pair_line) == pairing_of(install_line), (pair_line, install_line)
     run.shot(page, "runners-pairing")
     run.a11y(page, "runners, pairing")
+    page.get_by_label("As a service on Linux (recommended)", exact=True).check()
+    expect(service).to_be_visible()
+    expect(terminal).to_be_hidden()
     status, headers, credential = pair_exchange(run, pair_line)
     assert status == 201 and credential.startswith("mty1.rcrd-"), (status, credential[:12])
     assert headers.get("maity-runner-id", "").startswith("rnr-"), headers
@@ -5211,7 +5254,11 @@ def runners_step(run: Run, page: Page) -> None:
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     card.get_by_role("button", name="Re-pair", exact=True).click()
     expect(page.locator(".pair-steps")).to_contain_text("Keep your existing configuration")
-    repair = page.locator(".pair-steps pre.paste-line").nth(1).inner_text()
+    # A re-pair offers the service's way first: pair again as maity-runner with install's file.
+    expect(page.locator(".pair-way-service")).to_be_visible()
+    repair = page.locator(".pair-way-service .pair-line-step pre.paste-line").inner_text()
+    assert " | sudo -u maity-runner -H maity runner pair " in repair, repair
+    assert repair.endswith(" --config /etc/maity-runner/runner.toml"), repair
     status, headers2, _ = pair_exchange(run, repair)
     assert status == 201 and headers2["maity-runner-id"] == headers["maity-runner-id"], headers2
     page.goto(f"{run.base}/all")
@@ -6546,6 +6593,9 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     expect(runner_options.first).to_contain_text(name + " · offline")
     expect(fields.locator("#placement-new-tool option")).to_have_count(0)
     expect(form).to_contain_text("The runner offers no tool there that is installed.")
+    # Why there is none, under the empty choice (tsk-2k0jcaxfd0ja): the answer above names
+    # repositories and no harness.
+    expect(form.locator(".placement-new-no-tool-why")).to_have_text("The runner's configuration names no tool for this target.")
     # What a placement does not take is hidden; the button says what it does.
     expect(form.locator("#join-ttl")).to_be_hidden()
     start = form.get_by_role("button", name="Start on the runner", exact=True)
