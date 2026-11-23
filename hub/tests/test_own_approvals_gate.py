@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import own_approvals, review_delivery
+from maity_hub import own_approvals
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -857,30 +857,35 @@ def _human_member(make_client: ClientFactory, engine: Engine, handle: str, role:
 
 
 def test_the_pull_request_is_resolved_once_however_many_results_name_it(
-    owner: flow.Human,
-    make_client: ClientFactory,
-    migrated: Engine,
-    monkeypatch: pytest.MonkeyPatch,
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     """#2145 review A2429: results named by their pull request alone all name the card's own
     pull request, so whether it is this card's is asked once per count, not once per result
-    (the resolution reads the project's reported cards). One count resolves it once, for one
-    such result as for three; with none, not at all."""
+    (the resolution reads the project's reported cards, `cards.naming_pr`). The SQL read of
+    reported cards one count sends: none without such a result, one for three of them."""
+    from sqlalchemy import event as sa_event
+
     card_id = _outsiders_card(owner, make_client, migrated)
-    real = review_delivery._card
-    calls: list[str] = []
 
-    def counted(*args: Any, **kwargs: Any) -> Any:
-        calls.append("resolve")
-        return real(*args, **kwargs)
+    def reported_card_reads() -> tuple[int, int]:
+        seen: list[str] = []
 
-    monkeypatch.setattr(review_delivery, "_card", counted)
-    assert _count(migrated, card_id) == 0 and calls == []  # no such result: no resolution
+        def capture(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+            flat = " ".join(statement.split())
+            if "FROM card WHERE" in flat and "card.report IS NOT NULL" in flat:
+                seen.append(flat)
+
+        sa_event.listen(migrated, "before_cursor_execute", capture)
+        try:
+            counted = _count(migrated, card_id)
+        finally:
+            sa_event.remove(migrated, "before_cursor_execute", capture)
+        return counted, len(seen)
+
+    assert reported_card_reads() == (0, 0)  # no result named by its pull request: no read
     for role in ("reviewer", "reviewer", "tester"):
         _subject_only(flow.agent(make_client, owner, role=role))
-    calls.clear()
-    assert _count(migrated, card_id) == 3
-    assert calls == ["resolve"]
+    assert reported_card_reads() == (3, 1)
 
 
 def test_an_approval_named_by_its_pull_request_alone_counts_on_a_move(

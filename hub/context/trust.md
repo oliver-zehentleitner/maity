@@ -296,8 +296,10 @@ owner's account live), and `event.review_pr`, the pull request number
 its subject `#<n>` names. A result without the record (stored before
 the column) counts as none. The card's results are read through
 `subject_id` and `review_pr` with the card's current pull request, so
-the read is bounded by the card's own results, not the project's chat;
-each result tied only by `#<n>` is still resolved to its card exactly.
+those event reads are bounded by the card's own results, not the
+project's chat; whether that pull request is this card's is resolved
+exactly, once per count, by one scan of the project's reported cards,
+and only when a result tied only by `#<n>` exists (Cost, below).
 
 An outside agent is read on the membership the check is about: its
 active row, else its most recent (a reporter who has left). Trust
@@ -343,11 +345,12 @@ They are read in two queries, merged by seq, each seeking its own index:
 a result tied to the card by `task_id` through `ix_event_subject`
 (`project_id`, `subject_type` `task`, `subject_id`), and one tied only
 by a subject `#<n>` through `ix_event_review_pr` (`review_pr`,
-`project_id`) with the card's current pull request; every such result
-names that one pull request, so whether it is this card's is resolved
-once per count, and only when such a result exists (the resolution reads
-the project's reported cards; once per result it would repeat that read,
-#2145 review A2429). So the read is bounded by the card's own results. One
+`project_id`) with the card's current pull request. These two event reads
+are bounded by the card's own results. Every result named by its pull
+request names that one pull request, so whether it is this card's is
+resolved once per count, and only when such a result exists: that
+resolution reads the project's reported cards (`cards.naming_pr`) once,
+where once per result would repeat it (#2145 reviews A2429, A2442). One
 query with an `OR` across both would leave neither index usable. The
 index leads with `review_pr`: led by `project_id`, PostgreSQL's planner
 took it for reads filtered on the project alone (the chat sweep) and
