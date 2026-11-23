@@ -38,7 +38,8 @@ URL = "https://github.com/maintainer/maity"
 def _test_clock() -> None:
     """`ticker_merge` dates its items from test_swarm's NOW and `public_prs` cuts its window at
     the clock: without test_swarm's clock (its autouse fixture is not imported here) the window
-    ended on the calendar day, and the items fell out of it 30 days after NOW (tsk-1z1h4rwyz0qf).
+    ended on the calendar day, and the items, dated NOW - 1 day, fell out of it 29 days after NOW
+    (tsk-1z1h4rwyz0qf).
     The conftest resets the clock after each test."""
     clock.set_source(lambda: NOW)
 

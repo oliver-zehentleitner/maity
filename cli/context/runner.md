@@ -1638,7 +1638,14 @@ pull request's body predates the last two rows):
   of `workspace.owned`; `workspace.prepare`'s existing-clone branch;
 - every other `AsUser.exists` caller (adapters, commands, operate,
   supervisor's start checks, tmux, workspace) gets the 3.13 meaning
-  back through the same method;
+  back through the same method; `check`'s host warnings of
+  tsk-2k0jcaxfd0ja (an `agent_path` entry, the gh login, a granted
+  program) go through `AsUser.exists` and `capabilities.which` as the
+  agents' user too. A path that cannot be looked at is said as not
+  checked (the gh login, an `agent_path` entry), never as missing, a
+  granted program whose look fails is not mentioned, and without working
+  sudo to the agents' user none of the three is looked at (reviews A2159,
+  A2160, A2167 and A2168 of #2125);
 - left on pathlib, since a quiet False only does less: `operate.py`'s
   gc walk of `.scratch`, `skills.py` over the runner's own cache,
   `asuser.link`, the runner's own state_dir checks, and the
@@ -3735,6 +3742,90 @@ of `maity runner unit`.
 Every call that touches the system goes through one `Host` seam, so the tests
 run without root or systemd.
 
+## Without `--config`, a missing default names the service's file; it is never read in its place
+
+**Id:** 65dba095-8677-48cd-baf3-e6ff9e7c3ad8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2k0jcaxfd0ja, point 9 ("should find `/etc/maity-runner/runner.toml` or say to pass it"; on a fresh Debian host `maity runner tools` without `--config` failed on the service layout); `cli/src/maity/runner/config.py` (`_missing`). The choice between the two is the implementer's.
+**Revisit when:** `maity runner` learns which configuration a running service uses (for example from the unit), or a user-level service layout exists
+
+When `~/.config/maity-runner/runner.toml` is missing, no `--config` and no
+`MAITY_RUNNER_CONFIG` was given, and `/etc/maity-runner/runner.toml` exists,
+the error names that file and says to pass `--config` as `maity-runner`.
+The commands still read only the default.
+
+- Rejected: falling back to `/etc/maity-runner/runner.toml`. The person
+  running the command may be another user than the service's (an operator
+  with a terminal runner of their own, or root), and `stop-all`, `gc --yes`
+  or `tools rollback` would then act on the service's state with that user's
+  rights and home; the state directory and the tools directory resolve under
+  `~` of whoever runs it. Naming the file keeps the choice with the person.
+- Rejected: leaving the message as it was. It sent the person to write a
+  file that the service does not read.
+
+## `maity gh` looks gh up at each call
+
+**Id:** b3608a60-0360-48e6-8d2a-08495c528175
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2k0jcaxfd0ja, point 15 (on a fresh host gh was installed after the placements started, and `maity gh pr create` said the repository grants no pull requests; the cause inferred, not verified); the lead's decision on the card, 2026-11-23 (look up at each call, keep the checks, a test); `cli/src/maity/ghpr.py` (`find_gh`), `cli/src/maity/runner/adapters.py` (`pull_requests_record`)
+**Revisit when:** the runner hands sessions a forge credential of their own (tsk-anek9pkb5r82), or `maity gh` runs inside a harness's sandbox
+**See:** runner.md#placed-agents-open-their-pull-requests-through-maity-gh-pinned-to-the-clones-repository — 9f43804d-cfdc-4496-b07b-b01e65fc6410 — as of 2026-11-23
+
+The runner's `pull_requests` record names the repository and the runner's
+own `PATH` (its absolute entries), no longer the gh it found at the start,
+and it is written for a granted repository whether gh is there or not.
+`maity gh` looks gh up on that recorded `PATH` at each call. A session
+started before gh was installed finds it at its next call; until then
+`maity gh` says that gh is not installed. The checks of a recorded gh stay:
+the path comes from the runner's record, which the session cannot write;
+only absolute entries are searched; and a gh found inside the clone or the
+placement's scratch, both writable by the session, is refused.
+`ghpr.visited` resolves the path to gh as the kernel does: one component
+and one link at a time, `..` against the real directory reached so far.
+It lists every directory, link and link target on the way, the final
+file's own link chain included. Any of them inside the clone or the
+scratch, as written or resolved, refuses (reviews A2159, A2167, A2168 of
+#2125). That covers a link in the clone pointing out, a directory or
+ancestor link through it, `..` through it, an older record through a
+directory link, and a link outside that bounces through the clone. A
+session could swap any of those between the check and the start. What
+runs is the real directory reached, joined with gh's own name, and that
+directory is what `gh_env` puts first on gh's `PATH`, so no link the
+session could swap stays on the way. A link that dispatches on its own
+name (a snap's `/snap/bin/gh`, which resolves to `/usr/bin/snap`) sits in
+a directory no session writes and still starts gh. A record from an older runner, which names
+gh itself, is still taken. On Windows gh is found on the recorded `PATH`
+by a `PATHEXT` suffix (`gh.exe`), as Windows itself and `proc.program`
+find a program; a bare `gh` there is not installed, which the tests'
+stand-in had to follow (cli-windows on #2125). On an ssh target the recorded entries are the
+runner host's own `PATH`, searched on the target. The record is read up to
+`ghpr.RECORD_MAX` (64 KiB); a longer `PATH` is cut to its first whole
+entries when the runner writes it (review A2160 of #2125). The lookup
+at each call and the kept checks are the lead's decision (confirmed); the
+incident's cause and the not-added check below are inferred.
+
+- Rejected: the runner re-reading gh at every tick and rewriting the
+  record: simpler to look up where it is used, and nothing goes stale.
+- Rejected: looking gh up on the session's own `PATH`: the session shapes
+  its environment, the runner's record it cannot.
+- Rejected: `runner check` telling the operator to restart the placements
+  after installing gh (the first version of point 15): it left the session
+  without `maity gh` until a restart nobody knew to make.
+- Not added: refusing a gh in any directory the agents' user can write
+  (such as `~/.local/bin` in the `single` layout), which today's recorded
+  gh did not refuse either and which would refuse a gh installed there on
+  purpose. Why the place check is enough (security review A2169 of
+  #2125): only a sandboxed session's writes matter here, since an
+  unsandboxed harness already runs any code as the agents' user and needs
+  no planted gh. A sandboxed Claude Code writes only its clone, its scratch
+  and its temporary leaf. The first two are checked. The runner's recorded
+  `PATH` names no temporary leaf, and the service's `PATH` (systemd's
+  default) holds root-owned directories only.
+
 ## A failed clone says why in the runner's log, not in the report
 
 **Id:** e814c00b-fde7-4c0a-a3ca-f7b3510900df
@@ -4561,8 +4652,9 @@ repository.
 **Known gap:** without the harness's sandbox (opencode, Claude Code off
 Linux or without bwrap and socat), nothing keeps repository code from
 running gh or rewriting `.git/maity/pull_requests`: the deny rules are no
-boundary there. On an ssh target, gh must be at the path the runner found
-on its own host, or `maity gh` refuses.
+boundary there. On an ssh target, gh must be in a directory of the runner's
+own `PATH`, where `maity gh` looks it up at each call (the entry
+"`maity gh` looks gh up at each call"), or `maity gh` refuses.
 
 Closed gap (review of #1663, round 5): under the harness's sandbox, code
 that can write the clone's root could exchange `.git` with a directory

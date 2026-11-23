@@ -1,8 +1,8 @@
 """The public lists ask whether a project has a page once for all the rows they read
-(`public_projects.served_of`) and read the full names once (`public_projects.full_names`):
+(`public_projects.served_of`) and read the full names once (`namespace.full_names`):
 `/explore`, an organisation's page, a person's and an agent's projects and the landing page's
 counters cost the same statements for 3 projects as for 30, and each IN list carries at most
-`public_projects.BATCH` ids. `served` for one project judges the row it is given, as a PATCH asks
+`chunks.CHUNK` ids. `served` for one project judges the row it is given, as a PATCH asks
 it of the project as it will be (§6.1, §6.2, §16.9)."""
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import (
+    chunks,
     clock,
     events,
     landing,
@@ -289,7 +290,7 @@ def test_the_public_lists_ask_in_batches_of_a_bounded_size(
     """`/explore` and the landing page's count judge every project with a page on the instance,
     which no quota bounds: an IN list over all of them would fail past the engine's limit on
     bound parameters ("too many SQL variables", review A1832). Each list asks in batches of
-    `public_projects.BATCH` ids instead: with the batch patched to 2 and SQLite's limit lowered
+    `chunks.CHUNK` ids instead: with the batch patched to 2 and SQLite's limit lowered
     to 4 for the call, every list answers what it answers in one batch, and costs one statement
     more for each further batch of each question."""
     if migrated.dialect.name != "sqlite":
@@ -324,7 +325,7 @@ def test_the_public_lists_ask_in_batches_of_a_bounded_size(
         return answers, counts
 
     whole, one_batch = read(None)
-    monkeypatch.setattr(public_projects, "BATCH", 2)
+    monkeypatch.setattr(chunks, "CHUNK", 2)
     batched, two_each = read(4)
     assert batched == whole
     # the 9 and the world's own project, which the owner and the agent are members of
