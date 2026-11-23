@@ -581,7 +581,7 @@ Without these lines nothing changes: the runner uses the tool it finds on the ag
 
 ### Which Claude Code version the update takes
 
-Claude Code's sandbox behaviour is checked for one version at a time, by a probe someone runs by hand and a pull request that records the version in `maity` (`capabilities.CHECKED`, 2.1.325 in this release). A runner has one Claude Code for all its placements, so the choice is per runner, under `[harness.claude-code]`:
+Claude Code's sandbox behaviour is checked for one version at a time, by a probe someone runs by hand and a pull request that records the version in `maity` (`capabilities.CHECKED`, 2.1.330 in this release). A runner has one Claude Code for all its placements, so the choice is per runner, under `[harness.claude-code]`:
 
 ```toml
 [harness.claude-code]
@@ -590,7 +590,7 @@ update = "daily"
 track = "checked"   # or "newest"; default "checked"
 ```
 
-- **`checked`** (the default, stability first): the daily check and "Update now" install at most the checked version. When Anthropic's newest is later, the runner installs the checked version itself, or keeps it when it is already in use; when the newest is not later, it installs the newest as before. `maity runner tools` then shows Anthropic's newest as `latest` and the target in brackets (`latest 2.1.330 (held at 2.1.325: track = checked)`), and the runner's log says the same after each check. The hub sees what it saw before: `latest` is Anthropic's newest, and a runner at its held version reports `current`, since nothing is pending; the hold itself is shown only on the runner. When a later `maity` raises the checked version, the next check or "Update now" takes it.
+- **`checked`** (the default, stability first): the daily check and "Update now" install at most the checked version. When Anthropic's newest is later, the runner installs the checked version itself, or keeps it when it is already in use; when the newest is not later, it installs the newest as before. `maity runner tools` then shows Anthropic's newest as `latest` and the target in brackets (`latest 2.1.335 (held at 2.1.330: track = checked)`), and the runner's log says the same after each check. The hub sees what it saw before: `latest` is Anthropic's newest, and a runner at its held version reports `current`, since nothing is pending; the hold itself is shown only on the runner. When a later `maity` raises the checked version, the next check or "Update now" takes it.
 - **`newest`**: every new Claude Code, as before this setting existed, unchecked until a later `maity` checks it.
 
 **This changes existing runners:** one with `update = "daily"` and no `track` now holds at the checked version and stops taking newer releases, one already above it stays where it is and is warned until the checked version catches up, and `track = "newest"` brings back the old behaviour.

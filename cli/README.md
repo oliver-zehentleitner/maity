@@ -1019,7 +1019,8 @@ the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
 that every agent would inherit, a Claude Code version other than the one
-its sandbox was checked with (a warning), a configuration file others could
+its sandbox was checked with (a warning; a newer one only a note under
+`track = "newest"`), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
 (`--offline` skips it). On the local backend it also warns about what the
 host lacks for the configuration: an `agent_path` entry that does not
@@ -1063,6 +1064,11 @@ manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
 GitHub, and refuses otherwise. `maity runner tools` lists the versions,
 `maity runner tools rollback <tool>` swaps the kept one in for new
 sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`track` under `[harness.claude-code]` chooses what its update takes:
+`"checked"` (the default) at most the version whose sandbox was checked,
+never going back on its own from a newer one, `"newest"` every new
+release, which `check` then only notes
+([`docs/runners.md`](../docs/runners.md#which-claude-code-version-the-update-takes)).
 `[maity] update` is not carried out yet; `check` and `serve` refuse it.
 
 Repository entries and the project's repository URL are compared after
@@ -1550,10 +1556,12 @@ does not rely on how Claude Code's sandbox exclusion treats a call with
 something in front of `maity`. The hook needs Claude Code 2.1.295 or
 later; the version whose sandbox was last checked is recorded, and it
 moves only after `cli/tests/claude_sandbox_probe.py`, run by hand where
-Claude Code is signed in, passed for the new version. With
-another Claude Code version the runner still starts the agent, and
-`maity runner check` and the runner's log say that the version was not
-checked. A repository's grant may only add plain
+Claude Code is signed in, passed for the new version. A runner that
+updates Claude Code installs at most that version unless its
+`track = "newest"`. With another Claude Code version the runner still
+starts the agent, and `maity runner check` and the runner's log say that
+the version was not checked: a warning, or a note for a newer one under
+`track = "newest"`. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
 is read. Not covered: Codex. Where the hook does not hold, such a call

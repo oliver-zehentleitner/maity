@@ -2219,7 +2219,7 @@ those settings switch the hook off.
 **Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17; the probe's use from its unmerged branch in security round 5 (S200), 2026-11-20 (996b6f48); the lead's order to land it fresh on main, its first pull request closed as superseded, and to raise the checked version to 2.1.330 only after a run from the new head passes on that version, as installed on a runner host, 2026-11-22; the lead's decision that the same run also probes further prefixed lines live, from a list kept out of the repository, 2026-11-22; security's review of that list and its order that such a line be checked as testable first and pass only on positive evidence, then that every step of the probe do so, 2026-11-22; Claude Code 2.1.330's wording of a blocking PreToolUse hook and of a permission refusal, read from its binary, 2026-11-22; the security review of #2111 (A2119), which found the private lines printed in step titles, 2026-11-22; the reviews of #2111 (A2117, A2118, A2119), which found verdicts that passed without their evidence and settings changes that could be left behind, and the lead's order to fix them before the second run, 2026-11-22; the delta reviews A2120 and A2121 and the lead's conditions for the second run (the minimal run writes nothing outside its scratch, recovery only with the flags and after the process check, the files' modes kept), 2026-11-22; the delta reviews A2124 and A2129 (Claude Code's own session transcript in the home, tool names and error flags from the stream, the earlier copy format, a linked settings file) and the lead's choice to turn session persistence off, 2026-11-22; Claude Code 2.1.330's option list, read from its binary: `--no-session-persistence`, "Don't save sessions to disk; they can't be resumed (only works with --print)", 2026-11-22; the delta reviews A2133, A2134, A2135 and A2136 (a private line stored JSON-escaped in the home went unseen, a file name that could print private text, a recovery entered with `--managed` that replaced linked user settings, a copy without its text, the prompt on the command line, a session file the line check would not match, citing anthropics/claude-code issue 49565) and the review lead's round-4 list, which ruled that a file not scanned fails the run, 2026-11-23; Claude Code 2.1.330's getInputPrompt and its "Input must be provided either through stdin or as a prompt argument when using --print", read from its binary, 2026-11-23; the second minimum run from head c12b672e on 2.1.330, which showed which kinds of files Claude Code writes in the home and the home check's blind spot for the operator's own transcript, reported by ops on the card, 2026-11-23
 **See:** runner.md#the-sandbox-checked-claude-code-version-is-raised-to-21325 — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-22
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-22
-**Revisit when:** a scheduled job with its own key runs the probe against each new release (ae02241e, not decided); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
+**Revisit when:** a scheduled job with its own key runs the probe against each new release (rejected for now, c1b5b9b9); the probe's checks no longer match what the runner relies on in the sandbox entries of this file, or the supervisor starts a Claude Code placement with something the probe's launch leaves out
 
 `cli/tests/claude_sandbox_probe.py` re-checks what the runner relies on in
 Claude Code's sandbox, for the installed version: a call with something in
@@ -2325,7 +2325,8 @@ that prefixed lines were probed live.
 
 **Id:** ae02241e-aed4-44e3-9eb7-9550cd006fb2
 **Type:** decision
-**Status:** open
+**Status:** superseded
+**Superseded by:** c1b5b9b9-5d7d-4db2-aea2-d74482308cb4
 **Evidence:** confirmed
 **Source:** card tsk-nnmgvz773z5n (the proposal in its notes, put to the owner through the lead, not decided), 2026-11-17; the lead's order to record it as a proposal in the pull request that lands the probe, 2026-11-22; the runner's managed update and its kept previous version (4c984f97)
 **See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-22
@@ -2356,6 +2357,77 @@ versions daily without a check.
 
 **Rejected alternatives:** unknown — the owner has not decided between
 (a), (b), both or neither.
+
+## The runner's Claude Code update takes at most the checked version, unless its owner chooses the newest
+
+**Id:** c1b5b9b9-5d7d-4db2-aea2-d74482308cb4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_note`, `above_checked`), `config.py` (`track`)
+**See:** runner.md#how-the-checked-claude-code-version-keeps-up-with-the-runners-daily-update — ae02241e-aed4-44e3-9eb7-9550cd006fb2 — as of 2026-11-23
+**See:** runner.md#a-checked-claude-code-version-is-raised-only-on-the-probes-output-from-a-signed-in-machine — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-23
+**See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-23
+**Revisit when:** the probe can run without a person's model login, so a scheduled job could raise `CHECKED` (the rejected alternative below); a second harness gets a checked version; the hub or dashboard needs to show the hold (a state or field for it is a contract change)
+
+The runner's configuration chooses, per runner, which Claude Code version
+its managed update takes: `track = "checked"` under `[harness.claude-code]`,
+the default, installs at most `capabilities.CHECKED`; `track = "newest"`
+takes every new release, as before. With `newest`, `maity runner check`
+and the runner's log name a version above `CHECKED` as a note, since the
+operator chose it; with `checked`, such a version stays a warning. An
+older or unknown version is a warning under both. `CHECKED` keeps rising
+as before: the probe run by hand, then a pull request (92a0cb54). This
+answers ae02241e with its option (b), made a choice.
+
+What is the owner's (confirmed): the choice itself, per runner, the two
+values, `checked` as the default for stability, the note under `newest`,
+`CHECKED` raised by hand, no daily CI job now, and a rollback that keeps
+working under both values. What this implementation chose within that
+(inferred, for review):
+
+- **The target.** The vendor serves its newest version and each
+  version's signed manifest, but no list of versions. So under `checked`
+  the update installs `CHECKED` itself when the vendor's newest is
+  later, and the newest when it is not. `CHECKED` is a release the probe
+  ran against, so it exists to fetch.
+- **No step back on its own.** A version in use above `CHECKED` (after a
+  switch from `newest`, or one installed before this setting) stays in
+  use. `check` warns and names the way back: a rollback when the kept
+  version is at or below `CHECKED`, or `track = "newest"` to keep it. A
+  silent downgrade would change what new sessions start with, unasked,
+  and the operator may have had a reason for the newer one.
+- **The hub sees no hold.** `latest` in `capabilities.tools` stays the
+  vendor's newest that the last check found, as the contract defines it,
+  and a runner at its held version reports `current`: nothing is pending,
+  and the hold is the operator's setting, not an update waiting to run.
+  `rolled_back` is measured against the held version, so a second
+  rollback back to it reports `current` again. The held version is shown
+  only on the runner (`maity runner tools`, `check`, the log). Rejected:
+  reporting the held version as `latest`, which would have changed what
+  the field means without a contract change (the lead's ruling); and
+  `rolled_back` for a held runner, which the contract reserves for an
+  operator's rollback.
+- **`track` only on Claude Code.** It is the one harness with a checked
+  version. On any other harness `track` is a configuration error, as
+  with any unknown key.
+
+**Reason:** the runner took each new Claude Code daily, while `CHECKED`
+moves only when someone with a signed-in Claude Code runs the probe. So
+`maity runner check` warned on every runner whose update ran ahead of
+it. A cap removes the gap where stability matters. The choice keeps the
+newest available to an operator who wants it, and that operator's
+choice is not reported as a fault.
+
+**Rejected alternatives:**
+- A scheduled CI job that probes each new release with a key of its
+  own and opens the pull request that raises `CHECKED` (ae02241e's
+  option (a)): out of scope for now; `CHECKED` is still raised by hand.
+- A cap with no choice: every runner held at `CHECKED`, so no operator
+  could take a newer release before the next probe.
+- A setting per placement: a runner has one managed Claude Code for all
+  its placements, so a per-placement value could not be honoured. Two
+  placements could ask for different versions of the one binary.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
