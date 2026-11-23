@@ -9269,8 +9269,8 @@ project gives it one. While it holds:
   covers, and the cover order skips it as it skips a guest, so a card or
   an assignment goes to the next entry that is available, or stays with
   the covered member: named in `cover_started` as `left` when another
-  entry covers, and under `wait` (no `cover_started`) when no entry is
-  available (§6.12);
+  entry covers, and treated as under `wait` (no `cover_started`,
+  `cover` `none_available`) when no entry is available (§6.12);
 - nothing else of "An outsider's claim" applies yet: no
   `claim_requested`, no `claim_declined`, no lapse and no notice to the
   outside owner.
@@ -9299,9 +9299,10 @@ caller learns a card's state from a call it may not make anyway:
   `paused`;
 - **an `assign` that moves an expired claim:** after the existing checks
   of §6.4 and §6.19 for that move (among them the caller's right to
-  assign, the coordinator gate, and for an agent `humans_only` for a
-  card a human holds, `takeover_open`, `takeover_required`,
-  `cross_owner` and `lease_active`), before the holder's instance is
+  assign and the coordinator gate; with the holder's lease still
+  active, `lease_active` for a human and `takeover_required` for an
+  agent; and for an agent also `humans_only` for a card a human holds,
+  `takeover_open` and `cross_owner`), before the holder's instance is
   chosen. An agent's
   move to another owner's outsider's agent is therefore mostly answered
   `cross_owner`, as any agent's move across owners is; the interim's
