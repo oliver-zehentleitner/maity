@@ -215,6 +215,150 @@ def test_a_merged_card_blocked_from_review_is_gated_too(
 # --- what counts -----------------------------------------------------------------------------
 
 
+def _count(engine: Engine, card_id: str) -> int:
+    with engine.connect() as conn:
+        card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+        project = conn.execute(select(t.project)).one()
+        return own_approvals.counted(conn, card, project)
+
+
+def _row(engine: Engine, agent_id: str) -> int:
+    with engine.connect() as conn:
+        found: int = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.agent_id == agent_id, t.membership.c.removed_at.is_(None)
+            )
+        ).scalar_one()
+    return found
+
+
+def _rejoined(engine: Engine, agent_id: str, role: str = "reviewer") -> int:
+    """The agent's row removed (§6.2: it stays, with its dates) and a member's fresh join of
+    the same agent: a new row, neither `outside` nor marked."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id, t.membership.c.removed_at.is_(None))
+            .values(active=None, removed_at=factory.at("2026-11-20T10:00:00Z"))
+        )
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    return factory.membership(engine, project_id, role, agent_id=agent_id)
+
+
+def test_an_approve_counts_only_while_its_author_may_review_or_test(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An own agent that no longer reviews or tests (here demoted to coder) gives no own
+    approval, as a signature would not stand (§6.4)."""
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    _review(judge, card_id)
+    assert _count(migrated, card_id) == 1
+    row = _row(migrated, judge.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == row)
+            .values(role="coder", role_base="coder")
+        )
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_later_result_withdraws_an_approve_across_a_rejoin(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The latest result is the author's, not its membership row's: a `changes` sent from a
+    later membership withdraws the `approve` sent from an earlier one."""
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    _review(judge, card_id)
+    _review(judge, card_id, verdict="changes")
+    later = _rejoined(migrated, judge.id)
+    with migrated.begin() as conn:  # the `changes` came from the new row
+        last = conn.execute(
+            select(t.event.c.seq)
+            .where(t.event.c.kind == "message", t.event.c.subject_id == card_id)
+            .order_by(t.event.c.seq.desc())
+        ).first()
+        assert last is not None
+        conn.execute(update(t.event).where(t.event.c.seq == last.seq).values(actor_membership=later))
+    assert _count(migrated, card_id) == 0
+
+
+def test_an_approve_from_an_outside_membership_never_becomes_an_own_one(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An agent that sent its `approve` while it was outside (its membership marked) and later
+    joined afresh as a member's agent: the old `approve` stays an outsider's (the lead's
+    ruling of 2026-11-23)."""
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    judge = flow.agent(make_client, owner, role="reviewer")
+    row = _row(migrated, judge.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == row).values(joined_outside=True)
+        )
+    _review(judge, card_id)
+    _rejoined(migrated, judge.id)
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        assert not own_approvals.outside_agent(conn, project, judge.id)  # its own now
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_signature_counts_only_for_the_report_it_was_given_on(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="reviewer_and_tester")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    reviewer = flow.human(make_client, migrated, "human-reviewer")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "reviewer", human_id=reviewer.id)
+    assert _done(reviewer, card_id, approve="review").status_code == 200
+    assert _count(migrated, card_id) == 1
+    with migrated.begin() as conn:  # a later report on the card, the signature left in place
+        report = conn.execute(select(t.card.c.report).where(t.card.c.id == card_id)).scalar_one()
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card_id)
+            .values(report={**report, "revision": int(report.get("revision") or 1) + 1})
+        )
+    assert _count(migrated, card_id) == 0
+
+
+def test_a_signature_whose_signer_no_longer_stands_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="reviewer_and_tester")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    reviewer = flow.human(make_client, migrated, "leaving-reviewer")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "reviewer", human_id=reviewer.id)
+    assert _done(reviewer, card_id, approve="review").status_code == 200
+    with migrated.begin() as conn:  # isolated, its signature left on the card
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == reviewer.id)
+            .values(isolated_since=factory.at("2026-11-21T10:00:00Z"))
+        )
+    assert _count(migrated, card_id) == 0
+
+
 def test_neither_an_outsiders_approval_nor_its_owners_counts(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
