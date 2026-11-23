@@ -594,7 +594,7 @@ existence is the namespace owner's).
 
 **Id:** 33f520b9-5aaa-4aed-96f4-e90bf3749c56
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26; the pricing remark on private organisations removed on 2026-10-31 (request req-7dq9c1xw5ka2)
 **Revisit when:** private organisations are taken up, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")

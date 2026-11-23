@@ -30,7 +30,7 @@ descriptions repeats the incident it is meant to prevent.
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
 **Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
@@ -88,6 +88,71 @@ instance grows.
   repositories, and `repo` can write.
 - Using any project member's grant: a member could make the hub read a
   repository with someone else's access by naming it in a project.
+
+## An installation on a GitHub organisation is linked by one of its owners, re-checked by polling, and stays that human's grant
+
+**Id:** 40057878-5f35-44fa-8b67-2e1820b59d38
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner's adoption of the contract change is requested and pending; contract `docs/api.md` §11.4, §6.26
+**Verification:** uncorroborated — contract only, not built yet: the hub still refuses an organisation installation (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
+**See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-23
+**See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-23
+**Revisit when:** the owner does not adopt the contract change; the forge's events are to replace the re-check; owners other than the first need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
+
+An installation of the instance's GitHub App on a GitHub organisation
+is linked when the human completing the link is, by the forge's answer
+to their own one-time user token, an active owner of that organisation
+(role `admin`, state `active`, and the organisation's id the
+installation account's id); anyone else gets `not_organisation_admin`.
+The link is that human's grant, like an installation on their own
+account: it serves their projects and the projects of a Maity
+organisation whose repository they confirmed as one of its owners
+(`confirmed_by`, unchanged). The forge user's id is kept on the link;
+the user token is still discarded. Whether the human is still an owner
+is re-checked by the hub with an installation token when it chooses a
+project's source and on the forge settings listing (`GET /me/forge`),
+in both cases at most every 10 minutes per link and at once after a
+refusal; a listing within 10 minutes of the last check makes no forge
+call and shows the last known status. A failed check sets the
+link `not_admin` and the projects' reason `installation_not_admin`
+until a check passes again. One human holds an installation's link at
+a time, as before. The App asks for the organisation permission
+Members, read-only; nothing else turns on by itself, so there is no
+instance switch. Tokens stay per installation, not per repository.
+
+**Reason:** teams keep their repositories on GitHub organisations, and
+the only way to read them so far was a fine-grained token per person.
+The owner check is the organisation's counterpart of the user check of
+the entry linked above: the right to install the App is not enough on
+an organisation, and the installation id from the redirect is never
+trusted. Keeping the grant a person's needs no new grant holder and
+leaves the Maity organisation rule (no grant of its own, the confirming
+owner lends theirs) as it is. Polling reuses the source choice's
+existing 10-minute refresh, and nothing activates without an owner's
+deliberate link and the organisation accepting the new permission, so a
+switch would guard nothing.
+
+**Rejected alternatives:**
+- The App's webhook (`installation`, `installation_repositories`,
+  member removal) now: a further contract change with a signature and
+  replay table of its own; polling within the existing window is
+  enough for launch.
+- Matching a Maity organisation's name to the GitHub organisation's
+  login: Maity names are first come, so anyone could register a known
+  organisation's name; no name is ever matched.
+- Letting GitHub App managers (or anyone who may install the App on
+  the organisation) link it: they need not be owners, and a copied
+  installation id would pass with one's own code.
+- Minting installation tokens per repository: not for launch; the
+  hub's reads with a grant already stay on the project's own
+  repository. Recorded here so that it can be taken up.
+- An instance switch, off by default, for organisation installations:
+  nothing switches on by itself without it.
+- Linking the installation to a Maity organisation instead of a person:
+  it would make an organisation a grant holder, which the organisation
+  entry linked above rules out.
 
 ## The instance token serves only the operator's own namespaces; every other project connects its repository itself
 
