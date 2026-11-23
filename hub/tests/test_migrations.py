@@ -2363,3 +2363,49 @@ def test_acct_lock_rows_backfills_every_human_without_one_and_its_downgrade_keep
     assert rows() == ["hum-1", "hum-2"]
     downgrade(engine, _before(engine, rev))
     assert rows() == ["hum-1", "hum-2"]
+
+
+def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_defaults(
+    engine: Engine,
+) -> None:
+    """§2.3 "Own approvals": an agent membership whose owner holds no active membership of its
+    project is marked `joined_outside`; one whose owner is a member is not, nor is a human.
+    The two policy columns stay null, which reads as 1 and `members`; the downgrade drops all
+    three columns."""
+    from sqlalchemy import inspect, select
+
+    from maity_hub import policy
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261123140000_own_approvals"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    member, stranger = factory.human(engine, "member"), factory.human(engine, "stranger")
+    project_id = factory.project(engine, "alpha")
+    factory.membership(engine, project_id, "owner", human_id=member)
+    own = factory.agent(engine, project_id, member, "coder", picture=False).agent_id
+    outside = factory.agent(engine, project_id, stranger, "coder", picture=False).agent_id
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        marked = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.joined_outside).where(
+                    t.membership.c.agent_id.is_not(None)
+                )
+            ).all()
+        )
+        humans = conn.execute(
+            select(t.membership.c.joined_outside).where(t.membership.c.human_id.is_not(None))
+        ).scalars()
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    assert marked == {own: False, outside: True}
+    assert set(humans) == {False}
+    assert (project.own_approvals, project.own_agents) == (None, None)
+    assert (policy.own_approvals(project), policy.own_agents(project)) == (1, "members")
+    downgrade(engine, _before(engine, rev))
+    columns = {c["name"] for c in inspect(engine).get_columns("membership")}
+    assert "joined_outside" not in columns
+    project_columns = {c["name"] for c in inspect(engine).get_columns("project")}
+    assert not {"own_approvals", "own_agents"} & project_columns

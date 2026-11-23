@@ -112,6 +112,10 @@ class PolicyIn(Strict):
     member_agents_max: int | None = None
     agent_owners: str | None = None  # `members` or `anyone`; never null again once set (§6.1)
     outside_roles: list[str] | None = Field(default=None, max_length=50)
+    # §6.1: an integer ≥ 1 (`0` and anything else `invalid`), and `owners`, `members` or
+    # `{"owners_of": [handle, …]}`, checked in `_apply_policy` so each refusal is named.
+    own_approvals: Any = None
+    own_agents: Any = None
 
 
 class AbsenceIn(Strict):
@@ -275,6 +279,70 @@ def _checked_restricted(
     if errors:
         raise invalid(errors)
     return {"mode": given.mode, "members": list(members)}
+
+
+MAX_OWNERS_OF = 200
+
+
+def _checked_own_agents(conn: Connection, project: Any, given: Any) -> Any:
+    """`policy.own_agents` as stored (§6.1): `owners`, `members`, or `{"owners_of": [human
+    ids]}`; otherwise the refusal's code, which `_apply_policy` names under `own_agents`.
+    The value is sent whole. A handle (current or an alias, §6.24) that resolves to a person
+    the stored list holds already is accepted as it is, member or not, so a list read and
+    sent back passes after a member has left; a new one must name a human member."""
+    if given in policy.OWN_AGENTS:
+        return given
+    if (
+        not isinstance(given, dict)
+        or set(given) != {policy.OWNERS_OF}
+        or not isinstance(given[policy.OWNERS_OF], list)
+        or not all(isinstance(h, str) for h in given[policy.OWNERS_OF])
+    ):
+        return "unknown"
+    named: list[str] = given[policy.OWNERS_OF]
+    if len(named) > MAX_OWNERS_OF:
+        return "too_many"
+    current = policy.own_agents(project)
+    held = set(current[policy.OWNERS_OF]) if isinstance(current, dict) else set()
+    picked: list[str] = []
+    for handle in named:
+        human_id = handles.human_id_of(conn, handle)
+        if human_id is None:
+            return "unknown_handle"
+        if human_id not in held and not _human_member(conn, project.id, human_id):
+            return "not_a_member"
+        if human_id not in picked:
+            picked.append(human_id)
+    return {policy.OWNERS_OF: picked}
+
+
+def _human_member(conn: Connection, project_id: str, human_id: str) -> bool:
+    return (
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.human_id == human_id,
+                t.membership.c.active.is_(True),
+            )
+        ).first()
+        is not None
+    )
+
+
+def _policy_shown(conn: Connection, value: dict[str, Any]) -> dict[str, Any]:
+    """A policy object as an event shows it: `own_agents` by handle, as the view does."""
+    return {**value, "own_agents": own_agents_view(conn, value["own_agents"])}
+
+
+def own_agents_view(conn: Connection, value: Any) -> Any:
+    """`policy.own_agents` as shown (§6.1): the picked people by their current handles."""
+    if not isinstance(value, dict):
+        return value
+    ids = list(value.get(policy.OWNERS_OF) or [])
+    found = dict(
+        conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids))).all()
+    )
+    return {policy.OWNERS_OF: [found[i] for i in ids if i in found]}
 
 
 def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode: str) -> str | None:
@@ -616,6 +684,20 @@ def _apply_policy(
         if problem is not None:
             errors["outside_roles"] = problem
         proposed["outside_roles"] = roles
+    if "own_approvals" in change.model_fields_set:
+        count = change.own_approvals
+        # An integer of at least 1, no upper bound; a bool is no number here (§6.1).
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            errors["own_approvals"] = "out_of_range"  # named plain, as outside_roles (§6.1)
+        else:
+            proposed["own_approvals"] = count
+    if "own_agents" in change.model_fields_set:
+        found = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        checked = _checked_own_agents(conn, found, change.own_agents)
+        if isinstance(checked, str) and checked not in policy.OWN_AGENTS:
+            errors["own_agents"] = checked
+        else:
+            proposed["own_agents"] = checked
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -799,6 +881,8 @@ def _serve_restricted(
     view["settings"]["restricted_access"] = restricted.served(
         conn, project, _reader(conn, project, request) if isinstance(mine, _Unread) else mine
     )
+    # Every member read passes here: `own_agents` names the picked people by handle (§6.1).
+    view["policy"]["own_agents"] = own_agents_view(conn, view["policy"]["own_agents"])
     return view
 
 
@@ -1391,8 +1475,11 @@ def patch_project(
                 "policy_changed",
                 BROADCAST,
                 {
-                    "old": policy.of(project),
-                    "new": {**policy.of(project), "keep_the_why": explicit["keep_the_why_policy"]},
+                    "old": _policy_shown(conn, policy.of(project)),
+                    "new": {
+                        **_policy_shown(conn, policy.of(project)),
+                        "keep_the_why": explicit["keep_the_why_policy"],
+                    },
                     "reason": body.reason,
                 },
                 actor=actor,
@@ -1413,7 +1500,11 @@ def patch_project(
                 project,
                 "policy_changed",
                 BROADCAST,
-                {"old": policy.of(project), "new": new_policy, "reason": body.reason},
+                {
+                    "old": _policy_shown(conn, policy.of(project)),
+                    "new": _policy_shown(conn, new_policy),
+                    "reason": body.reason,
+                },
                 actor=actor,
                 again=bumped,
             )
@@ -1599,6 +1690,8 @@ HUMANS_ONLY_POLICY = {
     "member_agents_max",
     "agent_owners",  # whether an agent's owner must be a member (§6.1, §6.2)
     "outside_roles",
+    "own_approvals",  # set by a human with project:admin (§6.1)
+    "own_agents",  # set by a human with trust owner (§6.1, `_refuse_own_agents`)
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
@@ -1684,6 +1777,10 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
         raise forbidden(message="the absence is set by the owner only")
     if given - {"absence", "reason"}:
         mine.require("project:admin")
+    # Whose agents count as the project's own is the owners' call (§6.1 `own_agents`).
+    named = body.policy.model_fields_set if "policy" in given and body.policy else set()
+    if "own_agents" in named and (mine.trust != "owner" or mine.kind != "human"):
+        raise ApiError(403, "forbidden", "own_agents is set by an owner", {"reason": "owner_only"})
     # Launch is the owner's go (§6.1): an admin human is refused too.
     moves_to_launch = body.state == "launch" and mine.project.state != "launch"
     if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):

@@ -217,3 +217,40 @@ leaves the routes as they are.
 written before the window and edited inside it stays listed with its current text, as a card's fields show the
 state the reader finds. A restricted text's current `text`, `version`, `updated_by` and `updated_at` are that
 state too. The public card page shows a public project's notes to everyone, windows have no reader there.
+
+## An agent that joined while its owner was no member stays outside: a mark set at the exchange, never cleared
+
+**Id:** 28c600cc-2b4e-4be0-ab48-00a49441c138
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ggnhdmgmkf3 (2026-11-23), the lead's go on the four-PR plan with this record in PR 1 and a contract line for it (seq 201341); the boundary with the outsider's join of tsk-enfbkj0xqq5m agreed with its coder (seq 201232, 201249); docs/api.md §2.3 "Own approvals"
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-23
+**Revisit when:** trust `outside` becomes the only way an agent of an owner who is no member joins, or §2.3 stops counting an outsider's agent whose owner has since become a member as outside
+
+`membership.joined_outside` is set at the exchange when the agent's owner
+holds no membership of the project, read under the project lock, and is
+never cleared. With trust `outside` it answers §2.3's "an outsider's
+agent whose owner has since become a member", which the owner's current
+membership alone cannot. The migration sets it once for existing agent
+memberships from the owners as they stand then.
+
+**Reason:** an agent that came in under `agent_owners: anyone` holds trust
+`member` or `guest`, and trust `outside` (the outsider's join) never marks
+it; once its owner joins, nothing else shows how it came in. One boolean
+on the membership is the smallest record, written where the membership is
+made, and needs no history table.
+
+**Lost by the migration:** an agent whose owner had already become a
+member before the column existed is not marked, since nothing recorded
+how it joined; such an agent counts as the project's own. The contract
+says so too (§2.3).
+
+**Rejected alternatives:**
+- Trust `outside` alone as the record: it marks only the outsider's join,
+  not the agents of owners from outside that came in under `anyone`.
+- Reading the membership history (when the owner joined against when the
+  agent did): the hub keeps no such history for an owner who left and
+  came back, and the check would need it on every move to `done`.
+- Clearing the mark when the owner joins: that is exactly the case §2.3
+  wants kept outside.

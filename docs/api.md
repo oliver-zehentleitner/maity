@@ -1152,6 +1152,13 @@ from a human of the project; every other card is unchanged. The words:
 - An *outside agent* is an agent with trust `outside` or whose owner
   is no member (§6.2, "An agent whose owner is no member"), an
   outsider's agent whose owner has since become a member included.
+  The hub knows the last case from the membership: trust `outside`,
+  which never changes after the exchange, or a mark it sets at the
+  exchange when the agent's owner holds no membership of the project
+  then, and never clears (`joined_outside`, not shown in any view). For
+  agent memberships made before the hub kept that mark, the upgrade sets
+  it once from the owners as they stood then, so an agent whose owner
+  had already become a member by then is not marked.
 - *Outsiders' work* is a card that an outside agent holds, or whose
   current report (§6.6) an outside agent filed (`report.reported_by`).
   It is judged at each check, as the card and its members stand then:
