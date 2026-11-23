@@ -20,7 +20,6 @@ from maity_hub import agent_owners, cards, policy, review_delivery, scopes
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 
-OUTSIDE_TRUST = scopes.OUTSIDE  # H1's trust, one name for it
 REASON = "own_approvals"
 # The scopes whose holder may approve a card's head (§6.4, the signatures).
 SIGNING_SCOPES = ("tasks:review", "tasks:test")
@@ -59,7 +58,7 @@ def outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
         )
         .limit(1)
     ).first()
-    if row is not None and (row.trust == OUTSIDE_TRUST or row.joined_outside):
+    if row is not None and (row.trust == scopes.OUTSIDE or row.joined_outside):
         return True
     # An owner whose account is suspended or deleted makes no agent the project's own (the
     # lead's ruling of 2026-11-23): its agent's work is gated, failing closed.
@@ -134,7 +133,7 @@ def signer_when_posted(conn: Connection, project: Any, row: Any, bridged: bool) 
         return False
     if kind == "human":
         return _live_account(conn, str(row.human_id))
-    if row.trust == OUTSIDE_TRUST or row.joined_outside:
+    if row.trust == scopes.OUTSIDE or row.joined_outside:
         return False
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == row.agent_id)
