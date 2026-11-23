@@ -479,3 +479,35 @@ in both directions.
 - Fixing the growing routes here: the card keeps this change to tests and CI; each fix is its
   own card.
 - A tolerance of a few statements: hides a real read per row, as in 6063bcb5.
+
+## A test with fixed dates pins the hub clock the code under test reads
+
+**Id:** 571c40ee-8ef0-45b0-bd4a-413a5da59261
+**Type:** constraint
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-1z1h4rwyz0qf, pull request #2126 (main red on 2026-11-23) and its review A2173; card tsk-2s1bwwsvqy9h; `_test_clock` in `hub/tests/test_backfill_public_merges.py`, `_fresh` in `hub/tests/test_swarm.py`
+**Revisit when:** the hub gets a second clock (a database `now()` or another module's own time) that code compares stored times against
+
+A test that writes fixed times (a module `NOW`, a calendar string) and asserts on anything cut
+by a window, an expiry or a retention against `clock.now()` pins `clock.set_source` to the same
+`NOW` in its own module, as an autouse fixture. Importing another test module's helpers does not
+bring that module's autouse fixture along: `test_backfill_public_merges` imported `public_prs`
+and `ticker_merge` from `test_swarm` but not its `_fresh`, which pins the clock, and so ran on
+the wall clock. Its ticker items are dated `NOW` − 1 day (2026-10-24), and the swarm window is
+cut by UTC day at `clock.now()`'s day − 29 (`swarm._window_days`), so they left it on
+2026-11-23, 29 days after `NOW`, and main turned red for every pull request. The conftest resets
+the clock after each test (`clock.reset()` in `_fresh_process_state`), so the pin needs no
+teardown. Where a module needs another module's pin, it repeats the one-line fixture rather than
+importing the fixture by name, which ruff flags as an unused import.
+
+**Reason:** `maity_hub.clock` is the hub's one time source: its docstring calls it the only time
+in the system (citing docs/api.md §1.2, where agents date nothing from their own clock) and says
+everything that dates or compares calls it. A pin there moves every window, cache and expiry
+the code under test reads together, so the test gives the same answer on every future date.
+
+**Rejected alternatives:**
+- Making only the stored dates relative (`merged_at` from `NOW`, the card's first proposal): the
+  window reads the event's own `at` against the clock, never `merged_at`; with that change alone
+  the test still failed (`assert None == 1`).
