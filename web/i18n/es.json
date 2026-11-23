@@ -3324,7 +3324,7 @@
   "observe.title": "Leer en paralelo en {project}",
   "org.by_area": "(por área)",
   "org.empty": "Sin miembros.",
-  "org.instance.label": "Sesiones de {address}",
+  "org.instance.label": "Sesiones de {address}: {state}",
   "org.intro": "Política: {preset}. Calculada a partir de quién informa a quién y quién es propietario de qué área.",
   "org.reread_failed": "No se pudieron volver a leer los miembros: {reason}",
   "org.face.label": "Mostrar la organización como",
@@ -3335,7 +3335,6 @@
     "other": "{count} tomas abiertas"
   },
   "org.fleet.dormant": "en reposo",
-  "org.fleet.dot": "{address}: {state}",
   "org.fleet.empty": "No tienes agentes en este proyecto.",
   "org.fleet.lead": "instancia responsable",
   "org.fleet.no_instances": "ninguna instancia activa",

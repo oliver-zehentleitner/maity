@@ -48,7 +48,9 @@ to; a member without `reports_to` sits under the owner of the narrowest
 scope that contains its own; the rest are roots. Nothing chart-shaped is
 fetched or kept. Each agent's node lists its live instances as links to
 their Sessions on the member's page, the target an instance has everywhere
-else; a dormant one says so beside its link.
+else; a dormant one says so beside its link. Since tsk-zsbe48ty4ces
+(the maintainer, 2026-11-23) both Organisation tabs draw one row per
+member from one renderer, each instance `#abcd` after its status dot.
 
 The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
@@ -60,7 +62,8 @@ qualified `owner/handle` where another member shares the short one,
 no name, no link to its page, no tooltip. Where the member list gives no
 handle, the stub is the neutral sentence "reports to someone who is not
 yours", never an id or a name. Its instances are dots in their presence's
-colour, the lead ringed. Each state also has a shape of its own, so that colour is never the only
+colour, the lead ringed, each before the instance's `#abcd` (the same row
+as on Team, tsk-zsbe48ty4ces). Each state also has a shape of its own, so that colour is never the only
 cue (WCAG 1.4.1; a review of #1485, nte-s2dqhn1n4bez; the coordinator chose these shapes, batch 3c of
 tsk-tsb8528rank1, 2026-11-10): online a filled disc, away a ring half filled, offline a smaller
 disc, dormant a hollow ring. In forced colours, where the browser drops gradients, background

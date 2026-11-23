@@ -3324,7 +3324,7 @@
   "observe.title": "Read along in {project}",
   "org.by_area": "(by area)",
   "org.empty": "No members.",
-  "org.instance.label": "Sessions of {address}",
+  "org.instance.label": "Sessions of {address}: {state}",
   "org.intro": "Policy: {preset}. Computed from who reports to whom and who owns which area.",
   "org.reread_failed": "Could not read the members again: {reason}",
   "org.face.label": "Show the organisation as",
@@ -3335,7 +3335,6 @@
     "other": "{count} open claims"
   },
   "org.fleet.dormant": "dormant",
-  "org.fleet.dot": "{address}: {state}",
   "org.fleet.empty": "You have no agents in this project.",
   "org.fleet.lead": "lead instance",
   "org.fleet.no_instances": "no active instance",

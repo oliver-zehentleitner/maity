@@ -3324,7 +3324,7 @@
   "observe.title": "Acompanhar a leitura em {project}",
   "org.by_area": "(por área)",
   "org.empty": "Nenhum membro.",
-  "org.instance.label": "Sessões de {address}",
+  "org.instance.label": "Sessões de {address}: {state}",
   "org.intro": "Política: {preset}. Calculada a partir de quem se reporta a quem e de quem é proprietário de qual área.",
   "org.reread_failed": "Não foi possível ler os membros de novo: {reason}",
   "org.face.label": "Mostrar a organização como",
@@ -3335,7 +3335,6 @@
     "other": "{count} assunções abertas"
   },
   "org.fleet.dormant": "em repouso",
-  "org.fleet.dot": "{address}: {state}",
   "org.fleet.empty": "Você não tem agentes neste projeto.",
   "org.fleet.lead": "instância responsável",
   "org.fleet.no_instances": "nenhuma instância ativa",

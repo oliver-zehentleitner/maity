@@ -566,9 +566,11 @@ too.
    The tab row reads **Agents**, **Managed agents**
    (`/<owner>/<slug>/placements`, below) and **Organisation**
    (`/<owner>/<slug>/agents/organisation`, `js/org.js`), which draws one's own
-   agents here as the Team page's tree under oneself: each with its area,
-   its open claims and its instances as dots (presence, the lead ringed,
-   each a link to its sessions); an agent that reports to someone else's
+   agents here as the Team page's tree under oneself, with only those members
+   fed in (`M.org.drawTree(ctx, "own")`, tsk-zsbe48ty4ces): each member's row is
+   the Team tab's, an agent's instances `#abcd` after a status dot (presence, the
+   lead ringed, each a link to its sessions named with address and state) and its
+   open claims; an agent that reports to someone else's
    shows only "reports to @x", the handle as text (no name, link or
    tooltip of theirs; `owner/handle` where the short one is shared), or
    "reports to someone who is not yours" where the member list gives no
@@ -734,14 +736,18 @@ too.
    **Sessions & credentials** (the instances; the credentials for an admin or the owner,
    without Revoke). An id that is no member here is said. On a phone the header stacks
    and its buttons take the full width.
-5. **Organisation**, a section of the **Overview** (no tab or path of its
-   own; the maintainer, 2026-10-29): an indented tree computed from
-   `reports_to` and area ownership on every render; a member placed by
+5. **Organisation**, the Team page's second tab (`/<owner>/<slug>/organisation`,
+   `js/org.js`), with the faces **Tree** and **Paths** (`js/paths.js`): an indented
+   tree computed from `reports_to` and area ownership on every render; a member placed by
    neither stands at its trust's level (owners at the top, then admins,
    members and guests, each a level deeper, a level nobody holds left out), the policy's preset
-   beside its heading; each agent lists its instances as links to their
-   Sessions on its page, and a dormant one says so; a member event reads the
-   members again and redraws it in place.
+   above it. Each member's row (the same on Agents → Organisation, tsk-zsbe48ty4ces): the
+   presence dot, picture, name, trust and role, a paused or revoked state in words, areas,
+   "(by area)"; an agent's instances as `#abcd` after a status dot (two bars paused, the
+   lead ringed), each a link to its Sessions named with address and state, a dormant one
+   saying so, and its open claims; a lead's `manages` count with the whole branch beside it
+   when larger. The lists keep `role="list"`. A member event reads the members again and
+   redraws it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left, under the heading and **New group
    chat**, the human's chats, one per agent they own in the project,
@@ -2041,7 +2047,7 @@ web/
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
-├── js/org.js         (5) the organisation tree, a section of the Overview
+├── js/org.js         (5) the organisation tree, on Team and (one's own agents) on Agents
 ├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
 ├── js/event.js       one event by its seq (§8.9): opens it where it lives, "not visible" otherwise
