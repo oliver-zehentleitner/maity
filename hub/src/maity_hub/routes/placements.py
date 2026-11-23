@@ -564,11 +564,12 @@ def _agent_values(
     # lock, as `handles.ensure_free` reads it: a `POST /agents` or a join that gives the
     # owner a profile with this handle waits for this placement and then finds it reserved,
     # instead of both committing and the pickup refusing it later (`handle_taken`). The
-    # handle's lock comes after the project's, the order join creation and a pickup's
-    # exchange take (`create_profile` under `lock_project`); `POST /agents` takes no project
-    # lock. A profile's rename takes the handle's lock before its events lock the projects,
-    # as against join creation already: such a deadlock is aborted by the database and the
-    # loser runs again (`idempotency.run`).
+    # handle's lock comes after the project's, the order a pickup's exchange takes
+    # (`create_profile` under `lock_project`); `POST /agents` takes no project lock. Join
+    # creation (`create_profile`, then a project role's or the member rule's project lock)
+    # and a profile's rename (the handle's lock, then its events lock the projects) take the
+    # other order: such a deadlock is aborted by the database and the loser runs again
+    # (`idempotency.run`).
     handles.lock(conn, handles.scope_of(mine.principal_id), body.agent.handle)
     held = handles.holder(conn, mine.principal_id, body.agent.handle)
     if held is not None and held != "placement":

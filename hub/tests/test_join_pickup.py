@@ -1237,8 +1237,8 @@ NEW_AGENT = {"handle": "agent-n", "display_name": "Agent N"}
 
 
 def test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock(setup: Setup) -> None:
-    # §6.24: the handle's lock after the project's, as join creation and the exchange take
-    # them, and before the read of who holds the handle (the statement order, any database).
+    # §6.24: the handle's lock after the project's, as a pickup's exchange takes them, and
+    # before the read of who holds the handle (the statement order, any database).
     from tests.test_moderation import transactions
 
     with transactions(setup.engine) as seen:
@@ -1250,8 +1250,11 @@ def test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock(setup:
 
     project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
     handle = first(lambda x: x.startswith("INSERT INTO handle_lock "))
+    locked = first(lambda x: x.startswith("SELECT handle_lock.handle \nFROM handle_lock"))
     holder = first(lambda x: "FROM handle_alias" in x)
-    assert project < handle < holder, statements
+    assert project < handle < locked < holder, statements
+    if setup.engine.dialect.name != "sqlite":  # SQLite renders no lock clause
+        assert "FOR UPDATE" in statements[project] and "FOR UPDATE" in statements[locked]
 
 
 def test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved(

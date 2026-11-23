@@ -368,11 +368,11 @@ keep a live join code in the database.
 **Id:** af889d2e-167b-449a-87d2-83f31f04eb51
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`
+**Evidence:** inferred
+**Source:** the lead's decision in a dated project message, 2026-11-22 (card tsk-88t5bec14qs3, follow-up N6 of a review); a review of the pull request, 2026-11-23, which found that join creation takes its locks in the other order; `hub/tests/test_join_pickup.py`: `test_a_new_profiles_placement_reads_its_handle_under_the_handles_lock`, `test_a_post_agents_waits_for_a_new_profiles_placement_and_finds_the_handle_reserved`
 **See:** placements.md#a-pickups-join-creates-a-new-profile-at-the-exchange-and-the-pickup-stores-nothing-to-replay — cf956bec-8b32-4ae3-8ba6-73e3afe33e89 — as of 2026-11-23
 **See:** handles.md#a-rename-and-a-creation-take-a-lock-on-the-handle-they-want-not-one-on-the-whole-scope — ddfd0481-7a0a-4ebd-8a33-fc5e5c2787e1 — as of 2026-11-23
-**Revisit when:** join creation or a pickup's exchange stops taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, or `POST /agents` starts taking a project's lock
+**Revisit when:** a pickup's exchange stops taking the project's lock before `create_profile`, join creation starts taking the project's lock before `create_profile`, a profile's rename stops emitting its events after the handle's lock, or `POST /agents` starts taking a project's lock
 
 Creating a placement that will create a profile (`{"agent":{"handle",
 "display_name"}}`) takes `handles.lock` on the owner's scope and the
@@ -386,26 +386,33 @@ counting as the reservation (§6.24).
 
 The handle's lock comes after the project's: the creation already holds
 `lock_project` (and, for an admitted profile, the profile's row before it),
-and join creation and a pickup's exchange call `create_profile`, which
-takes the handle's lock, under their project's lock too. `POST /agents`
-takes no project lock, so it never waits in the other direction. A
-profile's rename takes the handle's lock and then its `member_updated`
-events lock the projects of its memberships, the opposite order; that
-pair already existed against join creation, and the database aborts such
-a deadlock and `idempotency.run` runs the loser again (inferred from the
-code; no test drives that pair).
+and a pickup's exchange calls `create_profile`, which takes the handle's
+lock, under its project's lock too (`_consume`). Join creation does not:
+it calls `create_profile` first and takes the project's lock only
+afterwards, when the role is a project role (`validate_assignment`) or the
+member rule counts its slot; with a built-in role under `members:admin` it
+takes none. A profile's rename takes the handle's lock and then its
+`member_updated` events lock the projects of its memberships. So join
+creation and a rename take the opposite order to the placement; the
+database aborts such a deadlock and `idempotency.run` runs the loser again
+(read from the code; no test drives either pair). `POST /agents` takes no
+project lock, so it never waits in the other direction.
 
 **Reason:** the placement reserves the handle for its owner (§6.24), so
 its check has to hold until it commits, like every other path that gives a
 handle; a clash found only at the pickup leaves a placement that can never
-run. The lead decided to take the lock in this branch and keep the order
-the other creating paths use.
+run. The lead decided to take the lock in this branch, after the project's
+(confirmed). That this order is the exchange's and inverts against join
+creation and a rename is read from the code (inferred): the first version
+of this entry said join creation shared it, which a review found wrong.
 
 **Rejected alternative:** taking the handle's lock before the project's
-(the order of a rename). It would invert the order against join creation
-and the pickup's exchange, which are the paths that give the same handle
-in the same project, to match a rename that only meets it when the renamed
-profile is a member there.
+(the order of join creation and a rename). It would invert the order
+against the pickup's exchange, which creates the profile of this very
+placement's handle in the same project, instead. Either order inverts
+against one path, and every path runs under `idempotency.run` or
+`db.retrying`, so the order the placement already shared with its own
+exchange stayed.
 
 ## Every runner credential revocation carries its consequences; a re-pair keeps what is closing
 
@@ -1063,7 +1070,10 @@ report. Nothing resets `reported_seq` and the counter does not wrap.
 a runner that does this (a bug, or on purpose) harms only its own
 placements; the owner sees the placement stop moving and can close it and
 place again, which starts a new placement at `reported_seq` 0
-(`placements.create`). The lead accepted that risk and decided an entry
+(`placements.create`). A placement frozen while it runs takes two
+`DELETE`s: the first only sets it closing (`close_uniform`), and the
+runner's report of its end is then a no-op too; the second closes it at
+once, the escape for a runner that never reports (§15.5). The lead accepted that risk and decided an entry
 here is enough.
 
 **Rejected alternatives:** unknown; a reset path and a wraparound are
