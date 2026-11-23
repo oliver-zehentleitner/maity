@@ -1,5 +1,7 @@
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
+**English** · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
+
 [![Licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Keep the Why · family](https://maity.dev/keep-the-why-dashboard/badge-family.svg)](https://maity.dev/keep-the-why-dashboard/)
 [![maity](https://maity.team/badge/oliver-zehentleitner/maity.svg)](https://maity.team/oliver-zehentleitner/maity/overview)

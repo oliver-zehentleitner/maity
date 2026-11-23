@@ -184,7 +184,7 @@ reasoning, not measured.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-6jwjdwftq6cm (option 1, lotse's go, 2026-11-04); implementation session, 2026-11-04 (merge reproduction in scratch repositories)
+**Source:** card tsk-6jwjdwftq6cm (option 1, the lead's go, 2026-11-04); implementation session, 2026-11-04 (merge reproduction in scratch repositories)
 **Revisit when:** `NOT_ROUTED` moves out of `hub/tests/test_contract_routes.py`, or the contract index is checked another way
 
 `NOT_ROUTED` in `hub/tests/test_contract_routes.py` holds one `(method, path)` per line, sorted
@@ -358,7 +358,7 @@ for it, which is the very gap that caused the flake; the search costs about
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-dbnh1nhcjrc4 (main's hub-postgresql red with `(51, 53)` on 5abda036); approach agreed by the lead (lotse, seq 135104) and the review lead (a4xv, seq 135111); `hub/tests/statements.py`, `hub/tests/test_statements.py`
+**Source:** card tsk-dbnh1nhcjrc4 (main's hub-postgresql red with `(51, 53)` on 5abda036); approach agreed by the lead (seq 135104) and the review lead (a4xv, seq 135111); `hub/tests/statements.py`, `hub/tests/test_statements.py`
 **Revisit when:** the app hands database work to a thread it starts itself (`threading.Thread`) and that work is part of a request's cost, or a test client stops running a request in the sending thread's context
 
 The tests that say a call costs the same statements for more rows count with

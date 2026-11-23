@@ -917,6 +917,8 @@ def apply_patch(
             cards.drop_signatures(
                 conn, change.project.id, row.agent_id or row.human_id, change.actor
             )
+            # A seat the new trust or role may not hold goes as at a removal (§2.3, §6.2).
+            seats.demoted(conn, change.project.id, row, change.actor)
         if "trust" in changed and row.trust == restricted.GUEST:
             # A guest holds and takes no cards (§2.3): its claims go back to the board and
             # its open takeovers end, as on an isolation (§6.2, §6.19).
