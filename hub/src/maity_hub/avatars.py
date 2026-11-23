@@ -46,6 +46,10 @@ log = logging.getLogger(__name__)
 # The first with an image wins: `forge` for a human, `motif` and `generated` for an agent.
 SOURCES = ("uploaded", "forge", "motif", "generated")
 HEADERS = {**images.HEADERS, "Cache-Control": "private, no-cache"}
+# A request whose `v` is the stored image's digest, the one its `avatar_url` carries (§6.10):
+# that address only ever names this picture, so the reader's browser keeps it for good.
+# `private`: the answer went to a caller `may_read` let through, never to a shared cache.
+VERSIONED_HEADERS = {**images.HEADERS, "Cache-Control": "private, max-age=31536000, immutable"}
 # A picture a public page shows (§6.10): the URL is versioned, so a browser keeps it a day; a
 # shared cache keeps it no longer than a public page (§16.9), so it leaves a proxy within a
 # minute once it stops being public.
@@ -567,15 +571,31 @@ def announce(conn: Connection, owner_id: str, before: dict[str, str | None], cal
 
 
 def _touch_page(conn: Connection, owner_id: str) -> None:
-    """The picture is an input of the pages that show it (§16.9): the person's page, or the
-    agent's page and its owner's agents page, rendered again at once, so a stored page names
-    the current public address and never the old one, which answers `not_found` from now on."""
-    from maity_hub import public_agents, public_pages, public_people
+    """The picture is an input of the pages that show it (§16.9): the person's page and the
+    pages of their agents (each names its owner with the picture), or the agent's page and its
+    owner's agents page; and the page of each public project with the member in its team and
+    `online`, with its Team and Organisation tabs (`public_projects.pages_with_picture`). Rendered
+    again at once, so a stored page names the current public address and never the old one,
+    which answers `not_found` from now on."""
+    from maity_hub import public_agents, public_pages, public_people, public_projects
 
     if owner_id.startswith("hum-"):
-        public_pages.touch(conn, public_people.KIND, owner_id, dependents=False)
+        public_pages.touch(
+            conn,
+            public_people.KIND,
+            owner_id,
+            others=lambda: [
+                *public_projects.pages_with_picture(conn, owner_id),
+                *public_agents.pages_of_owner(conn, owner_id),
+            ],
+        )
     elif owner_id.startswith("agt-"):
-        public_pages.touch(conn, public_agents.KIND, owner_id, dependents=False)
+        public_pages.touch(
+            conn,
+            public_agents.KIND,
+            owner_id,
+            others=lambda: public_projects.pages_with_picture(conn, owner_id),
+        )
         public_people.touch_owner_of(conn, owner_id)
 
 
@@ -589,10 +609,21 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     if caller.kind == "agent":
         if caller.agent_id == owner_id:
             return True
-        mine = conn.execute(
-            select(t.membership.c.project_id).where(t.membership.c.id == caller.membership_id)
-        ).scalar()
-        return mine is not None and mine in _projects_of(conn, owner_id)
+        # A project the instance shares with the member: on a project route the one it acts
+        # in, else any of its live attachments that is not isolated (§6.17), never a project
+        # its profile is in without this instance.
+        from maity_hub import attached
+
+        if caller.membership_id is not None:
+            memberships = select(t.membership.c.id).where(t.membership.c.id == caller.membership_id)
+        else:
+            memberships = attached.free_memberships(caller)
+        mine = set(
+            conn.execute(
+                select(t.membership.c.project_id).where(t.membership.c.id.in_(memberships))
+            ).scalars()
+        )
+        return bool(mine & _projects_of(conn, owner_id))
     if caller.kind != "human":
         return False
     me = caller.human_id

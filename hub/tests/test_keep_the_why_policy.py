@@ -8,7 +8,13 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
-from maity_hub.config import KTW_SKILL_GUIDE, KTW_SKILL_SOURCE, ConfigError, Settings
+from maity_hub.config import (
+    KTW_SKILL_COMMIT,
+    KTW_SKILL_GUIDE,
+    KTW_SKILL_SOURCE,
+    ConfigError,
+    Settings,
+)
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -138,12 +144,33 @@ def test_the_block_stays_under_optional_and_goes_under_none(
     assert agent.resume().json()["keep_the_why"] == {"enabled": False, "instruction": None}
 
 
+MIRROR_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
 def test_a_mirror_is_set_by_the_environment() -> None:
     assert Settings.from_env({}).ktw_skill_source == KTW_SKILL_SOURCE
     mirror = "https://git.example.org/mirror/ktw/tree/main/skill"
-    assert Settings.from_env({"MAITY_KTW_SKILL_SOURCE": mirror}).ktw_skill_source == mirror
+    env = {"MAITY_KTW_SKILL_SOURCE": mirror, "MAITY_KTW_SKILL_COMMIT": MIRROR_COMMIT}
+    assert Settings.from_env(env).ktw_skill_source == mirror
     with pytest.raises(ConfigError):
         Settings.from_env({"MAITY_KTW_SKILL_SOURCE": "file:///etc/passwd"})
+
+
+def test_the_commit_a_runner_fetches_is_set_with_the_source() -> None:
+    # §15.5, req-b3q6ttwgrp1v: unset, the default source's commit; with a source of its own,
+    # the operator names its commit too, or the hub does not start.
+    assert Settings.from_env({}).ktw_skill_commit == KTW_SKILL_COMMIT
+    mirror = "https://git.example.org/mirror/ktw/tree/main/skill"
+    upper = {"MAITY_KTW_SKILL_SOURCE": mirror, "MAITY_KTW_SKILL_COMMIT": MIRROR_COMMIT.upper()}
+    assert Settings.from_env(upper).ktw_skill_commit == MIRROR_COMMIT
+    with pytest.raises(ConfigError, match="must be set with MAITY_KTW_SKILL_SOURCE"):
+        Settings.from_env({"MAITY_KTW_SKILL_SOURCE": mirror})
+    for bad in ("v0.20.3", MIRROR_COMMIT[:12], MIRROR_COMMIT + "0", "g" * 40):
+        env = {"MAITY_KTW_SKILL_SOURCE": mirror, "MAITY_KTW_SKILL_COMMIT": bad}
+        with pytest.raises(ConfigError, match="40 hex digits"):
+            Settings.from_env(env)
+    with pytest.raises(ConfigError, match="40 hex digits"):
+        Settings.from_env({"MAITY_KTW_SKILL_COMMIT": "main"})
 
 
 def test_the_guide_is_set_by_the_environment() -> None:

@@ -408,7 +408,6 @@ def test_an_agents_deletion_and_a_patch_at_once_do_not_deadlock(
     a1 = profile(migrated, anna.id, "anna-a")
     a2 = profile(migrated, anna.id, "anna-b")
     entry = allow(anna, agents=[a2], owner_id=ben.id).json()["id"]
-    chat_access.lock_rows(migrated, anna.id, ben.id)
     outcome: list[str] = []
 
     def patch() -> None:
@@ -451,7 +450,6 @@ def test_two_humans_naming_each_other_at_once_do_not_deadlock(
 
     mine = profile(migrated, anna.id, "anna-a")
     bens = profile(migrated, ben.id, "ben-b")
-    chat_access.lock_rows(migrated, anna.id, ben.id)
     outcome: list[str] = []
 
     def bens_write() -> None:
@@ -483,7 +481,6 @@ def test_two_writes_at_once_keep_the_cap(
 
     mine = profile(migrated, anna.id, "anna-a")
     monkeypatch.setattr(chat_access, "MAX_ENTRIES", 1)
-    chat_access.lock_rows(migrated, anna.id, ben.id)
     body = {"agents": [mine], "owner_id": ben.id}
     outcome: list[str] = []
 

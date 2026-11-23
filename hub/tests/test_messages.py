@@ -436,7 +436,9 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "redacted",
         "redaction",
         "attachments",
+        "verdicts",  # §9.7
     }
+    assert message["verdicts"] == []
     assert (message["from"], message["to"], message["conversation_id"]) == (
         owner.id,
         agent.id,

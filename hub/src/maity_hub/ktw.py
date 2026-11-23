@@ -28,7 +28,9 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field, TypeAdapter, ValidationError
 
 from maity_hub import bounded, clock, forge, outbound
 
@@ -47,6 +49,23 @@ FORCE_INTERVAL = 30.0
 STATUSES = ("active", "open", "needs-review", "pending-confirmation", "superseded")
 ATTENTION_ORDER = ("needs-review", "pending-confirmation", "open")
 STATE_JSON_MAJOR = 2
+MAX_AGE_MAX = 86400  # the routes' `max_age` bound (§11.3, §11.5)
+# The routes' `max_age: int = Query(ge=0, le=MAX_AGE_MAX)` as FastAPI validates a query value:
+# pydantic in lax mode, from the string the query carries.
+_MAX_AGE = TypeAdapter(Annotated[int, Field(ge=0, le=MAX_AGE_MAX)])
+
+
+def max_age_of(raw: str | None) -> int | None:
+    """A query's `max_age` exactly as the routes read it (`_MAX_AGE`, the same pydantic type),
+    None when absent or refused: one parser for `access.gate`, which reads the query before
+    FastAPI does, and the routes (the lead, seq 187206)."""
+    if raw is None:
+        return None
+    try:
+        return _MAX_AGE.validate_python(raw)
+    except ValidationError:
+        return None
+
 
 _OPEN = {name: re.compile(rf"<!--\s*keep-the-why:{name}\s*-->") for name in ("config", "children")}
 _CLOSE = {
@@ -61,7 +80,8 @@ _CONTROL = re.compile(
 )
 
 
-def _now() -> float:
+def now() -> float:
+    """The monotonic clock every hold and age here is measured on (ktw_reads too)."""
     return time.monotonic()
 
 
@@ -346,7 +366,7 @@ def digest(data: Any, link_base: str) -> Read:
     return Read(summary, entries, skipped)
 
 
-_REFUSALS = {
+REFUSALS = {
     "address_refused": "address_refused",
     "redirect_refused": "redirect_refused",
     "timeout": "timeout",
@@ -356,18 +376,29 @@ _REFUSALS = {
 }
 
 
-def read_state(url: str) -> Read:
-    """GET a member's `state.json` under the transport rule and digest it."""
+def fetch_json(url: str, cap: int) -> Any:
+    """GET a published JSON file under the transport rule (§11.1) and parse it;
+    `MemberError` for a refused read, a status other than 200, or a body that is no JSON."""
     try:
-        answer = outbound.read(url, cap=STATE_CAP, headers={"Accept": "application/json"})
+        answer = outbound.read(url, cap=cap, headers={"Accept": "application/json"})
     except outbound.Refused as refused:
-        raise MemberError(_REFUSALS.get(refused.reason, "unavailable")) from None
+        raise MemberError(REFUSALS.get(refused.reason, "unavailable")) from None
     if answer.status != 200:
         raise MemberError("http_status", status=answer.status)
-    data = parse(answer.body)
+    return parse(answer.body)
+
+
+def fetch_state(url: str) -> tuple[Read, Raw]:
+    """A member's `state.json`, digested (§11.3's checks: version and shape) and kept in
+    RAW: the digest for §11.3, the kept file for the views (§11.5)."""
+    data = fetch_json(url, STATE_CAP)
     found = digest(data, dashboard_url(url))
-    RAW.keep_state(url, data)
-    return found
+    return found, RAW.keep_state(url, data)
+
+
+def read_state(url: str) -> Read:
+    """GET a member's `state.json` under the transport rule and digest it."""
+    return fetch_state(url)[0]
 
 
 def _no_constant(name: str) -> Any:
@@ -415,7 +446,7 @@ class Raw:
     url: str
     body: bytes
     digest: str
-    at: float  # _now() of the read
+    at: float  # now() of the read
     observed_at: str
     bodies: str | None = None  # a lean state's `bodies` value, as published
 
@@ -443,16 +474,20 @@ class RawStore:
     def mark(self, kind: str, url: str) -> None:
         """Records a read of the file, made or begun now."""
         with self.guard:
-            self.read_at[(kind, url)] = _now()
-            self.read_at.move_to_end((kind, url))
-            while len(self.read_at) > HELD_KEPT:
-                self.read_at.popitem(last=False)
+            self._touch(kind, url, now())
+
+    def _touch(self, kind: str, url: str, at: float) -> None:
+        """`read_at` for the file, the newest last, at most HELD_KEPT. The caller holds `guard`."""
+        self.read_at[(kind, url)] = at
+        self.read_at.move_to_end((kind, url))
+        while len(self.read_at) > HELD_KEPT:
+            self.read_at.popitem(last=False)
 
     def held(self, kind: str, url: str) -> bool:
         """Whether the file was read less than FORCE_INTERVAL ago."""
         with self.guard:
             at = self.read_at.get((kind, url))
-        return at is not None and _now() - at < FORCE_INTERVAL
+        return at is not None and now() - at < FORCE_INTERVAL
 
     def get(self, kind: str, url: str) -> Raw | None:
         with self.guard:
@@ -465,13 +500,10 @@ class RawStore:
         # ASCII with escapes: a lone surrogate, which UTF-8 cannot encode, stays `\ud800`
         body = json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode()
         raw = Raw(
-            url, body, hashlib.sha256(body).hexdigest(), _now(), clock.rfc3339(clock.now()), bodies
+            url, body, hashlib.sha256(body).hexdigest(), now(), clock.rfc3339(clock.now()), bodies
         )
         with self.guard:
-            self.read_at[(kind, url)] = raw.at
-            self.read_at.move_to_end((kind, url))
-            while len(self.read_at) > HELD_KEPT:
-                self.read_at.popitem(last=False)
+            self._touch(kind, url, raw.at)
             old = self.files.pop((kind, url), None)
             if old is not None:
                 self.size -= len(old.body)
@@ -534,7 +566,7 @@ def _error(reason: str, **details: Any) -> dict[str, Any]:
 def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Family:
     """The family's members in order, depth first, with their config read; the exports are
     read afterwards. `NotConfigured`/`RootUnavailable` for the root. A child whose config
-    would be read after `deadline` (`_now()`) is listed with `timeout`, not read."""
+    would be read after `deadline` (`now()`) is listed with `timeout`, not read."""
     members: list[Member] = []
     seen: set[str] = set()
     truncated = False
@@ -595,7 +627,7 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
             if depth + 1 > MAX_DEPTH:
                 truncated = True
                 continue
-            if deadline is not None and _now() >= deadline:
+            if deadline is not None and now() >= deadline:
                 members.append(Member(path=target, name=clean_name, error=_error("timeout")))
                 continue
             try:
@@ -652,7 +684,7 @@ def _read_exports(family: Family, deadline: float) -> None:
         futures = {pool.submit(_one_export, m.state_url or ""): m for m in readable}
         for future, member in futures.items():
             try:
-                found = future.result(timeout=max(deadline - _now(), 0.0))
+                found = future.result(timeout=max(deadline - now(), 0.0))
             except FutureTimeout:
                 found = _error("timeout")
             if isinstance(found, Read):
@@ -750,7 +782,7 @@ class Snapshot:
 @dataclass
 class _Entry:
     snapshot: Snapshot | None  # None: the project is not configured
-    at: float  # _now() of the read
+    at: float  # now() of the read
     repository_url: str | None
 
 
@@ -760,25 +792,62 @@ PROJECTS_KEPT = 256
 
 
 @dataclass
+class Refresh:
+    """When a project's family is read, decided once for every cache that shares it (`Cache.link`:
+    `ktw_reads.OUTSIDE_CACHE` beside `CACHE`): one lock per project, the requests using it, and
+    the project's last read (its repository and when). The answers stay each cache's own."""
+
+    guard: threading.Lock = field(default_factory=threading.Lock)
+    locks: dict[str, threading.Lock] = field(default_factory=dict)
+    # Requests between taking a project's lock and leaving `get`: such a project is never
+    # dropped, so a read in progress keeps its last good reads and its lock.
+    users: dict[str, int] = field(default_factory=dict)
+    last_read: OrderedDict[str, tuple[str | None, float]] = field(default_factory=OrderedDict)
+
+
+@dataclass
 class Cache:
     """The answers per project, in memory; the last good read of each member until the hub
-    restarts. One read of a project's family at a time."""
+    restarts. One read of a project's family at a time, across the caches that share `refresh`."""
 
     entries: OrderedDict[str, _Entry] = field(default_factory=OrderedDict)
     # (project, repository, member path): a repository's read never stands in for another's
     last_good: dict[tuple[str, str, str], tuple[Read, str | None]] = field(default_factory=dict)
-    locks: dict[str, threading.Lock] = field(default_factory=dict)
-    # Requests between taking a project's lock and leaving `get`: such a project is
-    # never dropped, so a read in progress keeps its last good reads and its lock.
-    users: dict[str, int] = field(default_factory=dict)
     guard: threading.Lock = field(default_factory=threading.Lock)
+    # The refresh decision, shared with a linked cache (`link`): a read in either holds a forced
+    # read in both for FORCE_INTERVAL, so the rate is one per project across both.
+    refresh: Refresh = field(default_factory=Refresh, repr=False, compare=False)
+    # Whether a read asks `Forge.for_project` for the project's source (§11.4). False for a
+    # cache whose reader is never a project's (`ktw_reads.OUTSIDE_CACHE`): choosing a source
+    # may write the project's and the grants' state, which an outsider's read must not.
+    bind: bool = True
+    # Called with (reader, project id, repository) just before a family read, after the
+    # source is chosen: `ktw_reads.OUTSIDE_CACHE` asks the forge live there, and an exception
+    # leaves the read unmade and nothing stored.
+    before_read: Callable[[forge.Forge, str, str], None] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    @property
+    def locks(self) -> dict[str, threading.Lock]:
+        return self.refresh.locks
+
+    @property
+    def users(self) -> dict[str, int]:
+        return self.refresh.users
+
+    def link(self, other: Cache) -> None:
+        """`other` shares this cache's refresh decision, per project (one lock, one last read)."""
+        other.refresh = self.refresh
 
     def clear(self) -> None:
         with self.guard:
             self.entries.clear()
             self.last_good.clear()
-            self.locks.clear()
-            self.users.clear()
+        with self.refresh.guard:
+            self.refresh.locks.clear()
+            self.refresh.users.clear()
+            self.refresh.last_read.clear()
 
     def forget_all(self) -> None:
         """`forget` for every project; the locks stay, as requests may hold them."""
@@ -793,16 +862,18 @@ class Cache:
         with self.guard:
             self.entries.pop(project_id, None)
             self._drop_reads(project_id)
-            if self.users.get(project_id, 0) == 0:
-                self.locks.pop(project_id, None)
+            with self.refresh.guard:
+                if self.refresh.users.get(project_id, 0) == 0:
+                    self.refresh.locks.pop(project_id, None)
 
     def _drop(self, project_id: str) -> None:
         """Dropped for room: the project's last good reads and its lock, unless a request
-        uses it now. The caller holds `guard`."""
-        if self.users.get(project_id, 0) > 0:
-            return
+        uses it now. The caller holds `guard` (then `refresh.guard`, never the other order)."""
+        with self.refresh.guard:
+            if self.refresh.users.get(project_id, 0) > 0:
+                return
+            self.refresh.locks.pop(project_id, None)
         self._drop_reads(project_id)
-        self.locks.pop(project_id, None)
 
     def _drop_reads(self, project_id: str) -> None:
         for key in [k for k in self.last_good if k[0] == project_id]:
@@ -812,23 +883,42 @@ class Cache:
         with self.guard:
             return self.entries.get(project_id)
 
+    def _read_lately(self, project_id: str, repository_url: str | None) -> bool:
+        """Whether this project's repository was read less than FORCE_INTERVAL ago, by this
+        cache or one sharing its `refresh`, forced or not: the last forge read of the family."""
+        with self.refresh.guard:
+            last = self.refresh.last_read.get(project_id)
+        return last is not None and last[0] == repository_url and now() - last[1] < FORCE_INTERVAL
+
+    def _mark_read(self, project_id: str, repository_url: str | None, at: float) -> None:
+        with self.refresh.guard:
+            bounded.put(self.refresh.last_read, project_id, (repository_url, at), 2 * PROJECTS_KEPT)
+
     def _lock(self, project_id: str) -> threading.Lock:
-        with self.guard:
-            return self.locks.setdefault(project_id, threading.Lock())
+        with self.refresh.guard:
+            return self.refresh.locks.setdefault(project_id, threading.Lock())
 
     def _enter(self, project_id: str) -> threading.Lock:
-        """The project's lock, the request counted as its user first, until `_leave`."""
-        with self.guard:
-            self.users[project_id] = self.users.get(project_id, 0) + 1
+        """The project's shared lock, the request counted as its user first, until `_leave`."""
+        with self.refresh.guard:
+            self.refresh.users[project_id] = self.refresh.users.get(project_id, 0) + 1
         return self._lock(project_id)
 
     def _leave(self, project_id: str) -> None:
+        """The request is done with the project. The last one out takes the project's lock
+        along while this cache holds no entry for it (a read that raised on a cold cache), as
+        `_drop` does for a dropped entry: no lock outlives every use of a project (zxjn,
+        A1830)."""
         with self.guard:
-            left = self.users.get(project_id, 1) - 1
+            kept = project_id in self.entries
+        with self.refresh.guard:
+            left = self.refresh.users.get(project_id, 1) - 1
             if left > 0:
-                self.users[project_id] = left
+                self.refresh.users[project_id] = left
             else:
-                self.users.pop(project_id, None)
+                self.refresh.users.pop(project_id, None)
+                if not kept:
+                    self.refresh.locks.pop(project_id, None)
 
     def get(
         self,
@@ -837,12 +927,22 @@ class Cache:
         repository_url: str | None,
         max_age: int = DEFAULT_MAX_AGE,
     ) -> tuple[_Entry, bool]:
-        """(entry, fresh): a cached answer younger than `max_age`, else a new read. No
-        `max_age` reads more often than FORCE_INTERVAL (`0` forces a read at that rate).
+        """(entry, fresh): a cached answer younger than `max(max_age, FORCE_INTERVAL)`, else a
+        new read, decided under the project's lock that the caches sharing `refresh` share.
+        Always read: a cold cache (no entry of its own for this repository: another cache's
+        answer is never served here) and an ordinary refresh (`max_age` at least
+        FORCE_INTERVAL, the entry older than it). A forced read (`max_age` below
+        FORCE_INTERVAL, i.e. `0`) on an own entry younger than DEFAULT_MAX_AGE is made only
+        when no cache sharing `refresh` read the project's repository in the last
+        FORCE_INTERVAL; otherwise this cache's own entry is served as it is (the lead's
+        rulings, seq 186740: one forced forge read per project per 30 s; seq 187034: on an
+        entry past DEFAULT_MAX_AGE a forced read refreshes whatever the other cache did, so
+        neither cache starves the other).
 
         While another request reads the family, the cached answer is served at once, and a
-        request with nothing cached waits at most LOCK_WAIT before `Busy`: a waiter holds a
-        request thread, and a family read may take FAMILY_DEADLINE."""
+        request with nothing cached waits at most LOCK_WAIT before `Busy`, then serves what
+        that read stored: a waiter holds a request thread, and a family read may take
+        FAMILY_DEADLINE."""
         current = self.cached(project_id)
         lock = self._enter(project_id)
         try:
@@ -853,19 +953,26 @@ class Cache:
                 raise Busy
             try:
                 entry = self.cached(project_id)
-                if (
-                    entry is not None
-                    and entry.repository_url == repository_url
-                    and _now() - entry.at < max(max_age, FORCE_INTERVAL)
-                ):
-                    return entry, False
+                own = entry is not None and entry.repository_url == repository_url
+                if own and entry is not None:
+                    age = now() - entry.at
+                    if age < max(max_age, FORCE_INTERVAL):
+                        return entry, False
+                    forced = max_age < FORCE_INTERVAL
+                    if (
+                        forced
+                        and age < DEFAULT_MAX_AGE
+                        and self._read_lately(project_id, repository_url)
+                    ):
+                        return entry, False
                 entry = self._read(reader, project_id, repository_url, entry)
                 with self.guard:
-                    in_use = self.users.get
+                    in_use = self.refresh.users.get
                     for gone in bounded.put(
                         self.entries, project_id, entry, PROJECTS_KEPT, lambda p: in_use(p, 0) > 0
                     ):
                         self._drop(gone)
+                self._mark_read(project_id, repository_url, entry.at)
                 return entry, True
             finally:
                 lock.release()
@@ -875,24 +982,27 @@ class Cache:
     def _read(
         self, reader: forge.Forge, project_id: str, repository_url: str | None, last: _Entry | None
     ) -> _Entry:
-        now = _now()
+        read_at = now()
         observed = clock.rfc3339(clock.now())
         if forge.kind_of(repository_url) != "github" or repository_url is None:
-            return _Entry(None, now, repository_url)
+            return _Entry(None, read_at, repository_url)
         repository = forge.repository_of(repository_url)
-        deadline = _now() + FAMILY_DEADLINE
-        reader = reader.for_project(project_id)  # the source that covers it (§11.4)
+        deadline = now() + FAMILY_DEADLINE
+        if self.bind:
+            reader = reader.for_project(project_id)  # the source that covers it (§11.4)
+        if self.before_read is not None:
+            self.before_read(reader, project_id, repository)  # raises: nothing read or stored
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:
-            return _Entry(None, now, repository_url)
+            return _Entry(None, read_at, repository_url)
         except RootUnavailable as failed:
             previous = last.snapshot if last and last.repository_url == repository_url else None
             error = _error("forge_unavailable")
             if previous is None:
                 return _Entry(
                     Snapshot(observed, [], False, error, failed.not_covered, failed.retry_at),
-                    now,
+                    read_at,
                     repository_url,
                 )
             kept = Snapshot(
@@ -903,7 +1013,7 @@ class Cache:
                 failed.not_covered,
                 failed.retry_at,
             )
-            return _Entry(kept, now, repository_url)
+            return _Entry(kept, read_at, repository_url)
         _read_exports(family, deadline)
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
@@ -914,7 +1024,7 @@ class Cache:
                     self.last_good[key] = (member.read, member.observed_at)
                 elif member.error is not None and key in self.last_good:
                     member.read, _at = self.last_good[key]
-        return _Entry(Snapshot(observed, family.members, family.truncated), now, repository_url)
+        return _Entry(Snapshot(observed, family.members, family.truncated), read_at, repository_url)
 
 
 CACHE = Cache()
@@ -939,7 +1049,7 @@ def export_for_view(
     stale = (
         entry is None
         or entry.repository_url != repository_url
-        or _now() - entry.at >= DEFAULT_MAX_AGE
+        or now() - entry.at >= DEFAULT_MAX_AGE
     )
     if stale and forge.kind_of(repository_url) == "github":
         _refresh_later(reader, project_id, repository_url, schedule)
@@ -963,8 +1073,10 @@ def _refresh_in_background(
     def run() -> None:
         try:
             CACHE.get(reader, project_id, repository_url)
-        except Exception:  # a failed background read leaves the cache as it was
-            pass
+        except (Busy, forge.ForgeUnavailableError):
+            pass  # expected: another read holds the family, or the forge did not answer
+        except Exception:  # a bug in walk or digest: the cache stays as it was, the log says why
+            log.warning("a background Keep the Why read failed", exc_info=True)
         finally:
             with _pending_lock:
                 _pending.discard(project_id)

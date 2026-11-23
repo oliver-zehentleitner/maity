@@ -282,9 +282,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     ).one()
     if target.active is None:  # removed meanwhile: nothing left to change
         return
-    proposer = conn.execute(
-        select(t.membership).where(t.membership.c.id == request.asked_by)
-    ).first()
+    # An isolated or suspended manager acts on nobody's line, a go given later included.
+    proposer = proposals.proposer_row(conn, request)
     found = reach(conn, proposer) if proposer is not None else {}
     if proposer is None or target.id not in found:
         raise ApiError(409, "not_in_line", "the member is no longer in the manager's reach")
@@ -339,18 +338,23 @@ proposals.register(
 def _lift_line_pauses(conn: Connection, change: Any, target: Any, by: str) -> None:
     """Lift every pause `by` set under `line:lead` over `target`: the membership's and
     each instance's (§6.2 "Ending it")."""
+    from maity_hub import instances
     from maity_hub.routes import members
 
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     if row.paused_since is not None and row.paused_line and row.paused_by == by:
         members.set_paused(conn, change, row, None)
+    # Each instance's pause in this project, on its attachment (§6.17).
+    a = t.instance_attachment
     held = conn.execute(
-        select(t.credential.c.instance).where(
-            t.credential.c.membership_id == target.id,
-            t.credential.c.revoked_at.is_(None),
-            t.credential.c.paused_since.is_not(None),
-            t.credential.c.paused_line.is_(True),
-            t.credential.c.paused_by == by,
+        select(t.credential.c.instance)
+        .select_from(instances.credential_join())
+        .where(
+            a.c.membership_id == target.id,
+            instances.attached_now(),
+            a.c.paused_since.is_not(None),
+            a.c.paused_line.is_(True),
+            a.c.paused_by == by,
         )
     ).scalars()
     for instance in sorted(held):

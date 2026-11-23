@@ -17,11 +17,12 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
-from maity_hub import avatars, clock, handle_register, handles, namespace, paths
+from maity_hub import avatars, clock, handle_register, handles, limits, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, one_line
+from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_name
 from maity_hub.views import ts
 
 ROLES = ("owner", "admin", "member")
@@ -60,12 +61,12 @@ def last_owner(handle: str) -> ApiError:
     )
 
 
-def org_limit(limit: int, count: int) -> ApiError:
+def org_limit(limit: int, count: int, source: str = "instance") -> ApiError:
     return ApiError(
         409,
         "org_limit",
         "the human owns as many organisations as allowed",
-        {"limit": limit, "count": count},
+        {"limit": limit, "count": count, "source": source},
     )
 
 
@@ -294,8 +295,8 @@ def lock_all_of(conn: Connection, human_id: str) -> None:
 
 
 def display_name_ok(display_name: str) -> bool:
-    """1–64 characters and no control or line-break character, as §2.7.4."""
-    return 1 <= len(display_name) <= DISPLAY_NAME_MAX and one_line(display_name)
+    """1–64 characters and plain text (§1.7.1), as §2.7.4."""
+    return 1 <= len(display_name) <= DISPLAY_NAME_MAX and plain_name(display_name)
 
 
 def create(
@@ -313,6 +314,8 @@ def create(
     if errors:
         raise invalid(errors)
     conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
+    # `limit` is the instance's value; an override on the human's account comes first.
+    limit, source = limits.for_account(conn, "max_orgs_per_human", human_id, limit)
     if limit is not None:
         owned = int(
             conn.execute(
@@ -327,7 +330,7 @@ def create(
             ).scalar_one()
         )
         if owned >= limit:
-            raise org_limit(limit, owned)
+            raise org_limit(limit, owned, source)
     org_id = new_id("org")
     # A handle a human gave up stays theirs (§6.24): the register does not know aliases.
     handles.lock(conn, handles.HUMANS, handle)

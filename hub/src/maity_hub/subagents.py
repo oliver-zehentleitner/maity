@@ -14,7 +14,7 @@ from sqlalchemy import Connection, select
 from maity_hub import catalog, languages
 from maity_hub import tables as t
 from maity_hub.errors import invalid
-from maity_hub.notifications import preferences
+from maity_hub.text_language import text_language
 
 # The roles a join without `subagents` switches it on for (§3.1); the migration that added
 # the field gave the same default to the memberships and open joins before it (§6.2).
@@ -29,7 +29,7 @@ def language_of(conn: Connection, requested: str | None, human_id: str) -> str:
     """The instruction's language: the one asked for, which must be an interface language,
     else the language the hub writes to that human in (§6.2)."""
     if requested is None:
-        return preferences.text_language(conn, human_id)
+        return text_language(conn, human_id)
     if requested not in languages.INTERFACE:
         raise invalid({"subagents_language": "not_interface"}, "not an interface language")
     return requested

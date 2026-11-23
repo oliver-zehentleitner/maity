@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, events, forge, idempotency, mentions, namespace, paging
+from maity_hub import access, clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials
@@ -22,6 +22,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import (
     ApiError,
@@ -36,7 +37,14 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.routes.tasks import TaskCreate, _locked, _project_card, audience, create_card
+from maity_hub.routes.tasks import (
+    TaskCreate,
+    _locked,
+    _project_card,
+    audience,
+    create_card,
+    of_read_card,
+)
 from maity_hub.views import shape_deleted
 
 router = APIRouter(route_class=ProjectRoute)
@@ -72,7 +80,7 @@ class NoteRedactIn(RedactIn):
 # --- shared --------------------------------------------------------------------------------
 
 
-def _card(conn: Connection, mine: Membership, card_id: str) -> Any:
+def _card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     return _project_card(conn, mine, card_id)
 
 
@@ -269,6 +277,7 @@ def delete_link(
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/history")
+@access.outside_read
 def get_history(
     slug: str,
     card_id: str,
@@ -277,15 +286,16 @@ def get_history(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+    with read_transaction(engine_of(request)) as conn:
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_history.c
-        query = select(t.card_history).where(c.card_id == card.id)
-        for start, end in events.window_times(conn, mine.project.id, mine.row):
-            # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
-            query = query.where(or_(c.at < start, c.at > end))
+        query = of_read_card(select(t.card_history).where(c.card_id == card.id), mine, c.card_id)
+        # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
+        visible = events.outside_window_times(conn, mine.project.id, mine.row, c.at)
+        if visible is not None:
+            query = query.where(visible)
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor)
             query = query.where(or_(c.at < after_at, and_(c.at == after_at, c.id < after_id)))
@@ -412,6 +422,12 @@ def _conflict(conn: Connection, mine: Membership, row: Any, base_version: int) -
     )
 
 
+def _redacted_note() -> ApiError:
+    """What an edit of a redacted note gets (§6.16), before the write or after losing the
+    row to a redaction."""
+    return ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+
+
 def _task_ref(card: Any) -> dict[str, Any]:
     return {"id": card.id, "title": card.title, "status": card.status}
 
@@ -424,6 +440,7 @@ def _members(conn: Connection, *membership_ids: int | None) -> list[str]:
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/notes")
+@access.outside_read
 def list_notes(
     slug: str,
     card_id: str,
@@ -433,12 +450,17 @@ def list_notes(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+    with read_transaction(engine_of(request)) as conn:
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_note.c
-        query = select(t.card_note).where(c.card_id == card.id)
+        query = of_read_card(select(t.card_note).where(c.card_id == card.id), mine, c.card_id)
+        # A note written in one of the reader's hidden windows, as its history's entries
+        # (§6.2, §6.16).
+        visible = events.outside_window_times(conn, mine.project.id, mine.row, c.created_at)
+        if visible is not None:
+            query = query.where(visible)
         if state != "all":
             wanted = [s for s in state.split(",") if s]
             if not wanted or any(s not in notes.STATES for s in wanted):
@@ -550,7 +572,7 @@ def edit_note(
             if not body.reason:
                 raise invalid({"reason": "required"}, "say why you edit someone else's note")
         if row.redacted:
-            raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+            raise _redacted_note()
         _precondition(conn, mine, row, body.base_version)
         if len(body.body.encode()) > notes.BODY_MAX:
             raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
@@ -566,9 +588,7 @@ def edit_note(
             # Another write won the row after it was read: say what it was.
             now = _note(conn, card, note_id)
             if now.redacted:
-                raise ApiError(
-                    400, "invalid", "a redacted note is not edited", {"reason": "redacted"}
-                )
+                raise _redacted_note()
             raise _conflict(conn, mine, now, row.version)
         shown = load_note(conn, row.id)
         for event in notes.carriers(conn, mine.project.id, row):
@@ -722,6 +742,11 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
     if replayed is not None:
         return replayed
     project = mine.project
+    # Off GitHub the import is a probe read that does not run (§6.14, §11). Checked
+    # before the URL is parsed, so a non-GitHub repository is never fetched.
+    admin = mine.may("project:admin")
+    if project.repository_url is not None and forge.kind_of(project.repository_url) != "github":
+        raise probe_not_configured("forge_not_github" if admin else None)
     # The project's own reader (§11.4): the owner's grant for its repository, or the
     # operator's token for a public one.
     fg = reader_of(request).for_project(project.id)
@@ -731,9 +756,10 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
         raise invalid({"issue_url": error.code}) from None
     if not links.is_own_repository(ref, project.repository_url):
         raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
-    admin = mine.may("project:admin")
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured((fg.refused or "no_grant") if admin else None)
+        raise probe_not_configured(
+            forge.unread_reason(fg, project.repository_url) if admin else None
+        )
     at = clock.rfc3339(clock.now())
     try:
         assert ref.number is not None  # an issue's URL names its number

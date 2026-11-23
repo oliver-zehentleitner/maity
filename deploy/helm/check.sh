@@ -38,9 +38,13 @@ expect() {
 out="$(render -f "$minimal")"
 expect "minimal: one pod, recreated, migrate hook first" "$out" \
     "replicas: 1" "type: Recreate" "helm.sh/hook: pre-install,pre-upgrade" 'args: ["migrate"]' \
-    'value: "https://maity.example.org"' "image: maity-hub:ci" "readOnlyRootFilesystem: true"
-expect "minimal: hub pods selected by component, version label from the tag" "$out" \
-    "app.kubernetes.io/component: hub" 'app.kubernetes.io/version: "ci"'
+    'value: "https://maity.example.org"' "readOnlyRootFilesystem: true" \
+    "image: maity-hub@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+expect "minimal: hub pods selected by component" "$out" "app.kubernetes.io/component: hub"
+# A tag only as an explicit opt-in, and then it also names the version label.
+expect "tag: pulled by tag only with image.allowTag, version label from the tag" \
+    "$(render -f "$minimal" --set image.digest= --set image.allowTag=true --set image.tag=ci)" \
+    "image: maity-hub:ci" 'app.kubernetes.io/version: "ci"'
 selector="$(sed -n '/^kind: Service$/,/^---/p' <<<"$out" | sed -n '/selector:/,$p')"
 expect "minimal: the Service selects only the hub" "$selector" "app.kubernetes.io/component: hub"
 expect "minimal: one serving process unless set" "$out" "name: MAITY_WORKERS" 'value: "1"'
@@ -63,6 +67,31 @@ out_np="$(render -f "$minimal" --set networkPolicy.enabled=false)"
 grep -q "kind: NetworkPolicy" <<<"$out_np" && bad "networkPolicy.enabled=false still renders one" \
     || ok "no NetworkPolicy when disabled"
 grep -q "kind: Ingress" <<<"$out" && bad "minimal: an Ingress without ingress.enabled" || ok "minimal: no Ingress"
+grep -q -- "- Egress" <<<"$out" && bad "minimal: an egress policy by default" || ok "minimal: no egress policy by default"
+eg="$(render -f "$minimal" --set networkPolicy.egress.enabled=true --show-only templates/networkpolicy.yaml)"
+expect "egress: DNS, the database on 5432, HTTPS, SMTP 587 and 465 without a mail host" "$eg" \
+    "name: t-maity-hub-egress" "- Egress" "protocol: UDP" "k8s-app: kube-dns" "port: 5432" "port: 443" "port: 587" "port: 465"
+eg="$(render -f "$minimal" --set networkPolicy.egress.enabled=true --set networkPolicy.egress.https=false \
+    --set mail.host=smtp.example.org --set mail.port=2525 --set networkPolicy.egress.database.port=6432 \
+    --set "networkPolicy.egress.database.to[0].podSelector.matchLabels.app=db" --show-only templates/networkpolicy.yaml)"
+expect "egress: the mail host's port, the database's port and peer" "$eg" "port: 2525" "port: 6432" "app: db"
+grep -q "port: 443\|port: 465" <<<"$eg" && bad "egress: HTTPS or 465 although off or a mail host is set" \
+    || ok "egress: no HTTPS when off, only the mail host's port"
+expect "egress: smtpPorts and extra rules as given" \
+    "$(render -f "$minimal" --set networkPolicy.egress.enabled=true --set "networkPolicy.egress.smtpPorts={25}" \
+        --set "networkPolicy.egress.extra[0].ports[0].port=9000" --show-only templates/networkpolicy.yaml)" "port: 25" "port: 9000"
+render -f "$minimal" --set networkPolicy.egress.enabled=true --set networkPolicy.egress.database.port=0 >/dev/null 2>&1 \
+    && bad "egress: database port 0 accepted" || ok "egress: database port 0 refused by the schema"
+mig="$(render -f "$minimal" --show-only templates/migrate-job.yaml)"
+expect "migrate: the hub's database Secret unless one of its own is named" "$mig" "name: maity-hub-database"
+mig="$(render -f "$minimal" --set database.migrate.existingSecret=maity-hub-db-migrate --set database.migrate.key=url \
+    --show-only templates/migrate-job.yaml)"
+expect "migrate: its own database Secret and key" "$mig" "name: maity-hub-db-migrate" "key: url"
+grep -q "name: maity-hub-database" <<<"$mig" && bad "migrate: the hub's Secret too" || ok "migrate: only its own Secret"
+grep -c "name: MAITY_DATABASE_URL" <<<"$mig" | grep -qx 1 && ok "migrate: one MAITY_DATABASE_URL" || bad "migrate: MAITY_DATABASE_URL not exactly once"
+dep="$(render -f "$minimal" --set database.migrate.existingSecret=maity-hub-db-migrate --show-only templates/deployment.yaml)"
+expect "migrate Secret: the hub keeps its own" "$dep" "name: maity-hub-database"
+grep -q "maity-hub-db-migrate" <<<"$dep" && bad "the hub got the migrate Secret" || ok "the hub never gets the migrate Secret"
 grep -q "MAITY_FORGE_GITHUB_TOKEN" <<<"$out" && bad "minimal: a token without a Secret" || ok "minimal: no forge token"
 grep -q "MAITY_FORGE_INSTANCE_NAMESPACES" <<<"$out" && bad "minimal: namespaces without a list" || ok "minimal: no instance namespaces"
 grep -q "MAITY_ATTACHMENT\|name: attachments" <<<"$out" && bad "minimal: attachment settings without a claim" || ok "minimal: no attachment settings"
@@ -125,6 +154,15 @@ out_mig="$(render -f "$minimal" --set mail.host=smtp.example.org --set mail.pass
 out_sk="$(render -f "$minimal" --set secretKey.existingSecret=s)"
 [ "$(grep -c 'name: MAITY_SECRET_KEY' <<<"$out_sk")" = 2 ] && ok "the instance key reaches the hub and the migrate Job, once each" \
     || bad "the instance key is not in both the hub and the migrate Job"
+grep -q "MAITY_SEAL_VERIFIERS" <<<"$out_sk" && bad "sealing verifiers is on by default" || ok "sealing verifiers is off by default"
+out_seal="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true)"
+[ "$(grep -c 'name: MAITY_SEAL_VERIFIERS' <<<"$out_seal")" = 2 ] && ok "sealVerifiers reaches the hub and the migrate Job, once each" \
+    || bad "sealVerifiers is not in both the hub and the migrate Job"
+grep -q "MAITY_SEALED_VERIFIERS_ONLY" <<<"$out_seal" && bad "sealed verifiers only is on by default" \
+    || ok "sealed verifiers only is off by default, also with sealing on"
+out_only="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true --set secretKey.sealedVerifiersOnly=true)"
+[ "$(grep -c 'name: MAITY_SEALED_VERIFIERS_ONLY' <<<"$out_only")" = 2 ] && ok "sealedVerifiersOnly reaches the hub and the migrate Job, once each" \
+    || bad "sealedVerifiersOnly is not in both the hub and the migrate Job"
 out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
 [ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 1 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 1 ] \
     && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
@@ -197,8 +235,16 @@ refuse "Ingress without host" "ingress.host is required" -f "$minimal" --set ing
     --set config.trustedProxies=10.0.0.0/8
 refuse "Ingress without trusted proxies" "config.trustedProxies is required" -f "$minimal" \
     --set ingress.enabled=true --set ingress.host=maity.example.org
+refuse "sealing verifiers without the key" "secretKey.sealVerifiers needs secretKey.existingSecret" -f "$minimal" \
+    --set secretKey.sealVerifiers=true
+refuse "sealed verifiers only without sealing" "secretKey.sealedVerifiersOnly needs secretKey.sealVerifiers" -f "$minimal" \
+    --set secretKey.existingSecret=s --set secretKey.sealedVerifiersOnly=true
 refuse "a typo in a value" "additional propert" -f "$minimal" --set config.publicURL=https://x.example
 refuse "a short digest" "match pattern" -f "$minimal" --set image.digest=sha256:abc
+# By digest by default: no tag of its own (not the appVersion), and a tag alone is not enough.
+refuse "no digest" "image.digest is required" -f "$minimal" --set image.digest=
+refuse "a tag without image.allowTag" "image.digest is required" -f "$minimal" --set image.digest= --set image.tag=ci
+refuse "image.allowTag without a tag" "image.tag is required" -f "$minimal" --set image.digest= --set image.allowTag=true
 refuse "a replica count" "additional propert" -f "$minimal" --set replicaCount=2
 refuse "a pull secret as a bare string" "imagePullSecrets" -f "$minimal" --set "imagePullSecrets[0]=registry"
 refuse "Ingress without trusted proxies, plain HTTP allowed" "config.trustedProxies is required" \

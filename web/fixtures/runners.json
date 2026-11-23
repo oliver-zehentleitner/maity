@@ -45,6 +45,7 @@
               "supervised"
             ],
             "default_mode": "interactive",
+            "efforts": [],
             "models": [
               "opus",
               "sonnet"
@@ -53,6 +54,23 @@
               "local"
             ],
             "confinement": "allowlist",
+            "sandbox": "on"
+          },
+          {
+            "id": "codex",
+            "version": "0.156.1",
+            "available": true,
+            "reason": null,
+            "modes": [
+              "supervised"
+            ],
+            "default_mode": "supervised",
+            "efforts": [],
+            "models": [],
+            "targets": [
+              "local"
+            ],
+            "confinement": "sandbox",
             "sandbox": "off"
           },
           {
@@ -64,6 +82,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [],
             "targets": [
               "local"
@@ -145,6 +164,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [
               "gpt-5.5"
             ],
@@ -152,7 +172,7 @@
               "build-1",
               "build-2"
             ],
-            "confinement": "allowlist",
+            "confinement": "sandbox",
             "sandbox": "on"
           }
         ],
@@ -214,6 +234,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [
               "sonnet"
             ],
@@ -232,6 +253,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [
               "sonnet"
             ],

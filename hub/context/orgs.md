@@ -239,6 +239,31 @@ what lets it undo exactly that and nothing a person did themselves.
 - Ending every owner's membership when they stop being an owner: it would remove seats they held
   before, or kept for another reason.
 
+## A raised membership falls back to its earlier trust through the members PATCH step
+
+**Id:** 3fe0a6b6-9260-4b32-a818-2c664cd21099
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hardening finding on the card tsk-0f7nbt07f98r (item 3d), carried out on tsk-ghgb82w02bah
+**Revisit when:** `members.apply_patch` stops being the one place a trust change's consequences run, or the hub's release of a seat should differ from a person's lowering of it
+
+When an organisation's owner stops being one, `org_projects.release_owner` clears the mark
+(`org_keep`, `org_keep_trust`) and hands the earlier trust to `members.apply_patch` with the `HUB`
+actor, as a members `PATCH` of `trust` would. Everything a lowering sets off runs there: the
+signatures that stop counting are dropped (§6.4), the rules version moves (§6.9), a manager's
+rights end when the trust becomes guest (§6.2), and a guest's claims and takeovers go back (§2.3).
+The ending of a `created` membership already went through `apply_remove` the same way.
+
+**Reason:** the trust written straight into the column skipped the hooks a lowering has, and each
+one added by hand beside it (the signature drop, then a guest's claims) left the others missing,
+the rules bump among them. One path for every trust change keeps a hook added later from being
+missed here.
+
+**Rejected alternatives:**
+- Writing the column and calling each hook beside it, as before: every new hook in `apply_patch`
+  would have to be repeated here, and the rules bump and a manager's rights already were not.
+
 ## A transfer into an organisation is a consent to each of its owners, and organisation rows are locked before the project's on every path
 
 **Id:** bb7a0295-8aa2-4ec8-abfb-85eefd18d5f0

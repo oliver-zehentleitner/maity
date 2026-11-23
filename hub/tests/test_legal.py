@@ -149,6 +149,29 @@ def test_what_a_page_may_not_hold_is_named_by_its_path(
     assert field(refused) == fields
 
 
+def test_a_lone_surrogate_is_a_control_character_and_an_emoji_is_text(owner: flow.Human) -> None:
+    def page(title: bytes, markdown: bytes) -> bytes:
+        return b'{"imprint": {"en": {"title": "%s", "markdown": "%s"}}}' % (title, markdown)
+
+    refused = owner.raw("PATCH", PATH, page(b"T", b"a \\ud800 b"))
+    assert refused.status_code == 400, refused.text
+    assert field(refused) == {"imprint.en.markdown": "control_character"}
+    refused = owner.raw("PATCH", PATH, page(b"a \\udfff b", b"x"))
+    assert field(refused) == {"imprint.en.title": "control_character"}
+    saved = owner.raw("PATCH", PATH, page(b"\\ud83d\\ude42", b"\\ud83d\\ude42 \xf0\x9f\x99\x82"))
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["pages"]["imprint"]["languages"]["en"]["markdown"] == "🙂 🙂"
+
+
+def test_a_lone_surrogate_in_a_language_key_is_invalid_under_its_page(owner: flow.Human) -> None:
+    sent = b'{"imprint": {"%s": {"title": "T", "markdown": "x"}}}'
+    refused = owner.raw("PATCH", PATH, sent % b"e\\ud800")
+    assert refused.status_code == 400, refused.text
+    assert field(refused) == {"imprint": "invalid"}
+    saved = owner.raw("PATCH", PATH, sent % b"en")
+    assert saved.status_code == 200, saved.text
+
+
 def test_a_page_at_the_text_limit_passes(owner: flow.Human) -> None:
     full = {"en": {"title": "T" * 120, "markdown": "é" * (32 * 1024)}}
     saved = owner.patch(PATH, {"terms": full})

@@ -592,8 +592,8 @@ def test_an_admin_agents_pause_is_named_as_such(
     admin = flow.agent(make_client, owner, role="admin")
     with migrated.begin() as conn:
         conn.execute(
-            t.credential.update()
-            .where(t.credential.c.id == agent.credential_id)
+            t.instance_attachment.update()
+            .where(t.instance_attachment.c.credential_id == agent.credential_id)
             .values(paused_reason="hold", paused_since=clock.now(), paused_by=admin.id)
         )
     response = agent.patch("/me", {"paused": None})

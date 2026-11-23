@@ -15,13 +15,16 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from maity import cli, clonecheck, ghpr
+from maity import cli, clonecheck, ghpr, hub, inclone, state
+from maity.runner import supervisor
+from maity.runner.asuser import AsUser
 
 REPOSITORY = "github.com/oliver-zehentleitner/maity"
 BRANCH = "agent-g/the-change"
@@ -58,7 +61,10 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     subprocess.run([git, "init", "-q", "-b", BRANCH, str(clone)], check=True)
     (clone / ".git" / "maity").mkdir()
     log = tmp_path / "gh.json"
-    gh = tmp_path / "bin" / "gh"
+    # On Windows a program on a search path is found by a PATHEXT suffix, never as a bare `gh`
+    # (proc.program, as Windows itself): the stand-in is `gh.exe` there. Tests that run it skip
+    # Windows (runs_gh); the others only need `maity gh` to find it on the recorded PATH.
+    gh = tmp_path / "bin" / ("gh.exe" if os.name == "nt" else "gh")
     gh.parent.mkdir()
     gh.write_text(
         f"#!{sys.executable}\n"
@@ -77,7 +83,8 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
     # The runner's records, in its directory for the agent, never in the clone.
     (private / clonecheck.GIT_PATH.name).write_text(git + "\n")
-    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh}\n")
+    # The runner's PATH, where `maity gh` looks gh up at each call (point 15).
+    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh.parent}\n")
     monkeypatch.chdir(clone)
     return {"clone": clone, "log": log, "gh": str(gh), "record": private / ghpr.PULL_REQUESTS}
 
@@ -202,6 +209,28 @@ def test_a_body_file_outside_the_clone_is_refused(
     assert "not a file in this clone" in err and ran(placed) is None
 
 
+@runs_gh
+@walks
+def test_a_body_file_in_the_recorded_scratch_is_sent_and_one_outside_both_names_both(
+    placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"  # beside the clone (§15.5)
+    room.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    (room / "body.md").write_text("Card tsk-x, from the scratch\n")
+    create = ["gh", "pr", "create", "--title", "t", "--body-file"]
+    assert cli.main([*create, str(room / "body.md")]) == 0
+    call = ran(placed)
+    assert call is not None and call["stdin"] == "Card tsk-x, from the scratch\n"
+    placed["log"].unlink()
+    err = refused([*create, str(login_file(tmp_path))], capsys)
+    assert ran(placed) is None
+    assert f"not a file in this clone ({placed['clone']})" in err
+    assert f"or in the placement's scratch ({room})" in err
+    assert f"this clone ({room})" not in err  # the scratch is never called the clone
+
+
 @walks
 def test_a_link_in_the_clone_to_a_file_outside_is_refused(
     placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -263,6 +292,36 @@ def test_a_record_the_runner_does_not_write_is_refused(
     placed["record"].write_text(record.format(gh=placed["gh"]))
     refused(["gh", "pr", "view"], capsys)
     assert ran(placed) is None
+
+
+def refused_without_waiting(fifo: Path, argv: list[str], capsys: pytest.CaptureFixture[str]) -> str:
+    """`refused(argv)` where `fifo` stands in for a runner record: the call must refuse and
+    not wait on the FIFO. Should it wait (a record opened without O_NONBLOCK), the test opens
+    the FIFO's other end after a while, which releases the call, and fails instead of
+    hanging."""
+    out: list[str] = []
+    call = threading.Thread(target=lambda: out.append(refused(argv, capsys)), daemon=True)
+    call.start()
+    call.join(10)
+    waited = call.is_alive()
+    if waited:
+        os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        call.join(10)
+    assert not waited, f"{fifo.name}: the call waited on a FIFO"
+    return out[0]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_as_the_pull_requests_record_is_refused_without_waiting(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security A1806 of #2054: the runner's records are opened without blocking, so a FIFO
+    planted in a record's place is refused by the regular-file check, never waited on."""
+    record = placed["record"]
+    record.unlink()
+    os.mkfifo(record, 0o600)
+    err = refused_without_waiting(record, ["gh", "pr", "view"], capsys)
+    assert "not readable" in err and ran(placed) is None
 
 
 def test_a_linked_record_is_refused(
@@ -550,6 +609,208 @@ def test_a_record_in_the_clone_is_never_read(placed: dict[str, Any], tmp_path: P
     assert not (tmp_path / "decoy-ran").exists()
 
 
+@runs_gh
+def test_a_gh_installed_after_the_start_is_found_at_the_next_call(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Point 15 of tsk-2k0jcaxfd0ja: the runner records its PATH, not the gh it found, and
+    `maity gh` looks gh up there at each call. Before gh is installed it refuses and says so;
+    once it is there, the same session runs it, with no restart."""
+    gh = Path(placed["gh"])
+    later = gh.parent.parent / "later-bin"
+    later.mkdir()
+    placed["record"].write_text(f"{REPOSITORY}\n{later}\n")
+    err = refused(["gh", "pr", "view", "7"], capsys)
+    assert "gh is not installed on the runner's PATH" in err and ran(placed) is None
+    os.rename(gh, later / "gh")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert ran(placed) is not None
+
+
+@runs_gh
+def test_the_lookup_takes_no_relative_entry_and_no_gh_the_session_can_write(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The checks of a gh recorded at the start stay (lotse's condition on point 15): a
+    relative entry is never searched, and a gh inside the clone, which the session writes, is
+    refused even where the recorded PATH names its directory. Nothing runs."""
+    clone: Path = placed["clone"]
+    planted = clone / "bin"
+    planted.mkdir()
+    decoy = planted / "gh"
+    decoy.write_text(f"#!{sys.executable}\nopen({str(clone / 'decoy-ran')!r}, 'w')\n")
+    decoy.chmod(0o755)
+    placed["record"].write_text(f"{REPOSITORY}\nbin\n")  # relative: the clone is the cwd
+    assert "gh is not installed on the runner's PATH" in refused(["gh", "pr", "view", "7"], capsys)
+    placed["record"].write_text(f"{REPOSITORY}\n{planted}\n")
+    assert "which this session can write" in refused(["gh", "pr", "view", "7"], capsys)
+    assert not (clone / "decoy-ran").exists() and ran(placed) is None
+
+
+@runs_gh
+def test_find_gh_searches_the_recorded_path_at_each_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`find_gh` alone, with no git: missing first, found once installed, an older record's
+    own path taken, a gh inside the clone refused, a relative entry never searched."""
+    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV, raising=False)
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    with pytest.raises(ghpr.Refused, match="gh is not installed on the runner's PATH"):
+        ghpr.find_gh(str(bin_dir), clone)
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    assert ghpr.find_gh(str(bin_dir), clone) == str(gh)
+    assert ghpr.find_gh(str(gh), clone) == str(gh)
+    planted = clone / "bin"
+    planted.mkdir()
+    (planted / "gh").write_text("#!/bin/sh\nexit 0\n")
+    (planted / "gh").chmod(0o755)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(f"{planted}{os.pathsep}{bin_dir}", clone)
+    monkeypatch.chdir(clone)
+    with pytest.raises(ghpr.Refused, match="gh is not installed"):
+        ghpr.find_gh("bin", clone)
+    # A link inside the clone to a gh outside it (review A2159 of #2125): its directory, which
+    # gh_env would put first on gh's PATH, is the clone's, so it is refused too.
+    (planted / "gh").unlink()
+    (planted / "gh").symlink_to(gh)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(planted), clone)
+    # A PATH entry that passes through the clone by a directory link to a directory outside it
+    # (review A2168 of #2125): file and directory resolve outside, but the entry as written is
+    # the clone's, where the session could swap the link after the check.
+    (clone / "via").symlink_to(bin_dir, target_is_directory=True)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(clone / "via"), clone)
+    # A link outside the clone that is resolvable is taken as found.
+    elsewhere = tmp_path / "links"
+    elsewhere.mkdir()
+    (elsewhere / "gh").symlink_to(gh)
+    assert ghpr.find_gh(str(elsewhere), clone) == str(elsewhere / "gh")
+
+
+@runs_gh  # Windows' lookup simulated here; on Windows the fixture itself shows it
+def test_find_gh_on_windows_takes_gh_by_its_pathext_suffix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cli-windows failure of #2125's round 3, in Windows' terms on any system: on a search
+    path Windows finds a program only by a PATHEXT suffix (proc.program does the same), so a
+    bare `gh` as the tests' stand-in is "not installed" there, while `gh.exe` is found."""
+    from maity import proc
+
+    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV, raising=False)
+    clone = _mkdir(tmp_path / "clone")
+    bare = _mkdir(tmp_path / "bare")
+    (bare / "gh").write_text("#!/bin/sh\nexit 0\n")  # the fixture's stand-in before this fix
+    (bare / "gh").chmod(0o755)
+
+    class WindowsOs:  # os as proc.program sees it on Windows; pathlib here stays POSIX
+        name = "nt"
+
+        def __getattr__(self, attr: str) -> Any:
+            return getattr(os, attr)
+
+    monkeypatch.setattr(proc, "os", WindowsOs())
+    # Lower case: Windows matches the suffix in any case, a POSIX file system only exactly; and
+    # this system's separator, which proc.program splits PATHEXT by (`;` on Windows).
+    monkeypatch.setenv("PATHEXT", os.pathsep.join([".com", ".exe", ".bat", ".cmd"]))
+    with pytest.raises(ghpr.Refused, match="gh is not installed on the runner's PATH"):
+        ghpr.find_gh(str(bare), clone)
+    exe = _mkdir(tmp_path / "exe")
+    (exe / "gh.exe").write_text("")
+    (exe / "gh.exe").chmod(0o755)
+    assert ghpr.find_gh(str(exe), clone) == str(exe / "gh.exe")
+
+
+def _gh_world(tmp_path: Path) -> dict[str, Path]:
+    """A workspace with a clone and its sibling, a scratch, and a gh outside both (in a
+    `usr/bin` with a `bin` link to it, as /bin -> /usr/bin)."""
+    ws = tmp_path / "ws"
+    clone, sibling, scratch = ws / "clone", ws / "clone2", tmp_path / "scratch"
+    for d in (clone, sibling, scratch, tmp_path / "usr" / "bin", tmp_path / "out"):
+        d.mkdir(parents=True)
+    gh = tmp_path / "usr" / "bin" / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    (tmp_path / "bin").symlink_to(tmp_path / "usr" / "bin", target_is_directory=True)
+    return {"ws": ws, "clone": clone, "sibling": sibling, "scratch": scratch, "gh": gh,
+            "usr": tmp_path / "usr", "out": tmp_path / "out", "tmp": tmp_path}  # fmt: skip
+
+
+# Every way a path can pass through the clone or the scratch (review A2167 of #2125): each
+# returns the recorded entry (or, for an older record, gh itself) after building its links.
+PASSING_THROUGH = {
+    "a dir link in the clone": lambda w: _link(w["clone"] / "bin", w["usr"] / "bin"),
+    "a dir link in the scratch": lambda w: _link(w["scratch"] / "bin", w["usr"] / "bin"),
+    "an ancestor link in the clone": lambda w: _link(w["clone"] / "anc", w["usr"]) / "bin",
+    "an older record through a dir link": lambda w: _link(w["clone"] / "b", w["usr"] / "bin")
+    / "gh",
+    "dot-dot through the clone": lambda w: _mkdir(w["clone"] / "sub")
+    / ".."
+    / ".."
+    / ".."
+    / "usr"
+    / "bin",
+    "a link outside bouncing through the clone": lambda w: _link(
+        w["out"] / "gh", _link(w["clone"] / "bounce", w["gh"])
+    ).parent,
+}
+
+
+def _link(link: Path, target: Path) -> Path:
+    link.symlink_to(target, target_is_directory=target.is_dir())
+    return link
+
+
+def _mkdir(path: Path) -> Path:
+    path.mkdir()
+    return path
+
+
+@runs_gh
+@pytest.mark.parametrize("case", list(PASSING_THROUGH))
+def test_find_gh_refuses_a_path_through_the_clone_or_the_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    world = _gh_world(tmp_path)
+    monkeypatch.setattr(inclone, "recorded_scratch", lambda root, dot_git: world["scratch"])
+    recorded = PASSING_THROUGH[case](world)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(recorded), world["clone"])
+
+
+@runs_gh
+def test_find_gh_takes_what_passes_through_neither(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept: a link dispatching on its name in a directory of its own (a snap's /snap/bin/gh),
+    a PATH entry that is itself a link (/bin -> /usr/bin), the clone's parent, and a sibling
+    whose name only starts like the clone's. What runs is the real directory with gh's name."""
+    world = _gh_world(tmp_path)
+    monkeypatch.setattr(inclone, "recorded_scratch", lambda root, dot_git: world["scratch"])
+    snap = _mkdir(tmp_path / "snap")
+    _link(snap / "gh", world["gh"])
+    assert ghpr.find_gh(str(snap), world["clone"]) == str(snap / "gh")
+    assert ghpr.find_gh(str(tmp_path / "bin"), world["clone"]) == str(world["gh"])
+    for place in (world["ws"], world["sibling"]):
+        (place / "gh").write_text("#!/bin/sh\nexit 0\n")
+        (place / "gh").chmod(0o755)
+        assert ghpr.find_gh(str(place), world["clone"]) == str(place / "gh")
+
+
+@runs_gh
+def test_an_older_runners_record_naming_gh_itself_still_works(placed: dict[str, Any]) -> None:
+    """A session started by a runner from before point 15 has gh's own path in the record:
+    it is taken as before."""
+    placed["record"].write_text(f"{REPOSITORY}\n{placed['gh']}\n")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert ran(placed) is not None
+
+
 @walks  # `opened_git` yields a descriptor only where maity walks
 def test_a_body_under_the_checked_git_is_refused_after_a_rename(placed: dict[str, Any]) -> None:
     """The walk compares each directory with the `.git` `opened_git` checked, by its
@@ -635,3 +896,1077 @@ def test_maity_gh_walks_the_body_file_against_the_checked_git(
     argv = ["gh", "pr", "create", "--title", "t", "--head", "x"]
     assert cli.main([*argv, "--body-file", ".git-moved/maity/pull_requests"]) == 4
     assert ran(placed) is None
+
+
+# --- the lead commands (tsk-pvnj16k8d6m0) -----------------------------------------------------
+
+SHA = "4a59187965ed2fca8c6ecb874d053823ba14ce91"
+ROLE_READS: list[str] = []
+
+
+def make_runner_layout(agent_files: Path, placement: str) -> Path:
+    """`agents/<placement>/git` as the runner makes it (supervisor.agent_dir_for, then
+    adapters.launch's `as_user.mkdir(records)`), under a umask of 002, the default of a manual
+    `maity runner serve` or sudo on Debian and Ubuntu (review A1758 of #2054): no chmod here."""
+    old = os.umask(0o002)
+    try:
+        agent_dir = supervisor.agent_dir_for(AsUser(), agent_files, placement)
+        AsUser().mkdir(agent_dir / "git")
+    finally:
+        os.umask(old)
+    return agent_dir / "git"
+
+
+def runner_layout(tmp_path: Path, placed: dict[str, Any], placement: str) -> Path:
+    """The runner's directory for the agent as the runner lays it out,
+    `<agent files>/agents/<placement>/git`, holding `placed`'s records (git, pull_requests).
+    Resolved (macOS's /var is a link): the lead commands refuse a link on the way."""
+    where = make_runner_layout(tmp_path.resolve() / "agent-files", placement)
+    for name in (clonecheck.GIT_PATH.name, ghpr.PULL_REQUESTS):
+        (where / name).write_bytes((placed["record"].parent / name).read_bytes())
+    return where
+
+
+@pytest.fixture
+def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """`placed` with the runner's LEAD record in this placement's own directory of the
+    runner's layout (`agents/plc-0003/git`), and a hub that names the member's role base
+    manager; the role read is counted, so a test can see it happened at the call."""
+    where = runner_layout(tmp_path, placed, "plc-0003")
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(where))
+    record = where / ghpr.LEAD
+    # Written as the runner writes it (adapters.launch: AsUser.write, state.write_file, a text
+    # file), so its line end is this system's (`\r\n` on Windows).
+    state.write_file(record, "lead\n")
+    ROLE_READS.clear()
+
+    def manager(*_: Any) -> str:
+        ROLE_READS.append("read")
+        return "manager"
+
+    monkeypatch.setattr(cli, "_hub_role", manager)
+    reads = tmp_path / "reads"
+    reads.mkdir()
+    (reads / "queue.json").write_text(json.dumps(queue_answer()))
+    (reads / "number.json").write_text(json.dumps({"number": 2045}))
+    lead_gh(Path(placed["gh"]), placed["log"], reads)
+    return {**placed, "lead_record": record, "runner_dir": where, "reads": reads}
+
+
+# The merge's read (ghpr.direct_merge_only), and its answer in the shape GitHub's GraphQL API
+# gives through `gh api graphql`: `data`, `repository`, `pullRequest`.
+QUEUE_READ = [
+    "api", "graphql", "--hostname=github.com", "-f", f"query={ghpr.MERGE_QUERY}",
+    "-f", "owner=oliver-zehentleitner", "-f", "name=maity", "-F", "number=2045",
+]  # fmt: skip
+
+
+def queue_answer(**fields: Any) -> dict[str, Any]:
+    pr = {"baseRefName": "main", "headRefOid": SHA, "isMergeQueueEnabled": False,
+          "isInMergeQueue": False, **fields}  # fmt: skip
+    return {"data": {"repository": {"pullRequest": pr}}}
+
+
+def lead_gh(gh: Path, log: Path, reads: Path, out: str = "", err: str = "") -> None:
+    """A gh that answers the merge's read (`api graphql`) from `reads/queue.json` and an edit's
+    branch read (`pr view --json=number`) from `reads/number.json` (missing: the read fails),
+    and writes their argv to `reads/calls`, one JSON list a line; any other call it writes
+    down in `log` (argv, stdin, cwd) and prints `out` and `err`."""
+    gh.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\n"
+        f"reads = {str(reads)!r}\n"
+        "read = 'queue.json' if sys.argv[1:3] == ['api', 'graphql'] else"
+        " 'number.json' if '--json=number' in sys.argv else None\n"
+        "if read:\n"
+        "    open(os.path.join(reads, 'calls'), 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "    answer = os.path.join(reads, read)\n"
+        "    if not os.path.exists(answer):\n"
+        "        sys.stderr.write('HTTP 502: Bad Gateway\\n')\n"
+        "        sys.exit(1)\n"
+        "    sys.stdout.write(open(answer).read())\n"
+        "    sys.exit(0)\n"
+        "json.dump({'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'cwd': os.getcwd()},"
+        f" open({str(log)!r}, 'w'))\n"
+        f"sys.stdout.write({out!r})\nsys.stderr.write({err!r})\n"
+    )
+    gh.chmod(0o755)
+
+
+def merge_reads(lead: dict[str, Any]) -> list[list[str]]:
+    calls = lead["reads"] / "calls"
+    return [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+
+
+@runs_gh
+@pytest.mark.parametrize(
+    "answer",
+    [
+        queue_answer(isMergeQueueEnabled=True),  # the base branch merges through a queue
+        queue_answer(isInMergeQueue=True),  # the pull request is in one
+        queue_answer(isMergeQueueEnabled=None),  # a field of another type
+        queue_answer(isInMergeQueue="false"),
+        {"data": {"repository": {"pullRequest": {"headRefOid": SHA}}}},  # fields missing
+        {"data": {"repository": {"pullRequest": None}}},  # no such pull request
+        {"data": {"repository": None}},
+        {"data": None},
+        {**queue_answer(), "errors": [{"message": "Something went wrong"}]},
+        [queue_answer()],  # not an object
+        "not json",
+        None,  # the read fails
+    ],
+)
+def test_a_merge_that_would_not_be_direct_is_refused_before_gh_merges(
+    lead: dict[str, Any], answer: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1804 of #2054, the lead's ruling: on a base branch with a merge queue
+    `gh pr merge` hands the method and the moment to the queue, so `--squash` and the head
+    named would no longer be the outcome. maity reads GitHub's queue state for the pull
+    request and merges only when both fields are literally false; any other answer, an
+    `errors` member or a failed read refuses, and gh never merges then."""
+    queue = lead["reads"] / "queue.json"
+    if answer is None:
+        queue.unlink()
+    else:
+        queue.write_text(answer if isinstance(answer, str) else json.dumps(answer))
+    err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+                   "--body", "b"], capsys)  # fmt: skip
+    assert "does not merge directly" in err and ran(lead) is None
+    assert merge_reads(lead) == [QUEUE_READ]
+
+
+@runs_gh
+def test_a_merge_whose_head_moved_is_refused(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    (lead["reads"] / "queue.json").write_text(json.dumps(queue_answer(headRefOid="0" * 40)))
+    err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+                   "--body", "b"], capsys)  # fmt: skip
+    assert "read it again" in err and ran(lead) is None and merge_reads(lead) == [QUEUE_READ]
+
+
+def test_the_merge_query_takes_its_values_as_variables_only() -> None:
+    """The query is fixed text: the owner, the name and the number are GraphQL variables
+    (`-f` strings, `-F` the number as an integer), never written into it."""
+    assert "$owner" in ghpr.MERGE_QUERY and "$number: Int!" in ghpr.MERGE_QUERY
+    assert all(f in ghpr.MERGE_QUERY for f in ("headRefOid", *ghpr.QUEUE_FIELDS))
+
+
+@pytest.mark.parametrize("layout", ["another placement", "not the runner's layout"])
+def test_the_lead_record_counts_only_in_this_placements_directory(
+    lead: dict[str, Any], tmp_path: Path, layout: str, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """Review A1721 of #2054: GIT_PRIVATE_ENV is taken as given, so the lead commands read
+    their record only from `…/agents/<this placement>/git`. A directory with every record in
+    place but of another placement, or outside the layout, is refused before any role read."""
+    if layout == "another placement":
+        where = runner_layout(tmp_path / "other", lead, "plc-0009")
+    else:
+        where = lead["record"].parent  # placed's own `agent/git`, which the runner never makes
+    state.write_file(where / ghpr.LEAD, "lead\n")
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(where))
+    err = refused(["gh", "pr", "ready", "2045"], capsys)
+    assert "this placement's directory" in err and ran(lead) is None and ROLE_READS == []
+
+
+@runs_gh
+def test_merge_squashes_the_named_head_with_the_footer_left_out(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    body = (
+        "Card tsk-x.\n\nSays co-authored-by: in a sentence, which stays.\n"
+        "Co-Authored-By: Someone <a@example.org>\n"
+        "\U0001f916 Generated with [A Tool](https://example.org/tool)\n"
+        "Generated by [A Container](https://example.org/container)\n"  # the containers' form
+    )
+    (lead["clone"] / "body.md").write_text(body)
+    argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject",
+            "ci + context: #2025 follow-ups (tsk-x) (#2045)", "--body-file", "body.md"]  # fmt: skip
+    assert cli.main(argv) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["pr", "merge", f"--repo={REPOSITORY}", "--squash",
+                            f"--match-head-commit={SHA}",
+                            "--subject=ci + context: #2025 follow-ups (tsk-x) (#2045)",
+                            "--body-file=-", "--", "2045"]  # fmt: skip
+    assert call["stdin"] == "Card tsk-x.\n\nSays co-authored-by: in a sentence, which stays.\n"
+    assert "left out 3 footer line(s)" in capsys.readouterr().err
+    assert ROLE_READS == ["read"]
+    # GitHub's queue state was read first and said the merge is direct (review A1804).
+    assert merge_reads(lead) == [QUEUE_READ]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        # no --match-head-commit: argparse refuses before anything runs
+        ["gh", "pr", "merge", "2045", "--subject", "s", "--body", "b"],
+        # a short sha, a branch, a URL
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA[:8],
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "agent-x/branch",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "https://github.com/o/n/pull/1",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ],
+        # another method, an admin bypass, auto-merge, a branch deletion, another repository
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--merge",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--admin",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--auto",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--delete-branch",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "-R",
+            "other/repo",
+        ],
+        # a subject over two lines
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s\nCo-Authored-By: x",
+            "--body",
+            "b",
+        ],
+        # other gh commands and options
+        ["gh", "pr", "close", "2045"],
+        ["gh", "pr", "edit", "2045", "--body", "b", "--add-reviewer", "x"],
+        ["gh", "pr", "edit", "2045", "--body", "b", "--base", "other"],
+        ["gh", "pr", "ready", "2045", "--undo"],
+        ["gh", "run", "rerun", "1"],
+        ["gh", "run", "list"],
+        ["gh", "run", "list", "--commit", "main"],
+        ["gh", "run", "view", "x1"],
+        ["gh", "run", "view", "1", "--job", "x"],
+        ["gh", "run", "view", "1", "--log"],
+        ["gh", "api", "repos/o/n"],
+    ],
+)
+def test_a_lead_command_takes_only_its_shapes(
+    lead: dict[str, Any], argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    refused(argv, capsys)
+    assert ran(lead) is None
+
+
+def edit_patch(number: str) -> list[str]:
+    """The one REST call `pr edit` makes (tsk-bmknv06ps0c6), on the pinned repository."""
+    return ["api", "--hostname=github.com", "--method=PATCH",
+            f"repos/oliver-zehentleitner/maity/pulls/{number}", "--input=-"]  # fmt: skip
+
+
+NUMBER_READ = ["pr", "view", f"--repo={REPOSITORY}", "--json=number", "--"]
+
+
+@runs_gh
+def test_edit_sets_the_title_and_the_body_and_ready_marks_it(lead: dict[str, Any]) -> None:
+    """tsk-bmknv06ps0c6: the edit is one PATCH of the pull request through gh's REST call, not
+    `gh pr edit` (older gh asks the forge for `projectCards` there, which the forge refuses);
+    the title and the body go as a JSON object on stdin, nothing else in it."""
+    assert cli.main(["gh", "pr", "edit", "2045", "--title", "t", "--body", "b\n"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == edit_patch("2045")
+    assert json.loads(call["stdin"]) == {"title": "t", "body": "b\n"}
+    assert merge_reads(lead) == []  # a number needs no read
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", "only the body"]) == 0
+    call = ran(lead)
+    assert call is not None and json.loads(call["stdin"]) == {"body": "only the body"}
+    assert cli.main(["gh", "pr", "ready"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["pr", "ready", f"--repo={REPOSITORY}", "--", BRANCH]
+
+
+@runs_gh
+@pytest.mark.parametrize("named", [None, "feature/x"])
+def test_edit_by_branch_reads_the_number_and_patches_the_pinned_repository(
+    lead: dict[str, Any], named: str | None
+) -> None:
+    """A branch (named, or the current one) is turned into its pull request's number with
+    `pr view --json=number` on the pinned repository; the PATCH takes the host, owner and name
+    only from the pinned repository, never from the read's answer (the lead's point on the
+    plan): an answer that also names another repository still edits this one's #77."""
+    (lead["reads"] / "number.json").write_text(
+        json.dumps({"number": 77, "url": "https://github.com/other/repo/pull/77"})
+    )
+    argv = ["gh", "pr", "edit", *([named] if named else []), "--body", "b"]
+    assert cli.main(argv) == 0
+    assert merge_reads(lead) == [[*NUMBER_READ, named or BRANCH]]
+    call = ran(lead)
+    assert call is not None and call["argv"] == edit_patch("77")
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["other-owner:feature", "https://github.com/other/repo/pull/3", "other/repo#3", "-x"],
+)
+def test_edit_naming_another_repository_is_refused_before_gh_runs(
+    lead: dict[str, Any], selector: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lead's point on the plan: a selector that names another repository (owner:branch,
+    a URL, owner/repo#N) is refused before any read or PATCH."""
+    refused(["gh", "pr", "edit", selector, "--body", "b"], capsys)
+    assert ran(lead) is None and merge_reads(lead) == []
+
+
+@runs_gh
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"number": "77"},
+        {"number": 0},
+        {"number": -5},
+        {"number": True},
+        {"number": 1.5},
+        {},
+        [77],
+        "not json",
+        None,
+    ],
+)
+def test_edit_by_branch_refuses_when_the_number_cannot_be_read(
+    lead: dict[str, Any], answer: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a whole number a pull request can have is taken; any other answer, or a failed read,
+    refuses, and nothing is patched."""
+    number = lead["reads"] / "number.json"
+    if answer is None:
+        number.unlink()
+    else:
+        number.write_text(answer if isinstance(answer, str) else json.dumps(answer))
+    err = refused(["gh", "pr", "edit", "feature/x", "--body", "b"], capsys)
+    assert "no pull request of this repository has the head" in err and ran(lead) is None
+
+
+@runs_gh
+def test_edit_says_which_pull_request_changed_in_one_cleaned_line(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """gh prints the whole pull request after the PATCH; maity prints its number and address
+    only, cleaned, with the footer lines left out of the body sent."""
+    url = "https://github.com/oliver-zehentleitner/maity/pull/2045"
+    out = json.dumps({"number": 2045, "html_url": url + "\x1b]0;x\x07", "body": "\x1b[2J long"})
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out)
+    body = "Text.\nCo-Authored-By: Someone <a@example.org>\n"
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", body]) == 0
+    seen = capsys.readouterr()
+    assert seen.out.startswith(f"edited pull request #2045 {url}") and "\x1b" not in seen.out
+    assert "long" not in seen.out and seen.out.count("\n") == 1
+    call = ran(lead)
+    assert call is not None and json.loads(call["stdin"]) == {"body": "Text.\n"}
+
+
+@runs_gh
+@pytest.mark.parametrize(
+    "out",
+    [
+        json.dumps({"title": "secret title", "body": "the body\nsecond"}),  # no number
+        json.dumps({"number": "2045", "body": "the body"}),  # a number of another type
+        json.dumps({"number": 2046, "body": "the body"}),  # another pull request (A1851)
+        json.dumps({"number": 0, "body": "the body"}),
+        json.dumps({"number": -2045, "body": "the body"}),
+        "not json, the body",
+        "",  # gh printed nothing
+    ],
+)
+def test_edit_never_echoes_an_answer_of_another_shape(
+    lead: dict[str, Any], out: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1841 of #2081: when gh's answer is not the pull request, maity prints a fixed
+    line that the edit was sent and may have taken effect, never the answer, which could hold
+    the body and the title."""
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out)
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", "b"]) == 0
+    seen = capsys.readouterr().out
+    assert seen.startswith("sent the edit of pull request #2045;") and seen.count("\n") == 1
+    assert "body" not in seen and "secret" not in seen
+
+
+@runs_gh
+def test_edit_keeps_an_address_with_a_line_break_on_its_line(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1841 of #2081: the address is cleaned as a field inside a line, so a line break
+    in it shows as `\\n` and the output stays one line."""
+    out = json.dumps({"number": 2045, "html_url": "https://example.org/p\nforged line"})
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out)
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", "b"]) == 0
+    seen = capsys.readouterr().out
+    assert seen == "edited pull request #2045 https://example.org/p\\nforged line\n"
+
+
+@runs_gh
+def test_run_list_and_view_read_the_heads_runs_and_jobs(lead: dict[str, Any]) -> None:
+    assert cli.main(["gh", "run", "list", "--commit", SHA]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["run", "list", f"--repo={REPOSITORY}", f"--commit={SHA}",
+                            f"--json={','.join(ghpr.RUN_FIELDS)}", "--limit=50"]  # fmt: skip
+    assert cli.main(["gh", "run", "view", "44802593768"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["run", "view", f"--repo={REPOSITORY}",
+                            f"--json={','.join(ghpr.RUN_VIEW_FIELDS)}", "--",
+                            "44802593768"]  # fmt: skip
+    assert "jobs" in ghpr.RUN_VIEW_FIELDS
+    # Real ids: an 11-digit run and a 12-digit job (lotse#ajwe's run on #2054).
+    argv = ["gh", "run", "view", "44802593768", "--job", "136531499858", "--log-failed"]
+    assert cli.main(argv) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["run", "view", f"--repo={REPOSITORY}", "--job=136531499858",
+                            "--log-failed", "--", "44802593768"]  # fmt: skip
+
+
+def test_run_and_job_ids_take_up_to_nineteen_digits_and_pr_numbers_ten() -> None:
+    """Run and job ids already pass 10 digits; 19 hold any positive 64-bit id; a pull
+    request number keeps its cap."""
+    assert ghpr.RUN_ID.fullmatch("44802593768") and ghpr.RUN_ID.fullmatch("136531499858")
+    assert ghpr.RUN_ID.fullmatch("9" * 19) and not ghpr.RUN_ID.fullmatch("9" * 20)
+    assert not ghpr.RUN_ID.fullmatch("0123") and not ghpr.RUN_ID.fullmatch("12a")
+    assert ghpr.NUMBER.fullmatch("2054") and not ghpr.NUMBER.fullmatch("44802593768")
+
+
+@runs_gh
+def test_a_failed_log_is_cleaned_and_cut_to_its_last_lines(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    lines = ghpr.LOG_TAIL + 5
+    Path(lead["gh"]).write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"sys.stdout.write(''.join(f'line {{n}}\\x1b[31m\\n' for n in range({lines})))\n"
+    )
+    assert cli.main(["gh", "run", "view", "4", "--log-failed"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == f"maity: cut to the last {ghpr.LOG_TAIL} of {lines} lines"
+    assert len(out) == ghpr.LOG_TAIL + 1
+    assert out[1].startswith("line 5") and out[-1].startswith(f"line {lines - 1}")
+    assert "\x1b" not in "".join(out)
+
+
+@pytest.mark.parametrize("role", ["coder", "reviewer", None])
+def test_a_member_the_hub_does_not_name_a_manager_is_refused(
+    lead: dict[str, Any], role: str | None, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.setattr(cli, "_hub_role", lambda *_: role)
+    err = refused(["gh", "pr", "ready", "2045"], capsys)
+    assert "manager or built on it" in err and ran(lead) is None
+
+
+def test_a_hub_that_does_not_answer_refuses(
+    lead: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def down(*_: Any) -> str:
+        raise ghpr.Refused("the hub did not say this member's role: unreachable")
+
+    monkeypatch.setattr(cli, "_hub_role", down)
+    err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+                   "--body", "b"], capsys)  # fmt: skip
+    assert "unreachable" in err and ran(lead) is None
+
+
+# The other system's line end: what the runner never writes here.
+FOREIGN_LEAD = b"lead\n" if os.linesep == "\r\n" else b"lead\r\n"
+
+
+@pytest.mark.parametrize("content", [b"", b"yes\n", b"lead", b"lead\nlead\n", FOREIGN_LEAD])
+def test_without_the_runners_lead_record_the_lead_commands_are_refused(
+    lead: dict[str, Any], content: bytes, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lead["lead_record"].write_bytes(content)
+    refused(["gh", "pr", "ready", "2045"], capsys)
+    assert ran(lead) is None and ROLE_READS == []
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_as_the_lead_record_is_refused_without_waiting(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security A1806 of #2054: as the pull_requests record, the lead record is opened
+    without blocking; a FIFO there refuses the lead command before any role read."""
+    record = lead["lead_record"]
+    record.unlink()
+    os.mkfifo(record, 0o600)
+    refused_without_waiting(record, ["gh", "pr", "ready", "2045"], capsys)
+    assert ran(lead) is None and ROLE_READS == []
+
+
+def test_the_lead_record_is_the_runners_text_write_on_this_system() -> None:
+    """lotse#ajwe's run of #2054 on Windows: the runner writes its records as text, so the
+    record ends in `\\r\\n` there; maity takes exactly that, not a `\\n` the runner never
+    writes on Windows (FOREIGN_LEAD above)."""
+    assert ghpr.LEAD_RECORD == ("lead" + os.linesep).encode("ascii")
+
+
+def test_a_missing_lead_record_names_the_grant_and_reads_no_role(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    lead["lead_record"].unlink()
+    err = refused(["gh", "run", "list", "--commit", SHA], capsys)
+    assert "lead = true" in err and ran(lead) is None and ROLE_READS == []
+
+
+@runs_gh
+def test_create_and_view_need_no_lead_record_and_no_role(
+    placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_read(*_: Any) -> str:
+        raise AssertionError("create and view read no role")
+
+    monkeypatch.setattr(cli, "_hub_role", no_read)
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+
+
+def test_the_role_is_never_read_for_an_agent_served_with_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli.Session, "for_target", "agt-other")
+    with pytest.raises(ghpr.Refused, match="--for"):
+        cli._hub_role(ROOT, OPENED)
+
+
+ROOT = Path("/ws/maity/agent-3")
+OPENED = clonecheck.Opened(top=-1, git=-1)  # never opened: Session.through is replaced
+PROJECT = "oliver-zehentleitner/maity"
+MEMBERS = "/projects/oliver-zehentleitner/maity/members/"
+
+
+class _Client:
+    """A hub that answers for the credential that signed the call: `/me` and the member views
+    by path from `answers`, an exception raised as given; every call is recorded."""
+
+    def __init__(self, answers: dict[str, Any]) -> None:
+        self.answers = answers
+        self.calls: list[tuple[str, str]] = []
+
+    def call(self, method: str, path: str, **_: Any) -> Any:
+        self.calls.append((method, path))
+        answer = self.answers.get(path, hub.HubError("not found", "not_found", 404))
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def _session(
+    monkeypatch: pytest.MonkeyPatch, answers: dict[str, Any], local_member: str = "agt-manager"
+) -> _Client:
+    """The placement's session as Session.through would read it, its state naming
+    `local_member` (a manager's id, say) while the hub authenticates the credential as
+    whoever `/me` in `answers` describes. Session.through itself is tested below on real
+    files; here it is replaced, and records the descriptor it was handed."""
+    client = _Client(answers)
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.client = client
+            self.data = {"member_id": local_member, "full_name": PROJECT}
+
+        def project_path(self, *parts: str) -> str:
+            return "/projects/" + PROJECT + "/" + "/".join(parts)
+
+    def through(root: Path, top: int) -> FakeSession:
+        client.calls.append(("through", f"{root}:{top}"))
+        return FakeSession()
+
+    monkeypatch.setattr(cli.Session, "through", through)
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
+    return client
+
+
+THROUGH = ("through", f"{ROOT}:-1")  # the session read through the checked .git, first
+
+
+def _me(member: str, role: str = "coder", isolated: Any = None) -> dict[str, Any]:
+    return {"member": {"id": member},
+            "projects": [{"full_name": PROJECT, "role": role}],
+            "membership": {"isolated": isolated}}  # fmt: skip
+
+
+def test_the_role_is_the_authenticated_callers_not_the_local_member_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review A1720 of #2054: the local state may name a manager's id, but `/me` answers for
+    the credential that signed the call; the member view read is that member's, never the
+    local id's, and its role base decides."""
+    client = _session(monkeypatch, {
+        "/me": _me("agt-coder"),
+        MEMBERS + "agt-coder": {"id": "agt-coder", "role": "coder", "role_base": "coder"},
+        MEMBERS + "agt-manager": {"id": "agt-manager", "role": "manager", "role_base": "manager"},
+    }, local_member="agt-manager")  # fmt: skip
+    assert cli._hub_role(ROOT, OPENED) == "coder"
+    assert client.calls == [THROUGH, ("GET", "/me"), ("GET", MEMBERS + "agt-coder")]
+
+
+@pytest.mark.parametrize(("role", "base", "allowed"), [
+    ("manager", "manager", True),
+    ("release-lead", "manager", True),   # a project role built on manager counts as manager
+    ("lead-coder", "coder", False),      # one built on coder does not, whatever its name says
+])  # fmt: skip
+def test_the_role_base_decides_not_the_roles_name(
+    monkeypatch: pytest.MonkeyPatch, role: str, base: str, allowed: bool
+) -> None:
+    """The lead's decision on #2054: a project role grants no more than its base
+    (context/trust.md), so `role_base == manager` lets a lead command run."""
+    _session(monkeypatch, {
+        "/me": _me("agt-l", role=role),
+        MEMBERS + "agt-l": {"id": "agt-l", "role": role, "role_base": base},
+    })  # fmt: skip
+    if allowed:
+        ghpr.check_role(cli._hub_role, ROOT, OPENED)
+    else:
+        with pytest.raises(ghpr.Refused, match="manager or built on it"):
+            ghpr.check_role(cli._hub_role, ROOT, OPENED)
+
+
+def test_an_isolated_member_is_refused_though_me_answers_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/me` answers an isolated agent (§6.2); the lead commands check its flag and refuse
+    before any member read."""
+    client = _session(monkeypatch, {
+        "/me": _me("agt-l", role="manager", isolated={"by": "hum-x", "reason": "r"}),
+        MEMBERS + "agt-l": {"id": "agt-l", "role": "manager", "role_base": "manager"},
+    })  # fmt: skip
+    with pytest.raises(ghpr.Refused, match="isolated"):
+        cli._hub_role(ROOT, OPENED)
+    assert client.calls == [THROUGH, ("GET", "/me")]
+
+
+def test_a_member_view_of_another_member_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    _session(monkeypatch, {
+        "/me": _me("agt-l"),
+        MEMBERS + "agt-l": {"id": "agt-other", "role": "manager", "role_base": "manager"},
+    })  # fmt: skip
+    with pytest.raises(ghpr.Refused, match="not the member"):
+        cli._hub_role(ROOT, OPENED)
+
+
+@pytest.mark.parametrize(
+    "me",
+    [
+        {"member": {"id": "agt-x"}, "projects": []},  # not a member of this project
+        {"member": {"id": "agt-x"}, "projects": [{"full_name": "o/elsewhere", "role": "manager"}]},
+        {"member": {"id": "agt-x"}},  # no list at all
+        {"projects": [{"full_name": PROJECT, "role": "manager"}]},  # no member named
+        "not json",
+    ],
+)
+def test_a_me_that_does_not_list_this_project_refuses(
+    monkeypatch: pytest.MonkeyPatch, me: Any
+) -> None:
+    _session(monkeypatch, {"/me": me})
+    with pytest.raises(ghpr.Refused, match="no membership"):
+        cli._hub_role(ROOT, OPENED)
+
+
+def test_a_hub_error_on_me_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    _session(monkeypatch, {"/me": hub.HubError("unreachable")})
+    with pytest.raises(ghpr.Refused, match="did not say"):
+        cli._hub_role(ROOT, OPENED)
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or os.open not in os.supports_dir_fd,
+    reason="no descriptor walk here; the lead commands refuse on such a system",
+)
+def test_a_malformed_credential_is_a_refusal_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1758 of #2054 (P3): a credential that is not `mty1.<id>.<secret>` makes
+    Session.through raise CredentialFormatError; the role read turns it into a refusal like
+    the others (exit 4), before any call."""
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
+    git = tmp_path / "clone" / ".git"
+    folder = git / "maity"
+    folder.mkdir(parents=True)
+    folder.chmod(0o700)
+    state.save_state(folder, {"hub": "https://hub.example", "full_name": PROJECT})
+    state.write_credential(folder, state.Secret("not-a-credential"))
+    top = os.open(git, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(ghpr.Refused, match="did not say"):
+            cli._hub_role(tmp_path / "clone", clonecheck.Opened(top=-1, git=top))
+    finally:
+        os.close(top)
+
+
+def test_a_state_dir_named_by_maity_state_dir_is_refused_under_a_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review A1721 of #2054: the runner never sets MAITY_STATE_DIR, so under a placement
+    the lead commands refuse it before a session is built or the hub asked."""
+    client = _session(monkeypatch, {"/me": _me("agt-l", role="manager")})
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    monkeypatch.setenv("MAITY_STATE_DIR", "/elsewhere/state")
+    with pytest.raises(ghpr.Refused, match="MAITY_STATE_DIR"):
+        cli._hub_role(ROOT, OPENED)
+    assert client.calls == []
+
+
+def test_without_the_checked_git_no_session_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where ghpr.run has no descriptor of the checked `.git` (Windows), the lead commands
+    refuse before any state is read or the hub asked (review A1738 of #2054)."""
+    client = _session(monkeypatch, {"/me": _me("agt-l", role="manager")})
+    with pytest.raises(ghpr.Refused, match="checked .git"):
+        cli._hub_role(ROOT, None)
+    assert client.calls == []
+
+
+# --- the placement's state read through the checked .git (state.read_placed) ---------------
+
+needs_dir_fd = pytest.mark.skipif(
+    os.name == "nt" or os.open not in os.supports_dir_fd,
+    reason="no descriptor walk here; the lead commands refuse on such a system",
+)
+
+
+def _placed_state(tmp_path: Path) -> tuple[Path, int]:
+    """A clone's `.git` with `maity/state.json` and `maity/credential` as maity writes them
+    (0700 directory, 0600 files), and an open descriptor of that `.git`."""
+    git = tmp_path / "clone" / ".git"
+    folder = git / "maity"
+    folder.mkdir(parents=True)
+    folder.chmod(0o700)
+    state.save_state(folder, {"hub": "https://hub.example", "full_name": PROJECT})
+    state.write_credential(folder, state.Secret("mty1.a.b"))
+    return folder, os.open(git, os.O_RDONLY | os.O_DIRECTORY)
+
+
+@needs_dir_fd
+def test_the_placements_state_is_read_through_the_checked_git(tmp_path: Path) -> None:
+    folder, top = _placed_state(tmp_path)
+    try:
+        data, credential = state.read_placed(top)
+    finally:
+        os.close(top)
+    assert data["full_name"] == PROJECT and credential.reveal() == "mty1.a.b"
+
+
+@needs_dir_fd
+def test_a_git_swapped_after_the_check_is_never_read(tmp_path: Path) -> None:
+    """kduz's probe on #2054 (A1739): `.git` replaced by a decoy after `opened_clone`
+    opened it and before the state is read. The read goes through the descriptor of the
+    `.git` that was checked, so the decoy's hub and credential are never seen (a path read,
+    as on ea5ca498, would take the decoy's)."""
+    folder, top = _placed_state(tmp_path)
+    clone = tmp_path / "clone"
+    try:
+        os.rename(clone / ".git", clone / ".git-moved")
+        decoy = clone / ".git" / "maity"
+        decoy.mkdir(parents=True, mode=0o700)
+        decoy.chmod(0o700)
+        state.save_state(decoy, {"hub": "https://attacker.example", "full_name": "o/decoy"})
+        state.write_credential(decoy, state.Secret("mty1.x.y"))
+        data, credential = state.read_placed(top)
+    finally:
+        os.close(top)
+    assert data == {"hub": "https://hub.example", "full_name": PROJECT}
+    assert credential.reveal() == "mty1.a.b"
+
+
+@needs_dir_fd
+@pytest.mark.parametrize(
+    "spoil",
+    ["maity is a link", "state.json is a link", "credential is a link",
+     "credential hard-linked", "credential readable by others", "maity readable by group",
+     "credential a directory", "state.json too large", "state.json a FIFO",
+     "credential a FIFO"],
+)  # fmt: skip
+def test_a_spoiled_placement_state_is_refused_before_any_client(tmp_path: Path, spoil: str) -> None:
+    """Review A1738 of #2054: the read boundary itself. Each step is opened from the one
+    before without following a link, and each must be maity's own private file or directory;
+    anything else is refused, so nothing a sandboxed session planted signs a call."""
+    folder, top = _placed_state(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(mode=0o700)
+    try:
+        if spoil == "maity is a link":
+            folder.rename(elsewhere / "maity")
+            folder.symlink_to(elsewhere / "maity")
+        elif spoil in ("state.json is a link", "credential is a link"):
+            name = spoil.split(" ")[0]
+            (folder / name).rename(elsewhere / name)
+            (folder / name).symlink_to(elsewhere / name)
+        elif spoil == "credential hard-linked":
+            os.link(folder / "credential", elsewhere / "credential")
+        elif spoil == "credential readable by others":
+            (folder / "credential").chmod(0o644)
+        elif spoil == "maity readable by group":
+            folder.chmod(0o750)
+        elif spoil == "credential a directory":
+            (folder / "credential").unlink()
+            (folder / "credential").mkdir(mode=0o700)
+        elif spoil.endswith("a FIFO"):
+            # No writer: without O_NONBLOCK the open would wait forever (review A1758).
+            name = spoil.split(" ")[0]
+            (folder / name).unlink()
+            os.mkfifo(folder / name, 0o600)
+        else:
+            (folder / "state.json").write_bytes(b" " * (state.PLACED_STATE_MAX + 1))
+            (folder / "state.json").chmod(0o600)
+        with pytest.raises(state.StateError):
+            state.read_placed(top)
+    finally:
+        os.close(top)
+
+
+@needs_dir_fd
+def test_the_session_through_the_checked_git_signs_with_that_credential(
+    tmp_path: Path,
+) -> None:
+    """Session.through builds the client from the bytes read through the descriptor alone:
+    a state.json elsewhere that MAITY_STATE_DIR or a path would name plays no part."""
+    folder, top = _placed_state(tmp_path)
+    try:
+        session = cli.Session.through(tmp_path / "clone", top)
+    finally:
+        os.close(top)
+    assert session.data["full_name"] == PROJECT
+    assert session.dir == tmp_path / "clone" / ".git" / "maity"
+    assert session.client.base.startswith("https://hub.example")
+
+
+# --- the runner's directory for the agent (ghpr.owned_layout) --------------------------------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes; the lead commands refuse on Windows")
+@pytest.mark.parametrize(
+    "spoil",
+    ["a link on the way", "agents writable by group", "placement writable by others",
+     "git of another kind"],
+)  # fmt: skip
+def test_the_runners_directory_must_be_real_and_closed_to_others(
+    tmp_path: Path, spoil: str
+) -> None:
+    """The security leg's P3 on #2054, tightened by the lead: no link anywhere on the way to
+    `agents/<placement>/git`, and none of the three writable by group or others."""
+    base = tmp_path.resolve()
+    where = base / "state" / "agents" / "plc-0003" / "git"
+    where.mkdir(parents=True)
+    for step in (where.parent.parent, where.parent, where):
+        step.chmod(0o700)
+    ghpr.owned_layout(where)  # as the runner makes it: passes
+    if spoil == "a link on the way":
+        (base / "link").symlink_to(base / "state")
+        where = base / "link" / "agents" / "plc-0003" / "git"
+    elif spoil == "agents writable by group":
+        where.parent.parent.chmod(0o770)
+    elif spoil == "placement writable by others":
+        where.parent.chmod(0o703)
+    else:
+        where.rmdir()
+        where.write_text("")
+    with pytest.raises(ghpr.Refused):
+        ghpr.owned_layout(where)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes; the lead commands refuse on Windows")
+def test_the_runner_makes_a_layout_the_lead_commands_take_under_a_loose_umask(
+    tmp_path: Path,
+) -> None:
+    """Review A1758 of #2054: under a umask of 002 a mkdir with parents leaves `agents/` at
+    0775, which owned_layout refuses; the runner makes and keeps it 0700 itself, and tightens
+    one an older runner left at 0775."""
+    base = tmp_path.resolve()
+    where = make_runner_layout(base / "fresh", "plc-0003")
+    assert stat.S_IMODE(os.stat(where.parent.parent).st_mode) == 0o700
+    ghpr.owned_layout(where)
+    older = base / "older" / "agents"
+    older.mkdir(parents=True)
+    older.chmod(0o775)  # what an older runner made under umask 002
+    where = make_runner_layout(base / "older", "plc-0003")
+    assert stat.S_IMODE(os.stat(older).st_mode) == 0o700
+    ghpr.owned_layout(where)
+
+
+class _ThroughRun(AsUser):
+    """An AsUser that takes its non-direct path (the `run` calls of sudo and ssh), here
+    running each argv locally as this user."""
+
+    @property
+    def direct(self) -> bool:
+        return False
+
+    def argv(self, argv: Any, env: Any = None) -> list[str]:
+        return list(argv)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes and links")
+@pytest.mark.parametrize("as_user", [AsUser(), _ThroughRun()], ids=["direct", "through run"])
+def test_the_runner_tightens_only_a_real_agents_directory(tmp_path: Path, as_user: AsUser) -> None:
+    """Security leg on #2054: chmod follows a link, so `agents/` as a link is refused before
+    the chmod and what it names keeps its mode; a real directory is made 0700."""
+    real = tmp_path / "real"
+    real.mkdir(mode=0o755)
+    real.chmod(0o755)
+    link = tmp_path / "agents"
+    link.symlink_to(real, target_is_directory=True)
+    with pytest.raises(OSError, match="not a directory"):
+        as_user.tighten(link)
+    assert stat.S_IMODE(os.stat(real).st_mode) == 0o755
+    as_user.tighten(real)
+    assert stat.S_IMODE(os.stat(real).st_mode) == 0o700
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX owners; the lead commands refuse on Windows")
+@pytest.mark.parametrize("step", ["agents", "placement", "git"])
+def test_a_runner_directory_of_another_user_is_refused(
+    tmp_path: Path, step: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1758 of #2054: in every layout the runner makes all three as the agents' user,
+    this session's uid, so one owned by anybody else is refused (a test cannot chown, so the
+    owner lstat reports is replaced for that one directory)."""
+    where = make_runner_layout(tmp_path.resolve(), "plc-0003")
+    foreign = {"agents": where.parent.parent, "placement": where.parent, "git": where}[step]
+    real_lstat = os.lstat
+
+    def lstat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        info = real_lstat(path, *args, **kwargs)
+        if Path(path) != foreign:
+            return info
+        fields = list(info)
+        fields[stat.ST_UID] = os.getuid() + 1
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    with pytest.raises(ghpr.Refused, match="not a directory of this user's"):
+        ghpr.owned_layout(where)
+
+
+@runs_gh
+def test_every_answer_of_gh_is_cleaned_on_both_streams(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1721 of #2054: a confirmation can echo a title someone else wrote; neither
+    stream reaches the terminal with an escape a terminal acts on."""
+    out, err = "merged #2045 (\x1b]0;title\x07)\n", "✓ Squashed \x1b[2J and merged\n"
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out, err=err)
+    argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+            "--body", "b"]  # fmt: skip
+    assert cli.main(argv) == 0
+    seen = capsys.readouterr()
+    assert "\x1b" not in seen.out and "\x07" not in seen.out and "\x1b" not in seen.err
+    assert "merged #2045" in seen.out and "\\x1b" in seen.out and "Squashed" in seen.err
+
+
+def test_the_footer_filter_drops_whole_lines_only() -> None:
+    text = (
+        "Title line\n"
+        "  co-authored-by: Lower Case <x@example.org>\r\n"
+        "Thanks; Co-Authored-By: is named here in a sentence\n"
+        "Generated with [Tool](https://example.org)\n"
+        "Generated with care by hand\n"
+        "\U0001f916 Generated by [A Container](https://example.org/c)\n"
+        "Generated by the team, see [notes](https://example.org/n)\n"
+    )
+    kept, dropped = ghpr.strip_footer(text)
+    assert dropped == 3
+    assert kept == (
+        "Title line\n"
+        "Thanks; Co-Authored-By: is named here in a sentence\n"
+        "Generated with care by hand\n"
+        "Generated by the team, see [notes](https://example.org/n)\n"
+    )
+    assert ghpr.strip_footer("no footer") == ("no footer", 0)
+
+
+def test_check_role_fails_closed() -> None:
+    with pytest.raises(ghpr.Refused):
+        ghpr.check_role(None, ROOT)
+    with pytest.raises(ghpr.Refused, match="no role"):
+        ghpr.check_role(lambda *_: None, ROOT)
+    ghpr.check_role(lambda *_: "manager", ROOT)

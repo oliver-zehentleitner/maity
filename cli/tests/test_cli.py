@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -14,7 +16,7 @@ import fakehub
 import pytest
 from conftest import assert_private, fake_gh, fake_maity, git, posix
 
-from maity import cli, hub, pointer, state
+from maity import cli, hub, pointer, proc, state
 
 COMMANDS = ("join", "resume", "wait", "report", "ask", "api", "help")
 
@@ -286,7 +288,11 @@ def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
     err = hub.HubError("join: x: reason: dummysecret", code="Bad Code")
     assert hub.error_code(err) is None
     assert hub.error_code(hub.HubError("x", code="instance_quota\n", status=409)) is None
-    assert hub.error_code(hub.HubError("cannot reach https://h: down")) == "network"
+    # `network` is the `unreached` flag, for a hub not reached and an answer that broke off
+    # alike; a message's wording decides nothing (tsk-b6083ktng3dw).
+    assert hub.error_code(hub.unreached("https://h", ConnectionRefusedError("down"))) == "network"
+    assert hub.error_code(hub.unreached("https://h", http.client.IncompleteRead(b"{"))) == "network"
+    assert hub.error_code(hub.HubError("cannot reach https://h: down")) is None
     assert hub.error_code(hub.HubError("not a hub URL: x")) is None
 
 
@@ -614,6 +620,21 @@ def test_a_credential_in_a_body_is_refused_locally(
     assert not fake.seen
 
 
+@pytest.mark.parametrize("after", ["é", "ß", "日", "."])
+def test_a_credential_before_a_non_ascii_letter_is_refused_locally(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], after: str
+) -> None:
+    # The hub's `\b` is ASCII and refuses this query (and revokes a real credential); the
+    # pre-send check must refuse it first. No `-` or `_` in the secret, see
+    # test_credential_guard.PLAIN.
+    leak = "mty1.crd-x-0001.abcdefABCDEF0123456789"
+    args = ["api", "GET", "/projects/oliver/maity/tasks", "--query", f"q={leak}{after}"]
+    assert cli.main(args) == cli.EXIT_ERROR
+    out = output(capsys)
+    assert "credential format" in out and leak not in out
+    assert not fake.seen
+
+
 def test_api_passthrough_is_signed_and_idempotent(
     joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -638,8 +659,12 @@ def test_api_query_is_signed(joined: Path, fake: fakehub.FakeHub) -> None:
 
 
 def test_help_fetches_the_hub_help(
-    fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setenv("MAITY_STATE_DIR", str(tmp_path / "no-state"))  # before a join
     assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK
     assert capsys.readouterr().out == "# Maity help\n"
 
@@ -676,6 +701,480 @@ def test_resume_adopts_a_credential_from_the_page_driven_join(
     assert data["hub"] == fake.url and data["project"] == "maity" and data["member_id"] == "agt-b"
 
 
+# --- a clone's hub is fixed: --hub on a joined clone ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("https://hub.example", "https://HUB.example"),
+        ("https://hub.example", "https://hub.example:443"),
+        ("https://hub.example", "HTTPS://hub.example./"),
+        ("https://hub.example", "https://hub.example/j/abc?x=1"),
+        ("http://localhost", "http://localhost:80"),
+        ("https://hub.example:8443", "https://Hub.Example:8443/api"),
+        # An IP literal is compared in its canonical spelling.
+        ("https://[2001:db8::1]", "https://[2001:0DB8:0:0:0:0:0:1]"),
+        ("https://[::1]", "https://[0:0:0:0:0:0:0:1]"),
+        ("http://[::1]:8000", "http://[::1]:8000/x"),
+    ],
+)
+def test_same_origin(a: str, b: str) -> None:
+    assert hub.same_origin(a, b) and hub.same_origin(b, a)
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("https://hub.example", "https://other.example"),
+        ("https://hub.example", "https://hub.example:8443"),
+        ("https://hub.example", "https://sub.hub.example"),
+        ("http://localhost:8000", "http://127.0.0.1:8000"),
+        ("http://localhost", "https://localhost"),
+        ("https://[2001:db8::1]", "https://[2001:db8::2]"),
+        ("https://[::1]", "https://127.0.0.1"),
+        ("https://[::ffff:127.0.0.1]", "https://127.0.0.1"),
+        # A trailing dot makes a name, not the address: checked before the dot is dropped.
+        ("https://127.0.0.1", "https://127.0.0.1."),
+    ],
+)
+def test_another_origin(a: str, b: str) -> None:
+    assert not hub.same_origin(a, b) and not hub.same_origin(b, a)
+
+
+def _state_bytes(directory: Path) -> dict[str, bytes]:
+    """Every file in the state directory, byte for byte."""
+    files = sorted(p for p in directory.rglob("*") if p.is_file())
+    return {str(p.relative_to(directory)): p.read_bytes() for p in files}
+
+
+def _other_port(url: str) -> str:
+    base = hub.hub_base(url)
+    port = int(base.rsplit(":", 1)[1])
+    return f"{base.rsplit(':', 1)[0]}:{port + 1 if port < 65535 else port - 1}"
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_hub_flag_with_another_origin_is_refused_and_writes_nothing(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    before = _state_bytes(joined)
+    assert "state.json" in before and "credential" in before
+    for other in ("https://elsewhere.example", _other_port(fake.url)):
+        assert cli.main([*command, "--hub", other]) == cli.EXIT_REFUSED, other
+        err = capsys.readouterr().err
+        assert f"joined to the hub at {fake.url}," in err
+        assert "changes only by a new join" in err
+        assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_hub_flag_with_the_same_origin_passes(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    spellings = (fake.url, f"{fake.url}/", f"{fake.url}/j/abc", fake.url.replace("http", "HTTP"))
+    for given in spellings:
+        assert cli.main([*command, "--hub", given]) == cli.EXIT_OK, output(capsys)
+        assert state.load_state(joined)["hub"] == fake.url  # the stored URL stays as it was
+    capsys.readouterr()
+
+
+def test_hub_flag_on_a_first_join_from_the_page_passes(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No state.json yet, only the credential the page-driven join left: `--hub` names the hub,
+    whatever it is, and is stored."""
+    directory = state.resolve_state_dir()
+    directory.mkdir(mode=0o700)
+    (directory / "credential").write_text(fakehub.CREDENTIAL)
+    (directory / "credential").chmod(0o600)
+    assert not (directory / "state.json").exists()
+    assert cli.main(["resume", "--hub", f"{fake.url}/"]) == cli.EXIT_OK, output(capsys)
+    assert state.load_state(directory)["hub"] == fake.url
+
+
+def test_a_new_join_is_the_way_to_another_hub(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A clone joined to another hub, its credential removed: `maity join` stores the new hub
+    as before."""
+    directory = state.resolve_state_dir()
+    state.save_state(directory, {"hub": "https://elsewhere.example", "project": "x/y"})
+    join = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]
+    assert cli.main(join) == cli.EXIT_OK, output(capsys)
+    assert state.load_state(directory)["hub"] == fake.url
+
+
+@pytest.mark.parametrize("case", ["marked, placement unset", "placement invalid", "no git"])
+def test_help_hub_where_the_clones_state_cannot_be_read_fails_closed(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """`help --hub` treats only "not inside a Git clone" (`state.NotInClone`) as before a
+    join. A clone whose state directory cannot be named may hold a state that names a hub, so
+    every other reason is refused with exit 4 and nothing is fetched, not even from the hub
+    `--hub` names."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    if case == "marked, placement unset":  # clonecheck.Refused
+        (clone / ".git" / "maity").mkdir(mode=0o700, exist_ok=True)
+        (clone / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    elif case == "placement invalid":  # clonecheck.Refused
+        monkeypatch.setenv("MAITY_PLACEMENT", "not a placement id")
+        monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    else:  # proc.ToolError
+        (tmp_path / "no-git").mkdir()
+        monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    with pytest.raises(state.StateError) as raised:
+        state.resolve_state_dir()
+    assert not isinstance(raised.value, state.NotInClone)
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "state cannot be read" in err and "Nothing was fetched" in err
+    assert fake.seen == []  # nothing fetched
+
+
+def test_help_hub_outside_a_clone_fetches(
+    bin_dir: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Outside a Git clone (git answers so: `state.NotInClone`) `help --hub` is before a join
+    and fetches from the hub it names, as before."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))  # no repository above it
+    monkeypatch.chdir(outside)
+    with pytest.raises(state.NotInClone):
+        state.resolve_state_dir()
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK, output(capsys)
+    assert capsys.readouterr().out == "# Maity help\n"
+    assert [s.method for s in fake.seen] == ["GET"]
+
+
+def _git_rev_parse_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`git rev-parse --git-common-dir` exits 128, as for a clone git cannot read (a damaged
+    config, a directory it does not trust); every other git runs as it is."""
+    run = proc.run
+
+    def failing(cmd: list[str], cwd: Path, *args: Any, **kwargs: Any) -> Any:
+        if cmd[-2:] == ["rev-parse", "--git-common-dir"]:
+            return subprocess.CompletedProcess(cmd, 128, "", "fatal: cannot read\n")
+        return run(cmd, cwd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", failing)
+
+
+def _help_hub_and_join_are_refused(
+    fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(state.StateError) as raised:
+        state.resolve_state_dir()
+    assert not isinstance(raised.value, state.NotInClone)
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "state cannot be read" in err and "Nothing was fetched" in err
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "state directory cannot be named" in capsys.readouterr().err
+    assert fake.seen == []  # nothing fetched or sent
+
+
+def test_a_clone_git_cannot_read_refuses_help_hub_and_join(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A joined clone, its state naming a hub, where git fails: its `.git` says it is a clone,
+    so the failure is no "not inside a Git clone". `help --hub` and `join` are refused with
+    exit 4 and the state stays as it was."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    before = _state_bytes(joined)
+    _git_rev_parse_fails(monkeypatch)
+    _help_hub_and_join_are_refused(fake, capsys)
+    assert _state_bytes(joined) == before
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "file",
+        pytest.param(
+            "link",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="a link needs a privilege"),
+        ),
+    ],
+)
+def test_a_git_file_or_link_above_counts_as_a_clone(
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+) -> None:
+    """A worktree's `.git` file, or a `.git` link to nowhere, in a directory above the working
+    one: a clone, so a failing git is refused, not taken for outside a clone."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    worktree = tmp_path / "worktree"
+    (worktree / "sub").mkdir(parents=True)
+    if kind == "file":
+        (worktree / ".git").write_text(f"gitdir: {tmp_path / 'gone'}\n")
+    else:
+        (worktree / ".git").symlink_to(tmp_path / "gone")
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.chdir(worktree / "sub")
+    _git_rev_parse_fails(monkeypatch)
+    _help_hub_and_join_are_refused(fake, capsys)
+
+
+def test_a_git_above_the_ceiling_does_not_count(
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Looking for a `.git` stops before a `GIT_CEILING_DIRECTORIES` entry, as git does: one
+    above the ceiling is no clone of this directory, so a failing git is outside a clone and
+    `help --hub` fetches. Without the ceiling the same `.git` makes it a clone."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / "above" / ".git").mkdir(parents=True)
+    inside = tmp_path / "above" / "ceiling" / "inside"
+    inside.mkdir(parents=True)
+    monkeypatch.chdir(inside)
+    _git_rev_parse_fails(monkeypatch)
+    monkeypatch.delenv("GIT_CEILING_DIRECTORIES", raising=False)
+    with pytest.raises(state.StateError) as raised:
+        state.resolve_state_dir()
+    assert not isinstance(raised.value, state.NotInClone)
+    ceiling = tmp_path / "above" / "ceiling"
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", f"relative{os.pathsep}{ceiling}")
+    with pytest.raises(state.NotInClone):
+        state.resolve_state_dir()
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK, output(capsys)
+    assert [s.method for s in fake.seen] == ["GET"]
+
+
+def test_a_same_origin_hub_flag_in_another_ipv6_spelling_keeps_the_stored_url(
+    joined: Path,
+) -> None:
+    """The origin is compared with the IP literal in its canonical spelling; the stored URL is
+    not rewritten to the given one or to that spelling."""
+    data = state.load_state(joined)
+    data["hub"] = "https://[2001:db8::1]:8443"
+    state.save_state(joined, data)
+    before = _state_bytes(joined)
+    session = cli.Session("https://[2001:0DB8:0:0:0:0:0:1]:8443/")
+    assert session.data["hub"] == "https://[2001:db8::1]:8443"
+    assert session.client.base == "https://[2001:db8::1]:8443"
+    assert _state_bytes(joined) == before
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_the_refusal_shows_both_origins_alike(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    """Stored and given origin are printed the same way: an IPv6 host in brackets, in its
+    canonical spelling, the port only when it is not the scheme's default."""
+    data = state.load_state(joined)
+    data["hub"] = "https://[0:0::1]:8443"
+    state.save_state(joined, data)
+    before = _state_bytes(joined)
+    given = "https://[0:0:0:0:0:0:0:1]:8444/j/abc"
+    assert cli.main([*command, "--hub", given]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "joined to the hub at https://[::1]:8443, and --hub names https://[::1]:8444," in err
+    assert cli.main([*command, "--hub", "https://[::2]"]) == cli.EXIT_REFUSED
+    assert "--hub names https://[::2], another origin" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize(
+    "url", ["https://@hub.example", "https://:@hub.example", "https://@hub.example/j/abc"]
+)
+def test_a_url_with_an_empty_userinfo_is_refused(url: str) -> None:
+    """An empty user or password is a userinfo part all the same."""
+    with pytest.raises(hub.HubError, match="credentials in it"):
+        hub.hub_base(url)
+
+
+# --- under a placement, --hub names only the clone's hub -------------------------------------
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_placed_hub_flag_with_another_origin_is_refused(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    before = _state_bytes(joined)
+    assert cli.main([*command, "--hub", "https://elsewhere.example"]) == cli.EXIT_REFUSED
+    assert "changes only by a new join" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_placed_hub_flag_without_a_stored_hub_is_refused(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    """The runner's join stores the hub with the credential; under a placement a state that
+    names no hub takes none from --hub, not even the hub the runner joined."""
+    data = state.load_state(joined)
+    del data["hub"]
+    state.save_state(joined, data)
+    before = _state_bytes(joined)
+    assert cli.main([*command, "--hub", fake.url]) == cli.EXIT_REFUSED
+    assert "--hub names only the clone's hub" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("case", ["placement unset", "placement invalid"])
+def test_placed_clone_whose_placement_cannot_be_read_refuses_help_hub(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """The runner's clone, its marker in place, with MAITY_PLACEMENT removed or not an id:
+    `help --hub` is refused and nothing is fetched; `resume --hub` fails before any call."""
+    (placed / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    if case == "placement unset":
+        monkeypatch.delenv("MAITY_PLACEMENT")
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", "not a placement id")
+    before = _state_bytes(joined)
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_REFUSED
+    assert "state cannot be read" in capsys.readouterr().err
+    assert cli.main(["resume", "--hub", fake.url]) != cli.EXIT_OK
+    capsys.readouterr()
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_placed_hub_flag_without_git_is_refused(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    """Under a placement the state directory is found without git, so with git missing from
+    PATH the clone's hub still decides: another origin is refused and nothing is sent."""
+    (tmp_path / "no-git").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    before = _state_bytes(joined)
+    assert cli.main([*command, "--hub", "https://elsewhere.example"]) == cli.EXIT_REFUSED
+    assert "changes only by a new join" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+# --- a placed session never joins --------------------------------------------------------------
+
+
+def _join_line(fake: fakehub.FakeHub) -> list[str]:
+    return ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE]
+
+
+def test_a_placed_session_never_joins(
+    placed: Path, joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _state_bytes(joined)
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "a placed session never joins" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("variable", ["MAITY_PLACEMENT", "MAITY_GIT_PRIVATE"])
+def test_a_join_with_a_placement_variable_set_is_refused(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    variable: str,
+) -> None:
+    """MAITY_PLACEMENT set even empty, or the runner's MAITY_GIT_PRIVATE set: a placed
+    session, refused before the state lookup; the fresh clone stays unjoined."""
+    monkeypatch.setenv(variable, "")
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "a placed session never joins" in capsys.readouterr().err
+    assert not (clone / ".git" / "maity").exists()
+    assert fake.seen == []  # nothing sent
+
+
+def test_a_join_in_a_runners_clone_without_its_placement_is_refused(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Unplaced, a clone holding the runner's marker (clonecheck.Refused) gets no directory of
+    the agent's own: refused before the join page is fetched."""
+    (clone / ".git" / "maity").mkdir(mode=0o700)
+    (clone / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "state directory cannot be named" in capsys.readouterr().err
+    assert not (clone / ".git" / "maity" / "credential").exists()
+    assert fake.seen == []  # nothing sent
+
+
+def test_an_unplaced_join_without_git_derives_the_identity_directory(
+    no_clone: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Outside a placement, git missing (`state.NoGit`) joins into a directory of the agent's
+    own, as without a clone."""
+    (tmp_path / "no-git").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    with pytest.raises(state.NoGit):
+        state.resolve_state_dir()
+    line = [*_join_line(fake), "--no-resume"]
+    assert cli.main(line) == cli.EXIT_OK, output(capsys)
+    host = state.host_dir(fake.url.removeprefix("http://"))
+    directory = no_clone / ".local" / "state" / "maity" / host / "agent-b"
+    assert state.credential_path(directory).read_bytes() == fakehub.CREDENTIAL.encode()
+    assert ("POST", f"/api/v1/join/{fakehub.TOKEN}") in [(s.method, s.path) for s in fake.seen]
+
+
+def test_a_placed_clone_without_a_hub_is_told_the_runner_joins_it(
+    placed: Path, joined: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under a placement `resume --hub` names no hub of its own, so the hint is the runner's
+    join, not `resume --hub`."""
+    data = state.load_state(joined)
+    del data["hub"]
+    state.save_state(joined, data)
+    assert cli.main(["messages"]) != cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert "the runner joins it again" in err and "resume --hub" not in err
+
+
 def test_a_redirect_is_refused_not_followed(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -703,7 +1202,56 @@ def test_userinfo_is_never_echoed(url: str) -> None:
 
 
 def test_safe_url_drops_userinfo_and_query() -> None:
-    assert hub.safe_url("https://u:p@h.example:8443/j/t?code=X") == "https://h.example:8443/j/t"
+    assert (
+        hub.safe_url("https://u:p@h.example:8443/j/t?code=X") == "https://h.example:8443/j/<token>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("url", "shown"),
+    [
+        ("https://h.example/join/abc123", "https://h.example/join/<token>"),
+        ("https://h.example/api/v1/join/abc123/", "https://h.example/api/v1/join/<token>/"),
+        ("https://h.example/r/abc123", "https://h.example/r/<token>"),
+        ("https://h.example/i/abc123?x=1", "https://h.example/i/<token>"),
+        ("https://h.example/join/", "https://h.example/join/"),
+        ("https://h.example/projects/a/b", "https://h.example/projects/a/b"),
+        ("https://h.example/j/abc123", "https://h.example/j/<token>"),
+        ("https://h.example/invite/abc123", "https://h.example/invite/<token>"),
+        ("https://h.example/JOIN/abc123", "https://h.example/JOIN/<token>"),
+        ("https://h.example/jo%69n/abc123", "https://h.example/jo%69n/<token>"),
+        ("https://h.example/%256Aoin/abc123", "https://h.example/%256Aoin/<token>"),
+        ("https://h.example/join//abc123", "https://h.example/join//<token>"),
+        (
+            "https://h.example/api/v1/runners/pair/abc",
+            "https://h.example/api/v1/runners/pair/<token>",
+        ),
+        ("https://h.example/mail/verify/abc123", "https://h.example/mail/verify/<token>"),
+        ("https://h.example/mail/sign-in/abc123", "https://h.example/mail/sign-in/<token>"),
+        ("https://h.example/mail/register/abc123", "https://h.example/mail/register/<token>"),
+        ("http://127.0.0.1:1/SECRETtok123", "http://127.0.0.1:1/<token>"),
+        ("https://join.example/abc123/", "https://join.example/<token>/"),
+        ("http://127.0.0.1:9/skill", "http://127.0.0.1:9/skill"),
+        ("https://h.example/r/join/abc123", "https://h.example/r/<token>/<token>"),
+        ("https://join.example/Ab3_xY9-kLm0pQr7sTu2vW", "https://join.example/<token>"),
+        ("https://join.example/AbcDef-GhiJkl-MnoPqrs", "https://join.example/<token>"),
+        (
+            "https://h.example/api/v1/invitations/abc123",
+            "https://h.example/api/v1/invitations/<token>",
+        ),
+    ],
+)
+def test_safe_url_hides_the_token_of_a_link(url: str, shown: str) -> None:
+    assert hub.safe_url(url) == shown
+
+
+def test_a_join_to_an_unreachable_host_does_not_print_the_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli.main(["join", "http://127.0.0.1:1/SECRETtok123", "--code", "abc"])
+    assert code != 0
+    printed = capsys.readouterr()
+    assert "SECRETtok123" not in printed.out + printed.err
 
 
 @pytest.mark.parametrize(
@@ -1262,6 +1810,20 @@ def test_a_placed_session_that_cannot_read_its_credential_is_told_to_run_maity_a
     assert cli.main(["messages"]) != 0
     err = capsys.readouterr().err
     assert "run maity alone" in err and "has not joined" not in err
+
+
+@pytest.mark.parametrize("value", ["", " ", "plc-0003\n", "PLC-0003", "../plc-0003"])
+def test_any_set_placement_that_is_not_an_id_is_refused_not_told_to_join(
+    clone: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str
+) -> None:
+    """Set, even empty or malformed, MAITY_PLACEMENT is a placed session, never one told it
+    has not joined: a value that is no placement id is refused before the credential is
+    looked for (clonecheck.placement_root, from the state lookup)."""
+    monkeypatch.setenv("MAITY_PLACEMENT", value)
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    assert cli.main(["messages"]) != 0
+    err = capsys.readouterr().err
+    assert "is set but not a placement id" in err and "has not joined" not in err
 
 
 def test_an_unplaced_clone_without_a_credential_is_told_to_join(

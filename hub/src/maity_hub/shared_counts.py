@@ -70,8 +70,10 @@ def _db() -> Engine:
 
 
 def _key(key: str) -> str:
-    """The key as stored: a long one, or one with a NUL (a pair of an address and a source)
-    that PostgreSQL text cannot hold, as its SHA-256."""
+    """The key as stored: a long one, or one with a NUL that PostgreSQL text cannot hold, as
+    its SHA-256. A guard of length only, not of privacy: a limit keyed by a mail address
+    keys it by `known_sources.address_key` before it gets here (hub/context/auth.md
+    7d3f0a52), since a plain hash of an address is checked against a guess at once."""
     if len(key) <= KEY_MAX and "\x00" not in key:
         return key
     return hashlib.sha256(key.encode()).hexdigest()
@@ -176,11 +178,18 @@ def _hold(conn: Connection, bucket: str, key: str) -> None:
 
 
 def log_take(
-    bucket: str, key: str, seconds: float, count: int, limit: int
+    bucket: str,
+    key: str,
+    seconds: float,
+    count: int,
+    limit: int,
+    *,
+    at: datetime | None = None,
 ) -> tuple[Log, datetime | None]:
-    """Record `count` attempts at this moment when they fit `limit` within `seconds`; the log
-    as read, and the moment recorded (None when refused: nothing is written then)."""
-    key, now = _key(key), _now()
+    """Record `count` attempts at this moment, or at `at` (another log's recorded moment),
+    when they fit `limit` within `seconds`; the log as read, and the moment recorded (None
+    when refused: nothing is written then)."""
+    key, now = _key(key), (_now() if at is None else at)
     with _db().begin() as conn:
         write_guard.exempt(conn)  # a count is no write of an account
         _hold(conn, bucket, key)

@@ -21,7 +21,7 @@ from maity_hub.scopes import has_scope, tokens_of
 def may_read_request(request: Any, member: Any) -> bool:
     """§7's readers of a request, from a membership row or a `ticker.Member`: the asker and
     the member asked for, the addressee (a member, the owner, every holder of the role),
-    and whoever holds `requests:answer`."""
+    and whoever holds `requests:answer`; never an agent it is held for (§9.6)."""
     membership_id = getattr(member, "membership_id", None) or member.id
     trust, role, base = member.trust, member.role, member.role_base
     kind = getattr(member, "kind", None)
@@ -29,6 +29,13 @@ def may_read_request(request: Any, member: Any) -> bool:
         kind = "agent" if member.agent_id else "human"
     if membership_id in (request.asked_by, request.on_behalf_of):
         return True
+    principal = (
+        getattr(member, "principal", None)
+        or getattr(member, "principal_id", None)
+        or getattr(member, "agent_id", None)
+    )
+    if principal and principal in (getattr(request, "held", None) or ()):
+        return False  # held for this agent when it was filed (§7, §9.6)
     if request.to_kind == "member" and request.to_member == membership_id:
         return True
     if request.to_kind == "owner" and trust == "owner":

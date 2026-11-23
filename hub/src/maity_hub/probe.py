@@ -110,6 +110,13 @@ def _read(fg: forge.Forge, repository: str, kind: str, ref: str) -> dict[str, An
         ) from None
 
 
+def _only_github(project: Any) -> None:
+    """A probe read exists only for `github.com` (§11). Anything else is not covered,
+    and nothing is requested: the host of `repository.url` is not a target."""
+    if forge.kind_of(project.repository_url) != "github":
+        raise forge.NotCoveredError("forge_not_github")
+
+
 def observe(
     engine: Engine,
     fg: forge.Forge,
@@ -124,6 +131,7 @@ def observe(
     Raises `forge.ForgeUnavailableError` when the forge must be asked and
     does not answer; the caller decides what the last observation is worth.
     """
+    _only_github(project)
     cached = _young(engine, project.id, kind, ref, max_age, floor)
     if cached is not None:
         return cached
@@ -247,6 +255,7 @@ def observe_commit(
     The commit's own read is stored only once the branch read is in too: a read dropped
     after the commit part leaves no stored commit behind that `details.last` or a later
     round could take for a complete observation."""
+    _only_github(project)
     commit = _young(engine, project.id, "commit", sha, max_age, floor)
     if commit is None:
         observed_at = clock.now()
@@ -387,9 +396,12 @@ def _announce_for_release(
 
 
 def _mark_released(conn: Connection, project_id: str, ref: str, observed_at: datetime) -> None:
-    """`released_at` once, when the found tag is a release's, done or not (§6.1)."""
+    """`released_at` once, when the found tag is a final release's, done or not (§6.1).
+    A pre-release tag never marks it."""
+    if not ref.startswith("v") or not releases.is_final(ref[1:]):
+        return
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    if project.released_at is not None or not ref.startswith("v"):
+    if project.released_at is not None:
         return
     release = conn.execute(
         select(t.card.c.id).where(
@@ -488,11 +500,24 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         "observed_at": clock.rfc3339(max(times)),
     }
     # A pull request the forge does not have contradicts the report; a branch it no
-    # longer has (deleted after the merge) does not.
+    # longer has (deleted after the merge) does not. That is about `mismatch` only: a merge
+    # closes a card on its own only by the pull request's own head branch and the rest of
+    # `merged._not_its_own` (§6.6), never by what a branch read finds or misses.
+    # A pull request from a fork: the reported branch lives in the fork, and a branch of its
+    # name in the project's repository is another one, whose head contradicts nothing.
+    forked = bool(
+        pr
+        and pr.data.get("found")
+        and pr.data.get("head_repo") is not None
+        and str(pr.data["head_repo"]).lower() != merged.own_repository(project)
+    )
     mismatch = bool(
         (pr and (not pr.data.get("found") or pr.data.get("head_sha") != report["pr"].get("head")))
         or (
-            branch and branch.data["found"] and branch.data["head_sha"] != report.get("remote_head")
+            not forked
+            and branch
+            and branch.data["found"]
+            and branch.data["head_sha"] != report.get("remote_head")
         )
     )
     with transaction(engine) as conn:
@@ -698,6 +723,8 @@ def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None
     project = _project(engine, project_id)
     if project is None or project.public_page != "on" or project.repository_url is None:
         return
+    if forge.kind_of(project.repository_url) != "github":
+        return  # off GitHub the visibility is not asked (§11)
     public = fg.for_project(project_id).repository_public(
         forge.repository_of(project.repository_url)
     )
@@ -998,7 +1025,9 @@ def _covered(
     names the project, as the reason alone can't be told apart when several have it."""
     try:
         work(*args)
-    except forge.NotCoveredError as error:
+    except (forge.NotCoveredError, forge.InvalidRepositoryError) as error:
+        # A URL that names no repository is that project's own fault, as a missing grant
+        # is: left out for the round, never the end of the round for every later project.
         log.warning("probe: project %s: %s", project_id, error)
         not_covered.add(project_id)
         return None

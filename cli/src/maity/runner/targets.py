@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import capabilities, config
-from .asuser import SSH_UNREACHABLE, AsUser, Ssh, Unreachable
+from .asuser import SSH_UNREACHABLE, AsUser, Ssh, Unreachable, shell_join
 from .tmux import Tmux, attach_words
 
 LOGS = "logs"
@@ -45,9 +44,17 @@ class Target:
     sandbox: dict[str, bool] = field(default_factory=dict)  # harness id -> its OS sandbox
     # Harnesses whose sandbox is off for their version alone (capabilities.sandbox_held).
     held: set[str] = field(default_factory=set)
+    # Claude Code's seccomp preflight on this target (capabilities.claude_seccomp), once it
+    # answered `ok`: the machine and the kernel do not change under a running service. An ssh
+    # target forgets it when it turns unreachable (another machine may answer when it is back).
+    seccomp: capabilities.ClaudeSeccomp | None = None
+    # Installed Claude Code versions this service run has already warned about on this target
+    # (no `check` probe passed with them): the warning is logged once per version.
+    probe_warned: set[str | None] = field(default_factory=set)
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None
+    log_keep: int = 10 * 1024 * 1024  # limits.log_keep_bytes
 
     @property
     def remote(self) -> bool:
@@ -62,9 +69,12 @@ class Target:
         assert self.backend is not None  # noqa: S101 - set once connected
         attach = attach_words(self.backend.socket, session, self.as_user)
         if isinstance(self.as_user, Ssh):
+            # ssh hands the host's login shell its words joined by spaces, so the remote line
+            # is quoted for that shell (the `=` target too, for zsh) and passed as one word.
             ssh = self.as_user
-            attach = ["ssh", "-t", "-p", str(ssh.port), f"{ssh.login}@{ssh.address}", *attach]
-        return shlex.join(attach)  # every word quoted: a remote value cannot become a command
+            destination = f"{ssh.login}@{ssh.address}"
+            attach = ["ssh", "-t", "-p", str(ssh.port), destination, shell_join(attach)]
+        return shell_join(attach)  # every word quoted: a remote value cannot become a command
 
     def connect(self, harnesses: dict[str, config.Harness]) -> None:
         """For an ssh target: its home, tmux server and harnesses, on the first connection.
@@ -85,6 +95,7 @@ class Target:
             agent_path=self.agent_path,
             logs=self.agent_files / LOGS,
             as_user=self.as_user,
+            log_keep=self.log_keep,
         )
 
 
@@ -96,7 +107,7 @@ def local(
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
     as_user = AsUser(cfg.local.agent_user if cfg.local.layout == "agent_user" else None)
     path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
-    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
+    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user, cfg.tools_dir)
              for h in cfg.harnesses}  # fmt: skip
 
     def version(harness_id: str) -> str | None:
@@ -111,6 +122,7 @@ def local(
             agent_path=path,
             logs=cfg.local.agent_files / LOGS,
             as_user=as_user,
+            log_keep=cfg.limits.log_keep_bytes,
         )
     return Target(
         name="local",
@@ -146,11 +158,13 @@ def ssh_hosts(cfg: config.Config) -> list[Target]:
                 known_hosts=cfg.ssh.known_hosts,
                 identity=cfg.ssh.identity,
                 control_dir=control,
+                agent_path=host.agent_path,
             ),
             workspaces=host.workspaces,
             agent_path=host.agent_path,
             max_agents=host.max_agents,
             reachable=False,
+            log_keep=cfg.limits.log_keep_bytes,
         )
         for host in cfg.ssh.hosts
     ]
@@ -173,7 +187,7 @@ def pin_maity(as_user: AsUser, agent_path: str) -> AsUser:
         raise Unreachable(done.stderr.strip()[:200])
     paths = dict(line.split("\t", 1) for line in done.stdout.splitlines() if "\t" in line)
     found = paths.get("maity", "")
-    if not found.startswith("/") or not REMOTE_PATH.match(found):
+    if not found.startswith("/") or not REMOTE_PATH.fullmatch(found):
         raise OSError(f"{as_user.name}: `maity` is not on agent_path ({agent_path}) as a plain"
                       " absolute path; the runner refuses the host")  # fmt: skip
     return replace(as_user, maity_path=found)
@@ -211,7 +225,9 @@ def probe_remote(
     sandbox: dict[str, bool] = {}
     held: set[str] = set()
     for harness in harnesses.values():
-        if harness.id == "codex":  # tried on the host, as the local target tries it here
+        if harness.id == "antigravity":  # off until agy's own sandbox is seen starting
+            sandbox[harness.id] = False  # (capabilities.sandbox_available)
+        elif harness.id == "codex":  # tried on the host, as the local target tries it here
             codex = found[harness.id].path
             sandbox[harness.id] = (
                 codex is not None

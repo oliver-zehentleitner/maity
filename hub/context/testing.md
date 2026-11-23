@@ -1,14 +1,15 @@
 # Testing
 
-## Test matrix: full check on SQLite, the suite again on PostgreSQL 17 and MariaDB 11.4
+## Test matrix: full check on SQLite, the suite again on PostgreSQL 17 and MariaDB 11.4, a subset on MariaDB 11.8
 
 **Id:** c7d0850a-a677-4f0f-a209-e64da3b0fe8f
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture)
+**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture); card tsk-5cah3a82dv63 (the subset on MariaDB 11.8, #2022)
 **Revisit when:** a user reports a difference between MySQL and MariaDB, or a query relies on behaviour the two engines implement differently
 **See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
+**See:** persistence.md#a-name-mysql-or-mariadb-reserve-is-quoted-with-quotetrue-not-renamed — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 CI runs `make check` (black, ruff, mypy strict, pytest) on SQLite with
 an editable install, pytest alone against a PostgreSQL 17 and a MariaDB
@@ -24,6 +25,11 @@ the parallel suite below.
 Which engines run in CI — SQLite, PostgreSQL and MariaDB — came from
 the coordinator's brief; the job split, the versions and the fixture were
 decided in the implementation session.
+
+Since 2026-11-20 `hub-mariadb` also runs a subset on MariaDB 11.8 LTS: the
+migrations, the schema checks and the notification tests. 11.7 reserved
+`vector`, a column name of the hub, and 11.4 alone could not show it (the
+entry on reserved names in `persistence.md`). The full suite stays on 11.4.
 
 **Reason:** lint and types do not depend on the database, so they run
 once; the tests are what differs per engine. An editable install tests
@@ -84,7 +90,7 @@ is what such a race exercises.
 **Evidence:** confirmed
 **Source:** card tsk-ta0xcr6s4qwg (the coordinator's proposal after hub jobs took 60 to 90 minutes, 2026-10-27); implementation session, 2026-10-28 (local before/after measurement)
 **Revisit when:** a test needs state shared between workers, or the CI runners change their core count
-**See:** testing.md#test-matrix-full-check-on-sqlite-the-suite-again-on-postgresql-17-and-mariadb-114 — c7d0850a-a677-4f0f-a209-e64da3b0fe8f — as of 2026-10-28
+**See:** testing.md#test-matrix-full-check-on-sqlite-the-suite-again-on-postgresql-17-and-mariadb-114-a-subset-on-mariadb-118 — c7d0850a-a677-4f0f-a209-e64da3b0fe8f — as of 2026-10-28
 
 `make test` runs pytest with `-n auto` (pytest-xdist). On SQLite each test
 still gets its own file, but a migrated one is copied from a template that
@@ -345,3 +351,237 @@ for it, which is the very gap that caused the flake; the search costs about
   leak is between files, so every file that reaches a limit would need it.
 - A registry of every limiter in `ratelimit`: a change to the hub for the
   tests' sake, where a search from the tests finds the same set.
+
+## A cost test counts only the statements of its own call, marked by a context variable
+
+**Id:** 6063bcb5-a218-452d-9b8d-b7a9faeca1b0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-dbnh1nhcjrc4 (main's hub-postgresql red with `(51, 53)` on 5abda036); approach agreed by the lead (lotse, seq 135104) and the review lead (a4xv, seq 135111); `hub/tests/statements.py`, `hub/tests/test_statements.py`
+**Revisit when:** the app hands database work to a thread it starts itself (`threading.Thread`) and that work is part of a request's cost, or a test client stops running a request in the sending thread's context
+
+The tests that say a call costs the same statements for more rows count with
+`tests/statements.py`. Its listener hangs on the engines as before, but counts a
+statement only while a context variable holds the marker the counting block set.
+The test thread sets it; a test client's request runs in a copy of that context
+(the portal's task), and so does every thread or task the request hands work to:
+FastAPI's threadpool for a sync route, `run_in_threadpool`, `anyio.to_thread`,
+`asyncio.create_task`, the async engine's greenlet. The app's background workers
+run on threads started before the block, without the marker, so a tick of theirs
+during the call is no longer counted. `test_notifications`, `test_requests` and
+`test_view_batching` had copies that listened on the whole engine; they use the
+helper now, on the sync engine only (`async_engines=False`), as before.
+`test_statements` holds the rule: a call through a sync route and through both
+thread hand-offs counts exactly, a worker thread sending during it counts nothing,
+and an app request counts more than zero.
+
+**Reason:** the background workers wake every 30 or 60 seconds and write their
+claim rows (`worker_run`) and read; one landing in a measured call added two
+statements to one of the two counts (reproduced by making the workers tick every
+0.2 s: the tests failed every run, with the marker they pass). Counting what the
+call itself sends keeps the test exact, so a statement per row the route adds still
+fails it (checked with a read injected per 50 requests: 4 of 4 tests red).
+
+**Rejected alternatives:**
+- Stopping the workers in these tests: a fixture per test that must know every
+  worker, and a new worker would bring the flake back.
+- Counting by thread id: the request's statements run in the threadpool's
+  threads, not the test's, so it counts nothing of the route (the self-test fails
+  with it: on SQLite 2 counted instead of 8).
+- Tolerating a few statements, or retrying: hides a real extra statement.
+- Counting per connection (`conn.info`): a request may open several connections,
+  from the pool, which a worker uses too; the connection does not say whose
+  call it serves.
+
+A thread started with `threading.Thread` begins with an empty context: a test that
+starts its own threads in the call hands each `contextvars.copy_context().run`
+(`test_load.held_statements`). The app starts such threads only for background
+reads that are by design no request's cost (the maintenance frame).
+
+## Every list route has a 3-versus-30 statement test, claimed by `@flat_rows` and found by a guard
+
+**Id:** 8f5ec285-3aa8-452a-9321-2fe2fa9f8269
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xdn21ph67js9 (item 15 of the list in `context/performance.md`, the lead's go of 2026-11-18: a statement-count test per list route, 3 rows against 30 in the style of `test_view_batching`, a guard that fails a list route without one, a route that grows becoming its own card); implementation session, 2026-11-20 (how the routes and the claims are found); the review of #2039 (2026-11-20: lists under a key other than `items`, an enrollment list measured with empty rows); `hub/tests/list_rows.py`, `hub/tests/test_list_rows.py`
+**Revisit when:** the hub gains response models (a list could then be known from its type), or the `GROWING` list is empty and could become a hard rule with no exceptions
+**See:** https://github.com/oliver-zehentleitner/maity — f81ab39d-1f35-40e2-bf25-aea0fa6fb102 — as of 2026-11-20
+**See:** testing.md#get-answers-are-checked-against-hand-listed-contract-keys-each-anchored-to-a-line-of-docsapimd — 4e114a53-b5e1-417d-a29d-62af96440a74 — as of 2026-11-20
+
+A test claims the list routes it measures with `@flat_rows("/path/{}")` (`tests/list_rows.py`).
+The guard, `tests/test_list_rows.py`, reads those decorators from the source of every
+`tests/test_*.py` and takes the GET routes under `/api/v1/` from the app's router, walked as
+`test_contract_shapes` walks it. Every route is claimed by a test, or is in `NOT_LISTS` (no
+list), `ITEMS_INSIDE` (its code names `items` in a part, with the reason) or `CATALOGS` (a list
+from the hub's own code, no rows); a route in none, an entry that is no route, and an entry in
+two fail. A list is a list of rows under any top-level key, not only `items` (`/me`'s
+`projects`, the jour fixe's `series`): its test counts the rows under that key (`rows=`). Each
+`NOT_LISTS` entry says what the route answers. To find a list put into `NOT_LISTS` by mistake,
+the guard does two things. It looks for `"items"` in the route's function and in the hub
+functions it calls, four calls deep by the names they call; a `NOT_LISTS` route that names it
+fails. And it reads every `NOT_LISTS` route as a small project's owner and as its agent: an
+answer with a list at the top under a key `LIST_KEYS` does not name for that route fails.
+`LIST_KEYS` names the lists that are bounded by something other than a table's rows (a
+catalog, one object's own parts, a setting). The new tests measure with `same_for_3_and_30`: one call
+first (so a first read's one-time write is not row cost), then 3 rows and 27 more, the list
+showing exactly 27 more rows, the statements on the sync engine the same both times. SQLite's
+`PRAGMA query_only`, which `db.read_transaction` switches on a pooled connection whose last use
+was a write, is not counted: which connection the pool hands out decides it, not the rows
+(seen with a minute between the two counts). A seed must reach the code that runs per row:
+an enrollment with an empty `attach` reads no project names, so that test attaches one. And
+its first 3 rows must already hold every kind the 30 hold: a view reads each kind once, so a
+kind that comes only with the 27 adds a statement that is no row cost. The overview's reports
+picked their reporter (the owner or one of three agents) by a counter shared by the file's
+tests, so whether the 3 held the human depended on the tests before it: it counted 11
+against 12 on PostgreSQL in CI, and recording the statements on PostgreSQL showed the extra one
+reading the reporting humans; a 13 against 14 on SQLite once under load was most likely the
+same. The counter now starts
+again in every test, and the reporters follow the test's own rows. The
+older tests that already measured a list (`test_view_batching`, the requests, the bell, the
+chat lists, the memory, the admin's users) only gained the decorator and keep their own
+numbers (2 against 8 chats, 5 against 30 requests, 3 against 20 entries).
+
+A route whose cost grows today is in `GROWING` with what it reads per row; its test asserts
+that the cost grows, so the entry fails and leaves once the fix lands. 25 of the 59 list
+routes grew when the guard came (2026-11-20; 21 first, on SQLite and PostgreSQL, four more
+after the review, on SQLite), plus `…/jour-fixe/rounds` for two readers of an owner circle
+(27 `GROWING` entries); each is to become a card of its own, and none was fixed in this
+change. A route whose cost depends on who reads it is measured once per reader, each with a
+`case`; a `GROWING` entry `<route> [<case>]` names only that reader, so the route's other
+tests stay flat. The jour fixe's rounds are flat for a project-wide series and for an owner
+circle read by its owner, and grow when the moderator or one of the owner's agents reads an
+owner circle (`circle.reads`, review of #2039): a growing reader would otherwise have taken
+the flat claim of the whole route along, or the flat reader its exception.
+
+**Reason:** the card asks for the cost of every list to stay flat after the performance cards.
+3 and 30 are the counts the 2026-11-08 measurement and `test_view_batching` used: 27 rows
+apart, so a read per row shows as 27 statements more, and 30 fits one page of every list. A
+claim on the test keeps the route and the test that measures it in one place, and a pull
+request that adds a list and its test touches no shared table. The "names `items`" search
+cannot prove that a route is no list (a deeper helper, a key built at run time), but it
+catches the common case, a route whose own code builds `{"items": …}`; `ITEMS_INSIDE` keeps
+its false hits explicit. The read of every `NOT_LISTS` route catches a list under another
+key, which no search of the source finds (`{"series": shown}`), but only for the routes the
+owner or the agent of a small project can read with 200; a route that needs more set up (an id
+of its own) is checked by its entry's reason alone. A `GROWING` test that asserts the growth keeps the exception honest
+in both directions.
+
+**Rejected alternatives:**
+- A central map from route to test name in the guard: it goes stale when a test is renamed,
+  and parallel pull requests adding lists would all change it.
+- Calling every GET route at run time to decide which is a list: 136 routes, many with ids
+  to set up first; a route the read cannot reach would be classified by nothing. The read is
+  kept as a second check on `NOT_LISTS`, where an entry already says what the route is.
+- Reading the lists from docs/api.md: the same three forms of shape and no marker of route,
+  as in 4e114a53.
+- Fixing the growing routes here: the card keeps this change to tests and CI; each fix is its
+  own card.
+- A tolerance of a few statements: hides a real read per row, as in 6063bcb5.
+
+## A test with fixed dates pins the hub clock the code under test reads
+
+**Id:** 571c40ee-8ef0-45b0-bd4a-413a5da59261
+**Type:** constraint
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-1z1h4rwyz0qf, pull request #2126 (main red on 2026-11-23) and its review A2173; card tsk-2s1bwwsvqy9h; `_test_clock` in `hub/tests/test_backfill_public_merges.py`, `_fresh` in `hub/tests/test_swarm.py`
+**Revisit when:** `swarm.window` or `swarm._Cache.get` stops reading `clock.now()`, or the conftest stops resetting the clock after each test
+
+A test that writes fixed times (a module `NOW`, a calendar string) and asserts on anything cut
+by a window, an expiry or a retention against `clock.now()` pins `clock.set_source` to the same
+`NOW` in its own module, as an autouse fixture. Importing another test module's helpers does not
+bring that module's autouse fixture along: `test_backfill_public_merges` imported `public_prs`
+and `ticker_merge` from `test_swarm` but not its `_fresh`, which pins the clock, and so ran on
+the wall clock. Its ticker items are dated `NOW` − 1 day (2026-10-24), and the swarm window is
+cut by UTC day at `clock.now()`'s day − 29 (`swarm._window_days`), so they left it on
+2026-11-23, 29 days after `NOW`, and main turned red for every pull request. The conftest resets
+the clock after each test (`clock.reset()` in `_fresh_process_state`), so the pin needs no
+teardown. A module that needs only another module's clock pin repeats the one-line fixture
+rather than importing that module's fixture, since `test_swarm`'s `_fresh` also clears
+`swarm.CACHE` and resets `listening`.
+
+**Reason:** a pin on `maity_hub.clock` moves every time read through `clock.now()` together: on
+this test's path the swarm window (`swarm.window`) and the swarm cache's age and day
+(`_Cache.get`), so the test gives the same answer on every future date. It does not move the
+times the hub reads elsewhere, among others the database's `now()` (for example `listening`,
+`shared_budget`), a module's own `datetime.now(UTC)` (`listening`, `shared_counts`), the epoch
+from `time.time()` (`forge`, `attachments`) and monotonic clocks (`ktw`, `images`,
+`contract_text`, `ratelimit`). A dated test that asserts on one of those freezes that module's
+own clock instead, as `test_mentions` does with `shared_counts._now` and `ratelimit.time`.
+
+**Rejected alternatives:**
+- Making only the stored dates relative (`merged_at` from `NOW`, the card's first proposal): the
+  window reads the event's own `at` against the clock, never `merged_at`; with that change alone
+  the test still failed (`assert None == 1`).
+
+## Background workers in test clients: `test_outside_reads` starts no probe and no public-pages worker
+
+**Id:** 8b631cbc-3da6-481f-973c-f0e93d3a2ff4
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-9j767pr11k1a (the flake in hub CI on #2129 and locally under `-n 4`, and its reproduction with a sweep delayed by a test plugin); implementation session, 2026-11-23 (the same reproduction on the whole file, and a second worker found by a run with the probe already off); `probe.Worker._run`, `probe.observe_visibility`, `public_pages.Worker._run`, `public_project_views.prepare_why`; the `make_client` fixture in `hub/tests/test_outside_reads.py`
+**Revisit when:** a test of that file needs either worker's own pass, another worker that starts with the app reaches the forge within a test's time, or either worker stops working at once on start
+**See:** testing.md#a-cost-test-counts-only-the-statements-of-its-own-call-marked-by-a-context-variable — 6063bcb5-a218-452d-9b8d-b7a9faeca1b0 — as of 2026-11-23
+**See:** testing.md#test_public_why-starts-no-public-pages-worker-the-renders-it-reads-come-from-the-apps-start-and-from-touch — 2be5f10f-49f7-4dae-80c4-bf72205aa584 — as of 2026-11-23
+
+Every test client starts the app's background workers in its lifespan. They
+run on threads of their own, beside the test, and can call a test's fakes
+while the test measures them. The probe worker sweeps at once on start: it
+asks the forge whether each public page's repository is public
+(`observe_visibility`, through `Forge.for_project`) and stores the answer as
+`repository_public`. In `test_outside_reads` that sweep went through the
+`WhyForge` fake and added an `asked`, a `"repos"` event and a `bound`
+project; landing after a test had taken its counts, it failed
+`test_the_why_is_not_found_to_an_outsider_where_the_instance_token_does_not_serve`
+with `assert (2, 4) == (1, 4)`. The public-pages worker does the same on
+start: `prepare_why` reads the Why of every served project for its pages
+through a `ktw.Cache` that binds (`Forge.for_project`), which in this fake adds
+a `bound` project, file reads and the owner's grant; with the probe already
+off, it failed `test_an_outsiders_why_reads_never_ask_the_projects_source`
+(`assert ['prj-…'] == []`) and the test above (`assert (0, 4) == (0, 0)`, four
+file reads). A fake that counts calls must leave the workers' calls out, or the
+test must keep the workers from running; this file keeps them from running:
+its `make_client` patches `probe.Worker.start` and `public_pages.Worker.start`
+to no-ops for every client, as `test_probe`, `test_forge_access`,
+`test_contract_text` do for the probe and `test_public_why` (2be5f10f) for the
+public pages.
+
+Which part stands how: both races are reproduced. With the probe's sweep
+delayed 0.1 s and 0.2 s by a test plugin, the whole file fails with that first
+assert; with the probe off and the sweep delayed 0.5 s, the public-pages
+worker failed the bound check once; a delay of the order of a second before
+its preparation (how much depends on the machine) failed the four-file-reads
+assert in both cases of that test. With both workers off
+the file passes under each delay. That a late sweep would also turn the stored
+visibility false after a test sets `why.private` is read from
+`observe_visibility`, not seen in a run. That no third worker reaches the forge
+within a test's time is read from the code too (the image worker waits its
+600 s interval before its first sweep, the notification mailer is off in the
+conftest).
+
+**Reason:** the probe's sweep does more than count. It writes the fake's
+answer into the project row, which the outsider's gate reads, so a sweep after
+`why.private = True` could refuse an outsider by the stored value where the test
+means the live answer. Not starting the workers removes every such effect, and
+no test in the file needs their passes: the tests read the forge through
+requests and set `repository_public` themselves (`_repository`), and the
+public pages they read are rendered at the app's start and by `touch`.
+6063bcb5 rejected stopping the workers for the cost tests, since there every
+worker's statements counted and a new worker would bring the flake back; here
+only the workers that reach the forge fake matter, and two do within a test's
+time.
+
+**Rejected alternatives:**
+- The fake leaving calls from the `maity-probe` thread out of `asked`, `events`
+  and `bound`, or recording them apart (the card's proposal): it would have
+  missed the public-pages worker, a second thread that reaches the fake, and the
+  sweep would still store the fake's answer as `repository_public`.
+- Stopping `app.state.probe` in every client a test measures (the card's
+  alternative): the first sweep starts as the client enters its lifespan, before
+  a test can stop it, so a sweep already under way still lands; and every client
+  of the file (the world's and a test's own) would need the stop.

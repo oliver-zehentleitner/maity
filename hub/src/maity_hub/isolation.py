@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, case, func, select, update
 
-from maity_hub import cards, clock, group_chats, longpoll, placements, restricted
+from maity_hub import cards, clock, group_chats, longpoll, placements, restricted, takeovers
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit, lock_project, on_commit
@@ -151,6 +151,7 @@ def isolate(
         )
     )
     released = release_claims(conn, target.id)
+    takeovers.membership_removed(conn, target.id, actor)  # no party any more (§6.19)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
     if target.agent_id is not None:
         from maity_hub import cross_chats
@@ -158,6 +159,7 @@ def isolate(
         cross_chats.isolation_settled(conn, target.agent_id, human_id)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
+    cards.drop_signatures(conn, project.id, target.agent_id or target.human_id, actor)  # §6.4
     tell_released(conn, released, actor, project)
     _tell_owner(
         conn,
@@ -208,6 +210,11 @@ def lift(
         ).scalar()
     if hide and from_seq is not None and from_seq <= to_seq:
         windows.append({"from_seq": from_seq, "to_seq": to_seq})
+    from maity_hub import cards
+
+    # A signature left from while it stood isolated goes before the lift gives the
+    # standing back, so the lift never makes it count again (§6.4).
+    cards.drop_signatures(conn, project.id, target.agent_id, actor)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -219,15 +226,13 @@ def lift(
             isolation_windows=windows or None,
         )
     )
-    # What happened while it was left out is not read afterwards: its sessions' cursors
-    # move to the project's head, where the next resume starts (§6.2).
+    # What happened while it was left out is not read afterwards: its sessions' cursors in
+    # this project move to its head, where the next resume starts (§6.2).
     if to_seq:
+        position = t.agent_session_project
         conn.execute(
-            update(t.agent_session)
-            .where(
-                t.agent_session.c.membership_id == target.id,
-                t.agent_session.c.acknowledged_seq < to_seq,
-            )
+            update(position)
+            .where(position.c.membership_id == target.id, position.c.acknowledged_seq < to_seq)
             .values(acknowledged_seq=to_seq)
         )
     _announce(conn, project, target, actor)

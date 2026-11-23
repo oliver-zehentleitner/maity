@@ -26,6 +26,7 @@
     "issues": "https://github.com/oliver-zehentleitner/maity/issues",
     "wiki": null,
     "discussions": null,
+    "docs": "https://maity.dev/",
     "chat": "https://discord.gg/maity"
   },
   "memory": {
@@ -44,6 +45,8 @@
     "preset": "hierarchical",
     "agent_owners": null,
     "outside_roles": ["coder"],
+    "own_approvals": 1,
+    "own_agents": "members",
     "claim_policy": "self-claim",
     "done_authority": "reviewer",
     "contract_arbiter": "agt-a",
@@ -56,6 +59,7 @@
     "keep_the_why_defaults": "adopt",
     "member_agents": "on",
     "member_agents_max": 3,
+    "max_placements": 8,
     "on_runner_revoke": "stop"
   },
   "absence": null,

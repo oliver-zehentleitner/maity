@@ -15,6 +15,7 @@ from maity_hub import tables as t
 from maity_hub.notifications import positions, records
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.test_personal_requests import _file
 
 N = "/me/notifications"
@@ -578,21 +579,14 @@ def test_a_group_message_redacted_before_it_is_read_counts_as_the_chat_counts_it
 
 
 def _statements(engine: Engine, call: Any) -> int:
-    from sqlalchemy import event
+    """The route's own statements on `engine`: not the authentication's (the async engine, its
+    presence write once a minute) and not a background worker's tick during the call."""
+    from tests.statements import count_statements
 
-    seen = [0]
-
-    def counted(*_: Any) -> None:
-        seen[0] += 1
-
-    event.listen(engine, "before_cursor_execute", counted)
-    try:
-        call()
-    finally:
-        event.remove(engine, "before_cursor_execute", counted)
-    return seen[0]
+    return count_statements(engine, call, async_engines=False)
 
 
+@flat_rows("/me/notifications")
 def test_the_bell_costs_the_same_statements_for_more_personal_requests(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

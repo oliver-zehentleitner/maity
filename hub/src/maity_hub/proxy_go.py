@@ -52,6 +52,8 @@ class ProxyGo:
             return "unanswered"
         if (row.answer or {}).get("reply_id") != "go":
             return "declined"
+        if not self._answerer_stands(row.answered_by):
+            return "not_owner"
         if row.action_used_at is not None:
             return "used"
         if clock.now() > row.answered_at + VALID_FOR:
@@ -66,6 +68,22 @@ class ProxyGo:
         ):
             return "mismatch"
         return None
+
+    def _answerer_stands(self, membership_id: int | None) -> bool:
+        """The go counts while the human who gave it is still an active member with trust
+        `owner` and an account not suspended (§2.3, §16.8): a go is that owner's authority,
+        not the request's."""
+        if membership_id is None:
+            return False
+        m = t.membership.c
+        answerer = self.conn.execute(
+            select(m.human_id, m.trust).where(m.id == membership_id, m.active.is_(True))
+        ).first()
+        if answerer is None or answerer.human_id is None or answerer.trust != "owner":
+            return False
+        from maity_hub import moderation  # moderation imports access, which imports us
+
+        return not moderation.suspended(self.conn, answerer.human_id)
 
     def spend(self) -> bool:
         """True when this call holds the go, spending it the first time it is asked."""

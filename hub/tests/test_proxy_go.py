@@ -18,6 +18,7 @@ from maity_hub import clock, cover, events, idempotency, inbox
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import credentials
+from maity_hub.ids import new_id
 from maity_hub.routes import requests
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -172,6 +173,21 @@ def test_a_body_over_the_cap_is_refused_by_name_and_one_at_it_fits(proxy: Proxy)
     assert refused.json()["error"]["details"]["fields"]["action.body"] == "too_large"
 
 
+def test_a_lone_surrogate_in_the_body_is_refused_and_an_emoji_is_not(proxy: Proxy) -> None:
+    def ask(text: str) -> Any:
+        # The body holds the character itself; the request's JSON writes it as `\ud800`.
+        body = json.dumps({"text": text}, ensure_ascii=False)
+        return proxy.ask({"method": "POST", "path": TICKER, "body": body})
+
+    refused = ask("half \ud800 a pair")
+    assert b"half \\ud800 a pair" in refused.request.content
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"action.body": "lone_surrogate"}
+    asked = ask("🙂")
+    assert asked.status_code == 201, asked.text
+    assert json.loads(asked.json()["action"]["body"]) == {"text": "🙂"}
+
+
 def test_only_a_proxy_sets_action(owner: flow.Human, make_client: ClientFactory) -> None:
     refused = owner.post(
         f"{PROJECT}/requests",
@@ -215,8 +231,11 @@ def test_an_action_request_in_flight_is_refused_once_its_proxy_became_a_coder(
 
 
 def test_a_signature_without_the_header_line_does_not_verify(proxy: Proxy) -> None:
-    refused = proxy.call("POST", TICKER, ITEM, on_request="req-a", signed_as="req-b")
+    refused = proxy.call(
+        "POST", TICKER, ITEM, on_request=new_id("request"), signed_as=new_id("request")
+    )
     assert refused.headers["Maity-Error"] == "signature_invalid"
+    assert refused.json()["error"]["message"] == "the signature does not verify"
 
 
 def test_a_go_opens_exactly_one_call_and_records_it(
@@ -246,7 +265,7 @@ def test_an_open_or_refused_or_foreign_request_opens_nothing(
     _refused(proxy.call("POST", TICKER, ITEM, on_request=opened), "unanswered")
     declined = _go(owner, proxy, "no")
     _refused(proxy.call("POST", TICKER, ITEM, on_request=declined), "declined")
-    _refused(proxy.call("POST", TICKER, ITEM, on_request="req-none"), "not_bound")
+    _refused(proxy.call("POST", TICKER, ITEM, on_request=new_id("request")), "not_bound")
     other = factory.agent(migrated, _project(migrated), owner.id, "proxy", instance="prx2")
     theirs = _go(owner, Proxy(make_client(), other))
     _refused(proxy.call("POST", TICKER, ITEM, on_request=theirs), "not_bound")
@@ -410,3 +429,26 @@ def test_a_retried_transaction_spends_the_go_again(
     action = owner.get(f"{PROJECT}/requests/{request_id}").json()["action"]
     assert action["used_at"] is not None and action["used_seq"] is not None
     _refused(proxy.call("POST", TICKER, ITEM, on_request=request_id), "used")
+
+
+@pytest.mark.parametrize("change", [{"trust": "admin"}, {"active": None}])
+def test_a_go_counts_only_while_its_owner_still_stands(
+    owner: flow.Human, proxy: Proxy, migrated: Engine, change: dict[str, Any]
+) -> None:
+    request_id = _go(owner, proxy, method="POST", path=TICKER, query=None, body=ITEM)
+    project_id = _project(migrated)
+    # The owner who said go is demoted or leaves before the proxy makes the call.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner.id, t.membership.c.project_id == project_id)
+            .values(change)
+        )
+    _refused(proxy.call("POST", TICKER, ITEM, on_request=request_id), "not_owner")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner.id)
+            .values(trust="owner", active=True)
+        )
+    assert proxy.call("POST", TICKER, ITEM, on_request=request_id).status_code == 201

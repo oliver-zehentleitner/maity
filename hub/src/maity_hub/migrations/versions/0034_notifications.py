@@ -72,7 +72,9 @@ def upgrade() -> None:
         "notification_position",
         sa.Column("id", sa.String(length=40), nullable=False),
         sa.Column("human_id", sa.String(length=40), nullable=False),
-        sa.Column("vector", JSON_VALUE, nullable=False),
+        # quoted: reserved on MariaDB 11.7+, and SQLAlchemy's list lacks it; only the spelling of
+        # the DDL changed later, not what it creates
+        sa.Column("vector", JSON_VALUE, nullable=False, quote=True),
         sa.Column("created_at", TIMESTAMP, nullable=False),
         sa.Column("last_used_at", TIMESTAMP, nullable=False),
         _human("notification_position"),

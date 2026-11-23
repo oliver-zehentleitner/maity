@@ -475,13 +475,16 @@ def test_keyboard_interrupt_passes_through_and_cleans_up(
 def test_json_nested_past_the_recursion_limit_is_a_trust_error_and_left_as_it_is(
     tmp_path: Path,
 ) -> None:
-    """json.loads raises RecursionError, no ValueError, for deep nesting (#1560 R4)."""
+    """Up to Python 3.13 json.loads raises RecursionError, no ValueError, for deep nesting
+    (#1560 R4), which is "not JSON". From 3.14 it parses it into nested lists, which are no
+    configuration either. Either way a trust error, and the file stays as it is
+    (tsk-0tje3vzzedtx: CI runs 3.14 and 3.15)."""
     home, clone = tmp_path / "h", _clone(tmp_path)
     home.mkdir()
     path = home / ".claude.json"
     original = b"[" * 100_000 + b"]" * 100_000
     path.write_bytes(original)
-    with pytest.raises(trust.TrustError, match="not JSON"):
+    with pytest.raises(trust.TrustError, match="not JSON|not a Claude Code configuration"):
         trust.record(home, clone)
     assert path.read_bytes() == original
     assert sorted(p.name for p in home.iterdir()) == [".claude.json"]
