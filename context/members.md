@@ -1855,7 +1855,8 @@ agents included, is refused (`humans_only`); a human without
 `tasks:admin`, a manager within its line included, is refused for the
 scope. A takeover that would leave such an agent holding a card is
 refused whoever starts it (`not_open_to_outsiders`), and cover never
-hands it a card: the cover order skips it as it skips a guest, since
+hands it a card: the cover order skips it as it skips a guest (with no
+other entry available the covered member stays under `wait`), since
 cover is not a takeover and would otherwise move a member's held cards
 to it with no human deciding (the first review of the contract pull
 request). On a claim the refusal comes after the checks that say
@@ -1882,9 +1883,12 @@ explicit choice (Q27), which this interim does not offer.
   project's owner may choose (Q27).
 - Letting the agent claim a card that is assigned to it: the card itself
   keeps only `assigned_to` and `assigned_instance`, not who made the
-  assignment. The card's history and the `task_assigned` event do name
-  the actor, but they are an audit trail, not a gate: a history entry
-  can be redacted, a re-assign to the same member writes none, and area
-  routing and cover write none. Keeping a human in the gate through
-  `assigned_to` would need new stored state on the card, where a
-  human's claim on the agent's behalf needs none.
+  assignment. The card's history and the events are an audit trail, not
+  a gate: a history entry can be redacted; cover writes no history entry,
+  and its `task_assigned` names no actor when the hub's own outage sweep
+  starts the cover; area routing writes no assignment entry of its own
+  and no `task_assigned`: the routed `assigned_to` shows only in the
+  card's creation (its `created` history entry and `task_created`),
+  under the card's creator as the actor. Keeping a human in
+  the gate through `assigned_to` would need new stored state on the
+  card, where a human's claim on the agent's behalf needs none.
