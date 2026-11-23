@@ -1064,6 +1064,113 @@ exists, the code follows the contract and reports `off`.
   which a supervised run refuses, and a host where it does start would
   lose it.
 
+## The agy probe tells a refusal agy's AppArmor profile may lift from one nothing lifts, and an agy start where nothing lifts it is said aloud
+
+**Id:** 24f14360-e568-46eb-8132-690dd741b94e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-xjy2d5617sar, 2026-11-22: ops 3yc2's live check on the Ubuntu runner (note nte-vhg5zfwsje6h: agy 1.5.14's own `clone` of user, mount, pid and net namespaces succeeds there under its AppArmor profile, while plain `unshare` fails at `uid_map`); the four-host table (notes nte-dty526f7nv5s, nte-w7et0ds1eb3h); 3yc2's checks (a)–(c) on the same host; lotse's rulings on the warn-or-refuse question and on the fallback; the third review round of #2119, 2026-11-22 (the refused unshare call, the one-line refusal)
+**See:** runner.md#agys-sandbox-is-reported-off-until-the-runner-sees-agys-own-sandbox-start — 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6 — as of 2026-11-22
+**Revisit when:** an unprivileged process can run under, or read the attachment and rules of, a loaded AppArmor profile; agy gains a bounded start of its sandbox alone; Oliver overrules the start-anyway rule below
+
+`agy_sandbox` answers five ways, as the agents' user. The namespaces start
+(`ok`, as before). The `uid_map`, `gid_map` or `setgroups` write is
+refused, but a loaded AppArmor profile is named `agy`, or after agy's
+binary as found on the PATH or with its symlinks resolved (as the agents'
+user, on an ssh host there): a warning, "not verified". A profile without
+a name of its own is named after the path it attaches to, the real one,
+while `which` may give a symlink. That write is refused and no such
+profile is loaded: "cannot start", an error that names the profile that
+clears it. The unshare call itself is refused (`refused`): "cannot start"
+too, an error that says the kernel or a container refuses user namespaces
+and that a profile for agy does not clear it, and no profile is looked
+for. Or the probe cannot tell (no `unshare`, a failure of the lookup or the
+run, a timeout, a failure that is no permission refusal, the profile list
+unreadable or read only in part, agy's path not resolvable): "not
+checked", a warning. A refusal counts only with unshare's own failure
+status 1 (a signal, sudo's or ssh's status tells nothing) and stderr that
+is exactly one line, `Operation not permitted` on one of those writes or on the unshare
+call (read under `LC_ALL=C`); a refusal beside any other line tells
+nothing. "cannot start" on the write needs every profile name read, and
+the agents'-side listing tells a missing part under a directory it can
+search (no AppArmor) from one it cannot reach (unreadable), and reads
+every entry, hidden ones too. Every command of the probe (`unshare`,
+`realpath -e`, the listing) is looked up and run with the system's own
+PATH, never the agents', where a directory they can write to could hold an
+`unshare` that exits 0 and hides the error, or a `realpath` or `cat` that
+names any profile (the review of #2119). Both "cannot start" errors say
+that `require_sandbox` only refuses the starts, so the error stays
+whatever it says. A start asks the probe once per target and agy binary for the
+service's lifetime; "not checked" is not kept, since a one-off timeout
+would keep every later start quiet where the next probe says "cannot
+start". Where the answer is "cannot start" and `require_sandbox`, unset
+(agy's default) or false, let the start through, the runner logs loudly, at
+every such start, that the placement's commands will run unsandboxed. With
+`require_sandbox = true` the start is refused, as it already was, since
+agy's sandbox is reported off. The test suite stubs the probe for every
+test but its own, so no start or check test runs the host's `unshare`.
+
+**Reason:** On the Ubuntu runner, `kernel.apparmor_restrict_unprivileged_userns
+= 1` refuses user namespaces to every program whose profile lacks `userns`,
+so the plain probe failed and `check` said agy runs unsandboxed. But an
+operator-loaded profile for agy grants `userns`, and agy's own sandbox was
+seen starting there (3yc2), so the warning was false. The probe can only
+tell the two apart by the profile's name. The behavioural check was tried
+first, and it cannot work unprivileged: 3yc2's check (b) found that under
+`aa-exec -p agy`, or after writing `exec agy` to
+`/proc/self/attr/apparmor/exec`, the label becomes the stack
+`agy//&unconfined`, and `unshare` still fails at `uid_map`. Check (a) found
+that the profile's `attach` reads `<unknown>` and its `raw_data` is
+unreadable without privilege. The cost of going by the name: a host whose
+profile named `agy` does not grant `userns` gets a warning, where the error
+would be right. The probe can err only towards a warning, never towards
+`ok`. Oliver's standing rule (2026-11-18) is that every agent must be
+startable and that a trade-off such as no sandbox is allowed when it is
+documented, so the start follows `require_sandbox` instead of being
+refused outright, and it is never silent.
+
+The split of the refused unshare call into its own answer came from the
+third review round of #2119 (pcbf, uk6x): under AppArmor's userns
+restriction the call succeeds and the mapping write fails (what 3yc2 saw),
+while `unshare failed: Operation not permitted` means the kernel (a sysctl
+such as `kernel.unprivileged_userns_clone`) or a container's seccomp
+refuses the namespace before any profile is asked. A profile named `agy`
+must then not turn the error into a warning while agy still runs
+unsandboxed. That reading of the call's refusal comes from the reviewers
+and the kernel's documented behaviour, not from a host seen doing it, so
+this part is inferred while the rest of the entry is confirmed. On a host
+where an AppArmor profile confining the agents' user itself refuses the
+call, the probe most likely gets "not checked", since AppArmor denies
+`userns_create` with EACCES, not EPERM (upstream reports, Launchpad
+2065088; unverified on a host). Requiring the refusal
+as one whole line came from the same round: the words were matched
+anywhere in stderr, so a refusal beside another failure, or the words on
+different lines, read as "cannot start".
+
+**Rejected alternatives:**
+- One "cannot start" text for both refusals that names both causes (the
+  round-3 alternative): the operator could not tell which one the host
+  has, and a profile named `agy` would still lift the call's refusal to a
+  warning.
+- The behavioural probe: run the same `unshare` under agy's profile
+  (`aa-exec`, or a `change_onexec` write). An unprivileged task only
+  stacks the profile and stays restricted, so it never succeeds (3yc2's
+  check (b)), and it cannot confirm agy's profile.
+- Reading `kernel.apparmor_restrict_unprivileged_userns` to choose the
+  branch: what decides is the loaded profiles, not the sysctl, as the
+  bubblewrap probe found (0f216e9d-1661-4887-a035-094efa301dfa). The
+  probe stays behavioural up to the refusal and reads only the profile
+  names after it.
+- Refusing every agy start where its sandbox cannot start, whatever
+  `require_sandbox` says (xpde's first proposal, matching Claude Code's
+  "strict or not at all"): lotse ruled against it under Oliver's
+  startable-agents rule, so it is recorded here for Oliver to overrule in
+  the PR.
+- A contract detail code for the unsandboxed start: lotse left it out of
+  this change. The report stays `sandbox_unavailable`, and a code would
+  be its own contract card.
+
 ## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
 
 **Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
