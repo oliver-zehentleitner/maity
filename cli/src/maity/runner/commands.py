@@ -437,7 +437,35 @@ def _check_state(report: Report, cfg: config.Config) -> None:
         report.error(f"no runner credential in {directory}; run `maity runner pair` first")
 
 
+def _check_agent_path(report: Report, local: config.Local) -> None:
+    """An `agent_path` entry that does not exist, said with the agents' home when it lies under
+    another one (tsk-2k0jcaxfd0ja: a service's agent_path named /home/maity-runner/..., while
+    `maity runner install` gives that user /var/lib/maity-runner). A warning: an entry that is
+    missing finds nothing, and the harness checks say what is then not found."""
+    if not local.agent_path:
+        return
+    home = (
+        config.home_of(local.agent_user)
+        if local.layout == "agent_user" and local.agent_user
+        else Path(os.path.expanduser("~"))
+    )
+    for entry in local.agent_path.split(os.pathsep):
+        if not entry:
+            continue
+        try:
+            if Path(entry).exists():
+                continue
+        except OSError:
+            continue  # not readable for this user: the agents' user may see it
+        said = f"agent_path entry {entry} does not exist"
+        parts = Path(entry).parts
+        if len(parts) > 2 and parts[1] == "home" and not Path(*parts[:3]).exists():
+            said += f"; {Path(*parts[:3])} is no home here, the agents' home is {home}"
+        report.warn(said)
+
+
 def _check_local(report: Report, local: config.Local) -> None:
+    _check_agent_path(report, local)
     if shutil.which("tmux") is None:
         report.error("tmux is not installed; the local backend runs every agent in tmux")
     else:
