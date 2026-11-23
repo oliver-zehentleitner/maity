@@ -430,6 +430,33 @@ def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake
     assert "docs/runners.md#opencode-grok" in warning[0] and "tsk-nynpvag9zvhh" in warning[0]
 
 
+@pytest.mark.parametrize("track", ["checked", "newest"])
+def test_check_names_the_way_back_for_a_newer_claude_code_on_an_ssh_host(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, track: str
+) -> None:
+    """The runner manages no tool on an ssh host: above the checked version the warning says
+    to install it by hand, or to keep it with `track = "newest"`, where it is only a note."""
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + f'\n[harness.claude-code]\ntrack = "{track}"\n')
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    claude = tmp_path / "remote" / "bin" / "claude"
+    claude.write_text("#!/bin/sh\necho '2.1.330 (Claude Code)'\n")
+    claude.chmod(0o755)
+    cfg = config.load(path)
+    report = commands.Report()
+    commands._check_host(report, cfg, targets.ssh_hosts(cfg)[1])
+    said = [(level, t) for level, t in report.lines if "2.1.325" in t and "2.1.330" in t]
+    ((level, text),) = said
+    assert text.startswith("build-2: harness claude-code: "), text
+    if track == "checked":
+        assert level == "warn" and "install 2.1.325 yourself" in text, text
+        assert 'or set track = "newest" to keep it' in text
+    else:
+        assert level == "note" and "takes it unchecked" in text, text
+
+
 @pytest.mark.parametrize(
     ("hooks_off", "version"), [(False, "2.1.325"), (True, "2.1.325"), (False, "2.1.40")]
 )

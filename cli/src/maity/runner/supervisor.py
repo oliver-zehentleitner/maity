@@ -2412,7 +2412,9 @@ class Supervisor:
             self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
         found = (view or GateView.of(target, harness.id)).found  # the version that started
         version = found.version if found else None
-        warning = capabilities.unchecked(harness.id, version, harness.track)
+        # The way back as `check` names it; an ssh host's tools are not the runner's.
+        tools_dir = None if target.remote else self.cfg.tools_dir
+        warning = capabilities.unchecked_warning(harness, version, tools_dir)
         note = capabilities.unchecked_note(harness.id, version, harness.track)
         if (warning or note) is not None:
             self.log(f"{name}: {warning or note}")

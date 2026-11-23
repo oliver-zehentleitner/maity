@@ -22,6 +22,7 @@ from . import (
     capabilities,
     config,
     install,
+    keeper,
     limitread,
     logcap,
     loop,
@@ -324,7 +325,7 @@ DEFAULTS = (
     (
         "harness.claude-code.track",
         '"checked": the update installs at most the sandbox-checked version; "newest": the'
-        " vendor's newest, which check then only notes",
+        " vendor's newest, which check notes as unchecked",
     ),
     (
         "git.name, git.email",
@@ -637,28 +638,14 @@ def _check_version(
     report: Report, harness: config.Harness, version: str | None, tools_dir: Path | None
 ) -> None:
     """The installed version against the sandbox-checked one: a warning, or under
-    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too."""
+    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too
+    (capabilities.unchecked_warning)."""
     note = capabilities.unchecked_note(harness.id, version, harness.track)
     if note is not None:
         report.note(note)
-    warning = capabilities.unchecked(harness.id, version, harness.track)
-    if warning is None:
-        return
-    if capabilities.above_checked(harness.id, version):
-        checked = capabilities.CHECKED[harness.id]
-        managed = tools_dir is not None and (harness.install or harness.update != "never")
-        if tools_dir is None or not managed:
-            warning += f"; to go back, install {checked} yourself"
-        else:
-            warning += f"; the runner's update takes at most {checked} and does not go back"
-            kept = tools.load(tools_dir, harness.id).previous_version
-            if kept is not None and not capabilities.above_checked(harness.id, kept):
-                warning += (f"; `maity runner tools rollback {harness.id}` starts new sessions"
-                            f" on the kept {kept}")  # fmt: skip
-            else:
-                warning += f"; no version at or below {checked} is kept for a rollback"
-        warning += '; or set track = "newest" to keep it'
-    report.warn(warning)
+    warning = capabilities.unchecked_warning(harness, version, tools_dir)
+    if warning is not None:
+        report.warn(warning)
 
 
 def _check_harness(
@@ -1333,7 +1320,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
-            warning = capabilities.unchecked(harness.id, probe.version, harness.track)
+            # No tool is managed on an ssh host: the way back is to install it by hand.
+            warning = capabilities.unchecked_warning(harness, probe.version, None)
             if warning is not None:
                 report.warn(f"{name}: {warning}")
             note = capabilities.unchecked_note(harness.id, probe.version, harness.track)
@@ -1492,7 +1480,7 @@ def cmd_tools(args: argparse.Namespace) -> int:
             print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
             return 1
         try:
-            done = tools.rollback(cfg.tools_dir, args.tool)
+            done = tools.rollback(cfg.tools_dir, args.tool, cap=keeper.cap(managed[args.tool]))
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1513,7 +1501,8 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
-        target = tools.load(cfg.tools_dir, row["id"]).held
+        # From the active `track`, not the last check's: a switch shows at once.
+        target = tools.hold(row["latest"], keeper.cap(managed[row["id"]]))
         held = f" (held at {target}: track = checked)" if target else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "

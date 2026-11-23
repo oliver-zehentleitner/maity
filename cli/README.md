@@ -1067,7 +1067,7 @@ sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-c
 `track` under `[harness.claude-code]` chooses what its update takes:
 `"checked"` (the default) at most the version whose sandbox was checked,
 never going back on its own from a newer one, `"newest"` every new
-release, which `check` then only notes
+release, which `check` notes as unchecked
 ([`docs/runners.md`](../docs/runners.md#which-claude-code-version-the-update-takes)).
 `[maity] update` is not carried out yet; `check` and `serve` refuse it.
 

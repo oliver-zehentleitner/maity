@@ -6,7 +6,8 @@
   one. `"newest"` takes every new release, as before. With `"newest"`, `maity runner
   check` and the runner's log name a version above the checked one as a note, not a
   warning. With `"checked"`, the warning names the way back (`maity runner tools
-  rollback`). `maity runner tools` shows the version the update is held at.
+  rollback`, or installing the checked version by hand) in `check`, on ssh hosts and in
+  the runner's log. `maity runner tools` shows the version the update is held at.
 
 ### Changed
 

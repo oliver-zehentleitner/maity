@@ -381,18 +381,63 @@ def test_rollback_works_under_a_cap(tmp_path: Path, fake: FakeInstaller) -> None
     tools.take(tmp_path, "codex", fake, "t1", cap="2.1.325")
     fake.offered = "2.1.330"
     tools.take(tmp_path, "codex", fake, "t2", cap="2.1.325")
-    state = tools.rollback(tmp_path, "codex")
+    state = tools.rollback(tmp_path, "codex", cap="2.1.325")
     assert (state.version, state.previous_version, state.state) == (
         "2.1.318", "2.1.325", "rolled_back",
     )  # fmt: skip
     again = tools.take(tmp_path, "codex", fake, "t3", cap="2.1.325")  # leaves the left one
     assert (again.version, again.state) == ("2.1.318", "rolled_back")
-    state = tools.rollback(tmp_path, "codex")  # back at the held target, below `latest`
+    state = tools.rollback(tmp_path, "codex", cap="2.1.325")  # back at the held target
     assert (state.version, state.latest, state.state) == ("2.1.325", "2.1.330", "current")
     raised = tools.take(tmp_path, "codex", fake, "t4", cap="2.1.330")  # CHECKED rose
     assert (raised.version, raised.previous_version, raised.held, raised.latest) == (
         "2.1.330", "2.1.325", None, "2.1.330",
     )  # fmt: skip
+
+
+def test_a_runner_above_its_held_version_is_not_rolled_back(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    """After a rollback and a rollback forward the held version is itself in `skipped`: the
+    next capped check still reports `current` for the version in use above it."""
+    fake.offered = "2.1.325"
+    tools.take(tmp_path, "codex", fake, "t1")
+    fake.offered = "2.1.330"
+    tools.take(tmp_path, "codex", fake, "t2")  # newest: 2.1.330, 2.1.325 kept
+    tools.take(tmp_path, "codex", fake, "t3", cap="2.1.325")  # switched to checked
+    tools.rollback(tmp_path, "codex", cap="2.1.325")
+    state = tools.rollback(tmp_path, "codex", cap="2.1.325")  # forward again
+    assert (state.version, state.skipped, state.state) == ("2.1.330", ["2.1.325"], "current")
+    daily = tools.take(tmp_path, "codex", fake, "t4", cap="2.1.325")
+    assert (daily.version, daily.held, daily.state) == ("2.1.330", "2.1.325", "current")
+
+
+def test_a_rollback_is_measured_against_the_active_cap_not_the_last_check(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    """Right after a switch to checked (no capped check yet, `held` unset), a rollback to the
+    checked version is `current`; right after a switch back to newest, the last check's hold
+    no longer counts."""
+    fake.offered = "2.1.325"
+    tools.take(tmp_path, "codex", fake, "t1")
+    fake.offered = "2.1.330"
+    tools.take(tmp_path, "codex", fake, "t2")  # newest: 2.1.330, 2.1.325 kept, held None
+    state = tools.rollback(tmp_path, "codex", cap="2.1.325")
+    assert (state.version, state.held, state.state) == ("2.1.325", "2.1.325", "current")
+    state = tools.rollback(tmp_path, "codex", cap="2.1.325")  # forward to 2.1.330
+    state = tools.rollback(tmp_path, "codex")  # switched back to newest: 2.1.325 again
+    assert (state.version, state.held, state.state) == ("2.1.325", None, "rolled_back")
+
+
+def test_an_unreadable_newest_holds_at_the_cap(tmp_path: Path, fake: FakeInstaller) -> None:
+    fake.offered = "2.1.x"
+    state = tools.take(tmp_path, "codex", fake, "t1", cap="2.1.325")
+    assert (fake.installed, state.version, state.held) == (["2.1.325"], "2.1.325", "2.1.325")
+
+
+def test_track_on_a_harness_without_a_checked_version_is_one_problem() -> None:
+    found = [p for p in problems(BASE + '\n[harness.codex]\ntrack = "bad"\n') if "track" in p]
+    assert len(found) == 1 and "sandbox-checked version" in found[0], found
 
 
 @pytest.mark.parametrize(

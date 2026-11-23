@@ -2364,7 +2364,7 @@ versions daily without a check.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_note`, `above_checked`), `config.py` (`track`)
+**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_warning`, `unchecked_note`, `above_checked`), `config.py` (`track`); the first review round of #2117 (the `rolled_back` cases below, reproduced with the tests' installer)
 **See:** runner.md#how-the-checked-claude-code-version-keeps-up-with-the-runners-daily-update — ae02241e-aed4-44e3-9eb7-9550cd006fb2 — as of 2026-11-23
 **See:** runner.md#a-checked-claude-code-version-is-raised-only-on-the-probes-output-from-a-signed-in-machine — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-23
 **See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-23
@@ -2393,8 +2393,10 @@ working under both values. What this implementation chose within that
   ran against, so it exists to fetch.
 - **No step back on its own.** A version in use above `CHECKED` (after a
   switch from `newest`, or one installed before this setting) stays in
-  use. `check` warns and names the way back: a rollback when the kept
-  version is at or below `CHECKED`, or `track = "newest"` to keep it. A
+  use. `check`, its check of an ssh host and the runner's start log warn
+  with one text that names the way back: a rollback when the kept
+  version is at or below `CHECKED` (install it by hand where the runner
+  manages no Claude Code), or `track = "newest"` to keep it. A
   silent downgrade would change what new sessions start with, unasked,
   and the operator may have had a reason for the newer one.
 - **The hub sees no hold.** `latest` in `capabilities.tools` stays the
@@ -2402,9 +2404,19 @@ working under both values. What this implementation chose within that
   and a runner at its held version reports `current`: nothing is pending,
   and the hold is the operator's setting, not an update waiting to run.
   `rolled_back` is measured against the held version, so a second
-  rollback back to it reports `current` again. The held version is shown
-  only on the runner (`maity runner tools`, `check`, the log). Rejected:
-  reporting the held version as `latest`, which would have changed what
+  rollback back to it reports `current` again. It also needs a left
+  version that is newer than the one in use: under a cap the target is
+  `CHECKED`, and after a rollback forward the held version is itself in
+  `skipped`. Without that condition a runner above its held version
+  reported `rolled_back` until `CHECKED` rose. A rollback and
+  `maity runner tools` work the hold out from the configuration's
+  `track` at that moment, not from the last check's `held`, so right
+  after a switch of `track` a rollback is not measured against the
+  vendor's newest, and a switch to `newest` no longer shows a hold. The
+  held version is shown only on the runner (`maity runner tools`, the
+  log). Rejected: clearing `skipped` on a capped check, which would let
+  the update take the left version again on its own, against §15.16
+  "Rollback"; reporting the held version as `latest`, which would have changed what
   the field means without a contract change (the lead's ruling); and
   `rolled_back` for a held runner, which the contract reserves for an
   operator's rollback.

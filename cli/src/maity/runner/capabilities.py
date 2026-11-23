@@ -289,6 +289,30 @@ def unchecked(harness_id: str, version: str | None, track: str = "checked") -> s
             " `maity` stays in the sandbox is not checked for it")  # fmt: skip
 
 
+def unchecked_warning(
+    harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> str | None:
+    """`unchecked` with the way back, for a version above the checked one under
+    `track = "checked"`; the one text `maity runner check`, an ssh host's check and the
+    runner's start log give. `tools_dir` is None where the runner manages no tool (an ssh
+    host): there the way back is to install the checked version by hand."""
+    warning = unchecked(harness.id, version, harness.track)
+    if warning is None or not above_checked(harness.id, version):
+        return warning
+    checked = CHECKED[harness.id]
+    if tools_dir is None or not (harness.install or harness.update != "never"):
+        warning += f"; to go back, install {checked} yourself"
+    else:
+        warning += f"; the runner's update takes at most {checked} and does not go back"
+        kept = tools.load(tools_dir, harness.id).previous_version
+        if kept is not None and not above_checked(harness.id, kept):
+            warning += (f"; `maity runner tools rollback {harness.id}` starts new sessions"
+                        f" on the kept {kept}")  # fmt: skip
+        else:
+            warning += f"; no version at or below {checked} is kept for a rollback"
+    return warning + '; or set track = "newest" to keep it'
+
+
 def unchecked_note(harness_id: str, version: str | None, track: str) -> str | None:
     """A note, not a warning, for a version above the checked one under `track = "newest"`;
     None otherwise."""

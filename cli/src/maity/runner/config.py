@@ -827,11 +827,15 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
-    track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
     from maity.runner.capabilities import CHECKED
 
-    if "track" in table.data and name not in CHECKED:
-        problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
+    if name in CHECKED:
+        track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
+    else:  # one problem for any value: the key itself does not belong here
+        track = "checked"
+        table.used.add("track")
+        if "track" in table.data:
+            problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
     if install or update != "never":
         from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
         from maity.runner.tools import INSTALLERS
