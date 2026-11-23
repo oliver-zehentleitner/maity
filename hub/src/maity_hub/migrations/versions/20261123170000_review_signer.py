@@ -33,7 +33,9 @@ def upgrade() -> None:
     # ADD COLUMN included), as for `actor_agent_id` before.
     op.add_column("event", sa.Column("review_signer", sa.Boolean(), nullable=True))
     op.add_column("event", sa.Column("review_pr", sa.Integer(), nullable=True))
-    op.create_index("ix_event_review_pr", "event", ["project_id", "review_pr"])
+    # `review_pr` first, so the index serves only a lookup by pull request number: led by
+    # `project_id`, PostgreSQL's planner took it for reads filtered on the project alone.
+    op.create_index("ix_event_review_pr", "event", ["review_pr", "project_id"])
 
 
 def downgrade() -> None:

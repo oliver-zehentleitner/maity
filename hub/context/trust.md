@@ -342,11 +342,14 @@ columns (`review_signer` set), never by a payload a redaction replaces.
 They are read in two queries, merged by seq, each seeking its own index:
 a result tied to the card by `task_id` through `ix_event_subject`
 (`project_id`, `subject_type` `task`, `subject_id`), and one tied only
-by a subject `#<n>` through `ix_event_review_pr` (`project_id`,
-`review_pr`) with the card's current pull request, then resolved to its
+by a subject `#<n>` through `ix_event_review_pr` (`review_pr`,
+`project_id`) with the card's current pull request, then resolved to its
 card one by one; so the read is bounded by the card's own results. One
-query with an `OR` across both would leave neither index usable. A report naming a pull request beyond the column's range
-looks none up. This runs only on a move to `done` of outsiders' work.
+query with an `OR` across both would leave neither index usable. The
+index leads with `review_pr`: led by `project_id`, PostgreSQL's planner
+took it for reads filtered on the project alone (the chat sweep) and
+walked every event. A report naming a pull request beyond the column's
+range looks none up. This runs only on a move to `done` of outsiders' work.
 
 ## `PUT …/roles` refuses a guide and keeps the one a role already has
 

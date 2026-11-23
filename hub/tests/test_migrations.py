@@ -2502,17 +2502,18 @@ def test_review_signer_adds_two_null_columns_and_drops_them_again(engine: Engine
     migrate(engine)
     downgrade(engine, _before(engine, rev))
     project_id = factory.project(engine, "alpha")
-    # The table as it is before the revision: plain SQL. The JSON columns get literals, which
-    # PostgreSQL coerces to jsonb as SQLite and MariaDB take them; a bound text parameter
-    # would be refused there.
-    with engine.begin() as conn:
+    with engine.begin() as conn:  # the table as it is before the revision: plain SQL
         conn.execute(
             text(
                 "INSERT INTO event (project_id, kind, at, audience, payload, redacted) "
-                "VALUES (:project, 'message', :at, '[]', '{\"type\": \"review_result\"}', "
-                ":redacted)"
+                "VALUES (:project, 'message', :at, '[]', :payload, :redacted)"
             ),
-            {"project": project_id, "at": factory.at("2026-11-20T10:00:00Z"), "redacted": False},
+            {
+                "project": project_id,
+                "at": factory.at("2026-11-20T10:00:00Z"),
+                "payload": '{"type": "review_result"}',
+                "redacted": False,
+            },
         )
     for _ in range(2):  # up, down, up
         migrate(engine)
