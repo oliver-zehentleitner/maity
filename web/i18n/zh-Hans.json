@@ -1314,6 +1314,8 @@
   },
   "forge.link.selected": "所选仓库",
   "forge.link.what": "关联 GitHub App",
+  "forge.public_offer": "仓库已确认。项目的公开页面仍处于关闭状态：现在开启，或稍后在下方的“公开页面”中开启。",
+  "forge.public_offer.button": "立即开启公开页面",
   "forge.settings_hint": "你的授权在{link}中设置。",
   "forge.settings_link": "代码托管平台访问",
   "forge.status.active": "有效",

@@ -1367,6 +1367,8 @@ window.MAITY_I18N["fr"] = {
   },
   "forge.link.selected": "dépôts sélectionnés",
   "forge.link.what": "Liaison de la GitHub App",
+  "forge.public_offer": "Le dépôt est confirmé. La page publique du projet est encore désactivée : activez-la maintenant, ou plus tard sous Page publique, plus bas.",
+  "forge.public_offer.button": "Activer la page publique maintenant",
   "forge.settings_hint": "Vos accès sont définis dans {link}.",
   "forge.settings_link": "Accès à la forge",
   "forge.status.active": "actif",

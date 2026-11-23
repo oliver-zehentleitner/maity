@@ -1367,6 +1367,8 @@ window.MAITY_I18N["es"] = {
   },
   "forge.link.selected": "repositorios seleccionados",
   "forge.link.what": "Vincular la GitHub App",
+  "forge.public_offer": "El repositorio está confirmado. La página pública del proyecto sigue desactivada: actívala ahora, o más tarde en Página pública, más abajo.",
+  "forge.public_offer.button": "Activar ahora la página pública",
   "forge.settings_hint": "Tus permisos se definen en {link}.",
   "forge.settings_link": "Acceso a la forja",
   "forge.status.active": "activa",

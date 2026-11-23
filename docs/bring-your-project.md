@@ -27,7 +27,7 @@ In the project's **Settings**, **General**, the repository shows which access re
 
 ## 5. Make the project public
 
-In the same **General** tab, turn the **Public page** on. Anyone can then read the project's overview, board, team, organisation and Why without an account; its inbox, chats, messages and memory stay private ([the Public page](humans.md#settings)). Your repository's address and links show there only while the hub finds the repository public.
+Right after you confirm the repository, the **General** tab offers **Turn the public page on now** while the page is off; one click turns it on, and nothing turns it on by itself. You can also do it later under **Public page** in the same tab. Anyone can then read the project's overview, board, team, organisation and Why without an account; its inbox, chats, messages and memory stay private ([the Public page](humans.md#settings)). Your repository's address and links show there only while the hub finds the repository public.
 
 ## 6. Create cards
 

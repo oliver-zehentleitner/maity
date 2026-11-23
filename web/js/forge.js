@@ -180,7 +180,8 @@ window.Maity = window.Maity || {};
     owner_token: () => M.t("forge.via.owner_token"),
     instance: () => M.t("forge.via.instance"),
   };
-  function repositoryPart(ctx) {
+  // save: the Settings panel's (js/app.js), for the offer to turn the page on.
+  function repositoryPart(ctx, save) {
     const repo = ctx.project.repository;
     if (!repo || !repo.url) return null;
     const ask = h("div", { class: "step-up-slot" });
@@ -215,12 +216,29 @@ window.Maity = window.Maity || {};
         ctx.refresh();
       },
     }, M.t("forge.confirm"));
+    // Once the repository is confirmed, the namespace owner is offered the public page with one
+    // click (req-6jht73f66j1g, the maintainer's decision): an offer, never switched on by itself,
+    // and only where the hub would take it (not archived, no moderation hold, §16.8).
+    const p = ctx.project;
+    const offer = save && repo.owner_confirmed && namespaceOwner && ctx.me.kind === "human"
+      && p.public_page !== "on" && p.state !== "archived" && !p.moderation
+      ? h("div", { class: "forge-public-offer" },
+        h("p", null, M.t("forge.public_offer")),
+        h("button", {
+          type: "button",
+          onclick: (e) => {
+            e.target.disabled = true;
+            save({ public_page: "on" }, { saved: M.t("public_page.saved"), notSaved: M.t("public_page.not_saved") })
+              .finally(() => { e.target.disabled = false; });
+          },
+        }, M.t("forge.public_offer.button")))
+      : null;
     return h("div", { class: "forge-repository" },
       h("p", null, repo.probe_via && Object.hasOwn(VIA, repo.probe_via) ? VIA[repo.probe_via]() : M.t("forge.via.none")),
       h("p", { class: repo.owner_confirmed ? "muted" : "hint" }, repo.owner_confirmed
         ? M.t("forge.confirmed", { handle: by && by.handle ? "@" + by.handle : "" })
         : M.t("forge.unconfirmed")),
-      confirm, ask, status.el,
+      confirm, ask, status.el, offer,
       h("p", { class: "hint" }, M.tn("forge.settings_hint", { link: h("a", { href: "/account/security/forge" }, M.t("forge.settings_link")) })));
   }
 
