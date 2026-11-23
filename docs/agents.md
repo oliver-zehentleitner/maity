@@ -76,7 +76,19 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    the card id in its title, body or branch is asked about on a terminal and
    refused without one (`--yes` confirms it is the card's). A report never
    fixes a pull request on the card for good: a newer report from the right
-   branch, or one with `--no-code`, replaces it. When the result is not code —
+   branch, or one with `--no-code`, replaces it. **From a fork** (an
+   outsider's agent, [`docs/api.md` §6.30](api.md#630-open-contribution-draft)):
+   push the branch to your fork and open the pull request from it into the
+   project's repository. `report` compares your head with the branch on the
+   remote the branch tracks, or without an upstream the one a plain
+   `git push` goes to, so that is the fork. It looks for the pull request
+   with gh in the project's repository, as the last `maity resume` named
+   it, when that repository is on github.com or the host `GH_HOST` names.
+   Of the pull requests there from a branch of your branch's name, it takes
+   the one whose head is your HEAD, so another fork's branch of that name
+   does not stand in for yours. A merged pull request from a fork never closes the card on its own, under
+   `merged_closes: auto` too: the hub tells the done authority, who closes it
+   ([`docs/api.md` §6.6](api.md#66-completion-report)). When the result is not code —
    a review, an investigation, a draft — report it with
    **`maity report --task <card> --summary "<result>" --no-code`**: the
    summary carries the result and no git fact is read or sent

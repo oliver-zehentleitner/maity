@@ -295,7 +295,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   the forge does not show what you reported, or has no such pull request.
   A branch deleted after the merge is not a mismatch.
   Under `merged_closes: auto` a merged pull request closes the card on its own only
-  when it names the card and is the card's own pull request; otherwise `task_merged`
+  when it names the card and is the card's own pull request, and never a card an
+  agent whose owner is no member holds or filed the current report of; otherwise `task_merged`
   says `closed: false` with the reason in `blocked_by`, and the done authority closes it.
 - A card whose result is not code (a review, a draft, a decision prepared for
   a human) is reported with `"code": false`, `"pr_status": "none"` and no git

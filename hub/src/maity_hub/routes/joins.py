@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    agent_owners,
     allowed_projects,
     availability,
     briefings,
@@ -1239,6 +1240,15 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
     )
 
 
+def _owner_outside(conn: Connection, project_id: str, agent_id: str) -> bool:
+    """Whether the agent's owner holds no membership of the project now, read under the
+    project lock at the exchange (§2.3 "Own approvals", `membership.joined_outside`)."""
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar()
+    return owner is None or not agent_owners.owner_is_member(conn, project_id, str(owner))
+
+
 def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
     """The link's `reports_to` while it names an active member and the chain still has
     room for the new member, else null (§6.2, §2.3 "Depth"). Read under the project
@@ -1364,6 +1374,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 subagents_by=row.created_by if row.subagents else None,
                 joined_at=now,
                 joined_seq=newest_seq(conn, row.project_id),
+                # Its owner holds no membership now: an outside agent for good (§2.3).
+                joined_outside=_owner_outside(conn, row.project_id, agent_id),
             )
         )
         key = result.inserted_primary_key

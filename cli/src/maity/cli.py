@@ -441,6 +441,12 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     full_name = field(packet, "project", "full_name")  # refreshed every resume: renames (§6.25)
     if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
         session.data["full_name"] = full_name
+    # Where `report` asks gh for the pull request (a fork's clone, tsk-k0x4jn4y4ykg); each
+    # resume replaces it, and a project without a repository drops it.
+    if isinstance(expected, str) and expected:
+        session.data["repository"] = expected
+    else:
+        session.data.pop("repository", None)
     if isinstance(member_id, str):
         session.data["member_id"] = member_id
     owner_id = field(packet, "me", "owner", "id")
@@ -1777,7 +1783,8 @@ def cmd_report(args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     if retrack.note:
         _err(retrack.note)
-    facts = gitfacts.collect(Path.cwd())
+    repository = session.data.get("repository")
+    facts = gitfacts.collect(Path.cwd(), repository if isinstance(repository, str) else None)
     card: Any = None
     probed = False
     no_forge = facts.pr is None and bool(facts.pr_unknown_reason or facts.forge_error)
