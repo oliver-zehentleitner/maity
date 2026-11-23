@@ -71,7 +71,8 @@ request has nothing left to report.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's go in the project chat, 2026-10-28, on the coordinator's card tsk-hkb9qe4xn520; contract `docs/api.md` §6.6 "A merge closes the loop", §6.1 `merged_closes`; the exception for outsiders' work by B.2, the maintainer's answer o1 to req-9wpst24yyz7a (2026-11-15), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.1 (`merged_closes`) and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q
+**Source:** the maintainer's go in the project chat, 2026-10-28, on the coordinator's card tsk-hkb9qe4xn520; contract `docs/api.md` §6.6 "A merge closes the loop", §6.1 `merged_closes`; the exception for outsiders' work by B.2, the maintainer's answer o1 to req-9wpst24yyz7a (2026-11-15), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.1 (`merged_closes`) and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q; only the card whose pull request it is, by card tsk-yfv9rnxpcwjd and the lead's rulings of 2026-11-20, contracted into `docs/api.md` §6.1, §6.6, §8.2 and §11 by its pull request
+**See:** reports.md#a-merge-closes-on-its-own-only-the-card-whose-pull-request-it-is — d068e91d-bf97-44e3-ba98-0f1c7e5b3674 — as of 2026-11-20
 **Revisit when:** the done authority closes cards reliably on its own, or a forge other than GitHub reports merges differently
 
 When the probe first sees a card's reported pull request merged (and
@@ -89,6 +90,8 @@ since 2026-11-15: on outsiders' work without its own approvals on the
 reported head, `merged_closes: auto` acts as `notify`, so the merge
 never stands in for the project's own approval (`docs/api.md` §2.3
 "Own approvals", §6.1 `merged_closes`, §6.6; members.md, dab6ae4a).
+Since 2026-11-20 `auto` closes only when the pull request is the
+card's own, and one pull request closes at most one card (d068e91d).
 
 **Reason:** on 2026-10-28, 17 of 36 cards in `review` had a pull request
 that was long merged. Reviews ran through messages and the forge, and
@@ -147,3 +150,57 @@ waits behind; the merge is the result review asked for.
   and its answerer's; the hub does not withdraw it for them.
 - Counting cards blocked from `in_progress`: their report was sent back
   for rework, so the merge is not what review approved.
+
+## A merge closes on its own only the card whose pull request it is
+
+**Id:** d068e91d-bf97-44e3-ba98-0f1c7e5b3674
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-yfv9rnxpcwjd; the lead's rulings of 2026-11-20 on its plan (the card named in the pull request and the merge after the report both required, `upstream`'s remote branch compared, forks never, a cancelled card still counting, the four `blocked_by` names); contract `docs/api.md` §6.1 `merged_closes`, §6.6 "A merge closes the loop", §8.2 `task_merged`, §11; it narrows hub/context/probe.md f89f3f4d (where the close happens) and qualifies cli/context/report.md f720dd3c (a deleted branch is still no mismatch, but no longer enough to close)
+**See:** reports.md#a-merged-pull-request-wakes-the-done-authority-and-may-close-the-card — ee81b817-86bb-4185-80c6-e0598132d5bd — as of 2026-11-20
+**Revisit when:** a card's work spans more than one pull request on purpose, the forge tool can link a pull request to its card by something better than its text, or a forge other than GitHub is read
+
+Under `merged_closes: auto` the hub closes a card on a merge only when
+the pull request is that card's own: its head branch as the forge
+reports it is the branch the report names on the remote (`upstream`
+without the remote's name, else `branch`) in the project's own
+repository, its title or body names the card's id, it was merged after
+the report was stored, and no other card of the project, in any status,
+names it in its current report or was closed by it before. Anything
+the hub cannot tell (an observation stored before these fields were
+kept) counts as not holding. In every other case `auto` acts as
+`notify`, and `task_merged` names the reason in `blocked_by`:
+`head_ref`, `pull_request_unnamed`, `merged_before_report`,
+`pull_request_shared`.
+
+**Reason:** a merge should close only the work it belongs to. The match
+compared only the pull request's head commit, which does not tie a pull
+request to one card. The head branch alone is not enough: it is as
+readable as the head commit. What only the card's own work has is that
+its pull request names the card and is merged after the card reported
+it, and the hub only has to keep a pull request from closing a second
+card. The check runs only where the hub would
+close, under the project's lock, so it reads the other cards' reports
+and the earlier `task_merged` events then, and no new column is needed.
+
+**Consequence:** a card whose pull request does not name it (the CLI's
+`--yes` case), whose report came after the merge (a report from a
+deleted branch), whose local and remote branch names differ without an
+`upstream`, or whose pull request comes from a fork, waits for its done
+authority under `auto` too. So do two cards that share a pull request.
+
+**Rejected alternatives:**
+- Trusting the branch read: a missing branch is the normal state after
+  a merge, and any branch can be pushed to the merged head.
+- Setting `mismatch` when the head branch differs: it would mark a
+  report contradicted and wake admins for a local branch named
+  differently from its remote, which nothing contradicts.
+- A unique index or a column linking a pull request to the card it
+  closed: a migration, for what the cards' reports and the earlier
+  `task_merged` events already tell at the one moment it is needed
+  (the event search ruled out in hub/context/probe.md f89f3f4d ran on
+  every observation; this one runs only before a close).
+- Closing the first card that names a pull request and only refusing
+  later ones: whoever reports first would win, also for someone else's
+  pull request.

@@ -377,6 +377,77 @@ def test_the_start_tabs_go_with_the_account(
     assert gone.start_tabs is None
 
 
+def test_the_stars_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The stars are the person's own (§5.1 "Stars", §2.9): a deleted account keeps none, not
+    even an empty list."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    assert pat.patch("/me", {"starred": []}).status_code == 200
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.human.c.starred).where(t.human.c.id == pat.id)).scalar()
+    assert kept == []
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        gone = conn.execute(select(t.human.c.starred).where(t.human.c.id == pat.id)).one()
+    assert gone.starred is None
+
+
+def test_the_links_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The website, the network names and who sees them are the person's profile (§16.9, §2.9):
+    a deleted account keeps no link, and the visibility is back at its default."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    links = {
+        "website": "https://pat.example.org",
+        "social": {"github": "pat"},
+        "links_visible": "everyone",
+    }
+    assert pat.patch("/me", links).status_code == 200
+    query = select(t.human.c.website, t.human.c.social, t.human.c.links_visible).where(
+        t.human.c.id == pat.id
+    )
+    with migrated.connect() as conn:
+        kept = conn.execute(query).one()
+    assert (kept.website, kept.social, kept.links_visible) == (
+        "https://pat.example.org",
+        {"github": "pat"},
+        "everyone",
+    )
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        gone = conn.execute(query).one()
+    assert (gone.website, gone.social, gone.links_visible) == (None, None, "private")
+
+
+def test_the_meat_proxy_and_the_presence_choice_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """What the person said of themselves (§5.2 "Meat proxy") and whether public pages name them
+    online (§16.9) are their choices: on a deleted account every one of these switches is off,
+    `public_presence` too, although a new account starts with it on."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    query = select(
+        t.human.c.meat_proxy_lead, t.human.c.meat_proxy_hands, t.human.c.public_presence
+    ).where(t.human.c.id == pat.id)
+    with migrated.connect() as conn:
+        assert tuple(conn.execute(query).one()) == (False, False, True)
+    choices = {"meat_proxy_lead": True, "meat_proxy_hands": True, "public_presence": True}
+    assert pat.patch("/me", choices).status_code == 200
+    with migrated.connect() as conn:
+        assert tuple(conn.execute(query).one()) == (True, True, True)
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        assert tuple(conn.execute(query).one()) == (False, False, False)
+
+
 def test_the_kept_sizes_of_the_picture_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
@@ -1091,9 +1162,10 @@ def test_the_account_lock_comes_before_any_other_lock_of_a_human_write(
         first = next((i for i, s in enumerate(statements) if write_guard.locking(s)), None)
         if first is None or "human_session" in statements[first]:
             continue  # read-only, or the authentication's own (checked by `_cookie`)
-        before = statements[:first]
-        # SQLite renders no lock clause: the account lock's read is what comes first.
-        assert any("FROM account_lock" in s for s in before), statements
+        # The account lock's read is the first locking statement itself (its `FOR SHARE` on
+        # PostgreSQL and MariaDB) or, on SQLite, which renders no lock clause, comes before it.
+        through_first = statements[: first + 1]
+        assert any("FROM account_lock" in s for s in through_first), statements
         guarded += 1
     assert guarded >= 2  # the profile's and the project's transactions
 

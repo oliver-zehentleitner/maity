@@ -226,15 +226,13 @@ def lift(
             isolation_windows=windows or None,
         )
     )
-    # What happened while it was left out is not read afterwards: its sessions' cursors
-    # move to the project's head, where the next resume starts (§6.2).
+    # What happened while it was left out is not read afterwards: its sessions' cursors in
+    # this project move to its head, where the next resume starts (§6.2).
     if to_seq:
+        position = t.agent_session_project
         conn.execute(
-            update(t.agent_session)
-            .where(
-                t.agent_session.c.membership_id == target.id,
-                t.agent_session.c.acknowledged_seq < to_seq,
-            )
+            update(position)
+            .where(position.c.membership_id == target.id, position.c.acknowledged_seq < to_seq)
             .values(acknowledged_seq=to_seq)
         )
     _announce(conn, project, target, actor)

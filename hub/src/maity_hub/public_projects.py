@@ -30,6 +30,7 @@ from maity_hub import (
     swarm,
 )
 from maity_hub import tables as t
+from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.errors import invalid
 
@@ -58,31 +59,95 @@ def check_about(value: str | None) -> str | None:
     return value
 
 
-def _owner_served(conn: Connection, project: Any) -> bool:
-    if project.owner_org_id is not None:
-        org = conn.execute(select(t.org).where(t.org.c.id == project.owner_org_id)).first()
-        return (
-            org is not None
-            and org.deleted_at is None
-            and moderation.hold(conn, "org", org.id) is None
+# Each question below asks in IN lists of at most `chunks.CHUNK` ids: `/explore` and the
+# landing page's count judge every project with a page on the instance, which no quota bounds.
+
+
+def served_of(conn: Connection, rows: Collection[Any]) -> set[str]:
+    """The ids of `rows` that have a page now, each judged by its own `public_page`, `state`
+    and owner columns: the one rule of `served`, `served_among` and the public lists, which
+    pass the rows they read. The page is on, the project is not archived and under no
+    moderation hold, and its namespace owner is an organisation that is not deleted and under
+    no hold, or a human who is active, not deleted and not suspended. At most four statements
+    for every `chunks.CHUNK` rows, none when no row has its page on."""
+    rows = [row for row in rows if row.public_page == "on" and row.state != "archived"]
+    if not rows:
+        return set()
+    held: set[str] = set()
+    for ids in chunks(row.id for row in rows):
+        held.update(moderation.holds_of(conn, "project", ids))
+    rows = [row for row in rows if row.id not in held]
+    if not rows:
+        return set()
+    org_ids = {row.owner_org_id for row in rows if row.owner_org_id is not None}
+    human_ids = {row.owner_human_id for row in rows if row.owner_org_id is None}
+    orgs: set[str] = set()
+    for ids in chunks(org_ids):
+        found = set(
+            conn.execute(
+                select(t.org.c.id).where(t.org.c.id.in_(ids), t.org.c.deleted_at.is_(None))
+            ).scalars()
         )
-    human = conn.execute(select(t.human).where(t.human.c.id == project.owner_human_id)).first()
-    return bool(
-        human is not None
-        and human.account_status == "active"
-        and human.deleted_at is None
-        and human.suspended_at is None
-    )
+        orgs |= found - set(moderation.holds_of(conn, "org", sorted(found)))
+    humans: set[str] = set()
+    h = t.human.c
+    for ids in chunks(human_ids):
+        humans.update(
+            conn.execute(
+                select(h.id).where(
+                    h.id.in_(ids),
+                    h.account_status == "active",
+                    h.deleted_at.is_(None),
+                    h.suspended_at.is_(None),
+                )
+            ).scalars()
+        )
+    return {
+        row.id
+        for row in rows
+        if (
+            row.owner_org_id in orgs
+            if row.owner_org_id is not None
+            else row.owner_human_id in humans
+        )
+    }
 
 
 def served(conn: Connection, project: Any) -> bool:
-    """Whether the project has a page now."""
-    return bool(
-        project.public_page == "on"
-        and project.state != "archived"
-        and moderation.hold(conn, "project", project.id) is None
-        and _owner_served(conn, project)
-    )
+    """Whether the project has a page now. The row given is judged as it is, not read again:
+    a PATCH asks this of the project as it will be (`agent_owners.effective` under
+    `routes.projects._refuse_outside_roles`), with a `public_page` not yet written."""
+    return bool(served_of(conn, [project]))
+
+
+def served_among(conn: Connection, project_ids: Collection[str]) -> set[str]:
+    """Of `project_ids`, those that have a page now: `served` for many projects at once, as
+    stored (the starred tabs on every `GET /me`, §5.1). It reads their rows, one statement for
+    every `chunks.CHUNK` ids, and judges them by `served_of`. An id that names no project is simply
+    not among them."""
+    p = t.project.c
+    rows: list[Any] = []
+    for ids in chunks(project_ids):
+        rows.extend(
+            conn.execute(
+                select(p.id, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+                    p.id.in_(ids), p.public_page == "on", p.state != "archived"
+                )
+            )
+        )
+    return served_of(conn, rows)
+
+
+def public_for_outsiders(conn: Connection, project_ids: Collection[str]) -> set[str]:
+    """Of `project_ids`, those public for a reader who is no member: `served_among`, and none
+    at all while the instance serves no public pages (`MAITY_PUBLIC_PAGES` off, §16.9). Fail
+    closed, as ruled for the stars (hub/context/persistence.md c0e833f1). `served`,
+    `served_of` and `served_among` themselves do not ask: most of their callers render pages,
+    which happens only while pages are served, and the others (`agent_owners.effective`,
+    `landing_stats`) keep their own rules."""
+    if not public_pages.serving():
+        return set()
+    return served_among(conn, project_ids)
 
 
 def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
@@ -505,16 +570,16 @@ def explore_html(
     frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
     shows only what those pages already show, and is rendered per request, behind the public
     cache."""
+    p = t.project.c
+    candidates = conn.execute(
+        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+            p.public_page == "on", p.state != "archived"
+        )
+    ).all()
+    public = served_of(conn, candidates)
+    names = namespace.full_names(conn, public)
     shown = sorted(
-        (
-            (namespace.full_name(conn, project), project.name)
-            for project in conn.execute(
-                select(t.project).where(
-                    t.project.c.public_page == "on", t.project.c.state != "archived"
-                )
-            )
-            if served(conn, project)
-        ),
+        ((names[row.id], row.name) for row in candidates if row.id in public),
         key=lambda item: (item[1].casefold(), item[0]),
     )
 

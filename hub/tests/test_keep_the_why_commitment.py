@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import clock, instances
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -48,7 +48,7 @@ def test_the_deadline_is_thirty_minutes_after_the_first_resume(
     _block(agent)
     with migrated.connect() as conn:
         row = conn.execute(
-            select(t.credential).where(t.credential.c.id == agent.credential_id)
+            instances.credential_rows().where(t.credential.c.id == agent.credential_id)
         ).one()
         started = conn.execute(
             select(t.agent_session.c.started_at).where(t.agent_session.c.id == row.ktw_session_id)
@@ -104,8 +104,8 @@ def test_the_member_view_carries_the_instance_and_the_mark(
     assert member["keep_the_why_unconfirmed"] is False
     with migrated.begin() as conn:
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == agent.credential_id)
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.credential_id == agent.credential_id)
             .values(ktw_acknowledge_by=clock.now() - timedelta(minutes=1))
         )
     late = owner.get(f"{BASE}/members/{agent.id}").json()
@@ -135,8 +135,8 @@ def test_humans_and_optional_projects_carry_neither(
 def _due(engine: Engine, agent: flow.Agent, ago: timedelta) -> None:
     with engine.begin() as conn:
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == agent.credential_id)
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.credential_id == agent.credential_id)
             .values(ktw_acknowledge_by=clock.now() - ago)
         )
 
@@ -245,8 +245,8 @@ def test_a_paused_agent_is_not_reminded(
     _block(agent)
     with migrated.begin() as conn:
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == agent.credential_id)
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.credential_id == agent.credential_id)
             .values(paused_since=clock.now(), paused_by=owner.id)
         )
     _due(migrated, agent, timedelta(minutes=1))
@@ -300,7 +300,7 @@ def test_a_reminder_missed_without_an_open_session_comes_at_the_next_resume(
 def _credential(engine: Engine, agent: flow.Agent) -> Any:
     with engine.connect() as conn:
         return conn.execute(
-            select(t.credential).where(t.credential.c.id == agent.credential_id)
+            instances.credential_rows().where(t.credential.c.id == agent.credential_id)
         ).one()
 
 

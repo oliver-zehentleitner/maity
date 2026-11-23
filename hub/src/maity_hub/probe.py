@@ -500,11 +500,24 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         "observed_at": clock.rfc3339(max(times)),
     }
     # A pull request the forge does not have contradicts the report; a branch it no
-    # longer has (deleted after the merge) does not.
+    # longer has (deleted after the merge) does not. That is about `mismatch` only: a merge
+    # closes a card on its own only by the pull request's own head branch and the rest of
+    # `merged._not_its_own` (§6.6), never by what a branch read finds or misses.
+    # A pull request from a fork: the reported branch lives in the fork, and a branch of its
+    # name in the project's repository is another one, whose head contradicts nothing.
+    forked = bool(
+        pr
+        and pr.data.get("found")
+        and pr.data.get("head_repo") is not None
+        and str(pr.data["head_repo"]).lower() != merged.own_repository(project)
+    )
     mismatch = bool(
         (pr and (not pr.data.get("found") or pr.data.get("head_sha") != report["pr"].get("head")))
         or (
-            branch and branch.data["found"] and branch.data["head_sha"] != report.get("remote_head")
+            not forked
+            and branch
+            and branch.data["found"]
+            and branch.data["head_sha"] != report.get("remote_head")
         )
     )
     with transaction(engine) as conn:

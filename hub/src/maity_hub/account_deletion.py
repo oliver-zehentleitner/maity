@@ -142,12 +142,7 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
 
 def lock_account(conn: Connection, human_id: str) -> None:
     """Take the human's `account_lock` exclusively: the first lock of a deletion."""
-    write_guard.ensure_row(conn, human_id)
-    conn.execute(
-        select(t.account_lock.c.human_id)
-        .where(t.account_lock.c.human_id == human_id)
-        .with_for_update()
-    ).first()
+    write_guard.lock_row(conn, human_id, shared=False)
 
 
 def lock_first(conn: Connection, human_id: str) -> None:
@@ -783,10 +778,21 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            website=None,  # the person's links go with the profile (§16.9, §2.9)
+            social=None,
+            links_visible="private",  # the column's default: as if never chosen
             public_stats=False,
             public_agents="public_projects",
+            # Every public switch of a deleted account ends off, whatever its default on a new
+            # account: what the person said of themselves (§5.2 "Meat proxy") and whether public
+            # pages name them online (§16.9). public_presence starts true on a new row; off here,
+            # so no later use of it can make a deleted person show anywhere.
+            meat_proxy_lead=False,
+            meat_proxy_hands=False,
+            public_presence=False,
             interface_language=None,
             start_tabs=None,  # project ids only, but the person's choice (§5.1)
+            starred=None,  # the public projects the person kept (§5.1 "Stars", §2.9)
             experiment_notice_understood_at=None,  # the person's own confirmation (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),

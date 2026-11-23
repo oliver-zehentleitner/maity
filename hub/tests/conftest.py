@@ -7,6 +7,7 @@ created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL).
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -47,6 +48,11 @@ def _shard() -> tuple[int, int] | None:
 
 def pytest_configure(config: pytest.Config) -> None:
     _shard()  # a bad MAITY_TEST_SHARD stops the run before collection, with a usage error
+    # Which check refused a join (`routes.joins._gone`, at info, and the attempt slot's join
+    # state at debug) shows under a failing test's captured log, so a flaky exchange names its
+    # cause in CI (tsk-e9pc50wdk9b9). Only this logger: a propagated record is held back by the
+    # handlers' level, not the root's.
+    logging.getLogger("maity_hub.routes.joins").setLevel(logging.DEBUG)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -462,6 +468,9 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import ktw_reads
 
     ktw_reads.FOREIGN.clear()
+    ktw_reads.OUTSIDE_CACHE.clear()  # the peer link to `ktw.CACHE` stays
+    ktw_reads._outside_seen.clear()
+    ktw_reads._asked_now.set(frozenset())  # no answer of an earlier test counts as this one's
     ktw_reads._slots.clear()
     ktw_reads._flights.clear()
     ktw_reads._failed.clear()

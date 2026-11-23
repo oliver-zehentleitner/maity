@@ -45,6 +45,7 @@
               "supervised"
             ],
             "default_mode": "interactive",
+            "efforts": [],
             "models": [
               "opus",
               "sonnet"
@@ -64,6 +65,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [],
             "targets": [
               "local"
@@ -80,6 +82,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [],
             "targets": [
               "local"
@@ -161,6 +164,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [
               "gpt-5.5"
             ],
@@ -230,6 +234,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [
               "sonnet"
             ],
@@ -248,6 +253,7 @@
               "supervised"
             ],
             "default_mode": "supervised",
+            "efforts": [],
             "models": [
               "sonnet"
             ],

@@ -12,7 +12,14 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Callable,
+    Iterable,
+    Iterator,
+    MutableMapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -250,6 +257,16 @@ def lock_project(conn: Connection, project_id: str) -> Any:
     return conn.execute(
         select(t.project).where(t.project.c.id == project_id).with_for_update()
     ).one()
+
+
+def lock_projects(conn: Connection, project_ids: Iterable[str]) -> None:
+    """Lock each of several projects once, in the order of their ids, before any write of
+    the caller's: a write that reaches several projects (a revocation of an instance in
+    each, §6.17) takes them all up front, so two such writes over overlapping projects never
+    wait on each other in a cycle. `emit`'s own lock of a project locked here is harmless:
+    the transaction holds it already."""
+    for project_id in sorted(set(project_ids)):
+        lock_project(conn, project_id)
 
 
 def newest_seq(conn: Connection, project_id: str) -> int:
@@ -1317,9 +1334,13 @@ def read_waking(
     carried: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
+    # Dormancy is per project, on the instance's attachment to this membership (§6.17).
+    a = t.instance_attachment
     dormant = credential_id is not None and (
         conn.execute(
-            select(t.credential.c.dormant_since).where(t.credential.c.id == credential_id)
+            select(a.c.dormant_since).where(
+                a.c.credential_id == credential_id, a.c.membership_id == membership.id
+            )
         ).scalar()
         is not None
     )

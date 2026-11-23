@@ -45,24 +45,26 @@ def defaults() -> dict[str, Any]:
 def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
     """Per agent membership its active instances with a live session: whether it listens,
     when it last called, and how many cards it holds."""
-    from maity_hub import listening
+    from maity_hub import instances, listening
 
     if not membership_ids:
         return {}
+    a = t.instance_attachment
     rows = conn.execute(
         select(
-            t.credential.c.membership_id,
+            a.c.membership_id,
             t.credential.c.instance,
             t.agent_session.c.id.label("session_id"),
             # The instance's latest call: its credential's last use, written on every call,
             # where the session's `last_seen_at` is written at most once a minute (§2.4).
             t.credential.c.last_used_at.label("last_seen_at"),
         )
+        .select_from(instances.credential_join())
         .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
         .where(
-            t.credential.c.membership_id.in_(membership_ids),
-            t.credential.c.revoked_at.is_(None),
-            t.credential.c.dormant_since.is_(None),  # never chosen, as if not listening (§6.17)
+            a.c.membership_id.in_(membership_ids),
+            instances.attached_now(),
+            a.c.dormant_since.is_(None),  # never chosen, as if not listening (§6.17)
             t.agent_session.c.live.is_(True),
         )
     ).all()
@@ -201,12 +203,12 @@ def record_presence(conn: Connection, now: datetime) -> None:
     # Each instance's latest call is its credential's last use, written on every call, as
     # `instances.presence` reads it elsewhere; the session's `last_seen_at` is written at most
     # once a minute (§2.4).
+    # A session counts in each project it is in (`agent_session_project`, §6.17).
+    p = t.agent_session_project
     live = conn.execute(
-        select(
-            t.agent_session.c.membership_id,
-            t.agent_session.c.id,
-            t.credential.c.last_used_at,
-        )
+        select(p.c.membership_id, t.agent_session.c.id, t.credential.c.last_used_at)
+        .select_from(p)
+        .join(t.agent_session, t.agent_session.c.id == p.c.session_id)
         .join(t.credential, t.credential.c.id == t.agent_session.c.credential_id)
         .where(t.agent_session.c.live.is_(True))
     ).all()

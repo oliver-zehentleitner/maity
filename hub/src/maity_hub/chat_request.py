@@ -48,6 +48,7 @@ from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.ids import CROCKFORD, PREFIXES
 from maity_hub.notifications import records
+from maity_hub.views import handles_of
 
 KIND = "chat_access"
 DECLINED = "declined"
@@ -209,15 +210,9 @@ def agents_of(conn: Connection, request: Any) -> list[str]:
 
 
 def _handles(conn: Connection, ids: set[str]) -> dict[str, str]:
-    wanted = sorted(i for i in ids if i)
-    if not wanted:
-        return {}
-    a, h = t.agent_profile.c, t.human.c
-    found: dict[str, str] = dict(conn.execute(select(a.id, a.handle).where(a.id.in_(wanted))).all())
-    rest = [i for i in wanted if i not in found]
-    if rest:
-        found.update(conn.execute(select(h.id, h.handle).where(h.id.in_(rest))).all())
-    return {i: str(found.get(i) or i) for i in wanted}
+    """`views.handles_of`, each id that names no handle standing for itself."""
+    found = handles_of(conn, ids)
+    return {i: found.get(i) or i for i in sorted(i for i in ids if i)}
 
 
 def _title(conn: Connection, side: str) -> str:

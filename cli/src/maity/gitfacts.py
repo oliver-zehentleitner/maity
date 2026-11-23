@@ -83,18 +83,54 @@ def _git_required(cwd: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
+# `\Z`, not `$`: `$` also matches before a trailing newline.
+_REPO_PATH = re.compile(r"\A[A-Za-z0-9_.][A-Za-z0-9_.-]*/[A-Za-z0-9_.][A-Za-z0-9_.-]*\Z")
+
+
+def gh_repository(url: str | None) -> str | None:
+    """The project's repository URL as gh's `--repo` takes it (`HOST/OWNER/REPO`), or None
+    when it is not one repository on a host gh is asked about: then gh picks the repository
+    from the clone's remotes, as before."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    try:
+        host, path = repository_key(url)
+    except ValueError:
+        return None
+    if host not in gh_hosts() or not _REPO_PATH.match(path):
+        return None
+    if any(part in (".", "..") for part in path.split("/")):
+        return None  # a path segment, never an owner or a repository
+    return f"{host}/{path}"
+
+
+# How many pull requests of one head branch name are read. gh's `--head` matches the branch
+# name alone, not the fork it lives in, so in the project's repository another fork's pull
+# request from a branch of the same name (`main`, `fix`) comes back too (tsk-6yq56cm6k01j).
+PR_CANDIDATES = 30
+
+
+def _pull_request(
+    cwd: Path, branch: str, repository: str | None = None, head: str | None = None
+) -> PullRequest | None:
+    """The pull request of `branch`: of those gh lists by that head branch name, the one whose
+    head is `head` (the local HEAD), else the first, as before (whose other head the report
+    then refuses)."""
+    # A fork's clone: its pull request is in the project's repository, which gh would not
+    # pick from an `origin` that is the fork (tsk-k0x4jn4y4ykg).
+    where = ["--repo", repository] if repository else []
     result = _run(
         [
             "gh",
             "pr",
             "list",
+            *where,
             "--head",
             branch,
             "--state",
             "all",
             "--limit",
-            "1",
+            str(PR_CANDIDATES),
             "--json",
             "number,headRefOid,state,url,title,body",
         ],
@@ -106,7 +142,9 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         rows = json.loads(result.stdout or "[]")
         if not rows:
             return None
-        row = rows[0]
+        # A row that is no object is passed over here and fails below as gh's odd answer.
+        mine = (r for r in rows if isinstance(r, dict) and r.get("headRefOid") == head)
+        row = next(mine, rows[0]) if head is not None else rows[0]
         return PullRequest(
             number=int(row["number"]),
             head=str(row["headRefOid"]),
@@ -322,7 +360,9 @@ def _push_target(cwd: Path, branch: str) -> tuple[str | None, str | None]:
     return remote, f"refs/heads/{branch}"
 
 
-def collect(cwd: Path) -> Facts:
+def collect(cwd: Path, repository: str | None = None) -> Facts:
+    """`repository`: the project's repository URL as the hub names it; gh looks for the pull
+    request there (`gh_repository`), else in the repository it picks for the clone."""
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
         raise FactsError(f"{cwd} is not a Git clone with at least one commit")
@@ -350,7 +390,7 @@ def collect(cwd: Path) -> Facts:
     pr = forge_error = None
     if unknown is None and branch:
         try:
-            pr = _pull_request(cwd, remote_branch or branch)
+            pr = _pull_request(cwd, remote_branch or branch, gh_repository(repository), head)
         except FactsError as exc:
             forge_error = str(exc)
     # Merged and deleted: the forge still has this head, as the merged pull request's. It

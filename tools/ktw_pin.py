@@ -12,9 +12,12 @@ copy is found in any of its written forms: the full tree URL, a bare `tree/<ref>
 without a version fails too. The sub-packages' `.keep-the-why` files must exist and name the
 same `context-schema` as the root's: each package's linter reads its own.
 
-What it cannot check offline is that the linter action's commit SHA is the commit of the tag its
-comment names: on a bump, the author and the reviewers check it, for example with
-`git ls-remote https://github.com/oliver-zehentleitner/keep-the-why refs/tags/lint-vX.N^{}`.
+The commit a runner delivers to its placements (`KTW_SKILL_COMMIT` in `hub/src/maity_hub/config.py`)
+must be 40 hex digits with the release tag in its comment. What it cannot check offline is that
+the linter action's commit SHA, and that commit, are the commits of the tags their comments name:
+on a bump, the author and the reviewers check them, for example with
+`git ls-remote https://github.com/oliver-zehentleitner/keep-the-why refs/tags/lint-vX.N^{}` and
+`... refs/tags/vX^{}`.
 
     python3 tools/ktw_pin.py          # from the repository root; exit 1 with one line per finding
 
@@ -52,6 +55,9 @@ BARE_INSTALLER = re.compile(r"(?<![\w@/.-])(?<!npx )skills@(\w[\w.-]*?)(?=[)\s\"
 UNVERSIONED = re.compile(r"`skills`")
 INSTALLER = re.compile(r'^SKILLS_INSTALLER = "skills@([^"]+)"$', re.MULTILINE)
 LINT_ACTION = re.compile(r"uses: oliver-zehentleitner/keep-the-why@(\S+)(?:\s*#\s*(\S+))?")
+# The commit a runner delivers (§15.5), its release tag in the comment.
+COMMIT_SOURCE = "hub/src/maity_hub/config.py"
+COMMIT_PIN = re.compile(r'^KTW_SKILL_COMMIT = "([^"]*)"(?:\s*#\s*(\S+))?$', re.MULTILINE)
 SCHEMA = re.compile(r"^- context-schema:\s*(\S+)\s*$", re.MULTILINE)
 
 
@@ -70,6 +76,17 @@ def check(root: Path) -> list[str]:
     if not pinned:
         problems.append(f'{INSTALLER_SOURCE}: no SKILLS_INSTALLER = "skills@<version>"')
     installer = pinned.group(1) if pinned else None
+    commit = COMMIT_PIN.search((root / COMMIT_SOURCE).read_text(encoding="utf-8"))
+    if not commit:
+        problems.append(f'{COMMIT_SOURCE}: no KTW_SKILL_COMMIT = "<commit>"  # v<release>')
+    else:
+        if not re.fullmatch(r"[0-9a-f]{40}", commit.group(1)):
+            problems.append(f"{COMMIT_SOURCE}: KTW_SKILL_COMMIT {commit.group(1)!r} is no commit")
+        if commit.group(2) != release:
+            problems.append(
+                f"{COMMIT_SOURCE}: KTW_SKILL_COMMIT's tag is {commit.group(2) or 'unnamed'}, "
+                f"context-schema is {version}"
+            )
     for name in SUB_CONFIGS:
         path = root / name
         if not path.exists():

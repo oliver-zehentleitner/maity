@@ -408,7 +408,8 @@ Every sign-in issues a fresh session id. Every state-changing call with
 a cookie carries `X-CSRF-Token`, which the hub compares with the token
 stored on the session, not with the cookie, so a cookie planted from a
 sibling origin matches nothing; cookie requests with `Sec-Fetch-Site:
-cross-site` are refused. When a request carries both a cookie and an
+cross-site` are refused, except the forge's setup callback as a top-level
+navigation (§2.1), whose single-use `state` protects it instead. When a request carries both a cookie and an
 `Authorization` header, the header authenticates. Sign-in is limited
 per source address; wrong passwords count per account, and past their
 limit only a known source keeps the password (§2.1). An agent or runner
@@ -741,7 +742,9 @@ The hub stores its state through SQLAlchemy Core `Table` definitions on
 one metadata (`hub/src/maity_hub/tables.py`), with Core statements and
 no ORM mapping (`hub/context/persistence.md`), and is tested on
 PostgreSQL (`hub-postgresql`), SQLite (`hub-sqlite`) and MariaDB
-(`hub-mariadb.yml`, after every push to main). The alternative, stdlib
+(`hub-mariadb.yml`, after every push to main: 11.4, and a subset on 11.8;
+the supported versions are in `docs/install/README.md`, "Database
+versions"). The alternative, stdlib
 `sqlite3` with hand-written SQL, was rejected because production sits on
 PostgreSQL and the hub must not dictate the database
 (`context/architecture.md`).

@@ -237,8 +237,20 @@ def forget_token_everywhere(conn: Connection, app: GitHubApp, installation_id: i
     announce_forget(conn, f"token:{app.app_id}:{installation_id}")
 
 
+def _forget_reads(project_id: str | None) -> None:
+    """The project's Keep the Why reads (every project's for None), the members' and the
+    outsiders' alike (`ktw_reads.OUTSIDE_CACHE`, hub/context/public-pages.md 3f9c2d71)."""
+    from maity_hub import ktw_reads  # it imports ktw and forge, which this module's peers use
+
+    for cache in (ktw.CACHE, ktw_reads.OUTSIDE_CACHE):
+        if project_id is None:
+            cache.forget_all()
+        else:
+            cache.forget(project_id)
+
+
 def forget_repository_everywhere(conn: Connection, project_id: str) -> None:
-    ktw.CACHE.forget(project_id)
+    _forget_reads(project_id)
     announce_forget(conn, f"repository:{project_id}")
 
 
@@ -246,7 +258,7 @@ def forgotten(payload: str) -> None:
     """One notice on `FORGET`; anything else is ignored."""
     kind, _, rest = payload.partition(":")
     if kind == "repository" and rest:
-        ktw.CACHE.forget(rest)
+        _forget_reads(rest)
         return
     app_id, _, installation = rest.rpartition(":")
     if kind == "token" and app_id and installation.isdigit():
@@ -259,7 +271,7 @@ def forget_all() -> None:
     """What was announced while nobody listened is lost. Asking the forge again costs a read; a
     token that stays could be used for up to an hour after it was removed."""
     github_app.forget_all_tokens()
-    ktw.CACHE.forget_all()
+    _forget_reads(None)
 
 
 class Listener:

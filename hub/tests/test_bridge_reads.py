@@ -84,8 +84,8 @@ def test_for_reads_what_the_served_agent_reads_and_moves_no_cursor(
     assert read.status_code == 200, read.text
     with migrated.connect() as conn:
         acknowledged = conn.execute(
-            select(t.agent_session.c.acknowledged_seq).where(
-                t.agent_session.c.id == bridge.session_id
+            select(t.agent_session_project.c.acknowledged_seq).where(
+                t.agent_session_project.c.session_id == bridge.session_id
             )
         ).scalar()
         delivered = conn.execute(select(t.message_delivery)).first()
@@ -288,14 +288,20 @@ def test_unread_through_the_bridge_is_the_served_agents_not_the_bridges_cursor(
     with migrated.begin() as conn:
         # The served agent read the first in a session that has ended since; the bridge's
         # own session has read far past both.
+        position = t.agent_session_project
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.id == served.session_id)
-            .values(acknowledged_seq=old.json()["seq"], live=None)
+            update(position)
+            .where(position.c.session_id == served.session_id)
+            .values(acknowledged_seq=old.json()["seq"])
         )
         conn.execute(
             update(t.agent_session)
-            .where(t.agent_session.c.id == bridge.session_id)
+            .where(t.agent_session.c.id == served.session_id)
+            .values(live=None)
+        )
+        conn.execute(
+            update(position)
+            .where(position.c.session_id == bridge.session_id)
             .values(acknowledged_seq=said.json()["seq"] + 100)
         )
     client = make_client()
@@ -324,12 +330,16 @@ def test_a_paused_bridge_leaves_the_served_agent_offline(
 ) -> None:
     served, bridge = _pair(migrated, owner, served_session=False)
     assert _get(make_client(), bridge, "/me").status_code == 200
-    table = t.membership if paused == "membership" else t.credential
-    key = bridge.membership_id if paused == "membership" else bridge.credential_id
+    if paused == "membership":
+        where = t.membership.c.id == bridge.membership_id
+        table = t.membership
+    else:  # the instance's pause is on its attachment (§6.17)
+        where = t.instance_attachment.c.credential_id == bridge.credential_id
+        table = t.instance_attachment
     with migrated.begin() as conn:
         conn.execute(
             update(table)
-            .where(table.c.id == key)
+            .where(where)
             .values(paused_since=clock.now(), paused_by=owner.id, paused_reason="break")
         )
     view = owner.get(f"{PROJECT}/members/{served.agent_id}").json()

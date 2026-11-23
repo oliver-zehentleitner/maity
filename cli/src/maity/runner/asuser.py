@@ -13,6 +13,7 @@ there, and a harness setting an agent changes only widens what that same user co
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import state
-from . import limitread, scratchop
+from . import limitread, scratchop, skillop
 
 TIMEOUT = 60.0
 # A read on the agents' side: a few kilobytes, or a log's next chunk.
@@ -49,8 +50,52 @@ REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
 
+def shell_quote(word: str) -> str:
+    """`shlex.quote`, and a word that starts with `=` quoted too: `shlex.quote` leaves it bare
+    (`=` is safe in POSIX sh), but zsh expands a bare `=name` to the path of the command `name`
+    and fails when there is none, so an exact tmux target (`=maity_p_c`) would not reach tmux."""
+    if word.startswith("="):
+        return "'" + word.replace("'", "'\"'\"'") + "'"
+    return shlex.quote(word)
+
+
+def shell_join(words: Sequence[str]) -> str:
+    """`shlex.join` with `shell_quote`: one line for a POSIX shell or zsh."""
+    return " ".join(shell_quote(word) for word in words)
+
+
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
+
+
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+
+def stat_mode(path: Path, *, follow: bool = True) -> int | None:
+    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
+    other OSError raises. A check that must fail closed decides with this, never with
+    `is_dir()`/`exists()`/`is_symlink()`: from Python 3.14 those answer False for a path
+    below a directory that cannot be searched instead of raising, and the check would take
+    what it cannot see for absent (tsk-0tje3vzzedtx)."""
+    try:
+        return (os.stat if follow else os.lstat)(path).st_mode
+    except OSError as exc:
+        if exc.errno in ABSENT:
+            return None
+        raise
+
+
+def present(path: Path, kind: str = "-e") -> bool:
+    """`test -e` (`-f`, `-d`, `-L`) on the runner's own side, failing closed: absent is False,
+    any other error raises (stat_mode)."""
+    mode = stat_mode(path, follow=kind != "-L")
+    if mode is None:
+        return False
+    check = {"-e": lambda m: True, "-f": stat.S_ISREG, "-d": stat.S_ISDIR, "-L": stat.S_ISLNK}
+    return bool(check[kind](mode))
 
 
 @dataclass(frozen=True)
@@ -152,6 +197,26 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
+    def tighten(self, path: Path) -> None:
+        """The directory `path` made 0700, also when it exists already with looser bits:
+        `mkdir -p -m 700` and `Path.mkdir(mode=0o700, parents=True)` give the mode to the last
+        directory only, and a parent made under a umask of 002 is 0775, which `maity gh`'s lead
+        commands refuse (`ghpr.owned_layout`, review A1758 of #2054). Only a real directory:
+        chmod follows a link, so a link in its place is refused first (security leg on #2054;
+        owned_layout refuses one anyway, this keeps the chmod from touching what it names)."""
+        if self.direct:
+            if not stat.S_ISDIR(os.lstat(path).st_mode):
+                raise OSError(f"cannot make {path} private for the agents: not a directory")
+            os.chmod(path, 0o700)
+            return
+        # find's -type tests the entry itself, never what a link names.
+        seen = self.run(["find", str(path), "-maxdepth", "0", "-type", "d"])
+        if seen.returncode != 0 or seen.stdout.strip() != str(path):
+            raise OSError(f"cannot make {path} private for the agents: not a directory")
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot make {path} private for the agents: {done.stderr.strip()[:200]}")
+
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
         from `under` (the clone, the agents' files, their home) without following a link on
@@ -216,6 +281,46 @@ class AsUser:
             entries.append((where, kind, int(size)))
         return entries
 
+    def entries(self, path: Path, depth: int) -> list[tuple[str, str]]:
+        """The entries exactly `depth` levels below a directory on the agents' side, which may
+        be closed to the runner (the scratch holder is the agents' user's, 0700): (path inside
+        it, `d`/`l`/`f`/`?`). Links are listed, never followed, and nothing deeper is read.
+        OSError when a directory on the way cannot be listed: an unlisted one would look empty
+        (gc's scratch listing, the review of #2112)."""
+        if self.direct:
+            level = [(path, "")]
+            for step in range(depth):
+                if step:  # only a real directory is gone into, never through a link
+                    level = [(p, r) for p, r in level if stat.S_ISDIR(p.lstat().st_mode)]
+                below: list[tuple[Path, str]] = []
+                for at, rel in level:
+                    with os.scandir(at) as listing:
+                        below += [(Path(item.path), rel + item.name) for item in listing]
+                level = [(p, r + "/") if step < depth - 1 else (p, r) for p, r in below]
+            found = []
+            for full, rel in level:
+                mode = full.lstat().st_mode
+                kind = ("l" if stat.S_ISLNK(mode) else "d" if stat.S_ISDIR(mode)
+                        else "f" if stat.S_ISREG(mode) else "?")  # fmt: skip
+                found.append((rel, kind))
+            return found
+        # A trailing `/`, so a start path that is itself a link (a linked workspaces root) is
+        # gone into, as os.scandir does on the direct side; below it no link is (A2056).
+        start = str(path) if str(path).endswith("/") else f"{path}/"
+        argv = ["find", start, "-mindepth", str(depth), "-maxdepth", str(depth),
+                "-printf", "%y %P\\0"]  # fmt: skip
+        try:
+            done = self.run(argv)
+        except subprocess.TimeoutExpired:
+            raise OSError(f"listing {path} on the agents' side did not end in time") from None
+        if done.returncode != 0:
+            raise OSError(f"cannot list {path} on the agents' side")
+        listed = []
+        for item in filter(None, done.stdout.split("\0")):
+            kind, where = item.split(" ", 1)
+            listed.append((where, kind if kind in ("d", "l", "f") else "?"))
+        return listed
+
     def inode(self, path: Path) -> int:
         """The inode of `path` itself on the agents' side, a link not followed: `ls -di`,
         which BSD, macOS and GNU all print the same way (POSIX follows no link named as an
@@ -230,11 +335,11 @@ class AsUser:
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the
-        runner."""
+        runner. On the runner's own side with stat (`present`): absent is False, and a path it
+        cannot look at raises, as pathlib's predicates did up to Python 3.13, so no caller
+        takes what it cannot see for absent (tsk-0tje3vzzedtx)."""
         if self.direct:
-            checks = {"-e": path.exists, "-f": path.is_file, "-d": path.is_dir,
-                      "-L": path.is_symlink}  # fmt: skip
-            return checks[kind]()
+            return present(path, kind)
         return self.run(["test", kind, str(path)]).returncode == 0
 
     def link(self, target: Path, link: Path) -> None:
@@ -263,6 +368,8 @@ class AsUser:
         done = self.run([*self.runner_module("scratchop"), op, "--under", str(under), str(path)])
         if done.returncode == scratchop.LINK:
             raise scratchop.OnTheWay(f"{path}: a link or no directory on the way; nothing done")
+        if done.returncode == 2 and op == "holder":  # a host's `maity` that predates the op
+            raise scratchop.Unsupported(f"host maity has no holder op: {done.stderr.strip()[:200]}")
         if done.returncode != 0:
             raise OSError(f"scratch {op} {path} failed: {done.stderr.strip()[:200]}")
         try:
@@ -271,6 +378,31 @@ class AsUser:
             raise OSError(f"scratch {op} {path}: no answer") from None
         if not isinstance(answer, dict):
             raise OSError(f"scratch {op} {path}: no answer")
+        return answer
+
+    def pg(self, op: str, under: Path, path: Path) -> dict[str, Any]:
+        """The test clusters' password holder or a placement's file in it, made (`make`) or
+        removed (`remove`) on the agents' side (scratchop.pg_make, pg_remove), opened from
+        `under` without following a link. scratchop.OnTheWay for a link or another user's
+        holder; OSError when it fails otherwise, a host whose `maity` predates the op included."""
+        if self.direct:
+            return (scratchop.pg_make if op == "make" else scratchop.pg_remove)(
+                str(under), str(path)
+            )
+        argv = [*self.runner_module("scratchop"), f"pg{op}", "--under", str(under), str(path)]
+        done = self.run(argv)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{path}: a link or another user's directory; not used")
+        if done.returncode == 2:  # a host's `maity` that predates the op: it made none either
+            raise scratchop.Unsupported(f"host maity has no pg ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"pg {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"pg {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"pg {op} {path}: no answer")
         return answer
 
     def tmp_scratch(self, op: str, path: Path) -> dict[str, Any]:
@@ -326,6 +458,74 @@ class AsUser:
             )
         if done.returncode != 0:
             raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
+
+    def skill_check(self, home: Path, key: str, source: str, commit: str) -> dict[str, Any]:
+        """The delivered skill's copy `key` below the agents' `home` (skillop.check): `ok` with
+        its manifest's SHA-256, `missing` or `mismatch`. skillop.OnTheWay when a directory
+        below the home is a link; scratchop.Unsupported when an ssh host's `maity` has no skill
+        ops; OSError otherwise."""
+        if self.direct:
+            return dict(skillop.check(str(home), key, source, commit))
+        argv = [*self.runner_module("skillop"), "check", "--home", str(home), key, source, commit]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "check", key)
+
+    def skill_put(self, home: Path, payload: str) -> dict[str, Any]:
+        """The runner's checked copy (skillop.payload) put below the agents' `home`
+        (skillop.put): `put` with its manifest's SHA-256. The document goes on stdin, at most
+        the skill's own bound. Errors as for `skill_check`."""
+        if self.direct:
+            return dict(skillop.put(str(home), json.loads(payload)))
+        argv = [*self.runner_module("skillop"), "put", "--home", str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "put", "")
+
+    def skill_codex(self, under: Path, home: Path, payload: str) -> dict[str, Any]:
+        """The skill's own files from the runner's checked copy (skillop.payload) as
+        `<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME in its scratch
+        (skillop.codex_put), reached from the workspaces root `under`. Errors as for
+        `skill_check`, scratchop.OnTheWay for a link on the way."""
+        if self.direct:
+            return dict(skillop.codex_put(str(under), str(home), json.loads(payload)))
+        argv = [*self.runner_module("skillop"), "codex", "--under", str(under), str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "codex", "")
+
+    def skill_codex_clear(self, under: Path, home: Path) -> dict[str, Any]:
+        """`<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME removed
+        (skillop.codex_clear), for a launch that writes no skill there. Errors as for
+        `skill_codex`."""
+        if self.direct:
+            return dict(skillop.codex_clear(str(under), str(home)))
+        argv = [*self.runner_module("skillop"), "codexclear", "--under", str(under), str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "codexclear", "")
+
+    def skill_remove(self, home: Path, keep: set[str]) -> list[str]:
+        """The delivered copies below the agents' `home` that are not in `keep` removed
+        (skillop.remove, `gc --skills`); their names. Errors as for `skill_check`."""
+        if self.direct:
+            answer = dict(skillop.remove(str(home), sorted(keep)))
+        else:
+            argv = [*self.runner_module("skillop"), "remove", "--home", str(home), *sorted(keep)]
+            answer = self._skill_answer(self.run(argv, env=self.module_env()), "remove", "")
+        names = answer.get("names")
+        return [n for n in names if isinstance(n, str)] if isinstance(names, list) else []
+
+    @staticmethod
+    def _skill_answer(done: subprocess.CompletedProcess[str], op: str, key: str) -> dict[str, Any]:
+        """A skill op's one JSON line (skillop.main): LINK (4) for a link below the home, 2 for
+        a host `maity` without the ops (older than this one), as with scratchop's `codex`."""
+        what = f"skill {op} {key}" if key else f"skill {op}"
+        if done.returncode == skillop.LINK:
+            raise skillop.OnTheWay(f"{what}: a link below the agents' home")
+        if done.returncode == 2:
+            raise scratchop.Unsupported(f"host maity has no skill ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"{what} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"{what}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"{what}: no answer")
+        return answer
 
     def worktree_prune(self, repo: Path) -> dict[str, Any]:
         """Clear a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
@@ -418,7 +618,7 @@ class Ssh(AsUser):
         """One remote command line: every word quoted, `env` set explicitly."""
         pairs = [f"{key}={value}" for key, value in (env or {}).items()]
         words = [*(["env", *pairs] if pairs else []), *argv]
-        return [*self.ssh(), "--", " ".join(shlex.quote(word) for word in words)]
+        return [*self.ssh(), "--", shell_join(words)]
 
     def run(
         self,
@@ -448,7 +648,7 @@ class Ssh(AsUser):
         home = done.stdout.strip()
         # The remote account is the agents': its shell start-up files can set HOME to
         # anything, and the runner builds paths and the attach hint from it.
-        if done.returncode != 0 or not REMOTE_HOME.match(home) or ".." in home.split("/"):
+        if done.returncode != 0 or not REMOTE_HOME.fullmatch(home) or ".." in home.split("/"):
             raise OSError(
                 f"{self.name}: {self.login}'s home is not a plain absolute path "
                 f"({home[:80]!r}); the runner refuses the host"

@@ -30,15 +30,15 @@ family). Turn it on once per clone:
 
 ```sh
 git config core.hooksPath tools/hooks
-python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python
+make -C hub dev
 pipx install --force "keep-the-why-lint==$(sed -n 's/.* # lint-v//p' .github/workflows/ktw-lint.yml)"
 ```
 
-The second line is the hub's environment from the hashed lock, the same
-one CI installs; the hook uses it for both packages (or the Python that
-`MAITY_HOOK_PYTHON` names). It stops before checking when black, ruff or
-mypy there differ from the pins in `hub/requirements/dev.txt`: after a
-lock change, run `make -C hub install PYTHON=.venv/bin/python` again.
+The second line makes the hub's environment, `hub/.venv`, from the hashed
+lock, the same set CI installs; the hook uses it for both packages (or the
+Python that `MAITY_HOOK_PYTHON` names). It stops before checking when black,
+ruff or mypy there differ from the pins in `hub/requirements/dev.txt`: after
+a lock change, run `make -C hub dev` again.
 Likewise it stops when the `ktw-lint` on PATH (or the one
 `MAITY_HOOK_KTW_LINT` names) is not the version CI pins (`# lint-vX` in
 `.github/workflows/ktw-lint.yml`), naming both versions and the install
@@ -192,9 +192,10 @@ verified.
 
 Everything runs on the machine you work on; there is no shared test system.
 
-- **Hub:** in `hub/`, `make install` into a venv of its own, then `make check`, which
-  runs the whole suite with one worker per core; on the machine the project's agents
-  share, `make lint typecheck` and the affected test files instead (below). The tests
+- **Hub:** in `hub/`, `make dev` (the venv `hub/.venv`, which the other targets then
+  use; `make install` installs the same set into the Python that `PYTHON=` names), then
+  `make check`, which runs the whole suite with one worker per core; on the machine the
+  project's agents share, `make lint typecheck` and the affected test files instead (below). The tests
   run on SQLite by default, one file per test (`hub/README.md`, "Develop").
 - **Hub on PostgreSQL:** `scripts/with_postgres.sh pytest -n 2 <test files>` from
   `hub/`; it starts a local server and gives the run a database of its own. Without a
@@ -244,6 +245,12 @@ directory and the slot files are that account's own; another account gets its ow
   running can hold the slot longer. Not every run gets an end line: once a run is over, a start
   line without a matching end line (same slot and pid) means the run was aborted (killed together
   with the watcher that writes the end line, or the machine rebooted).
+- **A slot directory the run may not write:** a sandboxed agent session may write only its
+  clone and a few other places, not `~/.local/state/maity`. There `tools/run_slot.sh` warns
+  and runs the command without a slot, and so without a log line. Point
+  `MAITY_RUN_SLOTS_DIR` at a shared directory the session may write to keep the slot.
+  `make smoke SLOT=` skips the slot on purpose; use it only on a machine where nothing else
+  runs tests.
 - **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
   starts two.
 - **No full hub suite on the agents' machine** (since 2026-10-29, after the
