@@ -64,6 +64,7 @@ class ProjectRoute(APIRoute):
         project_route = path == access.API_PROJECT or below
         readable = frozenset(m for m, p in access.OUTSIDE_READS if p == path)
         owned = frozenset(m for m, p in access.OWNER_CALLS if p == path)
+        joining = frozenset(m for m, p in access.OUTSIDE_JOINS if p == path)
         conditional = frozenset(m for m, p in access.PUBLIC_REPOSITORY_READS if p == path)
 
         async def handler(request: Request) -> Response:
@@ -75,7 +76,9 @@ class ProjectRoute(APIRoute):
             if project_route and request.method in conditional:
                 await access.gate(request, public_repository_read=True)
             elif project_route and request.method not in readable:
-                await access.gate(request, request.method in owned)
+                await access.gate(
+                    request, request.method in owned, outside_join=request.method in joining
+                )
             return await inner(request)
 
         return handler

@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    agent_owners,
     allowed_projects,
     availability,
     briefings,
@@ -51,6 +52,7 @@ from maity_hub import (
     mentions,
     moderation,
     namespace,
+    outsiders,
     product_line,
     project_roles,
     render,
@@ -78,7 +80,7 @@ from maity_hub.plain_text import plain_line
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
-from maity_hub.scopes import MEMBER_RULE_ROLES, has_scope
+from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, has_scope
 from maity_hub.views import join_view, member_view, principal_id, routing_boss
 
 log = logging.getLogger(__name__)
@@ -146,11 +148,30 @@ def _sees_join(conn: Connection, mine: Any, join_id: str) -> bool:
     return bool(may_bring(mine)) and created_by == mine.principal_id
 
 
-idempotency.register(
-    "join",
-    idempotency.plain(load_join),
-    idempotency.in_project(idempotency.column_of(t.join_link), _sees_join),
-)
+_member_sees_join = idempotency.in_project(idempotency.column_of(t.join_link), _sees_join)
+
+
+def _replay_sees_join(conn: Connection, join_id: str, caller: Caller) -> bool:
+    """A replay of a join's creation or revocation (§1.5): as the joins list, for a member;
+    for an outsider their own join, while the project is open to them now (§3.1)."""
+    if _member_sees_join(conn, join_id, caller):
+        return True
+    row = conn.execute(
+        select(t.join_link.c.project_id, t.join_link.c.created_by).where(
+            t.join_link.c.id == join_id
+        )
+    ).first()
+    name = namespace.name_of(conn, row.project_id) if row is not None else None
+    if row is None or name is None:
+        return False
+    try:
+        outsider = outsiders.outsider(conn, caller, name)
+    except ApiError:
+        return False
+    return bool(row.created_by == outsider.principal_id)
+
+
+idempotency.register("join", idempotency.plain(load_join), _replay_sees_join)
 
 
 # --- the join link (human) --------------------------------------------------------
@@ -166,7 +187,9 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         raise invalid({"via": "no_join_host"}, "this hub has no join host")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = joiner(conn, caller, slug)
+        if isinstance(mine, outsiders.Outsider):
+            return _outsider_join(conn, mine, body, caller, settings, via)
         member_rule = not mine.may("members:admin")
         if member_rule:
             require_member_rule(mine)
@@ -190,29 +213,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         ).first()
         values = assignment(conn, mine, body, member_rule=member_rule, existing=existing)
         if existing is not None:
-            # A second clone of a member: a new instance, the membership as it is.
-            # A role change goes through PATCH …/members/{id}, never through a join.
-            differing = {
-                k: "differs_from_membership" for k, v in values.items() if getattr(existing, k) != v
-            }
-            if body.briefing is not None and body.briefing != existing.briefing:
-                differing["briefing"] = "differs_from_membership"
-            if body.subagents is not None and body.subagents != existing.subagents:
-                differing["subagents"] = "differs_from_membership"
-            if (
-                body.subagents_language is not None
-                and body.subagents_language != existing.subagents_language
-            ):
-                differing["subagents_language"] = "differs_from_membership"
-            if differing:
-                raise invalid(differing, "the agent is a member; change its membership instead")
-            values = {
-                "trust": existing.trust,
-                "role": existing.role,
-                "reports_to": existing.reports_to,
-                "areas": existing.areas,
-                "capabilities": existing.capabilities,
-            }
+            values = _as_member(body, values, existing)
         # After the member's own trust and role are in: a new instance of an admin or a
         # proxy hands out a credential with that trust, which is the owner's to give.
         _require_owner_for(mine, values)
@@ -227,70 +228,232 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         values.setdefault("role", "coder")
         values.setdefault("areas", [])
         values.setdefault("capabilities", [])
-        if existing is not None:
-            # A new instance carries the membership's instruction as it is (§3.1).
-            told, language = bool(existing.subagents), existing.subagents_language
-        else:
-            told, language = subagents_of(conn, body, values["role"], caller.principal_id)
-        token, code = new_token(), new_code()
-        now = clock.now()
-        join_id = new_id("join")
-        conn.execute(
-            insert(t.join_link).values(
-                id=join_id,
-                project_id=mine.project.id,
-                token_hash=digest(token),
-                code_hash=digest(normalise_code(code)),
-                agent_id=agent_id,
-                trust=values["trust"],
-                role=values["role"],
-                reports_to=values.get("reports_to"),
-                areas=values["areas"],
-                capabilities=values["capabilities"],
-                briefing=body.briefing or None,
-                via=via,
-                new_instance=bool(body.new_instance),
-                replaces=body.replaces,
-                takes_over=body.takes_over,
-                handover=handed,
-                subagents=told,
-                subagents_language=language,
-                created_by=caller.principal_id,
-                created_at=now,
-                expires_at=now + timedelta(seconds=body.ttl_seconds),
-                failed_attempts=0,
-                member_rule=member_rule,
-            )
-        )
-        join_url = join_link(settings, via, token)
-        return idempotency.Outcome(
-            201,
-            "join",
-            join_id,
-            {
-                "id": join_id,
-                "join_url": join_url,
-                "code": code,
-                "paste_lines": {
-                    "join": join_line.plain(join_url, code),
-                    "posix": join_line.posix(settings.cli_install, join_url, code),
-                    "windows": join_line.windows(settings.cli_install, join_url, code),
-                },
-                "agent_id": agent_id,
-                "instruction": (
-                    subagents.instruction(
-                        language or "en", subagents.handle_of(conn, caller.principal_id)
-                    )
-                    if told
-                    else None
-                ),
-                "project": namespace.full_name(conn, mine.project),
-                "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
-                "via": via,
-            },
+        return _issue(
+            conn,
+            mine.project,
+            agent_id,
+            values,
+            body,
+            caller,
+            settings,
+            via,
+            handed,
+            existing,
+            member_rule=member_rule,
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def joiner(conn: Connection, caller: Caller, slug: str) -> Membership | outsiders.Outsider:
+    """Who calls a joins route (§3.1): the caller's active membership, else, for a signed-in
+    human who is none, an `outsiders.Outsider` of a project open to outsiders' agents now
+    (`outsiders.joins_open`); otherwise `not_found`, as before."""
+    try:
+        return membership(conn, caller, slug)
+    except ApiError as refused:
+        if refused.code != "not_found":
+            raise
+    return outsiders.outsider(conn, caller, slug)
+
+
+def _as_member(body: Any, values: dict[str, Any], existing: Any) -> dict[str, Any]:
+    """A second clone of a member: a new instance, the membership as it is. A role change goes
+    through PATCH …/members/{id}, never through a join; whatever the body names otherwise is
+    `invalid` (`differs_from_membership`)."""
+    differing = {
+        k: "differs_from_membership" for k, v in values.items() if getattr(existing, k) != v
+    }
+    if body.briefing is not None and body.briefing != existing.briefing:
+        differing["briefing"] = "differs_from_membership"
+    if body.subagents is not None and body.subagents != existing.subagents:
+        differing["subagents"] = "differs_from_membership"
+    if (
+        body.subagents_language is not None
+        and body.subagents_language != existing.subagents_language
+    ):
+        differing["subagents_language"] = "differs_from_membership"
+    if differing:
+        raise invalid(differing, "the agent is a member; change its membership instead")
+    return {
+        "trust": existing.trust,
+        "role": existing.role,
+        "reports_to": existing.reports_to,
+        "areas": existing.areas,
+        "capabilities": existing.capabilities,
+    }
+
+
+def _outsider_join(
+    conn: Connection,
+    outsider: outsiders.Outsider,
+    body: JoinCreate,
+    caller: Caller,
+    settings: Settings,
+    via: str,
+) -> idempotency.Outcome:
+    """An outsider's join for an agent of their own (§3.1, "An outsider's agent"): the limits
+    of "Bringing your own agent" with trust `outside`, a role `outside_roles` gives, no boss,
+    areas or capabilities, and `member_agents_max`, under the project's lock. A join for an
+    agent that is already a member adds an instance to a membership with trust `outside`
+    only. Re-checked at the exchange (`outsiders.still_holds`)."""
+    second_factor.require_step_up(conn, settings, caller)  # mints a credential (§2.8.4)
+    agent_id = _agent_for_join(
+        conn,
+        body.agent,
+        outsider.principal_id,
+        True,
+        limits.of(conn, settings, "max_agents_per_human"),
+    )
+    allowed_projects.refuse(conn, agent_id, outsider.project)  # §6.3
+    existing = _active_member(
+        conn, SimpleNamespace(project_id=outsider.project.id, agent_id=agent_id)
+    )
+    project = lock_project(conn, outsider.project.id)  # project roles and the count (§3.1)
+    if not outsiders.joins_open(conn, project):  # again, as read under the lock
+        raise not_found()
+    values = _outside_values(conn, project, body, outsider.principal_id, existing)
+    if body.takes_over is not None and not _owns(conn, body.takes_over, outsider.principal_id):
+        raise member_join_limit("takes_over")
+    _check_takes_over(conn, body, project.id, agent_id, existing)
+    _check_instance(conn, body, existing, outsider.principal_id)
+    handed = _check_handover(conn, body.handover, project.id)
+    if existing is None:
+        _require_slot(conn, project, outsider.principal_id, agent_id)
+    return _issue(
+        conn,
+        project,
+        agent_id,
+        values,
+        body,
+        caller,
+        settings,
+        via,
+        handed,
+        existing,
+        member_rule=True,
+    )
+
+
+def _outside_values(
+    conn: Connection, project: Any, body: JoinCreate, outsider_id: str, existing: Any
+) -> dict[str, Any]:
+    """The trust, role, boss, areas and capabilities of an outsider's join (§3.1): the first
+    limit broken is `forbidden` with `member_join_limit` and `details.field`, as for a member;
+    a role the project does not have is `invalid`."""
+    if body.trust is not None and body.trust != OUTSIDE:
+        raise member_join_limit("trust")
+    if body.reports_to is not None and body.reports_to != outsider_id:
+        raise member_join_limit("reports_to")
+    if body.areas:
+        raise member_join_limit("areas")
+    if body.capabilities:
+        raise member_join_limit("capabilities")
+    if existing is not None:
+        if existing.trust != OUTSIDE:  # a membership an admin or a member's join made
+            raise member_join_limit("agent")
+        asked = {} if body.role is None else {"role": body.role}
+        return _as_member(body, asked, existing)
+    role = body.role or "coder"
+    base = project_roles.base_of(project, role)
+    if base is None:
+        raise invalid({"role": "unknown"})
+    if not agent_owners.outside_role_allowed(project, role, base):
+        raise member_join_limit("role")
+    # The owner is no member, so the agent reports to nobody here (§6.2); the caller named as
+    # the boss is the same as no boss.
+    return {"trust": OUTSIDE, "role": role, "reports_to": None, "areas": [], "capabilities": []}
+
+
+def _owns(conn: Connection, agent_id: str, owner_id: str) -> bool:
+    return (
+        conn.execute(
+            select(t.agent_profile.c.id).where(
+                t.agent_profile.c.id == agent_id, t.agent_profile.c.owner_id == owner_id
+            )
+        ).first()
+        is not None
+    )
+
+
+def _issue(
+    conn: Connection,
+    project: Any,
+    agent_id: str,
+    values: dict[str, Any],
+    body: JoinCreate,
+    caller: Caller,
+    settings: Settings,
+    via: str,
+    handed: dict[str, Any] | None,
+    existing: Any,
+    *,
+    member_rule: bool,
+) -> idempotency.Outcome:
+    """The join row and the answer with its one-time URL and code (§3.1), for every way a
+    join is created."""
+    if existing is not None:
+        # A new instance carries the membership's instruction as it is (§3.1).
+        told, language = bool(existing.subagents), existing.subagents_language
+    else:
+        told, language = subagents_of(conn, body, values["role"], caller.principal_id)
+    token, code = new_token(), new_code()
+    now = clock.now()
+    join_id = new_id("join")
+    conn.execute(
+        insert(t.join_link).values(
+            id=join_id,
+            project_id=project.id,
+            token_hash=digest(token),
+            code_hash=digest(normalise_code(code)),
+            agent_id=agent_id,
+            trust=values["trust"],
+            role=values["role"],
+            reports_to=values.get("reports_to"),
+            areas=values["areas"],
+            capabilities=values["capabilities"],
+            briefing=body.briefing or None,
+            via=via,
+            new_instance=bool(body.new_instance),
+            replaces=body.replaces,
+            takes_over=body.takes_over,
+            handover=handed,
+            subagents=told,
+            subagents_language=language,
+            created_by=caller.principal_id,
+            created_at=now,
+            expires_at=now + timedelta(seconds=body.ttl_seconds),
+            failed_attempts=0,
+            member_rule=member_rule,
+        )
+    )
+    join_url = join_link(settings, via, token)
+    return idempotency.Outcome(
+        201,
+        "join",
+        join_id,
+        {
+            "id": join_id,
+            "join_url": join_url,
+            "code": code,
+            "paste_lines": {
+                "join": join_line.plain(join_url, code),
+                "posix": join_line.posix(settings.cli_install, join_url, code),
+                "windows": join_line.windows(settings.cli_install, join_url, code),
+            },
+            "agent_id": agent_id,
+            "instruction": (
+                subagents.instruction(
+                    language or "en", subagents.handle_of(conn, caller.principal_id)
+                )
+                if told
+                else None
+            ),
+            "project": namespace.full_name(conn, project),
+            "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
+            "via": via,
+        },
+    )
 
 
 def _check_takes_over(
@@ -363,6 +526,8 @@ def assignment(
     the caller as the default boss, then `validate_assignment`. One check for every way in,
     so a placement gives nothing a join could not. `body` carries the join fields."""
     reports_to = body.reports_to
+    if body.trust == OUTSIDE:  # only the outsider's join gives it (§2.3 "Outside")
+        raise invalid({"trust": OUTSIDE}, "trust outside comes only from an outsider's join")
     if member_rule:
         _check_member_limits(conn, body, mine, existing)
         if existing is None and reports_to is None:
@@ -593,7 +758,7 @@ def _require_slot(conn: Connection, project: Any, owner_id: str, agent_id: str) 
     """The owner's agents stay within `policy.member_agents_max`, read under the
     project's lock the caller took."""
     held = agents_held(conn, project.id, owner_id)
-    limit = _member_agents_limit(conn, project)
+    limit = member_agents_limit(conn, project)
     if agent_id not in held and len(held) >= limit.limit:
         quota = ceilings.details(
             limit,
@@ -610,7 +775,7 @@ def _require_slot(conn: Connection, project: Any, owner_id: str, agent_id: str) 
         )
 
 
-def _member_agents_limit(conn: Connection, project: Any) -> Any:
+def member_agents_limit(conn: Connection, project: Any) -> Any:
     """`member_agents_max` in effect (§6.31): the policy's value, or its ceiling when that
     is lower."""
     return ceilings.resolve(conn, "member_agents_max", project, project.member_agents_max)
@@ -647,7 +812,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     # maximum now. Another open join naming the same profile is no exemption: a lowered
     # maximum holds for it too.
     held = agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
-    if len(held) > _member_agents_limit(conn, project).limit:
+    if len(held) > member_agents_limit(conn, project).limit:
         raise _gone("member rule: member_agents_max reached", row)
 
 
@@ -730,7 +895,7 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     ):
         return False
     held = agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
-    return bool(len(held) <= _member_agents_limit(conn, project).limit)
+    return bool(len(held) <= member_agents_limit(conn, project).limit)
 
 
 def live_profile(conn: Connection, agent_id: str, row: Any = None) -> None:
@@ -780,10 +945,11 @@ def _agent_for_join(
 @router.get("/projects/{owner}/{slug}/joins")
 def list_joins(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = joiner(conn, caller, slug)
         query = select(t.join_link).where(t.join_link.c.project_id == mine.project.id)
         if not mine.may("members:admin"):
-            _require_own_joins(mine)
+            if not isinstance(mine, outsiders.Outsider):  # an outsider's own, as a member's
+                _require_own_joins(mine)
             query = query.where(t.join_link.c.created_by == mine.principal_id)
         rows = conn.execute(query.order_by(t.join_link.c.created_at.desc())).all()
         return JSONResponse({"items": [join_view(conn, r) for r in rows], "next_cursor": None})
@@ -792,9 +958,10 @@ def list_joins(slug: str, request: Request, caller: HumanCaller) -> JSONResponse
 @router.delete("/projects/{owner}/{slug}/joins/{join_id}")
 def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = joiner(conn, caller, slug)
+        outsider = isinstance(mine, outsiders.Outsider)
         own_only = not mine.may("members:admin")
-        if own_only:
+        if own_only and not outsider:  # an outsider revokes their own joins (§3.1)
             _require_own_joins(mine)
         row = conn.execute(
             select(t.join_link).where(
@@ -817,7 +984,9 @@ def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) 
                 conn,
                 t.join_link.c.id == join_id,
                 by=caller.principal_id,
-                actor_in=lambda _project_id: caller.actor(mine.id),
+                # An outsider has no membership to act from: the event names no member, as
+                # for a revocation the hub carries out (§3.1); `by` still names the outsider.
+                actor_in=lambda _project_id: (Actor(None) if outsider else caller.actor(mine.id)),
             )
         return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
 
@@ -1320,7 +1489,13 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     if not allowed_projects.admits(conn, allowed_projects.of_profile(conn, row.agent_id), project):
         # The list changed since the join was handed out (§6.3).
         raise _gone("the profile's allowed projects exclude this one", row)
-    if row.member_rule:
+    if row.trust == OUTSIDE:
+        # An outsider's join (§3.1, "An outsider's agent"): the opt-in, the public page, the
+        # creator still no member, the role and the count, again under the lock.
+        refused = outsiders.still_holds(conn, row, project, _active_member(conn, row))
+        if refused is not None:
+            raise _gone(refused, row)
+    elif row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
     elif row.placement_id is None:
         _recheck_creator(conn, row)

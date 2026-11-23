@@ -33,6 +33,7 @@ from maity_hub import (
     merged,
     moderation,
     namespace,
+    outsiders,
     paging,
     project_roles,
     ranks,
@@ -1598,6 +1599,7 @@ def claim(
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
+        holder_row = mine.row
         instance = mine.instance
         session_id = caller.session_id
         if body.holder is not None and body.holder not in (
@@ -1614,6 +1616,9 @@ def claim(
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
+        # An outsider's agent claims nothing itself; a human with tasks:admin gives it a
+        # card (§6.5, "Until the claim request is built").
+        outsiders.refuse_taking(holder_row, mine)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -1971,6 +1976,7 @@ def assign(
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
             instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
+            outsiders.refuse_taking(assignee_row, mine)  # §6.5, "Until the claim request…"
             _refuse_paused(conn, assignee, instance)
             values.update(
                 claim_holder=assignee,

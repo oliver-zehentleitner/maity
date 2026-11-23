@@ -11,11 +11,10 @@ Two things live here and nowhere else, so that each is one change (hub/context/j
 
 - `JOINS_ON` and `joins_open`, the one answer to "may an outsider bring an agent into this
   project now". The gate (`access.gate`), the joins routes and the exchange all ask it.
-- `refuse_taking`, the one refusal of a card that an agent with trust `outside` would take
-  by its own hand (a claim, a takeover to it). Until the claim confirmation of §6.5 is
-  built, such an agent gets a card only from a holder of `tasks:admin`, who claims it on the
-  agent's behalf (`POST …/claim` with `holder`); §6.5 says such an assignment needs no
-  further confirmation.
+- `refuse_taking`, the one check of a card coming to be held by an agent with trust
+  `outside` (§6.5, "Until the claim request is built"): such an agent claims nothing itself,
+  and gets a card only from a human member with `tasks:admin`, who claims it on the agent's
+  behalf (`POST …/claim` with `holder`) or moves an expired claim to it (`assign`).
 """
 
 from __future__ import annotations
@@ -25,9 +24,9 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import agent_owners, namespace, policy, project_roles
+from maity_hub import agent_owners, namespace
 from maity_hub import tables as t
-from maity_hub.errors import ApiError, not_found
+from maity_hub.errors import ApiError, humans_only, not_found
 from maity_hub.scopes import OUTSIDE
 
 # Off until the own-approvals gate of §2.3 (tsk-3ggnhdmgmkf3) is on main: without it an agent
@@ -37,36 +36,22 @@ from maity_hub.scopes import OUTSIDE
 # membership with trust `outside`. Turned on by a one-line change of its own.
 JOINS_ON = False
 
-# The roles an outsider's agent may hold (§6.1 `outside_roles`, B.1 of §6.30): every role but
-# `manager`, `ops`, `proxy` and `blue-team`, and a project role on one of the five work bases.
-# The join takes the role from `policy.outside_roles` and this list both, so a stored list
-# that still names `blue-team`, or a wider `policy.OUTSIDE_BASES`, never lets more in.
-ROLE_BASES = (
-    "coder",
-    "reviewer",
-    "tester",
-    "designer",
-    "writer",
-    "red-team",
-    "purple-team",
-    "expert",
-)
-
 
 def joins_open(conn: Connection, project: Any) -> bool:
     """Whether an outsider may bring an agent of their own into `project` now (§3.1, "An
-    outsider's agent"): the switch is on, the project is public for outsiders now
-    (`public_projects.public_for_outsiders`: public pages on, its page served, not archived,
-    no hold, its owner in good standing), and `policy.agent_owners` reads `anyone`, unset
-    included while the page is served (§6.1). The one place this is decided: an explicit
-    opt-in by the project's admins, if the maintainer asks for one, changes the last line."""
+    outsider's agent"; §6.1, "The outsiders' opt-in"): the switch is on, the project's admins
+    opted in, and the project is public for outsiders now (`public_projects.
+    public_for_outsiders`: public pages on, its page served, not archived, no hold, its owner
+    in good standing). The opt-in is a stored `policy.agent_owners: anyone`, set by a human;
+    the unset value, which `agent_owners.effective` reads as `anyone` while the page is
+    served, opens no join (req-gp8jzgr6zdvj). The one place this is decided."""
     if not JOINS_ON:
+        return False
+    if project.agent_owners != "anyone":
         return False
     from maity_hub import public_projects  # the public pages' modules, as `access` reads them
 
-    if project.id not in public_projects.public_for_outsiders(conn, [project.id]):
-        return False
-    return agent_owners.effective(conn, project) == "anyone"
+    return project.id in public_projects.public_for_outsiders(conn, [project.id])
 
 
 @dataclass(frozen=True)
@@ -101,31 +86,32 @@ def outsider(conn: Connection, caller: Any, slug: str) -> Outsider:
     return Outsider(project, str(caller.human_id))
 
 
-def role_allowed(project: Any, role: str, base: str | None) -> bool:
-    """A role an outsider's agent may hold in `project` (§6.1 `outside_roles`, §6.2): on the
-    project's list, on one of `policy.OUTSIDE_BASES` as the list is checked when it is set,
-    and on one of the contract's `ROLE_BASES`."""
-    base = base or project_roles.base_of(project, role)
-    return (
-        role in policy.outside_roles(project)
-        and base in policy.OUTSIDE_BASES
-        and base in ROLE_BASES
-    )
+def refuse_taking(holder: Any, by: Any, *, takeover: bool = False) -> None:
+    """The interim of §6.5, "Until the claim request is built" (req-yzt08c2qgx6g): the one
+    check of a card coming to be held by a membership with trust `outside`. `holder` is the
+    membership row that would hold it, `by` the caller's `Membership`; anyone else's card
+    passes untouched. Refused with `forbidden`:
 
+    - `not_open_to_outsiders` for its own claim, and for a takeover that would leave it
+      holding the card, whoever starts it;
+    - `humans_only` when an agent gives it the card (a claim with `holder`, an `assign` that
+      moves an expired claim), an admin agent and the coordinator's agent included;
+    - `details.scope: tasks:admin` for a human without it (a manager's or a lead's reach).
 
-def refuse_taking(row: Any) -> None:
-    """`forbidden`, `not_open_to_outsiders`, when the membership `row` (the one that would
-    hold the card) has trust `outside` and would take a card by its own claim or a takeover
-    (§6.5, "An outsider's claim", with the fail-closed values of the lead's decision of
-    2026-11-14: no claim by an outsider's agent). A holder of `tasks:admin` claiming on its
-    behalf is an assignment and passes (§6.5)."""
-    if row.trust == OUTSIDE:
+    So a card reaches such an agent only from a human member with `tasks:admin`."""
+    if holder.trust != OUTSIDE:
+        return
+    if takeover or holder.id == by.id:
         raise ApiError(
             403,
             "forbidden",
-            "an outsider's agent gets a card from the project's admins, not by its own claim",
+            "an outsider's agent takes no card itself; a human of the project with "
+            "tasks:admin assigns it one",
             {"reason": "not_open_to_outsiders"},
         )
+    if by.kind != "human":
+        raise humans_only("only a human of the project gives an outsider's agent a card")
+    by.require("tasks:admin")
 
 
 def still_holds(conn: Connection, row: Any, project: Any, member: Any) -> str | None:
@@ -149,7 +135,7 @@ def still_holds(conn: Connection, row: Any, project: Any, member: Any) -> str | 
         return "outsider: its creator no longer owns the profile"
     if member is not None:
         return None if member.trust == OUTSIDE else "outsider: the agent is a member's"
-    if not role_allowed(project, row.role, None):
+    if not agent_owners.outside_role_allowed(project, row.role, None):
         return "outsider: its role is beyond outside_roles"
     held = joins.agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
     if len(held) > joins.member_agents_limit(conn, project).limit:

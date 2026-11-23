@@ -19,10 +19,24 @@ from maity_hub import isolation, policy, project_roles, public_projects
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.events import Actor
+from maity_hub.scopes import OUTSIDE
 
 OWNER_LEFT = "The agent's owner is no longer a member of this project."
 HUB = Actor(None)  # the events name no actor: the hub's own change
 OUTSIDE_TRUST = ("member", "guest")
+# The roles an agent with trust `outside` may hold (§6.1 `outside_roles`, B.1 of §6.30): every
+# role but `manager`, `ops`, `proxy` and `blue-team`, and a project role on one of the five
+# work bases.
+OUTSIDE_ROLE_BASES = (
+    "coder",
+    "reviewer",
+    "tester",
+    "designer",
+    "writer",
+    "red-team",
+    "purple-team",
+    "expert",
+)
 
 
 def effective(conn: Connection, project: Any) -> str:
@@ -67,11 +81,27 @@ def is_outside(conn: Connection, project: Any, row: Any) -> bool:
 def within_limits(project: Any, trust: str, role: str, role_base: str | None) -> bool:
     """What `outside_roles` lets an outsider's agent hold: trust `member` or `guest`, a role on
     the list, and one built on a base that works (never one that reviews, tests, manages,
-    deploys or relays decisions, whatever the list says)."""
+    deploys or relays decisions, whatever the list says); for trust `outside`, which only an
+    outsider's join gives (§2.3 "Outside"), a role `outside_role_allowed` gives."""
+    if trust == OUTSIDE:
+        return outside_role_allowed(project, role, role_base)
     return (
         trust in OUTSIDE_TRUST
         and role in policy.outside_roles(project)
         and (role_base or project_roles.base_of(project, role)) in policy.OUTSIDE_BASES
+    )
+
+
+def outside_role_allowed(project: Any, role: str, base: str | None) -> bool:
+    """A role an agent with trust `outside` may hold in `project` (§6.1 `outside_roles`, B.1
+    of §6.30): on the project's list, on one of `policy.OUTSIDE_BASES` as the list is checked
+    when it is set, and on one of the contract's `OUTSIDE_ROLE_BASES`, so that a stored list
+    that still names `blue-team`, or a wider `OUTSIDE_BASES`, never lets more in."""
+    base = base or project_roles.base_of(project, role)
+    return (
+        role in policy.outside_roles(project)
+        and base in policy.OUTSIDE_BASES
+        and base in OUTSIDE_ROLE_BASES
     )
 
 
@@ -167,6 +197,17 @@ def check_assignment(conn: Connection, project: Any, row: Any, values: dict[str,
     isolated or not, gives it trust `admin` or a role that reviews. A project that reads
     `members` holds no limits."""
     if row.agent_id is None or not ({"trust", "role"} & values.keys()):
+        return
+    if row.trust == OUTSIDE:
+        # Whatever the setting and wherever its owner is now: trust `outside` holds only a
+        # role `outside_roles` gives (§2.3 "Outside"); the trust itself never changes
+        # (`members.validate_assignment`).
+        if "role" in values and not outside_role_allowed(
+            project, values["role"], values.get("role_base")
+        ):
+            raise invalid(
+                {"role": "outside_owner"}, "an outsider's agent stays within outside_roles"
+            )
         return
     if effective(conn, project) != "anyone" or not is_outside(conn, project, row):
         return
