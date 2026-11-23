@@ -13,11 +13,13 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
+from maity_hub import placements
+from maity_hub import runners as runner_rows
 from maity_hub import tables as t
 from maity_hub.auth import credentials, verifiers
 from maity_hub.auth.caller import is_runner_credential
-from maity_hub.auth.revocation import revoke, revoke_runner_credential
-from maity_hub.events import emit
+from maity_hub.auth.revocation import projects_of, revoke, revoke_runner_credential
+from maity_hub.events import emit, lock_projects
 
 REASON = "leaked_in_payload"
 
@@ -36,7 +38,17 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
     if not secrets_by_id:
         return []
     runner_ids = sorted(i for i in secrets_by_id if is_runner_credential(i))
-    revoked = _revoke_leaked_runners(conn, runner_ids, secrets_by_id)
+    runners = _leaked_runners(conn, runner_ids, secrets_by_id)
+    if runners:
+        # The runners' credential and runner rows first, in the order every runner call and
+        # the owner's revoke take them (`runners.lock`), and only then their projects: a leak
+        # that locked the projects first would wait for an owner's revoke of the same runner
+        # that holds its rows and waits for those projects. Holding the runner's row also
+        # keeps an attach out until this commits (`routes/runners`), so the projects read
+        # below stay its projects. Read again under the lock: a revocation that committed
+        # meanwhile already did the work.
+        runner_rows.lock(conn, t.runner.c.id.in_(sorted({r.runner_id for r in runners})))
+        runners = _still_live(conn, runners)
     rows = conn.execute(
         select(
             t.credential.c.id,
@@ -45,17 +57,45 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             t.membership.c.project_id,
             t.membership.c.agent_id,
             t.agent_profile.c.owner_id,
+            t.instance_attachment.c.detached_at,
         )
-        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .select_from(t.credential)
+        .join(t.instance_attachment, t.instance_attachment.c.credential_id == t.credential.c.id)
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(t.credential.c.id.in_(sorted(set(secrets_by_id) - set(runner_ids))))
+        .order_by(t.credential.c.id, t.instance_attachment.c.id)
     ).all()
+    verified = {
+        row.id
+        for row in rows
+        if row.revoked_at is None and _verifies("credential", row, secrets_by_id[row.id])
+    }
+    # Every project any of these revocations writes in, locked in the order of their ids
+    # after the runners' rows and before the first write, so two leaks over overlapping
+    # projects cannot deadlock. A
+    # runner's are those it is attached to and those of its active placements: one still
+    # closing after the runner's detach closes now, in its own project
+    # (`placements.runner_credential_gone`).
+    affected = projects_of(conn, verified)
+    for runner in runners:
+        affected.update(placements.reading_projects(conn, runner.runner_id))
+    lock_projects(conn, affected)
+    revoked: list[str] = []
+    for runner in runners:
+        revoke_runner_credential(conn, runner.id, REASON, by=None)
+        revoked.append(runner.id)
+    # One row per project the instance was ever attached to: revoked once whatever its
+    # attachments, told in each project it is in now. A project it was detached from hears
+    # nothing (§6.17).
     for row in rows:
-        if row.revoked_at is not None:
+        if row.id not in verified:
             continue
-        if not _verifies("credential", row, secrets_by_id[row.id]):
+        if row.id not in revoked:
+            revoke(conn, row.id, REASON, by=None)
+            revoked.append(row.id)
+        if row.detached_at is not None:
             continue
-        revoke(conn, row.id, REASON, by=None)
         payload = {"credential_id": row.id, "reason": REASON}
         subject = ("credential", row.id)
         emit(
@@ -74,7 +114,6 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             {"credential_id": row.id},
             subject=subject,
         )
-        revoked.append(row.id)
     return revoked
 
 
@@ -85,25 +124,38 @@ def _verifies(table: verifiers.Table, row: Any, secrets: set[str]) -> bool:
     )
 
 
-def _revoke_leaked_runners(
+def _still_live(conn: Connection, runners: list[Any]) -> list[Any]:
+    """Those of `runners` whose credential is still unrevoked, read under their lock."""
+    live = set(
+        conn.execute(
+            select(t.runner_credential.c.id).where(
+                t.runner_credential.c.id.in_([r.id for r in runners]),
+                t.runner_credential.c.revoked_at.is_(None),
+            )
+        ).scalars()
+    )
+    return [r for r in runners if r.id in live]
+
+
+def _leaked_runners(
     conn: Connection, ids: list[str], secrets_by_id: dict[str, set[str]]
-) -> list[str]:
-    """A runner credential is revoked like an agent's (§15.1)."""
+) -> list[Any]:
+    """The runner credentials among `ids` that are live and verify, in the order of their
+    ids: each is revoked like an agent's (§15.1)."""
     if not ids:
         return []
     rows = conn.execute(
         select(
             t.runner_credential.c.id,
+            t.runner_credential.c.runner_id,
             t.runner_credential.c.verifier,
             t.runner_credential.c.revoked_at,
-        ).where(t.runner_credential.c.id.in_(ids))
+        )
+        .where(t.runner_credential.c.id.in_(ids))
+        .order_by(t.runner_credential.c.id)
     ).all()
-    revoked = []
-    for row in rows:
-        if row.revoked_at is not None:
-            continue
-        if not _verifies("runner_credential", row, secrets_by_id[row.id]):
-            continue
-        revoke_runner_credential(conn, row.id, REASON, by=None)
-        revoked.append(row.id)
-    return revoked
+    return [
+        row
+        for row in rows
+        if row.revoked_at is None and _verifies("runner_credential", row, secrets_by_id[row.id])
+    ]

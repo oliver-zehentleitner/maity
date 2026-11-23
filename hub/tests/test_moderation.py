@@ -349,9 +349,7 @@ def test_suspend_ends_every_way_in_until_the_operator_lifts_it(
     assert agent.get("/me").status_code == 401  # and the agent's credential
     with migrated.connect() as conn:
         reasons = conn.execute(
-            select(t.credential.c.revoked_reason)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-            .where(t.membership.c.agent_id == agent.id)
+            select(t.credential.c.revoked_reason).where(t.credential.c.agent_id == agent.id)
         ).scalars()
         assert set(reasons) == {"suspended"}
         # Said as a revocation by hand says it, to the agent and the project's owners.

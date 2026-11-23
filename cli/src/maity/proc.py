@@ -54,12 +54,13 @@ def allowed(transports: str) -> str:
     return ":".join(t for t in transports.split(":") if t in theirs)
 
 
-def program(name: str) -> str | None:
-    """The absolute path of `name` on PATH, or None. Only absolute PATH entries count, and
-    never the current directory: Windows would otherwise start a `git.exe` lying in the
-    directory maity runs in before the installed one. A name with a directory in it is a
-    path the caller chose, used as given: on POSIX relative to the command's cwd, on Windows
-    to maity's own current directory (how the OS resolves it)."""
+def program(name: str, path: str | None = None) -> str | None:
+    """The absolute path of `name` on PATH (or on `path`, a search path in PATH's form), or
+    None. Only absolute entries count, and never the current directory: Windows would
+    otherwise start a `git.exe` lying in the directory maity runs in before the installed
+    one. A name with a directory in it is a path the caller chose, used as given: on POSIX
+    relative to the command's cwd, on Windows to maity's own current directory (how the OS
+    resolves it)."""
     if os.path.isabs(name) or os.path.dirname(name):
         return name
     suffixes = [""]
@@ -67,7 +68,8 @@ def program(name: str) -> str | None:
         listed = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(os.pathsep)
         given = os.path.splitext(name)[1].lower()
         suffixes = ([""] if given else []) + [e for e in listed if e and not given]
-    for entry in os.environ.get("PATH", "").split(os.pathsep):
+    searched = os.environ.get("PATH", "") if path is None else path
+    for entry in searched.split(os.pathsep):
         if not entry or not os.path.isabs(entry):
             continue
         for suffix in suffixes:
@@ -75,6 +77,12 @@ def program(name: str) -> str | None:
             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                 return candidate
     return None
+
+
+def search_path() -> str:
+    """This process's PATH with only its absolute entries, the ones `program` searches."""
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    return os.pathsep.join(e for e in entries if e and os.path.isabs(e))
 
 
 def run(

@@ -1,7 +1,8 @@
 """A placement's scratch (§15.5): its size, its removal, and the operator's record of each.
 
-The scratch is `<workspaces>/<project_id>/.scratch/<placement id>` (workspace.scratch_of),
-made by the supervisor at a start. Nothing in it is kept as unsaved work: the runner removes
+The scratch is `<workspaces>/.scratch/<project_id>/<placement id>` (workspace.scratch_of),
+made by the supervisor at a start; one in the former `<workspaces>/<project_id>/.scratch/` is
+still measured and removed. Nothing in it is kept as unsaved work: the runner removes
 it when the hub reads the placement as closed, and `maity runner gc` removes what no placement
 of the runner names. Neither its size nor its removal goes to the hub; the operator reads them
 with `maity runner status` and in `removed.jsonl` in the runner's state directory.
@@ -42,15 +43,23 @@ def size(path: Path, as_user: AsUser = RUNNER) -> int | None:
 
 
 def _under(path: Path) -> Path:
-    """The workspaces root of a scratch path (`<workspaces>/<project>/.scratch/<id>`), as
+    """The workspaces root of a scratch path, three levels up in either shape
+    (`<workspaces>/.scratch/<project>/<id>`, formerly `<workspaces>/<project>/.scratch/<id>`), as
     workspace.scratch_of built it: the place every operation is anchored."""
     return path.parents[2]
 
 
 def make(path: Path, as_user: AsUser = RUNNER) -> None:
     """The scratch at `path` with `tmp` in it. scratchop.OnTheWay when a directory on the way
-    from the workspaces root is a link: nothing is made through it."""
+    from the workspaces root is a link, or the holder is another user's: nothing is made."""
     as_user.scratch("make", _under(path), path)
+
+
+def make_holder(root: Path, holder: Path, as_user: AsUser = RUNNER) -> None:
+    """The holder of every scratch, `<root>/.scratch`, made 0700 or checked: a real directory
+    of the agents' user, reached without following a link. scratchop.OnTheWay when it is not;
+    scratchop.Unsupported for an ssh host whose `maity` has no holder op (the former layout)."""
+    as_user.scratch("holder", root, holder)
 
 
 def write_codex_home(
@@ -63,6 +72,59 @@ def write_codex_home(
     of the scratch. scratchop.OnTheWay when codex-home is a link; OSError when it fails
     otherwise."""
     as_user.codex(_under(home.parent), home, config_text, auth_target)
+
+
+def write_codex_skill(home: Path, payload: str, as_user: AsUser = RUNNER) -> None:
+    """The skill's document (skillop.payload) as `skills/keep-the-why/` in `home`
+    (`<scratch>/codex-home`), by skillop.codex_put on the agents' side, anchored at the
+    workspaces root as write_codex_home is. OSError (scratchop.OnTheWay for a link on the way)
+    when it fails."""
+    as_user.skill_codex(_under(home.parent), home, payload)
+
+
+def clear_codex_skill(home: Path, as_user: AsUser = RUNNER) -> None:
+    """`skills/keep-the-why/` in `home` removed (skillop.codex_clear), anchored as
+    write_codex_skill is."""
+    as_user.skill_codex_clear(_under(home.parent), home)
+
+
+def tmp_make(path: Path, as_user: AsUser = RUNNER) -> None:
+    """The agy scratch at `path` under `/tmp`, with `tmp` in it, owned by the user the agents
+    run as, under a per-user parent owned 0700 by that user (scratchop.tmp_make). scratchop.OnTheWay
+    when a level is a link, a directory another user holds, or a leaf that already exists; OSError
+    otherwise."""
+    as_user.tmp_scratch("make", path)
+
+
+def tmp_make_parent(path: Path, as_user: AsUser = RUNNER) -> None:
+    """The per-user agy scratch parent at `path` (`<root>/maity-scratch-<uid>`) created or
+    adopted 0700, owned by the agents' user (scratchop.tmp_parent_make). The runner makes it
+    before a non-agy placement that only hides it starts, so the sandbox's deny path is a real
+    directory. scratchop.OnTheWay when it is a link or a directory another user holds; OSError
+    otherwise."""
+    as_user.tmp_scratch("parent", path)
+
+
+def tmp_measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """The bytes under the agy scratch at `path`; None when it is missing, reached through a
+    link or a foreign-owned parent, or cannot be measured in time."""
+    try:
+        answer = as_user.tmp_scratch("size", path)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else None
+
+
+def tmp_remove(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """Remove the agy scratch at `path` under `/tmp` and return its size before; None when
+    there was none (scratchop.tmp_remove). scratchop.OnTheWay when the parent is a link or
+    foreign-owned; OSError when it cannot be removed."""
+    answer = as_user.tmp_scratch("remove", path)
+    if answer.get("result") == "missing":
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else 0
 
 
 def measure(path: Path, as_user: AsUser = RUNNER) -> int | None:

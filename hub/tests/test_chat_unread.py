@@ -419,7 +419,9 @@ def test_a_listening_agent_reads_each_message_once_and_no_body_at_all(
 def _credential_of(r: Room, agent: flow.Agent, **values: Any) -> None:
     with r.engine.begin() as conn:
         conn.execute(
-            update(t.credential).where(t.credential.c.id == agent.credential_id).values(**values)
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.credential_id == agent.credential_id)
+            .values(**values)
         )
 
 

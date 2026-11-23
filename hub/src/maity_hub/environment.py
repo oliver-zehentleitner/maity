@@ -29,14 +29,13 @@ QUIET = timedelta(minutes=10)
 
 def _declared(conn: Connection, project_id: str) -> dict[int, tuple[set[str], set[str]]]:
     """The homes and workspaces each member's live sessions declare."""
+    # A session is in the project through its row of `agent_session_project` (§6.17).
+    p = t.agent_session_project
     rows = conn.execute(
-        select(
-            t.agent_session.c.membership_id,
-            t.agent_session.c.env_home,
-            t.agent_session.c.env_workspace,
-        )
+        select(p.c.membership_id, t.agent_session.c.env_home, t.agent_session.c.env_workspace)
         .select_from(t.agent_session)
-        .join(t.membership, t.membership.c.id == t.agent_session.c.membership_id)
+        .join(p, p.c.session_id == t.agent_session.c.id)
+        .join(t.membership, t.membership.c.id == p.c.membership_id)
         .where(
             t.membership.c.project_id == project_id,
             t.membership.c.active.is_(True),

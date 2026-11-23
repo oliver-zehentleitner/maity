@@ -120,9 +120,31 @@ window.Maity = window.Maity || {};
     return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
+  // Every child gone in one change (tsk-3b2t7hwc352s: the board's columns emptied one removeChild
+  // at a time).
   function clear(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
+    el.replaceChildren();
     return el;
+  }
+
+  // Whether two trees draw the same: the same elements with the same attributes and the same text,
+  // in the same order. Listeners and properties (a value typed, a box ticked) are not compared, so
+  // only the caller knows whether the older tree's listeners still act on the right data. loose(name,
+  // a, b), where given, says that two different values of an attribute count as the same (an id
+  // made up anew for every draw). A view keeps the older tree where it would draw the same, and the
+  // browser has nothing to lay out or style again (tsk-3b2t7hwc352s). A missing tree (null or
+  // undefined) is never the same as any, another missing one included: there is nothing to keep.
+  // Nodes of different kinds (an element, text, a comment) are never the same, whatever their text.
+  function sameTree(a, b, loose) {
+    if (a == null || b == null) return false;
+    if (a.nodeType !== b.nodeType) return false;
+    if (a.nodeType !== 1) return a.textContent === b.textContent; // text, a comment: no element
+    if (a.tagName !== b.tagName || !sameAttrs(a, b, null, loose)) return false;
+    const ac = a.childNodes;
+    const bc = b.childNodes;
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) if (!sameTree(ac[i], bc[i], loose)) return false;
+    return true;
   }
 
   // Every <img> under root, the root itself included, in document order.
@@ -135,21 +157,16 @@ window.Maity = window.Maity || {};
     return out;
   }
 
-  function attrNames(el) {
-    const names = typeof el.getAttributeNames === "function" ? el.getAttributeNames() : [];
-    const out = [];
-    for (let i = 0; i < names.length; i++) if (names[i] !== "src") out.push(names[i]);
-    return out;
-  }
-
-  // Every attribute other than src. A different alt, class, width or
-  // anything else means a different image: the fresh node stays.
-  function sameAttrs(a, b) {
-    const an = attrNames(a);
-    const bn = attrNames(b);
+  // Whether two elements have the same attributes, the one named `skip` left out of both (keepImages:
+  // src). loose(name, a, b), where given, says that two different values count as the same (sameTree).
+  function sameAttrs(a, b, skip, loose) {
+    const an = a.getAttributeNames().filter((name) => name !== skip);
+    const bn = b.getAttributeNames().filter((name) => name !== skip);
     if (an.length !== bn.length) return false;
     for (let i = 0; i < an.length; i++) {
-      if (b.getAttribute(an[i]) !== a.getAttribute(an[i])) return false;
+      const av = a.getAttribute(an[i]);
+      const bv = b.getAttribute(an[i]);
+      if (av !== bv && !(loose && bv != null && loose(an[i], av, bv))) return false;
     }
     return true;
   }
@@ -174,7 +191,9 @@ window.Maity = window.Maity || {};
       for (let k = 0; k < oldImgs.length; k++) {
         const candidate = oldImgs[k];
         if (used.has(candidate) || handledImgs.has(candidate)) continue;
-        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh)) continue;
+        // Every attribute other than src: a different alt, class, width or anything else means a
+        // different image, and the fresh node stays.
+        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh, "src")) continue;
         old = candidate;
         break;
       }
@@ -484,5 +503,5 @@ window.Maity = window.Maity || {};
     return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
   };
 
-  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, sameTree, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

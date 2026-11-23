@@ -99,6 +99,19 @@ def test_the_invitation_page_sends_no_referrer_and_the_others_keep_theirs(
     assert client.get("/maintainer/maity/board").headers["referrer-policy"] == "same-origin"
 
 
+@pytest.mark.parametrize("path", ["//invite/some-token", "/invite//some-token", "///invite/a/"])
+def test_the_invitation_page_at_an_address_with_empty_segments_sends_no_referrer(
+    client: TestClient, web_dir: Path, path: str
+) -> None:
+    # The dashboard skips empty segments and draws the invitation here too (web/js/app.js), so
+    # the token in the path goes on in no `Referer` either (§16.13, nte-zvjjfj9g95bh). A whole
+    # address: `//invite/…` alone would be read as a host.
+    response = client.get("http://testserver" + path)
+    assert response.status_code == 200, path
+    assert "<title>dashboard</title>" in response.text, path
+    assert response.headers["referrer-policy"] == "no-referrer", path
+
+
 # A sample of the paths the shell answers (docs/api.md §1.1, §16.11).
 SHELL_PATHS = (
     "/",

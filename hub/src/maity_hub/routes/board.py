@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, events, forge, idempotency, mentions, namespace, paging
+from maity_hub import access, clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials
@@ -37,7 +37,14 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.routes.tasks import TaskCreate, _locked, _project_card, audience, create_card
+from maity_hub.routes.tasks import (
+    TaskCreate,
+    _locked,
+    _project_card,
+    audience,
+    create_card,
+    of_read_card,
+)
 from maity_hub.views import shape_deleted
 
 router = APIRouter(route_class=ProjectRoute)
@@ -73,7 +80,7 @@ class NoteRedactIn(RedactIn):
 # --- shared --------------------------------------------------------------------------------
 
 
-def _card(conn: Connection, mine: Membership, card_id: str) -> Any:
+def _card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     return _project_card(conn, mine, card_id)
 
 
@@ -270,6 +277,7 @@ def delete_link(
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/history")
+@access.outside_read
 def get_history(
     slug: str,
     card_id: str,
@@ -279,11 +287,11 @@ def get_history(
     cursor: str | None = None,
 ) -> JSONResponse:
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_history.c
-        query = select(t.card_history).where(c.card_id == card.id)
+        query = of_read_card(select(t.card_history).where(c.card_id == card.id), mine, c.card_id)
         # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
         visible = events.outside_window_times(conn, mine.project.id, mine.row, c.at)
         if visible is not None:
@@ -432,6 +440,7 @@ def _members(conn: Connection, *membership_ids: int | None) -> list[str]:
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/notes")
+@access.outside_read
 def list_notes(
     slug: str,
     card_id: str,
@@ -442,11 +451,11 @@ def list_notes(
     cursor: str | None = None,
 ) -> JSONResponse:
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_note.c
-        query = select(t.card_note).where(c.card_id == card.id)
+        query = of_read_card(select(t.card_note).where(c.card_id == card.id), mine, c.card_id)
         # A note written in one of the reader's hidden windows, as its history's entries
         # (§6.2, §6.16).
         visible = events.outside_window_times(conn, mine.project.id, mine.row, c.created_at)

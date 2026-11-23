@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, func, or_, select
+from sqlalchemy import ColumnElement, Connection, and_, case, func, not_, or_, select
 
 from maity_hub import avatars, cards, clock, inbox, views
 from maity_hub import tables as t
@@ -19,7 +19,8 @@ from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid
 from maity_hub.namespace import ProjectRoute
-from maity_hub.routes.requests import _filtered
+from maity_hub.routes.requests import listed_to_all, relayed
+from maity_hub.scopes import tokens_of
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -41,16 +42,95 @@ def board_counts(
     return counts
 
 
+def _addressed_sql(mine: Membership) -> ColumnElement[bool]:
+    """`inbox.addressed_to` in plain columns, for a request that is not personal and has no
+    `held` and no `cover` (the caller's `where` sees to that): its holder, the admins'
+    pool for an admin, else `to` in the caller's own right (`inbox._in_own_right`). A change
+    there is a change here."""
+    r = t.request.c
+    tokens = sorted(tokens_of(mine.trust, mine.role, mine.role_base))
+    own_right = [
+        and_(r.to_kind == "member", r.to_member == mine.id),
+        and_(r.to_kind.not_in(("member", "owner")), r.to_role.in_(tokens)),
+    ]
+    if mine.trust == "owner":
+        own_right.append(r.to_kind == "owner")
+    not_forwarded = and_(
+        r.holder_member.is_(None), or_(r.holder_pool.is_(None), r.holder_pool.is_(False))
+    )
+    held_now = [r.holder_member == mine.id, and_(not_forwarded, or_(*own_right))]
+    if "trust:admin" in tokens:
+        held_now.append(and_(r.holder_member.is_(None), r.holder_pool.is_(True)))
+    return or_(*held_now)
+
+
+# What `relayed`, `listed_to_all` and `inbox.addressed_to` read of a request, and the counts.
+_DECIDED_BY = (
+    "id", "priority", "created_at", "personal", "to_kind", "to_member", "to_role",
+    "holder_member", "holder_pool", "held", "cover", "jour_fixe", "proposal", "filed_by",
+    "asked_by", "on_behalf_of",
+)  # fmt: skip
+
+
 def request_counts(conn: Connection, mine: Membership) -> dict[str, Any]:
-    """Over exactly what `GET …/requests?status=open&to=all` lists for this caller."""
-    rows = _filtered(conn, mine, status="open", class_=None, asked_by=None, to="all")
+    """Over exactly what `GET …/requests?status=open&to=all` lists for this caller, `to_me`
+    over what `to=me` lists (§6.11).
+
+    One grouped statement counts the plain requests: no `held`, no `cover` and, where they
+    matter, no `jour_fixe` (for a holder of `requests:answer`: an owner's round opens to no
+    scope) and no `proposal` (for a proxy: it never lists a bridge consent). Its `where`
+    restates `routes/requests.py` `listed_to_all` and `_addressed_sql` restates
+    `inbox.addressed_to`. The others, a few, are read with only the columns the Python rule
+    needs and decided by it, unchanged: a JSON list or another table decides them, and
+    each database reads JSON in its own syntax."""
+    r = t.request.c
+    answers = mine.may("requests:answer")
+    open_here = [r.project_id == mine.project.id, r.personal.is_(False), r.status == "open"]
+    plain = [r.held.is_(None), r.cover.is_(None)]
+    if answers:
+        plain.append(r.jour_fixe.is_(None))
+    if mine.role_base == "proxy":
+        plain.append(r.proposal.is_(None))
+    addressed = _addressed_sql(mine)
+    visible: list[ColumnElement[bool]] = []
+    if not answers:  # what it asked (`inbox.is_asker`) and what is addressed to it
+        asked = and_(
+            or_(r.filed_by.is_(None), r.filed_by != "hub"),
+            or_(r.asked_by == mine.id, r.on_behalf_of == mine.id),
+        )
+        visible.append(or_(asked, addressed))
+    counted = conn.execute(
+        select(
+            r.priority,
+            func.count(),
+            func.sum(case((addressed, 1), else_=0)),
+            func.min(r.created_at),
+        )
+        .where(*open_here, *plain, *visible)
+        .group_by(r.priority)
+    ).all()
+    leftover = relayed(
+        conn.execute(
+            select(*(r[name] for name in _DECIDED_BY)).where(*open_here, not_(and_(*plain)))
+        ).all(),
+        mine,
+    )
     by_priority = {p: 0 for p in reversed(inbox.PRIORITIES)}
-    for row in rows:
+    total = to_me = 0
+    oldest: datetime | None = None
+    for priority, n, addressed_n, first in counted:
+        by_priority[priority] = by_priority.get(priority, 0) + int(n)
+        total += int(n)
+        to_me += int(addressed_n or 0)
+        oldest = first if oldest is None or first < oldest else oldest
+    for row in listed_to_all(conn, mine, leftover):
         by_priority[row.priority] = by_priority.get(row.priority, 0) + 1
-    oldest = min((r.created_at for r in rows), default=None)
+        total += 1
+        to_me += int(inbox.addressed_to(conn, row, mine))
+        oldest = row.created_at if oldest is None or row.created_at < oldest else oldest
     return {
-        "open": len(rows),
-        "to_me": sum(1 for r in rows if inbox.addressed_to(conn, r, mine)),
+        "open": total,
+        "to_me": to_me,
         "by_priority": by_priority,
         "oldest_open_at": clock.rfc3339_or_none(oldest),
     }
@@ -87,23 +167,33 @@ def _reporter(people: dict[str, dict[str, Any]], report: dict[str, Any]) -> dict
 
 def latest_reports(conn: Connection, project_id: str, limit: int) -> list[dict[str, Any]]:
     """The latest report of up to `limit` cards, newest `reported_at` first, from the
-    cards' `report` field (§6.6); earlier reports live only in limited events."""
-    rows = conn.execute(
-        select(
-            t.card.c.id,
-            t.card.c.title,
-            t.card.c.status,
-            t.card.c.kind,
-            t.card.c.label,
-            t.card.c.report,
-            t.card.c.updated_at,
-        ).where(t.card.c.project_id == project_id, t.card.c.report.isnot(None))
-    ).all()
-    # `reported_at` has whole seconds: within one, the card changed last came last.
-    rows = sorted(
-        rows, key=lambda r: (r.report.get("reported_at") or "", r.updated_at, r.id), reverse=True
+    cards' `report` field (§6.6); earlier reports live only in limited events.
+
+    Keys first: the database sorts and limits the ids alone, then only those cards are read
+    in full, put back in that order. `reported_at` has whole seconds: within one, the card
+    changed last comes first, then the greater id; a report without one comes last."""
+    c = t.card.c
+    ids = list(
+        conn.execute(
+            select(c.id)
+            .where(c.project_id == project_id, c.report.isnot(None))
+            .order_by(
+                func.coalesce(c.report["reported_at"].as_string(), "").desc(),
+                c.updated_at.desc(),
+                c.id.desc(),
+            )
+            .limit(limit)
+        ).scalars()
     )
-    rows = rows[:limit]
+    if not ids:
+        return []
+    found = {
+        row.id: row
+        for row in conn.execute(
+            select(c.id, c.title, c.status, c.kind, c.label, c.report).where(c.id.in_(ids))
+        )
+    }
+    rows = [found[card_id] for card_id in ids if card_id in found]  # gone since the ids
     people = _reporters(
         conn, {r.report["reported_by"] for r in rows if r.report.get("reported_by")}
     )

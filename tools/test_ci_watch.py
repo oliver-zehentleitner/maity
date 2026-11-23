@@ -174,6 +174,22 @@ class QueueTest(unittest.TestCase):
         # The runs are asked for this head and pull_request events only.
         self.assertIn(f"head_sha={SHA}&event=pull_request", gh.calls[1])
 
+    def test_a_newer_green_run_of_another_branch_is_not_reported(self) -> None:
+        # The same head pushed to another branch (a fork's of the same commit, say): its run is
+        # green and newer than the pull request's own, which is still going. Without the branch
+        # filter the newest run would decide and report green (tsk-dest4a10zfw9).
+        self.add()
+        gh = FakeGh(
+            runs=[
+                run(1, "2026-11-07T08:00:00Z", status="in_progress", conclusion=None),
+                run(2, "2026-11-07T09:00:00Z", branch="someone/else"),
+            ]
+        )
+        gh.jobs[(2, 1)] = jobs(ci_ok="success")
+        self.assertEqual(self.one_pass(gh), 0)
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.lines(), [f"7 {SHA} {AUTHOR}"])
+
     def test_the_newest_run_decides_over_an_older_green_one(self) -> None:
         self.add()
         gh = FakeGh(

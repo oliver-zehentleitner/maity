@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, db
+from maity_hub import clock, db, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import totp
@@ -31,6 +31,7 @@ def conn(engine: Engine) -> Iterator[Connection]:
                 created_at=clock.now(),
             )
         )
+        write_guard.make_row(connection, HUMAN)
         yield connection
 
 
@@ -192,6 +193,7 @@ def test_parallel_link_and_code_make_only_one_grant(engine: Engine) -> None:
                 created_at=clock.now(),
             )
         )
+        write_guard.make_row(connection, HUMAN)
         grant = issue(connection)
     start = Barrier(2)
 
@@ -212,9 +214,11 @@ def test_parallel_link_and_code_make_only_one_grant(engine: Engine) -> None:
 
 
 def test_request_limits_are_address_and_source_pairs() -> None:
+    # The address comes as its key (`known_sources.address_key`, made by the route); the
+    # limits treat it as an opaque string, so a plain one stands in for it here.
     limits = links.RequestLimits()
     for _ in range(3):
-        assert limits.take("  HUMAN@EXAMPLE.ORG  ", "192.0.2.1") == (0, True)
+        assert limits.take("human@example.org", "192.0.2.1") == (0, True)
     assert limits.take("human@example.org", "192.0.2.1") == (0, False)
     assert limits.take("human@example.org", "192.0.2.2") == (0, True)
     assert limits.take("unknown@example.org", "192.0.2.1") == (0, True)
@@ -511,7 +515,7 @@ def test_a_network_asking_again_late_in_its_hold_takes_no_second_place(
 
 
 def _places_held(limits: links.RequestLimits, now: float) -> int:
-    hits = limits.recipient_hour._hits.get(links.digest("recipient\0human@example.org"), ())
+    hits = limits.recipient_hour._hits.get("human@example.org", ())
     return sum(1 for at in hits if at > now - 3600)
 
 

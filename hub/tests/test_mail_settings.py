@@ -17,9 +17,9 @@ from sqlalchemy import Engine, select, update
 from maity_hub import secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
-from maity_hub.mail import address, headers, settings, smtp
+from maity_hub.mail import address, environment, headers, settings, smtp
 from maity_hub.mail.environment import Sender
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified, row_of
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script, certificate
@@ -149,6 +149,22 @@ def test_an_unusable_value_in_the_environment_stops_the_hub(values: dict[str, st
 def test_tls_none_is_allowed_for_a_loopback_host() -> None:
     for host in ("localhost", "LOCALHOST.", "127.0.0.1", "::1"):
         assert env_of(MAITY_SMTP_TLS="none", MAITY_SMTP_HOST=host).mail.tls == "none"
+
+
+def test_the_environment_and_the_patch_share_one_set_of_checks() -> None:
+    # The environment, the admin's PATCH and the settings in effect ask the same three.
+    assert environment.tls_refused("none", "smtp.example.org")
+    assert not environment.tls_refused("none", "127.0.0.1")
+    assert not environment.tls_refused("none", None)
+    assert not environment.tls_refused("starttls", "smtp.example.org")
+    assert environment.ascii_secret("maity", 5)
+    for value in ("mäity", "maitys", "", "li\nne", None, 42):  # "maitys": over the maximum
+        assert not environment.ascii_secret(value, 5)
+    assert environment.sender_ok("maity@example.org", None)
+    assert environment.sender_ok("maity@example.org", "Maity")
+    assert not environment.sender_ok("maity@example.org", " Maity")
+    assert not environment.sender_ok("maity@localhost", None)
+    assert not environment.sender_ok(None, "Maity")
 
 
 # --- reading and changing the settings ----------------------------------------------
@@ -383,7 +399,7 @@ def test_the_test_send_defaults_to_the_admins_verified_address(
     owner = admin(make_client, migrated, local_env(server.port))
     address.prepare(migrated, None)
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "owner@example.org", owner.id, secret_key=None)
+        assert claim_verified(conn, "owner@example.org", owner.id, secret_key=None)
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)
@@ -402,7 +418,7 @@ def test_the_test_send_never_defaults_to_an_unverified_or_disabled_address(
 ) -> None:
     owner = admin(make_client, migrated, env_of())
     with migrated.begin() as conn:
-        preferences.row_of(conn, owner.id, lock=True)
+        row_of(conn, owner.id, lock=True)
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)

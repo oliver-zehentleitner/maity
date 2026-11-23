@@ -23,7 +23,7 @@ from maity_hub.auth import second_factor, second_factor_reset
 from maity_hub.db import retrying
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences, tokens
+from maity_hub.notifications import address, preferences, tokens
 from maity_hub.notifications.preferences import KINDS
 from maity_hub.text_language import text_language
 
@@ -115,7 +115,7 @@ def verify_confirm(token: str, request: Request) -> HTMLResponse:
     with engine_of(request).begin() as conn:
         language = _language(conn, request, token)
         words = catalog.section("mail_links", language)
-        if not preferences.verify(
+        if not address.verify(
             conn, token, hub.mail.signing_key, hub.public_url, secret_key=hub.secret_key
         ):
             return _dead(conn, request, words, language)

@@ -7,7 +7,9 @@ database empties them together, and `nonce_epoch` says since when the nonces are
 request signed before that moment is refused (as a request signed before the process started
 is refused on the other databases, which keep the window in the process). The claim runs in the
 caller's transaction, the short one that authenticates and commits before the route runs
-(`deps._resolve`).
+(`deps._resolve`); a refusal later in that transaction rolls the claim back, and
+`deps.authenticated` claims the nonce again in a transaction of its own before it answers
+(`caller.keep_nonces_spent`), so a refused request keeps its nonce spent.
 """
 
 from __future__ import annotations

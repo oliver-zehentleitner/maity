@@ -358,7 +358,7 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
         assert guest is None
         revoked = conn.execute(
             select(t.credential.c.revoked_at).where(
-                t.credential.c.membership_id == agents["guest"].membership_id
+                t.credential.c.id == agents["guest"].credential_id
             )
         ).scalar()
         assert revoked is not None
@@ -1166,6 +1166,40 @@ def test_the_per_instance_placement_downgrade_refuses_while_a_membership_holds_t
         ).scalars().all() == [first["id"]]
 
 
+def test_the_placement_agent_id_downgrade_refuses_while_a_placement_names_only_it(
+    make_client: Any, migrated: Engine
+) -> None:
+    """20261120205253 down (§15.6): the old check needs a membership or a new handle, so the
+    downgrade refuses while a placement admits a profile by `agent_id` alone."""
+    from sqlalchemy import delete
+
+    from maity_hub import tables as t
+    from tests import flow
+    from tests.test_placements import REPOSITORY, Setup, placed
+    from tests.test_runner_stream import attach, hello
+    from tests.test_runners import paired
+
+    revision = "20261120205253_plc_agent_id"
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, repository={"url": REPOSITORY})
+    runner = paired(make_client, owner)
+    attach(owner, runner)
+    client = make_client()
+    assert hello(client, runner).status_code == 200
+    agent = flow.agent(make_client, owner, role="member")
+    s = Setup(owner, runner, client, agent, migrated)
+    own = owner.post("/agents", {"handle": "agent-own", "display_name": "Own"}).json()["id"]
+    admitting = placed(s, agent={"id": own})
+    with pytest.raises(RuntimeError, match="agent_id alone"):
+        downgrade(migrated, _before(migrated, revision))
+    with migrated.begin() as conn:
+        conn.execute(delete(t.placement).where(t.placement.c.id == admitting["id"]))
+    downgrade(migrated, _before(migrated, revision))
+    assert current_revision(migrated) == _before(migrated, revision)
+    migrate(migrated)
+    assert current_revision(migrated) == head_revision(migrated)
+
+
 def test_profiles_public_switches_every_account_on_and_indexes_every_page(engine: Engine) -> None:
     """20261102110000 up: every account's `public_profile` is on (§16.9, tsk-my5gvj4warte), a
     new account defaults to on, and every stored page is `indexed` until it renders again. It
@@ -1885,3 +1919,447 @@ def test_sealed_verifiers_only_widens_and_the_downgrade_opens_sealed_rows(engine
         )
     downgrade(engine, before, secret_key=key)
     assert stored() == plain
+
+
+def test_the_access_history_downgrade_drops_the_table_with_rows_and_returns(
+    migrated: Engine,
+) -> None:
+    """20261118180000 down and up again with a row stored: the table goes with its index. On
+    MariaDB the index (human_id, n) is the one the foreign key on `human_id` uses, so dropping
+    it alone first was refused (error 1553, issue #1993)."""
+    from sqlalchemy import func, inspect, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261118180000_access_history"
+    anna = factory.human(migrated, "anna")
+    with migrated.begin() as conn:
+        conn.execute(
+            t.chat_access_history.insert().values(
+                id="cah-migration", human_id=anna, kind="entry", data={}, at=clock.now()
+            )
+        )
+    downgrade(migrated, _before(migrated, revision))
+    assert current_revision(migrated) == _before(migrated, revision)
+    assert "chat_access_history" not in inspect(migrated).get_table_names()
+    migrate(migrated)
+    assert current_revision(migrated) == head_revision(migrated)
+    indexes = {i["name"] for i in inspect(migrated).get_indexes("chat_access_history")}
+    assert "ix_chat_access_history_human" in indexes
+    with migrated.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(t.chat_access_history)).scalar() == 0
+
+
+# What 20261121120000_inst_attach moves from `credential` to `instance_attachment` and from
+# `agent_session` to `agent_session_project` (§6.17, §5.3).
+_ATTACHMENT_MOVED = (
+    "dormant_since", "dormant_by", "exchange_seq", "first_after", "first_cursor",
+    "ktw_acknowledged_at", "ktw_acknowledged_session", "ktw_acknowledge_by", "ktw_session_id",
+    "ktw_reminded_at", "ktw_request_id", "paused_reason", "paused_since", "paused_by",
+    "paused_line",
+)  # fmt: skip
+_POSITION_MOVED = (
+    "acknowledged_seq", "not_listening_since", "not_listening_seq", "not_listening_request_id",
+)  # fmt: skip
+
+
+def _reflected(engine: Engine, *names: str) -> dict[str, Any]:
+    """The tables as the database has them now: a migration test reads one revision's shape,
+    which the current `tables.py` no longer describes."""
+    import sqlalchemy as sa
+
+    meta = sa.MetaData()
+    return {name: sa.Table(name, meta, autoload_with=engine) for name in names}
+
+
+def test_inst_attach_moves_each_instance_s_project_state_onto_its_one_attachment(
+    engine: Engine,
+) -> None:
+    """20261121120000_inst_attach (§6.17, "One instance in several projects"): every
+    credential becomes one attachment with its own values (attached at its creation, through
+    its join, not detached even when revoked), gains its profile as `agent_id`, and every
+    session one position row in its membership with its cursor and its episode. The data
+    work is two INSERT … SELECT and one UPDATE, whatever the number of rows; the downgrade
+    puts every value back, and refuses while an instance is attached to two projects."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import delete, event, insert, select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261121120000_inst_attach"
+    before = _before(engine, revision)
+    migrate(engine, before)
+    # Naive for the reflected tables, which store UTC without a zone as UtcDateTime does.
+    aware = datetime(2026, 11, 21, 12, 0, 0, 123456, tzinfo=UTC)
+    now = aware.replace(tzinfo=None)
+    owner = factory.human(engine, "owner")
+    boss = factory.human(engine, "boss")
+    alpha = factory.project(engine, "alpha")
+    beta = factory.project(engine, "beta")
+    factory.membership(engine, alpha, "owner", human_id=owner)
+
+    def agent(**keywords: Any) -> factory.Agent:
+        return factory.agent(engine, alpha, owner, "coder", picture=False, **keywords)
+
+    active, revoked, resting, owing = agent(), agent(), agent(), agent()
+    replaced = agent(instance="aaaa", with_session=False)
+    old = _reflected(engine, "credential", "agent_session")
+    credential, session = old["credential"], old["agent_session"]
+    with engine.begin() as conn:
+        join_id = "join-inst-attach"
+        conn.execute(
+            insert(t.join_link).values(
+                id=join_id, project_id=alpha, token_hash="f" * 64, code_hash="0" * 64,
+                role="coder", trust="member", areas=["/"], capabilities=[], created_by=owner,
+                created_at=aware, expires_at=aware + timedelta(days=1), failed_attempts=0,
+                used_at=aware, agent_id=replaced.agent_id, new_instance=True, replaces="aaaa",
+                instance="bbbb",
+            )
+        )  # fmt: skip
+
+        def change(who: factory.Agent, **values: Any) -> None:
+            conn.execute(
+                update(credential).where(credential.c.id == who.credential_id).values(**values)
+            )
+
+        # 1: active, and confirmed Keep the Why in its session.
+        change(
+            active,
+            ktw_acknowledged_at=now,
+            ktw_acknowledged_session=active.session_id,
+            last_used_at=now,
+        )
+        # 2: revoked.
+        change(revoked, revoked_at=now, revoked_by=owner, revoked_reason="manual")
+        # 3: dormant, and paused by a human who keeps its line.
+        change(
+            resting,
+            dormant_since=now - timedelta(hours=1),
+            dormant_by=boss,
+            paused_reason="hold on",
+            paused_since=now,
+            paused_by=boss,
+            paused_line=True,
+        )
+        # 4: an open Keep the Why deadline, reminded, the owner's request filed.
+        change(
+            owing,
+            ktw_session_id=owing.session_id,
+            ktw_acknowledge_by=now - timedelta(minutes=5),
+            ktw_reminded_at=now,
+            ktw_request_id="req-inst-attach",
+        )
+        # 5: a replaced chain: aaaa revoked, bbbb its successor with the handover numbers.
+        change(replaced, revoked_at=now, revoked_reason="replaced")
+        conn.execute(
+            insert(credential).values(
+                id="crd-successor", membership_id=replaced.membership_id, instance="bbbb",
+                replaces="aaaa", verifier="0" * 64, created_at=now + timedelta(seconds=1),
+                join_id=join_id, exchange_seq=17, first_after=17, first_cursor=23,
+            )
+        )  # fmt: skip
+        # 6: the active instance's session with a position and an open episode, and an
+        # ended session before it.
+        conn.execute(
+            update(session)
+            .where(session.c.id == active.session_id)
+            .values(
+                acknowledged_seq=42,
+                not_listening_since=now,
+                not_listening_seq=40,
+                not_listening_request_id="req-not-listening",
+            )
+        )
+        conn.execute(
+            insert(session).values(
+                id="ses-ended", credential_id=active.credential_id,
+                membership_id=active.membership_id, started_at=now - timedelta(days=1),
+                last_seen_at=now - timedelta(days=1), ended_at=now - timedelta(hours=2),
+                acknowledged_seq=7,
+            )
+        )  # fmt: skip
+    # 7: one profile in two projects, its instance in each with the same legacy id.
+    twin = agent(instance="wle2", with_session=False)
+    twin_beta = factory.membership(engine, beta, "coder", agent_id=twin.agent_id)
+    crowd = factory.membership(engine, beta, "coder", agent_id=active.agent_id)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(credential).values(
+                id="crd-twin-beta", membership_id=twin_beta, instance="wle2",
+                verifier="0" * 64, created_at=now,
+            )
+        )  # fmt: skip
+        # More rows add rows, never statements.
+        conn.execute(
+            insert(credential),
+            [
+                {
+                    "id": f"crd-crowd-{n:04d}", "membership_id": crowd, "instance": f"c{n:04d}",
+                    "verifier": "0" * 64, "created_at": now, "paused_line": n % 2 == 0,
+                    "dormant_since": now if n % 3 == 0 else None,
+                }
+                for n in range(300)
+            ],
+        )  # fmt: skip
+        conn.execute(
+            insert(session),
+            [
+                {
+                    "id": f"ses-crowd-{n:04d}", "credential_id": f"crd-crowd-{n:04d}",
+                    "membership_id": crowd, "started_at": now, "last_seen_at": now,
+                    "acknowledged_seq": n, "live": True,
+                }
+                for n in range(300)
+            ],
+        )  # fmt: skip
+
+    def old_rows() -> tuple[dict[str, Any], dict[str, Any]]:
+        shape = _reflected(engine, "credential", "agent_session")
+        with engine.connect() as conn:
+            credentials = {r.id: r._asdict() for r in conn.execute(select(shape["credential"]))}
+            sessions = {r.id: r._asdict() for r in conn.execute(select(shape["agent_session"]))}
+        return credentials, sessions
+
+    credentials, sessions = old_rows()
+    assert len(credentials) == 5 + 1 + 2 + 300  # the factory's, the successor, twins, crowd
+    statements: list[tuple[str, str]] = []
+
+    def count(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        words = statement.split()
+        verb = words[0].upper() if words else ""
+        if verb == "INSERT":
+            target = words[2].strip('"`')
+        elif verb == "UPDATE":
+            target = words[1].strip('"`')
+        else:
+            return
+        if target != "alembic_version" and not target.startswith("_alembic_tmp_"):
+            statements.append((verb, target))
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        migrate(engine, revision)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    # Two INSERT … SELECT and one UPDATE, whatever the number of rows (persistence.md).
+    assert sorted(statements) == [
+        ("INSERT", "agent_session_project"),
+        ("INSERT", "instance_attachment"),
+        ("UPDATE", "credential"),
+    ], statements
+
+    new = _reflected(engine, "credential", "instance_attachment", "agent_session_project")
+    with engine.connect() as conn:
+        attachments = [r._asdict() for r in conn.execute(select(new["instance_attachment"]))]
+        positions = [r._asdict() for r in conn.execute(select(new["agent_session_project"]))]
+        profiles: dict[str, str] = dict(
+            conn.execute(select(new["credential"].c.id, new["credential"].c.agent_id)).all()
+        )
+        memberships = dict(conn.execute(select(t.membership.c.id, t.membership.c.agent_id)).all())
+    # One attachment per credential, with its own values.
+    assert sorted(a["credential_id"] for a in attachments) == sorted(credentials)
+    for attached in attachments:
+        was = credentials[attached["credential_id"]]
+        assert attached["membership_id"] == was["membership_id"]
+        assert attached["instance"] == was["instance"]
+        assert attached["attached_at"] == was["created_at"]
+        assert attached["join_id"] == was["join_id"]
+        assert attached["attached_by"] is None
+        # Revoked ones too stay attached (QA4).
+        assert attached["detached_at"] is None and attached["detached_reason"] is None
+        moved = {name: attached[name] for name in _ATTACHMENT_MOVED}
+        assert moved == {name: was[name] for name in _ATTACHMENT_MOVED}, was["id"]
+    # Every credential has the profile of its membership.
+    assert profiles == {c: memberships[w["membership_id"]] for c, w in credentials.items()}
+    assert profiles["crd-twin-beta"] == profiles[twin.credential_id] == twin.agent_id
+    by_credential = {a["credential_id"]: a for a in attachments}
+    assert by_credential["crd-twin-beta"]["membership_id"] == twin_beta
+    assert by_credential[twin.credential_id]["membership_id"] == twin.membership_id
+    assert by_credential[resting.credential_id]["paused_by"] == boss  # spot checks
+    assert by_credential["crd-successor"]["first_cursor"] == 23
+    # One position row per session, in its membership, with its cursor and its episode.
+    assert sorted(p["session_id"] for p in positions) == sorted(sessions)
+    for position in positions:
+        was = sessions[position["session_id"]]
+        assert position["membership_id"] == was["membership_id"]
+        assert {name: position[name] for name in _POSITION_MOVED} == {
+            name: was[name] for name in _POSITION_MOVED
+        }
+    [episode] = [p for p in positions if p["session_id"] == active.session_id]
+    assert (episode["acknowledged_seq"], episode["not_listening_seq"]) == (42, 40)
+
+    # A clean downgrade puts every value back.
+    downgrade(engine, before)
+    assert current_revision(engine) == before
+    assert old_rows() == (credentials, sessions)
+
+    # Attached to a second project, the instance cannot go back to one membership.
+    migrate(engine, revision)
+    second = factory.attach(engine, active, factory.project(engine, "gamma"))
+    _refused_before_any_change(engine, "a credential has more than one instance_attachment row")
+    with engine.begin() as conn:  # the rows go, as only a restore would remove them
+        conn.execute(
+            delete(t.agent_session_project).where(t.agent_session_project.c.membership_id == second)
+        )
+        conn.execute(
+            delete(t.instance_attachment).where(t.instance_attachment.c.membership_id == second)
+        )
+    downgrade(engine, before)
+    assert current_revision(engine) == before
+    assert old_rows() == (credentials, sessions)
+
+
+def _refused_before_any_change(engine: Engine, condition: str) -> None:
+    """The downgrade of 20261121120000_inst_attach refuses, naming `condition`, before its
+    first DDL: PostgreSQL and SQLite would roll a later failure back, MariaDB would not, so
+    every engine stays at the revision with the schema untouched. The message advises no
+    detach, which keeps the row, but a restore."""
+    from sqlalchemy import inspect
+
+    revision = "20261121120000_inst_attach"
+    with pytest.raises(RuntimeError, match=condition) as refused:
+        downgrade(engine, _before(engine, revision))
+    assert "database restore" in str(refused.value)
+    assert "detach" not in str(refused.value)
+    assert current_revision(engine) == revision
+    shape = inspect(engine)
+    credential = {c["name"] for c in shape.get_columns("credential")}
+    assert "agent_id" in credential and "membership_id" not in credential
+    session = {c["name"] for c in shape.get_columns("agent_session")}
+    assert "membership_id" not in session and "acknowledged_seq" not in session
+    assert "attach" in {c["name"] for c in shape.get_columns("join_link")}
+    assert {"instance_attachment", "agent_session_project"} <= set(shape.get_table_names())
+
+
+def _at_inst_attach(engine: Engine) -> tuple[str, str, Any]:
+    """The database at 20261121120000_inst_attach with an owner, projects alpha and beta,
+    and one agent in alpha whose credential and live session fit the older schema."""
+    from tests import factory
+
+    migrate(engine, "20261121120000_inst_attach")
+    owner = factory.human(engine, "owner")
+    alpha = factory.project(engine, "alpha")
+    beta = factory.project(engine, "beta")
+    factory.membership(engine, alpha, "owner", human_id=owner)
+    return alpha, beta, factory.agent(engine, alpha, owner, "coder")
+
+
+def test_inst_attach_downgrade_refuses_a_credential_with_two_attachments(
+    engine: Engine,
+) -> None:
+    """A credential attached to two projects, the second one detached: the row stays, so
+    the downgrade still refuses."""
+    from sqlalchemy import update
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    _, beta, agent = _at_inst_attach(engine)
+    with engine.begin() as conn:  # no live session: only the attachment is doubled
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.id == agent.session_id)
+            .values(live=None, ended_at=clock.now())
+        )
+    second = factory.attach(engine, agent, beta)
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.membership_id == second)
+            .values(detached_at=clock.now(), detached_reason="detached")
+        )
+    _refused_before_any_change(engine, "a credential has more than one instance_attachment row")
+
+
+def test_inst_attach_downgrade_refuses_a_session_with_two_positions(engine: Engine) -> None:
+    from sqlalchemy import insert
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    _, beta, agent = _at_inst_attach(engine)
+    in_beta = factory.membership(engine, beta, "coder", agent_id=agent.agent_id)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id=agent.session_id, membership_id=in_beta, acknowledged_seq=0
+            )
+        )
+    _refused_before_any_change(engine, "a session has more than one agent_session_project row")
+
+
+def test_inst_attach_downgrade_refuses_a_session_without_a_position(engine: Engine) -> None:
+    from sqlalchemy import insert
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    _, _, agent = _at_inst_attach(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.agent_session).values(
+                id="ses-nowhere", credential_id=agent.credential_id, started_at=clock.now(),
+                last_seen_at=clock.now(), ended_at=clock.now(),
+            )
+        )  # fmt: skip
+    _refused_before_any_change(engine, "a session has no agent_session_project row")
+
+
+def test_inst_attach_downgrade_refuses_a_credential_without_an_attachment(
+    engine: Engine,
+) -> None:
+    from sqlalchemy import insert
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    _, _, agent = _at_inst_attach(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.credential).values(
+                id="crd-nowhere", agent_id=agent.agent_id, instance="zzzz", verifier="0" * 64,
+                created_at=clock.now(),
+            )
+        )  # fmt: skip
+    _refused_before_any_change(engine, "a credential has no instance_attachment row")
+
+
+def test_acct_lock_rows_backfills_every_human_without_one_and_its_downgrade_keeps_them(
+    engine: Engine,
+) -> None:
+    """A human made after 0076 got its `account_lock` row only on first need; the backfill gives
+    every human one, leaves an existing row as it is, and the downgrade deletes nothing."""
+    from sqlalchemy import insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    rev = "20261123120000_acct_lock_rows"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    with engine.begin() as conn:
+        for n in ("1", "2"):
+            conn.execute(
+                insert(t.human).values(
+                    id=f"hum-{n}", handle=f"h{n}", display_name=n, password_hash="x",
+                    created_at=clock.now(),
+                )
+            )  # fmt: skip
+        conn.execute(insert(t.account_lock).values(human_id="hum-1"))  # made on first need
+
+    def rows() -> list[str]:
+        with engine.connect() as conn:
+            found = conn.execute(select(t.account_lock.c.human_id).order_by("human_id"))
+            return [str(r) for r in found.scalars()]
+
+    assert rows() == ["hum-1"]
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    assert rows() == ["hum-1", "hum-2"]
+    downgrade(engine, _before(engine, rev))
+    assert rows() == ["hum-1", "hum-2"]

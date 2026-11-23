@@ -151,18 +151,22 @@ def _candidates(conn: Connection, conversation_id: str | None = None) -> list[An
 def _listening(conn: Connection, membership_id: int) -> bool:
     """Whether an instance of the agent that is neither dormant nor paused has a live
     session with an open long-poll (§5.3)."""
-    s, cr = t.agent_session.c, t.credential.c
+    from maity_hub import instances  # instances imports what imports this module
+
+    # Dormant and paused in this project: on the instance's attachment (§6.17).
+    s, a = t.agent_session.c, t.instance_attachment.c
     sessions = (
         conn.execute(
             select(s.id)
-            .join(t.credential, cr.id == s.credential_id)
+            .select_from(instances.credential_join())
+            .join(t.agent_session, s.credential_id == t.credential.c.id)
             .where(
-                s.membership_id == membership_id,
+                a.membership_id == membership_id,
                 s.live.is_(True),
                 s.ended_at.is_(None),
-                cr.revoked_at.is_(None),
-                cr.dormant_since.is_(None),
-                cr.paused_since.is_(None),
+                instances.attached_now(),
+                a.dormant_since.is_(None),
+                a.paused_since.is_(None),
             )
         )
         .scalars()

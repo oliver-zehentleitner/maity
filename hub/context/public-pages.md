@@ -136,6 +136,28 @@ removal; only the render, which shows the state after the change, moves after th
 - Deleting without the per-target lock and accepting the window: on PostgreSQL a render already running when
   a removal commits wrote the removed content back until the removal's own render ended.
 
+## A test that deletes stored pages keeps the pages worker from running
+
+**Id:** 783a0bd6-0bcc-439c-8fcc-1ff3737ec4fa
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of pull request #2069, 2026-11-21 (a flaky `assert 201 == 404` in `hub/tests/test_reports_public.py`), reproduced with a late first worker pass; `public_pages.startup`, `Worker._run`, `_unrendered`
+**See:** public-pages.md#a-touched-page-is-taken-off-in-the-writers-transaction-and-rendered-after-its-commit-one-render-has-a-time-limit-and-a-start-takes-up-no-target-after-its-budget — deafb243-f385-4108-8de4-81fc8f9a7872 — as of 2026-11-21
+
+A test that deletes stored pages to model "not served" keeps the pages worker from running
+(`public_pages.Worker.start` patched to a no-op before the first app is built), and builds no
+pages app after the delete. Every app with pages on renders, at its start (`startup`), the
+pages of the targets it takes up within `public_pages_startup_seconds`, and starts
+`public_pages.Worker`, whose first pass renders every target without a stored page; either can
+bring the deleted page back, the worker's pass at a moment the test does not control.
+
+**Reason:** a first pass that runs late on a loaded runner turned a filing the test expected to
+be refused into an accepted one.
+
+**Rejected alternative:** deleting the pages again before each assertion: the worker can still
+render them between the delete and the read.
+
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
@@ -603,6 +625,171 @@ renderer puts it there.
 `refresh` compares `view` and `data` as well as `inputs`, since a change may reach `data` without touching the
 HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
 `data` in the digest, which would move that date.
+
+**Superseded by, for signed-in outsiders only:** 3f9c2d71-8a4e-4b6f-9d15-7e2a0c8b4f63 (2026-11-19, the entry
+below). This entry, its "member routes stay closed" and the first rejection above hold for a visitor without a
+session, who still reads only `GET /public/pages/{path}`.
+
+## A signed-in outsider reads a public project through a closed list of member routes
+
+**Id:** 3f9c2d71-8a4e-4b6f-9d15-7e2a0c8b4f63
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q, "public is public", `docs/api.md` §2.3); the lead's rulings of 2026-11-19 and 2026-11-20 (tsk-kqn8zhptf06k, #2001); split out of eb7fd1c7 on the card tsk-jk2psmarajjb; the owner's answer on req-adh287znbx64 (2026-11-21, o1: the stricter condition with the shared max_age window); the lead's decision, seq 186180, 2026-11-21 (the Why only where the instance's token serves the project)
+**See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-21
+**Revisit when:** an outsider needs a project read outside `access.OUTSIDE_READS`, or the public page shows a member or project field the allow-lists do not name
+
+A signed-in human without an active membership reads a public project through the member routes (`docs/api.md`
+§2.3). The risk eb7fd1c7 names for a visitor caller in those routes (a field added later becomes public) is met
+for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
+
+- A closed allow-list of routes: `access.OUTSIDE_READS`, twelve GETs (the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner, and the three reads of the Why view
+  below). Only those endpoints call
+  `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
+  member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
+  together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
+  is closed until someone opens it on purpose.
+- A gate in `ProjectRoute`: an outsider's call to any other project route answers `not_found` before FastAPI
+  reads its body or query, so no `400` names a route's fields to them. Members, strangers to a private or unknown
+  project, agents and callers without a session pass it unchanged. A human who owns an agent or a runner in the
+  project passes it on `access.OWNER_CALLS` alone, the calls §1.3 lists for such an owner (the chats they read
+  along, a jour-fixe round, their agent's briefings and its briefing view, membership and bridge, the placements
+  on their runner); on any other route they are an outsider like any other (the lead's ruling, 2026-11-19).
+  Strangers to a private or unknown project need no gate: the body is validated before the route reads the
+  membership, for both alike (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body
+  tells them apart no more than `not_found` does (checked, not changed, and tested). The gate names a route by
+  the template the app serves, `access.API` before the route's own path: FastAPI keeps an included router behind
+  its own object (hub/context/namespace.md), so a route's `path` is the router's, without the prefix. The tests
+  walk the app with `iter_route_contexts` and take each endpoint from the routers of `maity_hub.routes`.
+- The gate reads the caller as `caller.authenticate` does (2026-11-20, review A1788/A1789): a call is another
+  credential's, not the cookie's, only with a non-empty `Authorization` header, which authenticates and makes the
+  cookie alongside ignored; an empty one authenticates nothing. `Maity-For` authenticates nothing on its own (a
+  bridge calls with its own `Authorization`, §2.3), so a cookie call with it is still the cookie's human and is
+  gated as any outsider. Rejected: passing a call on a header's mere presence, a reading other than the one
+  that decides the caller.
+- The gate runs in `ProjectRoute`'s handler (`namespace.py`), so before FastAPI's dependencies, among them the
+  pending-account and second-factor gates (`auth/second_factor.py`). The stated reason is the one above: before
+  FastAPI reads the body or the query (`namespace.py`, #2001). That it also runs before the pending-account and
+  second-factor gates is stated nowhere as a choice; it follows from where the gate sits. Searched (2026-11-21,
+  tsk-jk2psmarajjb): the code and this file, `git log -S'access.gate'` (only #2001), the commit messages on
+  `namespace.py`, `access.py`, `auth/second_factor.py` and `auth/caller.py` for the second factor and the
+  pending account, and the #2001 round notes. Evidence: unknown.
+- The Why view's three reads, `GET …/keep-the-why` (§11.3), `…/keep-the-why/export` and `…/keep-the-why/bodies`
+  (§11.5), are open to an outsider. Source: the owner's option A in req-vsfjgx3fch8k, its §2.3 sentence as the
+  owner wrote it; tsk-jk2psmarajjb; round 2 after review A1829 (F1, F2), round 3 after review A1830; the owner's
+  answer on req-adh287znbx64 (o1); the lead's decision, seq 186180, 2026-11-21 (only where the instance's token
+  serves the project); round 4 after review A1863, the lead's rulings, seq 186723 and seq 186740.
+  - The source, shared with the public page's **Why** (`public_project_views.why_data`, `WHY_CACHE`): only what
+    the forge serves publicly, read with the instance's token and without a grant, its visibility asked of the
+    forge itself, and only for a project in the operator's own namespaces, which that token serves, where the
+    page shows it too (`render_views`' `by_instance`). These checks, in order. `access.gate`
+    (`PUBLIC_REPOSITORY_READS`, before the query is read; `instance_serves_project`, from the app's settings) and
+    `_require_why` with `_outside_token` answer `not_found` unless the stored `repository_public` is true and the
+    instance's token serves the namespace, the cheap first checks. Then the gate, still before the query is read,
+    takes the forge's answer whether the repository is public (`ktw_reads.outside_visible`, one function with the
+    endpoint's `outside_reader`, which reuses the answer the gate just kept): asked live (`_visibility`,
+    uncached, in a worker thread outside any database connection) when the kept answer is older than
+    `_refresh(max_age)`, at the latest every `VISIBILITY_SECONDS`, with `max_age=0` every `FORCE_INTERVAL`, the
+    query's `max_age` read with the routes' own type (`ktw.max_age_of`); not public, or no answer, is `not_found` before
+    validation (A1863 point 2), a spent budget passes to the endpoint, which answers `probe_unavailable` as for a
+    member. A kept positive answer only lets `OUTSIDE_CACHE` serve what it holds: every content fetch for an
+    outsider is preceded by a live visibility answer in the same request (the lead's rule, seq 186723, A1863
+    point 1). `OUTSIDE_CACHE`'s `before_read` (`_before_outside_read`) asks the forge live before each family
+    read unless the gate or the endpoint asked in this request (a context variable), and drops the forge's own
+    kept verdict (`Forge.forget_visibility`, PUBLIC_SECONDS) so the file reads that follow ask again; not public raises
+    before anything is fetched or stored. The read itself goes through a reader bound to no project and holding no
+    grant into `OUTSIDE_CACHE`, a `ktw.Cache` of its own that never asks `Forge.for_project` (`bind=False`). The
+    outsider path picks its token by the operator's namespaces, as the public page does
+    (`routes/keep_the_why._outside_token`: the instance token where `forge_access.serves` the project's namespace
+    owner), and never asks the project's source, so it writes nothing: choosing a source may write the project's
+    `probe_via` and the grants' state (A1830). Rejected: an anonymous read for the other projects (round 2), since
+    it spends the hub-wide anonymous forge budget, which a loop over many projects with `max_age=0` could drain
+    for every project (A1830, note 3; the lead, seq 186180). Why the rest: the stored flag lags the forge, since
+    the probe updates it on its own round (F1); and the members' `ktw.CACHE` may be filled through the namespace
+    owner's grant, which reads a private repository, so serving it to an outsider until the probe looked again would hand out private content (F1).
+    The gate runs for these routes too, so an outsider they are closed to gets no `400` for a bad query (F2).
+  - The scope of the answers: the full export and its bodies, more than the page's summary, under the same
+    rules as for a member. They come from what the repository publishes, never the database, so they carry no
+    restricted text; a card id in an entry's text is served as published and opens nothing (`GET …/tasks/{id}`
+    stays `not_found` for a hidden card).
+  - The rate: one refresh decision per project across both caches, the data separate. `OUTSIDE_CACHE` and
+    `ktw.CACHE` share one `ktw.Refresh` (`ktw.Cache.link`): one lock per project and the project's last family
+    read. Under that lock a forced read (`max_age` below `FORCE_INTERVAL`, i.e. `0`) is made only when neither
+    cache read the project's repository in the last `FORCE_INTERVAL`, else the cache serves its own entry, never
+    the other's; a cold first read (no entry of its own) and an ordinary refresh (an entry older than its
+    `max_age`) are always made, and an overlapping request waits and serves what was just read (the lead's
+    ruling, seq 186740; earlier seq 185669). So the owner's "the same one forge read per 30 seconds per project
+    as for a member" holds for the forced reads it governs. The shared window holds back only a forced read on
+    an own entry still younger than `DEFAULT_MAX_AGE`, which then gets that entry as it is; a read whose own entry
+    is older than the `max_age` asked for (default `DEFAULT_MAX_AGE`) always refreshes, and so does a forced read
+    on an entry past `DEFAULT_MAX_AGE`, whatever the other cache did, so neither cache starves the other (the
+    lead's ruling, seq 187034, on zxjn A1830; `wakeups` forgets both caches on a repository change). A caller
+    with its own entry does not wait while another request holds the project's lock for its read: it gets its
+    own entry at once (`fresh: false`); only a cold caller waits, at most `LOCK_WAIT`, and then serves what was
+    read. File fetches are content fetches too: the export and bodies fetch a published file themselves on a miss
+    or an expired file while the family is still kept, and for an outsider that fetch follows the same answer
+    in the same request (`ktw_reads.outside_before_fetch`), on the repository the file belongs to: the
+    project's own, or the named repository of a `?canonical=` read; a named repository's family read
+    (`ForeignCache._read`) asks about that repository live before its walk, and that answer is this request's
+    (`_record`), so each repository is asked at most once per request (the lead, seq 187245, on zxjn A1830). A
+    file served from the store needs none. A project's lock is reclaimed when its last request leaves and the
+    cache holds no entry for it. The gate
+    reads `max_age` with the routes' own pydantic type (`ktw.max_age_of`), so `00` or `0.0` give it the same
+    window as the route (the lead, seq 187206, on ukxh A1875). Apart from it, the live visibility
+    check of an outsider's own repository (at most once per `FORCE_INTERVAL` with `max_age=0`) is one small forge
+    request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS
+    without any token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a
+    visibility check) stay shared: nothing in them was read with a grant.
+- A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
+  (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
+  notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
+  `moderation.hold` the Board and the card page read), and no hidden card's id is in another card's view
+  (`public_cards.outside_views`, called once by `views.task_views` for an `OutsideReader`: `depends_on`,
+  `ships_with`, `related`, `parent`, the `children` counts and a release's pull requests, groups and blockers,
+  with one statement for a page; the lead's rulings 6 and 7, 2026-11-19). A known residual, not cleaned (§2.3 as
+  adopted in req-mfnmm9m8fgsd): an older entry of a visible card's history can still name a hidden card's id in a
+  past `depends_on`, `related` or `parent` change, and a body or a note can name its id as text.
+- The rule is decided on the rows a read returns, in the statement that reads them, never only in a statement
+  before (the lead's point, 2026-11-20): on PostgreSQL each statement of a transaction reads its own snapshot (READ
+  COMMITTED), so a card that became `security` or held between the statement that listed it and the one that
+  shaped it would otherwise reach the outsider, the gap #2005 closed for a request list by deciding its full rows
+  again. So the list's keys statement and the statement that reads the page's full rows after them (`_views`,
+  keys first since tsk-ybc2ma72dzvq) both carry `outside_clause`, the keys statement also for the card a `parent`
+  filter names (an `EXISTS`); the card's own statement carries it too, and the history's and the notes' statement
+  `outside_card`. `outside_views` reads last: one statement that drops a view whose card is hidden by then, counts
+  `children` again from the children it reads (not by subtracting from the earlier count, which a hidden child
+  added meanwhile would turn negative) and strips the ids hidden by then; no hold is read for an outsider after
+  it. A card hidden after a history's or notes' card read gives an empty page, not `not_found`: nothing of it is
+  read. `test_outside_reads.py` forces the interleaving by writing between the statements, on the route's own
+  transaction (every engine) and committed from another connection (seen on PostgreSQL; SQLite reads one snapshot
+  per read transaction).
+- An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
+  outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
+  `setup`, and the links as the public page shows them.
+- An allow-list of the member view's keys too (`members.OUTSIDE_MEMBER_KEYS`, `manages` with
+  `OUTSIDE_COUNT_KEYS`; 2026-11-20, review A1789, the lead's order): who the member is and where it stands, as the
+  public Team and Organisation pages show it, and nothing else, so no sign of presence or isolation reaches the
+  outsider through a derived field either (`availability`, `paused`, `session`, `instances`, the `online` and
+  `dormant` counts of `manages`, `covered_by`, `covering`, `moderation`), and a key the view gains later stays
+  hidden. The members are those the public page names (`outside_shown`, `public_project_views.members`): an
+  isolated member, one under a moderation hold on its profile, and one whose account (or whose owner's) is not
+  served are in no outsider's list, `not_found` on `GET …/members/{id}` as a hidden card is, and neither named
+  in `reports_to` nor counted in `manages`. Their `avatar_url` is the picture the public page shows
+  (`outside_pictures`, the rule of `public_projects.member_pictures`, one read for the page), `null` while a
+  person's `public_profile` is off; never `avatars.url_of`, whose address `GET /avatars/{id}` refuses an outsider
+  and which names a picture the public page may not show (tsk-k7bt2393gz3d (a)). Rejected: a deny-list with
+  neutral values for the derived fields (a value the member does not have, and a field added later would still
+  pass). The public page names no isolated
+  agent and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
+  redaction's tombstone without its reason; no read of a card carries a restricted text; the outsider has no
+  hidden window of its own. Reading a public project never makes the outsider a colleague for `links_visible`.
+  `GET /bootstrap` stays with members.
+
+Rejected: filtering the member routes by a denylist for the outsider (the risk above, route by route); reusing the
+public page's stored `data` for the outsider (a visitor's projection of a few views, partly rendered on a timer,
+without the card history and the member and card fields the contract opens to an outsider).
 
 ## A visitor on the way to a public page never ends at the login
 
@@ -1166,3 +1353,58 @@ would put the old design back over the new one until the next pass.
   crawler and a reader without script never saw the design at all.
 - Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
   removal, that the running version did not make; taking the target off is what a missing page already means.
+
+## Whether a project has a page is one rule over rows; `served` judges the row it is given
+
+**Id:** 1def6e81-4be2-4e03-8bd7-4426d59407e5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e37ckp87r9cp (audit round 4: the rule written twice since #1986, five public lists asking it per project); the plan for it and the lead's approval, 2026-11-21; reviews A1831 (the cost of one project) and A1832 (an IN list over every public project), and the fix the review lead agreed and the lead approved, 2026-11-21; `public_projects.served_of`, `served`, `served_among`, `chunks.CHUNK` (was `BATCH`); `routes.projects._refuse_outside_roles`, `agent_owners.effective`
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-21
+**See:** persistence.md#an-in-list-over-many-ids-is-cut-into-chunks-by-one-leaf-module-chunks — 63ffb6dc-48cb-400d-8692-5466fb7de939 — as of 2026-11-22
+**Revisit when:** no caller asks `served` of a project as it will be after a write, or the rule needs a column a list's rows do not carry
+
+Whether a project has a page now (its page on, not archived, under no moderation hold, its namespace owner an
+organisation that is not deleted and under no hold, or a human who is active, not deleted and not suspended) is
+written once, in `public_projects.served_of(conn, rows)`, which judges the rows it is given in at most four
+statements for every `chunks.CHUNK` (500) rows. `served(conn, project)` passes it that one row as it is;
+`served_among(conn, ids)` (the stars) reads the stored rows first (page on, not archived, in SQL) and passes those.
+The public lists (`/explore`, an organisation's page, a person's and an agent's projects, the landing page's count
+of public projects) read their candidates with the columns the rule needs and pass those rows to `served_of`, and
+read the full names once (`namespace.full_names`), so they cost the same for 3 projects as for 30
+(`hub/tests/test_public_lists_cost.py`). One project costs what it did before: no statement with the page off or
+archived, one under a project hold, two for a human owner, three for an organisation. Every IN list these ask
+carries at most `chunks.CHUNK` ids. Until 2026-11-22 that bound was `BATCH` here, mirrored from `export.CHUNK`
+because `export` imports this module through `reports` and `moderation`; the leaf module `chunks` replaced the
+copies (persistence.md 63ffb6dc).
+
+**Reason:** a `PATCH` of a project asks `served` of the project as it will be: `_refuse_outside_roles` passes
+`agent_owners.effective` a row whose `public_page` is the one in the request, not yet written. A `PATCH` that
+turns the page on and narrows `outside_roles` in the same call must be judged under `anyone`, so the narrower
+list is refused while an outsider's agent at work holds a role it leaves out.
+
+**Rejected alternatives:**
+- `served(conn, project)` as `project.id in served_among(conn, [project.id])`, the card's first proposal: it
+  reads the stored page, so that `PATCH` would be judged by the page as it was and the narrower list would pass.
+  `test_a_patch_that_turns_the_page_on_checks_outside_roles_by_the_new_page` fails with it.
+- Keeping the rule written twice, once per row and once for a set: the two could drift apart without a test
+  noticing, which is what the card was opened for.
+- Each list passing ids to `served_among`, which reads their rows again (the first version of this change): one
+  statement more per list, so every list with exactly one public project cost one more than before (review
+  A1831; measured 2026-11-21, e.g. an organisation's page 7 -> 8, `/explore` 8 -> 9), and `/explore` and the count put the id of every public project
+  on the instance into one IN list.
+- One IN list over all the ids, unbounded: `/explore` and the landing page's count judge every project with a
+  page on the instance, which no per-namespace quota bounds, and past the driver's limit on bound parameters
+  (SQLite usually 32766, PostgreSQL 65535) the statement fails ("too many SQL variables" with 250,001 ids,
+  review A1832); the per-project calls before could not fail that way. Batches of 500 keep a normal list at one
+  statement per question.
+- The holds and owners joined in SQL instead of batches, which the agreed fix allowed as well: a join judges the
+  stored rows, so `served`, which judges a row not yet written, would need the rule a second time.
+
+**Consequence:** no list costs more than before for one project (measured 2026-11-21 against `main`, org-owned and
+human-owned: `/explore` 8 and 7 statements, an organisation's page 7, a person's projects 6 and 5, an agent's 4
+and 3, the landing page's counters 11 and 10), and from two projects on they cost less. Past 500 candidates a list
+costs one statement more for each further batch of each question, which
+`test_the_public_lists_ask_in_batches_of_a_bounded_size` counts with the batch patched to 2 under a lowered SQLite
+limit.

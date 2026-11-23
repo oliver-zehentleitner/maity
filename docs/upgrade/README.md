@@ -18,6 +18,7 @@ Oldest first:
 - [0.1.0a7](0.1.0a7.md)
 - [0.1.0a8](0.1.0a8.md)
 - [0.1.0a9](0.1.0a9.md)
+- [0.1.0a10](0.1.0a10.md)
 
 ## How a page is written
 

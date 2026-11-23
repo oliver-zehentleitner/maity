@@ -26,6 +26,7 @@ from sqlalchemy import Connection, or_, select
 from maity_hub import (
     avatars,
     chat_access,
+    chat_access_history,
     clock,
     contacts,
     cross_chats,
@@ -35,16 +36,16 @@ from maity_hub import (
     namespace,
     reports,
     restricted,
+    stars,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import second_factor
+from maity_hub.chunks import chunks
 from maity_hub.notifications import preferences as notification_preferences
 from maity_hub.views import git_identity, principal_ids, ts
 
 FORMAT = 1
-# What one IN list carries at most: far below every engine's limit on bound parameters.
-CHUNK = 500
 
 
 def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
@@ -105,18 +106,13 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "pinned_conversations": _pinned_conversations(conn, human_id),
         **contacts.exported(conn, human_id),  # `contacts`, `contact_of` (§6.29)
         "chat_access": chat_access.exported(conn, human_id),  # `{allow, deny}` (§9.6)
+        "chat_access_history": chat_access_history.exported(conn, human_id),  # §9.6, oldest first
         "restricted_texts": _restricted_texts(conn, readers, names),
         "cross_chats": cross_chats.export_of(conn, human_id),
     }
 
 
 # --- helpers ---------------------------------------------------------------------------
-
-
-def _chunks(values: Iterable[Any]) -> Iterator[list[Any]]:
-    items = sorted(set(values))
-    for start in range(0, len(items), CHUNK):
-        yield items[start : start + CHUNK]
 
 
 def _redaction(mark: Any, human_id: str) -> dict[str, Any]:
@@ -146,7 +142,7 @@ class _Titles:
 
     def load_cards(self, card_ids: Iterable[str | None]) -> None:
         wanted = {i for i in card_ids if i and i not in self._cards}
-        for chunk in _chunks(wanted):
+        for chunk in chunks(wanted):
             rows = self.conn.execute(
                 select(t.card.c.id, t.card.c.project_id, t.card.c.title).where(
                     t.card.c.id.in_(chunk)
@@ -270,6 +266,9 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         "social": human.social or {},
         "links_visible": human.links_visible,
         "start_tabs": _start_tabs(conn, human.start_tabs),  # §5.1
+        # §5.1 "Stars", as `GET /me` shows them: an entry hidden while its project is not public
+        # would name a private project by its current name (hub/context/persistence.md c0e833f1).
+        "starred": stars.visible_of(conn, human.id, human.starred),
         "preferences": (
             {
                 "markdown": prefs.markdown,
@@ -399,7 +398,8 @@ def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         .where(t.abuse_report.c.account_id == human_id)
         .order_by(t.abuse_report.c.created_at, t.abuse_report.c.id)
     ).all()
-    return [{**reports.own_view(conn, row), "text": row.text} for row in rows]
+    views = reports.own_views(conn, rows)
+    return [{**view, "text": row.text} for row, view in zip(rows, views, strict=True)]
 
 
 def _org_invitations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
@@ -583,7 +583,7 @@ def _agent_profiles(conn: Connection, human_id: str) -> Sequence[Any]:
 
 def _agent_memberships(conn: Connection, agent_ids: list[str]) -> list[Any]:
     found: list[Any] = []
-    for chunk in _chunks(agent_ids):
+    for chunk in chunks(agent_ids):
         found += conn.execute(
             select(*_MEMBERSHIP_COLUMNS)
             .where(t.membership.c.agent_id.in_(chunk))
@@ -602,7 +602,7 @@ def _agent_views(
     missing = {row.project_id for row in memberships} - names.keys()
     names.update(namespace.full_names(conn, missing))
     souls: dict[str, Any] = {}
-    for chunk in _chunks(a.id for a in agents):
+    for chunk in chunks(a.id for a in agents):
         souls.update(
             {
                 row.agent_id: row
@@ -783,7 +783,7 @@ def _requests_asked(
     if not my_ids:
         return []
     rows: list[Any] = []
-    for chunk in _chunks(project_ids):
+    for chunk in chunks(project_ids):
         rows += conn.execute(
             select(*_REQUEST_COLUMNS).where(
                 t.request.c.project_id.in_(chunk),
@@ -825,7 +825,7 @@ def _requests_asked(
 def _withdrawn_by(conn: Connection, request_ids: list[str], my_ids: set[int]) -> set[str]:
     """The requests among `request_ids` whose withdrawal was the caller's own."""
     found: set[str] = set()
-    for chunk in _chunks(request_ids):
+    for chunk in chunks(request_ids):
         found |= set(
             conn.execute(
                 select(t.event.c.subject_id).where(
@@ -842,7 +842,7 @@ def _answers(conn: Connection, human_id: str, my_ids: set[int]) -> list[Any]:
     """Every request the human answered: through a membership, and the personal ones
     (cross-owner consents, takeovers, an agent's outage) they answered without one."""
     found: dict[str, Any] = {}
-    for chunk in _chunks(my_ids):
+    for chunk in chunks(my_ids):
         for row in conn.execute(select(t.request).where(t.request.c.answered_by.in_(chunk))).all():
             found[row.id] = row
     personal = conn.execute(
@@ -887,7 +887,7 @@ def _cards_created(
     if not my_ids:
         return []
     rows: list[Any] = []
-    for chunk in _chunks(project_ids):
+    for chunk in chunks(project_ids):
         rows += conn.execute(
             select(
                 t.card.c.id,
@@ -900,7 +900,7 @@ def _cards_created(
         ).all()
     rows.sort(key=lambda r: (r.created_at, r.id))
     created: dict[str, Any] = {}
-    for chunk in _chunks(row.id for row in rows):
+    for chunk in chunks(row.id for row in rows):
         for found in conn.execute(
             select(
                 t.card_history.c.card_id,
@@ -1007,7 +1007,7 @@ def _card_notes(
     conn: Connection, my_ids: set[int], names: dict[str, str], titles: _Titles
 ) -> list[dict[str, Any]]:
     rows: list[Any] = []
-    for chunk in _chunks(my_ids):
+    for chunk in chunks(my_ids):
         rows += conn.execute(
             select(
                 t.card_note.c.id,
@@ -1079,7 +1079,7 @@ def _jour_fixe_answers(
 ) -> list[dict[str, Any]]:
     """Named answers only: an anonymous one stores no author (§20.4)."""
     rows: list[Any] = []
-    for chunk in _chunks(my_ids):
+    for chunk in chunks(my_ids):
         rows += conn.execute(
             select(
                 t.jour_fixe_answer.c.id,

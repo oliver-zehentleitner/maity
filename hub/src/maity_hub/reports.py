@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -21,6 +22,7 @@ from maity_hub import (
     attachment_store,
     clock,
     events,
+    jcs,
     moderation,
     namespace,
     public_people,
@@ -30,11 +32,12 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth.caller import Caller
+from maity_hub.chunks import chunks
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.text_language import text_language
-from maity_hub.views import principal_id, ts
+from maity_hub.views import handles_of, principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
 REASONS = ("spam", "abuse", "illegal", "prompt_injection", "impersonation", "other")
@@ -63,15 +66,7 @@ def account_of(conn: Connection, caller: Caller) -> str:
 
 
 def _handle(conn: Connection, principal: str | None) -> str | None:
-    if principal is None:
-        return None
-    if principal.startswith("agt-"):
-        found = conn.execute(
-            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == principal)
-        ).scalar()
-    else:
-        found = conn.execute(select(t.human.c.handle).where(t.human.c.id == principal)).scalar()
-    return str(found) if found is not None else None
+    return None if principal is None else handles_of(conn, [principal]).get(principal)
 
 
 def _author(conn: Connection, principal: str | None) -> dict[str, Any]:
@@ -105,6 +100,26 @@ def _page(conn: Connection, pages: bool, path: str, view: str) -> Any:
     ).first()
 
 
+def _pages_at(conn: Connection, pages: bool, paths: Iterable[str]) -> dict[str, Any]:
+    """path → stored page (`view`, `target_id`, `data`) for each of `paths` that has one, while
+    the instance serves pages (`_page` for a list: a path is the key). One query for every
+    `chunks.CHUNK` paths: an agent's projects add a path each, however short the page."""
+    if not pages:
+        return {}
+    p = t.public_page.c
+    found: dict[str, Any] = {}
+    for chunk in chunks(paths):
+        rows = conn.execute(select(p.path, p.view, p.target_id, p.data).where(p.path.in_(chunk)))
+        found.update({row.path: row for row in rows})
+    return found
+
+
+def _served(found: dict[str, Any], path: str, view: str) -> Any:
+    """The page of `path` with that view among the pages `_pages_at` read, else None."""
+    page = found.get(path)
+    return page if page is not None and page.view == view else None
+
+
 def _lists(page: Any, path: str) -> bool:
     """Whether a page's `agents` names the agent whose own page is `path`."""
     data = (page.data or {}) if page is not None else {}
@@ -113,28 +128,66 @@ def _lists(page: Any, path: str) -> bool:
 
 def _agent_shown(conn: Connection, pages: bool, agent: Any, owner: str) -> bool:
     """Whether a page served now shows the agent: its own page, its owner's page, or the page
-    of a project it is named on (§16.8)."""
-    path = f"/{owner}/agents/{agent.handle}"
-    if _page(conn, pages, path, "agent") is not None:
+    of a project it is named on (§16.8). The first two are looked at first; the agent's
+    projects are read only when neither shows it (the list reads all at once instead)."""
+    if not pages:
+        return False
+    direct = _pages_at(conn, pages, _agent_paths(agent.handle, owner, []))
+    if _shown_directly(direct, agent.handle, owner):
+        return True
+    projects = _agent_projects(conn, [agent.id]).get(agent.id, [])
+    found = _pages_at(conn, pages, (f"/{full}" for full in projects))
+    return _named_on_projects(found, agent.handle, owner, projects)
+
+
+def _agent_projects(conn: Connection, agent_ids: Iterable[str]) -> dict[str, list[str]]:
+    """agent id → the full names of the projects it is an active member of, in one query."""
+    ids = set(agent_ids)
+    if not ids:
+        return {}
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.agent_id, t.project.c.slug, namespace.owner_handle().label("owner"))
+        .select_from(
+            namespace.join_owner(t.membership.join(t.project, m.project_id == t.project.c.id))
+        )
+        .where(m.agent_id.in_(ids), m.active.is_(True))
+    )
+    found: dict[str, list[str]] = {}
+    for row in rows:
+        found.setdefault(row.agent_id, []).append(f"{row.owner}/{row.slug}")
+    return found
+
+
+def _agent_paths(handle: str, owner: str, projects: list[str]) -> list[str]:
+    """The pages `_shows_agent` looks at."""
+    return [f"/{owner}/agents/{handle}", f"/{owner}", *(f"/{full}" for full in projects)]
+
+
+def _shows_agent(found: dict[str, Any], handle: str, owner: str, projects: list[str]) -> bool:
+    """`_agent_shown` on the pages `_pages_at` read for `_agent_paths`."""
+    return _shown_directly(found, handle, owner) or _named_on_projects(
+        found, handle, owner, projects
+    )
+
+
+def _shown_directly(found: dict[str, Any], handle: str, owner: str) -> bool:
+    """Whether the agent's own page or its owner's page, among `found`, shows it."""
+    if _served(found, f"/{owner}/agents/{handle}", "agent") is not None:
         return True
     # The owner's page lists an agent with or without a page of its own (`page` null):
     # handles are unique per owner, so its handle there names it (§16.8).
-    listing = _page(conn, pages, f"/{owner}", public_people.KIND)
-    if listing is not None and any(
-        isinstance(a, dict) and a.get("handle") == agent.handle
+    listing = _served(found, f"/{owner}", public_people.KIND)
+    return listing is not None and any(
+        isinstance(a, dict) and a.get("handle") == handle
         for a in (listing.data or {}).get("agents") or []
-    ):
-        return True
-    m = t.membership.c
-    projects = conn.execute(
-        select(t.project)
-        .join(t.membership, m.project_id == t.project.c.id)
-        .where(m.agent_id == agent.id, m.active.is_(True))
-    ).all()
-    return any(
-        _lists(_page(conn, pages, f"/{namespace.full_name(conn, p)}", "project"), path)
-        for p in projects
     )
+
+
+def _named_on_projects(found: dict[str, Any], handle: str, owner: str, projects: list[str]) -> bool:
+    """Whether the page of one of `projects` (full names), among `found`, names the agent."""
+    path = f"/{owner}/agents/{handle}"
+    return any(_lists(_served(found, f"/{full}", "project"), path) for full in projects)
 
 
 def _on_project_page(conn: Connection, pages: bool, handle: str, project: str) -> tuple[str, str]:
@@ -163,13 +216,16 @@ def _on_project_page(conn: Connection, pages: bool, handle: str, project: str) -
 
 def _shares_a_project(conn: Connection, caller: Caller, principal: str) -> bool:
     """Whether the reporter reads `principal`'s member view somewhere: an active
-    membership of both in one project. An agent credential reaches its own project only."""
+    membership of both in one project. An agent credential reaches only the projects its
+    instance is attached to and not isolated in (§6.17), outside a project route as on one."""
+    from maity_hub import attached
+
     m = t.membership.c
     theirs = select(m.project_id).where(
         m.active.is_(True), (m.agent_id == principal) | (m.human_id == principal)
     )
     if caller.kind == "agent":
-        mine = select(m.project_id).where(m.id == caller.membership_id, m.active.is_(True))
+        mine = select(m.project_id).where(m.id.in_(attached.free_memberships(caller)))
     else:
         mine = select(m.project_id).where(m.human_id == caller.human_id, m.active.is_(True))
     return (
@@ -383,6 +439,12 @@ def target(
     if not isinstance(target_id, str) or not target_id or len(target_id) > 255:
         raise invalid({"target.id": "required"})
     project = given.get("project")
+    if jcs.has_lone_surrogate(target_id) or (
+        isinstance(project, str) and jcs.has_lone_surrogate(project)
+    ):
+        # The id and the project are the strings a lookup binds: no id or name holds a lone
+        # surrogate, and the SQL bind cannot encode it. Any other member is ignored.
+        raise not_found()
     if kind == "profile":
         shot = _profile(conn, caller, target_id, project, pages)
         from_page = shot.pop("project", None)
@@ -437,8 +499,10 @@ def create(
     reason, text = body.get("reason"), body.get("text")
     if reason not in REASONS:
         raise invalid({"reason": "unknown"})
-    if text is not None and (not isinstance(text, str) or len(text.encode()) > TEXT_MAX):
-        raise invalid({"text": "too_long" if isinstance(text, str) else "not_text"})
+    if text is not None and (not isinstance(text, str) or jcs.has_lone_surrogate(text)):
+        raise invalid({"text": "not_text"})  # a lone surrogate is no text UTF-8 can encode
+    if text is not None and len(text.encode()) > TEXT_MAX:
+        raise invalid({"text": "too_long"})
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})
@@ -477,11 +541,12 @@ def create(
 # --- views ----------------------------------------------------------------------------------
 
 
-def _target_view(row: Any, conn: Connection) -> dict[str, Any]:
-    """A project by its full name as it is now (§6.25), the rest by its id."""
+def _target_view(row: Any, names: dict[str, str]) -> dict[str, Any]:
+    """A project by its full name as it is now (§6.25), the rest by its id; `names` holds the
+    full names (`namespace.full_names`)."""
     shown: dict[str, Any] = {"type": row.target_type, "id": row.target_id}
     if row.project_id is not None:
-        name = namespace.full_names(conn, [row.project_id]).get(row.project_id)
+        name = names.get(row.project_id)
         if row.target_type == "project":
             shown["id"] = name
         else:
@@ -489,47 +554,98 @@ def _target_view(row: Any, conn: Connection) -> dict[str, Any]:
     return shown
 
 
-def _public_target(conn: Connection, row: Any, pages: bool) -> dict[str, Any]:
-    """The reporter's form of the target (§16.8 "Limits"): its current public name while its
-    page is served now, else `null` with a neutral word; never an account or member id, a
-    former name or an alias. A message keeps its seq and the project's name as it is now."""
-    if row.target_type == "message":
-        return _target_view(row, conn)
-    gone = {"type": row.target_type, "id": None, "label": row.target_type}
-    full = (
-        namespace.full_names(conn, [row.project_id]).get(row.project_id)
-        if row.project_id is not None
-        else None
+def _public_targets(
+    conn: Connection, rows: Sequence[Any], pages: bool, names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """The reporter's form of each row's target (§16.8 "Limits"): its current public name
+    while its page is served now, else `null` with a neutral word; never an account or member
+    id, a former name or an alias. A message keeps its seq and the project's name as it is
+    now. The people, the agents, the agents' projects and the pages are read once each for
+    all rows."""
+    profiles = [r for r in rows if r.target_type not in ("message", "project", "card")]
+    human_ids = {r.target_id for r in profiles if str(r.target_id).startswith("hum-")}
+    agent_ids = {r.target_id for r in profiles} - human_ids
+    h, a = t.human.c, t.agent_profile.c
+    humans = (
+        {
+            row.id: row
+            for row in conn.execute(
+                select(h.id, h.handle).where(h.id.in_(human_ids), h.deleted_at.is_(None))
+            )
+        }
+        if human_ids
+        else {}
     )
+    agents = (
+        {
+            row.id: row
+            for row in conn.execute(
+                select(t.agent_profile, h.handle.label("owner_handle"))
+                .join(t.human, h.id == a.owner_id)
+                .where(a.id.in_(agent_ids), a.deleted_at.is_(None))
+            )
+        }
+        if agent_ids
+        else {}
+    )
+    # Only an agent reported without a project is looked for on its projects' pages.
+    unplaced = {r.target_id for r in profiles if r.project_id is None and r.target_id in agents}
+    projects = _agent_projects(conn, unplaced) if pages else {}
+    paths: set[str] = set()
+    for row in rows:
+        full = names.get(row.project_id) if row.project_id is not None else None
+        if row.target_type == "message":
+            continue
+        if full and row.target_type == "card":
+            paths.add(f"/{full}/tasks/{row.target_id}")
+        elif full:
+            paths.add(f"/{full}")  # the project itself, or the page an agent is named on
+        if row.target_id in humans:
+            paths.add(f"/{humans[row.target_id].handle}")
+        elif row.target_id in unplaced:
+            agent = agents[row.target_id]
+            paths.update(_agent_paths(agent.handle, agent.owner_handle, projects.get(agent.id, [])))
+    found = _pages_at(conn, pages, paths)
+    return [_public_target(row, names, humans, agents, projects, found) for row in rows]
+
+
+def _public_target(
+    row: Any,
+    names: dict[str, str],
+    humans: dict[str, Any],
+    agents: dict[str, Any],
+    projects: dict[str, list[str]],
+    found: dict[str, Any],
+) -> dict[str, Any]:
+    """One row of `_public_targets`, from what it read."""
+    if row.target_type == "message":
+        return _target_view(row, names)
+    gone = {"type": row.target_type, "id": None, "label": row.target_type}
+    full = names.get(row.project_id) if row.project_id is not None else None
     if row.target_type == "project":
-        if full and _page(conn, pages, f"/{full}", "project") is not None:
+        if full and _served(found, f"/{full}", "project") is not None:
             return {"type": "project", "id": full}
         return gone
     if row.target_type == "card":
-        if full and _page(conn, pages, f"/{full}/tasks/{row.target_id}", "card") is not None:
+        if full and _served(found, f"/{full}/tasks/{row.target_id}", "card") is not None:
             return {"type": "card", "id": row.target_id, "project": full}
         return gone
     if str(row.target_id).startswith("hum-"):
-        human = conn.execute(
-            select(t.human).where(t.human.c.id == row.target_id, t.human.c.deleted_at.is_(None))
-        ).first()
-        if human is not None and _page(conn, pages, f"/{human.handle}", "person") is not None:
+        human = humans.get(row.target_id)
+        if human is not None and _served(found, f"/{human.handle}", "person") is not None:
             return {"type": "profile", "id": human.handle}
         return {**gone, "label": "person"}
-    agent = conn.execute(
-        select(t.agent_profile, t.human.c.handle.label("owner_handle"))
-        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
-        .where(t.agent_profile.c.id == row.target_id, t.agent_profile.c.deleted_at.is_(None))
-    ).first()
+    agent = agents.get(row.target_id)
     neutral = {**gone, "label": "agent"}
     if agent is None:
         return neutral
     path = f"/{agent.owner_handle}/agents/{agent.handle}"
     if row.project_id is not None:  # reported by its handle on a project page
-        if full and _lists(_page(conn, pages, f"/{full}", "project"), path):
+        if full and _lists(_served(found, f"/{full}", "project"), path):
             return {"type": "profile", "id": agent.handle, "project": full}
         return neutral
-    if _agent_shown(conn, pages, agent, agent.owner_handle):
+    owned = projects.get(agent.id, [])
+    if _shows_agent(found, agent.handle, agent.owner_handle, owned):
         return {"type": "profile", "id": f"{agent.owner_handle}/{agent.handle}"}
     return neutral
 
@@ -537,28 +653,54 @@ def _public_target(conn: Connection, row: Any, pages: bool) -> dict[str, Any]:
 def own_view(conn: Connection, row: Any, pages: bool | None = None) -> dict[str, Any]:
     """The reporter's view: status and action only (§16.8), never the note. With `pages`
     (whether the instance serves public pages), the target in the reporter's form."""
-    return {
-        "id": row.id,
-        "created_at": ts(row.created_at),
-        "target": _target_view(row, conn) if pages is None else _public_target(conn, row, pages),
-        "reason": row.reason,
-        "status": row.status,
-        "action": row.action,
-    }
+    return own_views(conn, [row], pages)[0]
+
+
+def own_views(
+    conn: Connection, rows: Sequence[Any], pages: bool | None = None
+) -> list[dict[str, Any]]:
+    """`own_view` for several rows, with the same number of queries for any number."""
+    names = namespace.full_names(conn, {r.project_id for r in rows if r.project_id is not None})
+    targets = (
+        [_target_view(row, names) for row in rows]
+        if pages is None
+        else _public_targets(conn, rows, pages, names)
+    )
+    return [
+        {
+            "id": row.id,
+            "created_at": ts(row.created_at),
+            "target": target,
+            "reason": row.reason,
+            "status": row.status,
+            "action": row.action,
+        }
+        for row, target in zip(rows, targets, strict=True)
+    ]
 
 
 def admin_view(conn: Connection, row: Any, *, snapshot: bool) -> dict[str, Any]:
-    shown = {
-        **own_view(conn, row),
-        "reporter": {"id": row.reporter, "handle": _handle(conn, row.reporter)},
-        "text": row.text,
-        "note": row.note,
-        "resolved_at": ts(row.resolved_at),
-        "closed_at": ts(row.closed_at),
-    }
-    if snapshot:
-        shown["snapshot"] = row.snapshot
-    return shown
+    return admin_views(conn, [row], snapshot=snapshot)[0]
+
+
+def admin_views(conn: Connection, rows: Sequence[Any], *, snapshot: bool) -> list[dict[str, Any]]:
+    """`admin_view` for several rows: the projects' names and the reporters' handles read
+    once for all of them."""
+    handles = handles_of(conn, [row.reporter for row in rows])
+    views = []
+    for row, own in zip(rows, own_views(conn, rows), strict=True):
+        shown = {
+            **own,
+            "reporter": {"id": row.reporter, "handle": handles.get(row.reporter)},
+            "text": row.text,
+            "note": row.note,
+            "resolved_at": ts(row.resolved_at),
+            "closed_at": ts(row.closed_at),
+        }
+        if snapshot:
+            shown["snapshot"] = row.snapshot
+        views.append(shown)
+    return views
 
 
 # --- resolving ------------------------------------------------------------------------------

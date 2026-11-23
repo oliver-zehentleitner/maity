@@ -9,7 +9,7 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import row_of
 from maity_hub.routes import me
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -99,6 +99,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "contacts",
         "contact_of",
         "chat_access",
+        "chat_access_history",
         "restricted_texts",
         "cross_chats",
     }
@@ -430,7 +431,7 @@ def test_where_a_pending_address_change_was_asked_from_stays_out(
     # context/notifications.md 569a1661-3a51-45bb-b7e3-47a3f4368354). The pending address is
     # exported; the copy is not: the session list holds the browser and system.
     with migrated.begin() as conn:
-        preferences.row_of(conn, owner.id, lock=True)
+        row_of(conn, owner.id, lock=True)
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)

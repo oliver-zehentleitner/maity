@@ -180,12 +180,12 @@ class ClaudeCode:
 
     def latest(self) -> str:
         version = self.get(f"{CLAUDE_BASE}/latest").decode("utf-8", "replace").strip()
-        if not _VERSION.match(version):
+        if not _VERSION.fullmatch(version):
             raise tools.InstallError("network", "the vendor did not answer with a version")
         return version
 
     def install(self, version: str, into: Path) -> Path:
-        if not _VERSION.match(version):
+        if not _VERSION.fullmatch(version):
             raise tools.InstallError("installer_failed", f"not a version: {version!r}")
         manifest = self.get(f"{CLAUDE_BASE}/{version}/manifest.json")
         signature = self.get(f"{CLAUDE_BASE}/{version}/manifest.json.sig")
@@ -246,12 +246,12 @@ class Codex:
     def latest(self) -> str:
         tag = str(self._release(f"{CODEX_API}/latest").get("tag_name", ""))
         version = tag.removeprefix("rust-v")
-        if not tag.startswith("rust-v") or not _VERSION.match(version):
+        if not tag.startswith("rust-v") or not _VERSION.fullmatch(version):
             raise tools.InstallError("network", f"unexpected release tag {tag!r}")
         return version
 
     def install(self, version: str, into: Path) -> Path:
-        if not _VERSION.match(version):
+        if not _VERSION.fullmatch(version):
             raise tools.InstallError("installer_failed", f"not a version: {version!r}")
         release = self._release(f"{CODEX_API}/tags/rust-v{version}")
         name = f"codex-package-{self.target()}.tar.gz"

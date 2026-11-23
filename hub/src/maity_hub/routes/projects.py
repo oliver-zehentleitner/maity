@@ -16,6 +16,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    access,
     agent_owners,
     attachments,
     availability,
@@ -55,6 +56,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import attachments as live_attachments
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project, newest_seq
@@ -811,41 +813,60 @@ idempotency.register("project", load_project, idempotency.in_project(idempotency
 def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
     settings = settings_of(request)
     with engine_of(request).begin() as conn:
-        query = select(t.project).join(t.membership, t.membership.c.project_id == t.project.c.id)
-        if caller.kind == "agent":
-            query = query.where(t.membership.c.id == caller.membership_id)
+        agent = caller.kind == "agent"
+        isolated_in: set[str] = set()
+        if agent:
+            # Every project the instance is attached to, an isolated one included (§6.1,
+            # §6.17); never a project its profile is in without this instance.
+            attached_rows = live_attachments(conn, caller.credential_id or "")
+            query = select(t.project).where(
+                t.project.c.id.in_([r.project_id for r in attached_rows])
+            )
+            isolated_in = {r.project_id for r in attached_rows if r.isolated_since is not None}
         else:
-            query = query.where(
-                t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True)
+            query = (
+                select(t.project)
+                .join(t.membership, t.membership.c.project_id == t.project.c.id)
+                .where(t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True))
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
-        shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
-        aliases = namespace.aliases_by(conn, [r.id for r in rows])
-        confirmed = confirmed_by_of(conn, rows)
-        return JSONResponse(
-            {
-                "items": [
-                    _serve_restricted(
-                        conn,
-                        r,
-                        request,
-                        project_view(
-                            r,
-                            settings,
-                            names[r.id].split("/")[0],
-                            shown[r.id],
-                            _export(r, request),
-                            aliases[r.id],
-                            _stored(conn, r, request),
-                            confirmed[r.id],
-                        ),
-                    )
-                    for r in rows
-                ],
-                "next_cursor": None,
-            }
-        )
+        full = [r for r in rows if r.id not in isolated_in]
+        shown = images.views(conn, [r.id for r in full])
+        aliases = namespace.aliases_by(conn, [r.id for r in full])
+        confirmed = confirmed_by_of(conn, full)
+        items = []
+        for r in rows:
+            if r.id in isolated_in:
+                # The isolated entry (§6.1): what `GET /me` already shows of the project.
+                items.append(
+                    {
+                        "id": r.id,
+                        "slug": r.slug,
+                        "full_name": names[r.id],
+                        "name": r.name,
+                        "state": r.state,
+                        "isolated": True,
+                    }
+                )
+                continue
+            view = _serve_restricted(
+                conn,
+                r,
+                request,
+                project_view(
+                    r,
+                    settings,
+                    names[r.id].split("/")[0],
+                    shown[r.id],
+                    _export(r, request),
+                    aliases[r.id],
+                    _stored(conn, r, request),
+                    confirmed[r.id],
+                ),
+            )
+            items.append({**view, "isolated": False} if agent else view)
+        return JSONResponse({"items": items, "next_cursor": None})
 
 
 def _creation_owner(
@@ -1021,17 +1042,70 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 
 
 @router.get("/projects/{owner}/{slug}")
+@access.outside_read
 def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        return JSONResponse(project_body(conn, request, caller, slug))
+        mine = access.reader(conn, caller, slug)
+        return JSONResponse(project_body(conn, request, caller, slug, mine))
 
 
-def project_body(conn: Connection, request: Request, caller: Caller, slug: str) -> dict[str, Any]:
+def project_body(
+    conn: Connection,
+    request: Request,
+    caller: Caller,
+    slug: str,
+    mine: Membership | access.OutsideReader | None = None,
+) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
-    `GET /bootstrap` (§5.4)."""
-    mine = membership(conn, caller, slug)
+    `GET /bootstrap` (§5.4), which passes no `mine`: the caller's membership is read here, so
+    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`."""
+    if mine is None:
+        mine = membership(conn, caller, slug)
     mine.require("project:read")
+    if isinstance(mine, access.OutsideReader):
+        return _outside_view(conn, mine.project, request)
     return _view(conn, mine.project, request, mine)
+
+
+# The project view's keys an outsider reads (§2.3): an allow-list, so that a key the view gains
+# later stays hidden from outside until it is named here (hub/context/public-pages.md 3f9c2d71).
+# Never `repository` (`probe_via` with it), `settings` beyond `language` (`role_rules` among
+# them, §6.1), `memory` or `setup`. `links` as the public page shows them (§16.9).
+OUTSIDE_PROJECT_KEYS = (
+    "id",
+    "owner",
+    "full_name",
+    "slug",
+    "name",
+    "state",
+    "released_at",
+    "state_changed_at",
+    "public_page",
+    "public_about",
+    "links",
+    "logo",
+    "banner",
+    "settings",
+    "created_at",
+)
+
+
+def _outside_view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
+    """The project as an outsider reads it (§2.3): `OUTSIDE_PROJECT_KEYS` of the view, its
+    `settings` only `language`, and its `links` as the public page shows them: one into the
+    repository's own path only while the hub's last look found the repository public
+    (`project_links.public`, §16.9), `null` otherwise."""
+    shown = images.views(conn, [project.id])[project.id]
+    owner = namespace.owner_of(conn, project)["handle"]
+    whole = project_view(project, settings_of(request), owner, shown)
+    view = {key: whole[key] for key in OUTSIDE_PROJECT_KEYS}
+    links = project.links
+    public = set(project_links.public(links, project.repository_url, project.repository_public))
+    view["links"] = {
+        key: value if value in public else None for key, value in whole["links"].items()
+    }
+    view["settings"] = {"language": whole["settings"]["language"]}
+    return view
 
 
 @router.patch("/projects/{owner}/{slug}")

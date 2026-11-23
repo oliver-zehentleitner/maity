@@ -109,8 +109,12 @@ def service(tmp_path: Path, script: Script, clock: Clock | None = None, **kwargs
         return script.call(method, path, **kw)
 
     client: Any = type("C", (), {"call": staticmethod(call)})()
+
+    def reconcile(placements: list[dict[str, Any]], read_at: float | None = None) -> None:
+        seen.append(placements)
+
     svc = serve.Service(
-        cfg, client, {"backend": "local"}, reconcile=seen.append,
+        cfg, client, {"backend": "local"}, reconcile=reconcile,
         sleep=clock.sleep, monotonic=clock.monotonic, rand=lambda: 0.5, **kwargs,
     )  # fmt: skip
     return svc, seen, clock
@@ -150,6 +154,72 @@ def test_an_empty_poll_does_not_reread_until_the_interval(tmp_path: Path) -> Non
         "POST /runner/hello", "GET /runner/events", "GET /runner/events", "GET /runner/placements"
     ]  # fmt: skip
     assert len(seen) == 2
+
+
+class Wants:
+    """A supervisor whose watch asks for the placements anew, as it answers in turn."""
+
+    def __init__(self, *answers: bool) -> None:
+        self.answers = list(answers)
+        self.asked = 0
+        self.t = 0.0  # its clock (`Supervisor.now`), moved on by the test's hub on each call
+
+    def now(self) -> float:
+        return self.t
+
+    def advertised_capabilities(self) -> dict[str, Any]:
+        return {"backend": "local"}
+
+    def reconnected(self) -> None:
+        pass
+
+    def clock(self, server_time: Any) -> None:
+        pass
+
+    def wants_placements(self) -> bool:
+        self.asked += 1
+        return self.answers.pop(0) if self.answers else False
+
+
+def test_the_watch_asking_rereads_after_the_poll_once_per_round(tmp_path: Path) -> None:
+    script = Script(HELLO, events(), placements(PLACEMENT), events())
+    svc, seen, _ = service(tmp_path, script)  # each poll is short: no interval passes
+    svc.supervisor = Wants(True, False)
+    run(svc)
+    paths = [c[0] for c in script.calls if not c[0].endswith("?closed=true")]
+    assert paths == [
+        "POST /runner/hello", "GET /runner/events", "GET /runner/placements",
+        "GET /runner/events", "GET /runner/events",
+    ]  # fmt: skip
+    assert len(seen) == 2  # the hello's placements and the one read the watch asked for
+    assert svc.supervisor.asked == 2
+
+
+def test_placements_are_stamped_with_the_start_of_their_read(tmp_path: Path) -> None:
+    script = Script(HELLO, events({"seq": 5121}), placements(PLACEMENT), events())
+    cfg = load(tmp_path)
+    clock, wants = Clock(), Wants()
+    stamps: list[float | None] = []
+
+    def call(method: str, path: str, **kw: Any) -> Any:
+        wants.t += 10  # every request takes ten seconds on the supervisor's clock
+        if path == "/runner/events":
+            clock.now += clock.poll_seconds
+        return script.call(method, path, **kw)
+
+    def reconcile(placements: list[dict[str, Any]], read_at: float | None = None) -> None:
+        stamps.append(read_at)
+
+    client: Any = type("C", (), {"call": staticmethod(call)})()
+    svc: Any = serve.Service(
+        cfg, client, {"backend": "local"}, reconcile=reconcile,
+        sleep=clock.sleep, monotonic=clock.monotonic, rand=lambda: 0.5,
+    )  # fmt: skip
+    svc.supervisor = wants
+    run(svc)
+    # The hello started at 0 and the read after the wake at 20 (the hello and the poll took
+    # ten seconds each): each is stamped with its start, not with its answer's arrival.
+    assert stamps == [0.0, 20.0]
 
 
 def test_a_lost_connection_backs_off_with_jitter_and_says_hello_again(tmp_path: Path) -> None:
@@ -223,6 +293,17 @@ def test_status_file_after_hello(tmp_path: Path) -> None:
     assert status["connected"] is True and status["session_id"] == "rses-1"
     assert status["pid"] == os.getpid() and status["cursor"] == 5120
     assert status["placements"] == [{**PLACEMENT, "agent": None}]
+
+
+def test_the_status_file_leaves_out_a_placement_id_with_a_trailing_newline(
+    tmp_path: Path,
+) -> None:
+    hello = {"runner": RUNNER, "placements": [PLACEMENT, {**PLACEMENT, "id": "plc-0004\n"}],
+             "cursor": 5120}  # fmt: skip
+    svc, _, _ = service(tmp_path, Script(("POST /runner/hello", hello)))
+    run(svc)
+    status = state.load_state(tmp_path / "st", name=serve.STATUS_FILE)
+    assert [p["id"] for p in status["placements"]] == ["plc-0003"]
 
 
 # --- capabilities ----------------------------------------------------------------------------

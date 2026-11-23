@@ -733,7 +733,8 @@ window.Maity = window.Maity || {};
     // What §3.1 counts: one's distinct agents with an active membership or
     // an open join; an instance of one already counted adds nothing.
     const ownMembers = () => items.filter((m) => P.ownAgent(m) && !m.removed_at);
-    const ownCount = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : [])).size;
+    const held = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : []));
+    const ownCount = () => held().size;
     const limitNote = h("span", { class: "muted member-agents-limit", id: "member-agents-limit" });
     // How many of one's agents are here, online, and the joins open.
     const countLine = h("p", { class: "muted agents-count" });
@@ -747,11 +748,13 @@ window.Maity = window.Maity || {};
       if (memberAdds) {
         const n = ownCount();
         const full = n >= maxOwn;
-        // At the limit the panel still makes an instance of one of them.
+        // At the limit the panel still makes an instance of one of them, and a profile with an
+        // open first join of one's own stays in the hub's held set (agents_held, §3.1): the hub
+        // takes it again without a new slot, so only holding none of them closes the way.
         const limit = [M.t("agents.limit", { n, count: maxOwn })];
-        if (full) limit.push(own.length ? M.t("agents.limit.instances_only") : M.t("agents.limit.no_more"));
+        if (full) limit.push(own.length ? M.t("agents.limit.instances_only") : n ? M.t("agents.limit.held_only") : M.t("agents.limit.no_more"));
         limitNote.textContent = limit.join(" · ");
-        anyClosed = full && !own.length ? limitNote.textContent : null;
+        anyClosed = full && !n ? limitNote.textContent : null;
       }
     }
     function drawJoins() {
@@ -798,7 +801,8 @@ window.Maity = window.Maity || {};
     if (mayAdd) {
       M.join.mount(ctx, {
         member: memberAdds,
-        full: () => memberAdds && ownCount() >= maxOwn,
+        // Full for a new profile only: one already held takes no new slot at the hub.
+        full: (id) => memberAdds && !(id && held().has(id)) && ownCount() >= maxOwn,
         changed: drawJoins,
         opened: (yes) => {
           if (yes) { addProfile.close(false); joining.closeAll(false); } else joining.button.focus();
