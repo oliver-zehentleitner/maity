@@ -72,9 +72,11 @@ def test_it_shows_counts_links_and_titles_and_no_entry_text(world: World) -> Non
     assert answer["kind"] == "why"
     data = answer["data"]
     assert (
-        set(data) == {"readable", "observed_at", "summary", "family", "attention"}
+        set(data)
+        == {"readable", "observed_at", "repository_url", "summary", "family", "attention"}
         and data["readable"]
     )
+    assert data["repository_url"] == URL
     assert data["attention"][0]["title"] == "Open question"
     assert data["family"][0]["dashboard_url"]
     page = world.anyone.get("/maintainer/maity/why").text
@@ -158,6 +160,39 @@ def test_a_replica_with_no_read_or_an_older_one_keeps_the_stored_view(
     empty.entries[world.project_id] = ktw._Entry(older, 0.0, URL)
     world.touch()
     assert world.anyone.get(READ).json()["data"] == stored
+
+
+def test_a_stored_view_of_another_repository_is_not_kept(
+    world: World, migrated: Engine, monkeypatch: Any
+) -> None:
+    """§16.9 Why: a process with no read of the project's current repository (a restart, a
+    switch to another public repository) keeps a stored view only when it names that
+    repository; a stored view of the one before, or one stored before it named any, is not
+    shown. The next read of the current repository fills it again."""
+    assert world.anyone.get(READ).json()["data"]["repository_url"] == URL
+    empty = ktw.Cache()
+    monkeypatch.setattr(public_project_views, "WHY_CACHE", empty)
+    other = "https://github.com/maintainer/elsewhere"
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(repository_url=other, repository_public=True))
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == {"readable": False}
+    assert "Open question" not in world.anyone.get("/maintainer/maity/why").text
+    empty.entries[world.project_id] = ktw._Entry(snapshot(), 0.0, other)
+    world.touch()
+    assert world.anyone.get(READ).json()["data"]["repository_url"] == other
+    # a view stored before the field: not kept by a process that has not read the repository
+    with migrated.begin() as conn:
+        row = conn.execute(
+            t.public_page.select().where(t.public_page.c.path == "/maintainer/maity/why")
+        ).one()
+        data = {k: v for k, v in row.data.items() if k != "repository_url"}
+        conn.execute(
+            update(t.public_page).where(t.public_page.c.path == row.path).values(data=data)
+        )
+    monkeypatch.setattr(public_project_views, "WHY_CACHE", ktw.Cache())
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == {"readable": False}
 
 
 def test_a_failed_read_keeps_the_view_and_a_removed_export_empties_it(
