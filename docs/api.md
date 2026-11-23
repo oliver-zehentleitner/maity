@@ -9483,7 +9483,11 @@ the card's `approvals` stay. Every replacement clears `approvals`
   views that read every event (owners, admins) see the report filled. A
   branch the forge no longer has (deleted, as after a merge) is not a
   mismatch: `observed.branch_head_sha` is null and only the PR head is
-  compared. A pull request the forge does not have is: `observed.pr_state`
+  compared. Nor is a pull request whose head is in another repository
+  than the project's (`head_repo`, a fork): the reported branch is the
+  fork's, so a branch of its name in the project's repository is not
+  compared with `remote_head`, though `observed.branch_head_sha` still
+  shows it. A pull request the forge does not have is: `observed.pr_state`
   is null and `mismatch` is true. This is about `mismatch` only: whether a
   merge closes a card on its own is decided by the pull request's own head
   branch and the other conditions of "A merge closes the loop" below,
