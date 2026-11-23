@@ -1256,11 +1256,12 @@ route there stays refused. The route authenticates its caller without side effec
 (`deps.forge_setup_caller`: `seen=False`, `renew_leases=False`, `counted=False`): no presence
 is written, no lease renewed and no read counted, on any path to it. Those flags reach only the
 cookie path, so `forge_setup_caller` first refuses an `Authorization` or `Maity-For` header
-(`humans_only`, as `presence_caller` does) before any credential is looked up: an agent's,
-runner's or bridge's credential would otherwise have its read counted and its presence settled
-before the route refused it. Its `state` (256 bits,
-stored as a hash, bound to the session, 15 minutes, used once) is checked before any forge read
-or write; the route's outcomes, and the refusals before it runs, are listed in §11.4.
+(`humans_only`, as `presence_caller` does) before any credential is looked up: an agent's
+credential would otherwise have its last use (`last_used_at`), its presence (`last_seen_at` of
+the membership, and of its live session if it has one) and its read count moved, and a
+runner's or a bridge's (`Maity-For`) its read count. Its `state` (256 bits, stored as a hash,
+bound to the session, 15 minutes, used once) is checked before any forge read or write; the
+route's outcomes, and the refusals before it runs, are listed in §11.4.
 
 **Reason:** the setup is an OAuth-style callback: GitHub sends the browser back after the
 installation, so the request comes from github.com and is `cross-site` by design. §2.1 refused
