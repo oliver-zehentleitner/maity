@@ -17203,6 +17203,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         && !text(ov).includes("Waiting for you") && !text(ov).includes("Latest reports") && text(ov).includes("1 human, 2 agents") && !text(ov).includes(" online"),
         "outsider: the Overview is its Summary, the board counted from the cards they read (the security card not among them), no requests, reports or presence "
         + JSON.stringify(counts));
+      // Its member chips: no presence dot and no presence word, since the hub sends an outsider none.
+      const chips = ov.querySelectorAll(".member-chip");
+      expect(chips.length === 3 && chips.every((c) => !c.querySelector(".chip-dot") && !/offline|online/.test(c.getAttribute("title") || "")),
+        "outsider: the Overview's member chips carry no presence dot or word " + JSON.stringify(chips.map((c) => c.getAttribute("title"))));
     }
     // Report the project from its Overview (§16.8); ?report on its address opens the form there (the sign-in link's way back).
     await rpSend(main.querySelector("section.view-overview"), "spam");
@@ -17210,8 +17214,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     {
       const ov = main.querySelector("section.view-overview");
       const open = ov && ov.querySelector("button.report-open");
-      expect(M_.route.current().path === "/stranger/tool/overview" && ov && ov.querySelector("form.report-form") && open && open.hidden && open.getAttribute("aria-expanded") === "true",
-        "report: ?report on a public project's address opens the form on the outsider's Overview " + M_.route.current().path);
+      // Led on as a member is, to `overview?report` written so, never `report=` (e2e report_pages_round).
+      expect(M_.route.current().path === "/stranger/tool/overview" && /\/stranger\/tool\/overview\?report$/.test(win.location.hash)
+        && ov && ov.querySelector("form.report-form") && open && open.hidden && open.getAttribute("aria-expanded") === "true",
+        "report: ?report on a public project's address opens the form on the outsider's Overview, the address overview?report " + win.location.hash);
+    }
+    // The same from a public view's address (the Board's, Team's, Why's): it leads to the Overview's form.
+    await go("#/stranger/tool/board?report"); for (let k = 0; k < 8; k++) await tick();
+    {
+      const ov = main.querySelector("section.view-overview");
+      expect(M_.route.current().path === "/stranger/tool/overview" && ov && ov.querySelector("form.report-form"),
+        "report: ?report on a public project's Board address leads an outsider to the Overview's open form " + M_.route.current().path);
     }
     // Board: the cards they read, no write control.
     await go("#/stranger/tool/board"); for (let k = 0; k < 6; k++) await tick();
@@ -17268,7 +17281,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     {
       const rows = main.querySelectorAll("tr.member").map((tr) => tr.getAttribute("data-member"));
       const heads = main.querySelectorAll("th").map(text);
-      expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView() && !text(main).includes("A quiet agent"),
+      expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView() && !text(main).includes("A quiet agent")
+        && !heads.includes(M_.t("members.col.actions")) && !heads.includes(M_.t("members.col.paused")) && !main.querySelector("td.member-actions"),
         "outsider: the Team lists the members they read, the isolated agent not among them, its tab current, no presence column " + JSON.stringify([rows, heads]));
       expect(main.querySelectorAll("a.member-ref").some((a) => (a.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/team/hum-sam"),
         "outsider: a member's name links to their page in the tab (M.trust.opensViews), as for a member");
@@ -17290,6 +17304,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const tabs = main.querySelectorAll("a.member-tab").map(text);
       expect(JSON.stringify(tabs) === '["Cards"]' && !main.querySelector("a.member-chat") && !main.querySelector(".member-actions-menu") && text(main).includes("Helper"),
         "outsider: a member's page offers Cards alone, no Chat and no Actions, their own agent's too " + JSON.stringify(tabs));
+    }
+    // Sam's page: `manages` as the hub sends an outsider (members and instances alone, counted among
+    // the members they read), said without "(… online)"; Report by the handle a stranger sends.
+    await go("#/stranger/tool/team/hum-sam"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const said = main.querySelectorAll(".member-manages").map(text).join(" | ");
+      expect(said && said.includes("1 member") && said.includes("1 instance") && !said.includes("undefined") && !said.includes("online"),
+        "outsider: a member's page says what they lead without an online count the hub does not send " + JSON.stringify(said));
+      await rpSend(main, "spam");
+      const sent = main.querySelector(".report-sent");
+      expect(rpSent.length && JSON.stringify(rpSent[rpSent.length - 1].target) === JSON.stringify({ type: "profile", id: "sam" }) && sent,
+        "report: an outsider reports a person by the handle a stranger sends (§16.8), and the hub takes it " + JSON.stringify(rpSent[rpSent.length - 1]));
+    }
+    await go("#/stranger/tool/team/agt-tool-bot"); for (let k = 0; k < 6; k++) await tick();
+    {
+      await rpSend(main, "other");
+      const sent = main.querySelector(".report-sent");
+      expect(JSON.stringify(rpSent[rpSent.length - 1].target) === JSON.stringify({ type: "profile", id: "sam/bot" }) && sent,
+        "report: an outsider reports an agent by its global name <owner>/<handle>, and the hub takes it " + JSON.stringify(rpSent[rpSent.length - 1]));
+      // The fixture hub as reports.py answers a stranger: a member id or an unserved person's handle is not_found.
+      const code = (target) => otPost("/reports", { target, reason: "spam" }).then(() => "ok", (err) => err.code);
+      const codes = [await code({ type: "profile", id: "agt-tool-bot" }), await code({ type: "profile", id: "hum-sam" }), await code({ type: "profile", id: "sam/quiet" }),
+        await code({ type: "card", id: "tsk-t004", project: "stranger/tool" })];
+      expect(JSON.stringify(codes) === JSON.stringify(["not_found", "not_found", "not_found", "not_found"]),
+        "fixture hub: a stranger's report by member id, of a hidden agent or of a hidden card is not_found " + JSON.stringify(codes));
     }
     // Why while the hub does not open it to an outsider (#2078: the repository not public, none, or
     // not in the operator's namespaces, all `not_found`): one sentence, nothing to set up or read again.
@@ -17330,16 +17369,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       }
     }
     {
+      // Counted: the reads under /projects/stranger/tool. Not counted: a boot's GET /bootstrap?project=,
+      // asked before /me says the reader is no member and dropped (its project parts are a member's, §5.4).
       const reads = viAll.slice(otFrom).filter((p) => p.startsWith("/projects/stranger"));
       expect(reads.length && reads.every((p) => OT_READS.test(p)) && !otWrites.length && viAsked.length === otPublicFrom,
-        "outsider: every read of the project is a member route an outsider reads, nothing is written there, no public page is read "
+        "outsider: every read under the project's routes is one an outsider reads (a boot's /bootstrap not counted), nothing is written there, no public page is read "
         + JSON.stringify([reads.filter((p) => !OT_READS.test(p)), otWrites, viAsked.slice(otPublicFrom)]));
     }
     // An agent's public page stays its page, signed in too, and reports by its global name.
     await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
     if (viView() && viView().querySelector("button.report-open")) await rpSend(viView(), "other");
     expect(JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "project", id: "stranger/tool" }, { type: "card", id: "tsk-t001", project: "stranger/tool" },
-      { type: "profile", id: "stranger/overview" }]) && rpSent[0].reason === "spam" && !("text" in rpSent[0]),
+      { type: "profile", id: "sam" }, { type: "profile", id: "sam/bot" }, { type: "profile", id: "stranger/overview" }]) && rpSent[0].reason === "spam" && !("text" in rpSent[0]),
       "report: signed in, a public project (its Overview), card (its panel) and agent each send their name " + JSON.stringify(rpSent.map((b) => b.target)));
     // The empty star on this session's tab (§5.1): PATCH /me with `starred` whole, the project's id last; a refusal says why.
     await go("#/stranger/tool/board"); for (let k = 0; k < 6; k++) await tick();
@@ -17356,6 +17397,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         && otTab("stranger/tool").attrs.draggable === "true" && otTab("stranger/tool").getAttribute("aria-current") === "page"
         && otSaid() === "Tool is starred; its tab stays in your row" && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === TOOL,
         "outsider: the empty star sends PATCH /me {starred: [...existing, id]}, and the tab is a starred one, still current " + JSON.stringify([sent, otSaid()]));
+      // Starred, this session's own entry is gone (no stale one by its name), and the tabs menu
+      // moves it as a drag does (cd4fe2ba: nothing is drag-only); last of three, so left only.
+      expect(otSession() === "", "outsider: starring drops this session's own entry of the tab " + otSession());
+      await otFreshMenu();
+      const labels = otItems().map((i) => i.textContent);
+      expect(labels.includes("Move this tab left") && !labels.includes("Move this tab right"),
+        "outsider: the tabs menu offers Move this tab left for the current starred tab " + labels.join("|"));
+      await otFreshMenu(); otButton().click(); await tick();
+    }
+    // Two clicks on the star while the first PATCH is on its way send one PATCH (js/tabs.js `once`).
+    {
+      let release;
+      const held = [];
+      M_.api.patch = (p, b) => { held.push([p, b]); return new Promise((resolve) => { release = () => resolve(otRealPatch(p, b)); }); };
+      const star = otStar();
+      star.click(); star.click(); otStar().click(); await tick();
+      expect(held.length === 1 && otStar().disabled === true, "outsider: a second click while the star's PATCH is on its way sends nothing, the button disabled " + held.length);
+      release(); for (let k = 0; k < 4; k++) await tick();
+      M_.api.patch = otRecord;
+      expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && !otStar().disabled, "outsider: the answer draws the tab unstarred, its star enabled again");
+      otPatches.length = 0;
+      // Starred again, so the block goes on as before.
+      otStar().click(); for (let k = 0; k < 4; k++) await tick();
+      otPatches.length = 0;
     }
     // Unstarred again from the tab: this session's own tab, its empty star back.
     otStar().click(); for (let k = 0; k < 4; k++) await tick();

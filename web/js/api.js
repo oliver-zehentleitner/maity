@@ -390,8 +390,12 @@ window.Maity = window.Maity || {};
       logo: { available: false, source: null, etag: null }, banner: { available: false, source: null, etag: null },
     },
     members: [
-      { id: "hum-sam", kind: "human", handle: "sam", display_name: "Sam", trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [],
-        expert_for: null, expert_sources: [], last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-01T09:00:00Z", placements: [] },
+      // `page_served`: the fixture's stand-in for whether Sam's own page at /sam is served (§16.9),
+      // which decides a stranger's report by handle (outsideReportTarget); never in a view.
+      { id: "hum-sam", kind: "human", handle: "sam", display_name: "Sam", page_served: true, trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [],
+        expert_for: null, expert_sources: [], last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-01T09:00:00Z", placements: [],
+        // §6.2's counts as a member reads them; an outsider gets `members` and `instances` alone.
+        manages: { direct: { members: 2, instances: 1, online: 1, dormant: 0 }, total: { members: 3, instances: 1, online: 1, dormant: 0 } } },
       { id: "agt-tool-bot", kind: "agent", bridges: [], bridging_for: [], handle: "bot", name: "sam/bot", display_name: "Bot one", owner_id: "hum-sam",
         owner: { handle: "sam", display_name: "Sam" }, trust: "member", role: "reviewer", reports_to: "hum-sam", areas: ["src/"], capabilities: [],
         expert_for: null, expert_sources: [], harness: "Claude Code", model: "model-one",
@@ -471,9 +475,16 @@ window.Maity = window.Maity || {};
     const named = new Set(outsideNamed().map((x) => x.id));
     const shown = Object.fromEntries(OUTSIDE_MEMBER_KEYS.filter((k) => k in m).map((k) => [k, m[k]]));
     shown.avatar_url = null;
+    // `manages` counted among the members the outsider reads (`instance_counts.for_member(...,
+    // among=named)`), cut to `members` and `instances` (`OUTSIDE_COUNT_KEYS`).
     if (shown.manages && typeof shown.manages === "object") {
-      shown.manages = Object.fromEntries(["direct", "total"].filter((part) => shown.manages[part])
-        .map((part) => [part, { members: shown.manages[part].members, instances: shown.manages[part].instances }]));
+      const below = (id) => outsideNamed().filter((x) => x.reports_to === id);
+      const direct = below(m.id);
+      const total = [];
+      const walk = (id) => below(id).forEach((x) => { if (!total.includes(x)) { total.push(x); walk(x.id); } });
+      walk(m.id);
+      const count = (list) => ({ members: list.length, instances: list.reduce((n, x) => n + (x.instances || []).length, 0) });
+      shown.manages = { direct: count(direct), total: count(total) };
     }
     // No edge to a member the outsider does not read.
     if (m.reports_to && !named.has(m.reports_to)) { shown.reports_to = null; shown.cross_owner = false; }
@@ -483,11 +494,49 @@ window.Maity = window.Maity || {};
   // card under a moderation hold whatever its status, are hidden from an outsider, and their ids
   // from every other card's lists (`outside_views`).
   const outsideShown = (c) => !(String(c.label || "").toLowerCase() === "security" && c.status !== "done") && !OUTSIDE_TOOL.held.includes(c.id);
+  // `outside_views`: the edges without a hidden card, `parent` null when it is one, `children`
+  // counted again from the children the outsider reads, and a release's pull requests, groups and
+  // blockers without the hidden cards (`_release_without`).
+  const CLOSED = ["done", "cancelled"];
   function outsideCards() {
     const hidden = new Set(OUTSIDE_TOOL.tasks.filter((c) => !outsideShown(c)).map((c) => c.id));
     const keep = (ids) => (ids || []).filter((id) => !hidden.has(id));
-    return OUTSIDE_TOOL.tasks.filter(outsideShown).map((c) => Object.assign({}, c, { depends_on: keep(c.depends_on), related: keep(c.related),
-      ships_with: keep(c.ships_with), parent: hidden.has(c.parent) ? null : c.parent }));
+    const seen = OUTSIDE_TOOL.tasks.filter(outsideShown);
+    const children = (id) => {
+      const under = seen.filter((x) => x.parent === id);
+      return { open: under.filter((x) => !CLOSED.includes(x.status)).length, total: under.length };
+    };
+    const release = (r) => {
+      if (!r || typeof r !== "object") return r;
+      const out = Object.assign({}, r);
+      if (Array.isArray(r.pull_requests)) out.pull_requests = r.pull_requests.filter((p) => !(p.cards || [p.card]).every((id) => hidden.has(id)));
+      if (Array.isArray(r.groups)) out.groups = r.groups.map(keep).filter((g) => g.length > 1);
+      if (r.readiness && Array.isArray(r.readiness.blocking)) {
+        out.readiness = Object.assign({}, r.readiness, { blocking: r.readiness.blocking.filter((b) => !hidden.has(b.card) && !(b.cards || []).some((id) => hidden.has(id))) });
+      }
+      return out;
+    };
+    return seen.map((c) => Object.assign({}, c, { depends_on: keep(c.depends_on), related: keep(c.related),
+      ships_with: keep(c.ships_with), parent: hidden.has(c.parent) ? null : c.parent, children: children(c.id), release: release(c.release) }));
+  }
+  // POST /reports on what the fixture caller reads only from outside (`stranger/tool`, its
+  // members and cards), as hub/reports.py answers a stranger (§16.8 "The id a stranger sends"):
+  // an account or member id is `not_found` (no project shared), an agent by its global name
+  // `<owner>/<handle>` while a served page shows it, a person by their handle while their own page
+  // is served (`page_served` here; Sam's is, Helper's owner's is the caller), a card by an id the
+  // outsider reads with the project's full name. Any other target is left to the checks below.
+  function outsideReportTarget(t, path) {
+    const gone = () => fail(404, "not_found", "Not found", path);
+    const named = outsideNamed();
+    const hidden = OUTSIDE_TOOL.members.filter((x) => !named.includes(x));
+    if (t.type === "profile") {
+      // By id only one's own agent resolves (`_reads_member`: its owner reads it).
+      if (OUTSIDE_TOOL.members.some((x) => x.id === t.id && x.owner_id !== me().member.id)) gone();
+      if (hidden.some((x) => x.name === t.id || x.handle === t.id)) gone();
+      const human = named.find((x) => x.kind === "human" && x.handle === t.id);
+      if (human && !human.page_served) gone();
+    }
+    if (t.type === "card" && t.project === OUTSIDE_TOOL.project.full_name && !outsideCards().some((c) => c.id === t.id)) gone();
   }
   const outsideFull = (owner, slug) => {
     try { return OUTSIDE_TOOL.project.full_name === decodeURIComponent(owner) + "/" + decodeURIComponent(slug); } catch (err) { return false; }
@@ -507,12 +556,23 @@ window.Maity = window.Maity || {};
     if (r) { const x = outsideNamed().find((y) => y.id === decodeURIComponent(r[1])); return x ? outsideMemberView(x) : gone(); }
     // GET …/tasks, the list and the board; GET …/tasks/{id}, …/history and …/notes
     if (rest === "/tasks") {
+      // routes/tasks.py `list_tasks` for an outsider: the same filters as a member's, among the
+      // cards they read; a `parent` naming a hidden card lists nothing.
       const keep = statusFilter(query, "all");
       const q = query.get("q");
       const norm = (value) => String(value || "").normalize("NFKC").toLowerCase();
-      const items = outsideCards().filter(keep)
+      const after = query.get("closed_after");
+      if (after !== null && (Number.isNaN(Date.parse(after)) || !/(Z|[+-]\d\d:?\d\d)$/.test(after))) {
+        fail(400, "invalid", "the request does not validate", fullPath, { fields: { closed_after: "needs_a_zone" } });
+      }
+      const all = outsideCards();
+      const parent = query.get("parent");
+      const items = all.filter(keep)
+        .filter((c) => ["kind", "label", "needs", "area"].every((k) => query.get(k) === null || c[k] === query.get(k)))
+        .filter((c) => parent === null || (c.parent === parent && all.some((x) => x.id === parent)))
         .filter((c) => !query.get("holder") || (c.claim && c.claim.holder === query.get("holder")))
         .filter((c) => !query.get("assigned_to") || c.assigned_to === query.get("assigned_to"))
+        .filter((c) => after === null || !c.closed_at || Date.parse(c.closed_at) > Date.parse(after))
         .filter((c) => q === null || ["id", "title", "body"].some((k) => norm(c[k]).includes(norm(q))));
       return { items, next_cursor: null };
     }
@@ -544,6 +604,12 @@ window.Maity = window.Maity || {};
         { canonical: "https://github.com/stranger/tool", url: "https://stranger.example/keep-the-why-dashboard/state.json" });
     }
     if (rest === "/keep-the-why/bodies") fail(404, "not_found", "this export carries its bodies inline", fullPath, { reason: "no_bodies_file" });
+    // GET …/keep-the-why (§11.3): the root's summary, in the member shape, as for a member.
+    if (rest === "/keep-the-why") {
+      const answer = JSON.parse(JSON.stringify(file("maity", "keep-the-why.json", fullPath)));
+      answer.fresh = query.get("max_age") === "0" || answer.fresh;
+      return answer;
+    }
     // Every other route of the project: `not_found`, before its body or query is read.
     return gone();
   }
@@ -3253,6 +3319,7 @@ window.Maity = window.Maity || {};
       if (["message", "card"].includes(t.type) && typeof t.project !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { "target.project": "missing" } });
       if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
       if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
+      outsideReportTarget(t, path);
       const key = t.type + " " + t.id + " " + (t.project || "");
       if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "this target was reported 3 times already", path, {});
       const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };

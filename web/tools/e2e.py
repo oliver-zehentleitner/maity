@@ -5506,7 +5506,10 @@ def report_pages_round(run: Run, browser) -> None:
         assert href == expected or href.startswith(expected + "&"), f"{path}: Report links to {href!r}, not {expected!r}"
         link.click()
         fill_sign_in(page, address, password)
-        expect(page).to_have_url(re.compile(re.escape(run.base + path + "?report") + "$"))
+        # The reporter is an outsider of e2e-alpha (§2.3): its own address leads to its Overview,
+        # whose form opens, as a member's does, written `overview?report` (never `report=`).
+        landed = path + "/overview" if path == "/owner/e2e-alpha" else path
+        expect(page).to_have_url(re.compile(re.escape(run.base + landed + "?report") + "$"))
         # The form is open, named for what this page shows; its button hides while it is.
         expect(page.get_by_role("form", name=button, exact=True)).to_be_visible()
         if path == "/owner":
@@ -5584,6 +5587,14 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(slot).to_be_hidden()
     run.shot(page, "outsider-tab-overview")
     run.a11y(page, "an outsider's Overview in the dashed tab")
+    # This session's unstarred tab at phone width: no wider than the window (its hidden words
+    # positioned inside the tab, which is not draggable).
+    page.set_viewport_size({"width": 390, "height": 844})
+    settle(page, NOT_WIDER, None)
+    wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert wide <= 0, f"the unstarred dashed tab at 390x844: {wide} px wider than the window"
+    run.shot(page, "outsider-tab-session-390")
+    page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(run.base + "/owner/e2e-alpha/board")
     expect(page.locator("#main section.view-board")).to_have_count(1)
     expect(page.get_by_role("button", name="New card", exact=True)).to_have_count(0)
@@ -5646,6 +5657,9 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(other.locator(OUTSIDER_TAB)).to_have_count(0)
     other.close()
     fresh.close()
+    # Why's read answers an outsider not_found while the hub has not found the repository public
+    # (§2.3, #2078), as on this hub: asked for, and said in the view's one sentence; no problem.
+    run.problems[:] = [p for p in run.problems if p != "GET /api/v1/projects/owner/e2e-alpha/keep-the-why/export answered 404"]
     no_problems(run, "outsider tab")
     context.close()
 
