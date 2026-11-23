@@ -121,6 +121,35 @@ def test_a_boss_of_the_same_owner_still_gets_each_kind(
         assert "trust:admin" not in got  # with a boss to report to, the admins do not read
 
 
+def _reports_to_human(engine: Engine, member: flow.Agent, human_id: str) -> None:
+    with engine.begin() as conn:
+        boss = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+            )
+        ).scalar_one()
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == row_of(conn, member.id).id)
+            .values(reports_to=boss)
+        )
+
+
+def test_a_human_boss_of_another_owner_is_left_out_and_the_agents_own_human_is_not(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_owner(make_client, migrated)
+    agent = flow.agent(make_client, owner)
+    _reports_to_human(migrated, agent, other.id)
+    with migrated.connect() as conn:
+        assert f"member:{other.id}" not in not_listening.audience_of(conn, row_of(conn, agent.id))
+    _reports_to_human(migrated, agent, owner.id)
+    with migrated.connect() as conn:
+        got = not_listening.audience_of(conn, row_of(conn, agent.id), admins_always=False)
+    assert got[0] == f"member:{owner.id}"  # its own human, as its boss
+    assert "trust:admin" not in got
+
+
 def test_session_paused_still_reaches_a_boss_of_another_owner(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
