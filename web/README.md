@@ -51,7 +51,28 @@ same folder; `web/brand/BRAND.md` has the rules.
 
 One account holds many projects. The header of every screen has a
 project switcher: each project with its state and the number of open
-requests waiting for the human, and **All projects** with the total. In a
+requests waiting for the human, and **All projects** with the total. A
+public project the human is no member of is a tab with a dashed outline
+once it is opened (`js/tabs.js`, `docs/api.md` §2.3, §5.1 "Stars"), kept
+for the browser session in sessionStorage
+(`maity.tabs.outsider.<member id>`, with the project's id) until it is
+closed from the tabs menu, its empty star sending
+`PATCH /me {"starred": [...]}` with the id last; the projects `/me` lists
+as `starred` are dashed tabs among the human's own, opened after
+`start_tabs` in a browser with none kept, each with a filled star whose
+button sends the list without it. The tab links to the project's
+Overview and opens its member views, Overview, Board, Team and Why (the
+views with `outsider: true` in `js/app.js` `NAV`), with `ctx.outsider`
+set: the reads are the member routes the hub opens to an outsider
+(#2001, and #2078's Why reads while the repository is public; the
+fixture hub's `stranger/tool` answers them as it does), no bootstrap
+parts, no event feed, and every write control left out through
+`M.trust.outsider` and `M.trust.writes` (`web/context/views.md`
+f461c919). Why's `not_found` there is one sentence (`M.why.outsideState`).
+The head carries the empty `#outsider-actions` slot for the outsider's
+own actions ("Add your agent" comes with its own card). Any other view of the project is "not found", a project the
+hub does not let them read "not a member"; the stored public page is
+never shown inside the tab. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. To their left, where the project has them,
@@ -198,7 +219,7 @@ pages itself where it serves them. There are no `#/` routes and no redirects fro
 | Route | What |
 |---|---|
 | `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard, which shows a visitor "not found" in the frame ("does not exist, or it is not public", `js/not-found.js`) with the sign-in one link away; signed in, **View public page** opens it with `?as=public` where one is served |
-| `/<owner>/<slug>` | a project: where it has a public page, a visitor and a signed-in non-member read it in the dashboard at the same address, read-only (`js/visitor.js`, `docs/api.md` §16.9), a visitor in the landing page's header and footer (§16.7.5, `js/site-chrome.js`, its **Sign in** with `?next=` back to the page; the app's small bar only where `GET /site/chrome` fails) with the stored pages' look (`.stored-page`); so do its `/overview` and `/overview/project`, which show the public overview. A visitor at any other view of the project gets the sign-in, which goes on there, and at a word that is no view "not found" in the frame (`js/not-found.js`); a non-member at `/overview/swarm` is taken to `/overview`. Signed in as a member, the project's inbox, with **View public page** (`?as=public`) where one is served |
+| `/<owner>/<slug>` | a project: where it has a public page, a visitor reads it in the dashboard at the same address, read-only (`js/visitor.js`, `docs/api.md` §16.9), in the landing page's header and footer (§16.7.5, `js/site-chrome.js`, its **Sign in** with `?next=` back to the page; the app's small bar only where `GET /site/chrome` fails) with the stored pages' look (`.stored-page`); so do its `/overview` and `/overview/project`, which show the public overview. A visitor at any other view of the project gets the sign-in, which goes on there, and at a word that is no view "not found" in the frame (`js/not-found.js`). A signed-in non-member gets the project's member views in its dashed tab (§2.3, the address taken to `/overview`, `/overview/project` and `/overview/swarm` too), never the public page; a view they do not read is "not found". Signed in as a member, the project's inbox, with **View public page** (`?as=public`) where one is served |
 | `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream brings a chat or mention or moves the chat counts, never a project's events feed), in the hub's four bands (pinned with unread, quietly pinned, unpinned with unread, the rest; §9.3), each with its project as a 14 px mark after the who line (name on hover); a pinned chat shows its 📌, and the pin buttons to pin or unpin show only while the 📌 toggle beside the heading is pressed (for this page, never stored), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context, going from one to another changes the pane alone; **← Conversations** goes back to `/chats` |
 | `/all/jour-fixe`, `/all/why` | a project's Jour fixe and Why side by side for every project of the reader (`js/all-pages.js`), one read per project, each section filled when its answer comes |
