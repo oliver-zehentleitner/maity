@@ -829,7 +829,12 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
     from maity.runner.capabilities import CHECKED
 
-    if name in CHECKED:
+    if name in CHECKED and not isinstance(table.data.get("track", ""), str):
+        # A Boolean, number, list or table names the choices too, not only "expected a string".
+        track = "checked"
+        table.used.add("track")
+        problems.append(f"{where}.track: expected a string, one of checked, newest")
+    elif name in CHECKED:
         track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
     else:  # one problem for any value: the key itself does not belong here
         track = "checked"

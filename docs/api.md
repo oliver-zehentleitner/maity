@@ -23060,16 +23060,31 @@ update = "daily"    # maity itself; default "never"
   `rolled_back`, the runner does not install the version it left, or
   one that failed its version answer, again on its own, neither on the
   daily check nor on `Update now`: it takes only a version newer than
-  those, which ends `rolled_back`. Taking the left version again is the
-  operator's second rollback. A rollback is refused while an install or
-  update of the tool runs; it can be run again once that is done, so
+  those, or, under `track = "checked"`, the held version when that is
+  newer than the version in use, even when it is older than the version
+  the rollback left: the version a runner on `checked` should run is the
+  checked one, and a rollback from a version above it rejects that
+  version, not the checked one. Either such check ends `rolled_back`:
+  the version it takes starts the next sessions, the one in use before
+  it is kept as `previous_version`, and the version the rollback left is
+  no longer kept, so it is removed once no running session started from
+  it. The runner never takes the left version again on its own, under
+  either value of `track`; until a check takes a version, taking it
+  again is the operator's second rollback. A rollback is refused while
+  an install or update of the tool runs; it can be run again once that is done, so
   neither overwrites the other. For example, with 2.1.320 in use, 2.1.308
   kept, `latest` 2.1.320 and no hold: a rollback starts new sessions on
   2.1.308, keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
   daily check finds 2.1.320 again and leaves it. A second rollback
   starts them on 2.1.320 again, keeps 2.1.308 and reports `current`. If
   2.1.321 appears while it is `rolled_back`, the runner installs it as
-  any update and reports `current`.
+  any update and reports `current`. Under `track = "checked"` with the
+  checked version 2.1.330, 2.1.335 in use (taken under `newest`) and
+  2.1.320 kept: a rollback starts new sessions on 2.1.320, keeps 2.1.335
+  and reports `rolled_back`; the next check installs 2.1.330, keeps
+  2.1.320 as `previous_version` and reports `current`, and 2.1.335 is
+  removed once no session uses it. A second rollback then starts them
+  on 2.1.320 again.
 - **maity itself.** The same rules. After an update, the runner restarts
   itself on the new version, takes over its sessions (`adopted`, §15.7),
   and restarts each session that an older `maity` started, at that

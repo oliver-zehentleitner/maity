@@ -440,6 +440,49 @@ def test_track_on_a_harness_without_a_checked_version_is_one_problem() -> None:
     assert len(found) == 1 and "sandbox-checked version" in found[0], found
 
 
+@pytest.mark.parametrize("value", ["true", "1", '["checked"]', '{ value = "checked" }'])
+def test_a_track_that_is_no_string_names_both_choices(value: str) -> None:
+    """A Boolean, integer, array or table gets one problem naming both choices; on a harness
+    without a checked version it stays the one problem that the key does not belong there."""
+    said = problems(BASE + f"\n[harness.claude-code]\ntrack = {value}\n")
+    found = [p for p in said if "track" in p]
+    assert found == ["harness.claude-code.track: expected a string, one of checked, newest"], found
+    found = [p for p in problems(BASE + f"\n[harness.codex]\ntrack = {value}\n") if "track" in p]
+    assert len(found) == 1 and "sandbox-checked version" in found[0], found
+
+
+def test_a_rollback_from_an_unchecked_version_rejects_that_version_not_the_checked_one(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    """Case F (A2207): from 2.1.320 to 2.1.335 under newest, then track = checked with
+    CHECKED 2.1.330 and a rollback to the kept 2.1.320. The next capped check takes the held
+    2.1.330, older than the left 2.1.335: checked means run the checked version (§15.16
+    "Rollback"). The left version stays in `skipped`, is no longer kept for a rollback, and
+    goes once no session uses it; a second rollback returns to 2.1.320."""
+    fake.offered = "2.1.320"
+    tools.take(tmp_path, "claude-code", fake, "t1")
+    fake.offered = "2.1.335"
+    tools.take(tmp_path, "claude-code", fake, "t2")  # newest: 2.1.335, 2.1.320 kept
+    state = tools.rollback(tmp_path, "claude-code", cap="2.1.330")  # now checked
+    assert (state.version, state.previous_version, state.skipped, state.state) == (
+        "2.1.320", "2.1.335", ["2.1.335"], "rolled_back",
+    )  # fmt: skip
+    fake.installed.clear()
+    daily = tools.take(tmp_path, "claude-code", fake, "t3", cap="2.1.330")
+    assert fake.installed == ["2.1.330"]
+    assert (daily.version, daily.previous_version, daily.latest, daily.held) == (
+        "2.1.330", "2.1.320", "2.1.335", "2.1.330",
+    )  # fmt: skip
+    assert (daily.skipped, daily.state) == (["2.1.335"], "current")
+    assert tools.prune(tmp_path, "claude-code", set()) == ["2.1.335"]
+    again = tools.take(tmp_path, "claude-code", fake, "t4", cap="2.1.330")
+    assert (fake.installed, again.version, again.state) == (["2.1.330"], "2.1.330", "current")
+    newest = tools.take(tmp_path, "claude-code", fake, "t5")  # back to newest: not on its own
+    assert (fake.installed, newest.version, newest.state) == (["2.1.330"], "2.1.330", "rolled_back")
+    back = tools.rollback(tmp_path, "claude-code", cap="2.1.330")
+    assert (back.version, back.previous_version) == ("2.1.320", "2.1.330")
+
+
 @pytest.mark.parametrize(
     ("version", "above"),
     [("2.1.326", True), ("2.1.326-rc.1", True), ("2.1.325", False), ("2.1.325+b1", False),

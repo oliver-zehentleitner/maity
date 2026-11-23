@@ -2364,7 +2364,7 @@ versions daily without a check.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_warning`, `unchecked_note`, `above_checked`), `config.py` (`track`); the first review round of #2117 (the `rolled_back` cases below, reproduced with the tests' installer); the lead's ruling of 2026-11-23 on that round's finding that docs/api.md §15.16 still measured `current` and `rolled_back` against `latest` (review A2202, P2-3)
+**Source:** the owner's decision on request req-2k6f4x4n9zt6 and his agreement to the lead's detailed proposal, both 2026-11-22; the lead's ruling that `latest` keeps its meaning, 2026-11-22; card tsk-b7441vw8w4tt; `cli/src/maity/runner/tools.py` (`take`, its `cap`), `keeper.py` (`cap`), `capabilities.py` (`unchecked`, `unchecked_warning`, `unchecked_note`, `above_checked`), `config.py` (`track`); the first review round of #2117 (the `rolled_back` cases below, reproduced with the tests' installer); the lead's ruling of 2026-11-23 on that round's finding that docs/api.md §15.16 still measured `current` and `rolled_back` against `latest` (review A2202, P2-3); the lead's ruling of 2026-11-23 on case F of the second round (review A2207, P2-1)
 **See:** runner.md#how-the-checked-claude-code-version-keeps-up-with-the-runners-daily-update — ae02241e-aed4-44e3-9eb7-9550cd006fb2 — as of 2026-11-23
 **See:** runner.md#a-checked-claude-code-version-is-raised-only-on-the-probes-output-from-a-signed-in-machine — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-23
 **See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-23
@@ -2424,6 +2424,21 @@ working under both values. What this implementation chose within that
   the field means without a contract change (the lead's ruling); and
   `rolled_back` for a held runner, which the contract reserves for an
   operator's rollback.
+  Under a cap a check takes the held version when it is newer than the
+  one in use, even when the version a rollback left is newer still (a
+  runner on 2.1.335 from `newest`, now `checked` with `CHECKED` 2.1.330,
+  rolled back to its kept 2.1.320: the next check installs 2.1.330).
+  That ends `rolled_back`; 2.1.320 becomes the kept version, the left
+  2.1.335 is no longer kept and goes once no session uses it, and it
+  stays in `skipped`, so it is not taken again on its own under either
+  value. The reason: `checked` means run the checked version, and a
+  rollback from a version above it rejects that version, not the
+  checked one (the lead's ruling on review A2207 of #2117, case F,
+  which §15.16 "Rollback" now states). Rejected: a check takes no
+  version that is not newer than every version in `skipped` (tried in
+  that review: case F then stays on 2.1.320 and a second rollback
+  returns to 2.1.335), which would keep a runner below the checked
+  version until `CHECKED` passes the version it left.
 - **`track` only on Claude Code.** It is the one harness with a checked
   version. On any other harness `track` is a configuration error, as
   with any unknown key.

@@ -20,3 +20,8 @@
   `rolled_back` states against the version the runner would take: `latest`, or the
   checked version a runner holds Claude Code at under `track = "checked"`. A held runner
   reports `current` with a `version` below `latest`. The fields are unchanged.
+- cli: under `track = "checked"`, the check after a rollback from a version above the
+  checked one installs the checked version when it is newer than the one in use, even
+  though the rollback left a newer one; the left version is not taken again on its own
+  under either `track`. docs/api.md §15.16 and docs/runners.md say so. A `track` that is
+  not a string (true, a number, a list, a table) is refused with both choices named.

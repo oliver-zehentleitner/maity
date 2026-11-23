@@ -2410,6 +2410,13 @@ class Supervisor:
             self.note(p["id"], "reset: a fresh session, the last one not resumed", log=False)
         if harness.id == "opencode":  # name the model in effect: the placement's, or the default
             self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
+        self._say_if_unchecked(name, harness, target, view)
+
+    def _say_if_unchecked(
+        self, name: str, harness: config.Harness, target: Target, view: GateView | None
+    ) -> None:
+        """The start log's line about a version other than the checked one, in `check`'s
+        words (capabilities.unchecked_warning / unchecked_note)."""
         found = (view or GateView.of(target, harness.id)).found  # the version that started
         version = found.version if found else None
         # The way back as `check` names it; an ssh host's tools are not the runner's.

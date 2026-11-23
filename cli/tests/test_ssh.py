@@ -15,7 +15,7 @@ from conftest import fake_opencode
 from test_supervisor import REPO, Clock, FakeTmux, Reports, placement, settle, states
 
 from maity import cli
-from maity.runner import capabilities, commands, config, supervisor, targets, tmux, workspace
+from maity.runner import capabilities, commands, config, supervisor, targets, tmux, tools, workspace
 from maity.runner.asuser import Ssh, Unreachable
 
 CONFIG = """\
@@ -430,12 +430,18 @@ def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake
     assert "docs/runners.md#opencode-grok" in warning[0] and "tsk-nynpvag9zvhh" in warning[0]
 
 
-@pytest.mark.parametrize("track", ["checked", "newest"])
+@pytest.mark.parametrize(
+    ("track", "managed"), [("checked", False), ("newest", False), ("checked", True)]
+)
 def test_check_names_the_way_back_for_a_newer_claude_code_on_an_ssh_host(
-    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, track: str
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, track: str, managed: bool
 ) -> None:
     """The runner manages no tool on an ssh host: above the checked version the warning says
-    to install it by hand, or to keep it with `track = "newest"`, where it is only a note."""
+    to install it by hand, or to keep it with `track = "newest"`, where it is only a note.
+    So too for a harness marked managed (`install`, `update = "daily"`) with the checked
+    version kept in the runner's tools: the host's line names no local rollback. The
+    configuration refuses install and update on an ssh backend today; the host check does
+    not lean on that."""
     monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
     path = tmp_path / "runner.toml"
     path.write_text(CONFIG.format(root=tmp_path) + f'\n[harness.claude-code]\ntrack = "{track}"\n')
@@ -445,6 +451,12 @@ def test_check_names_the_way_back_for_a_newer_claude_code_on_an_ssh_host(
     claude.write_text("#!/bin/sh\necho '2.1.330 (Claude Code)'\n")
     claude.chmod(0o755)
     cfg = config.load(path)
+    if managed:  # the runner's own Claude Code: above the checked one, the checked one kept
+        harness = dataclasses.replace(cfg.harnesses["claude-code"], install=True, update="daily")
+        cfg = dataclasses.replace(cfg, harnesses={**cfg.harnesses, "claude-code": harness},
+                                  tools_dir=tmp_path / "tools")  # fmt: skip
+        kept = tools.ToolState(version="2.1.330", previous_version="2.1.325")
+        tools.save(cfg.tools_dir, "claude-code", kept)
     report = commands.Report()
     commands._check_host(report, cfg, targets.ssh_hosts(cfg)[1])
     said = [(level, t) for level, t in report.lines if "2.1.325" in t and "2.1.330" in t]
@@ -452,6 +464,7 @@ def test_check_names_the_way_back_for_a_newer_claude_code_on_an_ssh_host(
     assert text.startswith("build-2: harness claude-code: "), text
     if track == "checked":
         assert level == "warn" and "install 2.1.325 yourself" in text, text
+        assert "rollback" not in text and "the runner's update" not in text, text
         assert 'or set track = "newest" to keep it' in text
     else:
         assert level == "note" and "takes it unchecked" in text, text

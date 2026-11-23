@@ -182,8 +182,10 @@ def inside(path: Path, folder: Path) -> bool:
 
 def rollback(tools_dir: Path, tool_id: str, *, cap: str | None = None) -> ToolState:
     """Swap the version in use with the kept one (§15.16); a second rollback swaps back.
-    The version it leaves is not taken again on its own; a newer one ends that. `cap` is the
-    active one (keeper.cap), not the last check's: `rolled_back` is measured against what
+    The version it leaves is not taken again on its own; a newer one ends that, and under a
+    cap so does the held version when it is newer than the one in use, even below the left
+    one (checked means run the checked version). `cap` is the active one (keeper.cap), not
+    the last check's: `rolled_back` is measured against what
     the runner would take now, right after a switch of `track` too. ValueError while an
     install or update of the tool runs: it would overwrite the swap."""
     try:
