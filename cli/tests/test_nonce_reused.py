@@ -55,6 +55,27 @@ def test_a_get_is_sent_again_only_once(joined: Path, fake: fakehub.FakeHub) -> N
     assert len([s for s in fake.signed() if s.path.endswith("/events")]) == 2
 
 
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (403, "nonce_reused"),  # the code on another status, say from something in between
+        (409, "nonce_reused"),
+        (401, "signature_invalid"),  # another 401
+        (401, "unauthenticated"),
+    ],
+)
+def test_only_a_401_nonce_reused_sends_a_get_again(
+    joined: Path, fake: fakehub.FakeHub, status: int, code: str
+) -> None:
+    error = {"error": {"code": code, "message": "refused", "details": {}}}
+    fake.routes[EVENTS] = lambda seen: (status, error)
+    session = cli.Session()
+    with pytest.raises(hub.HubError) as raised:
+        session.client.call("GET", session.project_path("events"), timeout=5)
+    assert (raised.value.status, raised.value.code) == (status, code)
+    assert len([s for s in fake.signed() if s.path.endswith("/events")]) == 1
+
+
 def test_a_write_is_not_sent_again(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

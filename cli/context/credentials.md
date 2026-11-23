@@ -564,12 +564,13 @@ tsk-t03pp2ftd1f3.
 **See:** https://github.com/oliver-zehentleitner/maity — fbc8c3e0-d945-4237-89dc-0a4cc8e1282d — as of 2026-11-23
 
 `hub._send` makes a new nonce for every attempt (`sign.new_nonce`, 16 random bytes), so a
-`nonce_reused` answer to it usually means the request reached the hub twice: something between
-the client and the hub delivered a copy, and the hub refused the second delivery. (A real
-replay by someone else gets the same answer; sending a `GET` once more changes nothing then.) A `GET` answered
-that way is signed again with a new nonce and sent once more, within what is left of the call's
-timeout; a second `nonce_reused` ends the call as before. `POST`, `PATCH`, `PUT` and `DELETE`
-are never sent again on it.
+401 `nonce_reused` answer to it usually means the request reached the hub twice: something
+between the client and the hub delivered a copy, and the hub refused the second delivery. (A
+real replay by someone else gets the same answer; the client's one more read then only reads
+again.) A `GET` answered that way is signed again with a new nonce and sent once more, within
+what is left of the call's timeout; a second `nonce_reused` ends the call as before. Only
+status 401 with that code counts: the code on another status, or another 401, ends the call at
+once. `POST`, `PATCH`, `PUT` and `DELETE` are never sent again on it.
 
 **Reason:** the hub has no path that spends one request's nonce twice. On PostgreSQL the nonce is
 spent by an insert that skips a conflict, inside the short auth transaction; the transaction's
@@ -582,7 +583,14 @@ is a proxy re-sending a long-poll `GET` to a restarted or another pod after its 
 which would hit every open wait in the same minute. That trigger on the production hub is
 inferred, not reproduced, and what fronted it then is still unanswered; the mechanism is shown by
 the tests named above. `maity wait` ended on that 401, so the agent stopped waiting until someone
-restarted it. A `GET` changes nothing, so sending it once more is safe.
+restarted it. A `GET` is not free of writes, but sending it once more repeats no write: the hub
+refuses `nonce_reused` while it authenticates (`deps.authenticated`, `auth/caller._signed`),
+before the route runs, and rolls that transaction back, so the refused attempt did nothing. The
+new one is one more read, as `maity wait` already makes with the same cursor after a 5xx, and
+what the events read writes comes out the same when it is read again: the acknowledged cursor
+only moves forward, and a chat message's delivery is recorded only the first time
+(`routes/events._acknowledge`, `events.mark_delivered`). A write gets no such repeat, since the
+delivery the hub accepted may have done it already.
 
 **Rejected alternatives:**
 - The hub accepting a re-delivered request: a copy a proxy re-sent and a replay by someone who

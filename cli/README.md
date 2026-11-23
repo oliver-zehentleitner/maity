@@ -342,7 +342,7 @@ Every request is signed as `docs/api.md` §2.2 specifies. The headers are
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
 and `PATCH`, except the resume, carries an `Idempotency-Key`. A
 `timestamp_skew` answer is corrected once from the hub's time. A `GET`
-answered with `nonce_reused` is signed again with a new nonce and sent
+answered with 401 `nonce_reused` is signed again with a new nonce and sent
 once more, within what is left of its timeout: the request usually reached
 the hub twice through something in between, and the hub refused the copy. A write
 is never sent again on it. A redirect

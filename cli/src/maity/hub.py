@@ -722,12 +722,17 @@ class Client:
         once more after `nonce_reused`; `handle` reads the successful response. A repeat gets
         only what is left of the timeout, so a caller's deadline holds across the attempts.
 
-        `nonce_reused` for a nonce made for this one attempt usually means the request reached
-        the hub twice: something between (a proxy re-sending after its upstream broke) delivered
-        a copy, and the hub refused the second (tsk-tsqzj6snvgpa). A real replay by someone
-        else gets the same answer, which is one more reason to send only a `GET` again: a `GET`
-        changes nothing, so it is signed again with a new nonce and sent once more; a write is
-        never sent again on it, since the first delivery may have done it."""
+        A 401 `nonce_reused` for a nonce made for this one attempt usually means the request
+        reached the hub twice: something between (a proxy re-sending after its upstream broke)
+        delivered a copy, and the hub refused the second (tsk-tsqzj6snvgpa). The hub refuses it
+        while authenticating, before the route runs, and rolls that transaction back, so the
+        refused attempt did nothing. A `GET` is then signed again with a new nonce and sent once
+        more: it is one more read, as `maity wait` makes with the same cursor after a 5xx, and
+        what the events read writes (the acknowledged cursor, which only moves forward, and a
+        chat message's first delivery) comes out the same when it is read again. A write is
+        never sent again on it: the delivery the hub accepted may have done it already. A real
+        replay by someone else gets the same answer. Only status 401 with that code counts; the
+        code on any other status, or another 401, ends the call at once."""
         limit = timeout or self.timeout
         end = time.monotonic() + limit
         skew_retried = nonce_retried = False
@@ -752,7 +757,12 @@ class Client:
                     limit = end - time.monotonic()
                     if limit > 0:
                         continue
-                if err.code == "nonce_reused" and method == "GET" and not nonce_retried:
+                if (
+                    err.status == 401
+                    and err.code == "nonce_reused"
+                    and method == "GET"
+                    and not nonce_retried
+                ):
                     nonce_retried = True
                     limit = end - time.monotonic()
                     if limit > 0:
