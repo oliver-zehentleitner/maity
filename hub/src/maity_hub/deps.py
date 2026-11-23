@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
@@ -13,7 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from maity_hub import events, namespace, request_stats, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
-from maity_hub.auth.caller import Caller, RequestFacts, authenticate, keep_nonces_spent
+from maity_hub.auth.caller import (
+    Caller,
+    RequestFacts,
+    attachment_in,
+    authenticate,
+    count_agent_read,
+    keep_nonces_spent,
+    settle_in_project,
+    settle_project_less,
+)
 from maity_hub.auth.permitted import Calls
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
@@ -67,7 +76,9 @@ def facts_of(request: Request) -> RequestFacts:
     )
 
 
-async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> Caller:
+async def _resolve(
+    request: Request, renew_leases: bool, seen: bool = True, counted: bool = True
+) -> Caller:
     """The caller, authenticated on the async engine (tsk-v874y63b4z8p, PR 2): the transaction's
     sync code runs through `run_sync` on the event loop, so no call waits for a thread of the
     pool for it. What it runs there is the database's work and a few hashes
@@ -83,8 +94,19 @@ async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> C
         second_factor.gate(conn, settings, caller, request.method, path)
         if caller.kind == "runner":
             _confine_runner(path)
-        if caller.kind == "agent" and slug is not None:
-            _refuse_other_project(conn, caller, slug)
+        if caller.kind == "agent":
+            if slug is None:
+                caller = settle_project_less(conn, caller, facts, renew_leases)
+            else:
+                # The route's project: its attachment (`not_found` without one, the read
+                # counted first, as a probe of another project always was), then its
+                # isolation (no count), then the read's count and this membership's presence
+                # and leases, in that order.
+                attachment = _route_attachment(conn, caller, slug)
+                if attachment is None:
+                    count_agent_read(conn, caller, facts)
+                    raise not_found()
+                caller = settle_in_project(conn, caller, attachment, facts, renew_leases)
         if "maity-for" in facts.headers:  # a bridge calling for an agent (§2.3)
             from maity_hub import bridges
 
@@ -95,7 +117,7 @@ async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> C
             _confine_pending(conn, caller, request.method, path)
         return caller
 
-    return await authenticated(request, renew_leases, confine, seen=seen)
+    return await authenticated(request, renew_leases, confine, seen=seen, counted=counted)
 
 
 async def authenticated(
@@ -103,16 +125,21 @@ async def authenticated(
     renew_leases: bool,
     confine: Callable[[Connection, Caller], Caller],
     seen: bool = True,
+    counted: bool = True,
 ) -> Caller:
     """Authenticate the request in one transaction and run `confine` on its caller in the
     same one, so that a refusal there undoes the call's presence and lease effects; then
     bind the caller to the request. `GET /bootstrap` confines differently (§5.4). With `seen`
-    false the call writes no `last_seen_at` (`POST /me/presence`, §18.4)."""
+    false the call writes no `last_seen_at` (`POST /me/presence`, §18.4); with `counted` false
+    a cookie session's read is not counted (the forge's setup, §11.4)."""
     facts = facts_of(request)
     engine = async_engine_of(request)
 
     def run_in(conn: Connection) -> Caller:
-        return confine(conn, authenticate(conn, facts, renew_leases=renew_leases, seen=seen))
+        return confine(
+            conn,
+            authenticate(conn, facts, renew_leases=renew_leases, seen=seen, counted=counted),
+        )
 
     async def run() -> Caller:
         try:
@@ -172,14 +199,26 @@ def _end_session(conn: Connection, ended: second_factor.SessionEnded) -> None:
     sessions.end_where(conn, t.human_session.c.id_hash == ended.id_hash, ended.by)
 
 
-def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
-    """An agent credential reaches its own project only (§2.2). Checked here, before
-    any route runs, so that nothing (an idempotent replay included) answers for
-    another project; raising inside the transaction also undoes the call's
-    presence and lease side effects."""
-    project = namespace.resolve(conn, slug)
-    if project is None or project.id != caller.project_id:
+def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> Any:
+    """The live attachment of the agent's credential in the project `slug` names (§2.2,
+    §6.17): a credential reaches the projects its instance is attached to only, every other
+    one is `not_found`. Checked here, before any route runs and before the isolation and the
+    call's presence and leases, so that nothing (an idempotent replay included) answers for
+    another project, and an isolation is not told to a project's non-member. Never another
+    attachment in its place: an error of the lookup refuses the call."""
+    attachment = _route_attachment(conn, caller, slug)
+    if attachment is None:
         raise not_found()
+    return attachment
+
+
+def _route_attachment(conn: Connection, caller: Caller, slug: str) -> Any | None:
+    """The live attachment of the agent's credential in the project `slug` names, or None
+    when the project does not exist or the instance is not attached to it."""
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    return attachment_in(conn, caller, project.id)
 
 
 # What an account that waits for approval may call (§2.7.5): its own account and
@@ -278,6 +317,21 @@ async def presence_caller(request: Request) -> Caller:
     return caller
 
 
+async def forge_setup_caller(request: Request) -> Caller:
+    """`GET /forge/github/setup` (§11.4): a human's cookie session only, checked as any call,
+    but writing no presence, renewing no lease and counting no read. It is the one call
+    another site may start with the cookie (§2.1): a navigation another site forces leaves
+    no trace before its `state` refuses it, and the forge's redirect, the only way the route
+    is reached, loses nothing by it (hub/context/auth.md e3a7c1d5). An `Authorization`
+    header (an agent, a runner, a bridge) or `Maity-For` is refused before any credential
+    is looked up, as for `presence_caller`, so no caller's presence, lease or read count is
+    touched either."""
+    headers = request.headers
+    if "authorization" in headers or "maity-for" in headers:
+        raise humans_only("forge access is a human's own")
+    return await _resolve(request, renew_leases=False, seen=False, counted=False)
+
+
 async def human_caller(request: Request) -> Caller:
     caller = await current_caller(request)
     if caller.kind != "human":
@@ -306,4 +360,5 @@ HumanCaller = Annotated[Caller, Depends(human_caller)]
 AgentCaller = Annotated[Caller, Depends(agent_caller)]
 EventsCaller = Annotated[Caller, Depends(events_caller)]
 ConversationsCaller = Annotated[Caller, Depends(conversations_caller)]
+ForgeSetupCaller = Annotated[Caller, Depends(forge_setup_caller)]
 RunnerCaller = Annotated[Caller, Depends(runner_caller)]

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -36,7 +37,7 @@ from sqlalchemy import Connection, Engine, and_, case, func, insert, select, upd
 from maity_hub import clock, maintenance, worker_runs, write_guard
 from maity_hub import tables as t
 from maity_hub.cards import SOME_INSTANCE, open_claims
-from maity_hub.events import lock_project, transaction
+from maity_hub.events import lock_projects, transaction
 from maity_hub.notifications import preferences, records
 from maity_hub.seen import latest_call
 
@@ -151,7 +152,9 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         )
         if (r.membership_id, r.instance) in held
     }
-    latest, episodes = _latest_sessions_and_episodes(conn, {c.id for c in credentials.values()})
+    latest, episodes = _latest_sessions_and_episodes(
+        conn, {c.id for c in credentials.values()}, {k[0] for k in held}
+    )
     sessions = {r.credential_id: r for r in latest}
     found = []
     for key, entry in held.items():
@@ -174,21 +177,19 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
     return found
 
 
-def _latest_sessions(conn: Connection, credential_ids: set[str]) -> list[Any]:
-    """Each credential's latest session, ended or not, one row per credential: the bell reads
-    this live, and the history of ended sessions grows without bound, so the latest start is
-    found once per credential along `ix_agent_session_credential_started`. Two sessions can
-    start at the same moment (a resume ends the old one and starts the new in one tick); then
-    the live one wins, then the later `last_seen_at`, then the id, so the choice never depends
-    on the random ids alone."""
-    return _latest_sessions_and_episodes(conn, credential_ids)[0]
-
-
 def _latest_sessions_and_episodes(
-    conn: Connection, credential_ids: set[str]
-) -> tuple[list[Any], dict[tuple[str, int], datetime | None]]:
-    """`_latest_sessions`, and beside them, in the same read, each session's episode start
-    per project (`agent_session_project`), by (session id, membership id)."""
+    conn: Connection, credential_ids: Collection[str], membership_ids: Collection[int]
+) -> tuple[list[Any], dict[tuple[str, int], datetime]]:
+    """Each credential's latest session, ended or not, one row per credential, and beside
+    them, in the same read, the start of each one's open not-listening episode (§5.3) in the
+    projects of `membership_ids`, by (session id, membership id); one without an open episode
+    is absent, as in `instances._live_sessions_and_episodes`.
+
+    The bell reads this live, and the history of ended sessions grows without bound, so the
+    latest start is found once per credential along `ix_agent_session_credential_started`. Two
+    sessions can start at the same moment (a resume ends the old one and starts the new in one
+    tick); then the live one wins, then the later `last_seen_at`, then the id, so the choice
+    never depends on the random ids alone."""
     if not credential_ids:
         return [], {}
     s = t.agent_session
@@ -212,7 +213,14 @@ def _latest_sessions_and_episodes(
                 s.c.started_at == latest.c.started_at,
             ),
         )
-        .outerjoin(p, p.c.session_id == s.c.id)
+        .outerjoin(
+            p,
+            and_(
+                p.c.session_id == s.c.id,
+                p.c.membership_id.in_(membership_ids),
+                p.c.not_listening_since.is_not(None),
+            ),
+        )
         .order_by(
             s.c.credential_id,
             case((s.c.live.is_(True), 1), else_=0),
@@ -221,10 +229,10 @@ def _latest_sessions_and_episodes(
         )
     )
     chosen: dict[str, Any] = {}
-    episodes: dict[tuple[str, int], datetime | None] = {}
+    episodes: dict[tuple[str, int], datetime] = {}
     for row in rows:
         chosen[row.credential_id] = row  # the last of a tie is the one to keep
-        if row.episode_membership is not None:
+        if row.episode_since is not None:
             episodes[(row.id, row.episode_membership)] = row.episode_since
     return list(chosen.values()), episodes
 
@@ -356,8 +364,7 @@ def withdraw_episode_requests(conn: Connection, owner_id: str) -> None:
     ).all()
     # The projects' locks first, as the episode's own check takes them (not_listening.check):
     # the request's withdrawal emits under that lock, so the other order could deadlock.
-    for project_id in sorted({row.project_id for row in held}):
-        lock_project(conn, project_id)
+    lock_projects(conn, (row.project_id for row in held))
     for session_id, membership_id, request_id, _ in held:
         withdraw_hub_notice(conn, request_id, "the owner's digest replaces it")
         conn.execute(

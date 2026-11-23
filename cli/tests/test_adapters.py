@@ -686,7 +686,10 @@ def test_loop_exits_map_to_reasons(code: int, expected: tuple[Any, ...]) -> None
     rec = supervisor.Record(generation=1, state="running", started_at=0.0)
     cfg: Any = type("Cfg", (), {"limits": config.Limits(projects=(), repositories=())})()
     sup: Any = type("Sup", (), {"cfg": cfg, "rand": staticmethod(lambda: 0.5),
-                                "log": staticmethod(lambda line: None)})()  # fmt: skip
+                                "log": staticmethod(lambda line: None),
+                                # the runner's notes (tsk-bzmd0avm4yhb): none for this record
+                                "_pid_of": staticmethod(lambda rec: None),
+                                "note": staticmethod(lambda *a, **k: None)})()  # fmt: skip
     sup.backend = type("B", (), {"kill": staticmethod(lambda name: None)})()
     session: Any = type("S", (), {"name": "maity_p_c", "exit_status": code})()
     supervisor.Supervisor._exited(sup, rec, session, 100.0, sup.backend)
@@ -809,7 +812,7 @@ def test_codex_home_lies_in_the_reopened_scratch_not_the_hidden_state_dir(tmp_pa
     placement's own codex-home, so Codex's per-command helper can be created and run. Red before
     the fix, when CODEX_HOME sat in agent_dir under the hidden state directory."""
     workspaces = tmp_path / "ws"
-    place_scratch = workspaces / "proj" / ".scratch" / "plc-0003"
+    place_scratch = workspaces / ".scratch" / "proj" / "plc-0003"
     place_scratch.mkdir(parents=True)
     state_dir = tmp_path / "st"  # the fixture's agent_dir lives under it
     ctx = context(
@@ -837,7 +840,7 @@ def test_a_placements_profile_hides_another_placements_codex_home(tmp_path: Path
     placement's codex-home, under the shared workspaces root this profile hides, is not
     reachable from it."""
     workspaces = tmp_path / "ws"
-    mine = workspaces / "proj" / ".scratch" / "plc-0003"
+    mine = workspaces / ".scratch" / "proj" / "plc-0003"
     mine.mkdir(parents=True)
     ctx = context(
         tmp_path, harness_id="codex", binary="/usr/bin/codex",
@@ -846,7 +849,7 @@ def test_a_placements_profile_hides_another_placements_codex_home(tmp_path: Path
         placement={**PLACEMENT, "mode": "supervised"},
     )  # fmt: skip
     filesystem = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"]["filesystem"]
-    other = workspaces / "other" / ".scratch" / "plc-9999" / "codex-home"
+    other = workspaces / ".scratch" / "other" / "plc-9999" / "codex-home"
     assert _effective_rule(filesystem, other) == "none"
     assert _effective_rule(filesystem, adapters.codex_home(ctx)) == "read"
     assert _effective_rule(filesystem, adapters.codex_home(ctx) / "tmp") == "read"
@@ -961,7 +964,7 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     # Codex: the leaf's `tmp` is its TMPDIR as before, with no CLAUDE_CODE_TMPDIR. Its launch
     # writes its CODEX_HOME into the scratch, so that scratch is made, still with no room for a
     # socket.
-    made = tmp_path / "c" / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    made = tmp_path / "c" / ("w" * 60) / ".scratch" / "maity" / "plc-0000000000000003"
     made.mkdir(parents=True)
     assert adapters.scratch_tmpdir(made) is None
     codex = context(
@@ -990,6 +993,27 @@ def test_a_sandboxed_claude_code_placement_without_a_tmpdir_of_its_own_is_refuse
     assert refusal(context(tmp_path / "s", sandbox=True)) is not None  # no scratch at all
     assert refusal(context(tmp_path / "u", sandbox=False, scratch=deep)) is None
     codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=deep)
+    assert refusal(codex) is None
+
+
+def test_a_sandboxed_claude_code_placement_without_a_scratch_under_a_holder_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The review of #2112 (A2045): the holder deny comes from the own scratch, so a sandboxed
+    Claude Code placement whose scratch could not be made (or lies under no holder) would start
+    without it, and a scratch made later would be readable from it: refused. A scratch in the
+    holder or in a former per-project `.scratch` will do; unsandboxed, or another harness, is
+    not refused."""
+    refusal = adapters.scratch_refusal
+    new = Path("/srv/ws/.scratch/maity/plc-0003")
+    former = Path("/srv/ws/maity/.scratch/plc-0003")
+    elsewhere = Path("/tmp/maity-scratch-1002") / ("a" * 32)  # noqa: S108 - a path only
+    assert refusal(context(tmp_path / "n", sandbox=True, scratch=new)) is None
+    assert refusal(context(tmp_path / "f", sandbox=True, scratch=former)) is None
+    assert refusal(context(tmp_path / "s", sandbox=True)) is not None  # none could be made
+    assert refusal(context(tmp_path / "e", sandbox=True, scratch=elsewhere)) is not None
+    assert refusal(context(tmp_path / "u", sandbox=False)) is None
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex")
     assert refusal(codex) is None
 
 
@@ -1022,7 +1046,7 @@ def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Pa
 
 def _codex_scratch_context(tmp_path: Path) -> adapters.Context:
     workspaces = tmp_path / "ws"
-    place_scratch = workspaces / "proj" / ".scratch" / "plc-0003"
+    place_scratch = workspaces / ".scratch" / "proj" / "plc-0003"
     return context(
         tmp_path, harness_id="codex", binary="/usr/bin/codex",
         clone=workspaces / "proj" / "agent-3",
@@ -1462,16 +1486,21 @@ def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> No
                               *(f"maity *{c}*" for c in adapters.MAITY_NOT_PLAIN))  # fmt: skip
 
 
-def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
+def test_launch_records_the_repository_and_the_runners_path_for_a_grant_with_pull_requests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record names where `maity gh` looks gh up at each call (point 15 of
+    tsk-2k0jcaxfd0ja): the runner's PATH, its absolute entries only, not the gh found now."""
     gh = fake_gh(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(Path(gh).parent), "relative/bin", "/usr/bin"]))
     ctx = context(tmp_path, sandbox=True, grant=PULLS,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git").mkdir(parents=True)
     launch = adapters.launch(ctx)
     record = (ctx.agent_dir / "git" / "pull_requests").read_text()
-    assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert record == (
+        f"github.com/oliver-zehentleitner/maity\n{Path(gh).parent}{os.pathsep}/usr/bin\n"
+    )
     assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
     assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
@@ -1540,13 +1569,32 @@ def test_the_lead_record_needs_lead_and_the_pull_request_record_and_is_cleared_w
     )
 
 
-def test_pull_requests_without_gh_on_the_path_record_nothing(
+def test_a_long_path_is_cut_to_whole_entries_that_fit_the_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record holds the runner's PATH, and `maity gh` reads at most ghpr.RECORD_MAX bytes
+    (review A2160 of #2125): a longer PATH keeps its first whole entries, in order."""
+    entries = [f"/nix/store/{i:04d}-{'x' * 90}/bin" for i in range(1000)]
+    monkeypatch.setenv("PATH", os.pathsep.join(entries))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    record = adapters.pull_requests_record(ctx)
+    assert len(record.encode()) <= ghpr.RECORD_MAX < len(os.pathsep.join(entries))
+    kept = record.splitlines()[1].split(os.pathsep)
+    assert kept == entries[: len(kept)] and 0 < len(kept) < len(entries)
+
+
+def test_pull_requests_without_gh_on_the_path_are_still_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gh installed after the start is found by `maity gh` at its next call, so a session
+    started without it still gets the grant and the word of `maity gh` (point 15)."""
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     ctx = context(tmp_path, grant=PULLS,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
-    assert adapters.pull_requests_record(ctx) == ""
+    record = adapters.pull_requests_record(ctx)
+    assert record == f"github.com/oliver-zehentleitner/maity\n{tmp_path / 'empty'}\n"
+    assert adapters.PULL_REQUEST_PROMPT in adapters._sandbox_prompt(ctx)
 
 
 def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(
@@ -1771,17 +1819,25 @@ def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_pat
     assert launched.env["TMPDIR"] == str(short / "tmp")
 
 
+@pytest.mark.parametrize("layout", ["holder", "former"])
 def test_the_own_projects_scratch_holder_is_denied_for_reading_and_only_the_scratch_reopened(
-    tmp_path: Path,
+    tmp_path: Path, layout: str
 ) -> None:
-    """tsk-07dwr3t80rg0 (the #2032 residual): a sibling scratch made in the same project after
-    this session started must not be readable. The holder goes in denyRead only (a write deny
-    on it would mount the re-opened scratch read-only, as P3 showed for the leaf), and the
-    allows name exactly the own scratch, with nothing denied for reading inside it."""
+    """tsk-07dwr3t80rg0 (the #2032 residual), tsk-c7zzd440x8pn: a scratch made after this
+    session started must not be readable. The holder (every scratch's `<root>/.scratch`, or the
+    project's own on a host with the former layout) goes in denyRead only (a write deny on it
+    would mount the re-opened scratch read-only, as P3 showed for the leaf), and the allows
+    name exactly the own scratch, with nothing denied for reading inside it."""
     ws = tmp_path / "ws"
-    holder = ws / "maity" / ".scratch"
-    room, sibling = holder / "plc-0003", holder / "plc-0004"
-    other = ws / "other" / ".scratch"  # another project's holder, named whole by the supervisor
+    if layout == "holder":
+        holder = ws / ".scratch"
+        room, sibling = holder / "maity" / "plc-0003", holder / "maity" / "plc-0004"
+        other = holder / "other"  # another project's directory, named whole by the supervisor
+    else:
+        holder = ws / "maity" / ".scratch"
+        room, sibling = holder / "plc-0003", holder / "plc-0004"
+        other = ws / "other" / ".scratch"  # another project's holder, named whole
+    assert adapters.scratch_holder(room) == holder
     pg = ws / ".maity-pg"
     ctx = context(tmp_path / "c", sandbox=True, scratch=room, private=(sibling, other, pg))
     filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]

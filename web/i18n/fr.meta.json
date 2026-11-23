@@ -967,6 +967,10 @@
     "en": "26c77b8aa1b262c3",
     "text": "ab17cb20eaadeebc"
   },
+  "all.page.runners": {
+    "en": "9aa56c3dab3c6957",
+    "text": "9aa56c3dab3c6957"
+  },
   "all.page.unread": {
     "en": "47193cff451f4903",
     "text": "877fb8ed25d2066a"
@@ -13995,6 +13999,10 @@
     "en": "0e25eee1502a372a",
     "text": "33f7f5c2d1357c69"
   },
+  "placements.new.no_tool_listed": {
+    "en": "ed4f1ad05a2a469d",
+    "text": "3ca55a0b4526d002"
+  },
   "placements.new.none": {
     "en": "4c51e5fed486a0c4",
     "text": "271667ebe0640721"
@@ -15711,6 +15719,10 @@
     "en": "ed7acb5465dc68aa",
     "text": "0f4545b635b1a738"
   },
+  "report.not_found.person": {
+    "en": "7c919d4eea02f65a",
+    "text": "da13b2d1e8ea1433"
+  },
   "report.open": {
     "en": "85d640066187108d",
     "text": "f9b6bde2da177489"
@@ -17035,6 +17047,10 @@
     "en": "f4ebc774df1605b4",
     "text": "c30ee495fddeeeb6"
   },
+  "runners.pair.aside": {
+    "en": "cb16464b5befc303",
+    "text": "b268fb6bee2f86fe"
+  },
   "runners.pair.check": {
     "en": "96ef5f8b49aa23b9",
     "text": "327902140cdbefb0"
@@ -17091,6 +17107,78 @@
     "en": "4caae70996a2e1cd",
     "text": "173faa57a0bae6dc"
   },
+  "runners.pair.service.check": {
+    "en": "8fb6ecf995a16906",
+    "text": "cd88d8647641a689"
+  },
+  "runners.pair.service.checks": {
+    "en": "7b8101bbaf3ee91d",
+    "text": "8d5d83b35673bfbb"
+  },
+  "runners.pair.service.checks_hint": {
+    "en": "35f1905121c00e8f",
+    "text": "1e6ee93403504d2a"
+  },
+  "runners.pair.service.cli": {
+    "en": "f8c1033befbd1cf8",
+    "text": "11597dfa45033438"
+  },
+  "runners.pair.service.cli_hint": {
+    "en": "dc970e624a892fa2",
+    "text": "2a793b830748f6cf"
+  },
+  "runners.pair.service.forge": {
+    "en": "24998d235accefc7",
+    "text": "9efa56ee1991bb68"
+  },
+  "runners.pair.service.forge_hint": {
+    "en": "4d7ecf2bf72025b1",
+    "text": "e78d2b3e6e3a0d49"
+  },
+  "runners.pair.service.install": {
+    "en": "5b1a97d6d9bb0874",
+    "text": "f03d45a7cddc1e36"
+  },
+  "runners.pair.service.install_hint": {
+    "en": "c7aa59392c3b9a4b",
+    "text": "e8bcd69625fa3109"
+  },
+  "runners.pair.service.login": {
+    "en": "de2e704b6a1307f8",
+    "text": "eaafcf0febe86d0f"
+  },
+  "runners.pair.service.login_hint": {
+    "en": "a60e298294e6d9b9",
+    "text": "9e38311774e2e6f7"
+  },
+  "runners.pair.service.packages": {
+    "en": "d9bb5dc6f69f6a0a",
+    "text": "a3869d0cbb37856a"
+  },
+  "runners.pair.service.packages_hint": {
+    "en": "ea4742a8995a0ea5",
+    "text": "0fa6dc98a7c36992"
+  },
+  "runners.pair.service.repair_line": {
+    "en": "d655183882f716a9",
+    "text": "3841d48b198dde28"
+  },
+  "runners.pair.service.repair_stop": {
+    "en": "9e9b7213663b3f1e",
+    "text": "f3eda7ab1ba0a32f"
+  },
+  "runners.pair.service.save": {
+    "en": "d9a15c61818681bf",
+    "text": "af1033d8c77a7c07"
+  },
+  "runners.pair.service.save_hint": {
+    "en": "24dbc1ac7df50f40",
+    "text": "fef3eea56dc99f4a"
+  },
+  "runners.pair.service.start": {
+    "en": "4ba1097ada4a75f4",
+    "text": "fbe019aaf60d2aaa"
+  },
   "runners.pair.start": {
     "en": "1fc9d7b62256de1d",
     "text": "eb0dc92a703345b6"
@@ -17115,6 +17203,18 @@
     "en": "2754ae633b8e65a3",
     "text": "37594513e5793aa9"
   },
+  "runners.pair.way": {
+    "en": "14e8a2d2a78b58b6",
+    "text": "d082a0b9a2c023e2"
+  },
+  "runners.pair.way_service": {
+    "en": "2ea1d53068615359",
+    "text": "724fcc89eaa36ca6"
+  },
+  "runners.pair.way_terminal": {
+    "en": "e3148209d96a7b81",
+    "text": "544db75da8bc177b"
+  },
   "runners.pair.where": {
     "en": "1be6c909404e4f4f",
     "text": "2a12ad8f6e231fba"
@@ -17124,8 +17224,8 @@
     "text": "c41658d9604800f3"
   },
   "runners.paired.offline": {
-    "en": "e6e375994b7f72eb",
-    "text": "4f0cb237de1af7a1"
+    "en": "2c143b03dc7a0551",
+    "text": "53e3b9125c27e358"
   },
   "runners.paired.online": {
     "en": "ffc89edae00f749d",
@@ -17270,6 +17370,18 @@
   "runners.tool.allowlist": {
     "en": "b15209a298ac6c83",
     "text": "b06b6703ba71e4f2"
+  },
+  "runners.tool.install_failed": {
+    "en": "f7eef5c735e30691",
+    "text": "67af5a2ad1d4f9de"
+  },
+  "runners.tool.installing": {
+    "en": "d6ddcb2e1ad592d0",
+    "text": "9112e33457a6ef2a"
+  },
+  "runners.tool.login_needed": {
+    "en": "2a48f0acb3dcdad3",
+    "text": "25db82fe37b671fb"
   },
   "runners.tool.models": {
     "en": "fc59651c64bac706",
@@ -19395,6 +19507,66 @@
     "en": "1a8185ac38f28117",
     "text": "2dd75784b601e0c5"
   },
+  "tabs.outsider": {
+    "en": "c954775e568a706b",
+    "text": "4b24c1d587733059"
+  },
+  "tabs.outsider_said": {
+    "en": "85149be017de9b85",
+    "text": "61a39734953568af"
+  },
+  "tabs.outsider_starred": {
+    "en": "8773fcc5468dba40",
+    "text": "6a91ef0d430b25e4"
+  },
+  "tabs.outsider_starred_said": {
+    "en": "cf003902fae432f0",
+    "text": "d421c0b7d465f20a"
+  },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "9098e298a46339f4"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "f2b45f769084d53c"
+  },
+  "tabs.star_refused.duplicate": {
+    "en": "7b81af33a1c1d982",
+    "text": "a64a1dbbb0c5e6bc"
+  },
+  "tabs.star_refused.member": {
+    "en": "d24d1afa79c89404",
+    "text": "837c6f6afdb952a9"
+  },
+  "tabs.star_refused.not_public": {
+    "en": "96320fcb44285a42",
+    "text": "838dc52079e8021b"
+  },
+  "tabs.star_refused.too_many": {
+    "en": "e67b9e539c2dea9b",
+    "text": "d8c11c23ebc43c58"
+  },
+  "tabs.star_refused.too_many_hidden": {
+    "en": "4caf1d14d04ed698",
+    "text": "22a05c5606ceb180"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "00be710363a6dca2"
+  },
+  "tabs.unstar": {
+    "en": "35927f42380e942f",
+    "text": "b04efa3d3cdb936a"
+  },
+  "tabs.unstar_failed": {
+    "en": "b5f86b4249ac9a21",
+    "text": "b34a63884fe35158"
+  },
+  "tabs.unstarred": {
+    "en": "fb313301fa2007be",
+    "text": "4664897c5ddb0ee9"
+  },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",
     "text": "3ddee09eb7d8efbb"
@@ -21042,6 +21214,10 @@
   "why.empty.no_repository": {
     "en": "de51ee428eb36caa",
     "text": "608e26fd14a4282e"
+  },
+  "why.empty.outsider": {
+    "en": "e533bb91a64c25b0",
+    "text": "f2e034b618aa1cdd"
   },
   "why.findings": {
     "en": "22f0b643ce2ad30e",

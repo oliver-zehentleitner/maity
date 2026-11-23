@@ -27,6 +27,7 @@ from maity_hub import (
     avatars,
     clock,
     moderation,
+    namespace,
     public_design,
     public_pages,
     public_people,
@@ -140,7 +141,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     found = served(conn, agent, owner)
     if found is None:
         return []
-    names = public_projects.full_names(conn, [p.id for p, _ in found])
+    names = namespace.full_names(conn, [p.id for p, _ in found])
     listed = sorted(((p, names[p.id]) for p, _ in found), key=lambda pair: pair[1])
     since = public_people.member_since(agent.created_at)
     up = online(conn, found)

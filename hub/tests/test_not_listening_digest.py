@@ -501,7 +501,9 @@ def test_only_the_latest_session_is_read_however_long_the_history(
                 for n in range(200)
             ],
         )
-        rows = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+        rows, _ = not_listening_digest._latest_sessions_and_episodes(
+            conn, {agent.credential_id}, set()
+        )
     assert [r.id for r in rows] == [latest.id]
     not_listening_digest.run(migrated)
     [digest] = _digests(owner)
@@ -540,7 +542,9 @@ def test_on_an_equal_start_the_live_session_is_the_latest(
                 }
             )
         )
-        [row] = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+        [row], _ = not_listening_digest._latest_sessions_and_episodes(
+            conn, {agent.credential_id}, set()
+        )
         assert row.id == live.id
     not_listening_digest.run(migrated)
     assert _digests(owner) == []  # seen five minutes ago: not away

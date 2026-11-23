@@ -100,6 +100,8 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "member_agents_max": 3,
         "agent_owners": None,
         "outside_roles": ["coder"],
+        "own_approvals": 1,  # §6.1, §2.3 "Own approvals": every preset fills 1
+        "own_agents": "members",
     }
     assert body["absence"] is None and body["rules_version"] == 1
     me = owner.get("/me").json()

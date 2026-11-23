@@ -24,13 +24,17 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from maity import clonecheck, gitfacts, inclone, onboarding
+from maity import clonecheck, gitfacts, inclone, onboarding, proc
 
 # What the runner writes for a clone whose repository's grant has `pull_requests = true`:
-# the repository (`host/owner/name`) and the gh it found, one per line. Empty: not granted.
+# the repository (`host/owner/name`) and the runner's PATH, where `maity gh` looks gh up at
+# each call (an older runner wrote the gh it found), one per line. Empty: not granted.
 # A record of the runner's, in its directory for the agent (`clonecheck.runner_record`); only
 # for Codex, which is never granted pull requests, at PULL_REQUESTS_PATH in the clone.
 PULL_REQUESTS = "pull_requests"
+# The record's size limit, the runner's PATH included: a long PATH (Nix, module systems) is
+# cut to whole entries that fit when the runner writes it (adapters.pull_requests_record).
+RECORD_MAX = 65536
 PULL_REQUESTS_PATH = Path(".git", "maity", PULL_REQUESTS)
 BODY_MAX = 65536  # bytes; the forge's own limit for a pull request's body
 JSON_FIELDS = re.compile(r"[A-Za-z]+(,[A-Za-z]+)*")
@@ -190,7 +194,7 @@ def is_lead(args: argparse.Namespace) -> bool:
 def _record(root: Path, dot_git: int | None) -> bytes:
     """The runner's pull-request record (`clonecheck.runner_record`): in the runner's
     directory for the agent, never a file in the clone, which the agent can write."""
-    return clonecheck.runner_record(root, dot_git, PULL_REQUESTS, 4096)
+    return clonecheck.runner_record(root, dot_git, PULL_REQUESTS, RECORD_MAX)
 
 
 def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
@@ -210,10 +214,92 @@ def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
         )
     if len(lines) != 2 or not REPOSITORY.fullmatch(lines[0]):
         raise Refused(f"the runner's record {PULL_REQUESTS} is not one it writes")
-    program = lines[1]
-    if not (os.path.isabs(program) and os.path.isfile(program) and os.access(program, os.X_OK)):
-        raise Refused(f"the gh the runner recorded ({program}) is not a program here")
-    return lines[0], program
+    return lines[0], find_gh(lines[1], root, dot_git)
+
+
+def find_gh(recorded: str, root: Path, dot_git: int | None = None) -> str:
+    """gh, looked up at this call on the PATH the runner recorded (`adapters.
+    pull_requests_record`), never on the session's own PATH, so a gh installed after the
+    session started is found without a restart (tsk-2k0jcaxfd0ja, point 15). The checks stay
+    those of a gh recorded at the start: only absolute entries are searched (`proc.program`),
+    the record is the runner's and not writable by the session, and a gh found inside the
+    clone or the placement's scratch, which the session can write, is refused (as written and
+    resolved, below). A record of an older runner names gh itself: that path is taken under
+    the same checks."""
+    if os.path.isabs(recorded) and os.path.isfile(recorded):
+        program: str | None = recorded if os.access(recorded, os.X_OK) else None
+        if program is None:
+            raise Refused(f"the gh the runner recorded ({recorded}) is not a program here")
+    else:
+        program = proc.program("gh", recorded)
+        if program is None:
+            raise Refused(
+                f"gh is not installed on the runner's PATH ({recorded}); once the runner's "
+                "operator installs it, `maity gh` finds it at its next call"
+            )
+    # Every path the system passes through to reach gh is checked against the clone and the
+    # scratch (reviews A2159, A2167, A2168 of #2125): `visited` resolves the path as the kernel
+    # does, one component and one link at a time, `..` against the real directory reached so
+    # far, and lists each directory, link and link target on the way, the final file's own
+    # link chain included. Any of them inside a place the session can write refuses: a link
+    # in the clone pointing out, a directory or ancestor link through it, `..` through it,
+    # or a link outside bouncing through it. What runs is the real directory reached with
+    # gh's own name: gh_env puts that directory first on gh's PATH, so no link the session
+    # could swap later stays on the way, and a link that dispatches on its own name (a snap's
+    # /snap/bin/gh, which resolves to /usr/bin/snap) still starts gh.
+    try:
+        scratch = inclone.recorded_scratch(root, dot_git)
+        given = [Path(os.path.abspath(p)) for p in (root, scratch) if p]
+        places = [*given, *(p.resolve(strict=True) for p in given)]
+        absolute = os.path.join(os.getcwd(), program)
+        passed, _ = visited(absolute)
+        _, folder = visited(os.path.dirname(absolute))
+    except (OSError, RuntimeError):
+        raise Refused(f"the gh found ({program}) cannot be resolved") from None
+    for step in passed:
+        for place in places:
+            if Path(step).is_relative_to(place):
+                raise Refused(
+                    f"the gh found ({program}) passes through {step}, in {place}, which this "
+                    "session can write"
+                )
+    return os.path.join(folder, os.path.basename(absolute))
+
+
+LINK_HOPS = 40  # as the kernel's own limit for symbolic links on one lookup
+
+
+def visited(path: str) -> tuple[list[str], str]:
+    """The paths an absolute `path` passes through, resolved as the kernel resolves it, and
+    the real path it ends in. A link's target is taken component by component too, so every
+    directory and link on the way is listed, never only the end. RuntimeError on a loop."""
+    pending = list(Path(path).parts)
+    current = pending.pop(0)  # the root
+    passed: list[str] = []
+    hops = 0
+    while pending:
+        part = pending.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            current = os.path.dirname(current)  # `current` holds no link: this is physical
+            passed.append(current)
+            continue
+        candidate = os.path.join(current, part)
+        passed.append(candidate)
+        if os.path.islink(candidate):
+            hops += 1
+            if hops > LINK_HOPS:
+                raise RuntimeError(f"{path}: too many links")
+            target = list(Path(os.readlink(candidate)).parts)
+            if target and os.path.isabs(target[0]):
+                current = target.pop(0)
+            pending = target + pending
+        else:
+            current = candidate
+    if not os.path.exists(current):
+        raise FileNotFoundError(current)
+    return passed, current
 
 
 def lead_granted(root: Path, dot_git: int | None = None) -> None:
@@ -330,13 +416,14 @@ def command(
     repository: str,
     gh: str,
     opened: clonecheck.Opened | None = None,
-) -> tuple[list[str], bytes | None]:
+) -> tuple[list[str], bytes | None, str | None]:
     """gh's argument list, built here option by option (`--name=value`, so no value is read
-    as an option), with the recorded repository, and what goes to its standard input. The
-    head branch and the pull request to view are always named: gh reads nothing from git."""
+    as an option), with the recorded repository, what goes to its standard input, and for an
+    edit the number of the pull request it changes (None otherwise). The head branch and the
+    pull request to view are always named: gh reads nothing from git."""
     argv = [gh, args.gh_group, args.gh_command, f"--repo={repository}"]
     if args.gh_group == "run":
-        return _run_command(args, argv), None
+        return _run_command(args, argv), None, None
     if args.gh_command == "merge":
         if not NUMBER.fullmatch(args.selector):
             raise Refused(f"{args.selector!r}: a merge names the pull request by its number")
@@ -346,11 +433,11 @@ def command(
             raise Refused("--subject: one line of text")
         argv += ["--squash", f"--match-head-commit={args.head_commit}",
                  f"--subject={args.subject}", "--body-file=-", "--", args.selector]  # fmt: skip
-        return argv, _lead_body(args, root, opened)
+        return argv, _lead_body(args, root, opened).encode("utf-8"), None
     if args.gh_command == "edit":
         return _edit_command(args, root, repository, gh, opened)
     if args.gh_command == "ready":
-        return [*argv, "--", _selector(args, root)], None
+        return [*argv, "--", _selector(args, root)], None, None
     if args.gh_command == "create":
         argv.append(f"--title={args.title}")
         stdin = _body(args, root, opened)
@@ -363,7 +450,7 @@ def command(
                 argv.append(f"--{name}={value}")
         if args.draft:
             argv.append("--draft")
-        return argv, stdin
+        return argv, stdin, None
     if args.json_fields is not None:
         if not JSON_FIELDS.fullmatch(args.json_fields):
             raise Refused(f"--json {args.json_fields!r}: field names and commas only")
@@ -374,7 +461,7 @@ def command(
         fields = [*VIEW_FIELDS, *(["comments"] if args.comments else [])]
         argv.append(f"--json={','.join(fields)}")
     argv += ["--", _selector(args, root)]
-    return argv, None
+    return argv, None, None
 
 
 def _edit_command(
@@ -383,28 +470,38 @@ def _edit_command(
     repository: str,
     gh: str,
     opened: clonecheck.Opened | None,
-) -> tuple[list[str], bytes]:
+) -> tuple[list[str], bytes, str]:
     """`pr edit` as one REST call through gh (tsk-bmknv06ps0c6): `PATCH
     repos/<owner>/<name>/pulls/<number>` with a JSON object on stdin that holds the body and,
     when given, the title, and nothing else. Not `gh pr edit`: older gh versions ask the forge
     for `projectCards` (Projects classic) there, which the forge refuses, so the edit failed and
     set nothing. The host, owner and name come only from the pinned repository; a branch is
-    turned into its pull request's number first (`pr_number`), and only the number is used."""
+    turned into its pull request's number first (`pr_number`), and only the number is used;
+    it is returned with the call, for the line `run` prints."""
     fields: dict[str, str] = {}
     if args.title is not None:
         if not args.title.strip() or not args.title.isprintable():
             raise Refused("--title: one line of text")
         fields["title"] = args.title
-    try:
-        fields["body"] = _lead_body(args, root, opened).decode("utf-8")
-    except UnicodeDecodeError:  # _lead_body's text, so not reached; kept for the types
-        raise Refused("the body is not UTF-8 text") from None
+    fields["body"] = _lead_body(args, root, opened)
     selector = _selector(args, root)
     number = selector if NUMBER.fullmatch(selector) else pr_number(gh, repository, selector)
     host, owner, name = repository.split("/")
     argv = [gh, "api", f"--hostname={host}", "--method=PATCH",
             f"repos/{owner}/{name}/pulls/{number}", "--input=-"]  # fmt: skip
-    return argv, json.dumps(fields).encode("utf-8")
+    return argv, json.dumps(fields).encode("utf-8"), number
+
+
+def _gh_json(gh: str, argv: list[str], cwd: str) -> Any:
+    """gh's answer to `argv`, run in `cwd` with `gh_env`, as JSON; None when gh failed or
+    answered no JSON."""
+    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built by the caller
+        argv, cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
+    )
+    try:
+        return json.loads(done.stdout) if done.returncode == 0 else None
+    except ValueError:
+        return None
 
 
 def pr_number(gh: str, repository: str, branch: str) -> str:
@@ -413,13 +510,7 @@ def pr_number(gh: str, repository: str, branch: str) -> str:
     gh answers with a whole number a pull request can have."""
     argv = [gh, "pr", "view", f"--repo={repository}", "--json=number", "--", branch]
     with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
-        done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
-            argv, cwd=empty, env=gh_env(os.environ, gh), check=False, capture_output=True
-        )
-    try:
-        answer = json.loads(done.stdout) if done.returncode == 0 else None
-    except ValueError:
-        answer = None
+        answer = _gh_json(gh, argv, empty)
     number = answer.get("number") if isinstance(answer, dict) else None
     if type(number) is not int or not NUMBER.fullmatch(str(number)):
         raise Refused(
@@ -472,9 +563,9 @@ def _body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None
     return body
 
 
-def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None) -> bytes:
-    """A merge's or an edit's body (`_body`) without its footer lines (`strip_footer`); how
-    many went is said on stderr, so the lead sees it."""
+def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None) -> str:
+    """A merge's or an edit's body (`_body`) as text, without its footer lines
+    (`strip_footer`); how many went is said on stderr, so the lead sees it."""
     try:
         text = _body(args, root, opened).decode("utf-8")
     except UnicodeDecodeError:
@@ -482,7 +573,7 @@ def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened |
     kept, dropped = strip_footer(text)
     if dropped:
         sys.stderr.write(f"maity: left out {dropped} footer line(s) of the body\n")
-    return kept.encode("utf-8")
+    return kept
 
 
 def _run_command(args: argparse.Namespace, argv: list[str]) -> list[str]:
@@ -603,7 +694,7 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
             if is_lead(args):
                 lead_granted(root, dot_git)
                 check_role(role_of, root, opened)
-            argv, stdin = command(args, root, repository, gh, opened)
+            argv, stdin, edited = command(args, root, repository, gh, opened)
     except clonecheck.Refused as exc:
         raise Refused(str(exc)) from None
     text, log = as_text(args), as_log(args)
@@ -620,9 +711,8 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
         )
     # Every answer of gh is printed cleaned (review A1721 of #2054): a confirmation can echo a
     # title or a branch someone else wrote, on either stream.
-    edit = args.gh_group == "pr" and args.gh_command == "edit" and done.returncode == 0
-    if edit:  # one line, also when gh printed nothing; its number ends the PATCH path
-        sys.stdout.write(_edited(done.stdout, argv[4].rsplit("/", 1)[-1]))
+    if edited is not None and done.returncode == 0:  # one line, also when gh printed nothing
+        sys.stdout.write(_edited(done.stdout, edited))
         sys.stdout.flush()
     elif done.stdout:
         out = _readable(done.stdout) if text else _tail(done.stdout) if log else _clean(done.stdout)
@@ -659,13 +749,7 @@ def direct_merge_only(gh: str, repository: str, number: str, head: str, cwd: str
     host, owner, name = repository.split("/")
     argv = [gh, "api", "graphql", f"--hostname={host}", "-f", f"query={MERGE_QUERY}",
             "-f", f"owner={owner}", "-f", f"name={name}", "-F", f"number={number}"]  # fmt: skip
-    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
-        argv, cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
-    )
-    try:
-        answer = json.loads(done.stdout) if done.returncode == 0 else None
-    except ValueError:
-        answer = None
+    answer = _gh_json(gh, argv, cwd)
     pr: Any = None
     if isinstance(answer, dict) and "errors" not in answer:
         data = answer.get("data")

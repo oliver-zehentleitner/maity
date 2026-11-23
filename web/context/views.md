@@ -116,7 +116,7 @@ not the requests themselves.
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
-**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs (the starred tabs of 2026-11-19 are close to pinned ones: the entry below, f461c919, keeps this model and adds them to it)
 **See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
 
 Which projects the header shows as tabs, and in which order, is kept in
@@ -140,6 +140,114 @@ a filter that hides personal requests would hide requests with no tab
 to open them from.
 
 **Rejected alternatives:** unknown beyond the contract entry's.
+
+## A public project one is no member of is a dashed tab for the browser session that opens the project's member views; a starred one is a dashed tab among one's tabs, opened after start_tabs
+
+**Id:** f461c919-3041-4558-af0e-e44127041a01
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's spec on card tsk-kqn8zhptf06k (the dashed outsider tab, the star that anchors it, member views limited to the outsider's rights); the owner's correction of 2026-11-19 (no separate view for outsiders: the dashed tab renders the normal member views with the controls the outsider has no right to hidden, fed by the member routes #2001 opens, and no public-page fallback inside the tab, not even as an interim) and their scope change the same day (seq 169849: outsiders see Why too); docs/api.md §2.3, §5.1 "Stars" and §6.30 Q2, as #2001 and #2078 built them (hub access.py `OUTSIDE_READS`, `PUBLIC_REPOSITORY_READS`; routes/keep_the_why.py); the lead's answers to the web plan's questions Q2–Q8, 2026-11-19, and their rulings on card tsk-2fxc53xqf922 (seq 201203: an owner of an agent or runner in the project is a plain outsider in the tab; one Why sentence for every reason the hub closes it; a slot for "Add your agent"); the card's note nte-n3vef4qz1838
+**Revisit when:** the hub opens another member route to an outsider, or closes one; the Why reads answer an outsider with a reason the dashboard could say; "Add your agent" or another outsider action lands in the slot; or the contract lets an unstarred tab outlive its browser session
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-19
+
+A signed-in human who opens a public project they are no member of gets
+a tab for it in the switcher, drawn with a dashed outline, that links to
+the project's Overview and is current while any of its views is shown
+(`js/tabs.js` `visit`, `js/app.js` `outsiderTab`). There is no separate
+view for outsiders: the tab opens the project's member views, Overview,
+Board, Team and Why, read from the member routes the hub opens to an
+outsider (§2.3, #2001: the project, its members, its cards with their
+history and notes, its logo and banner; #2078: the three Why reads,
+only while the hub found the repository public), with every control
+they have no right to left out (`js/trust.js`: `outsider(ctx)` and
+`writes(ctx)` beside the trust helpers, which already answer no for a
+reader with no trust: no card created, moved, assigned or watched, no
+note added or edited, no member managed, invited or chatted with, no
+agent joined; Report stays, naming a person or an agent as a stranger
+does, §16.8: a handle, a global name). What the hub sends an outsider
+less is left out, not drawn empty: no presence dot or word, no online
+count in what a member leads, no Actions or Paused column, no link to
+answer a request a card waits for. A member's name links to their page there
+(`opensViews(ctx)`, `ctx.outsideViews`), which a group chat read along
+(`/observe`, also `ctx.outsider`) keeps unlinked; card and request ids
+in text stay unlinked for both, since an id can lead into a view closed
+to them (`js/ids.js`). A person who owns an agent or a runner in
+the project is a plain outsider here: the owner calls §2.3 keeps for
+them stay with the CLI and the API, and the tab offers none of them,
+not even for that agent. Where the Why reads answer `not_found`, Why
+says in one sentence that the project's Why is not shown outside it,
+naming no reason, since the hub answers the same for a repository that
+is not public, for none, and for a project outside the operator's own
+namespaces (`js/why.js` `outsideState`). The head of every view in the
+tab carries an empty slot for the outsider's own actions,
+`span#outsider-actions.outsider-actions` with
+`data-slot="outsider-add-agent"` in `.project-state` (`js/app.js`),
+hidden while empty; "Add your agent" (§3.1, its own card) is drawn
+into it, and nothing else is yet. Another module fills it by defining
+`M.outsiderActions(ctx, slot)`, which `js/app.js` calls once per header
+drawn for an outsider and never defines itself. Each view is switched on for outsiders
+in the nav itself (`NAV`'s `outsider: true`), Why's included, so one
+flag takes a view out; every other route of the project, the inbox,
+chat and settings among them, is the dashboard's "not found", and a
+project the hub does not let them read is "not a member", as before.
+The project's own address leads an outsider to its Overview; a public
+page's Report coming back with `?report` at that address or at a public
+view's (Board, Team, Organisation, Why) leads to `overview?report`, the
+Overview's form open, as it does for a member.
+The bootstrap bundle and the event feed are a member's (§5.4, §8.3):
+an outsider's views read on their own and offer no reload on events.
+
+Each such project opened gets a tab of its own, kept in sessionStorage
+under `maity.tabs.outsider.<me.id>` (every access in try/catch, in
+memory without storage) with the project's id from its view, named by
+its full name, after the member and starred tabs, until it is closed
+from the tabs menu or the browser session ends; it is never sent. Its
+empty star stars it (`PATCH /me` with `starred` whole, the id last);
+the tab is then a starred one. The projects `/me` lists as `starred`
+are tabs like memberships: a browser with nothing kept opens
+`start_tabs`, then the starred projects; a star added elsewhere opens
+as the last tab, as a new membership does. A starred tab is dashed too,
+since dashed says "not a member", and carries a filled star whose
+button takes the star off (`PATCH /me` with the rest in order); the tab
+then stays, unstarred, for the session. Closing a starred tab hides it
+in this browser and keeps the star. A refused `PATCH` leaves the star as
+it was and says why; refused as `member`, `/me` is read again and the
+project turns into a member's tab. Stars show only in the tab row and
+the tabs menu; `start_tabs` stays memberships only, and the inbox's tab
+filter and grouping follow member tabs alone. Signed out, a visitor
+still gets the project's stored public page (§16.9).
+
+**Reason:** the owner's: an outsider reads the same project as a member,
+less what they may not do, so the same views serve both, and a second
+set of views for outsiders would drift from the members'. The tab is
+the way in, so it opens the views directly.
+
+For the tab's lifetime: §6.30 Q2 says an unstarred tab "lasts as long as the
+browser session that opened it". sessionStorage is that browser
+session: it survives a reload and dies with the session. The star is
+the contract's way to keep a project (§5.1), so a starred tab must not
+depend on this browser's storage, and treating it like a membership
+reuses the `known` rule the tab row already has (cd4fe2ba). Keeping
+the star on close mirrors a member tab, whose close never leaves the
+project.
+
+**Rejected alternatives:** the stored public page inside the tab, as
+this entry first had it while the hub's outsider read was missing, or
+as a fallback where a member route fails (the owner, 2026-11-19: there
+is no separate view for outsiders, and no public-page fallback inside
+the tab, not even as an interim); a view of their own for outsiders (the
+same reason); a Why sentence per reason the hub closes it (its
+`not_found` does not say which, and naming one, such as "the repository
+is not public", would be false for the others); the owner actions of an
+agent's owner inside the tab (the lead: a plain outsider there); kept in localStorage until closed (Q2's wording rules it out:
+it would outlive the session and come back in a fresh start); gone on
+leaving the project's page (Q2: "not until the reader moves to another
+tab"); kept in memory only (it dies on a reload, which is no end of the
+session); a × of its own on the tab (member tabs close from the tabs
+menu, and a second way would differ from them); closing a starred tab
+unstars it (the star is the account's, a tab this browser's: cd4fe2ba's
+split).
 
 ## A private project carries a lock after its name, from the project's own public_page
 
@@ -7699,3 +7807,62 @@ sent is what the page shows (review A963).
   and cost a call on every save.
 - Merging the draft into the list read again (keeping roles others added): it would hide a
   conflict on the same role; refusing and reloading says it.
+
+## Pair a runner offers the service way first, chosen by the person; its file replaces install's after install
+
+**Id:** 108b029e-4a36-4b22-ae92-f3a72afb4d7d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2k0jcaxfd0ja (the owner's request req-0d53nenzt328, 2026-11-22: a fresh Debian 13 runner host was paired by the terminal steps, had no service, and `install` then refused a hand-made `maity-runner` user; the card names the two ways, the service recommended, macOS terminal only, the file at `/etc/maity-runner/runner.toml`); `cli/src/maity/runner/install.py`. How the choice is made and the file's order and contents are the implementer's. The re-pair's ways, the order of `check`, the starting directory and the pairing lines built by the page follow review A2144 of #2123 (2026-11-23).
+**Revisit when:** `maity runner install` writes `[limits]` and a harness itself, adopts an existing user, or a launchd service exists; or the hub learns the runner host's system before pairing
+
+The Runners view's pairing panel offers two ways as radio buttons, **As a service on Linux
+(recommended)**, checked, and **In a terminal** (the only way on macOS). Both step lists are drawn
+once; the choice hides one, so the pairing line in either is cleared by the same "paired" or
+"expired" update. A re-pair offers the same two ways (review A2144 of #2123): as a service, the
+service is stopped, its credential moved aside (`pair` refuses while one is there) and `pair` run as
+`maity-runner` with `--config /etc/maity-runner/runner.toml`, so the new credential lands in
+install's state directory. Rejected: the terminal's steps only, as first built, which on a service
+paired into the person's own `~/.local/state` and left the service on its revoked credential.
+
+- **The person chooses; nothing is detected.** The browser's system says nothing about the machine
+  the runner goes on (a Mac's browser pairing a Linux server is the usual case). Rejected: choosing
+  from `navigator.platform`/`userAgentData`, which would pick the wrong way exactly then.
+- **On the service way the file is written after `install`, replacing install's file**, with a
+  copy of it kept as `runner.toml.install`. `install` writes its own file, pairs and enables the
+  service but starts it only once `[limits]` and a harness are there; the dashboard's file then
+  completes it, and a restart starts it. Rejected: writing the file first, which `install` would
+  keep (it keeps a file that differs) and start at once, but which moves the one step that can fail
+  on the person's own file (`install` refuses a file whose `state_dir` or hub is not its own) before
+  the pairing, and an `install` run again over it would only say "kept". Rejected: the terminal's
+  `set -C`, since the file to replace always exists by then.
+- **The service's file keeps install's `state_dir` and `workspaces`.** The terminal's file holds
+  only keys without a default; here the defaults resolve under the service user's home to other
+  directories than the ones install paired in, and `serve` would not find the credential.
+  `web/tools/starter_configs.py` checks both paths against install's.
+- **`install = true` for Claude Code on the service way**: the service user has no Claude Code of
+  its own, and the runner's managed copy (from the vendor, checked) is the one tool of the two it can
+  install that the starter names. The login then comes as its own step, with the managed binary's
+  path. Rejected: asking the person to install Claude Code for `maity-runner` by hand, which on the
+  host this card came from was the step that went wrong.
+- **Every pairing line pipes the code to `--code-file -`.** `printf` is a shell builtin, so the code
+  is in no process's arguments. The terminal's and the re-pair's `pair` lines are built by the
+  dashboard from the enrollment's `pair_url` and `code` too (review A2144). Rejected: showing the
+  hub's `pair_line`, which carries `--code`; changing it would be a hub change for what the page
+  can say itself. The URL and the code go in single quotes, a quote in them escaped.
+- **`check` comes last on the service way, after the tool's and the forge's login** (review A2144).
+  With `install = true`, `serve` installs Claude Code in the background after its start: a `check`
+  run before that skips the sandbox checks ("not installed yet"), and one run before the login fails
+  on its headless probe run. Rejected: `check` right after the restart, as first built.
+- **Commands as `maity-runner` start in a directory that user can enter**: `cd / &&` for `check`
+  and gh, and Claude Code in `maity-runner`'s home (`sh -c 'cd && exec …'`), since `sudo` keeps the
+  caller's directory, which an Ubuntu home (0750) keeps `maity-runner` out of, and Claude Code asks
+  to trust the folder it starts in. Rejected: `sudo -D`, which sudoers allow only with a `runcwd`
+  setting; starting Claude Code in `/`, which would make the person trust `/`.
+- **The configuration's command writes with `tee` into install's file, mode untouched.** `tee`
+  keeps an existing file's owner and mode (root, 0644, as install writes it) whatever the umask, and
+  `cp -p` fails without install's file, so nothing is written then; `starter_configs.py` runs the
+  command under umask 002 against a 0644 stand-in, twice. Install's copy is made only once
+  (`test -e … ||`), so a second paste keeps it. Rejected: a `chmod` after `tee`, which would only
+  repeat what the file already is; `cp -n`, whose exit status differs between coreutils versions.

@@ -25,6 +25,7 @@ from maity_hub import (
 from maity_hub import handles as handle_book
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
+from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
@@ -162,13 +163,23 @@ def meat_proxy_view(lead: bool, hands: bool) -> dict[str, Any]:
     }
 
 
+def handles_of(conn: Connection, principal_ids: Iterable[str | None]) -> dict[str, str]:
+    """principal id → handle, an agent profile's (`agt-…`) or a human's, in one query per
+    kind and `chunks.CHUNK` ids. An id that names neither, or one without a handle, is left
+    out: the caller decides what stands in for it."""
+    wanted = {p for p in principal_ids if p}
+    agents = {p for p in wanted if p.startswith("agt-")}
+    found: dict[str, str] = {}
+    for table, ids in ((t.agent_profile, agents), (t.human, wanted - agents)):
+        for part in chunks(ids):
+            rows = conn.execute(select(table.c.id, table.c.handle).where(table.c.id.in_(part)))
+            found.update({row.id: str(row.handle) for row in rows if row.handle is not None})
+    return found
+
+
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
     """Per human id its handle: the first half of an agent's global name (§6.3)."""
-    ids = set(owner_ids)
-    if not ids:
-        return {}
-    rows = conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids)))
-    return {row.id: row.handle for row in rows}
+    return handles_of(conn, owner_ids)
 
 
 def agent_member(row: Any, *, avatar_url: str | None, owner_handle: str) -> dict[str, Any]:

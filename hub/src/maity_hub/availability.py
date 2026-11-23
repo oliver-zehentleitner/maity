@@ -23,7 +23,7 @@ from sqlalchemy import Connection, Engine, case, literal, or_, select, update
 
 from maity_hub import cards, clock, maintenance, worker_runs
 from maity_hub import tables as t
-from maity_hub.events import Actor, emit, lock_project, transaction
+from maity_hub.events import Actor, emit, lock_project, lock_projects, transaction
 
 log = logging.getLogger(__name__)
 
@@ -475,8 +475,7 @@ def reconcile(
 
     The rows are read again under their projects' locks, so that a request and the
     sweep noticing the same change announce it once."""
-    for project_id in sorted({r.project_id for r in rows}):
-        lock_project(conn, project_id)
+    lock_projects(conn, (r.project_id for r in rows))
     ids = [r.id for r in rows]
     if not ids:
         return []

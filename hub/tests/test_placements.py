@@ -959,6 +959,76 @@ def test_a_leaked_runner_credential_closes_what_is_closing(setup: Setup) -> None
     assert get(setup, body["id"])["closed_reason"] == "removed"
 
 
+def test_a_leaked_detached_runner_locks_its_closing_placements_project_first(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner detached from the project while its placement there is still closing: the
+    leak's revocation closes that placement, in that project, so the project is locked in the
+    sorted set before the runner's credential is revoked, never late (persistence.md)."""
+    from maity_hub.auth import credentials, leaks
+
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/projects/maintainer/maity/runners/{setup.runner.id}")
+    closing = get(setup, body["id"])
+    assert (closing["active"], closing["desired"]) == (True, "stopped")
+    with setup.engine.connect() as conn:
+        project_id = conn.execute(
+            select(t.placement.c.project_id).where(t.placement.c.id == body["id"])
+        ).scalar_one()
+    real = events.lock_project
+    taken: list[tuple[str, bool]] = []
+
+    def recording(conn: Any, locked: str) -> Any:
+        revoked = conn.execute(
+            select(t.runner_credential.c.revoked_at).where(
+                t.runner_credential.c.id == setup.runner.credential_id
+            )
+        ).scalar_one()
+        taken.append((locked, revoked is not None))
+        return real(conn, locked)
+
+    monkeypatch.setattr(events, "lock_project", recording)
+    presented = credentials.parse(setup.runner.value)
+    assert presented is not None
+    with events.transaction(setup.engine) as conn:
+        assert leaks.revoke_leaked(conn, [presented]) == [setup.runner.credential_id]
+    assert taken[0] == (project_id, False)
+    assert get(setup, body["id"])["closed_reason"] == "detached"
+
+
+def test_a_leaked_runner_takes_its_rows_before_its_projects_as_the_owners_revoke_does(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owner's revoke holds the runner's credential and runner rows (`runners.lock`) and
+    then locks the projects; a leak of the same runner takes them in that order too, so the
+    two never wait on each other in a cycle (d4kb and suqj on #2105)."""
+    from maity_hub import runners
+    from maity_hub.auth import credentials, leaks
+
+    body = placed(setup)
+    report(setup, body, 1)
+    real_rows, real_project = runners.lock, events.lock_project
+    taken: list[str] = []
+
+    def rows(conn: Any, *where: Any) -> Any:
+        taken.append("rows")
+        return real_rows(conn, *where)
+
+    def project(conn: Any, locked: str) -> Any:
+        taken.append("project")
+        return real_project(conn, locked)
+
+    monkeypatch.setattr(runners, "lock", rows)
+    monkeypatch.setattr(events, "lock_project", project)
+    presented = credentials.parse(setup.runner.value)
+    assert presented is not None
+    with events.transaction(setup.engine) as conn:
+        assert leaks.revoke_leaked(conn, [presented]) == [setup.runner.credential_id]
+    assert taken[0] == "rows"
+    assert "project" in taken
+
+
 def test_a_suspended_owners_runner_closes_what_is_closing(setup: Setup) -> None:
     """The suspension stops the runner (§15.3): what was closing closes at once too."""
     body = placed(setup)

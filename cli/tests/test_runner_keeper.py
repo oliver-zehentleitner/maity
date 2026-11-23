@@ -351,3 +351,55 @@ def test_update_now_for_a_tool_it_may_not_install_is_settled_at_once(
     published.clear()
     keep.step()  # the same request until the hub has read the report: not again
     assert not any("skipped" in line for line in published) and "PATCH" not in published
+
+
+@pytest.mark.parametrize(("track", "taken"), [("checked", "2.1.325"), ("newest", "2.1.330")])
+def test_the_update_follows_the_track(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, track: str, taken: str
+) -> None:
+    installer = FakeInstaller("2.1.330")
+    monkeypatch.setitem(tools.INSTALLERS, "claude-code", lambda: installer)
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    keep, _, logs = make(
+        tmp_path, f'\n[harness.claude-code]\ninstall = true\nupdate = "daily"\ntrack = "{track}"\n'
+    )
+    keep.step()
+    assert installer.installed == [taken]
+    entry = tool(keep, "claude-code")
+    assert (entry["version"], entry["latest"], entry["state"]) == (taken, "2.1.330", "current")
+    held = [line for line in logs if "held at" in line]
+    assert bool(held) is (track == "checked"), logs
+
+
+def test_maity_runner_tools_shows_and_rolls_back_against_the_active_track(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """The hold `maity runner tools` shows, and what its rollback measures against, follow the
+    configuration at once after a switch of `track`, before the next check."""
+    installer = FakeInstaller("2.1.325")
+    monkeypatch.setitem(tools.INSTALLERS, "claude-code", lambda: installer)
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    keep, _, _ = make(
+        tmp_path, '\n[harness.claude-code]\ninstall = true\nupdate = "daily"\ntrack = "newest"\n'
+    )
+    keep.step()
+    installer.offered = "2.1.330"
+    tools.take(keep.cfg.tools_dir, "claude-code", installer, "t")  # newest: 2.1.330
+
+    def on(track: str) -> None:
+        harness = dataclasses.replace(keep.cfg.harnesses["claude-code"], track=track)
+        harnesses = {**keep.cfg.harnesses, "claude-code": harness}
+        cfg = dataclasses.replace(keep.cfg, harnesses=harnesses)
+        monkeypatch.setattr(config, "load", lambda path: cfg)
+
+    listing = argparse.Namespace(config=None, json=False, tools_action=None)
+    on("checked")  # switched, no check since
+    assert commands.cmd_tools(listing) == 0
+    assert "latest 2.1.330 (held at 2.1.325: track = checked);" in capsys.readouterr().out
+    back = argparse.Namespace(config=None, json=False, tools_action="rollback", tool="claude-code")
+    assert commands.cmd_tools(back) == 0
+    assert tools.load(keep.cfg.tools_dir, "claude-code").state == "current"  # at the hold
+    on("newest")
+    assert commands.cmd_tools(listing) == 0
+    out = capsys.readouterr().out
+    assert "latest 2.1.330;" in out and "held at" not in out, out
