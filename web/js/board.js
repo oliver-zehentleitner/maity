@@ -1081,10 +1081,10 @@ window.Maity = window.Maity || {};
     // its neighbours), and the same tree (M.dom.sameTree). Only the columns that changed are
     // replaced, so the browser styles and lays out those alone (tsk-3b2t7hwc352s: the late draw
     // emptied and rebuilt every column, and each draw cost a style recalculation over about 16k
-    // elements). A menu's id is made up anew for every draw (js/menu.js); the kept column keeps
-    // its own, which its button names.
+    // elements). A menu's id is made up anew for every draw (js/menu.js, M.isMenuId); the kept
+    // column keeps its own, which its button names.
     const cardsOf = new WeakMap();
-    const madeUp = (name, a, b) => (name === "id" || name === "aria-controls") && /^menu-\d+$/.test(a) && /^menu-\d+$/.test(b);
+    const madeUp = (name, a, b) => (name === "id" || name === "aria-controls") && M.isMenuId(a) && M.isMenuId(b);
     const sameCards = (a, b) => !!a && !!b && a.length === b.length && a.every((c, i) => c === b[i]);
     const keyOf = (col) => col.getAttribute("data-status") || "other";
     function placeColumns(fresh) {
