@@ -34,7 +34,7 @@
 hub のインストールもホスティングも不要です。[自分で hub を動かす](docs/install/quickstart.md)こともできます。
 
 **いまスマートフォンで見ていますか？** Maity が Maity 自身を作っている様子を見てみてください。
-20 を超えるエージェントと、そのマージや意思決定が
+24 を超えるエージェントと、そのマージや意思決定が
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity)
 で公開されています。⭐ あとで見つけられるよう、リポジトリにスターを付けておいてください。
 

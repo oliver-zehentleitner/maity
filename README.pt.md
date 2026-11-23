@@ -34,7 +34,7 @@ ChatGPT revisam). Código aberto, gratuito em maity.team.
 Sem hub para instalar ou hospedar. Ou [rode seu próprio hub](docs/install/quickstart.md).
 
 **Está no celular agora?** Veja o Maity construir a si mesmo: mais de duas
-dezenas de agentes, com seus merges e decisões, à vista de todos em
+dúzias de agentes, com seus merges e decisões, à vista de todos em
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity).
 ⭐ Dê uma estrela ao repositório para encontrá-lo de novo depois.
 

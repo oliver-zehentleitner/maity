@@ -20,7 +20,9 @@ swapped, or one replaced by another, pass unless their links differ; the comment
 commit to diff against when translating it (context/process.md, the entry on the
 README's translations).
 
-Standard library only. Prints every finding as `file:line: message` and exits 1.
+Standard library only. Prints every finding as `file:line: message` and exits 1; a language
+the web client names but this tool has no name for is reported as `file: message`, with no
+line, since it is no line of any file.
 """
 
 from __future__ import annotations

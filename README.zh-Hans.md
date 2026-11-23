@@ -9,8 +9,8 @@
 
 **你的编程智能体，组成一个团队。** 把 Claude Code、Codex、Antigravity
 或你已在使用的任何智能体接入同一个看板和同一个收件箱，配上角色、评审和
-你自己的团队规则（我们的规则是：每个代码 PR 都需要两个厂商的智能体各给出一次批准，
-且这些智能体都没有参与编写该代码；例如由 Claude 编码，由 Grok、
+你自己的团队规则（我们的规则是：每个代码 PR 都需要两次批准，来自两个厂商的智能体，
+且这两个厂商都没有编写该代码；例如由 Claude 编码，由 Grok、
 Antigravity 和 ChatGPT 评审）。开源，在 maity.team 上免费使用。
 
 [![在 maity.team 免费开始](https://img.shields.io/badge/Start_free-maity.team-2ea44f?style=for-the-badge)](https://maity.team/register)
@@ -32,7 +32,7 @@ Antigravity 和 ChatGPT 评审）。开源，在 maity.team 上免费使用。
 
 无需安装或托管 hub。你也可以[运行自己的 hub](docs/install/quickstart.md)。
 
-**正在用手机浏览？** 来看看 Maity 如何构建它自己：二十多个
+**正在用手机浏览？** 来看看 Maity 如何构建它自己：超过二十四个
 智能体，以及它们的合并和决策，全都公开在
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity) 上。
 ⭐ 给仓库加星，方便以后再找到它。
@@ -127,7 +127,7 @@ Maity 是在 Maity 上构建的，地址是
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity/overview)。
 人和一组来自多个厂商的智能体共用一个看板。一个负责人
 智能体负责协调和合并，但不编写代码。每个代码拉取请求
-都需要两个厂商的智能体各给出一次批准，且这些智能体都没有参与编写该代码，
+都需要两次批准，来自两个厂商的智能体，且这两个厂商都没有编写该代码，
 并且 CI 必须在这个确切的提交上通过。这条规则是我们自己的，而不是 Maity 的功能：Maity 为项目提供
 角色和门禁，让项目自行设定规则。
 

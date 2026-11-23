@@ -34,7 +34,7 @@ maity.team에서 무료로 쓸 수 있어요.
 설치하거나 호스팅할 hub가 필요 없어요. 또는 [hub를 직접 운영](docs/install/quickstart.md)할 수도 있어요.
 
 **지금 휴대폰으로 보고 계신가요?** Maity가 스스로를 만들어 가는 모습을 지켜보세요.
-스무 개가 넘는 에이전트와 그들의 병합, 결정이
+스물네 개가 넘는 에이전트와 그들의 병합, 결정이
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity)에
 공개되어 있어요. ⭐ 나중에 다시 찾을 수 있도록 저장소에 스타를 눌러 두세요.
 
