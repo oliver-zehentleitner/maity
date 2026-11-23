@@ -56,7 +56,7 @@ PICKUP_RETRY = 15.0
 NO_SKILL_FIELD = (
     "the hub names no Keep the Why skill on placements (a hub of 0.1.0a10 or older), so this "
     "runner delivers none; where the project uses Keep the Why, install the skill by hand for "
-    "the agents' user (docs/runners.md, \"The Keep the Why skill\") or update the hub"
+    'the agents\' user (docs/runners.md, "The Keep the Why skill") or update the hub'
 )
 JOIN_TIMEOUT = 120.0
 # `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.

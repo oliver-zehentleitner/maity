@@ -1687,6 +1687,50 @@ def test_check_warns_on_an_agent_path_entry_under_a_home_that_is_not_there(
     assert quiet.lines == []
 
 
+def test_check_warns_when_the_host_lacks_what_a_grant_needs(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tsk-2k0jcaxfd0ja: on a fresh host `make` was granted but missing, gh came after the
+    # sessions started (so `maity gh` said "grants no pull requests"), and gh had no login.
+    from maity import proc
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "npm").write_text("#!/bin/sh\n")
+    (bin_dir / "npm").chmod(0o755)
+    raw = {
+        "hub": {"url": "https://hub.example"},
+        "limits": {"projects": ["ow/pr"], "repositories": ["github.com/ow/pr"]},
+        "harness": {"stub": {}},
+        "repositories": {
+            "github.com/ow/pr": {"allow": ["make *", "npm test"], "pull_requests": True},
+        },
+    }
+    cfg = config.parse(raw, tmp_path / "runner.toml")
+    monkeypatch.setattr(proc, "program", lambda name: None)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, str(bin_dir))
+    said = [text for level, text in report.lines if level == "warn"]
+    assert len(said) == 2 and not report.failed, said
+    assert said[0].startswith("repositories.github.com/ow/pr: allow 'make *': `make` is not on")
+    assert "gh is not on the runner's PATH" in said[1] and "restart the placements" in said[1]
+    # gh there, no login stored where `maity gh` finds it.
+    monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, str(bin_dir))
+    said = [text for level, text in report.lines if level == "warn"]
+    assert len(said) == 2 and "gh has no login for" in said[1], said
+    assert f"no {home}/.config/gh/hosts.yml" in said[1] and "gh auth setup-git" in said[1]
+    # Logged in, make there: nothing to say.
+    (home / ".config" / "gh").mkdir(parents=True)
+    (home / ".config" / "gh" / "hosts.yml").write_text("github.com:\n")
+    (bin_dir / "make").write_text("#!/bin/sh\n")
+    (bin_dir / "make").chmod(0o755)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, str(bin_dir))
+    assert report.lines == []
+
+
 def test_opencode_is_offered() -> None:
     # Offered (req-g4d2cskx6zxv): a configuration naming opencode is accepted, no longer refused
     # as "not offered yet" (cli/context/runner.md). Its modes and the Grok model are read, and

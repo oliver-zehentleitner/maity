@@ -16,7 +16,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import clonecheck, hub, onboarding, state
+from .. import clonecheck, hub, onboarding, proc, state
 from . import (
     adapters,
     capabilities,
@@ -506,7 +506,7 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
                 f"repositories.{name}: pull_requests = true, but gh has no login for {who} "
                 f"(no {agents_home}/.config/gh/hosts.yml); as that user: gh auth login, then "
                 "gh auth setup-git (an agent's git push uses that login too: without it, "
-                "\"could not read Username\")"
+                '"could not read Username")'
             )
 
 
