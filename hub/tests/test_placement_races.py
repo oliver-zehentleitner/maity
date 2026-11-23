@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from maity_hub import handles
+from maity_hub import handles, limits
 from maity_hub import tables as t
 from maity_hub.routes import placements as placement_routes
 from tests import flow
@@ -51,15 +51,36 @@ def _reserving(s: Setup, handle: str) -> list[str]:
         )
 
 
+def _no_agent_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`max_agents_per_human` off for every account: `create_profile` then does not lock the
+    owner's `human` row for its count (`_refuse_over_agents`)."""
+    original = limits.for_account
+
+    def for_account(
+        conn: Any, name: str, owner_id: str, instance_value: int | None
+    ) -> tuple[int | None, str]:
+        if name == "max_agents_per_human":
+            return None, "instance"
+        return original(conn, name, owner_id, instance_value)
+
+    monkeypatch.setattr(limits, "for_account", for_account)
+
+
 def test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_it_reserved(
-    setup: Setup, monkeypatch: pytest.MonkeyPatch  # noqa: F811
+    setup: Setup,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     # §6.24, §15.5: the placement read the handle as free under its lock and holds it; a join
-    # in another project of the owner that would give them a profile with that handle
-    # (`create_profile`, which takes the handle's lock first) waits for it and is then refused
-    # `taken`. The join is in another project so that it shares no project row with the
-    # placement (its `join_link` insert locks its own project's row through the foreign key):
-    # without the placement's handle lock it waits for nothing, and both commit.
+    # that would give the owner a profile with that handle (`create_profile`, which takes the
+    # handle's lock first) waits for it and is then refused `taken`, with no deadlock. The
+    # handle's lock is its only wait path for this to hold. The agent limit is off, so the
+    # join does not lock the owner's `human` row, which the placement's insert key-shares
+    # through `created_by`. The join is in another project, so its `join_link` insert does not
+    # wait on the placement's project row through the foreign key. Without the placement's
+    # handle lock the join then waits for nothing, and both commit.
+    caplog.set_level(logging.WARNING, logger="maity_hub.db")
+    _no_agent_limit(monkeypatch)
     reached, go = paused(monkeypatch, placement_routes, "_exists")  # right after the handle read
     with race(setup.engine) as r:  # skips on SQLite before any setup
         flow.project(setup.owner, "second", repository={"url": REPOSITORY})
@@ -80,6 +101,8 @@ def test_a_join_naming_the_handle_waits_for_a_new_profiles_placement_and_finds_i
     assert _fields(refused) == {"handle": "taken"}
     assert _profiles(setup, NEW_AGENT["handle"]) == []
     assert pick_up(setup, made.json()).status_code == 201
+    retries = [x.getMessage() for x in caplog.records if "database retry" in x.getMessage()]
+    assert retries == []  # the join waited on the handle's lock alone, no deadlock
 
 
 def test_two_placements_of_one_new_handle_in_two_projects_give_one_placement(
