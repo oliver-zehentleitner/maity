@@ -1070,7 +1070,7 @@ exists, the code follows the contract and reports `off`.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** tsk-xjy2d5617sar, 2026-11-22: ops 3yc2's live check on the Ubuntu runner (note nte-vhg5zfwsje6h: agy 1.5.14's own `clone` of user, mount, pid and net namespaces succeeds there under its AppArmor profile, while plain `unshare` fails at `uid_map`); the four-host table (notes nte-dty526f7nv5s, nte-w7et0ds1eb3h); 3yc2's checks (a)–(c) on the same host; lotse's rulings on the warn-or-refuse question and on the fallback; the third review round of #2119, 2026-11-22 (the refused unshare call, the one-line refusal)
+**Source:** tsk-xjy2d5617sar, 2026-11-22: ops 3yc2's live check on the Ubuntu runner (note nte-vhg5zfwsje6h: agy 1.5.14's own `clone` of user, mount, pid and net namespaces succeeds there under its AppArmor profile, while plain `unshare` fails at `uid_map`); the four-host table (notes nte-dty526f7nv5s, nte-w7et0ds1eb3h); 3yc2's checks (a)–(c) on the same host; lotse's rulings on the warn-or-refuse question and on the fallback; the third review round of #2119, 2026-11-22 (the refused unshare call, the one-line refusal); its fourth round, 2026-11-23 (the refusal only with unshare's failure status 1, the EACCES sentence)
 **See:** runner.md#agys-sandbox-is-reported-off-until-the-runner-sees-agys-own-sandbox-start — 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6 — as of 2026-11-22
 **Revisit when:** an unprivileged process can run under, or read the attachment and rules of, a loaded AppArmor profile; agy gains a bounded start of its sandbox alone; Oliver overrules the start-anyway rule below
 
@@ -1090,8 +1090,8 @@ run, a timeout, a failure that is no permission refusal, the profile list
 unreadable or read only in part, agy's path not resolvable): "not
 checked", a warning. A refusal counts only with unshare's own failure
 status 1 (a signal, sudo's or ssh's status tells nothing) and stderr that
-is exactly one line, `Operation not permitted` on one of those writes or on the unshare
-call (read under `LC_ALL=C`); a refusal beside any other line tells
+is exactly one line, `Operation not permitted` on one of those writes or
+on the unshare call (read under `LC_ALL=C`); a refusal beside any other line tells
 nothing. "cannot start" on the write needs every profile name read, and
 the agents'-side listing tells a missing part under a directory it can
 search (no AppArmor) from one it cannot reach (unreadable), and reads

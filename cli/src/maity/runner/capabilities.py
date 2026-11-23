@@ -493,8 +493,9 @@ def agy_sandbox(as_user: AsUser = RUNNER, binary: str | None = None) -> str:
     if done.returncode == 0:
         return AGY_STARTS
     if done.returncode != UNSHARE_FAILED:
-        # A signal (negative), sudo's or ssh's own status (255 for a transport error), or any
-        # other code is no refusal unshare reported, whatever stderr holds (the review of #2119).
+        # A signal (negative), ssh's transport error (255) or any other code is no refusal
+        # unshare reported, whatever stderr holds (the review of #2119). sudo's own refusal
+        # exits 1 too; its line is no unshare refusal line, so unshare_refusal turns it away.
         return AGY_UNKNOWN
     refusal = unshare_refusal(done.stderr or "")
     if refusal is None:

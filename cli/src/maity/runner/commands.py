@@ -665,8 +665,8 @@ def _check_antigravity(
             "kernel or a container refuses user namespaces to the agents' user (the unshare "
             "call itself is refused: a sysctl such as kernel.unprivileged_userns_clone, or a "
             "container's seccomp), so agy runs commands unsandboxed. An AppArmor profile for "
-            "agy does not clear this; allowing unprivileged user namespaces there does "
-            "(docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+            "agy does not clear this; allowing unprivileged user namespaces there does, then a "
+            "restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
         )
     elif state == capabilities.AGY_UNKNOWN:
         report.warn(
