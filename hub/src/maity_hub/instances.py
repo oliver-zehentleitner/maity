@@ -78,8 +78,9 @@ def live_attachments(credential_ids: Iterable[str], *columns: Any) -> Select[Any
     """`columns` of the credentials' attachments that have not ended, joined with their
     memberships (`t.instance_attachment` as `a`, `t.membership`): one row per project an
     instance is in (§6.17). Unlike `attached_now()` it does not leave out a revoked
-    credential, since a revocation reads its attachments after its own UPDATE
-    (`auth.revocation.revoke`)."""
+    credential: a revocation reads them for a credential that may be revoked already (a
+    second revocation, `runner_revoke`), and its own read happens in the transaction that
+    revokes it (`auth.revocation.revoke`)."""
     a, m = t.instance_attachment, t.membership
     return (
         select(*columns)

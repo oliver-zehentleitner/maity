@@ -935,7 +935,7 @@ but only a profile of the caller's own: it reads the owner first without
 a lock and locks only when that is the caller, the locking read itself
 also bound to `owner_id`. Another owner's profile is never locked, and
 `_admitted` answers it `not_yours` before any lock; the caller's own is
-read again under the lock (`live_profile`: not deleted, else
+read again under the lock (`_named_profile`: not deleted, else
 `not_found`). The admitting right under "Bringing your
 own agent" covers creating the placement only: a spec change by `PATCH`
 still needs `members:admin` and the runner, while `desired` stays the

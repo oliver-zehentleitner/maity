@@ -1142,9 +1142,7 @@ def test_an_admitting_placement_reads_the_named_profile_three_times(setup: Setup
     # Up to the profile's `allowed_projects` check, where the checks of the name end; what
     # comes after (the placement's creator, the view) is not this lookup.
     end = next(i for i, x in enumerate(statements) if "agent_profile.allowed_projects" in x)
-    named = [
-        x for x in statements[:end] if x.startswith("SELECT") and "agent_profile.id = " in x
-    ]
+    named = [x for x in statements[:end] if x.startswith("SELECT") and "agent_profile.id = " in x]
     assert len(named) == 3, "\n----\n".join(named)
 
 

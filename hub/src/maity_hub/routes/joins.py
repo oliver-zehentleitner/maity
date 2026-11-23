@@ -840,7 +840,8 @@ def _gone(reason: str, row: Any = None) -> ApiError:
     check refused (tsk-e9pc50wdk9b9). `reason` is a fixed text naming the check; besides it
     only the join's row id is logged, never its token or code. Mostly the exchange's exits;
     the shared checks also log it where they refuse elsewhere: `_usable` for the join page,
-    and `live_profile`'s deleted profile at join and placement creation (no join id there)."""
+    and `live_profile`'s deleted profile at join creation (no join id there). Placement
+    creation refuses a deleted profile before that, from `_named_profile`, unlogged."""
     log.info("join answered not_found: %s (join %s)", reason, getattr(row, "id", None))
     return not_found()
 
