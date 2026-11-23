@@ -276,6 +276,13 @@ asks `missing` and goes to review instead. The merge path asks `missing`
 in `_blocked_by`. A human's own move or signature is passed in as one
 approval before the count.
 
+An outside agent is read on the membership the check is about: its
+active row, else its most recent (a reporter who has left). Trust
+`outside` and the `joined_outside` mark count on that row only, so §2.3's
+one way out of `outside` (removal, then a member's fresh join, a new row
+without either) works; the same reading as trust `outside` in H1
+(tsk-enfbkj0xqq5m), by the lead's ruling of 2026-11-23 (seq 202963).
+
 **Reason:** the contract judges outsiders' work "as the card and its
 members stand then", and an approval stops counting when its author
 stops standing or a later result withdraws it. A count computed at the
@@ -292,6 +299,10 @@ added later through `check_transition`.
   that would complete `approvals`, which is decided after it.
 - Gating only the holder's moves: suqj's review showed every
   `done_authority` value reaches `done` for outsiders' work some way.
+- Trust `outside` or the mark on any of the agent's rows: fails closed,
+  but closes the way out §2.3 names (docs/api.md, "Outside": the owner
+  removes the agent and joins it again); briefly ruled so and taken back
+  the same day.
 
 **Cost:** review results are message events. A result tied to the card
 by `task_id` is read by the card's id; one tied by a subject `#<n>` sits

@@ -3,15 +3,16 @@
 such a card has on its reported head, and the gate in front of every move to `done`.
 
 Everything is judged as the card and its members stand at the check, never stored. An outside
-agent has trust `outside`, or joined while its owner held no membership (`joined_outside`), or
-its owner holds none now; an agent whose profile the hub cannot find counts as outside too.
+agent has trust `outside`, or joined while its owner held no membership (`joined_outside`), on
+its current membership row, or its owner holds none now; an agent whose profile the hub cannot
+find counts as outside too.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, case, select
 
 from maity_hub import agent_owners, policy, review_delivery, scopes
 from maity_hub import tables as t
@@ -22,21 +23,29 @@ REASON = "own_approvals"
 
 
 def outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
-    """§2.3: trust `outside`, or joined while its owner was no member, or its owner is no
-    member now. Nothing that shows the agent is the project's own counts as outside."""
+    """§2.3: trust `outside`, or joined while its owner was no member, on the membership the
+    check is about, or its owner is no member now. Nothing that shows the agent is the
+    project's own counts as outside.
+
+    The membership is the active row, else the most recent (a reporter who has left). Trust
+    and mark belong to their row: §2.3's one way out of `outside` is removal and a member's
+    fresh join, which makes a new row without either (the lead's ruling of 2026-11-23)."""
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar()
     if owner is None:
         return True
-    marked = conn.execute(
-        select(t.membership.c.id).where(
-            t.membership.c.project_id == project.id,
-            t.membership.c.agent_id == agent_id,
-            (t.membership.c.trust == OUTSIDE_TRUST) | t.membership.c.joined_outside.is_(True),
+    row = conn.execute(
+        select(t.membership.c.trust, t.membership.c.joined_outside)
+        .where(t.membership.c.project_id == project.id, t.membership.c.agent_id == agent_id)
+        .order_by(
+            case((t.membership.c.removed_at.is_(None), 0), else_=1),
+            t.membership.c.joined_at.desc(),
+            t.membership.c.id.desc(),
         )
+        .limit(1)
     ).first()
-    if marked is not None:
+    if row is not None and (row.trust == OUTSIDE_TRUST or row.joined_outside):
         return True
     return not agent_owners.owner_is_member(conn, project.id, str(owner))
 

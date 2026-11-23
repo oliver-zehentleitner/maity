@@ -247,6 +247,41 @@ def test_neither_an_outsiders_approval_nor_its_owners_counts(
         assert not own_approvals._own_agent(conn, project, sibling, {stranger})
 
 
+def test_the_mark_belongs_to_its_row_and_a_members_rejoin_makes_the_agent_its_own(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3's one way out of outside: removal, then a member's fresh join, a new row without
+    the mark. While the marked row is the agent's membership, the agent stays outside, its
+    owner a member or not (the lead's ruling of 2026-11-23: the row the check is about)."""
+    member = flow.human(make_client, migrated, "came-in")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "coder", human_id=member.id)
+    agent_id = factory.agent(migrated, project_id, member.id, "coder").agent_id
+    with migrated.begin() as conn:  # it joined while its owner was no member
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id)
+            .values(joined_outside=True)
+        )
+
+    def outside() -> bool:
+        with migrated.connect() as conn:
+            project = conn.execute(select(t.project)).one()
+            return own_approvals.outside_agent(conn, project, agent_id)
+
+    assert outside()  # its owner a member now, the marked row still its membership
+    with migrated.begin() as conn:  # removed (§6.2: the row stays, with its dates)
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id)
+            .values(active=None, removed_at=factory.at("2026-11-20T10:00:00Z"))
+        )
+    assert outside()  # a reporter who left: its most recent row is still the marked one
+    factory.membership(migrated, project_id, "coder", agent_id=agent_id)  # a member's join
+    assert not outside()
+
+
 def test_own_agents_owners_counts_only_the_agents_of_owners(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
