@@ -61,6 +61,8 @@ FIELDS = (
     "member_agents_max",
     "agent_owners",
     "outside_roles",
+    "own_approvals",
+    "own_agents",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, reset the placement limit, the coordinator seats or the takeover window, or
@@ -84,6 +86,8 @@ KEPT_ON_PRESET = (
     "member_agents_max",
     "agent_owners",
     "outside_roles",
+    "own_approvals",
+    "own_agents",
 )
 # A project that requires a test keeps requiring it (§6.1): no preset names these.
 DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
@@ -93,6 +97,16 @@ DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
 # is no base. Whatever else a list names is `invalid`.
 OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team", "expert")
 OUTSIDE_DEFAULT = ["coder"]
+
+# Own approvals for outsiders' work (§6.1, §2.3 "Own approvals"): from one up to
+# OWN_APPROVALS_MAX; whose agents count as the project's own.
+OWN_APPROVALS_DEFAULT = 1
+# The column's width on PostgreSQL and MariaDB (a 32-bit integer): any count a project can
+# reach, and a larger one is `out_of_range`, not a database error.
+OWN_APPROVALS_MAX = 2_147_483_647
+OWN_AGENTS = ("owners", "members")
+OWN_AGENTS_DEFAULT = "members"
+OWNERS_OF = "owners_of"
 
 
 def keep_the_why_effective(project: Any) -> str:
@@ -122,6 +136,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "member_agents_max": MEMBER_AGENTS_MAX_DEFAULT,
         "agent_owners": None,  # unset: it follows the public page (§6.1)
         "outside_roles": list(OUTSIDE_DEFAULT),
+        "own_approvals": OWN_APPROVALS_DEFAULT,
+        "own_agents": OWN_AGENTS_DEFAULT,
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -155,6 +171,8 @@ def of(project: Any) -> dict[str, Any]:
         "member_agents_max": project.member_agents_max,
         "agent_owners": project.agent_owners,
         "outside_roles": outside_roles(project),
+        "own_approvals": own_approvals(project),
+        "own_agents": own_agents(project),
     }
 
 
@@ -162,6 +180,46 @@ def outside_roles(project: Any) -> list[str]:
     """`policy.outside_roles` (§6.1): the stored list, `["coder"]` while nobody set one."""
     stored = project.outside_roles
     return list(OUTSIDE_DEFAULT) if stored is None else list(stored)
+
+
+def own_approvals(project: Any) -> int:
+    """`policy.own_approvals` (§6.1): the stored number, 1 for a project that predates it."""
+    stored = project.own_approvals
+    return OWN_APPROVALS_DEFAULT if stored is None else int(stored)
+
+
+def shown(conn: Any, value: dict[str, Any]) -> dict[str, Any]:
+    """A policy object as it leaves the hub (a view, the resume packet, `policy_changed`):
+    `own_agents` names the picked people by their current handles, never by id (§6.1)."""
+    return {**value, "own_agents": own_agents_shown(conn, value["own_agents"])}
+
+
+def own_agents_shown(conn: Any, value: Any) -> Any:
+    """`policy.own_agents` as shown: `{"owners_of": [handle, ...]}` for the stored ids."""
+    if not isinstance(value, dict):
+        return value
+    ids = list(value.get(OWNERS_OF) or [])
+    if not ids:
+        return {OWNERS_OF: []}
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    found = dict(
+        conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids))).all()
+    )
+    return {OWNERS_OF: [found[i] for i in ids if i in found]}
+
+
+def own_agents(project: Any) -> str | dict[str, list[str]]:
+    """`policy.own_agents` (§6.1) as stored: `owners`, `members`, or `{"owners_of": [human
+    ids]}`; `members` for a project that predates it. The view shows the ids as handles."""
+    stored = project.own_agents
+    if stored is None:
+        return OWN_AGENTS_DEFAULT
+    if isinstance(stored, dict):
+        return {OWNERS_OF: list(stored.get(OWNERS_OF) or [])}
+    return str(stored)
 
 
 def columns(policy: dict[str, Any]) -> dict[str, Any]:
@@ -192,6 +250,8 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "member_agents_max": policy["member_agents_max"],
         "agent_owners": policy["agent_owners"],
         "outside_roles": policy["outside_roles"],
+        "own_approvals": policy["own_approvals"],
+        "own_agents": policy["own_agents"],
     }
 
 

@@ -140,7 +140,11 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
     """The membership and the instance `to` comes down to (§6.19): by default the
     caller's own instance; an address names one; a member id is resolved by the team's
     rules, the next one under `round_robin`."""
+    from maity_hub import outsiders
+
     if to is None:
+        # An outsider's agent takes no card over (§6.5, "Until the claim request is built").
+        outsiders.refuse_taking(mine.row, mine, takeover=True)
         _refuse_paused(conn, mine.id, mine.instance)  # its own takeover is new work too
         return mine.row, mine.instance
     principal, named = instances.split_address(to)
@@ -150,6 +154,7 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
         target = member_row(conn, mine.project.id, principal)
     except ApiError:
         raise invalid({"to": "not_a_member"}) from None
+    outsiders.refuse_taking(target, mine, takeover=True)  # whoever starts it (§6.5)
     if target.role == "expert":  # an expert takes no cards (§2.3 "The expert")
         raise invalid({"to": "expert"})
     if target.trust == "guest":  # a guest holds no cards (§2.3)

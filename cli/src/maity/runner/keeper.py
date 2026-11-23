@@ -31,6 +31,12 @@ LOGIN_STATUS = {"claude-code": ("auth", "status"), "codex": ("login", "status")}
 Log = Callable[[str], None]
 
 
+def cap(harness: config.Harness) -> str | None:
+    """The highest version the runner's update may take: the sandbox-checked one under
+    `track = "checked"` (the default), none under `"newest"` or without a checked version."""
+    return capabilities.CHECKED.get(harness.id) if harness.track == "checked" else None
+
+
 def stamp(at: float) -> str:
     return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -57,6 +63,48 @@ def logged_in(harness_id: str, binary: str, as_user: AsUser) -> bool:
     except Exception:  # noqa: BLE001 - a tool that cannot answer is not logged in
         return False
     return done.returncode == 0
+
+
+# Each probe's own answer for "not logged in": its exit code, and where the same code also
+# means an error, the line it then writes (security review A1942). `codex login status`
+# exits 1 with the line "Not logged in", and also exits 1 on an error, with another line.
+# Claude Code has no entry, so none of its answers is `needed` (the lead, seq 189704): ops'
+# live check (2026-11-21) saw `claude auth status` answer a logout and an unreadable
+# configuration the same way (exit 1, `"loggedIn": false`), so a logout cannot be told from
+# an error; a real logout shows as a restart and then `hung`, which costs availability only.
+LOGIN_NEEDED: dict[str, tuple[int, str | None]] = {
+    "codex": (1, "Not logged in"),
+}
+
+
+def login_state(
+    harness_id: str, binary: str | None, as_user: AsUser, agent_path: str | None = None
+) -> str:
+    """The tool's own login answer as the watch's `login` signal (§15.7): `ok` on exit 0,
+    `needed` only on the probe's documented "not logged in" answer (LOGIN_NEEDED), and
+    `unknown` for anything else: another exit, a timeout, an error, a harness without a
+    probe (agy, opencode, …) or no binary. `needed` ends a placement as `failed`/`auth`
+    with no restart, so a flaky probe must never give it (security review A1942). Unlike
+    `logged_in`, neither a missing probe nor a failed one counts as an answer. Through sudo
+    or on an ssh host the probe runs with the agents' PATH (`agent_path`), as the harness
+    probe does: a tool there finds its own helpers on it (Gemini review A1941)."""
+    args = LOGIN_STATUS.get(harness_id)
+    if args is None or not binary:
+        return "unknown"
+    env = {"PATH": agent_path} if not as_user.direct and agent_path else None
+    try:
+        done = as_user.run([binary, *args], env=env, timeout=LOGIN_TIMEOUT)
+    except Exception:  # noqa: BLE001 - a probe that cannot run says nothing about the login
+        return "unknown"
+    if done.returncode == 0:
+        return "ok"
+    needed = LOGIN_NEEDED.get(harness_id)
+    if needed is None or done.returncode != needed[0]:
+        return "unknown"
+    if needed[1] is None:
+        return "needed"
+    said = f"{done.stdout or ''}\n{done.stderr or ''}".splitlines()
+    return "needed" if any(line.strip() == needed[1] for line in said) else "unknown"
 
 
 @dataclass
@@ -179,11 +227,15 @@ class Keeper:
             stamp(self.now()),
             requested_at=requested_at,
             started=self.publish,
+            cap=cap(harness),
         )
         if result.state == "failed":
             self.log(f"tools: {harness.id}: failed ({result.reason})")
         elif result.version != state.version:
             self.log(f"tools: {harness.id}: {result.version} for new sessions")
+        if result.held is not None and result.state != "failed":
+            self.log(f"tools: {harness.id}: {result.latest} offered, held at {result.held}"
+                     ' (track = "checked")')  # fmt: skip
         self.refresh(harness)
         self.publish()
 

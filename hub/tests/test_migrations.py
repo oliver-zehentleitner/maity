@@ -2327,3 +2327,163 @@ def test_inst_attach_downgrade_refuses_a_credential_without_an_attachment(
             )
         )  # fmt: skip
     _refused_before_any_change(engine, "a credential has no instance_attachment row")
+
+
+def test_acct_lock_rows_backfills_every_human_without_one_and_its_downgrade_keeps_them(
+    engine: Engine,
+) -> None:
+    """A human made after 0076 got its `account_lock` row only on first need; the backfill gives
+    every human one, leaves an existing row as it is, and the downgrade deletes nothing."""
+    from sqlalchemy import insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    rev = "20261123120000_acct_lock_rows"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    with engine.begin() as conn:
+        for n in ("1", "2"):
+            conn.execute(
+                insert(t.human).values(
+                    id=f"hum-{n}", handle=f"h{n}", display_name=n, password_hash="x",
+                    created_at=clock.now(),
+                )
+            )  # fmt: skip
+        conn.execute(insert(t.account_lock).values(human_id="hum-1"))  # made on first need
+
+    def rows() -> list[str]:
+        with engine.connect() as conn:
+            found = conn.execute(select(t.account_lock.c.human_id).order_by("human_id"))
+            return [str(r) for r in found.scalars()]
+
+    assert rows() == ["hum-1"]
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    assert rows() == ["hum-1", "hum-2"]
+    downgrade(engine, _before(engine, rev))
+    assert rows() == ["hum-1", "hum-2"]
+
+
+def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_defaults(
+    engine: Engine,
+) -> None:
+    """§2.3 "Own approvals": an agent membership whose owner held no membership of its project
+    when the agent joined (by the rows' joined_at and removed_at) is marked `joined_outside`;
+    one whose owner was a member then is not, whatever came after, nor is a human. The two
+    policy columns stay null, which reads as 1 and `members`; the downgrade drops all three
+    columns."""
+    from sqlalchemy import inspect, select
+
+    from maity_hub import policy
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261123140000_own_approvals"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    from sqlalchemy import update
+
+    member, stranger = factory.human(engine, "member"), factory.human(engine, "stranger")
+    elsewhere, gone = factory.human(engine, "elsewhere"), factory.human(engine, "gone")
+    project_id = factory.project(engine, "alpha")
+    beta = factory.project(engine, "beta")
+    factory.membership(engine, project_id, "owner", human_id=member)
+    factory.membership(engine, beta, "coder", human_id=elsewhere)  # a member of beta only
+    later = factory.human(engine, "later")
+    removed = factory.membership(engine, project_id, "coder", human_id=gone)
+    joined_later = factory.membership(engine, project_id, "coder", human_id=later)
+    early, back = factory.human(engine, "early"), factory.human(engine, "back")
+    left_first = factory.membership(engine, project_id, "coder", human_id=early)
+    before = factory.human(engine, "before")
+    left_before = factory.membership(engine, project_id, "coder", human_id=before)
+    first_stay = factory.membership(engine, project_id, "coder", human_id=back)
+    with engine.begin() as conn:  # a removed row first, so the rejoin's row can be inserted
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == first_stay)
+            .values(active=None, removed_at=factory.at("2026-10-20T10:00:00Z"))
+        )
+    second_stay = factory.membership(engine, project_id, "coder", human_id=back)
+    own = factory.agent(engine, project_id, member, "coder", picture=False).agent_id
+    outside = factory.agent(engine, project_id, stranger, "coder", picture=False).agent_id
+    other_project = factory.agent(engine, project_id, elsewhere, "coder", picture=False).agent_id
+    left = factory.agent(engine, project_id, gone, "coder", picture=False).agent_id
+    came_in_outside = factory.agent(engine, project_id, later, "coder", picture=False).agent_id
+    owner_left_first = factory.agent(engine, project_id, early, "coder", picture=False).agent_id
+    owner_rejoined = factory.agent(engine, project_id, back, "coder", picture=False).agent_id
+    owner_left_before = factory.agent(engine, project_id, before, "coder", picture=False).agent_id
+    t0 = factory.at("2026-11-01T10:00:00Z")
+    with engine.begin() as conn:
+        conn.execute(update(t.membership).values(joined_at=t0))  # everyone joined together
+        # Removed the moment its agent joined: no membership at the agent's join.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == left_first)
+            .values(active=None, removed_at=t0)
+        )
+        # Left a day before its agent joined, never back: outside.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == left_before)
+            .values(
+                joined_at=factory.at("2026-10-01T10:00:00Z"),
+                active=None,
+                removed_at=factory.at("2026-10-31T10:00:00Z"),
+            )
+        )
+        # Left before, came back before its agent joined: the second row counts.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == first_stay)
+            .values(joined_at=factory.at("2026-10-01T10:00:00Z"))
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == second_stay)
+            .values(joined_at=factory.at("2026-10-25T10:00:00Z"))
+        )
+        # Left after its agent joined (review A2211, case D): the row stays (§6.2).
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == removed)
+            .values(active=None, removed_at=factory.at("2026-11-02T10:00:00Z"))
+        )
+        # Became a member only after its agent joined (case B): the history marks it.
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == joined_later)
+            .values(joined_at=factory.at("2026-11-03T10:00:00Z"))
+        )
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        marked = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.joined_outside).where(
+                    t.membership.c.agent_id.is_not(None)
+                )
+            ).all()
+        )
+        humans = conn.execute(
+            select(t.membership.c.joined_outside).where(t.membership.c.human_id.is_not(None))
+        ).scalars()
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    assert marked == {
+        own: False,
+        outside: True,
+        other_project: True,
+        left: False,  # a member when it joined: never outside, whatever came after
+        came_in_outside: True,  # its owner joined after it: outside for good (§2.3)
+        owner_left_first: True,  # removed at the agent's join: held nothing then
+        owner_rejoined: False,  # an earlier removed row does not hide the rejoin
+        owner_left_before: True,  # an ended row before the agent's join holds nothing then
+    }
+    assert set(humans) == {False}
+    assert (project.own_approvals, project.own_agents) == (None, None)
+    assert (policy.own_approvals(project), policy.own_agents(project)) == (1, "members")
+    downgrade(engine, _before(engine, rev))
+    columns = {c["name"] for c in inspect(engine).get_columns("membership")}
+    assert "joined_outside" not in columns
+    project_columns = {c["name"] for c in inspect(engine).get_columns("project")}
+    assert not {"own_approvals", "own_agents"} & project_columns

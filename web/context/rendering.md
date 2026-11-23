@@ -908,7 +908,7 @@ is a finding by design.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** review findings on card tsk-ya56x9gx986r, 2026-11-02: `"Pick a conversation."` and `" reads what you write here…"` were not counted, so a baseline of zero would have proved nothing
+**Source:** review findings on card tsk-ya56x9gx986r, 2026-11-02: `"Pick a conversation."` and `" reads what you write here…"` were not counted, so a baseline of zero would have proved nothing; the shell-command shapes: card tsk-2k0jcaxfd0ja and reviews A2144 and A2146 of #2123, 2026-11-23
 **Revisit when:** the baseline reaches zero, or a false positive cannot be worded around
 
 `prose()` in `tools/check.py` counts a literal of three words or more that starts with a capital or ends
@@ -918,6 +918,17 @@ word counts only as a piece of a sentence (`"to "`) or where a person reads it (
 of `h()`, `title:`). Others stay with the reviewer: `"online"` beside a variable cannot be told from a key.
 A `#` comment with words in it counts whatever the line is, since a person reads it in the generated file.
 
+Shell commands the page builds for a person to paste (the runner pairing dialog, tsk-2k0jcaxfd0ja) are
+excluded by their shape too (`CONFIG_OR_SHELL`): `&&` or `||` between words, `printf` with its quoted
+format, `sudo` with an option or one of the commands the dialogs run (`cp`, `ls`, `maity`, `mv`, `pipx`,
+`systemctl`, `tee`, `test`), `sudo apt install` with three or more package names and nothing else, `mv`
+of a path, `{ sudo `. They are commands, never translated, and counting them as prose would put a
+command into the catalog. The shapes are anchored to these commands on purpose (reviews A2144 and A2146
+of #2123): the first version took any literal starting with `sudo ` or `printf `, or holding ` | `, and
+let `"sudo is required"`, `"yes | no"` and `"then | sudo "` through as code; `test_i18n_check.py` holds
+those as prose. Left over: a literal such as `"sudo apt install a b c"` with three plain words after
+`install` reads as a command, since its shape is one; a capitalised sentence stays prose either way.
+
 `prose()` stays an approximation on purpose: a lone word in an `h()` call over several lines is not seen,
 because `before` holds one line. The ratchet shows the direction. The proof that nothing is left untranslated
 is the run with a pseudo catalog, so further single cases are not chased here.
@@ -926,6 +937,8 @@ is the run with a pseudo catalog, so further single cases are not chased here.
 - Counting every lone word: thousands of keys and values, and the ratchet would mean nothing.
 - Shape alone: `"Text (Markdown)"` and `", in "` read like code to it, `"reply primary"` like words.
 - A browser run that collects what is on screen: it sees only the views a run opens.
+- For the commands: the exact command strings in `NOT_PROSE`: the dialog builds its lines from pieces
+  (the URL and code quoted in between), so every piece would have to be listed and kept in step.
 
 ## A refusal is translated by code in `ApiError`; in English the hub's message stays
 

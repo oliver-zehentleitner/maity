@@ -31,7 +31,6 @@ NOT_ROUTED = {
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/projects/{}/{}/contribution"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/projects/{}/{}/milestones"),  # no route yet: tsk-k6a4bnnc4wct, milestones
     ("GET", "/projects/{}/{}/milestones/{}"),  # no route yet: tsk-k6a4bnnc4wct, milestones

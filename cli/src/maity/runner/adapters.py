@@ -15,10 +15,12 @@ could widen the grant, bring hooks or plugins, and change with a `git checkout`.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -26,9 +28,9 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import capabilities, config, scratch, skills, stub, trust
+from . import capabilities, config, scratch, skillop, skills, stub, trust
 from .asuser import AsUser
-from .workspace import TMP_SCRATCH_HARNESSES
+from .workspace import SCRATCH, TMP_SCRATCH_HARNESSES
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -268,6 +270,10 @@ class Context:
     # plugin root Claude Code loads with `--plugin-dir`, read-only to the session. None when the
     # placement names none or it could not be fetched.
     skill: Path | None = None
+    # The runner's own checked copy of that skill (skills.ensure, `<skills_dir>/keep-the-why/
+    # <key>`), on the runner's machine whatever the target: the bytes a Codex placement's own
+    # skills directory gets (codex_skill). None with `skill`.
+    skill_source: Path | None = None
 
 
 def skill_env(ctx: Context) -> dict[str, str]:
@@ -275,7 +281,7 @@ def skill_env(ctx: Context) -> dict[str, str]:
     resume block names it instead of "<skills directory>" (onboarding)."""
     if ctx.skill is None:
         return {}
-    return {"MAITY_KTW_SKILL_DIR": str(ctx.skill / "skills" / skills.NAME)}
+    return {"MAITY_KTW_SKILL_DIR": str(skills.skill_in(ctx.skill))}
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -364,6 +370,25 @@ def private_tmpdir_refusal(ctx: Context) -> str | None:
         "host). Its commands would share /tmp/claude-<uid> with every Claude Code session of "
         "this OS user, so it is not started. Set a short `workspaces` root on this host, such "
         "as /srv/mw"
+    )
+
+
+def scratch_refusal(ctx: Context) -> str | None:
+    """Why a sandboxed Claude Code placement must not start, or None: it starts only with a
+    scratch under a holder its sandbox denies (scratch_holder). That deny is what hides a
+    scratch made after the session started (tsk-c7zzd440x8pn), and it is derived from the own
+    scratch, so a start whose scratch could not be made would have none (the review of
+    #2112, A2045). An unsandboxed placement, and every other harness, is not refused: Codex
+    hides the whole workspaces root, and agy and opencode get no such deny. For the runner's
+    log only, with the cause."""
+    if ctx.harness.id != "claude-code" or not ctx.sandbox:
+        return None
+    if scratch_holder(ctx.scratch) is not None:
+        return None
+    return (
+        "no scratch could be made for this sandboxed Claude Code placement, so its sandbox "
+        "would not deny the scratch holder and a scratch made later would stay readable from "
+        "it; it is not started (the cause is logged above)"
     )
 
 
@@ -577,6 +602,21 @@ def own_tmp_leaf(ctx: Context) -> Path | None:
     return None if own is None else own.parent
 
 
+def scratch_holder(scratch: Path | None) -> Path | None:
+    """The `.scratch` that holds `scratch` under the workspaces root (workspace.scratch_of): the
+    one holder of every scratch, `<root>/.scratch` for `<root>/.scratch/<project>/<id>`
+    (tsk-c7zzd440x8pn), or the project's own for the former `<root>/<project>/.scratch/<id>`
+    (an ssh host whose `maity` has no holder op). None for no scratch or one elsewhere (agy's
+    under `/tmp`)."""
+    if scratch is None:
+        return None
+    if scratch.parent.name == SCRATCH:
+        return scratch.parent
+    if scratch.parent.parent.name == SCRATCH:
+        return scratch.parent.parent
+    return None
+
+
 def _shared_tmp(ctx: Context) -> list[str]:
     """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, as a list
     for a deny rule; empty for an agy placement (which owns it) or where there is none."""
@@ -641,6 +681,17 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # in that mount alone (the ops probe P4, 2026-11-21).
         own = own_tmpdir_in_use(ctx)
         writable = [str(p) for p in (ctx.scratch, own) if p is not None]
+        # The holder of every scratch, `<root>/.scratch`, the same way (tsk-07dwr3t80rg0,
+        # tsk-c7zzd440x8pn): denied for reading only, its own scratch opened again, so a scratch
+        # of any project made after this session started lies under the read deny's empty mount
+        # instead of staying readable. Never in denyWrite (it would mount the re-opened scratch
+        # read-only, as for the leaf); the holder is not writable from the sandbox anyway, since
+        # writes are allowed only where allowWrite says. The former per-project `.scratch` and
+        # the other entries are hidden whole (ctx.private); on a host with the former layout
+        # the project's `.scratch` is the holder denied here.
+        holder = scratch_holder(ctx.scratch)
+        readable = [*([str(ctx.scratch)] if holder is not None else []),
+                    *([str(own)] if own is not None else [])]  # fmt: skip
         settings["sandbox"] = {
             "enabled": True,
             "failIfUnavailable": True,  # never fall back to unsandboxed commands
@@ -660,7 +711,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # owner cannot reach another placement's scratch there: from reading always, and from
             # writing too unless the placement's own TMPDIR is re-opened under it (above).
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
-                                        *_shared_tmp(ctx)],
+                                        *_shared_tmp(ctx),
+                                        *([str(holder)] if holder is not None else [])],
                            # The private paths are not writable either: the runner's files
                            # (~/.maity-runner on an ssh host) are what `maity runner` takes.
                            "denyWrite": [f"{git}/maity",
@@ -670,9 +722,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          # The delivered skill (skills.py): read, never written.
                                          *([str(ctx.skill)] if ctx.skill is not None else [])],
                            # Commands write the placement's scratch besides the clone (§15.5),
-                           # and its own TMPDIR.
+                           # and its own TMPDIR; both are read again under their hidden parents.
                            **({"allowWrite": writable} if writable else {}),
-                           **({"allowRead": [str(own)]} if own is not None else {})},
+                           **({"allowRead": readable} if readable else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -741,16 +793,25 @@ def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
 
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
-    and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty. Always empty for Codex (codex_left_out)."""
+    and the runner's PATH (its absolute entries) when the grant has pull requests, else
+    empty. Always empty for Codex (codex_left_out). `maity gh` looks gh up on that PATH at
+    each call, so a gh installed after the session started is found without a restart
+    (tsk-2k0jcaxfd0ja, point 15); the record, not the session's own PATH, says where."""
     if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
-    gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
     repository = config.normalise_repository(workspace.get("repository") or "")
-    if gh is None or not repository:
+    if not repository:
         return ""
-    return f"{repository}\n{gh}\n"
+    # Whole entries, in PATH's order, as many as fit the size `maity gh` reads
+    # (ghpr.RECORD_MAX; review A2160 of #2125): the earlier ones are the ones that win.
+    room = ghpr.RECORD_MAX - len(f"{repository}\n\n".encode())
+    kept: list[str] = []
+    for entry in (e for e in proc.search_path().split(os.pathsep) if e):
+        if len(os.pathsep.join([*kept, entry]).encode()) > room:
+            break
+        kept.append(entry)
+    return f"{repository}\n{os.pathsep.join(kept)}\n"
 
 
 def lead_record(ctx: Context) -> str:
@@ -981,6 +1042,34 @@ def codex_config(ctx: Context) -> str:
     )
 
 
+def codex_skill(ctx: Context, home: Path) -> bool:
+    """The delivered Keep the Why skill as `<CODEX_HOME>/skills/keep-the-why/`, which Codex
+    loads as its own skill `keep-the-why` with no setting (ops, nte-nqs227hnpqzz, Codex 0.171.0),
+    written from the runner's checked copy by skillop on the agents' side at every launch. The
+    home is read-only to the session (codex_config), so the skill is too; Codex's own `.system/`
+    beside it is left alone. Only with a scratch: without one the home lies in the runner's own
+    directory, which the sandbox hides. Whether it was written: a failure leaves the session
+    with `MAITY_KTW_SKILL_DIR` alone, which is how Codex had the skill before.
+
+    A launch that writes no skill (none named, or one that could not be written) removes a copy
+    an earlier launch left in a reused home, so Codex never loads a skill this launch did not
+    hand it (the review of #2093). That removal is best effort: if it fails too, the earlier
+    copy stays, one the runner wrote from a checked copy."""
+    if ctx.scratch is None:
+        return False
+    errors = (OSError, ValueError, KeyError, subprocess.SubprocessError, skillop.Mismatch)
+    if ctx.skill_source is not None:
+        try:
+            payload = skillop.payload(ctx.skill_source, ctx.skill_source.name)
+            scratch.write_codex_skill(home, payload, ctx.as_user)
+            return True
+        except errors:
+            pass
+    with contextlib.suppress(*errors):
+        scratch.clear_codex_skill(home, ctx.as_user)
+    return False
+
+
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     home = codex_home(ctx)
@@ -996,6 +1085,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
         # descriptor opened without following a link from the workspaces root, so a codex-home
         # swapped for a link is refused, never written through, out of the scratch.
         scratch.write_codex_home(home, config_text, auth, ctx.as_user)
+        codex_skill(ctx, home)
     else:
         # No scratch to carve: the home stays in the runner's own directory, below no
         # agent-writable parent, so the plain writes are safe there.
@@ -1166,8 +1256,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
     `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
     the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity` and URLs of the hub, the forge and the
-    grant's `network` hosts. A grant's `allow` command list is not given to agy (agy_grants):
+    interactive start asks nothing. Allowed: `maity`, URLs of the hub, the forge and the
+    grant's `network` hosts, and reads of the delivered skill.
+    A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
     left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
     tools: the clone's credential, what makes git run something (GIT_PROTECTED), the other
@@ -1177,10 +1268,16 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
     allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
+    # agy's sandbox shows only what a rule mounts: a `read_file` allow mounts the delivered skill
+    # read-only, and its write deny below still wins (the agy settings entry in
+    # cli/context/runner.md). No `write_file` allow is given: the clone's `.git` stays as agy's
+    # sandbox mounts it until a live probe shows its denies hold inside a writable mount.
+    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+        allow += [f"read_file({ctx.skill})"]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
-    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+    if ctx.skill is not None:
         deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {

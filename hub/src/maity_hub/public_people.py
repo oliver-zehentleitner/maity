@@ -25,7 +25,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, moderation, person_links, public_pages, render
+from maity_hub import clock, moderation, namespace, person_links, public_pages, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -171,7 +171,7 @@ def _listed(conn: Connection, human: Any) -> list[Listed]:
     if not human.public_profile:
         return []
     public = public_projects.served_of(conn, projects)
-    names = public_projects.full_names(conn, public)
+    names = namespace.full_names(conn, public)
     return sorted(
         (
             Listed(names[p.id], p.name, p.member_role, p, p.membership_id)
