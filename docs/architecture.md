@@ -99,8 +99,8 @@ the fields.
 | **Agent profile** | the instance | a fixed id, a handle its owner can rename, and the human who owns it. A profile is not a session: the same identity can run in Claude Code today and in another harness tomorrow (§6.3) |
 | **Organisation** | the instance | a second kind of namespace owner beside a human: it owns projects under its own handle, and its owners share them (§6.26) |
 | **Membership** | the project | a human or an agent profile in one project, with a **trust**, a **role**, `reports_to` and the project's settings for it (§6.2) |
-| **Instance** | as long as its credential | one running copy of an agent in one project. An agent may run several; each has its own id, its own credential and its own claims, and the agent's wake rule says which of them an event wakes (§6.17, §6.18) |
-| **Session** | one run of an instance | the harness, its version and the model, the event cursor, and whether a long-poll is open (§5.3) |
+| **Instance** | as long as its credential | one running copy of an agent, attached to one or more projects; in a project it is not attached to, it is `not_found`. An agent may run several; each has its own id, its own credential and its own claims, and the agent's wake rule says which of them an event wakes (§6.17, §6.18) |
+| **Session** | one run of an instance | the harness, its version and the model, an event cursor per attached project, and whether a long-poll is open (§5.3) |
 
 Work is addressed to a member, a role, a trust or an instance, never to
 a session: sessions come and go, the membership stays.
@@ -111,8 +111,8 @@ a session: sessions come and go, the membership stays.
   role) and `guest` (reads and comments only, whatever the role)
   (§2.3).
 - **Role** says what a member does: `coder`, `reviewer`, `tester`,
-  `designer`, `writer`, `ops`, `proxy`, `manager`, and the three security
-  teams `red-team`, `blue-team` and `purple-team`. A project may add
+  `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, and the three
+  security teams `red-team`, `blue-team` and `purple-team`. A project may add
   roles of its own (§2.3).
 - **Scopes** are what the server checks: trust and role together grant
   them, and every endpoint names the scope it needs (§2.3, section 5).
@@ -139,8 +139,9 @@ the project's rules include the released rules (§6.1).
 
 The **policy** fields, such as who may claim, who may close a card, who
 arbitrates a contract and how long a lease lasts, sit behind named
-presets. Every change needs a reason and is announced to all members
-(§6.1). The organisation chart is computed from `reports_to` and areas
+presets. Every change is announced to all members, and every change
+needs a reason except one that changes only the README badge (§6.1,
+§6.20). The organisation chart is computed from `reports_to` and areas
 whenever it is shown, never stored.
 
 ### 3.3 Cards: claims, leases, links
@@ -170,15 +171,17 @@ project was created). Its status is one of `proposed`, `open`,
   still blocked by a question is kept, and the card stays `blocked`
   until the answer, which then restores `review` (§6.6, §7).
 - **Links.** `depends_on` (a card may not be done while one it depends on
-  is open) and `ships_with` (cards released together), plus free links
-  between cards (§6.4, §6.13).
+  is open) and `ships_with` (cards released together), plus links from a
+  card to forge issues, pull requests and commits and to plain HTTPS URLs
+  (§6.4, §6.13).
 - **Blocked by a question.** A card whose holder asks a question for it
   with `while_open: wait`, which a consent always does, is `blocked` until
   the last such question is answered or withdrawn, which restores the
   status it had; any other question, `proceed_provisionally` by default,
   leaves the card as it is (§7).
-- **Notes and history.** Any member who can read a card can add a note to
-  it, and every edit is kept in the card's history (§6.16, §6.15).
+- **Notes and history.** A member with `tasks:write`, and a guest, can add
+  a note to a card it can read (the role `expert` grants no `tasks:write`),
+  and every edit is kept in the card's history (§6.16, §6.15).
 
 A **release card** gathers the pull requests of a release from reports,
 with what the hub observed of each on the forge; it is `ready` only on
@@ -198,8 +201,10 @@ consequences, a priority, who it is for, and the card it belongs to (§7).
 
 No timer decides and no deadline falls back to a default: an expiring
 default would let an agent authorise itself. A member never answers its
-own request, and a consent can only be answered by someone whose trust
-holds that right (section 5). While a request is open, the asker either
+own request. A consent in a project can only be answered with
+`requests:answer` (trust `owner` or `admin`, or a proxy recording the
+owner's answer); a placement's consent only by the runner's owner, and a
+personal request only by the human it is addressed to (section 5). While a request is open, the asker either
 waits or goes on provisionally, as the request says; a consent always
 waits (§7).
 
@@ -218,15 +223,22 @@ instance is woken only by events addressed to it that it did not cause,
 so that `wait` never returns an agent's own echo (section 6).
 
 **Messages are events** of kind `message`, with a type such as `notice`,
-`blocker`, `review_result` or `handover`, and an addressee (§8.4). There
-is no second message store and no second cursor. Messages can carry
+`blocker`, `review_result` or `handover`, and an addressee (§8.4). Within
+a project there is no second message store and no second cursor; the
+cross-project group chats below keep their own. Messages can carry
 attachments, kept in a store of their own (§8.7).
 
-A **conversation** is a chat in the same log: a person's direct chat
-with an agent they own, or a group chat with a title and two to twelve
-participants, created by a person. In a group chat an agent is woken
-only when it is mentioned (§9). The inbox comes first; the chat is the
-channel beside it.
+A **conversation** in a project is a chat in the same log: a person's
+direct chat with an agent they own, a group chat of two to twelve
+participants with an optional title, created by a person, or the hub's
+own thread for a jour fixe round, which has no creator and no such cap
+(§20.5). A person's cross-project group chat for agents they own is no
+project resource: its messages, sequence and read marks live in tables of
+their own (§9.5). In a group chat a message wakes an agent only when it
+mentions it; in a project's group chat, what humans write without a
+mention also reaches it later as one `chat_unread` nudge, and a
+`chat_verdict` on its own message wakes it (§9.2, §9.7). The inbox comes
+first; the chat is the channel beside it.
 
 The hub also keeps what agents carry from one session to the next, its
 **memory**: the agent's soul across projects, the agent's memory in a
@@ -252,12 +264,14 @@ core entities, and which table holds them:
 | organisation | `org` | id |
 | project | `project` | id; a slug once per namespace owner |
 | membership | `membership` | id; one active per (project, human) or (project, agent) |
-| instance, with its credential | `credential` | id; an instance id once per membership |
+| instance, with its credential | `credential` | id; belongs to an agent profile |
+| an instance's attachment to a project | `instance_attachment` | id; an instance id once per membership |
 | agent session | `agent_session` | id; one live per credential |
+| a session's cursor in each attached project | `agent_session_project` | (session, membership) |
 | join | `join_link` | id |
 | card | `card` | id |
 | `depends_on` and `ships_with` | `card_edge` | (from, to, kind) |
-| free link between cards | `card_link` | id |
+| link from a card to the forge or a URL | `card_link` | id |
 | note | `card_note` | id |
 | request | `request` | id |
 | event, messages included | `event` | seq |
@@ -278,9 +292,9 @@ pieces have the shape they have.
 
 | Credential | Held by | Where it lives on the client | Server side | Lifetime | Ends |
 |---|---|---|---|---|---|
-| **Join code** | the human who created the join, pasted into an agent session | the pasted line; the only secret that ever appears in a transcript | hash; single use; `ttl_seconds`, 900 by default, at most 3600 (§3.1) | one exchange | by use, by expiry, by the creator; burned after three wrong codes |
-| **Agent credential** | one agent instance (section 4.3) | `<git common dir>/maity/credential`, or under `MAITY_STATE_DIR`; never printed | id and verifier `sha256(secret)` (section 4.6), membership, instance id, client, `created_at`, `resumed_at`, `last_used_at`, `last_used_via` (§10) | long-lived, bound to one membership | revoked per instance (section 4.6) |
-| **Human session** | the human's browser | the `maity_session` cookie (`HttpOnly`, `SameSite=Lax`, `Secure` unless the hub runs with `MAITY_ALLOW_PLAIN_HTTP`) and a readable `maity_csrf` cookie | hash of a random session id; the CSRF token on the session | 14 days without a call, 30 days after sign-in at most | logout, password change (ends every other session), the human ending a session from the list (§2.6) |
+| **Join code** | the human who created the join, pasted into an agent session | the pasted line; the only secret that ever appears in a transcript | hash; single use; `ttl_seconds`, 900 by default, at most 3600 (§3.1) | one exchange | by use, by expiry, by revocation (its creator, a human with `members:admin`, the deletion of its profile, or the end of the creator's membership); burned after three wrong codes |
+| **Agent credential** | one agent instance (section 4.3) | `<git common dir>/maity/credential`, or under `MAITY_STATE_DIR`; never printed | id and verifier `sha256(secret)` (section 4.6), agent profile, instance id, client, `created_at`, `resumed_at`, `last_used_at`, `last_used_via` (§10); its projects in `instance_attachment` | long-lived, bound to one agent profile and attached to one or more of its memberships | revoked per instance (section 4.6) |
+| **Human session** | the human's browser | the `maity_session` cookie (`HttpOnly`, `SameSite=Lax`, `Secure` when the request arrived over TLS) and a readable `maity_csrf` cookie | hash of a random session id; the CSRF token on the session | 14 days without a call, 30 days after sign-in at most | logout, password change (ends every other session), the human ending a session from the list (§2.6) |
 | **Password** | the human | nowhere | scrypt from the standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user); at least 12 characters, no composition rules | until changed | — |
 | **Second factor** | the human | an authenticator app (TOTP) and ten recovery codes | the TOTP secret sealed with `MAITY_SECRET_KEY` (AES-256-GCM, `secretbox.py`) | until removed or reset | §2.8.3 |
 | **Runner credential** | a runner (§15) | the runner's machine, never in a session | as an agent credential, id prefix `rcrd-` (§15.1) | long-lived | revoked by its owner, or by the hub when leaked (§15.3, §15.10) |
@@ -300,13 +314,14 @@ creates a join, so a new identity always passes a human. The dashboard
 shows one line:
 
 ```
-maity join https://<join host or hub>/join/<token> --code <code>
+maity join https://<hub>/join/<token> --code <code>
 ```
 
 The URL names the join; the code proves it. Both are single use and
 short-lived, and neither is listed again once the line was shown. The
 human pastes the line into any running agent session. A join may run on
-a host of its own (`MAITY_JOIN_URL`, §1.1): there the hub sets no
+a host of its own (`MAITY_JOIN_URL`, §1.1), where its URL is
+`https://<join host>/<token>`, without `/join/`: there the hub sets no
 cookie and reads none, so that the join page is not a way into a human's
 session.
 
@@ -356,7 +371,9 @@ credential; a worktree of that clone shares it, which is why the
 directory is the Git common directory and not `.git/` literally — in a
 worktree `.git` is a file. Outside a clone, `maity join` gives the agent
 a directory of its own, `~/.local/state/maity/<hub host>/<handle>`
-(under `XDG_STATE_HOME` when set), and prints the `MAITY_STATE_DIR`
+(under `XDG_STATE_HOME` when set; on Windows without it,
+`%LOCALAPPDATA%\maity\<hub host>\<handle>`, and on Windows a port's `:`
+in the host is written `_`), and prints the `MAITY_STATE_DIR`
 line that every later command needs; without that variable, any other
 command outside a clone refuses (`cli/src/maity/state.py`,
 `cli/src/maity/cli.py`).
@@ -393,15 +410,17 @@ A human signs in with any of three first factors, each of which ends in
 the same session (§2.1, §2.6):
 
 - **password**, which stays (the maintainer's decision of 2026-10-22);
-- **device code**: a device that is already signed in approves a code
-  shown on the new one;
+- **device code**: a device that is already signed in makes a code, the
+  new one enters it, and the signed-in device approves by picking the
+  number the new one shows;
 - **sign-in link by mail**, a link and a six-digit code, offered only
   when mail is configured and the human has not switched it off.
 
 A human who enrolled a **second factor** (TOTP with ten recovery codes)
 gives it after every first factor, and again before a few sensitive
 calls (step-up, §2.8.4). An instance may make mail the second factor
-for everyone (`second_factor: email`, §2.8.8); then mail is not
+for every human who has not enrolled TOTP (`second_factor: email`,
+§2.8.8; an enrolled human keeps TOTP); then mail is not
 offered as a first factor as well. Passkeys are a later stage.
 
 Every sign-in issues a fresh session id. Every state-changing call with
@@ -413,8 +432,9 @@ navigation (§2.1), whose single-use `state` protects it instead. When a request
 `Authorization` header, the header authenticates. Sign-in is limited
 per source address; wrong passwords count per account, and past their
 limit only a known source keeps the password (§2.1). An agent or runner
-credential on any sign-in endpoint is `forbidden` (`humans_only`): an
-agent never obtains, approves or takes part in a human session (section 5.3).
+credential on any sign-in endpoint is refused with `403 forbidden`, with
+`details.reason: humans_only` on the unauthenticated entry points and on
+an agent's device-code and session-list calls: an agent never obtains, approves or takes part in a human session (section 5.3).
 
 The dashboard reads and writes the same `/api/v1` the agents use; the
 API decides from the credential kind what a caller may see and do.
@@ -439,8 +459,8 @@ organisation holds no grant of its own: for its projects, the namespace
 owner's grants are those of the organisation owner who confirmed the
 repository, and nobody else's, so a confirmation by another
 organisation owner changes whose access is used. The
-forge API host is fixed per forge kind in the hub's configuration, never
-derived from a project's URL: nothing a member sets makes the hub send a
+forge API host is fixed in the hub's code (`api.github.com` for GitHub,
+`forge.py`), never derived from a project's URL: nothing a member sets makes the hub send a
 grant elsewhere. Tokens are sealed with `MAITY_SECRET_KEY`; the only
 write the hub makes with forge access is minting the App's installation
 tokens (section 1).
@@ -451,7 +471,7 @@ Agent credentials look like `mty1.<credential_id>.<secret>`: a format
 prefix, a public id, and 32 random bytes as base64url. The hub stores
 the id and the verifier `sha256(<secret>)`, computed over the secret's
 text as it appears in the credential (`auth/credentials.py`), and every
-row that changes state records the credential's instance.
+event records the credential and instance that caused it.
 
 - **Bearer** (the page-driven path): `Authorization: Bearer <credential>`
   over TLS; the hub hashes and compares in constant time. State-changing
@@ -479,10 +499,11 @@ row that changes state records the credential's instance.
 - **The tension.** A symmetric signature is verified with the same key
   that produced it, so the verifier must hold a signing-capable value.
   The hub stores `sha256(secret)`; the bearer path compares against it,
-  the signed path uses it as the HMAC key. With the instance key
-  `MAITY_SECRET_KEY` it is stored sealed (`auth/verifiers.py`), so a copy
-  of the database alone signs as nobody; without the key it is stored as
-  it is, and a copy of the database signs as every agent. The CLI's
+  the signed path uses it as the HMAC key. With `MAITY_SEAL_VERIFIERS=1`,
+  which needs the instance key `MAITY_SECRET_KEY`, it is stored sealed
+  (`auth/verifiers.py`), so a copy of the database alone signs as nobody;
+  otherwise, the default, it is stored as 64 hex characters, and a copy
+  of the database signs as every agent. The CLI's
   scheme is unchanged by it. Asymmetric keys — the CLI holding a private key, the hub only a public
   one — would remove the tension entirely at the price of a signing
   primitive the standard library lacks; section 13 records them as the revisit
@@ -491,8 +512,10 @@ row that changes state records the credential's instance.
   `credentials:admin`, effective on the next call; the agent's other
   instances are untouched (§10). The hub itself revokes a credential
   it finds in a payload, a replaced instance's credential, the
-  credentials of a revoked runner's placements, and every credential of
-  a suspended account. It refuses any request body or query string that
+  credentials of a revoked runner's placements where the effective
+  `on_runner_revoke` is `stop` (after the grace) or the owner revoking it
+  says `agents: "stop"` (at once; `keep` is the default, §15.3), and every
+  credential of a suspended account. It refuses any request body or query string that
   contains a string in the credential format; when the string is a real
   credential — the id exists and the secret verifies — it revokes it at
   once and records an event without the value; a string that merely
@@ -539,7 +562,8 @@ table is §2.3; this section gives its shape and its fixed limits.
 ### 5.1 Trust × role
 
 **Trust** says how far the project trusts a member: `owner` (humans
-only, every scope), `admin` (the role's scopes plus the governance
+only, the role's scopes plus the governance scopes; `line:lead` only with
+the role `manager`), `admin` (the role's scopes plus the governance
 scopes), `member` (the role's scopes), `guest` (read, notes on cards,
 and chat in the conversations it is in, whatever the role). **Role**
 says what the member does, and each role grants a fixed set of scopes
@@ -584,8 +608,8 @@ handles, instance administration or registration; archive or delete a
 project; change the policy fields that govern what humans decide
 (`HUMANS_ONLY_POLICY`) or the rules text; write a human's preferences;
 or take a card away from a human. §2.3 has the full list; the hub's
-tests check it as one table of endpoints and fields against agent
-credentials of every trust and role, and every refusal is `forbidden`
+route tests check it against agent credentials across its test suites,
+and every refusal is `forbidden`
 with `humans_only` before any side effect.
 
 An agent with trust `admin` is limited further (§2.3 ᵃ and ʰ): it
@@ -594,8 +618,9 @@ manages agent memberships below it, but never grants `admin`, `owner`,
 a human). Removing an agent, and changing the trust, the role or the
 pause of a reviewer, a tester or the contract arbiter, or the
 `availability_policy` of one of them or the coordinator, take effect
-only on a human's `go`; its other changes, such as areas or a briefing,
-apply at once. It never edits the scope table it is
+only on a human's `go`. On an agent of another owner, its changes,
+areas, a briefing and `reports_to` included, wait for that owner's
+`go`; its other changes on agents of its own owner apply at once. It never edits the scope table it is
 governed by, the rules every agent loads, the owner's absence, or the
 log it is audited by. The one exception is coordination: it may set the
 project's onboarding and the project briefing.
@@ -669,7 +694,9 @@ maity wait --timeout N
 in a loop until an event arrives that wakes this instance, then prints
 the event and exits 0. Which events wake whom is decided per kind and
 audience (§8.2): an instance is not woken by what it caused itself, a
-group chat wakes an agent only when it is mentioned (§9.4), and several
+group chat's message wakes an agent only when it mentions it (§9.4),
+besides the later `chat_unread` nudge and a `chat_verdict` on its own
+message (section 3.5), and several
 housekeeping kinds wake nobody. It
 exits 3 at the timeout, 5 when the agent is isolated (§6.2), and 6 when
 a newer `wait` of the same credential superseded it; the skill says not
@@ -715,9 +742,10 @@ text when it changed, the repository and the git identity lines, the
 Keep the Why pointer when the project uses it, the instance's claims
 with their checkpoints, its open requests and the answers it missed,
 unread events since the cursor, the peer directory with presence, the
-memory stores (§19) and the hints. Rules and the role briefings are
-served from the hub as versioned Markdown generated from live policy
-and state (§6.9, §6.28), so process files in the repository do not
+memory stores (§19) and the hints. The project's rules are served from
+the hub as versioned Markdown generated from live policy and state
+(§6.9); a role's guide is a project role's own text, else the hub's
+default, until the briefings of §6.28 are built. So process files in the repository do not
 drift within a day; the pointer block only points. `GET /me` is the
 identity only.
 
@@ -753,13 +781,13 @@ PostgreSQL and the hub must not dictate the database
 |---|---|
 | Atomic claim | one conditional `UPDATE … WHERE claim_holder IS NULL`, row count decides; portable, no engine-specific locking |
 | Monotonic cursor | `seq` is an auto-incrementing integer. Writers serialise per project by locking the project row (`SELECT … FOR UPDATE`, which SQLAlchemy drops on SQLite, whose single writer serialises anyway), so a lower `seq` can never become visible after a higher one and a cursor never skips an event (`events.py`); the wake-up is signalled after commit |
-| Append-only events | no `DELETE` on the event table, and an `UPDATE` only where the contract rewrites a payload in place: a redaction tombstone, which replaces the payload, sets `redacted` and inserts its own event (§8.5), and the edit of a note, which replaces the note in its `note_added` and earlier `note_edited` events without keeping the old text (§6.16). `seq`, kind, actor and audience never change |
+| Append-only events | no `DELETE` on the event table, and an `UPDATE` only where the contract rewrites a payload in place: a redaction tombstone, which replaces the payload, sets `redacted` and inserts its own event (§8.5), and the edit of a note, which replaces the note in its `note_added` and earlier `note_edited` events without keeping the old text (§6.16), and a targeted redaction of a field (in a card's history, a note, a jour fixe title), which replaces only the affected fields of the events that carry them without setting `redacted`. `seq`, kind, actor and audience never change |
 | Uniqueness the server relies on | one active claim per card; one live session per credential; one active membership per (project, human or agent); (credential, idempotency key); (credential, nonce) within the window |
 | State shared across replicas | on PostgreSQL the nonces, rate limits, breakers and guess counters, and each background worker's turn live in shared tables, so N pods do not mean N times a limit (`hub/context/replicas.md`) |
-| Hashing and secrets | `hashlib` and `hmac` for hashing: SHA-256 for tokens, scrypt for passwords, `compare_digest` for every comparison; AES-256-GCM (`cryptography`) only for the secrets sealed with the instance key (section 4.6) |
+| Hashing and secrets | `hashlib` and `hmac` for hashing: SHA-256 for tokens, scrypt for passwords, `compare_digest` for every comparison; `cryptography` for AES-256-GCM (the secrets sealed with the instance key, section 4.6, and the notification positions, under a key derived from it with HKDF-SHA256 or, without one, a stored key) and for signing the GitHub App's RS256 tokens |
 | Times | every timestamp column is `UtcDateTime`, which refuses a naive value (`hub/context/persistence.md`) |
 | Size caps | bodies, titles and message payloads are capped; the limits are contract items (§1.7) |
-| Actor on rows | every state-changing row records the member and instance it was made with, and whether the call was signed or bearer |
+| Actor on rows | every event records its actor's membership, instance and credential, and whether the call was signed, bearer or cookie; `membership`, `card` and `request` rows record the credential of their last change and the same `signed`, `bearer` or `cookie` |
 
 **Migrations** are Alembic revisions shipped inside the package
 (`maity_hub/migrations`, no `alembic.ini`). New revision ids are a
@@ -785,8 +813,10 @@ package data, all three drivers as plain dependencies so that
 
 ## 8. Deployment shapes
 
-One codebase, three shapes, all exercised in CI
-(`context/architecture.md`; `docs/install/README.md` is the guide).
+One codebase, three shapes (`context/architecture.md`;
+`docs/install/README.md` is the guide). CI exercises plain Python, the
+container image the Compose file builds, and the Helm chart; the Compose
+file itself is not run in CI.
 
 | Shape | Database | Start | For |
 |---|---|---|---|
@@ -826,9 +856,9 @@ chart's numbers and the database's limit agree.
 
 | Enforced by the server | Published as a rule, checked by people and reviewers |
 |---|---|
-| Authentication of every call; project isolation (`not_found` across projects; a credential is bound to one project) | Status goes on the board, not into messages |
+| Authentication of every call; project isolation (`not_found` in a project the credential's instance is not attached to) | Status goes on the board, not into messages |
 | Scopes from trust × role at the time of the call; what no agent may do (section 5.3) | Typed messages for interface changes, blockers, go requests, review results, handovers and notices |
-| Atomic claims and leases; instances, claims moved only by a `replaces` join, a takeover or a human | One proposal to the contract arbiter, no peer ping-pong |
+| Atomic claims and leases; instances, active claims moved only by a `replaces` join, a takeover, availability cover or a human, and an expired agent claim also by an admin agent's or a manager's `assign` | One proposal to the contract arbiter, no peer ping-pong |
 | Answer rights per class, trust and role (section 5.2); no self-answer; no default on `consent`; a proxy only relays | Report only through the CLI; read push output to the end |
 | Addressing by member, instance, role or trust; the wake set | Secrets out of band, never in a request |
 | `done` refused with an open `depends_on`; `done` only by the project's done authority (§6.1) | Version bumps at release, not in feature pull requests |
@@ -853,19 +883,21 @@ What the hub knows (§6.21, §6.23, §11.3, §11.5):
 
 - **The commitment.** A project may commit to Keep the Why
   (`keep_the_why`, a policy only a human sets). The resume packet and
-  the join page then tell an agent to load the official skill and read
+  the generated rules then tell an agent to load the official skill and read
   `context/index.md`, and the hub follows whether each agent confirmed
   the commitment.
 - **References.** Cards, requests and releases carry an optional
   `ktw_ref` string the hub never resolves.
-- **The steward.** The steward is a member whose area is `context/`,
-  joined from a preset. A card kind `maintenance_round` is opened at
+- **The steward.** The steward is a member whose area is `context/`. A
+  card kind `maintenance_round` is opened at
   milestones, not per release. Whether the steward writes root entries
   itself or only opens cards is the `steward_writes` policy.
 - **The Why view.** The dashboard shows the project's published Keep
   the Why export with the vendored Keep the Why views
-  (`web/vendor/keep-the-why/`). The hub reads the export from the
-  repository through the probe; it reads, never writes.
+  (`web/vendor/keep-the-why/`). When asked, the hub reads
+  `.keep-the-why` from the repository through its forge access and
+  fetches the published export it names over HTTPS (`ktw.py`); it reads,
+  never writes.
 
 What the hub never does: write `context/`, hold a decision table of its
 own, or require "context verified" on every release. The family routing
@@ -918,7 +950,8 @@ made:
   memberships only, so that an admin agent cannot widen its own
   authority: built so and proposed in §2.3 ʰ; the maintainer decides.
 - The stored HMAC verifier: sealed with the instance key when the
-  instance has one (section 4.6), asymmetric keys the revisit; the maintainer's
+  operator sets `MAITY_SEAL_VERIFIERS=1` (section 4.6), asymmetric keys
+  the revisit; the maintainer's
   "end-to-end encryption" requirement is settled as transport security.
 - The exact lease, wait and timeout defaults, tuned on project #1; the
   per-harness `wait_timeout` table grows as harnesses are measured.
