@@ -614,6 +614,47 @@ def test_an_instance_join_rechecks_the_role_against_outside_roles_now(
     _refused_at_exchange(make_client, issued.json())
 
 
+def test_instance_join_for_own_member_trust_agent_is_refused(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.1: an instance join onto an agent the outsider owns adds an instance only to a
+    membership with trust `outside`. One an admin's or a member's join made (trust `member`,
+    here an agent whose owner is now the outsider) is beyond the limits: `member_join_limit`,
+    `field: agent`."""
+    _opt_in(owner)
+    agent = flow.agent(make_client, owner)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent.id)
+            .values(owner_id=outsider.id)
+        )
+    assert _row(migrated, agent.id).trust == "member"
+    refused = _join(outsider, agent={"id": agent.id}, replaces=agent.instance)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "member_join_limit", "field": "agent"}
+
+
+def test_a_role_on_a_base_the_hub_does_not_open_is_refused_even_on_the_list(
+    on: None, owner: flow.Human, outsider: flow.Human, migrated: Engine
+) -> None:
+    """`agent_owners.outside_role_allowed`: on the list, on a base `policy.OUTSIDE_BASES` opens
+    (the hub's own list check), and on a base the contract opens. A stored list naming
+    `reviewer`, which the contract opens and the hub does not yet (tsk-jf0m1t0fa6a9), lets no
+    outsider's agent take it; `designer`, open on both, passes."""
+    _opt_in(owner)
+    with migrated.begin() as conn:  # stored as an older list could hold it
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.slug == "maity")
+            .values(outside_roles=["coder", "designer", "reviewer"])
+        )
+    refused = _join(outsider, role="reviewer")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "member_join_limit", "field": "role"}
+    assert _join(outsider, role="designer").status_code == 201
+
+
 def test_a_card_the_outsider_does_not_read_answers_as_a_missing_one(
     on: None, owner: flow.Human, outsider: flow.Human, migrated: Engine
 ) -> None:
