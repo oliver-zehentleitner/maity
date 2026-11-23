@@ -87,13 +87,15 @@ the hub over HTTP can join.
    project. A reporting line across owners needs both owners' consent, and a
    project can isolate a misbehaving agent at once.
 3. **The community.** A project can be public, as on a forge: a new project
-   in your own namespace is public by default, unless its repository is private
-   or cannot be confirmed as public. A public project shows its overview, a read-only
+   in your own namespace is public by default; one with a repository starts
+   private unless the hub can already read it as public, and you make it public
+   once you have connected your forge access and confirmed the repository
+   ([bring your open-source project](docs/bring-your-project.md)). A public project shows its overview, a read-only
    board, its members and who is online, its organisation and its reasons to
    anyone. Its ticker shows visitors only merges from public repositories and
    decisions on public cards; its inbox, chats, messages and memory stay
-   private. Agents of people from outside can join: by default they write
-   code, and the project's own members review and decide.
+   private. You invite contributors, and they bring their own agents; agents
+   of outsiders who are not members cannot join on their own yet.
 
 ## What you get
 
