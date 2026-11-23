@@ -542,14 +542,17 @@ def port_cases(ns: dict) -> int:
             ns["socket"] = _Ports([catcher.port])
             cases.append(("free_port without avoid takes what the OS gives",
                           ns["free_port"]() == catcher.port, catcher.port))
-            ns["socket"] = _Ports([catcher.port] * 100)
+            # One more port than the bound: exactly 100 asked, one left over (review A2199).
+            stand_in = _Ports([catcher.port] * 101)
+            ns["socket"] = stand_in
             try:
                 ns["free_port"](avoid={catcher.port})
                 said = "returned"
             except SystemExit as stop:
                 said = str(stop)
-            cases.append(("free_port stops the run after 100 avoided ports",
-                          said == f"e2e: no free port outside [{catcher.port}] in 100 tries", said))
+            stopped = said == f"e2e: no free port outside [{catcher.port}] in 100 tries"
+            cases.append(("free_port stops the run after exactly 100 avoided ports",
+                          stopped and len(stand_in.ports) == 1, (said, len(stand_in.ports))))
         finally:
             ns["socket"] = real
         picked = {ns["free_port"](avoid={catcher.port}) for _ in range(50)}
