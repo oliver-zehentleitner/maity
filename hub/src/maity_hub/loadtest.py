@@ -45,6 +45,7 @@ from maity_hub import (
     policy,
     rules,
     setup_cards,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.auth import credentials, sessions, verifiers
@@ -113,6 +114,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                 created_at=now,
             )
         )
+        write_guard.make_row(conn, human_id)
         if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
             raise RuntimeError(f"the handle {handle} is taken")
         project_id = new_id("project")

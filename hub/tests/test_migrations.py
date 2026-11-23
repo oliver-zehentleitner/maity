@@ -2327,3 +2327,39 @@ def test_inst_attach_downgrade_refuses_a_credential_without_an_attachment(
             )
         )  # fmt: skip
     _refused_before_any_change(engine, "a credential has no instance_attachment row")
+
+
+def test_acct_lock_rows_backfills_every_human_without_one_and_its_downgrade_keeps_them(
+    engine: Engine,
+) -> None:
+    """A human made after 0076 got its `account_lock` row only on first need; the backfill gives
+    every human one, leaves an existing row as it is, and the downgrade deletes nothing."""
+    from sqlalchemy import insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    rev = "20261123120000_acct_lock_rows"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    with engine.begin() as conn:
+        for n in ("1", "2"):
+            conn.execute(
+                insert(t.human).values(
+                    id=f"hum-{n}", handle=f"h{n}", display_name=n, password_hash="x",
+                    created_at=clock.now(),
+                )
+            )  # fmt: skip
+        conn.execute(insert(t.account_lock).values(human_id="hum-1"))  # made on first need
+
+    def rows() -> list[str]:
+        with engine.connect() as conn:
+            found = conn.execute(select(t.account_lock.c.human_id).order_by("human_id"))
+            return [str(r) for r in found.scalars()]
+
+    assert rows() == ["hum-1"]
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    assert rows() == ["hum-1", "hum-2"]
+    downgrade(engine, _before(engine, rev))
+    assert rows() == ["hum-1", "hum-2"]

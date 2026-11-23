@@ -95,7 +95,6 @@ def history(
 def create_allow(body: AllowIn, request: Request, caller: AnyCaller) -> JSONResponse:
     me = _caller(caller)
     sent = _sent(body)
-    chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"))
 
     def action(conn: Connection) -> idempotency.Outcome:
         with chat_rules.announcing(conn, me):
@@ -128,7 +127,6 @@ def patch_allow(
 def create_deny(body: DenyIn, request: Request, caller: AnyCaller) -> JSONResponse:
     me = _caller(caller)
     sent = _sent(body)
-    chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"), sent.get("human_id"))
 
     def action(conn: Connection) -> idempotency.Outcome:
         with chat_rules.announcing(conn, me):
