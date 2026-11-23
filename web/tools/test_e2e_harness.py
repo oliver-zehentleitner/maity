@@ -413,8 +413,9 @@ def catcher_rounds(source: str) -> list[str]:
     A catcher belongs to the function whose own scope makes it; a pick belongs to the
     innermost function around it that makes a catcher, so one in a nested def, lambda or
     default argument still counts for the round. One message per fault, naming the function
-    and line. A helper at module level that picks or makes a catcher for a round is not
-    followed (web/context/stack.md 65a9e67e, Known limits)."""
+    and line. Not seen (web/context/stack.md 65a9e67e, Known limits): a helper at module level
+    that picks or makes a catcher for a round, a catcher made in a lambda or a class body
+    inside the round, and one made through another name for MailCatcher."""
     faults = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name == "free_port":

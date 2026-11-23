@@ -300,7 +300,7 @@ Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-vfdn98vwa0ym (web-e2e job 137502570723 on #2131: `http.client.BadStatusLine: 220 e2e catcher` in the mail factor round), found in review A2188, 2026-11-23; PR #2133 and its reviews A2195 and A2196
+**Source:** card tsk-vfdn98vwa0ym (web-e2e job 137502570723 on #2131: `http.client.BadStatusLine: 220 e2e catcher` in the mail factor round), found in review A2188, 2026-11-23; PR #2133 and its reviews A2195, A2196, A2197 and A2199
 
 `free_port` binds port 0, reads the port and closes it; the hub binds it later. A `MailCatcher` that also bound port 0 in between could get that very port, and the hub's health check was answered by SMTP. The second hub, the mail factor and the password reset rounds now make the catcher first, which listens from its constructor on, and pick the hub's port with `free_port(avoid={catcher.port})`. A port with a listener is never handed out by bind(0), so the collision is impossible, not rarer. `test_e2e_harness.py` forces the old collision and holds every function of `e2e.py` that makes a catcher to that order: an AST check per function that names the round, sees a catcher the round makes by name, bound by assignment, annotation or `with`, and flags one bound to no name, charges a `free_port(` in a nested def, lambda or default argument of the round to the round, and checks that it still finds the three rounds.
 
