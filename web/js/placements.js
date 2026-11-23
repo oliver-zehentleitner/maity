@@ -508,12 +508,15 @@ window.Maity = window.Maity || {};
         append(clear(tool), list.map((x) => h("option", { value: x.id }, words.toolName(x.id) + (x.version ? " " + x.version : ""))));
         tool.value = list.some((x) => x.id === kept) ? kept : list.length ? list[0].id : "";
         // Nothing to start with: the hub would refuse it (harness_not_offered).
-        noTool.hidden = !!list.length;
+        // An installed tool left out only for its missing model is said by noModel below, not
+        // as "no tool installed" (review A2144).
+        noTool.hidden = !!list.length || installed().length > 0;
         const listed = (caps().harnesses || []).filter((x) => !target.value || (x.targets || []).includes(target.value));
         const chosenRunner = runners.find((a) => a.runner.id === runner.value).runner;
-        append(clear(noToolWhy), list.length ? [] : !chosenRunner.capabilities ? h("li", null, M.t("runners.caps.unreported"))
+        append(clear(noToolWhy), noTool.hidden ? [] : !chosenRunner.capabilities ? h("li", null, M.t("runners.caps.unreported"))
           : listed.length ? listed.filter((x) => x.available === false).map((x) => h("li", null, words.unavailableText(chosenRunner, x)))
             : h("li", null, M.t("placements.new.no_tool_listed")));
+        noToolWhy.hidden = !noToolWhy.childNodes.length;
         const left = installed().filter((x) => !list.includes(x)).map((x) => words.toolName(x.id));
         noModel.hidden = !left.length;
         noModel.textContent = left.length ? M.t("placements.new.no_model", { tools: M.fmt.list(left) }) : "";

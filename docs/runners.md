@@ -46,11 +46,11 @@ The pairing line is shown once and expires after the time you chose; the code in
    sudo pipx install --global maity
    ```
 
-   A `pipx install` in your own home is one the service's user cannot run; `install` stops then and says so.
+   A `pipx install` in your own home is one the service's user cannot run; `install` stops then and says so. `--global` needs pipx 1.5 or later; Ubuntu 24.04 has 1.4.3. There, install a newer pipx first (`sudo apt install python3-pip`, then `sudo pip install --break-system-packages 'pipx>=1.5'`, which puts it in `/usr/local/bin`), or install `maity` into a virtual environment of its own that every user can run: `sudo python3 -m venv /opt/maity && sudo /opt/maity/bin/pip install maity && sudo ln -s /opt/maity/bin/maity /usr/local/bin/maity`.
 3. **Install the service and pair it**, with the URL and code of the pairing line. The dashboard shows the line ready to paste:
 
    ```sh
-   printf '%s\n' '<code>' | sudo maity runner install https://<hub>/r/<token> --code-file -
+   printf '%s\n' '<code>' | sudo maity runner install 'https://<hub>/r/<token>' --code-file -
    ```
 
    `--code-file -` reads the code from stdin, so it is not on install's command line, where other users could see it. The line still lands in your shell's history with the code. The code is single-use and expires, so once used or expired the line opens nothing; to keep it out of the history anyway, start the line with a space where bash has `HISTCONTROL=ignorespace` (or `ignoreboth`) or zsh `setopt HIST_IGNORE_SPACE`, or delete the entry after use (`history -d` in bash). The same holds for the terminal way's pairing line. `install`:
@@ -58,7 +58,7 @@ The pairing line is shown once and expires after the time you chose; the code in
    - writes `/etc/maity-runner/runner.toml` with the hub, the state directory `/var/lib/maity-runner/state` (where the credential goes) and the workspaces `/var/lib/maity-runner/workspaces`;
    - writes the systemd unit, pairs as `maity-runner` and enables the service;
    - **starts the service only once the configuration has `[limits]` and a `[harness.<id>]`.** Until then it prints `enabled maity-runner, not started`, lists what is missing (`limits: required`, `harness: required`) and the next steps. A service started on such a file would exit 78 (a configuration it cannot use) and not be restarted.
-4. **Give the runner its configuration.** Replace install's file with one that says what the runner may do, keeping install's `state_dir` and `workspaces`. The dashboard offers this file for the projects you chose, with a command that writes it (`sudo tee /etc/maity-runner/runner.toml`, install's file kept beside it as `runner.toml.install`):
+4. **Give the runner its configuration.** Replace install's file with one that says what the runner may do, keeping install's `state_dir` and `workspaces`. The dashboard offers this file for the projects you chose, with a command that writes it (`sudo tee /etc/maity-runner/runner.toml`, install's file kept beside it as `runner.toml.install`, a copy a second paste does not overwrite). `tee` writes into install's file, so it stays root's and 0644 whatever your umask:
 
    ```toml
    [hub]
@@ -83,42 +83,48 @@ The pairing line is shown once and expires after the time you chose; the code in
 
    - **List only tools that are installed on the machine, or that the runner installs.** `install = true` works for Claude Code and Codex only ([Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current)); it needs `gpgv` for Claude Code, which Debian and Ubuntu have installed with apt. The runner checks the download, not the installed binary at each start, and in this layout the binary belongs to the agents' user: add no harness that runs unsandboxed to this runner, as it could replace that binary ([Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current)). Any other tool (agy, opencode) has to be installed for `maity-runner` first. A tool that is listed but missing is an error in `maity runner check`, and the runner offers it to no agent: the dashboard's **On a runner** form then says why under the empty tool choice ("… is not installed on …").
    - **Leave `agent_path` out** unless you need it. Without it the agents get the service's own `PATH`. If you set it, the agents' home is `/var/lib/maity-runner`: a directory under `/home/maity-runner` does not exist.
-5. **Start it and check it** as its user:
+5. **Start it:**
 
    ```sh
    sudo systemctl restart maity-runner
-   sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml
    ```
 
-   Every `maity runner` command for the service takes `--config /etc/maity-runner/runner.toml` and runs as `maity-runner`: without `--config` it reads `~/.config/maity-runner/runner.toml`, which the service layout does not have. The runner's log is `journalctl -u maity-runner`.
-6. **Log the tool in as `maity-runner`.** With `install = true` the runner installs Claude Code at its start, into its own tools directory. Find the version, then start that binary as the service's user and type `/login` in it:
+   With `install = true` the runner installs Claude Code as it starts, in the background. The runner's log is `journalctl -u maity-runner`.
+6. **Log the tool in as `maity-runner`.** The runner installs Claude Code into its own tools directory. Once it is there, find the version, then start that binary as the service's user and type `/login` in it:
 
    ```sh
    sudo ls /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions
-   sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude
+   sudo -u maity-runner -H sh -c 'cd && exec /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude'
    ```
 
-   Codex the same way: `sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/codex/versions/<version>/codex/bin/codex login`. Until the login, the runner reports the tool `login_needed`, the dashboard's runner card says it waits for its login, and no agent can be started with it; the runner checks once a minute and offers it as soon as you have logged in. A tool you installed yourself is logged in the same way, as `maity-runner` with `-H`.
+   `sudo` keeps the directory you run it in, which `maity-runner` may not be allowed to enter (Ubuntu's home directories are 0750), so Claude Code starts in `maity-runner`'s home instead (`cd` without an argument); trust that folder when Claude Code asks. The commands below start in `/` for the same reason. Codex the same way: `sudo -u maity-runner -H sh -c 'cd && exec /var/lib/maity-runner/.local/share/maity-runner/tools/codex/versions/<version>/codex/bin/codex login'`. Until the login, the runner reports the tool `login_needed`, the dashboard's runner card says it waits for its login, and no agent can be started with it; the runner checks once a minute and offers it as soon as you have logged in. A tool you installed yourself is logged in the same way, as `maity-runner` with `-H`.
 7. **Log the forge in as `maity-runner`.** An agent's `git push` uses the machine's forge login of the agents' user, and `maity gh` (pull requests, with `pull_requests = true` in the repository's grant) needs gh logged in as that user ([Git in an agent's session](#git-in-an-agents-session)). Without it the first push fails with `could not read Username`. For GitHub (`sudo apt install gh` on Debian 13 and Ubuntu):
 
    ```sh
-   sudo -u maity-runner -H gh auth login
-   sudo -u maity-runner -H gh auth setup-git
+   cd / && sudo -u maity-runner -H gh auth login
+   cd / && sudo -u maity-runner -H gh auth setup-git
    ```
 
    The login is stored under `/var/lib/maity-runner`, where gh finds it under `HOME`; a token in `GH_TOKEN` or `GITHUB_TOKEN` does not reach `maity gh`. Give it a login you would hand to the agents: code an allowed command runs can push wherever it may.
-8. **The Keep the Why skill**, if your projects use it: [The Keep the Why skill](#the-keep-the-why-skill) says what the runner delivers and, with a hub of 0.1.0a10 or older, how to install it by hand.
+8. **Check it** as its user, once the tools and the forge are logged in:
+
+   ```sh
+   cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml
+   ```
+
+   Not earlier: before the runner has installed Claude Code, `check` says only that it is not installed yet and skips the sandbox checks, and before its login, `check` runs Claude Code headless to test the sandbox, which fails without a login. Every `maity runner` command for the service takes `--config /etc/maity-runner/runner.toml` and runs as `maity-runner`: without `--config` it reads `~/.config/maity-runner/runner.toml`, which the service layout does not have.
+9. **The Keep the Why skill**, if your projects use it: [The Keep the Why skill](#the-keep-the-why-skill) says what the runner delivers and, with a hub of 0.1.0a10 or older, how to install it by hand.
 
 ### In a terminal
 
 1. Install the CLI: `pipx install maity`.
-2. Run the pairing line on the machine. It reads like this:
+2. Run the pairing line on the machine. The dashboard's line reads like this:
 
    ```sh
-   maity runner pair https://<hub>/r/<token> --code <code>
+   printf '%s\n' '<code>' | maity runner pair 'https://<hub>/r/<token>' --code-file -
    ```
 
-   The credential goes to the runner's own state directory and is never printed. Without a configuration, `pair` writes `~/.config/maity-runner/runner.toml` with the hub and the state directory.
+   As with install, the code goes in on stdin, not on `pair`'s command line (`--code <code>` works too, but puts it there). The credential goes to the runner's own state directory and is never printed. Without a configuration, `pair` writes `~/.config/maity-runner/runner.toml` with the hub and the state directory.
 3. Add what the runner may do to that file:
 
    ```toml
@@ -150,6 +156,19 @@ The dashboard offers this way's starter configuration too, with a command that w
 
 > [!WARNING]
 > Allow rules and hooks in the runner user's own harness settings are inherited by every agent it starts. `maity runner check` warns about them. Use a user of its own for the runner.
+
+### Pair again
+
+**Re-pair** on a runner's card makes a new pairing line for the same runner; its exchange revokes the runner's credential. The dashboard offers both ways again, and you choose the way the runner runs. `pair` refuses while a credential is in the state directory, so it is moved aside first. As a service, `pair` runs as `maity-runner` with install's configuration, so the new credential goes to `/var/lib/maity-runner/state`, where the service reads it:
+
+```sh
+sudo systemctl stop maity-runner
+sudo -u maity-runner mv /var/lib/maity-runner/state/credential /var/lib/maity-runner/state/credential.old
+cd / && printf '%s\n' '<code>' | sudo -u maity-runner -H maity runner pair 'https://<hub>/r/<token>' --code-file - --config /etc/maity-runner/runner.toml
+sudo systemctl restart maity-runner
+```
+
+then check it as in step 8 above. In a terminal, move `~/.local/state/maity-runner/credential` aside (or the one in your `state_dir`), run the pairing line, and start `maity runner serve` again.
 
 ## macOS
 

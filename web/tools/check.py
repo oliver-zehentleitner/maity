@@ -839,8 +839,16 @@ CODE_BEFORE = re.compile(
 TEXT_BEFORE = re.compile(
     r"""(?:\.textContent\s*=\s*|\btitle["']?\s*[:=]\s*|placeholder["']?\s*[:=]\s*|aria-label["']?\s*[:=]\s*|\blabel["']?\s*:\s*|alt["']?\s*:\s*
          |\bh\([^;\n]*(?:null|\}),\s*)$""", re.X)
-# A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`.
-CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export|sudo|printf)\s|<<'|\s(&&|\|)\s|\$\(""")
+# A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`, a
+# pipe into a command, `sudo` with an option or one of the commands the dialogs run, `printf`
+# with its quoted format, `mv` of a path. Not a bare ` | ` or a word after `sudo`: "yes | no" and "sudo is
+# required" are prose.
+CONFIG_OR_SHELL = re.compile(
+    r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|^mv\s+[~/]|<<'|\s(&&|\|\|)\s|\$\(
+        |\s\|\s+(sudo|maity)\s|^\{\s+sudo\s
+        |^sudo\s+(-[a-zA-Z]\s|(apt|cp|ls|maity|mv|pipx|systemctl|tee|test)\s)|^printf\s'""",
+    re.X,
+)
 # A comment in a generated file with words in it: the person reads it, whatever the line is.
 WORDS_IN_COMMENT = re.compile(r"(?:^|\s)#\s+[A-Za-z]+\s+[A-Za-z]")
 HTML_NAMES = {"a", "button", "input", "select", "textarea", "form", "label", "summary", "details", "li", "ul", "ol",

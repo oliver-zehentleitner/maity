@@ -17039,6 +17039,10 @@
     "en": "f4ebc774df1605b4",
     "text": "e80bfba8e344b1d4"
   },
+  "runners.pair.aside": {
+    "en": "cb16464b5befc303",
+    "text": "92f00f6d0ef20080"
+  },
   "runners.pair.check": {
     "en": "96ef5f8b49aa23b9",
     "text": "69353a062c173e3e"
@@ -17095,6 +17099,10 @@
     "en": "4caae70996a2e1cd",
     "text": "302e4cd8b4156d3a"
   },
+  "runners.pair.service.check": {
+    "en": "8fb6ecf995a16906",
+    "text": "50df9a876d00d722"
+  },
   "runners.pair.service.checks": {
     "en": "7b8101bbaf3ee91d",
     "text": "3e0ddb2ebf04c5c3"
@@ -17132,8 +17140,8 @@
     "text": "325892c28472f8c5"
   },
   "runners.pair.service.login_hint": {
-    "en": "0f9a9bbbfef00879",
-    "text": "e38629f7b1cdcfa3"
+    "en": "a60e298294e6d9b9",
+    "text": "042a96f10406ef90"
   },
   "runners.pair.service.packages": {
     "en": "f32a7cb0c802ce98",
@@ -17142,6 +17150,14 @@
   "runners.pair.service.packages_hint": {
     "en": "ea4742a8995a0ea5",
     "text": "adc1e173d64fa7ca"
+  },
+  "runners.pair.service.repair_line": {
+    "en": "d655183882f716a9",
+    "text": "16dc656cbbb264af"
+  },
+  "runners.pair.service.repair_stop": {
+    "en": "9e9b7213663b3f1e",
+    "text": "746e90d3edcd1595"
   },
   "runners.pair.service.save": {
     "en": "d9a15c61818681bf",
@@ -17152,8 +17168,8 @@
     "text": "9fcd3d63c94deb44"
   },
   "runners.pair.service.start": {
-    "en": "6ba7ddb2000c8848",
-    "text": "4b8c43b34c7c42a5"
+    "en": "4ba1097ada4a75f4",
+    "text": "6c86522cdc4494cc"
   },
   "runners.pair.start": {
     "en": "1fc9d7b62256de1d",

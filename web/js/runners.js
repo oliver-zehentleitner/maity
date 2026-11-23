@@ -23,6 +23,9 @@ window.Maity = window.Maity || {};
   const CONFIG_PATH = "~/.config/maity-runner/runner.toml";
   // The service way (`maity runner install`, cli/src/maity/runner/install.py): its fixed
   // paths, the home of the user it makes, and where the runner keeps the tools it installs.
+  // A command as maity-runner starts in `/` (`cd / &&`), or Claude Code in that user's home:
+  // sudo keeps the caller's directory, which maity-runner may not enter (Ubuntu's 0750
+  // homes), and Claude Code would ask to trust it (web/context/views.md).
   const SERVICE = {
     config: "/etc/maity-runner/runner.toml",
     home: "/var/lib/maity-runner",
@@ -32,12 +35,17 @@ window.Maity = window.Maity || {};
     checks: "sudo apt install make python3-venv python3-dev build-essential postgresql",
     cli: "sudo pipx install --global maity",
     start: "sudo systemctl restart maity-runner",
-    check: "sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml",
+    stop: "sudo systemctl stop maity-runner",
+    check: "cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml",
     versions: "sudo ls /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions",
-    login: "sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude",
-    forge: "sudo -u maity-runner -H gh auth login",
-    forgeGit: "sudo -u maity-runner -H gh auth setup-git",
+    login: "sudo -u maity-runner -H sh -c 'cd && exec /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude'",
+    forge: "cd / && sudo -u maity-runner -H gh auth login",
+    forgeGit: "cd / && sudo -u maity-runner -H gh auth setup-git",
+    // A re-pair: the runner's credential moved aside, since `pair` refuses while one is there.
+    aside: "sudo -u maity-runner mv /var/lib/maity-runner/state/credential /var/lib/maity-runner/state/credential.old",
   };
+  // The terminal way's re-pair: the default state directory's credential moved aside.
+  const TERMINAL_ASIDE = "mv ~/.local/state/maity-runner/credential ~/.local/state/maity-runner/credential.old";
 
   // ---- plain words for what a runner advertises (shared with Project → Runners)
 
@@ -224,11 +232,19 @@ window.Maity = window.Maity || {};
   // file, 0644 as install has it, since the service's user must read it. tee writes into
   // install's existing file, so that mode stays under any umask; without install's file,
   // cp -p fails and nothing is written (tools/starter_configs.py runs it under umask 002).
+  // Install's own file is copied aside only once: pasted again, the command keeps that copy.
   const writeCommand = (config, way) => (way === "service"
-    ? "sudo cp -p " + SERVICE.config + " " + SERVICE.config + ".install && sudo tee " + SERVICE.config + " > /dev/null <<'EOF'\n" + config + "EOF"
+    ? "{ sudo test -e " + SERVICE.config + ".install || sudo cp -p " + SERVICE.config + " " + SERVICE.config + ".install; } && sudo tee " + SERVICE.config + " > /dev/null <<'EOF'\n" + config + "EOF"
     : "mkdir -p ~/.config/maity-runner && (set -C; umask 077; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF");
-  // The service way's pairing: the code goes in on stdin, never on install's command line.
-  const installLine = (enrollment) => "printf '%s\\n' '" + enrollment.code + "' | sudo maity runner install " + enrollment.pair_url + " --code-file -";
+  // A word for the shell in single quotes; a quote in it closed, escaped and opened again.
+  const sq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+  // Every pairing line pipes the code in (--code-file -), never on a command line, where
+  // other users of the machine could read it; printf is the shell's own.
+  const piped = (enrollment, command) => "printf '%s\\n' " + sq(enrollment.code) + " | " + command + " " + sq(enrollment.pair_url) + " --code-file -";
+  const installLine = (enrollment) => piped(enrollment, "sudo maity runner install");
+  const pairLine = (enrollment) => piped(enrollment, "maity runner pair");
+  // The service's re-pair: pair again as maity-runner, into install's state directory.
+  const servicePairLine = (enrollment) => "cd / && " + piped(enrollment, "sudo -u maity-runner -H maity runner pair") + " --config " + SERVICE.config;
 
   // A command to paste, with its copy button.
   const pasteLine = (command) => [h("pre", { class: "paste-line" }, command), copyButton(() => command)];
@@ -245,8 +261,8 @@ window.Maity = window.Maity || {};
       h("li", null, M.t("runners.pair.install"), pasteLine(CLI_INSTALL),
         h("p", { class: "hint" }, M.t("runners.pair.install_hint"))),
       config ? h("li", null, configStep(M.t("runners.pair.save", { path: CONFIG_PATH }), config, "terminal"))
-        : h("li", null, M.t("runners.pair.keep_config")),
-      h("li", { class: "pair-line-step" }, M.t("runners.pair.line", { time: formatTime(enrollment.expires_at) }), pasteLine(enrollment.pair_line)),
+        : h("li", null, M.t("runners.pair.keep_config"), " ", M.t("runners.pair.aside"), pasteLine(TERMINAL_ASIDE)),
+      h("li", { class: "pair-line-step" }, M.t("runners.pair.line", { time: formatTime(enrollment.expires_at) }), pasteLine(pairLine(enrollment))),
       h("li", null, M.tn("runners.pair.check", { command: h("code", null, "maity runner check") })),
       h("li", null, M.tn("runners.pair.start", { command: h("code", null, "maity runner serve") })));
   }
@@ -267,20 +283,37 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint" }, M.t("runners.pair.service.install_hint", { home: SERVICE.home, path: SERVICE.config }))),
       h("li", null, configStep(M.t("runners.pair.service.save", { path: SERVICE.config }), config, "service"),
         h("p", { class: "hint" }, M.t("runners.pair.service.save_hint"))),
-      h("li", null, M.t("runners.pair.service.start"), pasteLine(SERVICE.start), pasteLine(SERVICE.check)),
-      h("li", null, M.t("runners.pair.service.login"), pasteLine(SERVICE.versions), pasteLine(SERVICE.login),
-        h("p", { class: "hint" }, M.t("runners.pair.service.login_hint"))),
-      h("li", null, M.t("runners.pair.service.forge"), pasteLine(SERVICE.forge), pasteLine(SERVICE.forgeGit),
-        h("p", { class: "hint" }, M.t("runners.pair.service.forge_hint"))));
+      h("li", null, M.t("runners.pair.service.start"), pasteLine(SERVICE.start)),
+      ...afterStart());
   }
 
-  // The panel that makes a pairing end in a runner that starts. A new runner chooses its way,
+  // The tool's and the forge's login, then the check: with install = true the runner installs
+  // Claude Code after its start, and check runs Claude Code headless, which needs the login.
+  const afterStart = () => [
+    h("li", null, M.t("runners.pair.service.login"), pasteLine(SERVICE.versions), pasteLine(SERVICE.login),
+      h("p", { class: "hint" }, M.t("runners.pair.service.login_hint", { home: SERVICE.home }))),
+    h("li", null, M.t("runners.pair.service.forge"), pasteLine(SERVICE.forge), pasteLine(SERVICE.forgeGit),
+      h("p", { class: "hint" }, M.t("runners.pair.service.forge_hint"))),
+    h("li", null, M.t("runners.pair.service.check"), pasteLine(SERVICE.check)),
+  ];
+
+  // A service's re-pair: the service stopped, its credential moved aside, paired again as
+  // maity-runner with install's configuration (so into install's state directory), started.
+  function serviceRepairSteps(enrollment) {
+    return h("ol", { class: "pair-way-service" },
+      h("li", null, M.t("runners.pair.service.repair_stop"), pasteLine(SERVICE.stop), pasteLine(SERVICE.aside)),
+      h("li", { class: "pair-line-step" }, M.t("runners.pair.service.repair_line", { time: formatTime(enrollment.expires_at) }), pasteLine(servicePairLine(enrollment))),
+      h("li", null, M.t("runners.pair.service.start"), pasteLine(SERVICE.start)),
+      h("li", null, M.t("runners.pair.service.check"), pasteLine(SERVICE.check)));
+  }
+
+  // The panel that makes a pairing end in a runner that starts. The person chooses the way,
   // the service by default; the dashboard cannot tell the runner's machine from the browser's,
-  // so the person says which (web/context/views.md). A re-pair keeps its configuration and
-  // shows the terminal's steps only.
+  // so the person says which (web/context/views.md). A re-pair keeps its configuration
+  // (`configFor` null) and pairs again the way the runner runs.
   function pairSteps(enrollment, configFor, onHide) {
     const terminal = terminalSteps(enrollment, configFor && configFor("terminal"));
-    const service = configFor ? serviceSteps(enrollment, configFor("service")) : null;
+    const service = configFor ? serviceSteps(enrollment, configFor("service")) : serviceRepairSteps(enrollment);
     let choice = null;
     if (service) {
       terminal.hidden = true;
@@ -507,12 +540,9 @@ window.Maity = window.Maity || {};
     function drawRunners(items) {
       clear(list);
       const live = items.filter((r) => !r.removed_at);
-      if (!live.length) {
-        append(list, h("div", { class: "empty-state" }, h("p", null, M.t("runners.empty"))));
-        return;
-      }
+      if (!live.length) append(list, h("div", { class: "empty-state" }, h("p", null, M.t("runners.empty"))));
       live.forEach((r) => append(list, runnerCard(r)));
-      // The pairing on screen: say when its runner has paired and come online;
+      // The pairing on screen, also while no runner is paired yet: say when its runner has paired and come online;
       // once the line is used or expired it leaves the page.
       const wait = panel.querySelector(".pair-wait");
       if (waitingFor && wait) {
@@ -568,4 +598,5 @@ window.Maity = window.Maity || {};
 
   M.runnerStarterConfig = starterConfig;
   M.runnerConfigCommand = writeCommand;
+  M.runnerShellWord = sq;
 })(window.Maity);

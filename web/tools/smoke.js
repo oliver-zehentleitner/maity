@@ -2492,6 +2492,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(ntEmpty) === JSON.stringify(["The runner's configuration names no tool for this target."]),
       "placements: a runner that lists no tool at all says so " + JSON.stringify(ntEmpty));
     srCancel().click(); await tick();
+    // Only OpenCode installed, with no model named (review A2144): the missing model is said,
+    // not "no tool installed" over an empty list.
+    ntHarnesses = (list) => list.filter((x) => x.id === "opencode").map((x) => Object.assign({}, x, { available: true, models: [] }));
+    await srOpen();
+    const ntModel = [srOpts("placement-new-tool").length, byId("placement-new-tool-none").hidden,
+      byId("placement-new-tool-none").querySelector("ul").hidden, srPanel().querySelector(".placement-new-no-model").hidden,
+      byId("placement-new-tool").getAttribute("aria-describedby")];
+    expect(JSON.stringify(ntModel) === JSON.stringify([0, true, true, false, "placement-new-tool-no-model"]),
+      "placements: an installed tool left out for its model says that, not that no tool is installed " + JSON.stringify(ntModel));
+    srCancel().click(); await tick();
     win.Maity.api.getAll = ntAll;
   }
   // A join line cancelled while its POST waits, the form opened anew and placed on a runner: the
@@ -3130,13 +3140,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const serviceConfig = service.querySelector(".runner-config").textContent;
   expect(JSON.stringify(serviceLines.slice(0, 3)) === JSON.stringify(["sudo apt install tmux socat bubblewrap git pipx",
     "sudo apt install make python3-venv python3-dev build-essential postgresql", "sudo pipx install --global maity"])
-    && /^printf '%s\\n' 'FIXT-URE0-RUNR' \| sudo maity runner install https:\/\/maity\.example\/r\/FIXTURE-\S+ --code-file -$/.test(serviceLines[3])
-    && serviceLines.includes("sudo systemctl restart maity-runner")
-    && serviceLines.includes("sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml")
-    && serviceLines.includes("sudo -u maity-runner -H /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude")
-    && JSON.stringify(serviceLines.slice(-2)) === JSON.stringify(["sudo -u maity-runner -H gh auth login", "sudo -u maity-runner -H gh auth setup-git"])
-    && text(service).includes("Without it the first push fails with \"could not read Username\"."),
-    "runners: the service's steps: packages, the CLI for every user, install with the code on stdin, restart, check, tool and forge login " + JSON.stringify(serviceLines));
+    && /^printf '%s\\n' 'FIXT-URE0-RUNR' \| sudo maity runner install 'https:\/\/maity\.example\/r\/FIXTURE-\S+' --code-file -$/.test(serviceLines[3])
+    && JSON.stringify(serviceLines.slice(4)) === JSON.stringify(["sudo systemctl restart maity-runner",
+      "sudo ls /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions",
+      "sudo -u maity-runner -H sh -c 'cd && exec /var/lib/maity-runner/.local/share/maity-runner/tools/claude-code/versions/<version>/bin/claude'",
+      "cd / && sudo -u maity-runner -H gh auth login", "cd / && sudo -u maity-runner -H gh auth setup-git",
+      "cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml"])
+    && text(service).includes("Without it the first push fails with \"could not read Username\".")
+    && text(service).includes("in maity-runner's home (/var/lib/maity-runner); trust that folder"),
+    "runners: the service's steps: packages, the CLI for every user, install with the code on stdin, restart, tool and forge login from a directory maity-runner can enter, then check " + JSON.stringify(serviceLines));
   expect(text(service).includes("with its home in /var/lib/maity-runner (not /home/maity-runner). Do not create that user by hand")
     && text(service).includes("until then it names what is missing (limits: required, harness: required)")
     && text(service).includes("install = true works for Claude Code and Codex only")
@@ -3150,12 +3162,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "runners: the service's configuration keeps install's state_dir and workspaces and lets the runner install Claude Code");
   ctx.copied = null;
   btn(service, "Copy as a command that writes the file").click(); await tick();
-  expect(ctx.copied === "sudo cp -p /etc/maity-runner/runner.toml /etc/maity-runner/runner.toml.install && sudo tee /etc/maity-runner/runner.toml > /dev/null <<'EOF'\n" + serviceConfig + "EOF",
+  expect(ctx.copied === "{ sudo test -e /etc/maity-runner/runner.toml.install || sudo cp -p /etc/maity-runner/runner.toml /etc/maity-runner/runner.toml.install; } && sudo tee /etc/maity-runner/runner.toml > /dev/null <<'EOF'\n" + serviceConfig + "EOF",
     "runners: the service's command writes /etc/maity-runner/runner.toml, install's file kept beside it " + JSON.stringify(ctx.copied));
   byId("pair-way-terminal").checked = true; byId("pair-way-terminal").dispatch("change"); await tick();
   expect(service.hidden && !steps.hidden, "runners: choosing the terminal shows its steps instead");
   const config = text(steps.querySelector(".runner-config"));
-  expect(text(steps).includes("maity runner pair https://maity.example/r/FIXTURE-") && text(steps).includes("pipx install")
+  const pairText = text(steps.querySelector(".pair-line-step pre"));
+  expect(/^printf '%s\\n' 'FIXT-URE0-RUNR' \| maity runner pair 'https:\/\/maity\.example\/r\/FIXTURE-\S+' --code-file -$/.test(pairText)
+    && !text(steps).includes("--code FIXT"), "runners: the terminal's pair line pipes the code in too " + JSON.stringify(pairText));
+  expect(text(steps).includes("maity runner pair 'https://maity.example/r/FIXTURE-") && text(steps).includes("pipx install")
     && text(steps).includes("maity runner check") && text(steps).includes("maity runner serve"), "runners: the steps: install, configure, pair, check, serve");
   expect(config.includes('url = "https://maity.example"') && config.includes('projects = ["maintainer/maity", "maintainer/sample"]')
     && config.includes('"github.com/oliver-zehentleitner/maity"') && config.includes('"github.com/example/sample-shop"')
@@ -3171,6 +3186,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.runnerStarterConfig("https://h.example", []).includes("projects = []   # none chosen"), "runners: no project chosen is said in the configuration");
   expect(win.Maity.runnerConfigCommand("x\n").includes("(set -C; umask 077; cat > ~/.config/maity-runner/runner.toml) <<'EOF'\nx\nEOF"),
     "runners: the command writes the configuration owner-only and never over an existing one");
+  expect(win.Maity.runnerShellWord("a'b c") === "'a'\\''b c'", "runners: a pairing line's words are single-quoted, a quote in one closed and escaped");
   expect(text(main).includes("Open pairings") && text(main).includes("new-laptop"), "runners: the open pairing is listed, revocable");
   await go("#/all"); await go("#/runners"); await tick();
   expect(!main.querySelector(".pair-steps") && !text(main).includes("FIXT-URE0-RUNR"), "runners: the pairing line is gone after leaving the view");
@@ -3178,6 +3194,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(card("home-laptop"), "Re-pair").click(); await tick(); await tick(); await tick();
   expect(rWrites.some((w) => JSON.stringify(w[2]) === JSON.stringify({ runner_id: "rnr-0002" })) && text(main.querySelector(".pair-steps")).includes("Keep your existing configuration"),
     "runners: re-pairing asks for a line for the same runner");
+  // A re-pair offers both ways too (review A2144): a service pairs again as maity-runner, into
+  // install's state directory, its credential moved aside first; the terminal the same way.
+  const rpService = main.querySelector(".pair-way-service");
+  const rpTerminal = main.querySelector(".pair-way-terminal");
+  const rpLines = rpService.querySelectorAll("pre.paste-line").map((p) => text(p));
+  expect(byId("pair-way-service").checked && !rpService.hidden && rpTerminal.hidden
+    && JSON.stringify(rpLines.slice(0, 2)) === JSON.stringify(["sudo systemctl stop maity-runner",
+      "sudo -u maity-runner mv /var/lib/maity-runner/state/credential /var/lib/maity-runner/state/credential.old"])
+    && /^cd \/ && printf '%s\\n' 'FIXT-URE0-RUNR' \| sudo -u maity-runner -H maity runner pair 'https:\/\/maity\.example\/r\/FIXTURE-\S+' --code-file - --config \/etc\/maity-runner\/runner\.toml$/.test(rpLines[2])
+    && JSON.stringify(rpLines.slice(3)) === JSON.stringify(["sudo systemctl restart maity-runner",
+      "cd / && sudo -u maity-runner -H maity runner check --config /etc/maity-runner/runner.toml"])
+    && !rpService.querySelector(".runner-config") && rpService.querySelectorAll(".pair-line-step").length === 1,
+    "runners: a service's re-pair stops it, moves the credential aside, pairs as maity-runner with install's file, starts and checks it " + JSON.stringify(rpLines));
+  expect(rpTerminal.querySelectorAll("pre.paste-line").map((p) => text(p)).includes("mv ~/.local/state/maity-runner/credential ~/.local/state/maity-runner/credential.old"),
+    "runners: the terminal's re-pair moves the default state directory's credential aside");
   await fireIntervals(); await tick();
   expect(text(main.querySelector(".pair-wait")).includes("Waiting for the runner") && main.querySelector(".pair-line-step pre"),
     "runners: a re-pair waits for the new credential, not the old one");

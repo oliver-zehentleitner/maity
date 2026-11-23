@@ -6,8 +6,8 @@ umask 002: the page's "copy as a command" writes
 ~/.config/maity-runner/runner.toml (owner-only, exactly the configuration),
 a second run refuses to overwrite it, and `maity runner check --offline`
 loads it without a word about the file. The service way's command runs
-without sudo on a stand-in for install's 0644 file and must leave it 0644,
-with install's own kept beside it. What check says about the machine
+without sudo on a stand-in for install's 0644 file, twice, and must leave it
+0644, with install's own kept beside it from the first run. What check says about the machine
 (no state_dir before pairing, no tmux) is not this test's business.
 
 Needs node, bash and `maity` (Python 3.11+, from cli/) on PATH.
@@ -61,7 +61,8 @@ def check_service_case(name: str, case: dict, root: Path) -> list[str]:
     home.mkdir()
     failures = []
     expected = (
-        f"sudo cp -p {SERVICE_CONFIG} {SERVICE_CONFIG}.install && sudo tee {SERVICE_CONFIG} "
+        f"{{ sudo test -e {SERVICE_CONFIG}.install || sudo cp -p {SERVICE_CONFIG} "
+        f"{SERVICE_CONFIG}.install; }} && sudo tee {SERVICE_CONFIG} "
         f"> /dev/null <<'EOF'\n{case['config']}EOF"
     )
     if case["command"] != expected:
@@ -81,12 +82,14 @@ def check_service_case(name: str, case: dict, root: Path) -> list[str]:
     # Only the command line itself; the heredoc's text names the real path too.
     line, heredoc = case["command"].split("\n", 1)
     command = line.replace("sudo ", "").replace(SERVICE_CONFIG, str(path)) + "\n" + heredoc
-    wrote = run(["bash", "-c", command], home)
     kept = home / "runner.toml.install"
-    if wrote.returncode != 0 or path.read_text(encoding="utf-8") != case["config"]:
-        failures.append(f"{name}: the command did not write the file: {wrote.stderr.strip()}")
-    if not kept.exists() or kept.read_text(encoding="utf-8") != installed:
-        failures.append(f"{name}: the command did not keep install's file beside it")
+    # Pasted twice: the second run writes the file again and keeps install's copy as it was.
+    for _ in range(2):
+        wrote = run(["bash", "-c", command], home)
+        if wrote.returncode != 0 or path.read_text(encoding="utf-8") != case["config"]:
+            failures.append(f"{name}: the command did not write the file: {wrote.stderr.strip()}")
+        if not kept.exists() or kept.read_text(encoding="utf-8") != installed:
+            failures.append(f"{name}: the command did not keep install's file beside it")
     for each in (path, kept):
         mode = stat.S_IMODE(each.stat().st_mode) if each.exists() else 0
         if mode != 0o644:
