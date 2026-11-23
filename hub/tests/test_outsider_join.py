@@ -614,6 +614,121 @@ def test_an_instance_join_rechecks_the_role_against_outside_roles_now(
     _refused_at_exchange(make_client, issued.json())
 
 
+def test_the_route_reads_an_outsider_only_while_the_join_is_open(
+    owner: flow.Human, outsider: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`outsiders.outsider` answers for itself, not only behind the gate: a signed-in human who
+    is no member is an outsider of the joins routes only while `joins_open` holds."""
+    from types import SimpleNamespace
+
+    from maity_hub.errors import ApiError
+
+    _opt_in(owner)
+    caller = SimpleNamespace(kind="human", via="cookie", human_id=outsider.id, bridge=None)
+    with migrated.connect() as conn, pytest.raises(ApiError) as closed:
+        outsiders.outsider(conn, caller, "maintainer/maity")
+    assert closed.value.code == "not_found"
+    monkeypatch.setattr(outsiders, "JOINS_ON", True)
+    with migrated.connect() as conn:
+        found = outsiders.outsider(conn, caller, "maintainer/maity")
+    assert found.principal_id == outsider.id
+
+
+def test_opening_the_join_opens_no_other_route_to_an_outsider(
+    on: None, owner: flow.Human, outsider: flow.Human
+) -> None:
+    """With the join open, only the joins routes pass the gate for an outsider: a write to
+    any other project route still answers `not_found` before its body is read."""
+    _opt_in(owner)
+    assert _join(outsider).status_code == 201  # the joins routes are open
+    for method, path, body in (
+        ("POST", f"{P}/tasks", {"title": 5}),
+        ("PATCH", P, {"name": 7}),
+        ("POST", f"{P}/invitations", {"trust": 5}),
+    ):
+        answer = outsider.client.request(
+            method,
+            f"/api/v1{path}",
+            json=body,
+            headers={"X-CSRF-Token": outsider.csrf, "Content-Type": "application/json"},
+        )
+        assert (answer.status_code, answer.json()) == (404, NOT_FOUND), (method, path, answer.text)
+
+
+def test_an_outsiders_agent_whose_owner_joined_keeps_to_outside_roles(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`check_assignment` binds trust `outside` to `outside_roles` whoever its owner is now:
+    with the owner a member, a role off the list is still `invalid` (`outside_owner`)."""
+    agent = _outside_agent(make_client, owner, outsider)
+    _member_now(migrated, outsider)
+    refused = owner.patch(f"{P}/members/{agent.id}", {"role": "manager"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"role": "outside_owner"}
+
+
+def test_the_exchange_voids_a_join_whose_profile_changed_owner(
+    on: None,
+    owner: flow.Human,
+    outsider: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+) -> None:
+    _opt_in(owner)
+    created = _join(outsider).json()
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == created["agent_id"])
+            .values(owner_id=owner.id)
+        )
+    _refused_at_exchange(make_client, created)
+
+
+def test_the_exchange_voids_an_instance_join_once_the_membership_is_not_outside(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    created = _join(outsider, agent={"id": agent.id}, replaces=agent.instance).json()
+    _set_row(migrated, agent.id, trust="member")
+    _refused_at_exchange(make_client, created)
+
+
+def test_the_join_asks_the_opt_in_again_under_the_lock(
+    on: None, owner: flow.Human, outsider: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The opt-in can close between the first reading and the project's lock: the join reads
+    it again under the lock and answers `not_found` then, creating nothing."""
+    _opt_in(owner)
+    real = outsiders.joins_open
+    calls = [0]
+
+    def closes_after_two(conn: Any, project: Any) -> bool:
+        calls[0] += 1  # the gate's and the route's readings see it open; the lock's sees it closed
+        return calls[0] <= 2 and real(conn, project)
+
+    monkeypatch.setattr(outsiders, "joins_open", closes_after_two)
+    answer = _join(outsider)
+    assert (answer.status_code, answer.json()) == (404, NOT_FOUND), answer.text
+    monkeypatch.setattr(outsiders, "joins_open", real)
+    assert outsider.get(JOINS).json()["items"] == []
+
+
+def test_contribution_lists_only_the_roles_an_outsiders_agent_may_hold(
+    on: None, owner: flow.Human, outsider: flow.Human, migrated: Engine
+) -> None:
+    """A stored `outside_roles` entry on a base the hub does not open is left out of
+    `GET …/contribution`'s `outside_roles`."""
+    _opt_in(owner)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.slug == "maity")
+            .values(outside_roles=["coder", "reviewer"])
+        )
+    assert outsider.get(CONTRIBUTION).json()["outside_roles"] == ["coder"]
+
+
 def test_instance_join_for_own_member_trust_agent_is_refused(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
