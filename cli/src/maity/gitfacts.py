@@ -150,7 +150,18 @@ def gh_repository(url: str | None) -> str | None:
     return f"{host}/{path}"
 
 
-def _pull_request(cwd: Path, branch: str, repository: str | None = None) -> PullRequest | None:
+# How many pull requests of one head branch name are read. gh's `--head` matches the branch
+# name alone, not the fork it lives in, so in the project's repository another fork's pull
+# request from a branch of the same name (`main`, `fix`) comes back too (tsk-6yq56cm6k01j).
+PR_CANDIDATES = 30
+
+
+def _pull_request(
+    cwd: Path, branch: str, repository: str | None = None, head: str | None = None
+) -> PullRequest | None:
+    """The pull request of `branch`: of those gh lists by that head branch name, the one whose
+    head is `head` (the local HEAD), else the first, as before (whose other head the report
+    then refuses)."""
     # A fork's clone: its pull request is in the project's repository, which gh would not
     # pick from an `origin` that is the fork (tsk-k0x4jn4y4ykg).
     where = ["--repo", repository] if repository else []
@@ -165,7 +176,7 @@ def _pull_request(cwd: Path, branch: str, repository: str | None = None) -> Pull
             "--state",
             "all",
             "--limit",
-            "1",
+            str(PR_CANDIDATES),
             "--json",
             "number,headRefOid,state,url,title,body",
         ],
@@ -179,7 +190,9 @@ def _pull_request(cwd: Path, branch: str, repository: str | None = None) -> Pull
         rows = json.loads(result.stdout or "[]")
         if not rows:
             return None
-        row = rows[0]
+        # A row that is no object is passed over here and fails below as gh's odd answer.
+        mine = (r for r in rows if isinstance(r, dict) and r.get("headRefOid") == head)
+        row = next(mine, rows[0]) if head is not None else rows[0]
         return PullRequest(
             number=int(row["number"]),
             head=str(row["headRefOid"]),
@@ -454,7 +467,7 @@ def collect(cwd: Path, repository: str | None = None) -> Facts:
     pr = forge_error = None
     if unknown is None and branch:
         try:
-            pr = _pull_request(cwd, remote_branch or branch, gh_repository(repository))
+            pr = _pull_request(cwd, remote_branch or branch, gh_repository(repository), head)
         except FactsError as exc:
             forge_error = str(exc)
     # Merged and deleted: the forge still has this head, as the merged pull request's. It

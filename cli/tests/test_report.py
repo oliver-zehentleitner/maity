@@ -236,6 +236,38 @@ def test_pr_head_mismatch_is_refused(clone: Path, bin_dir: Path) -> None:
     assert problems == [f"pull request #12 has head {'0' * 12}, local HEAD is at {head[:12]}"]
 
 
+def test_another_fork_s_pull_request_of_the_same_branch_name_is_passed_over(
+    clone: Path, bin_dir: Path
+) -> None:
+    """gh's `--head` matches the branch name alone: in the project's repository another fork's
+    pull request from a `work` of its own comes back too, here first. The one whose head is
+    the local HEAD is the report's (tsk-6yq56cm6k01j)."""
+    head = git(clone, "rev-parse", "HEAD")
+    rows = [
+        {"number": 5, "headRefOid": "0" * 40, "state": "OPEN", "url": "https://x/pull/5"},
+        {"number": 9, "headRefOid": head, "state": "OPEN", "url": "https://x/pull/9"},
+    ]
+    fake_gh(bin_dir, json.dumps(rows))
+    facts = gitfacts.collect(clone)
+    assert facts.pr is not None and facts.pr.number == 9
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_no_pull_request_with_the_local_head_keeps_the_first_and_its_refusal(
+    clone: Path, bin_dir: Path
+) -> None:
+    """None of them has the local HEAD: the first stands as before, and the report is refused
+    over its other head rather than sent with a pull request that is not this work's."""
+    rows = [
+        {"number": 5, "headRefOid": "0" * 40, "state": "OPEN", "url": "https://x/pull/5"},
+        {"number": 9, "headRefOid": "1" * 40, "state": "OPEN", "url": "https://x/pull/9"},
+    ]
+    fake_gh(bin_dir, json.dumps(rows))
+    facts = gitfacts.collect(clone)
+    assert facts.pr is not None and facts.pr.number == 5
+    assert any("pull request #5 has head" in p for p in gitfacts.mismatches(facts))
+
+
 def test_no_pr_for_branch(clone: Path, bin_dir: Path) -> None:
     fake_gh(bin_dir, "[]")
     facts = gitfacts.collect(clone)

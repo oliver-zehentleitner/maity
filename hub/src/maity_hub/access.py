@@ -12,7 +12,9 @@ routes"): a route is open to an outsider only when its endpoint calls `reader` a
 `@outside_read`, and `ProjectRoute` answers an outsider's call to any other project route
 `not_found` before its body or query is read (`gate`). A human who
 owns an agent or a runner in the project passes the gate on `OWNER_CALLS` alone (§1.3), and
-reads not-done `security` cards no more than any outsider does (`public_cards.shown`).
+reads not-done `security` cards no more than any outsider does (`public_cards.shown`). The
+joins routes for an outsider's own agent (`OUTSIDE_JOINS`, §3.1) pass the gate only while
+`outsiders.joins_open` holds for the project.
 """
 
 from __future__ import annotations
@@ -214,6 +216,8 @@ OUTSIDE_READS = frozenset(
         ("GET", f"{API_PROJECT}/tasks/{{card_id}}/notes"),
         ("GET", f"{API_PROJECT}/logo"),
         ("GET", f"{API_PROJECT}/banner"),
+        # What the project allows an outsider: whether they may add an agent (§6.1).
+        ("GET", f"{API_PROJECT}/contribution"),
         # The Why view, only while the hub last found the repository public (§11.3, §11.5).
         ("GET", f"{API_PROJECT}/keep-the-why"),
         ("GET", f"{API_PROJECT}/keep-the-why/export"),
@@ -273,6 +277,19 @@ OWNER_CALLS = frozenset(
         # The placements on its runner (§15.3, §15.6).
         ("PATCH", f"{API_PROJECT}/placements/{{placement_id}}"),
         ("DELETE", f"{API_PROJECT}/placements/{{placement_id}}"),
+    }
+)
+
+# The joins routes an outsider calls for an agent of their own (§3.1, "An outsider's agent"):
+# the gate passes them for an outsider only while `outsiders.joins_open` holds for the project
+# (the switch, the admins' opt-in, public), and answers `not_found` before the body is read
+# otherwise, as for any other route. The route then reads the caller as an `outsiders.
+# Outsider` (`routes/joins.joiner`).
+OUTSIDE_JOINS = frozenset(
+    {
+        ("POST", f"{API_PROJECT}/joins"),
+        ("GET", f"{API_PROJECT}/joins"),
+        ("DELETE", f"{API_PROJECT}/joins/{{join_id}}"),
     }
 )
 
@@ -382,6 +399,7 @@ def is_outsider(
     owner_call: bool = False,
     public_repository_read: bool = False,
     instance_namespaces: frozenset[str] | None = None,
+    outside_join: bool = False,
 ) -> bool:
     """Whether the session cookie's human is an outsider of the public project `slug` names
     (§2.3) for this call. Cheapest refusals first: the project's own row (no page, archived,
@@ -399,12 +417,19 @@ def is_outsider(
         and instance_serves_project(conn, project, instance_namespaces)
     ):
         return False  # the read is open to an outsider: the route answers them
-    return _outsider_of(conn, cookie, project, owner_call)
+    return _outsider_of(conn, cookie, project, owner_call, outside_join)
 
 
-def _outsider_of(conn: Connection, cookie: str, project: Any, owner_call: bool = False) -> bool:
+def _outsider_of(
+    conn: Connection,
+    cookie: str,
+    project: Any,
+    owner_call: bool = False,
+    outside_join: bool = False,
+) -> bool:
     """`is_outsider` past the project's own row: the session, the membership, for one of
-    `OWNER_CALLS` the owner's reads, and the whole public test."""
+    `OWNER_CALLS` the owner's reads, for one of `OUTSIDE_JOINS` whether the project takes
+    outsiders' agents now (`outsiders.joins_open`), and the whole public test."""
     human_id = _session_human(conn, cookie)
     if human_id is None:
         return False
@@ -419,6 +444,11 @@ def _outsider_of(conn: Connection, cookie: str, project: Any, owner_call: bool =
         return False
     if owner_call and _owns_a_part(conn, project.id, human_id):
         return False
+    if outside_join:
+        from maity_hub import outsiders  # its imports reach this module: read at call time
+
+        if outsiders.joins_open(conn, project):
+            return False  # the joins route answers the outsider (`routes/joins.joiner`)
     from maity_hub import public_projects
 
     return project.id in public_projects.public_for_outsiders(conn, [project.id])
@@ -510,12 +540,17 @@ def _owns_a_part(conn: Connection, project_id: str, human_id: str) -> bool:
 
 
 async def gate(
-    request: Any, owner_call: bool = False, public_repository_read: bool = False
+    request: Any,
+    owner_call: bool = False,
+    public_repository_read: bool = False,
+    outside_join: bool = False,
 ) -> None:
     """`not_found` for an outsider's call to a project route not in `OUTSIDE_READS` (§2.3),
     before FastAPI reads its body or its query, so that no validation answer (`400 invalid`)
     tells an outsider what a route takes. `ProjectRoute` calls it for such a route, with
-    `owner_call` for one of `OWNER_CALLS`, and with `public_repository_read` for one of
+    `owner_call` for one of `OWNER_CALLS`, with `outside_join` for one of `OUTSIDE_JOINS`,
+    which it opens to an outsider only while `outsiders.joins_open` holds (§3.1, "An
+    outsider's agent"), and with `public_repository_read` for one of
     `PUBLIC_REPOSITORY_READS`, which it opens to an outsider only while the project's stored
     `repository_public` is true and the instance's token serves its namespace (the app's
     settings: `forge_github_token`, `forge_instance_namespaces`) and the forge, asked live when
@@ -558,7 +593,7 @@ async def gate(
     opened = None
     async with engine.connect() as conn:
         outsider = await conn.run_sync(
-            is_outsider, cookie, slug, owner_call, public_repository_read, instance
+            is_outsider, cookie, slug, owner_call, public_repository_read, instance, outside_join
         )
         if not outsider and token is not None and instance is not None:
             opened = await conn.run_sync(open_why_project, cookie, slug, instance)

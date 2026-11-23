@@ -43,6 +43,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.plain_text import plain
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
+from maity_hub.scopes import OUTSIDE
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -50,7 +51,8 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
 class InvitationIn(Strict):
-    trust: Literal["owner", "admin", "member", "guest"] = "member"
+    # `outside` is read only to be refused by name (§2.3 "Outside", `_check`).
+    trust: Literal["owner", "admin", "member", "guest", "outside"] = "member"
     role: str = "coder"  # a built-in role or one of the project's (§2.3)
     address: str | None = None
     handle: str | None = None  # a person's handle or live alias, instead of `address` (§3.4)
@@ -61,6 +63,8 @@ class InvitationIn(Strict):
 
 def _check(body: InvitationIn) -> None:
     errors: dict[str, str] = {}
+    if body.trust == OUTSIDE:  # only an outsider's join gives it (§2.3 "Outside")
+        errors["trust"] = OUTSIDE
     if body.handle is not None and body.address is not None:
         errors["handle"] = "with_address"
     if body.address is not None and not address.valid(body.address.strip()):
