@@ -562,7 +562,10 @@ trust of the membership it is about: the active row, and in merged.py the active
 most recent one, for a reporter who has left. An agent with trust `outside` stays outside when
 its owner becomes a member, so `agent_owners.bound_by_outside_roles` (`check_assignment`,
 `check_policy`, `refuse_lift`) and merged.py's `_outside_agent` count it whoever its owner is
-now; a rejoin as an outsider's agent makes a new row with trust `outside` again. A removal and
+now; a rejoin as an outsider's agent makes a new row with trust `outside` again. merged.py's
+predicate has three terms on that current row, as the lead ruled (seq 202949): trust `outside`,
+the row's `joined_outside` mark (#2135: it joined while its owner held no membership), or its
+owner holding no membership now; one test per term, each failing without it. A removal and
 a new join as a member's agent is §2.3's one way out, and leaves a row with trust `member`.
 Rejected: any row of the agent in the project that ever held `outside` counting, because it
 would close the one exit §2.3 names (the lead took that reading back the same day).

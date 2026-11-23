@@ -240,17 +240,22 @@ def outsiders_work(conn: Connection, card: Any, project: Any) -> bool:
 
 
 def _outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
-    """An outside agent (§2.3 "Own approvals"): one with trust `outside` in the project (its
-    active membership, else its most recent one), which stays outside when its owner later
-    becomes a member, or one whose owner is no member of the project. One whose profile the
-    hub cannot find counts as outside, since nothing then shows it is the project's own."""
-    trust = conn.execute(
-        select(t.membership.c.trust)
+    """An outside agent (§2.3 "Own approvals"), judged on its current membership in the project
+    (the active one, else the most recent, for a reporter who has left; never any older row,
+    since a rejoin as a member's agent is §2.3's one way out): its trust is `outside`, or its
+    `joined_outside` mark is set (it joined while its owner held no membership), both of which
+    stay when its owner later becomes a member; or its owner holds no membership now. One
+    whose profile the hub cannot find counts as outside, since nothing then shows it is the
+    project's own."""
+    current = conn.execute(
+        select(t.membership.c.trust, t.membership.c.joined_outside)
         .where(t.membership.c.project_id == project.id, t.membership.c.agent_id == agent_id)
         .order_by(t.membership.c.active.is_(True).desc(), t.membership.c.joined_at.desc())
         .limit(1)
-    ).scalar()
-    if trust == OUTSIDE:
+    ).first()
+    if current is not None and current.trust == OUTSIDE:
+        return True
+    if current is not None and current.joined_outside:
         return True
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)

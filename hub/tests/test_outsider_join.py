@@ -682,6 +682,61 @@ def test_merged_closes_counts_an_outsiders_agent_as_outside_after_its_owner_join
     assert _outsiders_work(migrated, card) is True
 
 
+def _held_by(owner: flow.Human, agent_id: str) -> str:
+    card = _card(owner)
+    assert owner.post(f"{P}/tasks/{card}/claim", {"holder": agent_id}).status_code == 200
+    return card
+
+
+def _set_row(engine: Engine, agent_id: str, **values: Any) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True))
+            .values(**values)
+        )
+
+
+def test_outsiders_work_by_the_trust_term_alone(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Trust `outside` on its current row: outside, with its owner a member and no
+    `joined_outside` mark (cleared here so that only the trust decides)."""
+    agent = _outside_agent(make_client, owner, outsider)
+    card = _held_by(owner, agent.id)
+    _member_now(migrated, outsider)
+    _set_row(migrated, agent.id, joined_outside=False)
+    assert _outsiders_work(migrated, card) is True
+
+
+def test_outsiders_work_by_the_joined_outside_term_alone(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The `joined_outside` mark on its current row: outside, with trust `member` and its owner
+    a member (the project's owner)."""
+    agent = flow.agent(make_client, owner)
+    card = _held_by(owner, agent.id)
+    assert _outsiders_work(migrated, card) is False
+    _set_row(migrated, agent.id, joined_outside=True)
+    assert _outsiders_work(migrated, card) is True
+
+
+def test_outsiders_work_by_the_owner_term_alone(
+    owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Its owner holds no membership now: outside, with trust `member` and no mark."""
+    agent = flow.agent(make_client, owner)
+    card = _held_by(owner, agent.id)
+    assert _outsiders_work(migrated, card) is False
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent.id)
+            .values(owner_id=outsider.id)
+        )
+    assert _outsiders_work(migrated, card) is True
+
+
 def test_a_rejoin_as_an_outsiders_agent_stays_outside(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
