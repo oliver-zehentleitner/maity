@@ -11,7 +11,7 @@ deleted. Whatever changes one of these calls `public_pages.touch` in its transac
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -30,6 +30,7 @@ from maity_hub import (
     swarm,
 )
 from maity_hub import tables as t
+from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.errors import invalid
 
@@ -58,19 +59,8 @@ def check_about(value: str | None) -> str | None:
     return value
 
 
-# What one IN list carries at most, as `export.CHUNK` (mirrored, not imported, as
-# `reports.PATHS_PER_QUERY`: `export` imports `reports`, which imports `moderation`, which
-# imports this module): far below every engine's limit on bound parameters (SQLite's is
-# usually 32766, PostgreSQL's 65535), and above the projects of a normal list, so a list still
-# asks each question in one statement. `/explore` and the landing page's count judge every
-# project with a page on the instance, which no quota bounds.
-BATCH = 500
-
-
-def _batches(values: Iterable[str]) -> Iterator[list[str]]:
-    items = sorted(set(values))
-    for start in range(0, len(items), BATCH):
-        yield items[start : start + BATCH]
+# Each question below asks in IN lists of at most `chunks.CHUNK` ids: `/explore` and the
+# landing page's count judge every project with a page on the instance, which no quota bounds.
 
 
 def served_of(conn: Connection, rows: Collection[Any]) -> set[str]:
@@ -79,12 +69,12 @@ def served_of(conn: Connection, rows: Collection[Any]) -> set[str]:
     pass the rows they read. The page is on, the project is not archived and under no
     moderation hold, and its namespace owner is an organisation that is not deleted and under
     no hold, or a human who is active, not deleted and not suspended. At most four statements
-    for every `BATCH` rows, none when no row has its page on."""
+    for every `chunks.CHUNK` rows, none when no row has its page on."""
     rows = [row for row in rows if row.public_page == "on" and row.state != "archived"]
     if not rows:
         return set()
     held: set[str] = set()
-    for ids in _batches(row.id for row in rows):
+    for ids in chunks(row.id for row in rows):
         held.update(moderation.holds_of(conn, "project", ids))
     rows = [row for row in rows if row.id not in held]
     if not rows:
@@ -92,7 +82,7 @@ def served_of(conn: Connection, rows: Collection[Any]) -> set[str]:
     org_ids = {row.owner_org_id for row in rows if row.owner_org_id is not None}
     human_ids = {row.owner_human_id for row in rows if row.owner_org_id is None}
     orgs: set[str] = set()
-    for ids in _batches(org_ids):
+    for ids in chunks(org_ids):
         found = set(
             conn.execute(
                 select(t.org.c.id).where(t.org.c.id.in_(ids), t.org.c.deleted_at.is_(None))
@@ -101,7 +91,7 @@ def served_of(conn: Connection, rows: Collection[Any]) -> set[str]:
         orgs |= found - set(moderation.holds_of(conn, "org", sorted(found)))
     humans: set[str] = set()
     h = t.human.c
-    for ids in _batches(human_ids):
+    for ids in chunks(human_ids):
         humans.update(
             conn.execute(
                 select(h.id).where(
@@ -133,11 +123,11 @@ def served(conn: Connection, project: Any) -> bool:
 def served_among(conn: Connection, project_ids: Collection[str]) -> set[str]:
     """Of `project_ids`, those that have a page now: `served` for many projects at once, as
     stored (the starred tabs on every `GET /me`, §5.1). It reads their rows, one statement for
-    every `BATCH` ids, and judges them by `served_of`. An id that names no project is simply
+    every `chunks.CHUNK` ids, and judges them by `served_of`. An id that names no project is simply
     not among them."""
     p = t.project.c
     rows: list[Any] = []
-    for ids in _batches(project_ids):
+    for ids in chunks(project_ids):
         rows.extend(
             conn.execute(
                 select(p.id, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
@@ -146,14 +136,6 @@ def served_among(conn: Connection, project_ids: Collection[str]) -> set[str]:
             )
         )
     return served_of(conn, rows)
-
-
-def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
-    """`namespace.full_names` for the public lists, one statement for every `BATCH` ids."""
-    names: dict[str, str] = {}
-    for ids in _batches(project_ids):
-        names.update(namespace.full_names(conn, ids))
-    return names
 
 
 def public_for_outsiders(conn: Connection, project_ids: Collection[str]) -> set[str]:
@@ -595,7 +577,7 @@ def explore_html(
         )
     ).all()
     public = served_of(conn, candidates)
-    names = full_names(conn, public)
+    names = namespace.full_names(conn, public)
     shown = sorted(
         ((names[row.id], row.name) for row in candidates if row.id in public),
         key=lambda item: (item[1].casefold(), item[0]),

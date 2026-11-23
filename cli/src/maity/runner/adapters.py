@@ -793,16 +793,25 @@ def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
 
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
-    and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty. Always empty for Codex (codex_left_out)."""
+    and the runner's PATH (its absolute entries) when the grant has pull requests, else
+    empty. Always empty for Codex (codex_left_out). `maity gh` looks gh up on that PATH at
+    each call, so a gh installed after the session started is found without a restart
+    (tsk-2k0jcaxfd0ja, point 15); the record, not the session's own PATH, says where."""
     if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
-    gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
     repository = config.normalise_repository(workspace.get("repository") or "")
-    if gh is None or not repository:
+    if not repository:
         return ""
-    return f"{repository}\n{gh}\n"
+    # Whole entries, in PATH's order, as many as fit the size `maity gh` reads
+    # (ghpr.RECORD_MAX; review A2160 of #2125): the earlier ones are the ones that win.
+    room = ghpr.RECORD_MAX - len(f"{repository}\n\n".encode())
+    kept: list[str] = []
+    for entry in (e for e in proc.search_path().split(os.pathsep) if e):
+        if len(os.pathsep.join([*kept, entry]).encode()) > room:
+            break
+        kept.append(entry)
+    return f"{repository}\n{os.pathsep.join(kept)}\n"
 
 
 def lead_record(ctx: Context) -> str:

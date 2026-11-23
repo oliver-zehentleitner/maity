@@ -1486,16 +1486,21 @@ def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> No
                               *(f"maity *{c}*" for c in adapters.MAITY_NOT_PLAIN))  # fmt: skip
 
 
-def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
+def test_launch_records_the_repository_and_the_runners_path_for_a_grant_with_pull_requests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record names where `maity gh` looks gh up at each call (point 15 of
+    tsk-2k0jcaxfd0ja): the runner's PATH, its absolute entries only, not the gh found now."""
     gh = fake_gh(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(Path(gh).parent), "relative/bin", "/usr/bin"]))
     ctx = context(tmp_path, sandbox=True, grant=PULLS,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git").mkdir(parents=True)
     launch = adapters.launch(ctx)
     record = (ctx.agent_dir / "git" / "pull_requests").read_text()
-    assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert record == (
+        f"github.com/oliver-zehentleitner/maity\n{Path(gh).parent}{os.pathsep}/usr/bin\n"
+    )
     assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
     assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
@@ -1564,13 +1569,32 @@ def test_the_lead_record_needs_lead_and_the_pull_request_record_and_is_cleared_w
     )
 
 
-def test_pull_requests_without_gh_on_the_path_record_nothing(
+def test_a_long_path_is_cut_to_whole_entries_that_fit_the_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record holds the runner's PATH, and `maity gh` reads at most ghpr.RECORD_MAX bytes
+    (review A2160 of #2125): a longer PATH keeps its first whole entries, in order."""
+    entries = [f"/nix/store/{i:04d}-{'x' * 90}/bin" for i in range(1000)]
+    monkeypatch.setenv("PATH", os.pathsep.join(entries))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    record = adapters.pull_requests_record(ctx)
+    assert len(record.encode()) <= ghpr.RECORD_MAX < len(os.pathsep.join(entries))
+    kept = record.splitlines()[1].split(os.pathsep)
+    assert kept == entries[: len(kept)] and 0 < len(kept) < len(entries)
+
+
+def test_pull_requests_without_gh_on_the_path_are_still_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gh installed after the start is found by `maity gh` at its next call, so a session
+    started without it still gets the grant and the word of `maity gh` (point 15)."""
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     ctx = context(tmp_path, grant=PULLS,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
-    assert adapters.pull_requests_record(ctx) == ""
+    record = adapters.pull_requests_record(ctx)
+    assert record == f"github.com/oliver-zehentleitner/maity\n{tmp_path / 'empty'}\n"
+    assert adapters.PULL_REQUEST_PROMPT in adapters._sandbox_prompt(ctx)
 
 
 def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(

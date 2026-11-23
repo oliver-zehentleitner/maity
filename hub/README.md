@@ -412,7 +412,8 @@ run gets the password as `PGPASSWORD`, which libpq reads (the URL stays without 
 must be letters, digits and `._~-` only, and a cluster whose `pg_hba.conf` lets anyone
 in without `scram-sha-256` is refused with it. A runner sets it for placed agents
 (`docs/runners.md`). It needs `pg_ctl`, `initdb` and `psql`, on the path
-or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
+or in `MAITY_PG_BIN`; with neither, it takes Debian's and Ubuntu's newest
+`/usr/lib/postgresql/<version>/bin` that has `pg_ctl` (by version number). Without a system PostgreSQL, the PyPI package `pgserver`
 brings them, in a venv of its own (its wheels stop at Python 3.12):
 
 ```sh
