@@ -86,11 +86,16 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
             order += by_handle(agents)
         elif entry in by_principal:
             order.append(by_principal[entry])
+    from maity_hub import outsiders  # its imports reach the views this module is read by
+
     seen: set[int] = set()
     shown = []
     for member in order:
         if (
             member.trust == "guest"
+            # An outsider's agent takes no card it is not handed by a human (§6.5, "Until the
+            # claim request is built"; §6.12 `substitutes`): it never covers.
+            or outsiders.handed_only_by_a_human(member)
             or member.role in ("proxy", "expert")  # an expert takes no cards (§2.3)
             or member.isolated_since is not None
         ):
