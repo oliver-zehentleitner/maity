@@ -171,6 +171,26 @@ def test_a_timed_out_default_branch_read_leaves_the_branch_alone(
     assert git(clone, "config", "--get", "branch.work.merge") == "refs/heads/main"
 
 
+def test_a_refusal_at_the_default_branch_read_is_raised(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal of maity's git stays one at the default branch's read too."""
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+    with contextlib.suppress(subprocess.CalledProcessError):
+        git(clone, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    real = proc.run
+
+    def refusing(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "--symref" in cmd:
+            raise proc.ToolRefused("maity runs no git here: x")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", refusing)
+    with pytest.raises(gitfacts.FactsError, match="maity runs no git here") as raised:
+        gitfacts.track_own_branch(clone)
+    assert not isinstance(raised.value, gitfacts.RemoteUnread)
+
+
 def test_a_branch_deleted_after_its_merge_reports_the_merged_head(
     clone: Path, bin_dir: Path
 ) -> None:

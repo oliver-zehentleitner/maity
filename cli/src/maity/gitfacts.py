@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from maity import proc
-from maity.redact import without_secrets, without_userinfo
+from maity.redact import without_userinfo
 
 
 class FactsError(Exception):
@@ -76,20 +76,56 @@ def _git(cwd: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _last_line(stderr: str) -> str:
-    """The last line of git's or gh's error output, without a credential: both repeat the
-    remote's URL as configured, a token in it included, and may repeat a proxy's credentials
-    (`_proxy_secrets`). The whole output is scrubbed before a line of it is picked, so a
-    credential that spans lines goes whole."""
-    text = without_secrets(stderr, _proxy_secrets()).strip()
-    return text.splitlines()[-1] if text else "no output"
+# What a failed git or gh command is said to be while a proxy that carries credentials is set:
+# the first class, in this order, with a phrase in its error output, matched without case;
+# else "other". The name always comes from this table, never from the output. Under such a
+# proxy, git and libcurl may repeat its credential in forms no scrub can follow, so the output
+# itself is never shown, only its exit code and class.
+FAILURE_CLASSES = (
+    ("proxy", ("could not resolve proxy", "unsupported proxy syntax", "407", "proxy")),
+    ("auth", ("authentication failed", "401", "403", "could not read username",
+              "could not read password", "terminal prompts disabled", "permission denied")),
+    ("not found", ("repository not found", "not found", "404",
+                   "does not appear to be a git repository")),
+    ("network", ("could not resolve host", "timed out", "connection refused",
+                 "network is unreachable", "failed to connect")),
+)  # fmt: skip
+_WITHHELD = "output withheld, a proxy with credentials is set"
+
+
+def _proxy_has_credentials() -> bool:
+    """Whether a proxy variable git may keep (clonecheck.ENV_PROXY) carries credentials: a
+    credential is a URL's userinfo, so a value without an `@` has none."""
+    from maity import clonecheck  # imports onboarding and proc; kept out of this module's load
+
+    return any("@" in os.environ.get(name, "") for name in clonecheck.ENV_PROXY)
+
+
+def _failure_class(stderr: str) -> str:
+    """The first class of FAILURE_CLASSES with a phrase in `stderr`, else "other"."""
+    text = stderr.lower()
+    for name, phrases in FAILURE_CLASSES:
+        if any(phrase in text for phrase in phrases):
+            return name
+    return "other"
+
+
+def _failure(what: str, stderr: str, returncode: int) -> str:
+    """The message for a git or gh command that failed, `what` saying so (`git ls-remote
+    failed`). While a proxy that carries credentials is set: its exit code and class
+    (FAILURE_CLASSES), never its own text. Else its last line without a credential: git and gh
+    repeat the remote's URL as configured, a token in it included."""
+    if _proxy_has_credentials():
+        return f"{what} (exit {returncode}, {_failure_class(stderr)}): {_WITHHELD}"
+    last = without_userinfo(stderr.strip().splitlines()[-1]) if stderr.strip() else "no output"
+    return f"{what}: {last}"
 
 
 def _git_required(cwd: Path, *args: str) -> str:
     """For questions that must be answered; a failure is an error, never an empty answer."""
     result = _run([*proc.GIT, *args], cwd)
     if result.returncode != 0:
-        raise FactsError(f"git {args[0]} failed: {_last_line(result.stderr)}")
+        raise FactsError(_failure(f"git {args[0]} failed", result.stderr, result.returncode))
     return result.stdout.strip()
 
 
@@ -136,7 +172,9 @@ def _pull_request(cwd: Path, branch: str, repository: str | None = None) -> Pull
         cwd,
     )
     if result.returncode != 0:
-        raise FactsError(f"gh could not list pull requests: {_last_line(result.stderr)}")
+        raise FactsError(
+            _failure("gh could not list pull requests", result.stderr, result.returncode)
+        )
     try:
         rows = json.loads(result.stdout or "[]")
         if not rows:
@@ -287,56 +325,22 @@ def _branch(cwd: Path) -> str | None:
     return ref.removeprefix("refs/heads/")
 
 
-def _secret_pieces(secret: str) -> set[str]:
-    """`secret`, every prefix of it that ends before a `/`, `?` or `#`, and every one of its
-    lines: the parts of a credential git or curl may show on their own when it does not parse
-    as a URL's userinfo. Empty pieces are left out."""
-    pieces = {secret, *secret.splitlines()}
-    pieces |= {secret[:i] for i, char in enumerate(secret) if char in "/?#"}
-    return {piece for piece in pieces if piece}
-
-
-def _proxy_secrets() -> list[str]:
-    """The userinfo of every proxy variable git keeps under a placement (clonecheck.ENV_PROXY),
-    and its password alone, each with its pieces (`_secret_pieces`), as set and
-    percent-decoded: git and curl may repeat a proxy's credentials in their errors, in whatever
-    shape the proxy was set, which `without_userinfo` alone does not recognize. The userinfo is
-    what comes before the last `@` of the part before the first `/`, and also before the last
-    `@` of the whole value, so neither a character of the password nor of the path keeps a
-    credential in; at worst more is taken out."""
-    from maity import clonecheck  # imports onboarding and proc; kept out of this module's load
-
-    secrets: list[str] = []
-    for name in clonecheck.ENV_PROXY:
-        value = os.environ.get(name)
-        if not value:
-            continue
-        rest = value.partition("://")[2] if "://" in value else value
-        for part in {rest.partition("/")[0], rest}:
-            userinfo, at, _ = part.rpartition("@")
-            if not at or not userinfo:
-                continue
-            password = userinfo.partition(":")[2]
-            for secret in (userinfo, password):
-                for piece in _secret_pieces(secret):
-                    secrets += [piece, urllib.parse.unquote(piece)]
-    return secrets
-
-
 def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
     """The commit the remote's `ref` points at, None when it has no such ref. `ls-remote` takes
     the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
     a line naming exactly `ref` counts. A refusal of maity's git is a FactsError as anywhere
-    else; a lookup that ran and failed or timed out is RemoteUnread, its message without the
-    proxy's credentials (`_proxy_secrets`; `_last_line` for git's own error)."""
+    else; a lookup that ran and failed or timed out is RemoteUnread, with git's failure as
+    `_failure` says it."""
     try:
         result = proc.run([*proc.GIT, "ls-remote", "--heads", "--", remote, ref], cwd)
     except proc.ToolRefused as exc:  # a ToolError too, so caught first
         raise FactsError(str(exc)) from exc
     except proc.ToolError as exc:
-        raise RemoteUnread(without_secrets(str(exc), _proxy_secrets())) from exc
+        # maity's own text (proc._start: not installed, or no answer in time, naming the first
+        # three words of the command, never the remote), with nothing of git's output in it.
+        raise RemoteUnread(str(exc)) from exc
     if result.returncode != 0:
-        raise RemoteUnread(f"git ls-remote failed: {_last_line(result.stderr)}")
+        raise RemoteUnread(_failure("git ls-remote failed", result.stderr, result.returncode))
     for line in result.stdout.strip().splitlines():
         sha, _, name = line.partition("\t")
         if name == ref:

@@ -283,10 +283,10 @@ with that head does not stand in: its head says nothing about the branch now,
 which may have moved since it was closed. Only when none stands in do the
 linked pull requests it read with another head or closed refuse. Without one,
 or with a card that cannot be read, the failure stays an error, never "does not
-exist; push it", since the branch may well be there. The proxy credentials of
-the variables git keeps under a placement (`gitfacts._proxy_secrets`) are
-scrubbed from the whole error before a line of it is shown, in any shape the
-proxy was set in.
+exist; push it", since the branch may well be there. While a proxy that carries
+credentials is set, a failed git or gh command shows its exit code and a coarse
+class (proxy, auth, not found, network, other) instead of its own text; without
+one, its last line without userinfo, as before.
 
 What decides here is the hub's record that the card links the pull request, and
 the probe's read of it, not a GitHub lookup by the branch's name. A link is
@@ -316,6 +316,9 @@ the check against the card's pull request.
   66da7721 and 8c58cebb refuse.
 - Retrying through the proxy only, with no fallback: a placement whose proxy
   git still cannot use (an auth scheme git lacks) could then never report.
+- Scrubbing the proxy's credential from git's output: git and libcurl print it
+  split, re-encoded or cut short in more ways than a list of shapes can follow,
+  which two review rounds showed (review of #2151).
 
 ## A pull request that does not name the card is shown and confirmed before the report goes out
 

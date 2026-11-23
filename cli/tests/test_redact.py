@@ -12,7 +12,7 @@ import pytest
 from conftest import fake_gh, git, posix
 
 from maity import cli, gitfacts, proc
-from maity.redact import without_secrets, without_userinfo
+from maity.redact import without_userinfo
 from maity.runner import config
 
 SECRET = "ghs_s3cret"
@@ -121,47 +121,6 @@ def test_a_git_error_that_repeats_the_url_loses_the_token(clone: Path) -> None:
     assert SECRET not in error
 
 
-def test_known_secrets_go_whatever_their_shape() -> None:
-    """A proxy set without a scheme has userinfo `without_userinfo` does not recognize; the
-    value maity knows is secret goes as set and decoded, the longest first."""
-    secrets = ["user:s3cr%40t", "user:s3cr@t", "s3cr%40t", "s3cr@t", ""]
-    text = (
-        "Failed to connect to user:s3cr%40t@proxy:3128; proxy user:s3cr@t@proxy:3128; "
-        f"remote {TOKEN_URL}"
-    )
-    shown = without_secrets(text, secrets)
-    assert shown == (
-        "Failed to connect to ***@proxy:3128; proxy ***@proxy:3128; "
-        "remote https://github.com/acme/widget.git"
-    )
-    assert "s3cr" not in shown and SECRET not in shown
-    assert without_secrets("nothing secret", []) == "nothing secret"
-
-
-def test_a_git_error_that_repeats_the_proxy_loses_its_credentials(
-    clone: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("HTTPS_PROXY", "agent:SECRETPW@proxy.invalid:3128")  # no scheme
-    real = proc.run
-
-    def fake(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
-        if "ls-remote" in cmd:
-            return subprocess.CompletedProcess(
-                cmd,
-                128,
-                "",
-                "fatal: unable to access 'https://github.com/acme/widget/': Failed to connect to "
-                "agent:SECRETPW@proxy.invalid port 3128\n",
-            )
-        return real(cmd, *args, **kwargs)
-
-    monkeypatch.setattr(proc, "run", fake)
-    facts = gitfacts.collect(clone)
-    assert facts.remote_error is not None
-    assert facts.remote_error.startswith("git ls-remote failed")
-    assert "SECRETPW" not in facts.remote_error
-
-
 def _lookup_says(monkeypatch: pytest.MonkeyPatch, stderr: str) -> None:
     """`git ls-remote` fails with `stderr`; every other call runs as it is."""
     real = proc.run
@@ -174,31 +133,101 @@ def _lookup_says(monkeypatch: pytest.MonkeyPatch, stderr: str) -> None:
     monkeypatch.setattr(proc, "run", fake)
 
 
-def test_a_proxy_password_with_a_slash_loses_its_prefix_too(
-    clone: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("HTTPS_PROXY", "http://agent:PRE7Q/FIXSECRET@proxy.invalid:3128")
-    _lookup_says(
-        monkeypatch,
-        "fatal: unable to access 'https://github.com/acme/widget/': Unsupported proxy syntax "
-        "in 'agent:PRE7Q'\n",
-    )
-    error = gitfacts.collect(clone).remote_error
-    assert error is not None and error.startswith("git ls-remote failed")
-    assert "PRE7Q" not in error and "FIXSECRET" not in error
+WITHHELD = "output withheld, a proxy with credentials is set"
+ACCESS = "fatal: unable to access 'https://x-access-token:TOKEN9@github.com/acme/widget/': "
 
 
-def test_a_proxy_password_with_a_newline_is_scrubbed_across_lines(
+# Invented credentialed proxies, each with token pieces git's output then repeats garbled
+# (split over lines, decoded, cut short), one per class.
+@pytest.mark.parametrize(
+    ("proxy", "stderr", "pieces", "cls"),
+    [
+        (  # an `@` in the password
+            "http://agent:TOKA1@TOKA2@proxy.invalid:3128",
+            "fatal: Could not resolve proxy: agent:TOKA1\nTOKA2@proxy.invalid\n",
+            ("TOKA1", "TOKA2"),
+            "proxy",
+        ),
+        (  # a space in the password
+            "http://agent:TOKB1 TOKB2@relay.invalid:3128",
+            "remote: TOKB2\nfatal: Authentication failed for 'http://agent:TOKB1'\n",
+            ("TOKB1", "TOKB2"),
+            "auth",
+        ),
+        (  # a `%40` in the password, repeated decoded
+            "http://agent:TOKC1%40TOKC2@relay.invalid:3128",
+            "remote: Repository not found for agent:TOKC1@TOKC2\nfatal: no repository\n",
+            ("TOKC1", "TOKC2"),
+            "not found",
+        ),
+        (  # a `://` in the password, repeated cut short
+            "http://agent:TOKD1://TOKD2@relay.invalid:3128",
+            "fatal: Failed to connect to TOKD2@relay.invalid: Connection refused (TOKD1:)\n",
+            ("TOKD1", "TOKD2"),
+            "network",
+        ),
+        (
+            "http://agent:TOKE1@relay.invalid:3128",
+            "error: something odd near TOKE1\n",
+            ("TOKE1",),
+            "other",
+        ),
+    ],
+)
+def test_under_a_credentialed_proxy_the_lookup_error_shows_only_its_class(
+    clone: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    proxy: str,
+    stderr: str,
+    pieces: tuple[str, ...],
+    cls: str,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", proxy)
+    _lookup_says(monkeypatch, stderr)
+    error = gitfacts.collect(clone).remote_error
+    assert error == f"git ls-remote failed (exit 128, {cls}): {WITHHELD}"
+    assert not any(piece in error for piece in pieces)
+
+
+@pytest.mark.parametrize(
+    ("stderr", "cls"),
+    [
+        ("fatal: Unsupported proxy syntax in 'x'", "proxy"),
+        ("error: HTTP 407 from the relay", "proxy"),
+        ("fatal: could not read Username for 'https://github.com'", "auth"),
+        ("The requested URL returned error: 403", "auth"),
+        ("ERROR: Repository not found.", "not found"),
+        ("fatal: 'x' does not appear to be a git repository", "not found"),
+        ("fatal: Could not resolve host: github.com", "network"),
+        ("Operation timed out after 30000 milliseconds", "network"),
+        ("error: something else", "other"),
+        ("", "other"),
+    ],
+)
+def test_a_failure_is_classed_by_the_first_matching_class(stderr: str, cls: str) -> None:
+    assert gitfacts._failure_class(stderr) == cls
+
+
+def test_without_a_proxy_the_lookup_error_is_shown(
     clone: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HTTPS_PROXY", "http://u:TOK1A\nTOK2B@proxy.invalid:3128")
-    _lookup_says(
-        monkeypatch,
-        "fatal: credential url cannot be parsed: http://u:TOK1A\nTOK2B@proxy.invalid:3128\n",
+    """conftest's `_isolate` leaves no proxy variable of the shell."""
+    _lookup_says(monkeypatch, f"{ACCESS}Could not resolve host: github.com\n")
+    assert gitfacts.collect(clone).remote_error == (
+        "git ls-remote failed: fatal: unable to access 'https://github.com/acme/widget/': "
+        "Could not resolve host: github.com"
     )
-    error = gitfacts.collect(clone).remote_error
-    assert error is not None and error.startswith("git ls-remote failed")
-    assert "TOK1A" not in error and "TOK2B" not in error
+
+
+def test_under_a_proxy_without_credentials_the_lookup_error_is_shown(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+    _lookup_says(monkeypatch, f"{ACCESS}Could not resolve proxy: proxy.invalid\n")
+    assert gitfacts.collect(clone).remote_error == (
+        "git ls-remote failed: fatal: unable to access 'https://github.com/acme/widget/': "
+        "Could not resolve proxy: proxy.invalid"
+    )
 
 
 @posix

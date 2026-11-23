@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ import fakehub
 import pytest
 from conftest import GITHUB_URL, fake_gh, git
 
-from maity import cli, gitfacts, state
+from maity import cli, gitfacts, proc, state
 
 TASK = "/api/v1/projects/oliver/maity/tasks/tsk-0004"
 REPO = "https://github.com/acme/widget"
@@ -346,6 +347,32 @@ def test_a_failed_remote_lookup_without_a_linked_pull_request_stays_an_error(
     _card(fake)
     assert _report() == cli.EXIT_ERROR
     assert "git ls-remote failed" in capsys.readouterr().err
+    assert not _sent(fake)
+
+
+def test_a_failed_remote_lookup_under_a_credentialed_proxy_prints_none_of_it(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """git's output repeats the proxy's credential garbled; the report's error names only the
+    exit code and the class."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://agent:TOKR1 TOKR2@proxy.invalid:3128")
+    real = proc.run
+
+    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "ls-remote" in cmd:
+            stderr = "fatal: Could not resolve proxy: agent:TOKR1\nTOKR2@proxy.invalid\n"
+            return subprocess.CompletedProcess(cmd, 128, "", stderr)
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", fake_run)
+    _card(fake)
+    assert _report() == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "git ls-remote failed (exit 128, proxy): output withheld" in err
+    assert "TOKR1" not in err and "TOKR2" not in err
     assert not _sent(fake)
 
 
