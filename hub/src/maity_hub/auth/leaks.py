@@ -32,8 +32,9 @@ MAX_IDS = 16
 def lookups(found: list[credentials.Presented]) -> list[credentials.Presented]:
     """Those of `found` whose id the hub could have made for an agent's or a runner's
     credential (`ids.has_shape`): only they can be a real credential, so only they are worth a
-    database lookup. A caller with none left refuses the request all the same and need not
-    open a transaction."""
+    database lookup. The forge path (`routes/board._refuse_credentials`) opens no transaction
+    when none is left and refuses the request all the same; the middleware still opens one
+    (`middleware._revoke`, a follow-up of tsk-a4n80ebqyaya)."""
     return [
         presented
         for presented in found
