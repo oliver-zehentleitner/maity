@@ -252,6 +252,21 @@ def test_contribution_tells_a_member_to_bring_agents_as_a_member(
     assert (found.json()["can_join"], found.json()["reason"]) == (False, "member")
 
 
+def test_contribution_to_an_agent_member_and_to_an_agent_of_another_project(
+    on: None, owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """An agent member reads it as a member (`member`); an agent of another project gets the
+    `not_found` of any non-member read (§6.1)."""
+    _opt_in(owner)
+    member = flow.agent(make_client, owner)
+    found = member.get(CONTRIBUTION)
+    assert found.status_code == 200, found.text
+    assert (found.json()["can_join"], found.json()["reason"]) == (False, "member")
+    flow.project(owner, "other")
+    stranger = flow.agent(make_client, owner, slug="other")
+    assert stranger.get(CONTRIBUTION).status_code == 404
+
+
 def test_contribution_of_a_project_that_is_not_public_is_not_found(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -561,6 +576,63 @@ def test_a_plain_assign_names_it_and_gives_no_claim(
     assert named.json()["claim"] is None
     refused = agent.post(f"{P}/tasks/{card}/claim", {})
     assert _reason(refused) == "not_open_to_outsiders"
+
+
+def test_its_own_claim_is_refused_before_the_cards_state(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+) -> None:
+    """§6.5's order: after the card's existence, before its state. A held card answers the
+    outsider's agent `not_open_to_outsiders`, not `already_claimed`; an unknown card
+    `not_found`."""
+    agent = _outside_agent(make_client, owner, outsider)
+    member = flow.agent(make_client, owner)
+    card = _card(owner)
+    assert member.post(f"{P}/tasks/{card}/claim", {}).status_code == 200
+    held = agent.post(f"{P}/tasks/{card}/claim", {})
+    assert (held.status_code, _reason(held)) == (403, "not_open_to_outsiders"), held.text
+    unknown = agent.post(f"{P}/tasks/tsk-000000000000/claim", {})
+    assert unknown.status_code == 404, unknown.text
+
+
+def test_an_agents_hand_out_is_refused_before_the_holders_instance(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+) -> None:
+    """§6.5's order for a claim with `holder`: after the holder resolves to a member, before
+    its instance, so an unknown instance answers `humans_only`, not `instance_required`."""
+    agent = _outside_agent(make_client, owner, outsider)
+    admin = flow.agent(make_client, owner, trust="admin", role="coder")
+    card = _card(owner)
+    refused = admin.post(f"{P}/tasks/{card}/claim", {"holder": f"{agent.id}#zzzz"})
+    assert (refused.status_code, _reason(refused)) == (403, "humans_only"), refused.text
+
+
+def test_a_human_without_tasks_admin_hands_it_nothing() -> None:
+    """The scope branch of `refuse_taking`: a human who may move the card otherwise (a
+    manager within its line) still needs `tasks:admin` (§6.5)."""
+    from types import SimpleNamespace
+
+    from maity_hub.errors import ApiError
+
+    holder = SimpleNamespace(trust="outside", id=7)
+
+    class Manager:
+        kind, id = "human", 3
+
+        def require(self, scope: str) -> None:
+            raise ApiError(403, "forbidden", "no", {"scope": scope})
+
+    with pytest.raises(ApiError) as refused:
+        outsiders.refuse_taking(holder, Manager())
+    assert refused.value.details == {"scope": "tasks:admin"}
+
+
+def test_agent_owners_null_is_refused_once_set(owner: flow.Human) -> None:
+    """§6.1: `null` would fall back to the unset reading quietly; `members` closes the joins."""
+    _opt_in(owner)
+    refused = owner.patch(P, {"policy": {"agent_owners": None}, "reason": "back to default"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"policy.agent_owners": "unknown"}
+    _policy(owner, agent_owners="members")
 
 
 def test_cover_hands_it_no_card(

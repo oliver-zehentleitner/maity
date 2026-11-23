@@ -19,7 +19,7 @@ from maity_hub.access import Membership
 from maity_hub.cards import CLOSED, open_claims
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit
-from maity_hub.scopes import OUTSIDE, counts_as, has_scope, in_admin_team
+from maity_hub.scopes import counts_as, has_scope, in_admin_team
 
 HELD = ("in_progress", "blocked", "review")  # the cards a member holds that cover moves
 
@@ -86,14 +86,16 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
             order += by_handle(agents)
         elif entry in by_principal:
             order.append(by_principal[entry])
+    from maity_hub import outsiders  # its imports reach the views this module is read by
+
     seen: set[int] = set()
     shown = []
     for member in order:
         if (
             member.trust == "guest"
             # An outsider's agent takes no card it is not handed by a human (§6.5, "Until the
-            # claim request is built"), so it covers nobody's (§2.3 "Outside": fail closed).
-            or member.trust == OUTSIDE
+            # claim request is built"; §6.12 `substitutes`): it never covers.
+            or outsiders.handed_only_by_a_human(member)
             or member.role in ("proxy", "expert")  # an expert takes no cards (§2.3)
             or member.isolated_since is not None
         ):

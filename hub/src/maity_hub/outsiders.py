@@ -122,6 +122,14 @@ def contribution(
     }
 
 
+def handed_only_by_a_human(row: Any) -> bool:
+    """Whether the membership `row` gets a card only from a human of the project with
+    `tasks:admin` (§6.5, "Until the claim request is built"): trust `outside`. The one test
+    `refuse_taking` and the cover walk (`cover.cover_order`, which skips such an entry, §6.12)
+    both ask."""
+    return bool(row.trust == OUTSIDE)
+
+
 def refuse_taking(holder: Any, by: Any, *, takeover: bool = False) -> None:
     """The interim of §6.5, "Until the claim request is built" (req-yzt08c2qgx6g): the one
     check of a card coming to be held by a membership with trust `outside`. `holder` is the
@@ -134,8 +142,9 @@ def refuse_taking(holder: Any, by: Any, *, takeover: bool = False) -> None:
       moves an expired claim), an admin agent and the coordinator's agent included;
     - `details.scope: tasks:admin` for a human without it (a manager's or a lead's reach).
 
-    So a card reaches such an agent only from a human member with `tasks:admin`."""
-    if holder.trust != OUTSIDE:
+    So a card reaches such an agent only from a human member with `tasks:admin`; cover hands
+    it none (`handed_only_by_a_human`)."""
+    if not handed_only_by_a_human(holder):
         return
     if takeover or holder.id == by.id:
         raise ApiError(

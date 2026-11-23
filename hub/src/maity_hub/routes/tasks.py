@@ -1613,11 +1613,14 @@ def claim(
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
+            # Before the holder's instance, as §6.5's interim orders it ("Until the claim
+            # request is built"): only a human with tasks:admin gives an outsider's agent a card.
+            outsiders.refuse_taking(holder_row, mine)
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
-        # An outsider's agent claims nothing itself; a human with tasks:admin gives it a
-        # card (§6.5, "Until the claim request is built").
+        # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
+        # after the scope, the project's state and the card's existence, before its state.
         outsiders.refuse_taking(holder_row, mine)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
