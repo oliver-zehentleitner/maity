@@ -372,16 +372,21 @@ def test_a_go_while_the_invitee_is_suspended_is_refused_and_the_request_stays_op
     invite(owner, "guest")
     [pending] = requests_of(guest)
     with migrated.begin() as conn:
-        conn.execute(update(t.human).where(t.human.c.id == guest.id).values(suspended_at=clock.now()))
+        conn.execute(
+            update(t.human).where(t.human.c.id == guest.id).values(suspended_at=clock.now())
+        )
     with pytest.raises(ApiError) as refused, migrated.begin() as conn:
         row = conn.execute(select(t.request).where(t.request.c.id == pending["id"])).one()
         proposals.settle(conn, row, "go", guest.id, None)
     assert (refused.value.status, refused.value.code) == (403, "account_suspended")
     with migrated.connect() as conn:
         assert conn.execute(select(t.org_invitation.c.live)).scalar_one() is True
-        assert conn.execute(
-            select(t.request.c.status).where(t.request.c.id == pending["id"])
-        ).scalar_one() == "open"
+        assert (
+            conn.execute(
+                select(t.request.c.status).where(t.request.c.id == pending["id"])
+            ).scalar_one()
+            == "open"
+        )
         assert conn.execute(select(func.count()).select_from(t.org_member)).scalar_one() == 1
     with migrated.begin() as conn:  # lifted: the same go goes through while it lasts
         conn.execute(update(t.human).where(t.human.c.id == guest.id).values(suspended_at=None))
