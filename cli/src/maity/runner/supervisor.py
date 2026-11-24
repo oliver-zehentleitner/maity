@@ -2649,14 +2649,27 @@ class Supervisor:
         if found is None or not found.path:
             return  # the gate refuses a Codex start without its binary
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
+
+        def say(line: str) -> None:
+            self.log(f"{p['id']}: {line}")
+
+        # The agents' home as the target found it when it was set up or connected: no account
+        # lookup or remote call outside the stop's deadline.
+        if target.agents_home is None:
+            say("the agents' home is not known; no Codex app-server daemon stopped, "
+                "the start goes on")  # fmt: skip
+            return
         # The path `agent_dir_for` returns, made nothing of: `_context` makes it, and here no
         # work may run outside the stop's deadline. With a scratch the home ignores it anyway.
         agent_dir = target.agent_files / "agents" / p["id"]
+        # The root the home is checked from, link by link: a directory the runner makes and
+        # checks itself. For a scratch, the workspaces root every scratch op is anchored at
+        # (scratch._under, three levels up in either layout); without one, the agents' files.
+        root = scratch.parents[2] if scratch is not None else target.agent_files
         try:
             codexd.stop_codex_daemon(
-                target.as_user, found.path, adapters.codex_home_of(scratch, agent_dir),
-                self._agents_home(target), target.agent_path,
-                lambda line: self.log(f"{p['id']}: {line}"),
+                target.as_user, found.path, adapters.codex_home_of(scratch, agent_dir), root,
+                target.agents_home, target.agent_path, say,
             )  # fmt: skip
         except Exception as exc:  # noqa: BLE001 - a daemon stop never refuses the start
             self.log(f"{p['id']}: the Codex app-server daemon stop failed: {type(exc).__name__}")

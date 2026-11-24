@@ -720,18 +720,24 @@ after the skill and before `_context`, which removes the old TMPDIR leaf,
 and before the launch writes the new `config.toml`. The stop is
 `codex app-server daemon stop` with the probed binary, run as the agents'
 user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment, on
-every target. One deadline of 20 s covers it: up to 5 s for one `sh` as
-the agents' user that says by a token whether the home is a directory, a
-link, something else or absent (a subprocess on every layout, so a stuck
-mount cannot hold the start), and the stop gets what is left; none runs
-once the check has used it up. A home not there yet has no daemon to stop.
-A home that is a link or no directory is not stopped: the scratch is the
-agent's to write, and a link there could point the stop at another
-placement's home or the operator's `~/.codex`. A check that gives no
-token, a failed sudo or ssh among them, is a home that cannot be checked,
-and is not stopped either. A process of the agents' uid could still swap
-the path between the check and the stop, since the home goes to an
-external binary by path. A stop that exits non-zero,
+every target. The agents' home for its `HOME` is the one the target found
+when it was set up or connected, so no account lookup runs at the start.
+One deadline of 20 s covers the check and the stop: up to 5 s for one
+`sh` as the agents' user that walks from a root the runner makes and
+checks itself (the workspaces root for a home in the scratch, the agents'
+files without one) down to the home and says by a token whether it is a
+directory, a link (at the home or on the way), something else or absent;
+the stop gets what is left, and none runs once the check has used it up.
+The check is a subprocess on every layout, so its wait is bounded; a child
+stuck in an uninterruptible wait on a dead mount can still hold the call
+while it is reaped, so the deadline bounds the wait, not every case. A
+home not there yet has no daemon to stop. A home not below its root, or
+one that is a link, lies behind one or is no directory, is not stopped: a
+stop through a link would reach whatever home the link names rather than
+this placement's. A check that gives no token, a failed sudo or ssh among
+them, is a home that cannot be checked, and is not stopped either. The
+check and the stop are not atomic: the path is named again to an external
+binary. A stop that exits non-zero,
 does not answer, cannot run or is skipped is one log line, and the start
 goes on. The runner signals no process itself. That the command is
 `codex app-server daemon stop`, with these exit codes, is as the card

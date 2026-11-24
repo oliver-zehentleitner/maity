@@ -24,7 +24,7 @@ from test_supervisor import (
     started,
 )
 
-from maity.runner import capabilities, codexd, supervisor
+from maity.runner import capabilities, codexd, config, supervisor
 from maity.runner.asuser import AsUser
 
 
@@ -80,10 +80,13 @@ def restart(world: Any) -> None:
     assert SESSION in backend.live and len(backend.started) == 2, sup.records
 
 
-def codex_home(sup: supervisor.Supervisor) -> Path:
+def workspaces(sup: supervisor.Supervisor) -> Path:
     assert sup.cfg.local is not None
-    scratch = sup.cfg.local.workspaces.resolve() / ".scratch" / "maity" / "plc-0003"
-    return scratch / "codex-home"
+    return sup.cfg.local.workspaces.resolve()
+
+
+def codex_home(sup: supervisor.Supervisor) -> Path:
+    return workspaces(sup) / ".scratch" / "maity" / "plc-0003" / "codex-home"
 
 
 def test_a_codex_start_stops_the_daemon_left_in_its_codex_home(world: Any, tmp_path: Path) -> None:
@@ -149,7 +152,7 @@ def test_a_slow_home_check_is_bounded_and_does_not_refuse_the_start(
     sup, backend, _, _, logs = world
     asked: list[float] = []
 
-    def slow(as_user: Any, home: Path, timeout: float) -> str:
+    def slow(as_user: Any, root: Path, parts: Sequence[str], timeout: float) -> str:
         asked.append(timeout)
         raise subprocess.TimeoutExpired(["sh"], timeout)
 
@@ -164,9 +167,19 @@ def test_a_slow_home_check_is_bounded_and_does_not_refuse_the_start(
     assert len(said) == 1 and said[0].endswith("the start goes on"), logs
 
 
-def is_check(argv: Sequence[str], home: Path) -> bool:
-    """Whether `argv` is the home check: one `sh -c` script, the home its one argument."""
-    return list(argv[:2]) == ["sh", "-c"] and list(argv[3:]) == ["sh", str(home)]
+def is_check(argv: Sequence[str], root: Path, *parts: str) -> bool:
+    """Whether `argv` is the home check: one `sh -c` script, the root and the home's
+    components below it its arguments."""
+    return list(argv[:2]) == ["sh", "-c"] and list(argv[3:]) == ["sh", str(root), *parts]
+
+
+def stop(agents: Any, tmp_path: Path, home: Path | None = None) -> list[str]:
+    """`stop_codex_daemon` for `home` (`<tmp_path>/h`) below the root `tmp_path`; its log."""
+    logs: list[str] = []
+    codexd.stop_codex_daemon(cast(Any, agents), str(tmp_path / "codex"),
+                             home or tmp_path / "h", tmp_path, tmp_path, "/usr/bin",
+                             logs.append)  # fmt: skip
+    return logs
 
 
 def test_the_agents_side_home_check_is_a_bounded_sh(tmp_path: Path) -> None:
@@ -178,9 +191,9 @@ def test_the_agents_side_home_check_is_a_bounded_sh(tmp_path: Path) -> None:
 
     agents = AgentsSide(no_answer)
     with pytest.raises(subprocess.TimeoutExpired):
-        codexd.check_home(cast(Any, agents), tmp_path / "h", codexd.CHECK_TIMEOUT)
+        codexd.check_home(cast(Any, agents), tmp_path, ("h",), codexd.CHECK_TIMEOUT)
     ((argv, timeout),) = agents.runs
-    assert is_check(argv, tmp_path / "h") and timeout == codexd.CHECK_TIMEOUT
+    assert is_check(argv, tmp_path, "h") and timeout == codexd.CHECK_TIMEOUT
 
 
 def test_a_check_whose_sudo_fails_is_not_an_absent_home(tmp_path: Path) -> None:
@@ -188,35 +201,53 @@ def test_a_check_whose_sudo_fails_is_not_an_absent_home(tmp_path: Path) -> None:
     never an absent home, so nothing is said to be missing and nothing is stopped."""
     agents = AgentsSide(lambda: (1, ""))
     with pytest.raises(OSError, match="no answer"):
-        codexd.check_home(cast(Any, agents), tmp_path / "h", codexd.CHECK_TIMEOUT)
-    logs: list[str] = []
-    codexd.stop_codex_daemon(cast(Any, agents), str(tmp_path / "codex"), tmp_path / "h",
-                             tmp_path, "/usr/bin", logs.append)  # fmt: skip
-    assert logs == ["the codex-home cannot be checked (OSError); no Codex app-server daemon "
-                    "stopped, the start goes on"]  # fmt: skip
-    assert all(is_check(argv, tmp_path / "h") for argv, _ in agents.runs)  # no stop ran
+        codexd.check_home(cast(Any, agents), tmp_path, ("h",), codexd.CHECK_TIMEOUT)
+    assert stop(agents, tmp_path) == ["the codex-home cannot be checked (OSError); no Codex "
+                                      "app-server daemon stopped, the start goes on"]  # fmt: skip
+    assert all(is_check(argv, tmp_path, "h") for argv, _ in agents.runs)  # no stop ran
 
 
-@pytest.mark.parametrize("kind", ["dir", "link", "other", "absent"])
+@pytest.mark.parametrize("home", ["/elsewhere/codex-home", "{root}", "{root}/a/../codex-home"])
+def test_a_home_outside_its_root_is_not_probed_or_stopped(tmp_path: Path, home: str) -> None:
+    """A home that is not plainly below its root (elsewhere, the root itself, or with `..` on
+    the way) is not checked and not stopped."""
+    agents = AgentsSide()
+    logs = stop(agents, tmp_path, Path(home.format(root=tmp_path)))
+    assert agents.runs == []
+    assert logs == ["the codex-home is not below its root; no Codex app-server daemon stopped, "
+                    "the start goes on"]  # fmt: skip
+
+
+@pytest.mark.parametrize("kind", ["dir", "link", "parent-link", "other", "parent-other", "absent"])
 def test_the_home_check_tells_a_link_from_a_directory(tmp_path: Path, kind: str) -> None:
-    """The real script, as the runner's own user: a link to a directory is `link`, never
-    followed to `dir`."""
-    home, target = tmp_path / "codex-home", tmp_path / "elsewhere"
-    target.mkdir()
-    if kind == "dir":
-        home.mkdir()
-    elif kind == "link":
-        home.symlink_to(target)
-    elif kind == "other":
-        home.write_text("")
-    assert codexd.check_home(AsUser(), home, codexd.CHECK_TIMEOUT) == kind
+    """The real script, as the runner's own user, over `<root>/a/b/codex-home`: a link at the
+    home or at any directory on the way from the root is `link`, never followed to `dir`."""
+    root, elsewhere = tmp_path / "root", tmp_path / "elsewhere"
+    (elsewhere / "b" / "codex-home").mkdir(parents=True)
+    root.mkdir()
+    a = root / "a"
+    if kind == "parent-link":
+        a.symlink_to(elsewhere)  # a real directory through it: only the walk tells
+    elif kind == "parent-other":
+        a.write_text("")
+    elif kind != "absent":
+        (a / "b").mkdir(parents=True)
+        home = a / "b" / "codex-home"
+        if kind == "dir":
+            home.mkdir()
+        elif kind == "link":
+            home.symlink_to(elsewhere / "b" / "codex-home")
+        else:
+            home.write_text("")
+    expected = {"parent-link": "link", "parent-other": "other"}.get(kind, kind)
+    found = codexd.check_home(AsUser(), root, ("a", "b", "codex-home"), codexd.CHECK_TIMEOUT)
+    assert found == expected
 
 
 def test_a_codex_home_that_is_a_link_is_not_stopped(world: Any, tmp_path: Path) -> None:
-    """The agent may swap its codex-home for a link (to another placement's home, or the
-    operator's `~/.codex`): the restart stops nothing through it and says so. The launch then
-    refuses the link as before (scratch.write_codex_home), so this start fails and is retried
-    after the backoff."""
+    """A codex-home that is a link: the restart stops nothing through it and says so. The
+    launch then refuses the link as before (scratch.write_codex_home), so this start fails and
+    is retried after the backoff."""
     sup, backend, _, clock, logs = world
     started(world)
     home, other = codex_home(sup), tmp_path / "other-home"
@@ -237,6 +268,39 @@ def test_a_codex_home_that_is_a_link_is_not_stopped(world: Any, tmp_path: Path) 
     assert any("start failed" in line for line in logs), logs
 
 
+@pytest.mark.parametrize("layout", ["scratch", "no scratch"])
+def test_a_link_above_the_codex_home_is_not_stopped(
+    world: Any, tmp_path: Path, layout: str
+) -> None:
+    """A link on the way from the runner's root to the codex-home (the project's directory in
+    the scratch holder, or the placement's directory under the agents' files) stops nothing,
+    though a real directory lies behind it. Called on the supervisor's own stop: a start does
+    not get this far with a scratch, since making the scratch refuses a link on the way first
+    (no scratch then, and the home moves to the agents' files)."""
+    sup, _, _, _, logs = world
+    target = sup.targets["local"]
+    assert target.agent_files is not None
+    behind = tmp_path / "behind"
+    if layout == "scratch":
+        (behind / "plc-0003" / "codex-home").mkdir(parents=True)
+        holder = workspaces(sup) / ".scratch"
+        holder.mkdir(parents=True, exist_ok=True)
+        (holder / "maity").symlink_to(behind)
+        scratch: Path | None = holder / "maity" / "plc-0003"
+    else:
+        (behind / "codex-home").mkdir(parents=True)
+        agents = target.agent_files / "agents"
+        agents.mkdir(parents=True, exist_ok=True)
+        (agents / "plc-0003").symlink_to(behind)
+        scratch = None
+    sup._stop_codex_daemon(placement(harness="codex"), sup.cfg.harnesses["codex"], target,
+                           scratch, None)  # fmt: skip
+    assert logs[-1:] == ["plc-0003: the codex-home is a link (or not a directory); no Codex "
+                         "app-server daemon stopped, the start goes on"]  # fmt: skip
+    calls = tmp_path / "calls.log"
+    assert not calls.exists() or "app-server daemon stop" not in calls.read_text()
+
+
 def test_the_daemon_stop_makes_no_directories(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -252,10 +316,36 @@ def test_the_daemon_stop_makes_no_directories(
     monkeypatch.setattr(AsUser, "tighten", made)
     target = sup.targets["local"]
     p = placement(harness="codex")
-    sup._stop_codex_daemon(p, sup.cfg.harnesses["codex"], target, tmp_path / "scratch", None)
+    scratch = workspaces(sup) / ".scratch" / "maity" / "plc-0003"
+    sup._stop_codex_daemon(p, sup.cfg.harnesses["codex"], target, scratch, None)
     assert logs[-1:] == ["plc-0003: no codex-home yet, so no Codex app-server daemon to stop"]
     assert target.agent_files is not None
     assert not (target.agent_files / "agents" / "plc-0003").exists()
+
+
+def test_the_agents_home_is_not_looked_up_before_the_deadline(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop takes the agents' home the target found when it was set up: no account lookup
+    (config.home_of) and no `_agents_home` at the start. A target that has none yet stops
+    nothing and says so."""
+    sup, _, _, _, logs = world
+
+    def looked_up(*args: Any) -> Any:
+        pytest.fail("the daemon stop looked the agents' home up")
+
+    monkeypatch.setattr(config, "home_of", looked_up)
+    monkeypatch.setattr(supervisor.Supervisor, "_agents_home", looked_up)
+    target = sup.targets["local"]
+    assert target.agents_home == Path.home()  # the single layout's, found by targets.local
+    p, codex = placement(harness="codex"), sup.cfg.harnesses["codex"]
+    scratch = workspaces(sup) / ".scratch" / "maity" / "plc-0003"
+    sup._stop_codex_daemon(p, codex, target, scratch, None)
+    assert logs[-1:] == ["plc-0003: no codex-home yet, so no Codex app-server daemon to stop"]
+    target.agents_home = None
+    sup._stop_codex_daemon(p, codex, target, scratch, None)
+    assert logs[-1:] == ["plc-0003: the agents' home is not known; no Codex app-server daemon "
+                         "stopped, the start goes on"]  # fmt: skip
 
 
 class AgentsSide:
@@ -297,11 +387,7 @@ def stop_after_a_check_of(
         return 0, "dir\n"
 
     agents = AgentsSide(check)
-    logs: list[str] = []
-    binary = tmp_path / "codex"  # under tmp_path: conftest's guard lets it through
-    codexd.stop_codex_daemon(cast(Any, agents), str(binary), tmp_path / "h", tmp_path,
-                             "/usr/bin", logs.append)  # fmt: skip
-    return agents, logs
+    return agents, stop(agents, tmp_path)  # the fake under tmp_path: the guard lets it through
 
 
 def test_the_stop_gets_what_is_left_of_the_deadline(
@@ -311,7 +397,7 @@ def test_the_stop_gets_what_is_left_of_the_deadline(
     took = codexd.CHECK_TIMEOUT - 0.5
     agents, logs = stop_after_a_check_of(took, tmp_path, monkeypatch)
     (check_argv, check_timeout), (stop_argv, stop_timeout) = agents.runs
-    assert is_check(check_argv, tmp_path / "h") and check_timeout == codexd.CHECK_TIMEOUT
+    assert is_check(check_argv, tmp_path, "h") and check_timeout == codexd.CHECK_TIMEOUT
     assert stop_argv[-4:] == [str(tmp_path / "codex"), "app-server", "daemon", "stop"]
     assert stop_timeout == codexd.DEADLINE - took == 15.5
     assert logs == []
@@ -324,7 +410,7 @@ def test_no_stop_runs_once_the_check_used_the_whole_deadline(
     log says the deadline was used up."""
     agents, logs = stop_after_a_check_of(codexd.DEADLINE + 30.0, tmp_path, monkeypatch)
     ((argv, _),) = agents.runs  # the check alone
-    assert is_check(argv, tmp_path / "h")
+    assert is_check(argv, tmp_path, "h")
     assert logs == ["the codex-home check used the whole deadline; no Codex app-server daemon "
                     "stopped, the start goes on"]  # fmt: skip
 
@@ -345,9 +431,9 @@ class RecordingUser(AsUser):
 
 def test_the_direct_layout_home_check_is_bounded_too(tmp_path: Path) -> None:
     """In the `single` layout the check is the same bounded `sh` with CHECK_TIMEOUT, never a
-    stat in the runner's own process, which a stuck mount could hold without a bound."""
+    stat in the runner's own process."""
     user = RecordingUser()
     assert user.direct
-    assert codexd.check_home(user, tmp_path, codexd.CHECK_TIMEOUT) == "absent"
+    assert codexd.check_home(user, tmp_path, ("h",), codexd.CHECK_TIMEOUT) == "absent"
     ((argv, timeout),) = user.runs
-    assert is_check(argv, tmp_path) and timeout == codexd.CHECK_TIMEOUT
+    assert is_check(argv, tmp_path, "h") and timeout == codexd.CHECK_TIMEOUT
