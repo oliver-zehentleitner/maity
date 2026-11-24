@@ -17251,8 +17251,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     M_.api.del = (...a) => { otWrote("DELETE", a[0]); return otDel(...a); };
     const otRecord = (path, body) => { otWrote("PATCH", path); otPatches.push([path, body]); return otRealPatch(path, body); };
     M_.api.patch = otRecord;
-    // The member routes an outsider reads (hub access.py `OUTSIDE_READS`, #2001 and #2078's three Why reads).
-    const OT_READS = /^\/projects\/stranger\/tool(\/members(\/[^/?]+)?|\/tasks(\/[^/?]+(\/history|\/notes)?)?|\/logo|\/banner|\/keep-the-why(\/export|\/bodies)?)?(\?.*)?$/;
+    // The member routes an outsider reads (hub access.py `OUTSIDE_READS`, #2001 and #2078's three Why reads),
+    // and what the project allows them (§6.1 `…/contribution`, H1 tsk-enfbkj0xqq5m), read for the head's slot.
+    const OT_READS = /^\/projects\/stranger\/tool(\/members(\/[^/?]+)?|\/tasks(\/[^/?]+(\/history|\/notes)?)?|\/logo|\/banner|\/keep-the-why(\/export|\/bodies)?|\/contribution)?(\?.*)?$/;
     const otFrom = viAll.length, otPublicFrom = viAsked.length;
     const otViews = () => (header.querySelector("nav.views") ? header.querySelector("nav.views").querySelectorAll("a") : []);
     const otShown = () => otViews().map((a) => [text(a), (a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current") === "page"]);
@@ -17335,13 +17336,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         "outsider: the tab's head has the empty #outsider-actions slot in its project group");
       // Another module fills the slot through M.outsiderActions(ctx, slot); app.js only calls it.
       const calls = [];
+      const otActions = M_.outsiderActions;
       M_.outsiderActions = (c, s) => calls.push([c, s, s.childNodes.length]);
       await go("#/stranger/tool/overview"); for (let k = 0; k < 6; k++) await tick();
       const now = byId("outsider-actions");
       expect(calls.length >= 1 && calls.every(([c, s, n]) => c.outsider === true && c.slug === "stranger/tool" && n === 0 && s.getAttribute("data-slot") === "outsider-add-agent")
         && calls[calls.length - 1][1] === now,
         "outsider: each header drawn for an outsider calls M.outsiderActions(ctx, slot) with the empty slot it drew " + calls.length);
-      delete M_.outsiderActions;
+      M_.outsiderActions = otActions;
     }
     // A card's panel: its notes and history read, no Watch, no Add a note; Report stays.
     await go("#/stranger/tool/tasks/tsk-t001"); for (let k = 0; k < 8; k++) await tick();
@@ -17473,6 +17475,238 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         "outsider: every read under the project's routes is one an outsider reads (a boot's /bootstrap not counted), nothing is written there, no public page is read "
         + JSON.stringify([reads.filter((p) => !OT_READS.test(p)), otWrites, viAsked.slice(otPublicFrom)]));
     }
+    // "Add your agent" (tsk-pgcm6wvyxxj4; docs/api.md §6.1 "What the project allows" and "The outsiders' opt-in",
+    // §3.1 "An outsider's agent"; js/outsider-actions.js): GET …/contribution decides what the head's slot shows,
+    // and the button opens the one join form (js/join.js) as an outsider's join. The fixture hub answers as H1
+    // contracts it (`fixtureOutsideJoins`).
+    {
+      const OJ = M_.api.fixtureOutsideJoins;
+      const fx = M_.api.fixturesLive();
+      const ojSlot = () => byId("outsider-actions");
+      const ojBox = () => header.querySelector(".outsider-join");
+      const ojDraw = async () => { await go("#/stranger/tool/board"); await go("#/stranger/tool/overview"); for (let k = 0; k < 8; k++) await tick(); };
+      const ojSaid = () => text(ojBox().querySelector("form.join-form .send-status"));
+      const ojAsked = viAll.length;
+      // No opt-in (`agent_owners` unset, the hub's default while JOINS_ON is off): `members_only`, nothing shown.
+      await ojDraw();
+      const answer = await M_.api.get("/projects/stranger/tool/contribution");
+      expect(ojSlot() && !ojSlot().childNodes.length && !ojBox() && viAll.slice(ojAsked).includes("/projects/stranger/tool/contribution")
+        && JSON.stringify(answer) === JSON.stringify({ agent_owners: null, outside_roles: ["coder", "writer"], open_cards: 0, agents_max: 3, can_join: false, reason: "members_only" }),
+      "add your agent: without the opt-in the hub says members_only and the slot stays empty, no words, no error " + JSON.stringify(answer));
+      expect(await M_.api.get("/projects/stranger/tool/joins").then(() => "read", (err) => err.code) === "not_found",
+        "fixture hub: without the opt-in an outsider's joins routes are not_found");
+      // A hub without the route (H1 not deployed): its 404 draws nothing and says nothing.
+      const ojGet = M_.api.get;
+      M_.api.get = (p, o) => (String(p).endsWith("/contribution") ? Promise.reject(new M_.api.ApiError("No fixture", 404, p, "not_found")) : ojGet(p, o));
+      OJ.agent_owners = "anyone";
+      await ojDraw();
+      expect(ojSlot() && !ojSlot().childNodes.length && !ojBox() && !header.querySelector(".failed") && !header.querySelector(".error"),
+        "add your agent: a 404 on …/contribution leaves the slot empty and says nothing");
+      M_.api.get = ojGet;
+      // The quota used (`limit`), and a blocked outsider (`blocked`): the reason in words, no button.
+      OJ.agents_max = 1;
+      await ojDraw();
+      expect(text(ojSlot()) === "You have as many agents here as the project allows (1)." && !btn(ojSlot(), "Add your agent") && !ojBox(),
+        "add your agent: at the quota the slot says so in words, with no button " + text(ojSlot()));
+      OJ.agents_max = null; OJ.blocked = true;
+      await ojDraw();
+      expect(text(ojSlot()) === "The project's admins do not let you add agents here." && !btn(ojSlot(), "Add your agent"),
+        "add your agent: a blocked outsider is told in words, with no button " + text(ojSlot()));
+      // can_join: the button opens the join form as an outsider's, roles from outside_roles, no trust, boss or runner to choose.
+      OJ.blocked = false;
+      await ojDraw();
+      expect(btn(ojSlot(), "Add your agent") && text(ojSlot()) === "Add your agent", "add your agent: can_join draws the button alone " + text(ojSlot()));
+      // The opt-in closed after the head drew the button: the form's first read (GET …/joins) is
+      // not_found, said as the opt-in gone, never a bare "Not found" (A2249 P2-2).
+      OJ.agent_owners = "members";
+      btn(ojSlot(), "Add your agent").click(); for (let k = 0; k < 8; k++) await tick();
+      {
+        const said = ojBox() ? text(ojBox()) : "";
+        expect(said.includes("This project does not take agents from outside, or no longer does.") && !said.includes("Not found") && !ojBox().querySelector("form.join-form"),
+          "add your agent: the opt-in closed before the click is said in words, no bare Not found " + said);
+      }
+      OJ.agent_owners = "anyone";
+      await ojDraw();
+      btn(ojSlot(), "Add your agent").click(); for (let k = 0; k < 8; k++) await tick();
+      const roles = byId("join-role") ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")) : [];
+      expect(ojBox() && ojBox().querySelector(".join-panel") && !ojBox().querySelector(".join-panel").hidden && byId("join-title") && text(byId("join-title")) === "Add your agent"
+        && JSON.stringify(roles) === '["coder","writer"]' && !byId("join-trust") && !byId("join-reports") && !byId("join-areas") && !byId("placement-new-clone")
+        && text(ojBox()).includes("It is your agent and works here as an agent from outside.")
+        && btn(ojSlot(), "Add your agent").getAttribute("aria-controls") === ojBox().getAttribute("id") && !!ojBox().getAttribute("id"),
+      "add your agent: the form offers the roles of outside_roles, and no trust, boss, areas or runner " + JSON.stringify(roles));
+      const ojSent = [];
+      const ojPost = M_.api.post;
+      M_.api.post = (p, b) => { if (p === "/projects/stranger/tool/joins") ojSent.push(b); return ojPost(p, b); };
+      const ojFill = (handle, role) => {
+        byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+        byId("join-handle").value = handle; byId("join-handle").dispatch("input"); byId("join-display").value = handle;
+        byId("join-role").value = role; byId("join-role").dispatch("change");
+      };
+      const ojSubmit = async () => { ojBox().querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
+      ojFill("outbot", "writer");
+      await ojSubmit();
+      const sent = ojSent[ojSent.length - 1] || {};
+      expect(sent.trust === "outside" && sent.role === "writer" && sent.reports_to === "hum-maintainer" && !("areas" in sent) && !("capabilities" in sent)
+        && JSON.stringify(sent.agent) === '{"handle":"outbot","display_name":"outbot"}' && OJ.items[0] && OJ.items[0].trust === "outside" && OJ.items[0].reports_to === null
+        && text(ojBox().querySelector(".paste-line")).includes("maity join https://maity.example/j/FIXTURE-"),
+      "add your agent: the join is POST …/joins with trust outside, the role chosen, reports_to the caller (stored as nobody), no areas or capabilities; the line is shown once " + JSON.stringify(sent));
+      // The hub's refusals, in words: a role outside outside_roles, the quota, a block, the opt-in gone (not_found).
+      const ojRefused = async (setup, handle, role) => {
+        setup();
+        btn(ojBox(), M_.t("join.line.again")) ? btn(ojBox(), M_.t("join.line.again")).click() : null; await tick();
+        ojFill(handle, role);
+        await ojSubmit();
+        return ojSaid();
+      };
+      const said = [
+        await ojRefused(() => { OJ.outside_roles = ["coder"]; }, "outbot2", "writer"),
+        await ojRefused(() => { OJ.outside_roles = ["coder", "writer"]; OJ.agents_max = 2; }, "outbot2", "coder"),
+        await ojRefused(() => { OJ.agents_max = null; OJ.blocked = true; }, "outbot2", "coder"),
+        await ojRefused(() => { OJ.blocked = false; OJ.agent_owners = "members"; }, "outbot2", "coder"),
+      ];
+      expect(JSON.stringify(said) === JSON.stringify([
+        "No join created: This project does not let an agent from outside hold this role.",
+        "No join created: you hold as many agents in this project as it allows (2)",
+        "No join created: The project's admins do not let you add agents here.",
+        "No join created: This project does not take agents from outside, or no longer does."]),
+      "add your agent: a role outside outside_roles, the quota, a block and the opt-in gone are said in words " + JSON.stringify(said));
+      // An instance of one's own agent already here at trust outside, over its team's instances: the
+      // refusal is said with no link to the Agents view's rulebook, which an outsider does not have (A2249 P2-1).
+      {
+        OJ.agent_owners = "anyone";
+        const mine = fx["agents.json"].items.find((a) => a.handle === "outbot");
+        const outMembers = M_.api.fixtureOutsideMembers;
+        outMembers.push({ id: mine.id, kind: "agent", handle: "outbot", name: "maintainer/outbot", display_name: "outbot", owner_id: "hum-maintainer",
+          owner: { handle: "maintainer", display_name: "Maintainer" }, trust: "outside", role: "writer", reports_to: null, areas: [], capabilities: [],
+          expert_for: null, expert_sources: [], joined_at: "2026-11-20T09:00:00Z", isolated: null,
+          instances: [{ id: "q1aa", label: "q1aa", presence: "online", last_seen_at: "2026-11-20T09:00:00Z", revoked_at: null }] });
+        btn(ojBox(), M_.t("join.cancel")).click(); await tick();
+        btn(ojSlot(), "Add your agent").click(); for (let k = 0; k < 8; k++) await tick();
+        byId("join-agent").value = mine.id; byId("join-agent").dispatch("change");
+        await ojSubmit();
+        const said = ojSaid();
+        const sent = ojSent[ojSent.length - 1] || {};
+        expect(sent.new_instance === true && !("role" in sent) && /^No join created: /.test(said) && !ojBox().querySelector(".join-quota-link"),
+          "add your agent: an outsider's instance over the quota is refused with no rulebook link " + JSON.stringify([sent, said]));
+        // H1's `_check_instance`: a join for an agent already here names new_instance or replaces.
+        const bare = await ojPost("/projects/stranger/tool/joins", { agent: { id: mine.id }, ttl_seconds: 900 }).then(() => "made", (err) => (err.details.fields || {}).instance);
+        expect(bare === "required", "fixture hub: an outsider's join for an agent already here without new_instance or replaces is invalid, instance: required " + bare);
+        // H1 at 39497bfb: an instance re-checks the membership's role against outside_roles now.
+        OJ.outside_roles = ["coder"];
+        const roleGone = await ojPost("/projects/stranger/tool/joins", { agent: { id: mine.id }, new_instance: true, ttl_seconds: 900 })
+          .then(() => "made", (err) => err.details.reason + ":" + err.details.field);
+        OJ.outside_roles = ["coder", "writer"];
+        expect(roleGone === "member_join_limit:role",
+          "fixture hub: an instance of an outside agent whose role left outside_roles is member_join_limit, field role " + roleGone);
+        // A hand-over: a card the outsider reads only; a hidden card answers as a missing one, a message is card_only.
+        const hand = (value) => ojPost("/projects/stranger/tool/joins", { agent: { handle: "handbot", display_name: "handbot" }, handover: value, ttl_seconds: 900 })
+          .then(() => "made", (err) => (err.details.fields || {}).handover);
+        const hands = [await hand(6001), await hand("tsk-t004"), await hand("tsk-nowhere")];
+        expect(JSON.stringify(hands) === '["card_only","not_found","not_found"]' && !byId("join-handover"),
+          "fixture hub: an outsider's hand-over is a card it reads only (a message card_only, a hidden card as a missing one); the form offers no hand-over field " + JSON.stringify(hands));
+        outMembers.splice(outMembers.findIndex((x) => x.id === mine.id), 1);
+      }
+      M_.api.post = ojPost;
+      // Back as before: no opt-in, no joins, no profile made here.
+      Object.assign(OJ, { agent_owners: null, outside_roles: ["coder", "writer"], member_agents_max: 3, agents_max: null, blocked: false });
+      OJ.items.length = 0;
+      fx["agents.json"].items = fx["agents.json"].items.filter((a) => a.handle !== "outbot");
+      await ojDraw();
+      expect(ojSlot() && !ojSlot().childNodes.length && !ojBox(), "add your agent: the opt-in withdrawn, the next head draws the slot empty again");
+    }
+    // An outsider's agent given a card by a human with tasks:admin (§6.5 "Until the claim request is built",
+    // req-yzt08c2qgx6g; js/board-edit.js assignControl): Claim for @… on an open card nobody holds (a claim with
+    // `holder`), the assign moving an expired claim to it, and the interim's refusals in words.
+    {
+      const fx = M_.api.fixturesLive();
+      const fxMembers = fx["maity/members.json"].items, fxTasks = fx["maity/tasks.json"].items;
+      const like = JSON.parse(JSON.stringify(fxMembers.find((m) => m.kind === "agent")));
+      const inst = Object.assign({}, (like.instances || [])[0] || {}, { id: "o1x9", label: "o1x9", revoked_at: null });
+      fxMembers.push(Object.assign(like, { id: "agt-outer", handle: "outer", name: "visitor/outer", display_name: "Outer", owner_id: "hum-visitor",
+        owner: { handle: "visitor", display_name: "Visitor" }, trust: "outside", role: "coder", reports_to: null, areas: [], capabilities: [], instances: [inst] }));
+      const card = (id, extra) => Object.assign(JSON.parse(JSON.stringify(fxTasks[0])), { id, title: "Outside " + id, parent: null, related: [], depends_on: [], ships_with: [],
+        assigned_to: null, claim: null, rank: null, created_at: "2020-01-01T00:00:00Z", status: "open", label: null, needs: null }, extra);
+      fxTasks.push(card("tsk-out01"), card("tsk-out02", { status: "in_progress", assigned_to: "hum-maintainer",
+        claim: { holder: "hum-maintainer", instance: null, session_id: null, since: "2020-01-01T00:00:00Z", lease_until: "2020-01-01T01:00:00Z", expired: true } }), card("tsk-out03"));
+      const ocSent = [];
+      const ocPost = M_.api.post;
+      M_.api.post = (p, b) => { if (/\/tasks\/tsk-out0[0-9]\/(claim|assign)$/.test(p)) ocSent.push([p, b]); return ocPost(p, b); };
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
+      const ocCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
+      const ocItems = async (id) => {
+        ocCard(id).querySelector(".card-assign .menu-button").click(); await tick();
+        return ocCard(id).querySelectorAll(".card-assign .menu-item");
+      };
+      const ocPick = async (id, label) => {
+        const item = (await ocItems(id)).find((b) => text(b).trim() === label);
+        if (!item) throw new Error("no menu item " + label + " in " + id);
+        item.click(); for (let k = 0; k < 6; k++) await tick();
+      };
+      const open = (await ocItems("tsk-out01")).map((b) => text(b).trim());
+      ocCard("tsk-out01").querySelector(".card-assign .menu-button").click(); await tick();
+      const held = (await ocItems("tsk-out02")).map((b) => text(b).trim());
+      ocCard("tsk-out02").querySelector(".card-assign .menu-button").click(); await tick();
+      expect(open.includes("Claim for @outer") && open.includes("@outer") && open.filter((l) => l.startsWith("Claim for")).length === 1
+        && held.includes("@outer") && !held.some((l) => l.startsWith("Claim for")),
+      "claim for: an open card nobody holds offers Claim for @… for the outsider's agent alone; a held card offers only the assign " + JSON.stringify([open, held]));
+      await ocPick("tsk-out01", "Claim for @outer");
+      const claimed = fxTasks.find((t) => t.id === "tsk-out01");
+      expect(JSON.stringify(ocSent[ocSent.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-out01/claim", { holder: "agt-outer#o1x9" }])
+        && claimed.claim && claimed.claim.holder === "agt-outer" && claimed.status === "in_progress" && text(main).includes("tsk-out01 is claimed for Outer."),
+      "claim for: the card is claimed with holder naming the agent's one instance, and the board says so " + JSON.stringify(ocSent[ocSent.length - 1]));
+      await ocPick("tsk-out02", "@outer");
+      const moved = fxTasks.find((t) => t.id === "tsk-out02");
+      expect(JSON.stringify(ocSent[ocSent.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-out02/assign", { assignee: "agt-outer" }])
+        && moved.claim.holder === "agt-outer" && text(main).includes("tsk-out02 is assigned to Outer."),
+      "claim for: an assign by a human moves an expired claim to the outsider's agent");
+      // The interim's refusals, as the hub words them, in the reader's words.
+      const refuse = (details) => (p, b) => (p.endsWith("/claim") ? Promise.reject(new M_.api.ApiError("refused", 403, p, "forbidden", details)) : ocPost(p, b));
+      const refusals = [];
+      for (const details of [{ reason: "not_open_to_outsiders" }, { reason: "humans_only" }, { scope: "tasks:admin" }]) {
+        M_.api.post = refuse(details);
+        await ocPick("tsk-out03", "Claim for @outer");
+        const failed = main.querySelectorAll(".send-status.failed").map((e) => text(e)).find((t) => t.startsWith("Claiming failed:")) || "";
+        refusals.push(failed);
+      }
+      expect(JSON.stringify(refusals) === JSON.stringify([
+        "Claiming failed: An agent from outside does not claim cards itself for now; a person who manages the project's cards claims one for it.",
+        "Claiming failed: Only a person can give a card to an agent from outside, not an agent.",
+        "Claiming failed: Only a member who manages the project's cards (tasks:admin) can do this."]),
+      "claim for: not_open_to_outsiders, humans_only and the missing tasks:admin are said in words, not codes " + JSON.stringify(refusals));
+      // The fixture hub's own humans_only: an agent's claim with holder naming an agent with trust outside.
+      M_.api.post = ocPost;
+      fx["me.json"].member.kind = "agent";
+      const byAgent = await M_.api.post("/projects/maintainer/maity/tasks/tsk-out03/claim", { holder: "agt-outer" }).then(() => "claimed", (err) => err.details.reason);
+      fx["me.json"].member.kind = "human";
+      expect(byAgent === "humans_only", "fixture hub: an agent's claim with holder naming an outsider's agent is forbidden, humans_only " + byAgent);
+      // In plan and review a claim needs a reason, archived takes none: Claim for is not offered there,
+      // in build it is (A2249 P2-3). The assign stays as it was.
+      {
+        const fxProject = fx["maity/project.json"];
+        const before = fxProject.state;
+        const offered = {};
+        for (const state of ["plan", "review", "archived", "build"]) {
+          fxProject.state = state;
+          await go("#/maintainer/sample/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
+          const menu = ocCard("tsk-out03") && ocCard("tsk-out03").querySelector(".card-assign .menu-button");
+          const items = menu ? (await ocItems("tsk-out03")).map((b) => text(b).trim()) : [];
+          if (menu) menu.click();
+          await tick();
+          offered[state] = items.includes("Claim for @outer");
+        }
+        fxProject.state = before;
+        expect(JSON.stringify(offered) === '{"plan":false,"review":false,"archived":false,"build":true}',
+          "claim for: not offered in plan, review or archived, where the claim needs a reason or the project is closed; offered in build " + JSON.stringify(offered));
+        const noReason = await ocPost("/projects/maintainer/maity/tasks/tsk-out03/claim", { holder: "agt-outer" }).then(() => "claimed", (err) => err.code);
+        fxProject.state = "plan";
+        const planNoReason = await ocPost("/projects/maintainer/maity/tasks/tsk-out03/claim", { holder: "agt-outer" }).then(() => "claimed", (err) => (err.details.fields || {}).reason);
+        fxProject.state = before;
+        expect(planNoReason === "required" && noReason === "claimed", "fixture hub: a claim in plan without a reason is invalid (reason: required), in build it is taken " + JSON.stringify([planNoReason, noReason]));
+      }
+      // Back as before.
+      fx["maity/members.json"].items = fxMembers.filter((m) => m.id !== "agt-outer");
+      fx["maity/tasks.json"].items = fxTasks.filter((t) => !/^tsk-out0/.test(t.id));
+    }
     // An agent's public page stays its page, signed in too, and reports by its global name.
     await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
     if (viView() && viView().querySelector("button.report-open")) await rpSend(viView(), "other");
@@ -17527,9 +17761,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // A member, beside the dashed tab: their own project's views keep every control, its tab is solid
     // and carries no star, and the head has no outsider slot.
     const memberCalls = [];
+    const otActionsKept = M_.outsiderActions;
     M_.outsiderActions = (c, s) => memberCalls.push(s);
     await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
-    delete M_.outsiderActions;
+    M_.outsiderActions = otActionsKept;
     expect(!memberCalls.length, "member: a member's header never calls M.outsiderActions " + memberCalls.length);
     {
       const own = otLinks().find((a) => a.getAttribute("data-project") === MA);
