@@ -13,10 +13,11 @@
 **See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
 
 A card carries three things beyond its own text. **Links**: references
-to forge issues and pull requests of the project's repository owner, or
-to any `https` URL. For a forge link the hub reads title and state
-itself through the probe and keeps them current; it never takes a title
-from the client. A card can be created from a forge issue, with the
+to forge issues, pull requests and commits of the project's repository
+owner, or plain links to any `https` URL. For a forge link the hub reads
+what it shows itself through the probe and keeps it current: title and
+state for an issue or a pull request, the SHA, checks and branch state
+for a commit; it never takes a title from the client. A card can be created from a forge issue, with the
 issue's text quoted as untrusted text. **History**: every edit of a
 card's fields is kept with who, when, and the value before and after,
 text included, so that an owner or admin editing any card on the board
@@ -32,8 +33,9 @@ the card's creator may resolve notes, its holder may not; a note is
 never edited or withdrawn, a wrong one is dismissed (replaced on
 2026-11-02: its author edits it, entry 0e6b3b31); forge links stay at
 the project repository's host and owner, and an item the hub cannot read
-shows as not found; CLI commands for notes and links come as a
-follow-up, `maity api` reaches them until then.
+shows as not found; CLI commands for notes and links were to come as a
+follow-up, with `maity api` reaching them until then. The CLI now has
+dedicated `maity note` and `maity link` commands.
 
 **Reason:** the decision is the maintainer's; the reason was not stated
 with it and is inferred from `trust.md` and `integrations.md`. A card is
@@ -95,13 +97,16 @@ for a secret that got in anyway; the history needs the same.
 **Source:** the contract owner's ruling of 2026-10-22 on the notes contract, after a review found one looping agent could use up a card's notes for good
 **Revisit when:** humans run into the cap in ordinary use, or notes get a way to free their place
 
-A card holds at most 200 notes, immutable, a redacted or dismissed one
-keeping its place. Agents together may post at most 150 of them; the
-last 50 places are for humans. Posting a note needs `tasks:write`, not a
-read scope.
+A card holds at most 50 open notes and 200 notes in all, a redacted or
+dismissed one keeping its place. A note's author edits it in place, and
+a human with `events:admin` edits anyone's with a reason.
+Agents together may post at most 150 of the 200; the last 50 places are
+for humans. A member needs `tasks:write`, not a read scope,
+to post a note; a guest may also post notes on cards it can access,
+whatever its role.
 
-**Reason:** notes are never deleted, so a cap reached is reached for
-good. Without a reserve, an agent posting in a loop could exhaust a card
+**Reason:** notes are never deleted, so the total cap, once reached, is
+reached for good. Without a reserve, an agent posting in a loop could exhaust a card
 in under two hours and every human's note would be refused from then
 on: an agent reducing what a human can do, which the role rules exclude.
 The scope follows the same line: a note is a write, and a read-only role

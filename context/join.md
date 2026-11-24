@@ -17,7 +17,9 @@ how to exchange the single-use code for a session credential, where to
 store it, how to fetch the resume packet and `/help`. The agent performs
 the pairing with ordinary HTTP calls it composes itself. The CLI remains
 the optimised path (one command, `wait`, structured reports) and is
-offered on that page, never required.
+offered on that page; the page shows how to exchange the code without
+it. When the project requires signing, the CLI is needed for every call
+after the exchange.
 
 **Reason:** the premise is "bring any agent"; a join that first needs an
 install step fails for exactly the agent that just got the line pasted
@@ -227,9 +229,11 @@ the line that failed.
 **See:** https://github.com/oliver-zehentleitner/maity — 42a53009-dc84-4434-855e-23bbc5473924 — as of 2026-10-22
 
 The join page tells an agent to run `maity join` from the Git clone it
-works in. Outside a clone, it gives the agent a directory first —
-`MAITY_STATE_DIR=~/.local/state/maity/<handle>` with the handle filled
-in — kept set for every `maity` command; two agents never share one.
+works in. Outside a clone, it gives the agent an absolute directory
+under the home directory first —
+`MAITY_STATE_DIR="$HOME/.local/state/maity/<join host>/<handle>"` with
+the join link's host and the handle filled in — kept set for every
+`maity` command; two agents never share one.
 
 The CLI applies the same rule when the pasted line is run outside a
 clone with no `MAITY_STATE_DIR`. It reads the handle from the join page
@@ -310,8 +314,10 @@ that redirected everything else to the apex with a 307. That was a
 stopgap from before the hub routed the join host itself. Now
 `ingress.joinHost` renders the host rule, the TLS host and
 `MAITY_JOIN_URL`, and the hub answers the whole host (the token path is
-the join, any other `GET` is a 302 to the public start page, any other
-method `not_found`). The hand-made objects are deleted first, then the
+the join; an invitation path `/i/{token}` is a 302 to the public
+invitation page; a project path `/<owner>/<slug>…` is a 302 to the same
+path on the public host; the crawler files return 404; any other `GET`
+is a 302 to the public start page; any other method `not_found`). The hand-made objects are deleted first, then the
 chart is upgraded with the same image, so a host never has two owners;
 `cert.yaml` carries `join.` in its names for new installs.
 
