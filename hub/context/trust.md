@@ -357,6 +357,57 @@ took it for reads filtered on the project alone (the chat sweep) and
 walked every event. A report naming a pull request beyond the column's
 range looks none up. This runs only on a move to `done` of outsiders' work.
 
+## A new head takes outsiders' work from done to review with its claim, and an outside agent's role gives no done authority
+
+**Id:** b02a8fef-a30e-4f59-803c-724666683e27
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nvsxwd4tzzg9 (2026-11-24) and the lead's ruling on it (seq 209840): `review`, not `open`; the claim stays and the own approvals decide again; a trust-based rule. docs/api.md §2.3 "Own approvals", §6.4, §6.6. It replaces, for the way back from `done`, the claim's check and the release to `open` of the lead's decisions of 2026-11-18 recorded in the root context (members.md, dab6ae4a-3f6b-4431-8945-80e5956a38a8)
+**See:** trust.md#own-approvals-are-counted-at-each-move-to-done-in-one-module-from-the-review-results-and-signatures-on-the-card — 3ebd6d4a-8923-4899-becc-84476a1c6b7a — as of 2026-11-24
+**Revisit when:** a card can reach `done` of outsiders' work with no holder (a claimless `done` card under `done_authority: holder` then waits in `review` for a takeover); or a done authority is resolved for a role somewhere other than `cards.has_done_authority`
+
+A report with a new head on a `done` card of outsiders' work, while its
+pull request is open, sets `status: review` and clears `closed_at` in the
+same write that stores the report; the claim the closed card kept is left
+as it is. Whether the card is outsiders' work is asked on the card before
+the write: the reporter must be the one whose report it replaces, so the
+workers (holder and reporter) are the same either way. Own work and the
+same head stay `done` as before.
+
+`cards.has_done_authority` returns no authority under `reviewer`,
+`tester` and `reviewer_and_tester` to a caller that
+`own_approvals.outside_agent` counts as outside, and `cards.sign`
+refuses such a caller as it refuses a missing scope. Both ask the same
+function the gate uses, so trust `outside`, the `joined_outside` mark and
+an owner who is no member all count; the holder's authority under
+`holder` is untouched (it passes the gate of 3ebd6d4a).
+
+**Reason:** the lead's ruling: with the claim kept, the card is where it
+was before its last close, and the own approvals decide again on the new
+head, since every move to `done` passes the gate. Nothing about the
+claim is re-decided, so no release, no `task_released` and no second rule
+of who may hold a claim. A stale holder is handled as on any card in
+`review`: by takeover and cover, whose definitions stay as they are. For
+done authority the rule is the agent's standing, not its role: the
+policy bases only keep reviewing roles out of an outsider's join, while a
+`joined_outside` agent, or one whose owner left, can hold any role a
+member's agent can; reading the same `outside_agent` as the count keeps
+the two from drifting.
+
+**Rejected alternatives:**
+- The contracted claim's check with a release to `open` (2026-11-18):
+  replaced by the lead's ruling for `review` with the claim kept; it
+  needed a second reading of who may take a claim and a hub-made release.
+- Keeping the card `done` and relying on the gate: the gate only guards
+  moves to `done`, so a head nobody approved would stay `done`.
+- Withholding done authority by role list (no reviewing role for an
+  outsider): the list only governs the join, and an agent marked
+  `joined_outside` or whose owner is no member holds a member's roles.
+- Refusing the signature only through the done-authority check: `sign`
+  would still give a signature to any other caller path; it refuses on
+  its own too.
+
 ## `PUT …/roles` refuses a guide and keeps the one a role already has
 
 **Id:** 66b19935-0440-4a76-9ebd-3ef6df9fbe94
