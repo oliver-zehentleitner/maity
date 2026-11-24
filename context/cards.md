@@ -626,3 +626,145 @@ set cannot see.
   further ones within 10 minutes: every change would be a mail or a
   push, and a digest would be a second kind of notice to build and
   keep for what the events already show.
+
+## Milestones as on GitHub: one per card, per project, several open, a release may point to one
+
+**Id:** c50d8929-b996-4656-9755-f579272948b3
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the maintainer's agreement of 2026-10-29 in a chat, recorded in the body of card tsk-k6a4bnnc4wct; contract in `docs/api.md` §6.33 (milestones), §6.4, §6.7 and §5.2
+**Revisit when:** a project needs a card in more than one milestone or a milestone across projects
+**See:** cards.md#milestones-the-points-the-scope-left-open-decided-within-it — 4f03f826-f4a4-4875-9e15-bfa3a2a33dad — as of 2026-11-22
+
+**Not built yet:** the contract is ahead of the hub, the dashboard and
+the CLI, which follow in their own cards.
+
+A project has milestones: each with a title, a description, an
+optional due date and a state, open or closed, and several may be open
+at the same time. A card belongs to at most one milestone. A
+milestone's view shows its progress, done of total, and the board and
+the card list filter by milestone. A release may point to a milestone,
+and the milestone's cards are then the release's cards. The resume
+packet names the milestone and the due date of each card the agent
+holds or is assigned. The model is GitHub's milestones. The contract
+draws these out in `docs/api.md` §6.33; the points the scope left open
+were decided afterwards within it (entry 4f03f826, below).
+
+**Reason:** the scope is the maintainer's and recorded on the card, so
+the decision itself is confirmed; the reason was not stated with it,
+hence `unknown` above, the weakest part. Inferred: Maity's projects work
+on GitHub repositories (the probe reads GitHub), so the people and
+agents in them already know GitHub's milestones, and taking that model
+whole spares inventing one. Why a release points to a milestone and
+why the packet carries the due date is not recorded (unknown).
+
+**Rejected alternatives** (excluded by the scope itself; why each lost
+was not stated, the reasons given are inferred):
+- Several milestones per card: the scope says one per card, as on
+  GitHub, where an issue has at most one milestone; with one, progress
+  counts each card once and the board filter is unambiguous.
+- Milestones across projects: the scope says per project, as on
+  GitHub, where a milestone belongs to one repository; a project is
+  also where membership and reading rights end, so a cross-project
+  milestone would count cards some of its readers may not see.
+
+## Milestones: the points the scope left open, decided within it
+
+**Id:** 4f03f826-f4a4-4875-9e15-bfa3a2a33dad
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the lead's decision of 2026-11-22 on the fourteen open points of the milestones contract draft (card tsk-k6a4bnnc4wct), within the maintainer's scope of 2026-10-29; the lead's rulings of 2026-11-22 after the first two reviews of the contract's pull request (#2113): outsiders' reads, cancelled cards, which releases block a delete, where the view lives; the owner's agreement to the fourteen decisions in a conversation of 2026-11-22, which confirms the decisions, not their reasons; contract in `docs/api.md` §6.33, §6.7, §2.3, §1.3 and §1.7
+**Revisit when:** the maintainer overrules one of these points in the review of the contract's pull request, or the 200 milestones per project are reached in practice
+**See:** cards.md#milestones-as-on-github-one-per-card-per-project-several-open-a-release-may-point-to-one — c50d8929-b996-4656-9755-f579272948b3 — as of 2026-11-22
+
+**Not built yet:** as the entry above.
+
+The contract draft for milestones listed fourteen points the
+maintainer's scope did not settle, each with a proposal and the other
+answers. The lead decided all of them within that scope ("like
+GitHub"); the maintainer reads the pull request and may overrule any
+point there. The decisions themselves are confirmed by that record.
+Their reasons stand differently, and each bullet says how: a reason the
+lead gave is confirmed; "like GitHub" is the stated frame for the points
+that follow GitHub; where no reason was given it says so, and the entry
+carries `unknown`, the weakest part.
+
+- **Who manages milestones:** `tasks:admin` (trust `owner`, `admin`)
+  creates, edits, closes, reopens and deletes them. Rejected:
+  `releases:write`, because a release only points to one milestone and
+  does not plan the board; every member with `tasks:write`. Reason
+  given with the rejections; why `tasks:admin` over a scope of its own,
+  the fourth answer offered, was not stated.
+- **Who sets a card's milestone:** whoever may edit the card, as for
+  `label`. Rejected: `tasks:admin` only; every member with
+  `tasks:write` on every card. Reason not stated.
+- **A release's milestone and its `depends_on`:** while the release is
+  open its cards are the milestone's cards that are not cancelled, in
+  place of `depends_on`; when the release goes done they are frozen
+  into `release.shipped`; a release with both is refused. Rejected: the union of the two; a one-time copy of
+  the milestone's cards into `depends_on`. Reason given: the
+  maintainer's own words, "a release may point to a milestone, and then
+  its cards are the milestone cards".
+- **Deleting:** allowed; the cards lose the milestone, each with a
+  history entry and an event. Rejected: refused while any card names
+  it; no delete, only close. Reason: as on GitHub, where deleting a
+  milestone clears it from its issues.
+- **Which releases block a delete** (decided after the second review):
+  an open or a `done` release that names the milestone; the refusal
+  lists them all, sorted, as `details.releases`. Rejected: every
+  release that names it, a `cancelled` one included. Reason given: a
+  cancelled release shipped nothing to keep a record of.
+- **Progress:** `done` of the cards that are not `cancelled`; a
+  cancelled card is in neither number. Rejected: `done` and `cancelled`
+  of all cards, as GitHub counts closed issues; `done` of all cards.
+  Reason not stated; this point does not follow GitHub.
+- **`due_on`:** a calendar date with no time and no zone. Rejected: a
+  UTC date-time, as GitHub's API serves; a date in a project time zone.
+  Reason not stated.
+- **Title:** unique in the project, as a milestone's title is in a
+  GitHub repository. Rejected: not unique. Reason: GitHub's model.
+- **A cap:** 200 milestones per project, open and closed together,
+  refused as the other fixed project caps are (`milestone_quota`,
+  `details.max`, as `restricted_quota`). Rejected: no cap. Reason given:
+  scalability before features.
+- **The list's order:** open first, then `due_on` with no date last,
+  then creation. Rejected: creation order; title. Reason not stated.
+- **A closed milestone** takes new cards. Rejected: refusing them.
+  Reason: as on GitHub.
+- **A subtask** does not inherit its parent's milestone. Rejected: a
+  new child taking its parent's; a child always showing its parent's.
+  Reason not stated; the contract notes the precedent that children do
+  not follow their parent into a release.
+- **The milestone events** are readable by everyone and wake nobody.
+  Rejected: waking the holders and assignees of its cards on a change
+  of due date or state. Reason given: the milestone and due date in the
+  resume packet is the reminder.
+- **Mentions in the description** are not resolved. Rejected: resolving
+  them with `mentioned`, as in a card's body. Reason not stated.
+- **Closing:** only a member closes a milestone, never the hub.
+  Rejected: closing it when its last card closes, or when a release
+  that points to it is done. Reason: as on GitHub, where milestones are
+  closed by hand.
+- **Outsiders of a public project** read the milestones, the list and
+  each one, and get no milestone event, as no project event; counts
+  leave out the cards hidden from them. Rejected: members only. Reason
+  given: a public project already shows its board to outsiders
+  (`scope.md`), and milestones belong to the board view.
+- **No cycle through a release's milestone:** the existing rule that
+  the dependency graph has no cycle (`docs/api.md` §6.4) runs over a
+  release's effective set, the milestone's cards included. Not a fork:
+  the review of #2113 found the draft had left that path unchecked.
+- **Cancelled cards and a release** (decided after the second review):
+  a release that points to a milestone ships the milestone's cards
+  that are not cancelled, the same set its progress counts; a
+  cancelled card neither blocks the release's readiness nor enters
+  its pull requests, groups or `release.shipped`. Rejected: cancelled
+  cards block until they are moved out of the milestone. Reason given:
+  that would make cancelling a card on a milestone a release blocker.
+- **Where the milestone view lives** (decided after the second
+  review): inside the board, as its milestone filter and a progress
+  panel, with no dashboard path of its own. Rejected: a separate page
+  at `/<owner>/<slug>/milestones`. Reason not stated; the maintainer
+  may overrule it in the pull request.

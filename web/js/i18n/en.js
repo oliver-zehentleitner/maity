@@ -1274,6 +1274,7 @@ window.MAITY_I18N["en"] = {
   "error.maintenance_running": "A running maintenance window is ended, not cancelled.",
   "error.memory_full": "This memory is full.",
   "error.method_not_allowed": "This action is not available here.",
+  "error.milestone_quota": "This project has as many milestones as it allows.",
   "error.namespace_owner": "The owner of this project's namespace cannot be changed or removed this way.",
   "error.no_moderator": "Nobody who may moderate this round is present.",
   "error.nonce_reused": "This request was already sent once.",
