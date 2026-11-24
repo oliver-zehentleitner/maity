@@ -797,12 +797,16 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         words = ctx.as_user.runner_module("plaincall")
         if python_tools_dirs(ctx):
             # What the hook holds a python3 tool line to: this clone, its tool directories, and
-            # the paths the session may write besides it, where no accepted python3 may lie.
+            # the paths the session may write besides it, where no accepted python3 may lie: the
+            # scratch, and the whole leaf of its own TMPDIR (own_tmp_leaf), not only the `tmp`
+            # in it, since Claude Code opens its own `claude-<uid>/` beside that `tmp` to the
+            # session's commands (own_tmp_env).
             words += ["--clone", ws]
             for tool_dir in python_tools_dirs(ctx):
                 words += ["--python-tools", tool_dir]
-            for path in writable:
-                words += ["--writable", path]
+            for path in (ctx.scratch, own_tmp_leaf(ctx)):
+                if path is not None:
+                    words += ["--writable", str(path)]
         module = " ".join(shlex.quote(word) for word in words)
         hook = f"{module} || exit 2"
         hooks["PreToolUse"] = [

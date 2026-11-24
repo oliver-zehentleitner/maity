@@ -100,6 +100,62 @@ def test_a_sandboxed_session_gets_the_rules_and_the_hook_gets_the_clone_and_the_
     )
 
 
+def test_with_its_own_tmpdir_the_hook_gets_the_whole_leaf_and_refuses_a_python3_beside_its_tmp(
+    tmp_path: Path, clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no room for a socket under the scratch, the session's TMPDIR is `<leaf>/tmp` and
+    Claude Code's own CLAUDE_CODE_TMPDIR is the leaf, where Claude Code opens `claude-<uid>/`
+    to the session's commands. The hook gets the leaf, so a python3 there is refused (A2541)."""
+    # Paths only for the settings, short enough for a socket, as test_adapters has them.
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
+    leaf = parent / ("a" * 32)
+    own = leaf / "tmp"
+    ctx = tools_ctx(tmp_path, scratch=deep, tmpdir=own, tmp_scratch_parent=parent)
+    assert adapters.own_tmpdir_in_use(ctx) == own
+    words = hook_words(adapters.claude_settings(ctx))
+    writable = [words[i + 1] for i, w in enumerate(words) if w == "--writable"]
+    assert writable == [str(deep), str(leaf)]  # the leaf, which holds its `tmp`, not `tmp`
+    # The hook, on real directories of that shape.
+    real_leaf = tmp_path / "leaf"
+    sibling = real_leaf / "claude-1001"
+    sibling.mkdir(parents=True)
+    (real_leaf / "tmp").mkdir()
+    program = sibling / "python3"
+    program.write_text("#!/bin/sh\n")
+    program.chmod(0o755)
+    monkeypatch.setenv("PATH", str(sibling))
+    tools = plaincall.PythonTools(clone=clone, dirs=("tools",), writable=(real_leaf,))
+    reason = decide("python3 tools/changelog.py", str(clone), tools)
+    assert reason is not None and "can write" in reason
+    # The `tmp` alone, as before this fix, would not cover the sibling.
+    tools = plaincall.PythonTools(clone=clone, dirs=("tools",), writable=(real_leaf / "tmp",))
+    assert decide("python3 tools/changelog.py", str(clone), tools) is None
+
+
+def test_a_python3_link_in_a_writable_root_under_a_linked_ancestor_is_refused(
+    clone: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A writable root under a linked ancestor (macOS's /tmp) reads as given in the PATH and
+    resolved in the hook's arguments, or the other way round. A python3 there that links to an
+    interpreter outside every root is still the session's own: refused (A2541)."""
+    real = tmp_path / "private" / "tmp"
+    real.mkdir(parents=True)
+    (tmp_path / "tmp").symlink_to(real)
+    system = tmp_path / "usr" / "bin"
+    system.mkdir(parents=True)
+    (system / "python3").write_text("#!/bin/sh\n")
+    (system / "python3").chmod(0o755)
+    scratch_real = real / "scratch"
+    scratch_real.mkdir()
+    (scratch_real / "python3").symlink_to(system / "python3")
+    for on_path, given in ((tmp_path / "tmp" / "scratch", scratch_real),
+                           (scratch_real, tmp_path / "tmp" / "scratch")):  # fmt: skip
+        monkeypatch.setenv("PATH", str(on_path))
+        reason = decide("python3 tools/changelog.py", str(clone), tools_for(clone, given))
+        assert reason is not None and "can write" in reason, (on_path, given)
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -227,7 +283,25 @@ def test_a_line_that_names_no_tool_directory_is_left_to_the_permission_rules(
     """Only a line that could match a `python_tools` rule is the hook's: the rest is decided by
     the allow list, which allows no other python3 line."""
     for command in ("python3 -c 'print(1)'", "python3 other/x.py", "git grep python3",
-                    "cli/.venv/bin/python -m pytest cli/tests", "make -C web check"):  # fmt: skip
+                    "cli/.venv/bin/python -m pytest cli/tests", "make -C web check",
+                    # the first word after python3 that is no option is no tool directory, so
+                    # no python_tools rule can match: left to the grant (A2541)
+                    "python3 -m pytest tools/test_changelog.py",
+                    "python3 -m unittest tools/test_changelog.py",
+                    "python3 -W ignore tools/x.py"):  # fmt: skip
+        assert decide(command, str(clone), tools_for(clone)) is None, command
+
+
+def test_a_tool_directory_right_after_a_python3_word_is_held_whatever_the_line(
+    clone: Path, system_python: Path
+) -> None:
+    """The side effect the candidate check keeps on purpose: a tool directory right after a
+    python3 word, past its options, is held to the exact form even where it is no call."""
+    for command in ("git grep python3 tools/", "git grep -e python3 tools/"):
+        reason = decide(command, str(clone), tools_for(clone))
+        assert reason is not None, command
+    # The way around it that docs/runners.md names.
+    for command in ("git grep python3 -- tools", "git grep python3 -- web"):
         assert decide(command, str(clone), tools_for(clone)) is None, command
 
 

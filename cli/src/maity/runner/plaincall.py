@@ -1383,19 +1383,24 @@ def _python_candidate(command: str, dirs: Sequence[str]) -> bool:
     """Whether the line could be one Claude Code matches against a `python_tools` rule
     (`python3 <dir>/…`): some word, with quotes and backslashes taken out and split at
     blanks, operators and expansions, names python3 (python3.N, by any path, in any case)
-    and a later word starts with a tool directory and `/` (after a leading `./`), so an
-    interpreter option between them counts too. Wider on purpose: such a line passes only in
-    the exact form (`python_tool`); a line that names a tool directory after python3 for
-    another reason (`git grep python3 tools/`) is refused with it."""
+    and the first word after it that is no option (`-…`) starts with a tool directory and
+    `/` (after a leading `./`), so an interpreter option between them counts too. Wider than
+    the rules on purpose: such a line passes only in the exact form (`python_tool`); a line
+    that names a tool directory right after a python3 word for another reason (`git grep
+    python3 tools/`) is refused with it. A first word that is no tool directory
+    (`python3 -m pytest tools/…`) leaves the line to the permission rules, which no
+    `python_tools` rule can match then."""
     text = re.sub(r"[\"'\\]", "", command)
     words = [w for w in _CANDIDATE_SPLIT.split(text) if w]
     prefixes = tuple(f"{d.lower()}/" for d in dirs)
-    seen_python = False
+    after_python = False
     for word in words:
-        if seen_python and word.lower().removeprefix("./").startswith(prefixes):
-            return True
+        if after_python and not word.startswith("-"):
+            if word.lower().removeprefix("./").startswith(prefixes):
+                return True
+            after_python = False
         if _PYTHON3.fullmatch(word.rsplit("/", 1)[-1].lower()):
-            seen_python = True
+            after_python = True
     return False
 
 
@@ -1442,9 +1447,17 @@ def python_tool(command: str, cwd: object, tools: PythonTools) -> str | None:
         program = shutil.which("python3")
         if program is None:
             return refused("python3 is not on the PATH")
-        resolved = Path(os.path.realpath(program))
-        roots = [clone, *(Path(os.path.realpath(p)) for p in tools.writable)]
-        if _inside(Path(os.path.abspath(program)), roots) or _inside(resolved, roots):
+        # Every place the session may write, as given and resolved: a root under a linked
+        # ancestor (macOS's /tmp) reads one way in the PATH and the other once resolved.
+        given = [Path(tools.clone), *tools.writable]
+        roots = [*(Path(os.path.abspath(p)) for p in given),
+                 *(Path(os.path.realpath(p)) for p in given)]  # fmt: skip
+        found_at = Path(os.path.abspath(program))
+        # The program as found, as resolved, and the directory it was found in resolved: a link
+        # named python3 in a writable directory is the session's, wherever it points.
+        if any(_inside(path, roots) for path in
+               (found_at, Path(os.path.realpath(found_at)),
+                Path(os.path.realpath(found_at.parent)))):  # fmt: skip
             return refused("python3 on the PATH lies where this session can write")
     except (OSError, ValueError) as exc:
         return refused(f"cannot check it: {type(exc).__name__}")
