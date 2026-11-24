@@ -7667,9 +7667,9 @@ sandbox, so the build is held to running nothing the clone holds:
   (any token starting with `-` but a sha256 `--hash`, also after a marker), a URL, a path or an
   include refuses the lock.
 - pip installs hashed wheels only (`--only-binary=:all:` on its command line and
-  `PIP_ONLY_BINARY=:all:` in its environment, `--no-deps`, no pip configuration read: a second
-  hold, since a pip 24.0 was seen to drop the command line's setting for an option a lock line
-  carried) into a venv the runner's
+  `PIP_ONLY_BINARY=:all:` in its environment, `--no-deps`, no pip configuration read; the
+  environment is no hold against an option on a lock line, for which a pip 24.0 started a source
+  build all the same, so refusing that line in the lock check is the one hold) into a venv the runner's
   python3 (the first on its PATH, which may be a pyenv or uv one) made just now, so no build
   script of any package runs.
 - The clone's own package is not built (hatch_build.py and setup.py are clone code): a `.pth`

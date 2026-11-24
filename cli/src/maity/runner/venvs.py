@@ -115,7 +115,8 @@ def _python() -> str:
 def _run(argv: list[str], timeout: int) -> None:
     env = {k: v for k, v in os.environ.items() if k in _PIP_ENV}
     # Wheels only in pip's environment as well as on its command line, and no configuration of
-    # the user's or the machine's: a second hold behind the lock check.
+    # the user's or the machine's. This does not hold against an option on a lock line (a pip
+    # 24.0 still started a source build for one): check_lock refusing the line is that hold.
     env.update({"PIP_CONFIG_FILE": os.devnull, "PIP_ONLY_BINARY": ":all:", "PIP_NO_INPUT": "1",
                 "PYTHONNOUSERSITE": "1"})  # fmt: skip
     try:

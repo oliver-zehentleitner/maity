@@ -82,8 +82,9 @@ def test_the_repositorys_own_locks_pass(sub: str) -> None:
 def test_pips_environment_asks_for_wheels_only_and_reads_no_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A second hold behind the lock check: wheels only in pip's environment as well, no pip
-    configuration of the user's or the machine's, none of the caller's own PIP_ settings."""
+    """Wheels only in pip's environment as well, no pip configuration of the user's or the
+    machine's, none of the caller's own PIP_ settings. Not a hold against an option on a lock
+    line: the lock check is that one."""
     seen: dict[str, str] = {}
 
     def run(argv: list[str], **kwargs: Any) -> Any:
@@ -154,7 +155,7 @@ def test_pip_installs_hashed_wheels_only_and_never_the_clone(
     venv = venvs.build(tmp_path / "venvs", "plc-0003", "hub", lock, clone)
     assert venv == tmp_path / "venvs" / "plc-0003" / "hub"
     [make, pip] = record
-    # The system Python makes the venv, never one under the test's (or a clone's) tree.
+    # The runner's python3 makes the venv, never one under the test's (or a clone's) tree.
     assert make[1:3] == ["-m", "venv"] and not make[0].startswith(str(tmp_path))
     assert {"--require-hashes", "--only-binary=:all:", "--no-deps"} <= set(pip)
     assert "-e" not in pip and not [a for a in pip if a.startswith(str(clone))]
