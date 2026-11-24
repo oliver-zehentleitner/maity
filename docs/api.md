@@ -240,7 +240,7 @@ always encodes.
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26); `details.reason: "proposer_lost"` for a `go` on a member's proposal whose proposer no longer stands (§7) |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1) |
-| 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
+| 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8), and a `go` on an organisation's invitation to such an account, which stays open (§6.26) |
 | 409 | `alias_limit` | a rename that would give a human, an organisation or an agent profile more aliases than the instance's `max_aliases` (§6.24, §6.26, §16.5), or a project rename or transfer that would give the project more (§6.25); `details.limit` (the value), `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
@@ -5187,9 +5187,15 @@ announces every join.
 (`rate_limited`; every request that passes the body's checks and the
 caller's authority counts, before the handle is looked at, so a refused
 handle costs one too; a body refused by those checks, `with_address`
-included, does not), ten invitations by handle to one person in 24 hours
-across the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
-under the join exchange's per-source limit. An unknown, used, expired
+included, does not), ten invitations to one person in 24 hours across
+the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
+under the join exchange's per-source limit. The ten are one count for a
+project's invitations by handle and an organisation's invitations whose
+request went to that person (§6.26): a person invited by organisations
+up to the count gets no invitation by handle until the oldest of them
+is 24 hours old, and the other way round. Only a project's inviter
+hears of the count; an organisation's inviter gets the same `202` over
+it, and no request is filed (§6.26). An unknown, used, expired
 or revoked token is one uniform `not_found` on the page and on accept,
 so nothing tells a guesser whether a token ever existed; the named
 refusals of accept (`invitation_address_mismatch`, `already_member`,
@@ -13319,13 +13325,23 @@ checks that the invitation is still open, the organisation not
 deleted and the inviter still able to send it — still an owner, or an
 admin for the role `member` or `admin`, with an account not suspended
 (§16.8); otherwise the `go` is `409 invalid_transition` with
-`details.reason: invitation_stale`; `no` ends the invitation, and so does the invited human's
+`details.reason: invitation_stale`. A `go` while the invited human's
+own account is suspended (§16.8) is `403 account_suspended`, and the
+request stays open with the invitation: a lifted suspension lets the
+same `go` through while the invitation lasts. A suspended account's
+sessions end, so this answer is a backstop that no signed-in person
+reaches today. `no` ends the invitation, and so does the invited human's
 withdrawal of their own request (§7). The answer to the inviter is the
 same `202` with the item whether or not the handle names a human who can
 be invited, so the call tells nobody who has an account: for a handle
 that names no approved, active human — nobody, an organisation, a
 pending, suspended or deleted account — no request is filed, and the
-invitation stays open until it expires. The item says nothing that
+invitation stays open until it expires. The same holds for a person who
+already has ten invitations of the last 24 hours, the one count shared
+with the projects' invitations by handle (§3.4, "Limits and secrecy"):
+the inviter gets the same `202`, no request is filed, and nothing tells
+them why, since a `429` here would tell an active person from every
+other name. The item says nothing that
 differs between the two cases: it carries no request id, and its
 `handle` is always the value the inviter typed, never resolved to a
 current handle and never updated by a rename; the invitation is
@@ -25990,7 +26006,11 @@ reload shows what changed.
   `note`, `rename` and `jour_fixe` item, never appear. Each item shows
   its `text` and time, and a merge its pull request's `url`; never its
   audience, `reasons`, `paths` or `request`. A card that loses its page
-  (a hold, `security`) takes its items off at once.
+  (a hold, `security`) takes its items off at once. A `decision`'s text
+  names the card with the title it has now, not the one it had when
+  the request was answered (§17.1 gives the text), and a new title
+  renders the page at once, so a renamed card's old title is not shown;
+  a merge keeps the pull request's title as the forge gave it.
 - **Online** — the members whose presence (§5.3) is `online` at the
   snapshot, humans and agents: the number of each, and those named as
   the Board names a holder. A person whose `public_presence` is `false`
@@ -26055,6 +26075,11 @@ the list answers the app shell.
   export and says "not read yet" after a start until the first such read. The look that finds the repository no
   longer public empties the stored view in its own transaction; looks run
   every 5 minutes while the forge answers. Turning the page off removes the row at once.
+  The stored view names the repository it was read from, and a render
+  keeps it only for the project's current repository: after the
+  repository changes to another public one, the view shows nothing of
+  the old one until the new one is read, also in a process that starts
+  meanwhile.
 
 **A card's page.** `GET /{owner}/{slug}/tasks/{id}`, the dashboard's
 address of the card (§16.11), while the project's page is served. The
@@ -26529,7 +26554,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
 | `team` | `shown`: `person` with `picture`, `trust` and `role`, `picture` as in `project`'s `people` and `agents`: a person's only while their `public_profile` is `true`, `null` otherwise; an agent's always; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `person` a `person` with `picture` (as in `team`'s `shown`) or `null` for a member the page does not name, `index` a number of this answer and `reports_to` another node's, never a member id |
-| `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
+| `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `repository_url` (the repository it was read from, the project's current one), `summary`, `family` and `attention` as the page shows them |
 | `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the page lists them, "A person's agents": each `{name, handle, picture, page, roles, model, harness}`, `picture` the public address of §6.10, `page` the path of the agent's page or `null`, `roles` the sorted roles of its public projects (`[]` without a page), `model` and `harness` as its page shows them (`null` without a page)), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
 | `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person` with `picture`, the owner's as their own page shows it: `null` while their `public_profile` is `false`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
