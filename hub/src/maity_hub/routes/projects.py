@@ -1648,6 +1648,26 @@ def transfer_project(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _as_stored(url: str) -> str | None:
+    """A URL as creation stores one (§6.1: the scheme and host in lower case, one trailing slash
+    and a lower-case `.git` dropped); None for one creation would refuse."""
+    try:
+        return forge.stored_repository_url(url)
+    except forge.RepositoryURLError:
+        return None
+
+
+def _same_repository(sent: str, carried: str) -> bool:
+    """Whether the URL the owner sent names the repository the project carries (§11.4): the same
+    spelling, or the same once both are written as creation stores a URL, so `…/repo.git/`
+    confirms `…/repo`. A row stored before URLs were normalised keeps its spelling
+    (20261114130000_repo_url_2048), so it is normalised here too, never only the sent side."""
+    if sent.rstrip("/") == carried:
+        return True
+    stored = _as_stored(sent)
+    return stored is not None and stored == _as_stored(carried)
+
+
 @router.post("/projects/{owner}/{slug}/repository/confirm")
 def confirm_repository(
     slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
@@ -1673,7 +1693,7 @@ def confirm_repository(
         elif mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
-        if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
+        if project.repository_url is None or not _same_repository(body.url, project.repository_url):
             # A co-admin's change between what the owner saw and the click is never
             # confirmed with it.
             raise ApiError(

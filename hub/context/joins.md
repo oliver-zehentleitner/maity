@@ -626,3 +626,42 @@ this one is about the session, not the token.
 - Raising `proposals.Stale` for it: that withdraws the request, and the person could not say
   `go` again once the session is confirmed.
 - A test of its own in each path: two tests of the same rule could drift apart.
+
+## What an outsider's agent keeps holds for the whole membership, not only at its join
+
+**Id:** 71e02aa1-d590-4125-a667-62c09caafb9b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-x028b4hk6r08, 2026-11-23; `docs/api.md` §2.3 "Outside" (an outsider's agent's `reports_to` is its owner or unset, its areas and capabilities stay empty), §3.1 "An outsider's agent", §6.2 `PATCH …/members/{id}`
+**Revisit when:** the contract lets an outsider's agent own an area, hold a capability or report to someone besides its owner; or a membership's areas, capabilities or `reports_to` come to be written somewhere other than `members.apply_patch`
+
+The join refuses an outsider's agent any areas, any capabilities and a boss other than its
+owner (`joins._outside_values`). The same three narrowings hold on every later change of a
+membership with trust `outside`: `agent_owners.check_outside_fields` refuses them with the
+join's own error (`forbidden`, `member_join_limit`, `details.field`). It runs twice: in
+`members.validate_assignment`, so a `PATCH`, the owner's own `reports_to` and a cross-owner
+pair are refused before any consent request is filed, and in `members.apply_patch`, the one
+place that writes a membership change, so a `go` that would write such a change after a
+consent is refused as well and the request stays open. Setting the fields empty or `null`
+passes. Its owner is a target only while the owner holds an active membership in the project
+(`reports_to` is a membership id); while the owner is no member only `null` passes, as at the
+join, where the outsider named as the boss is the same as no boss. Moving trust to or from
+`outside` stays refused by `validate_assignment` as before, so no change brings a row with
+areas or a boss into trust `outside`.
+
+**Reason:** the narrowings are what keeps an outsider's agent from the project's own
+structure. An area makes it the owner that cards and notices in that area go to, a boss with
+a manager's rights brings it into a line that hands it cards, and a capability gives it what
+the project's own agents hold. If a later change could set them, the join's refusal would only
+delay what any admin, or its owner's consent, could give a moment later, and whoever asked
+would decide what the contract says no one decides.
+
+**Rejected alternatives:**
+- Checking only at the join: the membership outlives the join, and every change of it later
+  would be outside the rule.
+- Relying on the owner's consent for another owner's agent: consent decides whether its owner
+  agrees to a change, not whether the project's contract allows it; an outsider agreeing to
+  more for its own agent is exactly what the narrowings exclude.
+- A check only where the change is applied: the request would be filed and shown to the owner
+  for a change that can never be written, and the caller would learn it only at the `go`.

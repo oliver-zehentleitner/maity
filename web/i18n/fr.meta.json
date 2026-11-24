@@ -5056,8 +5056,8 @@
     "text": "9ed797c66b09e2b2"
   },
   "forge.intro": {
-    "en": "f62d81fe902e04a6",
-    "text": "efd473769d5817c5"
+    "en": "4597536f99595f6b",
+    "text": "ab9a1773963cfcf8"
   },
   "forge.link": {
     "en": "1a6cbade78b4dded",
@@ -5090,6 +5090,14 @@
   "forge.link.what": {
     "en": "f86f933f5d894d04",
     "text": "db9f4ed8c72c418f"
+  },
+  "forge.public_offer": {
+    "en": "daa899db80699347",
+    "text": "ceaad8d4b96cf4f7"
+  },
+  "forge.public_offer.button": {
+    "en": "e61d529cfb3c23f2",
+    "text": "f1e5ee5a48f344a9"
   },
   "forge.settings_hint": {
     "en": "eb131d7875a058cd",
@@ -12268,8 +12276,8 @@
     "text": "28d723bacdfd6a55"
   },
   "new_project.private.repository": {
-    "en": "af799b680ddb6a58",
-    "text": "cdc9e01164a7f5ad"
+    "en": "f0f07b243b719034",
+    "text": "4bc91ddde90c55f4"
   },
   "new_project.provider.keep_the_why": {
     "en": "906a90b9dc595771",

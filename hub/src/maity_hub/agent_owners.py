@@ -319,6 +319,37 @@ def check_assignment(conn: Connection, project: Any, row: Any, values: dict[str,
         raise invalid(errors, "an agent of an owner from outside stays within outside_roles")
 
 
+def check_outside_fields(conn: Connection, row: Any, values: dict[str, Any]) -> None:
+    """An agent with trust `outside` keeps no areas or capabilities and reports to its owner
+    or to nobody (§2.3 "Outside"), for as long as it holds the membership: the join's limits
+    (`joins._outside_values`), with its error, `member_join_limit` and `details.field`, for
+    every later change, whoever asks and whoever consents. `values` holds the new columns,
+    `reports_to` as a membership id; its owner is a target only while the owner is a member."""
+    if row.trust != OUTSIDE or row.agent_id is None:
+        return
+    from maity_hub.routes.joins import member_join_limit  # the join's error, one definition
+
+    boss = values.get("reports_to")
+    if boss is not None and boss != _owner_membership(conn, row):
+        raise member_join_limit("reports_to")
+    if values.get("areas"):
+        raise member_join_limit("areas")
+    if values.get("capabilities"):
+        raise member_join_limit("capabilities")
+
+
+def _owner_membership(conn: Connection, row: Any) -> int | None:
+    """The active membership of the agent's owner in the agent's project, if any."""
+    found = conn.execute(
+        select(t.membership.c.id).where(
+            t.membership.c.project_id == row.project_id,
+            t.membership.c.human_id == owner_of(conn, row),
+            t.membership.c.active.is_(True),
+        )
+    ).scalar()
+    return None if found is None else int(found)
+
+
 def check_policy(conn: Connection, project: Any, roles: list[str]) -> str | None:
     """`outside_owner` when a new `outside_roles` would leave an outsider's agent that is at
     work with a role not on it. An agent on `blue-team` is not counted: no list holds that
