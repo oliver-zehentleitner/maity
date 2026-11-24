@@ -787,6 +787,9 @@ class _Entry:
     # Read through a link on a forge organisation: answered only until that link's grant ends,
     # 10 minutes after its last successful owner check (§11.4; review A2574 P2-3).
     until: datetime | None = None
+    # False: answered to the request that read it, never stored for another nor counted as
+    # the project's last read (a read whose source stopped serving during it: A2592)
+    keep: bool = True
 
     def live(self) -> bool:
         """Whether the entry may still be answered: not past the grant it was read with."""
@@ -1000,10 +1003,11 @@ class Cache:
                     generation = self._generation(project_id)
                 entry = self._read(reader, project_id, repository_url, entry, generation)
                 with self.guard:
-                    if self._generation(project_id) != generation:
+                    if not entry.keep or self._generation(project_id) != generation:
                         # forgotten while it read (an org link unlinked or replaced, the
-                        # repository changed): its own request gets it, as it was read for
-                        # it, but nothing is kept for another (review A2586)
+                        # repository changed), or its source stopped serving during it: its
+                        # own request gets it, as it was read for it, but nothing is kept
+                        # for another and it counts as no read (reviews A2586, A2592)
                         self._drop_reads(project_id)
                         return entry, True
                     in_use = self.refresh.users.get
@@ -1076,11 +1080,12 @@ class Cache:
         if reader.still_serves is not None and not reader.still_serves():
             # Read through a link on a forge organisation that was unlinked, replaced or
             # stopped serving during the read: none of it is kept or answered (A2585 P2-1).
+            # Nor is this answer kept: the next request chooses its source anew (A2592).
             with self.guard:
                 self._drop_reads(project_id)
             error = _error("forge_unavailable")
             snapshot = Snapshot(observed, [], False, error, errors.ORG_UNANSWERED)
-            return _Entry(snapshot, read_at, repository_url)
+            return _Entry(snapshot, read_at, repository_url, keep=False)
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
                 continue  # its path is location text, never read: no last good read

@@ -1243,6 +1243,11 @@ def test_a_link_that_goes_during_the_read_keeps_nothing_of_it(
     monkeypatch.setattr(ktw, "walk", walk)
     if how == "before":
         unlink()
+    first = owner.get(WHY)
+    assert "secret-plan" not in first.text, first.text
+    if how != "before":  # the call that read through the link keeps nothing, not even its error
+        assert LINK_TOKEN in reads, reads
+        assert ktw.CACHE.cached(project_id) is None
     answered = []
     for name, who in (("owner", owner), ("guest", guest)):
         for path in (WHY, WHY, WHY + "?max_age=0", VIEW, "/projects"):
@@ -1251,8 +1256,102 @@ def test_a_link_that_goes_during_the_read_keeps_nothing_of_it(
                 answered.append(f"{name}: {path}")
     assert answered == []
     assert (LINK_TOKEN in reads) == (how != "before"), reads
+    assert reads.count(LINK_TOKEN) <= 1, reads  # never through the link again
     entry = ktw.CACHE.cached(project_id)
     assert entry is None or entry.snapshot is None or entry.snapshot.members == []
+
+
+def _family(name: str) -> Any:
+    """A family of one member called `name`, read."""
+    summary = {
+        "status": dict.fromkeys((*ktw.STATUSES, "other"), 0),
+        "findings": {"errors": 0, "warnings": 0},
+        "entries": 0,
+        "attention": 0,
+    }
+    member = ktw.Member(path=".", name=name, id="sid", read=ktw.Read(summary, [], 0))
+    return ktw.Family([member], False)
+
+
+def test_a_read_across_the_end_of_the_grant_keeps_nothing_and_the_next_check_serves(
+    held_clock: HeldClock,
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review A2592: a family read through the link that starts before the link's grant ends
+    and finishes after it is answered to its own call as `forge_unavailable`, and kept for no
+    other. Once the next owner check succeeds, §11.3, §11.5 and the project view answer from a
+    new read through the link, not that call's error."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _project_id(migrated)
+    admin, _guest = _readers(owner, make_client, migrated)
+    reads: list[str | None] = []
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        reads.append(reader.token)
+        if len(reads) == 1:  # the grant ends while this read is made
+            held_clock.advance(timedelta(minutes=9, seconds=1))
+        return _family("the-plan")
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    first = owner.get(WHY)
+    assert _error(first) == (503, "ktw_unavailable", {"reason": "forge_unavailable"})
+    assert ktw.CACHE.cached(project_id) is None
+    checked_before = _link_row(migrated).owner_ok_at
+    why = owner.get(WHY)
+    assert why.status_code == 200, why.text
+    assert "the-plan" in why.text
+    assert _link_row(migrated).owner_ok_at > checked_before  # the owner check ran and succeeded
+    assert reads == [LINK_TOKEN, LINK_TOKEN]
+    export = admin.get(EXPORT)
+    assert export.status_code != 409 and export.status_code < 500, export.text
+    view = owner.get(VIEW).json()["keep_the_why_export"]
+    assert view["error"] is None and view["members"][0]["name"] == "the-plan"
+
+
+def test_a_link_unlinked_before_the_cache_reads_keeps_nothing_and_the_next_call_falls_back(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review A2592: the link is unlinked after §11.3 chose it and before the cache reads with
+    it. That call keeps nothing, and the next one reads with the owner's own token."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _token(migrated, owner.id)
+    _confirm(owner)
+    project_id = _project_id(migrated)
+    reads: list[str | None] = []
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        reads.append(reader.token)
+        return _family("secret-plan" if reader.token == LINK_TOKEN else "owner-read")
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    get = ktw.Cache.get
+    unlinked: list[bool] = []
+
+    def unlink_first(self: ktw.Cache, reader: forge.Forge, *args: Any, **kwargs: Any) -> Any:
+        if not unlinked:
+            unlinked.append(True)
+            assert reader.via == "app"  # §11.3 chose the link
+            assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+        return get(self, reader, *args, **kwargs)
+
+    monkeypatch.setattr(ktw.Cache, "get", unlink_first)
+    first = owner.get(WHY)
+    assert unlinked and "secret-plan" not in first.text, first.text
+    assert ktw.CACHE.cached(project_id) is None
+    second = owner.get(WHY)
+    assert second.status_code == 200, second.text
+    assert "owner-read" in second.text and "secret-plan" not in second.text
+    assert reads[-1] == OWNER_TOKEN, reads
 
 
 def _observed_then_not_admin(owner: flow.Human, migrated: Engine) -> None:

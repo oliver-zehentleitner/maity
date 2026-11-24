@@ -104,10 +104,15 @@ What a dropped key held is read or computed again on its next use. For
   have been made through that link. Each `forget` of a project in use
   counts up that project's generation (`Refresh.forgotten`, dropped with
   its last user), and `forget_all` a cache-wide one; a read notes both
-  before it chooses its source, and keeps its entry, a member's last
+  when `Cache.get` starts it (§11.3 and §11.5 have chosen their source
+  with `for_project` by then), and keeps its entry, a member's last
   good read or the mark that it read only while both are unchanged.
   Otherwise its own request gets it, as it was made for that request,
-  and no later one does (review A2585 P2-2, A2586). Rejected: asking
+  and no later one does (review A2585 P2-2, A2586). The same holds for
+  a read whose link no longer serves once it is done (`still_serves`):
+  its `forge_unavailable` entry is marked `keep=False`, so the next
+  request chooses its source again instead of meeting that error
+  (review A2592). Rejected: asking
   the stored link before every cached answer (one database read per
   project in a list, and an unlinked link leaves no row to ask);
   shortening `until` (it only narrows the window); and taking the
