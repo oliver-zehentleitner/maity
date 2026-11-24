@@ -220,7 +220,7 @@ always encodes.
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24), and, while the interim of §6.5 holds, an agent's claim with `holder`, or `assign` moving an expired claim, that would give a card to an agent with trust `outside`; `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet) and a pull request watch (§11.6; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), a human's call on a card's restricted text (§6.4), and accepting an invitation (§3.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`role_mismatch`, `not_eligible` and `vendor_mismatch` on a review leg's change of holder, §6.32, not built yet; `runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project (§6.2), and `GET /me/events` while every attached membership is isolated (§8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give and for a change of an outsider's agent's `areas`, `capabilities` or `reports_to` beyond what it keeps (§2.3, "Outside"), and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, and, while the interim of §6.5 ("Until the claim request is built") holds, for every claim of its own and every takeover that would leave such an agent holding the card, whoever starts it (an agent's claim with `holder`, or `assign`, that gives it a card is `humans_only` instead), `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), or writes or deletes an entry of a role's memory (§19.2), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24), and, while the interim of §6.5 holds, an agent's claim with `holder`, or `assign` moving an expired claim, that would give a card to an agent with trust `outside`; `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet) and a pull request watch (§11.6; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), a human's call on a card's restricted text (§6.4), and accepting an invitation (§3.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`role_mismatch`, `not_eligible` and `vendor_mismatch` on a review leg's change of holder, §6.32, not built yet; `runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project (§6.2), and `GET /me/events` while every attached membership is isolated (§8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give and for a change of an outsider's agent's `areas`, `capabilities` or `reports_to` beyond what it keeps (§2.3, "Outside"), and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `not_organisation_admin` (not built yet), `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, and, while the interim of §6.5 ("Until the claim request is built") holds, for every claim of its own and every takeover that would leave such an agent holding the card, whoever starts it (an agent's claim with `holder`, or `assign`, that gives it a card is `humans_only` instead), `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), or writes or deletes an entry of a role's memory (§19.2), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2), and on every call of a credential attached to any such project, an isolated attachment included and a detached one not (§2.2, §6.17); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -245,7 +245,7 @@ always encodes.
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; `accepts` not built yet: until then every resume of such an instance is refused so, with `details.min_cli: null`). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet). Also a change of holder of a review leg to a member that holds or completed another leg of the same pull request and head, or whose owner does under `policy.review_distinct_owners` (`details.reason: review_leg_taken`, `details.task`, §6.32; not built yet). Also a pull request watch whose `head` is not the pull request's head now (`details.reason: head_changed`, `details.head`, and `details.fresh: false` with `details.retry_at` when the forced-read floor held the fresh read back, §11.6; not built yet) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4; for an installation on a forge organisation, a link is checked again right before another owner's link replaces it: when the caller passes the owner check, the existing link's own owner check, made at once whatever its 10-minute cadence (the one exception to it) and whether that link is `active`, `not_admin` or `suspended`, decides (a link the forge reported `removed` is replaced without one): a definite answer that its human is no active owner lets the caller's link replace it, a success gives `installation_linked`, and no definite answer gives `503 forge_unavailable`; not built yet), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; `accepts` not built yet: until then every resume of such an instance is refused so, with `details.min_cli: null`). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet). Also a change of holder of a review leg to a member that holds or completed another leg of the same pull request and head, or whose owner does under `policy.review_distinct_owners` (`details.reason: review_leg_taken`, `details.task`, §6.32; not built yet). Also a pull request watch whose `head` is not the pull request's head now (`details.reason: head_changed`, `details.head`, and `details.fresh: false` with `details.retry_at` when the forced-read floor held the fresh read back, §11.6; not built yet) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
@@ -268,7 +268,7 @@ always encodes.
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
-| 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
+| 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `installation_not_admin` and `installation_link_invalid` (not built yet), `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
 | 409 | `placement_exists` | a second active placement for (runner, clone) in a project, for one agent credential, or that creates the same new profile (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -306,8 +306,8 @@ always encodes.
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
-| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation or checking an owner's own token before it is stored (`PUT /me/forge/github/token`) (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
+| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (for an installation on a forge organisation also when the caller's owner check, or the check of the link it would replace, gave no definite answer; not built yet) or checking an owner's own token before it is stored (`PUT /me/forge/github/token`) (§11.4) |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11); also, for the human named in `confirmed_by`, a probe read of a repository whose only covering source would be an `active` link to an installation on a forge organisation that has had no successful owner check in the last 10 minutes and whose check has no answer (§11.4, "What a project sees"; not built yet) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached, or no pooled connection to it came free in time (`/health`, and any call that needs it); `Retry-After` is set, the same for both causes; `details` is `{}`, the message carries no driver text |
 | 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
@@ -13460,7 +13460,10 @@ confirmation (§11.4). An organisation holds no forge grant of its own:
 the owner who confirms the repository lends theirs, is recorded as
 `confirmed_by`, and the confirmation is reset when they stop being an
 owner (§11.4). An installation of the forge's App on a forge
-organisation stays a follow-up (§11.4, "Follow-up").
+organisation is linked by one of that organisation's owners on the
+forge as their own grant, never the Maity organisation's, and no
+organisation name is matched to a forge login (§11.4, "Organisations:
+Maity's and the forge's"; not built yet).
 
 **Transfer into and out of an organisation** (§6.25, `POST
 /projects/{owner}/{slug}/transfer`, with the step-up of §2.8.4). `to`
@@ -18845,7 +18848,10 @@ not built yet, as the runner replacement is not),
 revokes a runner's previous credential on a re-pair (`revoked_reason:
 repaired`, §15.2), revokes the credential of a placement whose clone
 its runner reported removed (`revoked_reason:
-workspace_removed`, §15.5), and revokes every credential of an account an instance admin
+workspace_removed`, §15.5), revokes the credential of a placement whose
+clone its runner reported set aside for a layout change (`revoked_reason:
+workspace_set_aside`, §15.5; not built yet (tsk-9f69y1hr1m6z): today
+the hub has no such reason and the runner sets nothing aside), and revokes every credential of an account an instance admin
 suspends (`revoked_reason: suspended`, §16.8).
 `revoked_reason` is the revoker's `reason` or one of those.
 
@@ -19442,9 +19448,14 @@ every 10 minutes, and at once after a refusal):
 
 - an installation covers it when the forge names, for the repository,
   an installation of the App (`GET /repos/{owner}/{repo}/installation`
-  with the App's key) that is one of the namespace owner's active links;
-  any other installation of the App, the owner's own others included, is
-  never tried;
+  with the App's key) that is one of the namespace owner's active links,
+  and for an installation on a forge organisation only while its owner
+  check is fresh (below; not built yet); a choice that rests on such a link is kept no
+  longer than the check it rests on. When the named installation is one
+  of the owner's links whose `status` is `not_admin`, the choice
+  re-checks it as below and it covers only once a check succeeded; until
+  then it serves nothing. Any other installation of the App, the owner's
+  own others included, is never tried;
 - the owner's token covers it when a read of the repository with that
   token answers it;
 - the instance token covers it when the project is in one of the
@@ -19516,7 +19527,16 @@ it), `private_without_grant` (the project is in one of the operator's
 own namespaces, only the instance token covers it, and the repository
 is private), `installation_suspended` or
 `installation_removed` (the owner's installation covered it and no
-longer does), `token_rejected` (the owner's token was refused by the
+longer does), `installation_not_admin` (the owner's installation on a
+forge organisation covered it, and the forge no longer reports the
+human who linked it as an owner of that organisation; shown to the
+human named in `confirmed_by`; below; not built yet),
+`installation_link_invalid` (one reason for every link that serves
+nothing: an installation on a forge organisation covered it, and its
+link is `not_admin`, suspended or removed, or has had no successful
+owner check in the last 10 minutes; as the project's `project:admin`
+readers other than the human named in `confirmed_by` see it; below; not
+built yet), `token_rejected` (the owner's token was refused by the
 forge), `unconfirmed` (a grant of the owner would cover it, but the
 owner has not confirmed this repository), `repository_moved`,
 `forge_not_github` (the repository's `forge` is not `github`). The
@@ -19550,10 +19570,18 @@ instance and configures it in the environment:
 
 All five or none: a partial set stops the hub at startup. The App asks
 for read access only — metadata, contents, pull requests, checks,
-commit statuses, deployments, issues — and for no write permission and
-no account permission; the hub never writes to the forge (§11). The
+commit statuses, deployments, issues, and among the organisation
+permissions Members (read-only), with which the hub checks that the
+human who links an installation on a forge organisation is one of its
+owners (below; the check is not built yet) — and for no write permission and
+no account permission; the hub never writes to the forge (§11). Only a
+definite membership answer changes a link's status or refuses a link as
+not an owner's; a membership read the forge refuses for any other
+reason, a missing permission included, counts as no answer, at linking
+and on a re-check (below; not built yet). The
 App's own webhook is not used in v1; the project webhook (§17.4) stays
-as it is.
+as it is. Changes on the forge reach the hub by its own re-checks
+(below), not by an event.
 
 **Linking an installation.** A human links an installation to their
 account, not to a project; it then serves every project they own whose
@@ -19580,17 +19608,58 @@ repository it includes.
   leaves a trace either.
   The hub exchanges `code` for a user token, reads that user
   (`GET /user`) and the installation (with the App's key), and links the
-  installation only when its account is that user: `account.type` is
-  `User` and `account.id` is the user's id. Listing the installations
+  installation only when that user may link it:
+  - an installation on a user account: only when its account is that
+    user: `account.type` is `User` and `account.id` is the user's id;
+  - an installation on a forge organisation (`account.type` is
+    `Organization`; not built yet, until then refused with
+    `organisation_installation` as below): only when the forge reports
+    that user, read with the same user token, as an active owner of that
+    organisation: `GET /user/memberships/orgs/{account.login}` answers
+    `state: "active"`, `role: "admin"` (the forge's name for an owner)
+    and an `organization.id` equal to `account.id`, so that a login an
+    organisation gave up and another took is never read as the
+    installation's. A definite answer that the user is no active owner
+    — a membership whose `state` is not `active`, whose `role` is not
+    `admin` (a member, an App manager) or whose `organization.id` is
+    another, or no membership (`404`: an outside collaborator, a
+    stranger) — is refused (`403 forbidden`, `details.reason:
+    not_organisation_admin`), and no link is written. Any other refusal
+    of that read (another `403`, a missing permission included, or a
+    `429`) and no answer at all are no answer: no link is written either,
+    and the call answers `forge_unavailable` (below);
+  - an installation on any other kind of account is refused (`403
+    forbidden`, `details.reason: organisation_installation`).
+
+  The checks run in this order: the `state` (`link_state`), the
+  installation's existence (`installation_not_yours` when the forge
+  names none), the account check by kind above, and only then whether
+  the installation is linked to another human (`installation_linked`,
+  below). So for an installation on a forge organisation (not built
+  yet) a human the forge does not report as an owner gets
+  `not_organisation_admin` or, without a definite answer,
+  `forge_unavailable`,
+  never `installation_not_yours`, and nobody who fails the account
+  check learns whether the installation is linked.
+
+  Listing the installations
   the user can access is not enough, since a member of an organisation
   with access to one repository would pass it and the hub would then
-  read every repository of the installation. Installations on an
-  organisation are not linked in v1 (`403 forbidden`, `details.reason:
-  organisation_installation`), also now that Maity has organisations of
-  its own (§6.26; "Follow-up" below): a project of a Maity organisation
-  is read with the grants of the owner who confirmed it (above). The user token is used for this one check and discarded,
-  never stored. An installation of another account is refused (`403
-  forbidden`, `details.reason: installation_not_yours`), so nobody links
+  read every repository of the installation; nor is being allowed to
+  install the App on an organisation, which the forge also grants to
+  others than its owners. An installation on a forge organisation is
+  linked to the human who completed the link, as one of their grants,
+  and to no Maity organisation: the hub never compares a Maity
+  organisation's name (§6.26) with a forge organisation's login, and a
+  project of a Maity organisation is read with the grants of the owner
+  who confirmed it (above), an installation on a forge organisation
+  that owner linked among them (not built yet). The hub keeps the forge
+  user's id with the link (`forge_user_id`, not built yet), for the
+  re-checks below; it is in no answer, `GET /me/forge` included. The user token is used for this one check and discarded,
+  never stored. An installation the forge does not name, or one on
+  another user account, is refused (`403 forbidden`, `details.reason:
+  installation_not_yours`; on a forge organisation the owner check above
+  answers instead), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
   refused with `details.reason: link_state`. Its outcomes:
 
@@ -19604,26 +19673,79 @@ repository it includes.
   | linked | `303` to the dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11), without a query |
   | refused by the route | `303` to the same page with `?error=<reason>` |
   | linked, with `Accept: application/json` | `200` with the new link in the form `GET /me/forge` lists it, `repositories_shown` empty |
-  | refused by the route, with `Accept: application/json` | `403 forbidden` for `link_state`, `installation_not_yours` and `organisation_installation` (in `details.reason`), `409 conflict` for `installation_linked`, `409 forge_app_missing`, `503 forge_unavailable` |
+  | refused by the route, with `Accept: application/json` | `403 forbidden` for `link_state`, `installation_not_yours`, `not_organisation_admin` (not built yet) and `organisation_installation` (in `details.reason`), `409 conflict` for `installation_linked`, `409 forge_app_missing`, `503 forge_unavailable` |
 
   The route's reasons are `link_state`, `installation_not_yours`,
-  `organisation_installation`, `installation_linked` (below),
-  `forge_app_missing`, and `forge_unavailable` when the forge did not
-  answer. No answer puts a forge token, code or state in the URL, and
-  the first five rows never take the `state`.
+  `not_organisation_admin`, `organisation_installation`,
+  `installation_linked` (below), `forge_app_missing`, and
+  `forge_unavailable` when the forge did not answer (for the owner check
+  of an installation on a forge organisation also when it gave no
+  definite answer, above; not built yet). No answer puts a forge token,
+  code or state in the URL, and the first five rows never take the
+  `state`.
 - An installation is linked to one human at a time. Linking one that is
   linked to another human is refused (`409 conflict`, `details.reason:
   installation_linked`); the other human unlinks it first, or the
-  installation is removed on the forge.
+  installation is removed on the forge. For an installation on a forge
+  organisation this holds as well: one of its owners holds the link at a
+  time, and another owner links it once that one has unlinked it, with
+  one exception (not built yet): another owner's link may replace it.
+  A link is checked again right before
+  another owner's link replaces it: when a human who passes the owner
+  check finds the installation linked to another human, whether that
+  link is `active`, `not_admin` or `suspended`, the hub runs the existing
+  link's owner check (below) at once, however recent that link's last
+  check is; when its first step still finds the installation suspended,
+  that check has no definite answer (below). A link the forge reported
+  `removed` holds nothing and is replaced without a check, its human
+  getting the account record with `change: "unlinked"`. This
+  is the one exception to the link's 10-minute cadence (below): only a
+  human who has just passed the owner check for that organisation can
+  set it off, so no listing, source choice or other read causes a call.
+  The new link replaces the existing one only
+  when that check gave a definite answer that its human is no active
+  owner. The existing link then becomes `not_admin` as on any failed
+  check, and its human gets the account record with `change:
+  "not_admin"` (a `security` item, below) unless the link was
+  `not_admin` already and had it then; then the link is deleted, gone
+  from its human's `GET /me/forge`, and they get the record with
+  `change: "unlinked"` (below). So replacing a link that was `active` or
+  `suspended` writes both records, in that order, in the call that
+  replaces it. When the check succeeded, the new link is refused with
+  `installation_linked`, and the check counts as the existing link's
+  last check and last successful one. When it gave no definite answer,
+  the new link is refused with `503 forge_unavailable` and nothing
+  changes, the existing link's `checked_at` included: a replacement's
+  check without a definite answer is not counted as the link's last
+  check, so it neither starts the link's 10-minute wait nor stops a
+  recent success from serving. If
+  the former owner becomes an owner again, the replacement stands: they
+  link again under the same rule, and while the new owner's check still
+  succeeds, that is refused with `installation_linked`.
 - `GET /me/forge` (human) answers `app_configured` (whether the instance
   has a GitHub App, above) and lists the caller's links: `[{id, forge,
   installation_id, account: {login, type}, repository_selection: "all"
   | "selected", repositories_shown, status: "active" | "suspended" |
-  "removed", linked_at, checked_at}]` and the caller's own token (below)
+  "removed" | "not_admin", linked_at, checked_at}]` and the caller's own token (below)
   as `{configured, login, status: "active" | "rejected", checked_at}`;
-  never a token.
+  never a token. A link's `checked_at` is the time of its last check,
+  whatever came of it, except a replacement's check without a definite
+  answer (above), which leaves it as it was. `not_admin` (not built yet) is a link to an
+  installation on a forge organisation whose linking human the forge no
+  longer reports as an owner of it (below); `account.type` is the
+  forge's, `User` or `Organization`.
   `repositories_shown` lists at most 100 full names the installation
   covers, read with an installation token when the list is requested.
+  For an installation on a forge organisation (not built yet) the list
+  is read only while the link serves reads, that is while it is
+  `active` and its last successful owner check is less than 10 minutes
+  old (after the owner check below, when one is due). A link that serves
+  nothing is listed with its `status` — `active` too, when its last
+  successful check is 10 minutes old or older — and `repositories_shown:
+  []`, without a call to the forge for the list. A `not_admin` link serves nothing, this list included: its
+  `repositories_shown` is `[]`, and the hub mints an installation token
+  for it only for the owner re-check below, uses that token for the
+  re-check's reads alone and does not keep it.
 - Starting a link and storing a token need the step-up (§2.8.4); an
   unlink and a token's removal do not, since they only take access away.
 - `DELETE /me/forge/github/links/{id}` (human, the linking human)
@@ -19636,7 +19758,130 @@ they expire (the forge issues them for an hour), and never stored, logged
 or put into an answer. A mint that the forge refuses because the
 installation was suspended or removed sets the link's `status` and the
 reason above; the hub retries a suspended one at most every 10 minutes
-and a removed one never, until it is linked again.
+and a removed one never, until it is linked again. A mint that succeeds
+again sets a `suspended` link on a user account back to `active`. For
+an installation on a forge organisation (not built yet) a mint alone
+never does: the link leaves `suspended` only through its owner check
+(below), taken as it stands like an `active` link's. While its last
+successful check is less than 10 minutes old it is `active` again;
+otherwise it is checked when the check is due, and a success sets it
+`active`, a definite answer that its human is no active owner
+`not_admin`, and no definite answer leaves it `suspended`, serving
+nothing. So an owner who lost the role while the installation was
+suspended never gets it back by the unsuspension.
+
+**An installation on a forge organisation is re-checked** (not built
+yet). Its link serves a read only on an owner check that succeeded less
+than 10 minutes before, a check at which the forge still reported the
+human who linked it as an active owner of that organisation. Up to 10
+minutes after an owner loses that role on the forge, their link may
+therefore still serve; that window is accepted, since the App's events
+are not used (above).
+
+*When the hub checks.* A link, `active`, `not_admin` or `suspended`, is checked at
+most once every 10 minutes, counted from its last check whatever came
+of it, for every caller except another owner's attempt to replace it,
+which checks it at once (above) and counts as its last check only when
+it gives a definite answer. Nothing else brings a check forward,
+neither a failed or unanswered check nor the source choice's own
+refresh after a refused read. A repository's confirmation
+(`…/repository/confirm`, above) is no caller either: it makes no owner
+check and no call to the forge, and only records the confirmation; the
+next source choice, which the confirmation starts afresh, takes the link
+as it stands. The source choice ("When a source covers a repository"
+above) and the linking human's `GET /me/forge` each take the link as it
+stands:
+
+- its last successful check is less than 10 minutes old: the link
+  serves, and no check is made;
+- its last check is 10 minutes old or older: it is checked first, and
+  what comes of that check (below) decides;
+- its last check is less than 10 minutes old and did not succeed, and
+  its last successful check is 10 minutes old or older: no check is
+  made and no call goes to the forge; the link serves nothing until the
+  next check is due, 10 minutes after the last one.
+
+A `GET /me/forge` within 10 minutes of the link's last check makes no
+owner-check call and shows the last known `status` and its
+`checked_at`; it reads the repository list with an installation token
+only for a link that serves reads (above), so for a link that serves
+nothing it makes no call to the forge at all.
+
+*How it checks* (not built yet), in this order:
+
+1. the installation, with the App's key (`GET
+   /app/installations/{installation_id}`): its account's current
+   `login` and `id`. The link's account login is updated from it, so a
+   renamed organisation keeps its link; an installation the forge
+   reports suspended or removed is handled as a refused mint (above);
+2. the forge user by the id kept with the link (`GET
+   /user/{forge_user_id}`), with an installation token of this
+   installation: that user's current login. A stored login is never
+   used;
+3. that user's membership in the organisation, with the same token
+   (`GET /orgs/{login}/memberships/{username}`, the logins from steps 1
+   and 2). The check succeeds only when the membership's `user.id` is
+   `forge_user_id`, `state` is `active`, `role` is `admin` and
+   `organization.id` is the account `id` from step 1.
+
+The user token from linking is not used again: it was discarded then.
+
+*What comes of it.* Only a definite membership answer changes a link's
+status (an installation step 1 finds suspended or removed aside). The
+check fails only on a membership whose `state` is not
+`active` or whose `role` is not `admin`, a membership whose `user.id` is
+not `forge_user_id`, a membership whose `organization.id` is not the
+account `id` from step 1 (the login now belongs to another
+organisation), or a `404` for the membership at step 3 or for the user
+by id at step 2, as at linking. Then the
+link's `status` becomes `not_admin`, the hub drops the installation's
+tokens it holds, and the linking human gets the account record with
+`change: "not_admin"` (below). A check that succeeds sets `status` back
+to `active`, from `not_admin` too, so a restored role restores the link
+unless another owner has replaced it (above). Every other refusal —
+any other `403`, one for a missing permission or a spent budget
+included, and a `429` — and no answer at all count as no answer: no
+status changes, but once the last successful check is 10 minutes old
+the link serves nothing until a check succeeds, and a read that would
+rest on it, when no other source covers the repository, answers
+`probe_unavailable` for the human named in `confirmed_by` (and as below
+for the project's other readers).
+
+*What a project sees.* A link to an installation on a forge
+organisation that serves nothing — `not_admin`, suspended, removed, or
+without a successful owner check in the last 10 minutes, `active` ones
+included and whatever its check, when due, answered — is not the
+project's source. The source choice goes on as for any installation
+that no longer covers the repository (the order at the top of this
+section): the confirming owner's own token if it covers it, then the
+instance token where it may serve; `probe_via` names the source that
+covers it, or is `null` when none does. That holds while the owner
+check has no answer too: only a forge that does not answer the choice's
+own lookup of the repository's installation (above) stops the choice
+before the other sources. When none covers it, every read answers by
+reader:
+
+- the human named in `confirmed_by` gets the specific reason:
+  `probe_not_configured` with `details.reason` `installation_not_admin`,
+  `installation_suspended` or `installation_removed`, and
+  `probe_unavailable` while the link is `active` and its owner check has
+  no answer (above), with `details.last` on `GET …/probe` as every
+  `probe_unavailable` there carries it;
+- the project's other `project:admin` readers get one reason for every
+  such state: `probe_not_configured` with `details.reason:
+  installation_link_invalid`;
+- everyone else gets `probe_not_configured` with `details: {}`.
+
+The Keep the Why views' reads (§11.5) answer the same, with one
+difference for the human named in `confirmed_by` while the owner check
+has no answer: `ktw_unavailable` with `details.reason:
+forge_unavailable`, as §11.5 answers a forge that does not answer, and
+without `details.last`, since no export read through the link outlives
+its last successful check. An installation on a user account keeps the
+reasons above for every `project:admin` reader.
+
+Nothing is learned from the forge about the organisation beyond that
+one membership: no member list is read, kept or shown.
 
 **The owner's own token.** A human may store a token of their own as a
 second source, for a forge setup where an App cannot be installed.
@@ -19665,10 +19910,11 @@ Both sources are the human's own: their links and token are readable by
 them alone, never by an instance admin, an agent or a runner. A change
 writes an account record (§18.1) `forge_access_changed` `{forge,
 source: "app" | "owner_token", change: "linked" | "unlinked" |
-"suspended" | "removed" | "token_set" | "token_removed" |
+"suspended" | "removed" | "not_admin" | "token_set" | "token_removed" |
 "token_rejected", login}` of that human (`login` is the forge account the
 installation or token is on, which the item's title names; never a token), which is a `security` item for
-`linked` and `token_set` and no notification otherwise.
+`linked`, `token_set` and `not_admin` (not built yet) and no
+notification otherwise.
 
 **Rate limits.** A source's reads count against that source's limit at
 the forge (an installation, the owner's token, the instance token); the
@@ -19693,13 +19939,18 @@ missing branch read is never `ahead: false`. A watched pull request
 project's source like every probe read, and while that budget is spent
 a watch tells nothing, rather than a `required_check` it did not read.
 
-**Follow-up: organisations.** Maity's organisations (§6.26) and the
-forge's are not linked here. An installation of the App on a forge
-organisation stays refused (`organisation_installation`, above); a
-project of a Maity organisation uses the grants of the owner who
-confirmed it (above). Whether an installation on a forge organisation
-may serve a Maity organisation's projects is open for its own
-contract; until then nothing else in this section changes.
+**Organisations: Maity's and the forge's.** Maity's organisations
+(§6.26) and the forge's are not linked to each other. An installation
+of the App on a forge organisation is one of the grants of the human
+who linked it as an owner of that organisation (above, not built yet),
+never the Maity organisation's: an organisation holds no grant of its
+own, and a project of a Maity organisation uses the grants of the owner
+who confirmed it (above), whether that owner's installation is on
+their own account or on a forge organisation they own. A forge
+organisation's installation covers only the repositories the forge
+names it for (above). Its tokens are minted for the whole installation,
+as for one on a user account, not per repository; a project's reads
+with them stay on the project's own repository alone (§11.5).
 
 ### 11.5 The Keep the Why views' reads
 
@@ -19984,7 +20235,12 @@ member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
 `repository_moved` or `bodies_url_invalid`, and only this code with
 `details.last`, the last good answer in the shape above, when the hub
 holds one: `probe_unavailable`, `probe_not_configured` and `not_found`
-from §11.5 never carry an export. The dashboard's provider turns
+from §11.5 never carry an export. A read that would rest on a link to an
+installation on a forge organisation that serves nothing answers as
+§11.4 says ("What a project sees"; not built yet): for the human named
+in `confirmed_by`, while that link's owner check has no answer,
+`ktw_unavailable` with reason `forge_unavailable` and no
+`details.last`. The dashboard's provider turns
 each into the library's `{ error }`, so a view says why it has nothing
 instead of failing.
 
@@ -20661,10 +20917,10 @@ Outside a placement every path is read as before.
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity roles [--guide] [--json]` | `GET /projects/{owner}/{slug}/roles` (§2.3). Prints `built-in roles`, then each as `  <name>`; then `project roles` (or `project roles: none`), each as `  <name> (permissions of <base>)`. A role with a description has `: <description>` after it on the same line; one with an empty description has the line alone. With `--guide`, a role's guide follows its line, quoted behind `> `. With `--json`, the hub's answer. Read only: the `PUT` is a human's. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` at most once a minute while a tool is updated daily, for the owner's `Update now` (§15.16), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14; not built yet, as the replacement is not), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every read of the active placements, for the scratch of closed ones (§15.5), and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers it, the runner does not call it yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` at most once a minute while a tool is updated daily, for the owner's `Update now` (§15.16), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14; not built yet, as the replacement is not), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every read of the active placements, for the scratch of closed ones (§15.5), and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers it, the runner does not call it yet, tsk-34gb7frfbsk7), and for a clone it sets aside for a layout change (§15.5; not built yet, tsk-9f69y1hr1m6z), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
-| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16). `status` also prints the fingerprint of the runner's handover key (§15.14; not built yet, as the replacement is not) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7), the size of each placement's clone and scratch as the service last measured them, and with `--removed` the last scratch removals from `removed.jsonl` (§15.5). |
+| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16). `status` also prints the fingerprint of the runner's handover key (§15.14; not built yet, as the replacement is not) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7), the clones it set aside for a layout change, likewise (§15.5; not built yet, tsk-9f69y1hr1m6z), the size of each placement's clone and scratch as the service last measured them, and with `--removed` the last scratch removals from `removed.jsonl` (§15.5). |
 | `maity runner gc --revoked \| --scratch [--yes]` | `GET /runner/placements` for the active placements, whose clones and scratch are kept. `--revoked`: for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`; git runs in a clone only when its `.git` is laid out like a plain clone's. `--scratch`: every `<workspaces>/.scratch/<project_id>/<placement id>`, and every one left in the former `<workspaces>/<project_id>/.scratch/<placement id>`, whose placement is not active, closed or no placement of this runner at all; an entry that is a link or not named like a placement is listed as left. A scratch goes only by its absence from a list the hub gave: when the hub cannot be asked or does not answer with a list, gc refuses and removes nothing, and when one item of the list cannot be read, it keeps every scratch. It also reads the agents' sessions first: a scratch whose placement still has one (a dead pane included) is kept, and when they cannot be read every scratch is kept. A scratch is removed from the workspaces root down, never through a link on the way. Both list first and remove only with `--yes`, which holds the service's lock, so gc refuses while the service runs and no placement starts meanwhile; a scratch removal goes to `removed.jsonl` (§15.5) |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
 | `maity dormant [--off] [--json]` | `PATCH /me` with `{"dormant": true}` (`false` with `--off`); prints `dormant: only @<handle>#<id> wakes this instance` or `awake`, read from this instance's entry in the answer's `instances` (an answer without it prints no line and the hint `the hub's answer does not show this instance; run maity resume to see whether it is dormant` on stderr, exit 0); with `--json`, the hub's answer. Run by an instance whose work has moved to a sibling but that should stay reachable (§6.17) |
@@ -21292,11 +21548,11 @@ serves several (§6.2, "Isolation").
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default. For `opencode` that is the runner's `default_model`, and a start whose model is none of its `models` is refused (`harness_refused`, `model_unsupported`), never started on opencode's own default (§15.3) |
 | `effort` | `null` (default: the harness's own reasoning effort) or one of the runner's advertised `efforts` for the harness (§15.3); the shape is `[a-z]{1,16}` (`invalid`), anything the runner does not advertise is `harness_not_offered` with `details.offered[].efforts`. A runner from before `efforts` advertises none, so a named effort never reaches a runner that would drop it. Part of the spec like `model`: a change makes a new `generation`, and an agent's change waits in `pending_change`. The runner refuses a start whose effort its harness no longer offers (`harness_refused`, `effort_unsupported`, §15.7), never starting it on the default instead. Where a model id carries an effort of its own (agy's `…-high` ids) and `effort` is set too, the runner passes both and the harness decides (tsk-0fr0xzy2ce95) |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
-| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`. Without one the hub takes the first of `<handle>`, `<handle>-2`, `<handle>-3`, … that no active placement of the project on that runner names and that no closed placement of another membership of the project on that runner names whose clone the runner did not report removed (`workspace_outcome`): the agent's first placement keeps the handle as its clone, a further instance on the same runner gets a clone of its own, and a clone the membership left there is taken up again (`continues_existing`). The placement's id never goes into the path, so a later placement can continue a clone; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
+| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`. Without one the hub takes the first of `<handle>`, `<handle>-2`, `<handle>-3`, … that no active placement of the project on that runner names and that no closed placement of another membership of the project on that runner names whose clone the runner did not report removed (`workspace_outcome`): the agent's first placement keeps the handle as its clone, a further instance on the same runner gets a clone of its own, and a clone the membership left there is taken up again (`continues_existing`). The placement's id never goes into the path, so a later placement can continue a clone; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts. A path the runner recorded for this placement's agent in the other layout (a plain clone where the harness needs a folder, or the reverse: a new placement of that agent on that runner, or a changed `harness`) is set aside and a new clone made (below, "Set aside for a layout change"); any other path in the other layout is `workspace_in_use`. Not built yet (tsk-9f69y1hr1m6z): today a path the runner recorded for this agent in the other layout is `workspace_in_use` (`workspace_unrecorded`), one recorded for another agent `workspace_in_use` (`other_agent`), and an unrecorded plain clone at a workspace folder's path `workspace_in_use` (`workspace_not_bare`) at a start that joins, or `join_failed` (`credential_missing`) when a credential is expected. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
-| `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
-| `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked, or by a `removed` workspace report on an active placement and on every active placement naming the credential it revoked (§15.5): the runner removes the old credential file and picks up a new join |
+| `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` or `set_aside` workspace report does not increment it, as the next start makes a new clone anyway (§15.5; `set_aside` not built yet, tsk-9f69y1hr1m6z); the runner reports which generation it acted on |
+| `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked, or by a `removed` or `set_aside` workspace report on an active placement and on every active placement naming the credential it revoked (§15.5; `set_aside` not built yet, tsk-9f69y1hr1m6z): the runner removes the old credential file and picks up a new join |
 | `fresh_session` | `true` while the current `generation` is the one a reset made (a restart with `fresh_session: true`, §15.6): the runner starts the harness on a fresh session instead of resuming the last one (§15.14). Any later new generation, a plain restart or a change of spec, reads `false` again; a stop and a start keep the generation and with it the value |
 | `keep_the_why` | runner's read only (§15.8): `null` when the project does not use Keep the Why (§6.23), else `{source, commit}`. `source` is the skill's release tree, the resume packet's `keep_the_why.skill.source` (the hub's `MAITY_KTW_SKILL_SOURCE`); `commit` is 40 lowercase hex digits, the git commit of that tree (`MAITY_KTW_SKILL_COMMIT`). The runner fetches exactly that commit, never the tag, into a directory it owns and gives the session the skill read-only at its start (Claude Code: as a plugin for that session, docs/runners.md); it takes nothing else from the hub for it. Not part of the spec: a change of either value or of the project's memory makes no new `generation` and reaches a placement at its next start. A runner that cannot fetch or check the commit starts the session without it and reports `keep_the_why_unavailable` (§15.7) (req-b3q6ttwgrp1v) |
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
@@ -21305,8 +21561,8 @@ serves several (§6.2, "Isolation").
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
 | `instance` | the id of the instance the placement runs (§6.17): the instance of `credential_id`, `null` until the first pickup's exchange. A rejoin's new instance replaces it. Shown wherever the placement is, the runner owner's line (§15.3) and the member view's `placements` (§15.11) included, as `<handle>#<instance>` in the dashboard and the CLI |
 | `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`; `replaced` and `replace_failed` (§15.14; not built yet, as the replacement is not: today no placement closes with either) |
-| `workspace_epoch` | which clone of the placement is meant: `1` for its first clone, raised by one when the hub takes a `removed` report, since the next start makes a new clone. The runner keeps the value it read when the placement started in that clone (one that continues another placement's clone starts at its own value) and names it in each workspace report (§15.8). After removing a clone, the runner makes the placement's next clone only once the hub has taken that `removed` report, and keeps the `workspace_epoch` of that answer, so no clone carries the epoch of the one before. The hub keeps and raises it; the runner side is not built yet, tsk-34gb7frfbsk7 |
-| `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes; for `antigravity` also an entry beside `repo` in the workspace folder), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, plus for `antigravity` the entries beside `repo`, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
+| `workspace_epoch` | which clone of the placement is meant: `1` for its first clone, raised by one when the hub takes a `removed` or a `set_aside` report (`set_aside` not built yet, tsk-9f69y1hr1m6z), since the next start makes a new clone. The runner keeps the value it read when the placement started in that clone (one that continues another placement's clone starts at its own value) and names it in each workspace report (§15.8). After removing a clone, the runner makes the placement's next clone only once the hub has taken that `removed` report, and keeps the `workspace_epoch` of that answer, so no clone carries the epoch of the one before. The hub keeps and raises it; the runner side is not built yet, tsk-34gb7frfbsk7 |
+| `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; a `set_aside` report (§15.8) is no state here: the outcome stays about the placement's current clone and is `null` after it (not built yet, tsk-9f69y1hr1m6z); `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes; for `antigravity` also an entry beside `repo` in the workspace folder), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, plus for `antigravity` the entries beside `repo`, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
 | `foreign` | computed, never stored: `true` when the agent profile's owner is not the runner's owner. Since 2026-11-16 no new placement is foreign (§15.4, §15.6); one made before stays until its runner's owner stops or removes it, and only the runner's side starts it again. Its profile's owner ends it with a `DELETE` and places the agent again on a runner of their own; a replacement (§15.14, not built yet) would not move it either (§15.6, "Moving an agent off someone else's runner") |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
@@ -21388,16 +21644,22 @@ serves several (§6.2, "Isolation").
 - **Revocation stops the placement.** Revoking the agent credential
   named by an active placement's `credential_id`, by any path (§10, the
   leak path of §2.2, member removal), sets `desired: stopped` in the
-  same transaction; it does not close the placement. The one exception
-  is `workspace_removed`: the credential's file went with the clone, so
-  the placement, and every other active placement that names the
-  credential, keeps its `desired` and rejoins at its next start
-  (§15.5). A rejoin after a revocation only the agent profile's owner
+  same transaction; it does not close the placement. The exceptions
+  are `workspace_removed` and `workspace_set_aside`: the credential's
+  file went with the clone, so the placement, and every other active
+  placement that names the credential, keeps its `desired` and rejoins
+  at its next start (§15.5; `workspace_set_aside` not built yet,
+  tsk-9f69y1hr1m6z). A rejoin after a revocation only the agent profile's owner
   may undo (§15.6, the restart row) waits for the owner's start: a
   clone's removal reported for a running placement whose credential was
   revoked that way stores the `rejoin` and sets `desired: stopped`, and
   every start of a placement whose credential was revoked, with a
   `rejoin` stored or not yet, follows the owner rule of the restart row.
+  A set-aside stops nothing: the runner reports it only from a start
+  under `desired: running`, which that rule already let through, and on
+  a credential revoked before it keeps that revocation's
+  `revoked_reason` and `revoked_by` (§15.8; not built yet,
+  tsk-9f69y1hr1m6z).
 
 **Closing.** A placement closes in one of two ways, by cause:
 
@@ -21527,6 +21789,98 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
   the target and stays. `maity runner check` warns when the file
   system holding the workspaces has less than 10 % or 5 GiB free.
 
+**Set aside for a layout change** (not built yet, tsk-9f69y1hr1m6z:
+today the runner refuses the path as `workspace_in_use`
+(`workspace_unrecorded`) and still expects the credential at the new
+layout's place; a person moves the clone away by hand, and the agent
+profile's owner revokes the credential and restarts with `rejoin`).
+Both layouts use one path (`workspace` above). A new placement of an
+agent on the same runner and clone, or a changed `harness`, can need
+the other layout than the clone the runner holds there for that agent.
+At that start the runner sets the old clone aside and makes a new one:
+
+- **Only this case.** The path is the one the runner recorded for this
+  placement's agent (or for this placement) in the other layout, it is
+  no symbolic link, and no session of the runner and no process uses
+  it. Everything else stays `workspace_in_use` as before: another
+  agent's path, an unrecorded one, another origin, a clone that is not
+  plain in the same layout.
+- **Reported first.** The runner reports `set_aside` for the
+  placement's current `workspace_epoch` (§15.8) before it moves
+  anything. The hub revokes the credential the placement names
+  (`revoked_reason: workspace_set_aside`, `revoked_by` null, §10), sets
+  `rejoin` on the placement and on every other active placement that
+  names that credential, and raises `workspace_epoch`. `set_aside` is
+  the runner's own report, as `removed` is: no member right is checked,
+  and the revocation is the hub's own, which the restart row (§15.6)
+  lets anyone with that route's right follow with a rejoin. The report
+  comes only from a start under `desired: running`, which already
+  passed the restart row's owner rule, so it stops nothing. Three cases
+  differ:
+  - The placement names no credential (`credential_id` null, nothing
+    carried over): nothing is revoked and no `rejoin` is set; the epoch
+    is raised, and the start picks up the placement's ordinary join
+    (§15.9).
+  - The credential was revoked before, for any reason: nothing is
+    revoked again and that revocation stays as it is, its
+    `revoked_reason` and `revoked_by` included, so after one only the
+    agent profile's owner may undo, the stored `rejoin` still waits for
+    that owner (§15.6); the `rejoin` is set and the epoch raised.
+  - Another running placement names the credential (which "One
+    placement per instance" above rules out; the check guards a stored
+    row that breaks it): the hub refuses
+    the report (`conflict`, `details.reason: "credential_in_use"`) and
+    changes nothing; the runner moves nothing, and the start is
+    `failed`, `workspace_in_use` (`workspace_set_aside_failed`).
+- **Moved, never deleted.** Once the hub took the report, the runner
+  renames the whole path in one step on the same file system to
+  `<workspaces>/<project_id>/.replaced-<time>-<clone>` (`<time>`
+  `YYYYMMDDTHHMMSSZ`, UTC). When that name exists, the runner adds
+  `-2`, `-3`, … to `<time>` until it finds a free one, and never renames
+  over an existing path. It runs no git there and reads nothing in
+  it: uncommitted files, commits on no remote branch, stashes and
+  entries beside `repo` stay as they are. A name with a leading `.` is
+  never a clone's, so nothing starts there. Its record moves with it. A
+  rename that fails leaves the clone where it was, and the start is
+  `failed`, `workspace_in_use` (`workspace_set_aside_failed`). The
+  hub's state stays as the report left it (the credential revoked,
+  `rejoin` set, the epoch raised): the next start finds the clone again
+  and reports `set_aside` at the new epoch, which revokes nothing more
+  (the credential was revoked before, above), then tries the rename
+  again. A `harness` switched back to the clone's layout meanwhile sets
+  it aside too: its credential is revoked and its epoch is an earlier
+  one, so it is never started in again.
+- **Then a new clone.** The runner makes the new clone in the new
+  layout under the epoch of the hub's answer; with `rejoin` set the
+  start picks up a join that `replaces` the instance of the revoked
+  credential (§15.9). The copy left in the set-aside clone is revoked
+  and reaches nothing.
+- **Named.** That start's report carries `detail: workspace_set_aside`
+  (§15.7), the runner's log names the old and the new path, and
+  `maity runner status` lists the set-aside clone with its path, the
+  time it was set aside and its unsaved count (git runs there only when
+  its `.git` is laid out like a plain clone's, else `not inspected`).
+  That git runs with the clone's own configuration and hooks ignored, as
+  `gc`'s does: only on a `.git` whose configuration holds a plain
+  clone's keys alone (so no `include`), with `core.hooksPath=/dev/null`,
+  `core.fsmonitor=false` and git's other configured programs overridden
+  on its command line, and no system or global configuration
+  (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL=/dev/null`), since a
+  set-aside clone is untrusted.
+- **Removed by hand.** The set-aside clone is meant to be kept as a
+  stopped clone is ("The workspace after a stop", above: the
+  `workspace_retention` of the placement it was set aside for, from the
+  set-aside, and unsaved work keeping it), but neither that removal nor
+  `maity runner gc --revoked` takes a `.replaced-*` path: gc goes by a
+  revoked credential, which a set-aside clone may not have, and skips
+  every clone of an agent with an active placement. Until a follow-up
+  of tsk-9f69y1hr1m6z teaches them that path, a person removes a
+  set-aside clone by hand, after `maity runner status` has named it and
+  its unsaved count. The hub's `workspace_outcome` and the dashboard's
+  removal by hand stay about the placement's current clone (`null`
+  after a set-aside while the placement runs), so a set-aside clone's
+  state is only in the runner's log and `maity runner status`.
+
 **A placement's scratch.** Besides
 its clone, each placement gets a directory for what is thrown away
 after the work: a review's or a test's evidence, a temporary clone, a
@@ -21610,7 +21964,7 @@ agents' shared home, which no removal of a clone reaches:
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | `members:admin` and ownership of the runner, not the right to admit a profile that is not a member yet (below, "Who may do what"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side, as a proposed change (below); `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `effort`, `target`, `stop_grace_seconds`, `workspace_retention` (`model`, `effort` and `target` take `null`); a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
-| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?, fresh_session?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `fresh_session: true` makes it a **reset**: the new generation starts the agent on a fresh harness session instead of resuming the last one (`fresh_session` on the placement, §15.5; §15.14), the clone and its branches kept as by any restart. The same right as a restart, and it combines with `rejoin`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5), and for one the clone's removal may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A restart without `fresh_session` resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
+| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?, fresh_session?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `fresh_session: true` makes it a **reset**: the new generation starts the agent on a fresh harness session instead of resuming the last one (`fresh_session` on the placement, §15.5; §15.14), the clone and its branches kept as by any restart. The same right as a restart, and it combines with `rejoin`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or set aside for a layout change (`workspace_set_aside`, `revoked_by` null, §15.5; not built yet, tsk-9f69y1hr1m6z: today no revocation carries that reason) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal or set-aside sets it, §15.5), and for one the clone's removal or set-aside may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A set-aside of a clone whose credential was revoked before keeps that revocation's `revoked_reason` and `revoked_by` (§15.8), so the `rejoin` it stores follows the rule of that revocation. A restart without `fresh_session` resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests`, for an agent whose own human owns both runners (`runner_owner_only` otherwise) | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
@@ -21838,7 +22192,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `project_refused` | `failed` | the project is not in the runner's allowlist |
 | `harness_missing` | `failed` | the binary or image is not there or does not run |
 | `clone_failed` | `failed` | `git clone` failed; `exit_code` from git |
-| `workspace_in_use` | `failed` | the clone path exists and cannot be this agent's: not recorded for it, another origin, held by another process, or not a plain clone |
+| `workspace_in_use` | `failed` | the clone path exists and cannot be this agent's: not recorded for it, another origin, held by another process, or not a plain clone; this agent's clone of the other layout is set aside instead (§15.5; not built yet, tsk-9f69y1hr1m6z: today it is `workspace_in_use` too) |
 | `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code, for a `403 forbidden` its `details.reason` when that has the code form, otherwise `forbidden` (below) |
 | `crash_loop` | `failed` | the restart cap was reached |
 | `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
@@ -21871,6 +22225,16 @@ placement as `reported`; the history is the `placement_reported` events.
 | `not_listening`, `never_joined` | `hung`: from the runner's watch (§15.14), the placement's session stayed not listening (§5.3) past the runner's grace, or no session of the placement's credential started within the runner's time for a join after it started the harness; `exited` when the runner resumes the session, `failed` when it stops retrying. The hub takes both, and the runner reports them (tsk-bzmd0avm4yhb) |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
 | `mode_unsupported`, `model_unsupported`, `effort_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `effort_unsupported`: the placement names an effort its harness no longer offers on the runner (§15.5); `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
+
+Two details of the set-aside for a layout change (§15.5) join the
+table above once the hub takes them, not built yet (tsk-9f69y1hr1m6z):
+`workspace_set_aside` with `starting` (the runner set this agent's clone
+of the other layout aside and made a new one for this start) and
+`workspace_set_aside_failed` with `workspace_in_use` (the set-aside was
+refused by the hub or its rename failed, and the clone stays where it
+was). Until then both are codes outside the table, which the hub refuses
+(`invalid`), and the runner reports `workspace_in_use`
+(`workspace_unrecorded`) instead.
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
@@ -22217,7 +22581,7 @@ Runner credential, signed (§15.1).
 | GET | `/runner/placements` | `closed` | `{items}`: every active, approved placement of this runner, the full desired spec as below, with `workspace_epoch`; one under `desired: stopped` also carries its `workspace_outcome` (with `remove_requested` and `remove_requested_at`, §15.5). `closed=true` lists instead the placements of this runner, closed at any time, whose clone it has not reported removed (`workspace_outcome` `null`, `retained` or `kept`), but none closed with the runner's own end (`runner_revoked`, `runner_removed`: those clones are the operator's, §15.5), each with `active: false`, its `closed_reason`, `workspace_retention`, `workspace_epoch` and `workspace_outcome` (§15.5) |
 | POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?, finding?}` (`handover` not built yet, as the replacement is not, §15.14; `finding` as in §15.7, which the runner sends, tsk-bzmd0avm4yhb) | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
-| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. When the placement's credential was revoked before, by a revocation only the agent profile's owner may undo (§15.6, the restart row), `removed` also sets `desired: stopped` on the placement if it runs, without a new `generation`: its rejoin waits for the owner's start (§15.5). Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
+| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. When the placement's credential was revoked before, by a revocation only the agent profile's owner may undo (§15.6, the restart row), `removed` also sets `desired: stopped` on the placement if it runs, without a new `generation`: its rejoin waits for the owner's start (§15.5). `set_aside` (§15.5) is the runner's own report, as `removed` is: the placement's runner sends it with its runner credential, and no member right is checked. It is taken only for an active placement of this runner under `desired: running` (otherwise `conflict`), and sent before the runner moves the clone; `reason`, `unsaved`, `size_bytes`, `removes_at` and `remove_requested_at` are about a stopped clone's outcome, so any of them on `set_aside` is `invalid`. Like `removed` it is final for its epoch: it revokes the credential the placement named as the hub's own revocation (`credential_revoked`, `reason: workspace_set_aside`, `revoked_by` null, §15.10), sets `rejoin` on the placement and on every other active placement that names the revoked credential, and raises `workspace_epoch`; it leaves `workspace_outcome` `null`, and a repeat or a late report answers `200` as it is and changes nothing. With no `credential_id` it revokes nothing and sets no `rejoin`, and only raises the epoch. When the credential was revoked before, for any reason, it revokes nothing again and keeps that revocation's `revoked_reason` and `revoked_by`, so a rejoin after a revocation only the agent profile's owner may undo still follows the restart row's owner rule (§15.6); it sets the `rejoin`, raises the epoch and stops nothing, since the start that sends it already passed that rule. When another running placement names the credential it is `conflict` (`details.reason: "credential_in_use"`) and changes nothing. Not built yet (tsk-9f69y1hr1m6z): today `set_aside` is `invalid`. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
 | PUT | `/runner/placements/{id}/handover` (not built yet, §15.14) | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` (not built yet, §15.14) | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` (not built yet, §15.14) | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
@@ -28214,7 +28578,8 @@ and by signing in; and with abuse reports (§16.8) `moderation_applied`,
 written for the account an action concerns (the instance admin hears of
 a new report through a personal request, §7); and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
-no notification otherwise; and `agents_not_listening` `{instances, holding}`
+for a link that went `not_admin` (not built yet), and no notification
+otherwise; and `agents_not_listening` `{instances, holding}`
 (§5.3), written in place of the digest request under
 `not_listening.mode: bell`.
 
@@ -28251,7 +28616,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Password changed: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`, `Second-factor codes refused for today after too many wrong ones: …` for `method: daily_limit`); `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set`, and `not_admin` (not built yet) (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Password changed: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`, `Second-factor codes refused for today after too many wrong ones: …` for `method: daily_limit`); `Forge access added: <account login> (<source>)`; `Forge access stopped: no longer an owner of <account login>` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
