@@ -1376,6 +1376,8 @@ window.MAITY_I18N["en"] = {
   },
   "forge.link.selected": "selected repositories",
   "forge.link.what": "Linking the GitHub App",
+  "forge.public_offer": "The repository is confirmed. The project's public page is still off: turn it on now, or later under Public page below.",
+  "forge.public_offer.button": "Turn the public page on now",
   "forge.settings_hint": "Your grants are set in {link}.",
   "forge.settings_link": "Forge access",
   "forge.status.active": "active",

@@ -1342,6 +1342,8 @@ window.MAITY_I18N["ko"] = {
   },
   "forge.link.selected": "선택한 저장소",
   "forge.link.what": "GitHub App 연결",
+  "forge.public_offer": "저장소가 확인되었습니다. 프로젝트의 공개 페이지는 아직 꺼져 있습니다. 지금 켜거나, 나중에 아래의 공개 페이지에서 켜세요.",
+  "forge.public_offer.button": "지금 공개 페이지 켜기",
   "forge.settings_hint": "권한 부여는 {link}에서 설정해요.",
   "forge.settings_link": "포지 접근",
   "forge.status.active": "활성",
