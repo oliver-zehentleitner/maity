@@ -13463,7 +13463,7 @@ owner (§11.4). An installation of the forge's App on a forge
 organisation is linked by one of that organisation's owners on the
 forge as their own grant, never the Maity organisation's, and no
 organisation name is matched to a forge login (§11.4, "Organisations:
-Maity's and the forge's"; not built yet).
+Maity's and the forge's").
 
 **Transfer into and out of an organisation** (§6.25, `POST
 /projects/{owner}/{slug}/transfer`, with the step-up of §2.8.4). `to`
