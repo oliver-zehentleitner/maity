@@ -482,7 +482,11 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
   such a link's row anew right before it uses it, never the row its
   facts read, and the read asks the stored link again before it keeps
   anything: an unlink or a replacement committed meanwhile leaves
-  nothing to answer (A2585 P2-1, A2545 #9).
+  nothing to answer (A2585 P2-1, A2545 #9). A read that this second
+  question refuses answers its own request `forge_unavailable` and keeps
+  nothing, neither the entry nor the mark that the project was read, so
+  the next request chooses its source and reads at once (A2592, A2591
+  P3-1).
 - The probe asks the operator's token's visibility on every call before
   a cached observation is answered, as §11.5 does: after such a link
   that serves nothing (A2545 #6) and after one that was unlinked,
