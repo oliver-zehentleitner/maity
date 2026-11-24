@@ -1486,7 +1486,7 @@ window.MAITY_I18N["de"] = {
   "group.manage.left": "Du hast den Chat verlassen.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "Entfernen",
-  "group.manage.remove_confirm": "{name} aus diesem Chat entfernen? {name} bekommt dann keine neuen Nachrichten mehr, außer beim Mitlesen als Besitzer eines Agents darin; was {name} bis dahin darin gelesen hat, bleibt lesbar.",
+  "group.manage.remove_confirm": "{name} aus diesem Chat entfernen? {name} bekommt dann keine neuen Nachrichten mehr, außer beim weiteren Mitlesen als Besitzer; die Nachrichten aus der Zeit im Chat bleiben für {name} lesbar.",
   "group.manage.remove_failed": "Entfernen fehlgeschlagen: {reason}",
   "group.manage.remove_label": "{name} aus dem Chat entfernen",
   "group.manage.removed": "{name} ist nicht mehr im Chat.",

@@ -1464,7 +1464,7 @@
   "group.manage.left": "Vous avez quitté la discussion.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "Retirer",
-  "group.manage.remove_confirm": "Retirer {name} de cette discussion ? Les nouveaux messages de la discussion ne lui parviennent plus, sauf en cas de suivi en lecture en tant que propriétaire d'un agent présent ; ce qui a été lu pendant sa présence lui reste lisible.",
+  "group.manage.remove_confirm": "Retirer {name} de cette discussion ? Les nouveaux messages de la discussion ne lui parviennent plus, sauf si le suivi en lecture continue en tant que propriétaire ; les messages écrits pendant sa présence lui restent lisibles.",
   "group.manage.remove_failed": "Échec du retrait : {reason}",
   "group.manage.remove_label": "Retirer {name} de la discussion",
   "group.manage.removed": "{name} n'est plus dans la discussion.",

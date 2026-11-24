@@ -1464,7 +1464,7 @@
   "group.manage.left": "Je hebt de chat verlaten.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "Weghalen",
-  "group.manage.remove_confirm": "{name} uit deze chat weghalen? Nieuwe berichten komen dan niet meer aan, tenzij {name} meeleest als eigenaar van een agent erin; wat er tot dan te lezen was, blijft leesbaar voor {name}.",
+  "group.manage.remove_confirm": "{name} uit deze chat weghalen? Nieuwe berichten komen dan niet meer aan, tenzij {name} nog meeleest als eigenaar; de berichten die zijn geschreven terwijl {name} erin zat, blijven leesbaar voor {name}.",
   "group.manage.remove_failed": "Weghalen mislukt: {reason}",
   "group.manage.remove_label": "{name} uit de chat weghalen",
   "group.manage.removed": "{name} zit niet meer in de chat.",

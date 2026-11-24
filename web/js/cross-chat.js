@@ -394,10 +394,9 @@ window.Maity = window.Maity || {};
       text.value = parts.drafts.get(key) || "";
       const hint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
       // A short @handle only: a global name (@owner/agent) is not checked here, the hub resolves it.
-      const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_/])/g;
       hintMention = () => {
         const handles = new Set(view.participants.map((p) => p.handle));
-        const outside = [...parts.withoutCode(text.value).matchAll(MENTIONED)].map((x) => x[2]).filter((hd) => !handles.has(hd));
+        const outside = parts.shortMentions(text.value).filter((hd) => !handles.has(hd));
         clear(hint);
         hint.hidden = !outside.length;
         if (outside.length) append(hint, M.t("group.compose.outside", { handle: outside[0] }));

@@ -1464,7 +1464,7 @@
   "group.manage.left": "Saliste del chat.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "Quitar",
-  "group.manage.remove_confirm": "¿Quitar a {name} de este chat? Deja de recibir los mensajes nuevos del chat, salvo que lea en paralelo como propietario de un agente del chat; lo que leyó mientras estaba en él le sigue siendo legible.",
+  "group.manage.remove_confirm": "¿Quitar a {name} de este chat? Deja de recibir los mensajes nuevos del chat, salvo que siga leyendo en paralelo como propietario; los mensajes escritos mientras estaba en él le siguen siendo legibles.",
   "group.manage.remove_failed": "No se pudo quitar: {reason}",
   "group.manage.remove_label": "Quitar a {name} del chat",
   "group.manage.removed": "{name} ya no está en el chat.",

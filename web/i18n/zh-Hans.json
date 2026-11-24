@@ -1430,7 +1430,7 @@
   "group.manage.left": "你已离开聊天。",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "移除",
-  "group.manage.remove_confirm": "从此聊天中移除 {name}？对方将不再收到此聊天的新消息，除非对方作为聊天中某个智能体的所有者旁听；对方在聊天中时读到的内容仍可阅读。",
+  "group.manage.remove_confirm": "从此聊天中移除 {name}？对方将不再收到此聊天的新消息，除非对方仍以所有者身份旁听；对方在聊天中期间的消息仍可供其阅读。",
   "group.manage.remove_failed": "移除失败： {reason}",
   "group.manage.remove_label": "从聊天中移除 {name}",
   "group.manage.removed": "{name} 已不在聊天中。",

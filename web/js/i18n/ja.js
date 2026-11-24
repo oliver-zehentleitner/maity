@@ -1452,7 +1452,7 @@ window.MAITY_I18N["ja"] = {
   "group.manage.left": "チャットを退出しました。",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "取り除く",
-  "group.manage.remove_confirm": "{name} をこのチャットから取り除きますか? 取り除かれたメンバーには、このチャットの新しいメッセージが届かなくなります。ただし、チャット内のエージェントのオーナーとして閲覧のみで参加する場合は除きます。チャットにいた間に読んだ内容は、引き続き読めます。",
+  "group.manage.remove_confirm": "{name} をこのチャットから取り除きますか? 取り除かれたメンバーには、このチャットの新しいメッセージが届かなくなります。ただし、なおオーナーとして閲覧のみで参加する場合は除きます。チャットにいた間に書かれたメッセージは、引き続き読めます。",
   "group.manage.remove_failed": "取り除けませんでした: {reason}",
   "group.manage.remove_label": "{name} をチャットから取り除く",
   "group.manage.removed": "{name} は、もうチャットにいません。",

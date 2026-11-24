@@ -12819,6 +12819,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A global name (@owner/agent) is the hub's to resolve: no hint on its first part (A2568).
   byId("chat-text").value = "@guest/spare look"; byId("chat-text").dispatch("input");
   expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a global @owner/agent name gives no hint");
+  // Nor on part of a hyphenated owner, nor on a run the hub reads as no mention (A2594): the whole run, as the hub scans it.
+  const gcHints = ["@my-owner/spare look", "@team-lead/agent-a look", "@agent-c_foo look", "@agent-a- look", "@agent-c-, look"].map((v) => {
+    byId("chat-text").value = v; byId("chat-text").dispatch("input");
+    const hint = main.querySelector(".group-chat .mention-hint");
+    return hint.hidden ? "" : text(hint).split(" ")[0];
+  });
+  expect(JSON.stringify(gcHints) === JSON.stringify(["", "", "", "", "@agent-c"]),
+    "group chat: hyphenated global names, a run with _ after it and a participant with a trailing - give no hint; a trailing - is not the handle's " + JSON.stringify(gcHints));
   byId("chat-text").value = "@agent-a go ahead"; byId("chat-text").dispatch("input");
   expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a mention of a participant gives no hint");
   main.querySelector(".group-chat form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();

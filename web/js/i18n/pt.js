@@ -1486,7 +1486,7 @@ window.MAITY_I18N["pt"] = {
   "group.manage.left": "Você saiu do chat.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "Remover",
-  "group.manage.remove_confirm": "Remover {name} deste chat? {name} deixa de receber as novas mensagens dele, a menos que acompanhe a leitura como proprietário de um agente nele; o que leu enquanto estava nele continua legível para {name}.",
+  "group.manage.remove_confirm": "Remover {name} deste chat? {name} deixa de receber as novas mensagens dele, a menos que ainda acompanhe a leitura como proprietário; as mensagens escritas enquanto estava nele continuam legíveis para {name}.",
   "group.manage.remove_failed": "Falha ao remover: {reason}",
   "group.manage.remove_label": "Remover {name} do chat",
   "group.manage.removed": "{name} não está mais no chat.",

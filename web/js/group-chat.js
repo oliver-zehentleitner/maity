@@ -402,7 +402,7 @@ window.Maity = window.Maity || {};
               () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
           } }, M.t("group.manage.remove"))))));
       }
-      // A jour fixe round's thread does not close when its last human leaves (§8.6): no warning there.
+      // A jour fixe round's thread does not close when its last human leaves (§20.5): no warning there.
       const lastHuman = !view.jour_fixe && view.participants.filter((p) => p.kind === "human").length === 1;
       append(box, h("button", { type: "button", class: "danger", onclick: () => {
         if (!window.confirm(lastHuman ? M.t("group.manage.leave_confirm_last") : M.t("group.manage.leave_confirm"))) return;
@@ -427,11 +427,10 @@ window.Maity = window.Maity || {};
       text.value = parts.drafts.get(key) || "";
       const hint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
       // A short @handle only: a global name (@owner/agent) is not checked here, the hub resolves it (§8.6).
-      const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_/])/g;
       // Read from the view each time: someone added in place is reachable at once.
       hintMention = () => {
         const handles = new Set(view.participants.map((p) => p.handle));
-        const outside = [...parts.withoutCode(text.value).matchAll(MENTIONED)].map((x) => x[2]).filter((hd) => !handles.has(hd));
+        const outside = parts.shortMentions(text.value).filter((hd) => !handles.has(hd));
         clear(hint);
         hint.hidden = !outside.length;
         if (outside.length) append(hint, M.t("group.compose.outside", { handle: outside[0] }));

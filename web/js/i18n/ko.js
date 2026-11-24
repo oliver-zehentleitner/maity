@@ -1452,7 +1452,7 @@ window.MAITY_I18N["ko"] = {
   "group.manage.left": "채팅에서 나갔어요.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "제거",
-  "group.manage.remove_confirm": "이 채팅에서 제거할까요? 대상: {name}. 채팅에 있는 에이전트의 소유자로서 함께 읽는 경우가 아니면 더 이상 이 채팅의 새 메시지를 받지 않아요. 채팅에 있는 동안 읽은 내용은 계속 읽을 수 있어요.",
+  "group.manage.remove_confirm": "이 채팅에서 제거할까요? 대상: {name}. 여전히 소유자로서 함께 읽는 경우가 아니면 더 이상 이 채팅의 새 메시지를 받지 않아요. 채팅에 있는 동안 작성된 메시지는 계속 읽을 수 있어요.",
   "group.manage.remove_failed": "제거하지 못했어요: {reason}",
   "group.manage.remove_label": "채팅에서 {name} 제거",
   "group.manage.removed": "채팅에서 제거됨: {name}",

@@ -1464,7 +1464,7 @@
   "group.manage.left": "You left the chat.",
   "group.manage.option": "{name} @{handle}",
   "group.manage.remove": "Remove",
-  "group.manage.remove_confirm": "Remove {name} from this chat? They stop receiving its new messages, unless they read along as the owner of an agent in it; what they read while in it stays readable to them.",
+  "group.manage.remove_confirm": "Remove {name} from this chat? They stop receiving its new messages, unless they still read along as an owner; messages from their stay remain readable to them.",
   "group.manage.remove_failed": "Removing failed: {reason}",
   "group.manage.remove_label": "Remove {name} from the chat",
   "group.manage.removed": "{name} is no longer in the chat.",
