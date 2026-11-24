@@ -1791,7 +1791,15 @@ window.Maity = window.Maity || {};
       const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
       if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
     },
-    end() { dragTab.id = null; dragTab.unmark(dragTab.marked); },
+    // A redraw of the row that came while a tab was dragged (renderSwitcher) runs once the drag ends.
+    redraw: null,
+    end() {
+      dragTab.id = null;
+      dragTab.unmark(dragTab.marked);
+      const redraw = dragTab.redraw;
+      dragTab.redraw = null;
+      if (redraw) redraw();
+    },
   };
 
   // The keyboard's way, and the one without a drag (WCAG 2.5.7): Alt+Shift
@@ -2116,9 +2124,15 @@ window.Maity = window.Maity || {};
 
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
+  // The counts now often answer just after the page is drawn (tsk-hyfqc0sp2bvc): a redraw keeps a
+  // tab's focus on the same tab, and waits while a tab is dragged, so neither is lost mid-way.
   function renderSwitcher(ctx) {
     const old = document.getElementById("header").querySelector("nav.switcher");
     if (!old) return;
+    if (dragTab.id) { dragTab.redraw = () => renderSwitcher(ctx); return; }
+    const active = document.activeElement;
+    const keyOf = (el) => el.getAttribute("data-project") || el.getAttribute("href");
+    const focusedKey = active && active !== old && old.contains && old.contains(active) && active.getAttribute ? keyOf(active) : null;
     const fresh = switcher(ctx);
     const scrolled = old.scrollLeft;
     M.dom.keepImages(old, fresh);
@@ -2127,6 +2141,10 @@ window.Maity = window.Maity || {};
     fresh.scrollLeft = scrolled;
     scrollCue(fresh);
     showFocused(fresh);
+    if (focusedKey) {
+      const again = Array.from(fresh.querySelectorAll("a")).find((a) => keyOf(a) === focusedKey);
+      if (again) again.focus({ preventScroll: true });
+    }
   }
 
   function renderHeader(ctx, current) {

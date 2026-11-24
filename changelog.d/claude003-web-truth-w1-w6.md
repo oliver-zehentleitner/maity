@@ -14,3 +14,6 @@
   hub's reason, instead of guessing that it is closed or does not exist.
 - web: Users of this hub no longer offers a "Disabled" filter, which always showed an empty list:
   the hub lists no disabled accounts.
+- web: when the notification counts redraw the project tabs, a focused tab keeps the focus, and a
+  tab being dragged keeps its drag; the redraw waits until the drag ends. Since the page no longer
+  waits for the counts, that redraw can come right after the page is drawn.

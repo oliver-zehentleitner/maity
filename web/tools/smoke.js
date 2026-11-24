@@ -591,6 +591,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(lineDuring && !anyDropLine() && tabIds() === MA + "," + SA, "tabs: a drag ended outside a tab leaves no line and no move");
     tabChip(MA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = false; } });
     expect(overPrevented, "tabs: no drop target without a tab being dragged");
+    // The counts redraw the row now and then, right after a page is drawn too (tsk-hyfqc0sp2bvc): the focused tab stays
+    // focused on the redrawn row, and while a tab is dragged the row waits until the drag ends (PR 2201's web-e2e).
+    const swProto = Object.getPrototypeOf(tabChip(MA));
+    const swFocus = swProto.focus;
+    swProto.focus = function () { document.activeElement = this; };
+    tabChip(SA).focus();
+    const swBefore = header.querySelector("nav.switcher");
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const swRedrawn = header.querySelector("nav.switcher") !== swBefore;
+    const swFocusKept = document.activeElement === tabChip(SA);
+    tabChip(MA).dispatch("dragstart", { dataTransfer: null });
+    const swDragRow = header.querySelector("nav.switcher");
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const swHeld = header.querySelector("nav.switcher") === swDragRow;
+    tabChip(MA).dispatch("dragend");
+    const swAfter = header.querySelector("nav.switcher") !== swDragRow;
+    swProto.focus = swFocus; document.activeElement = undefined;
+    expect(swRedrawn && swFocusKept && swHeld && swAfter,
+      "tabs: a counts redraw keeps the focused tab focused, and waits for a drag to end " + JSON.stringify([swRedrawn, swFocusKept, swHeld, swAfter]));
     // The tabs menu: one switch per project, the start set, nothing sent for a switch.
     const tabsButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
     // The tabs menu is drawn as the row's last tab but is no tab (tsk-qa2r972wjsws): a menu button outside the tabs,
