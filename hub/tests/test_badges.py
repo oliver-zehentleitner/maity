@@ -142,7 +142,7 @@ def test_a_held_project_or_an_owner_out_of_standing_has_no_badge(
             conn.execute(
                 insert(t.abuse_report).values(
                     id="rpt-badge", reporter=owner.id, account_id=owner.id,
-                    target_type="project", target_id=project_id, reason="spam",
+                    target_type=target, target_id=org_id or project_id, reason="spam",
                     status="resolved", action=action, created_at=clock.now(),
                 )
             )  # fmt: skip

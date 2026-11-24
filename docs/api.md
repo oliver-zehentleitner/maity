@@ -26008,7 +26008,7 @@ reload shows what changed.
   audience, `reasons`, `paths` or `request`. A card that loses its page
   (a hold, `security`) takes its items off at once. A `decision`'s text
   names the card with the title it has now, not the one it had when
-  the request was answered (§17.1 gives the text), and a new title
+  the request was answered (§17.2 gives the text), and a new title
   renders the page at once, so a renamed card's old title is not shown;
   a merge keeps the pull request's title as the forge gave it.
 - **Online** — the members whose presence (§5.3) is `online` at the
