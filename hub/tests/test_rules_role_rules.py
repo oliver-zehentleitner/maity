@@ -297,9 +297,12 @@ def test_only_the_plain_text_set_is_checked_so_a_blank_looking_item_is_stored(
     assert response.json()["settings"]["role_rules"]["tester"]["checklist"] == [blank]
 
 
-@pytest.mark.parametrize("item", ["café, naïve, Ærø", "emoji 🙂 and 🚀", "日本語", "a – b — c"])
+@pytest.mark.parametrize(
+    "item", ["café, naïve, Ærø", "emoji 🙂 and 🚀", "日本語", "a – b — c", "love ❤️ it"]
+)
 def test_an_item_of_letters_accents_and_emoji_is_stored(owner: flow.Human, item: str) -> None:
-    """§1.7.1: letters of every script, accents and emoji are plain text."""
+    """§1.7.1: letters of every script, accents and emoji are plain text; U+FE0F is a
+    combining mark (Mn), outside the set, so it passes in a checklist item (§6.1)."""
     response = owner.patch(BASE, {"settings": {"role_rules": {"tester": {"checklist": [item]}}}})
     assert response.status_code == 200, response.text
     assert response.json()["settings"]["role_rules"]["tester"]["checklist"] == [item]
@@ -346,6 +349,7 @@ def test_an_item_with_a_character_the_plain_text_rule_refuses_is_multiline(
         ("tester", {"checklist": ["a\u180eb"]}, ".checklist", "multiline"),
         ("tester", {"checklist": ["a\u00adb"]}, ".checklist", "multiline"),
         ("tester", {"checklist": ["a\u2029b"]}, ".checklist", "multiline"),
+        ("tester", {"checklist": ["\U0001f469\u200d\U0001f4bb"]}, ".checklist", "multiline"),
         ("reviewer", {"checklist": ["x" * 301]}, ".checklist", "too_long"),
         ("reviewer", {"checklist": ["x"] * 31}, ".checklist", "too_many"),
         ("coder", {"tone": "kind"}, ".tone", "extra_forbidden"),
