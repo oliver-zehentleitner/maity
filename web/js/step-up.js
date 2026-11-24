@@ -35,7 +35,9 @@ window.Maity = window.Maity || {};
         const digits = value.replace(/\s+/g, "");
         return M.api.post("/auth/second-factor/verify", /^\d{6}$/.test(digits) ? { code: digits } : { recovery_code: value });
       },
-      wrong: (err) => (err.code === "code_invalid" ? M.t("stepup.code.wrong") : err.code === "rate_limited" ? M.t("stepup.code.rate_limited") : null),
+      // The day's cap (§2.8.6, details.reason daily_limit) holds until the UTC day ends, not a few minutes.
+      wrong: (err) => (err.code === "code_invalid" ? M.t("stepup.code.wrong")
+        : err.code === "rate_limited" ? (err.details && err.details.reason === "daily_limit" ? M.t("stepup.code.daily_limit") : M.t("stepup.code.rate_limited")) : null),
     },
     // §2.8.8 rule 4: the code comes by mail, sent when the question opens, again on request.
     step_up_mail: {

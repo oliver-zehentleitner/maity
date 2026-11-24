@@ -1,8 +1,8 @@
 // Users of this hub, the Users section of /admin (docs/api.md §16.1;
 // js/instance-admin.js shows it to the instance admin only): the humans of the
 // instance for its admin — counts and times, never content. Each shows its
-// sign-in address (§16.1, `email`), with a copy button. Searchable by handle,
-// name or address and filterable by disabled; paged by the hub's cursor.
+// sign-in address (§16.1, `email`), with a copy button. Searchable by current or
+// earlier handle, name or address; paged by the hub's cursor.
 // "Reset two-factor sign-in" (§2.8.3, §2.8.7) mails the person a link; only
 // their press on its button changes anything.
 // Being the instance admin opens no project: this view links nowhere into
@@ -71,9 +71,8 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "users-box" });
     const more = h("div", { class: "actions" });
     const q = h("input", { id: "users-q", type: "search", maxlength: "64", autocomplete: "off", spellcheck: "false" });
-    const disabled = h("select", { id: "users-disabled" },
-      [["", M.t("users.filter.all")], ["false", M.t("users.filter.active")], ["true", M.t("users.filter.disabled")]].map(([v, l]) => h("option", { value: v }, l)));
-    disabled.value = "";
+    // No filter by disabled accounts: the hub lists none (an account is not disabled before the
+    // accounts design, §16.1), so the choice would only ever show an empty list or all of them.
     let rows = [];
     let next = null;
     let seq = 0;
@@ -81,11 +80,10 @@ window.Maity = window.Maity || {};
     // the next page asks with that filter, never with what is typed since.
     let shownFilter = null;
 
-    const filterNow = () => ({ q: q.value.trim(), disabled: disabled.value });
+    const filterNow = () => ({ q: q.value.trim() });
     const query = (filter, cursor) => {
       const p = new URLSearchParams();
       if (filter.q) p.set("q", filter.q);
-      if (filter.disabled) p.set("disabled", filter.disabled);
       p.set("limit", String(PAGE));
       if (cursor) p.set("cursor", cursor);
       return "/admin/users?" + p.toString();
@@ -180,13 +178,11 @@ window.Maity = window.Maity || {};
       window.clearTimeout(timer);
       timer = window.setTimeout(() => load(filterNow(), null), SEARCH_MS);
     });
-    disabled.addEventListener("change", () => { changed(); load(filterNow(), null); });
 
     append(root, h("h2", null, M.t("users.title")),
       h("p", { class: "muted" }, M.t("users.intro")),
       h("form", { class: "users-filter", role: "search", onsubmit: (e) => { e.preventDefault(); changed(); load(filterNow(), null); } },
-        h("label", { for: "users-q" }, M.t("users.search")), q,
-        h("label", { for: "users-disabled" }, M.t("users.show")), disabled),
+        h("label", { for: "users-q" }, M.t("users.search")), q),
       status.el, box, more, resetBox);
     await load(filterNow(), null);
   }

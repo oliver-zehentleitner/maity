@@ -1695,14 +1695,17 @@ window.Maity = window.Maity || {};
       markedCard = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked) || null;
     }
     if (kept && returning && window.scrollTo) window.scrollTo(0, kept.scroll);
-    const opened = wanted ? byId[wanted] || await M.api.get(cardPath({ id: wanted })).catch(() => null) : null;
+    // A card the address names that the board does not hold is read by itself; when that read
+    // fails, for whatever reason, the board says it could not be opened and why (A2567b).
+    let wantedErr = null;
+    const opened = wanted ? byId[wanted] || await M.api.get(cardPath({ id: wanted })).catch((err) => { wantedErr = err; return null; }) : null;
     if (opened) openPanel(opened);
     else if (markedCard && returning) {
       const title = markedCard.querySelector("a.card-open");
       window.setTimeout(() => (title || markedCard).focus(), 0);
     } else if (markedCard) window.setTimeout(() => markedCard.focus(), 0);
     else if (wanted) {
-      wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, days: CLOSED_WINDOW_DAYS });
+      wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, reason: wantedErr ? wantedErr.message : "" });
     }
     // The holders' presence, read again every 30 s; an outsider reads none (§2.3), so not for them.
     if (!M.trust.outsider(ctx)) ctx.every(30000, async () => {
