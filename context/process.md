@@ -775,13 +775,19 @@ lock uses the same recipe as the hub's locks, so there is no second locking tool
 **Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
 **Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
 
-`ci.yml` lets `hub-sqlite` and `hub-postgresql`, and `hub-mariadb.yml` `hub-mariadb`, run on a self-hosted runner
+`ci.yml` lets `hub-sqlite` and `hub-postgresql`, and `hub-mariadb.yml` `hub-mariadb` and `hub-mariadb-11-8`, run on a self-hosted runner
 when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
 runners. The runner is a user of its own with rootless Docker, no read access to anything
-else on the machine and a firewall rule against local and internal services (IPv4 and
-IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
-the runner user's home, where a job could replace them. It is not ephemeral, and a
-job-completed hook tidies containers, images, volumes and the workspace.
+else on the machine and a firewall chain against ssh, the metadata address and the internal
+networks, with the rest of loopback left to the job (IPv4 and IPv6; the decision is entry
+41cea0a5-28af-4a1a-87ad-aad00c580b77); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
+the runner user's home, where a job could replace them. It is not ephemeral. The Actions
+runner stops its own job's service containers, and the job-completed hook
+(`job-completed.sh`, set as `ACTIONS_RUNNER_HOOK_JOB_COMPLETED` in the unit) then removes
+stopped containers and unused networks older than an hour, anonymous volumes no container
+uses, dangling images (the service images stay cached), build cache older than 24 hours,
+and the job's workspace and temp files; it leaves running containers alone, since the
+runner instances share one Docker. The workflows themselves clean up nothing.
 Install steps and the trust boundary: `deploy/runner/README.md`.
 
 The condition in `ci.yml` that sends fork pull requests to the hosted runners (since the entry "Only a push to main goes to the rented runner", every pull request) is **not** a
