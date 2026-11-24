@@ -161,11 +161,14 @@ class FakeForge:
         self.sent: list[tuple[str | None, str]] = []
         self.private = True
         self.down = False  # the operator's token gets no answer, its visibility read included
+        self.moved = False  # the operator's token meets a redirect: the repository moved
 
     def send(self, fg: forge.Forge, path: str, query: Any = None) -> Any:
         self.sent.append((fg.token, path))
         if self.down and fg.token == OPERATOR:
             raise forge.ForgeUnavailableError("the forge did not answer: timeout")
+        if self.moved and fg.token == OPERATOR:
+            raise forge.NotCoveredError("repository_moved")  # the forge's redirect
         if path == f"/repos/{REPO}":
             if fg.token in (OPERATOR, None) and self.private:
                 return {"private": True} if fg.token == OPERATOR else None
@@ -1061,6 +1064,138 @@ def test_the_probe_cache_is_not_answered_while_the_visibility_after_such_a_link_
     repo.down = True
     status, code, details = _error(owner.get(PROBE))
     assert (status, code) == (503, "probe_unavailable") and not details
+
+
+# --- review A2574: what a link that stopped serving read is answered nowhere ---------------------
+
+
+def test_the_probe_cache_is_not_answered_after_the_link_is_unlinked(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """P2-1: an unlinked link leaves no reason behind; the operator's token is asked on every
+    call whether it covers the repository, so the observation the link read is not answered."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _operators(owner)
+    assert owner.get(PROBE).status_code == 200
+    assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+    private = (409, "probe_not_configured", {"reason": "private_without_grant"})
+    assert _error(owner.get(PROBE)) == private
+
+
+def test_the_probe_cache_is_not_answered_after_the_link_is_replaced(
+    owner: flow.Human, anna: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _operators(owner)
+    assert owner.get(PROBE).status_code == 200
+    app.memberships[("acme", "maintainer-gh")] = None
+    assert _anna_links(anna) == DONE
+    private = (409, "probe_not_configured", {"reason": "private_without_grant"})
+    assert _error(owner.get(PROBE)) == private
+
+
+def test_the_why_cache_is_not_answered_when_the_repository_moved_after_such_a_link(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """P2-2: `repository_moved` keeps its own reason, and is answered by reader too."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=12))
+    _confirm(owner)
+    _operators(owner)
+    _cached_export(migrated)
+    repo.moved = True
+    moved = (409, "probe_not_configured", {"reason": "repository_moved"})
+    assert _error(owner.get(WHY)) == moved
+
+
+def _cached_until(engine: Engine, until: datetime) -> str:
+    """An export in the cache read through a link whose grant ends at `until`."""
+    project_id = _cached_export(engine)
+    with ktw.CACHE.guard:
+        ktw.CACHE.entries[project_id].until = until
+    return project_id
+
+
+def test_the_reader_of_such_a_link_carries_when_its_grant_ends(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """P2-3: the cache keeps an export with the time the grant it was read with ends."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    reader = _reader(migrated)
+    assert reader.via == "app"
+    assert reader.serves_until == _link_row(migrated).owner_ok_at + TEN
+
+
+def test_the_project_view_shows_no_export_past_its_grant(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """P2-3: the project view answers from the cache only, and never an export past the grant
+    it was read with, though no write ended the link (an `active` one ageing out)."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _cached_until(migrated, clock.now() + TEN)
+    view = owner.get("/projects/maintainer/maity").json()
+    assert view["keep_the_why_export"] is not None  # within the grant
+    _cached_until(migrated, clock.now() - timedelta(seconds=1))
+    view = owner.get("/projects/maintainer/maity").json()
+    assert view["keep_the_why_export"] is None
+
+
+def test_the_why_cache_reads_anew_past_the_grant(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """Past its grant the entry is read anew, never answered (here the read finds no
+    `.keep-the-why`)."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _cached_until(migrated, clock.now() - timedelta(seconds=1))
+    assert _error(owner.get(WHY))[:2] == (409, "ktw_not_configured")
+
+
+def test_a_failed_read_after_such_a_link_keeps_none_of_what_it_read(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """P2-3: the root read refused for a link that serves nothing keeps no member's last good
+    read, so none is shown again."""
+    project_id = _project_id(migrated)
+    cache = ktw.Cache()
+    cache.last_good[(project_id, REPO, "")] = (Any, None)  # type: ignore[assignment]
+    refused = forge.Forge(None, refused=errors.ORG_NOT_ADMIN, project_id=project_id)
+    entry, _ = cache.get(refused, project_id, URL, 0)
+    assert entry.snapshot is not None and entry.snapshot.members == []
+    assert cache.last_good == {}
+
+
+def test_a_link_that_leaves_active_drops_the_cached_export(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """P2-3: a definite "no", and a refused mint, end what the link read in the cache at once."""
+    link_id = _org_link(migrated, owner.id, checked=TEN, ok=TEN)
+    _confirm(owner)
+    project_id = _cached_export(migrated)
+    app.memberships[("acme", "maintainer-gh")] = None
+    assert _check(migrated, app) == "not_admin"
+    assert ktw.CACHE.cached(project_id) is None
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(status="active"))
+    _cached_export(migrated)
+    with migrated.begin() as conn:
+        forge_links.set_status(conn, link_id, "suspended")
+    assert ktw.CACHE.cached(project_id) is None
+
+
+def test_step_one_on_another_account_changes_neither_status_nor_login(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """A2574 P3-4: the account check comes before the suspension, and keeps the login."""
+    _org_link(migrated, owner.id, checked=TEN, ok=TEN)
+    _confirm(owner)
+    app.account_id, app.login, app.installation_state = 901, "other-org", "suspended"
+    assert _check(migrated, app) == "active"
+    assert _link_row(migrated).account_login == "acme"
+    assert _records(migrated, owner.id) == []
 
 
 # --- review A2545 #4: an answer of no shape is never a "no" ---------------------------------------
