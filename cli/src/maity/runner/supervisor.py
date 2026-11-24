@@ -1270,6 +1270,16 @@ class Supervisor:
                     if located is None:
                         continue  # no /tmp scratch on this target (an ssh host): none to remove
                     path, in_tmp = located
+                    # A Codex placement's updater loop and app-server daemon live on detached
+                    # from its session, in the CODEX_HOME inside this scratch: ended before the
+                    # scratch goes, or they would run on without it (tsk-n6sajs3gyh8h, slice 2).
+                    harness = self.cfg.harnesses.get(p.get("harness") or "")
+                    if harness is not None and harness.id == "codex" and not in_tmp:
+                        try:
+                            self._stop_codex_daemon(p, harness, target, path, None)
+                        except Exception as exc:  # noqa: BLE001 - the removal goes on
+                            self.log(f"{p['id']}: the Codex stop at close failed: "
+                                     f"{type(exc).__name__}")  # fmt: skip
                     # Beside the clone, the former per-project scratch goes too, wherever a start
                     # before the holder made one (tsk-c7zzd440x8pn); the holder's project
                     # directory stays, even empty (scratchop.remove). The holder's path is asked

@@ -19,7 +19,12 @@ review of #2175).
 
 from __future__ import annotations
 
+import json
+import os
+import signal
+import stat
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -35,6 +40,155 @@ STOP_TIMEOUT = 15.0
 # what the check left, and no stop at all once the check has used it up.
 DEADLINE = CHECK_TIMEOUT + STOP_TIMEOUT
 STOP = ("app-server", "daemon", "stop")
+
+
+# --- the updater loop (slice 2) ---------------------------------------------------------------
+#
+# `daemon stop` ends the app-server but not the `app-server daemon pid-update-loop` that comes
+# with it, Codex's package updater (ops' measurement on 0.171.0 and 0.172.0: alive 120 s after
+# the stop, ended by TERM within 2 s). At a package update it starts a replacement app-server
+# itself, with the environment of the start that made the loop. So it is ended first, then the
+# daemon: never by a pattern, only by the pid Codex records for it in this home, and only once
+# the process behind that pid is shown to be that loop.
+
+# Codex's record of the loop: `{"pid": N, "processIdentity": {"bootId": "…", "startTicks": N}}`.
+UPDATER_DIR = "app-server-daemon"
+UPDATER_PID = "daemon-updater.pid"
+UPDATER_ARGV = ("app-server", "daemon", "pid-update-loop")
+PID_FILE_MAX = 4096
+# What `end_updater` says, one token: the loop ended; no record of one; the recorded process
+# is gone; the process behind the pid is not that loop; the record or the process could not be
+# read; no pidfd here (not Linux).
+UPDATER_TOKENS = ("stopped", "absent", "gone", "mismatch", "unreadable", "unsupported")
+QUIET = ("stopped", "absent", "gone")  # nothing to say in the log
+
+
+def _record(raw: bytes) -> tuple[int, str, int] | None:
+    """The pid, boot id and start ticks of Codex's record of the loop, or None."""
+    if len(raw) > PID_FILE_MAX:
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    identity = data.get("processIdentity") if isinstance(data, dict) else None
+    if not isinstance(identity, dict):
+        return None
+    pid, boot, ticks = data.get("pid"), identity.get("bootId"), identity.get("startTicks")
+    if type(pid) is not int or type(ticks) is not int or not isinstance(boot, str):
+        return None
+    if pid <= 1 or ticks < 0 or not boot:
+        return None
+    return pid, boot, ticks
+
+
+def _read_record(home: Path) -> tuple[int, str, int] | str:
+    """Codex's record of the loop in `home`, read with no link followed below `home` itself
+    (whose way from the runner's root `check_home` checked), as `(pid, boot id, start ticks)`,
+    or the token for why there is none."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    try:
+        top = os.open(home, flags | os.O_DIRECTORY)
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "unreadable"
+    try:
+        sub = os.open(UPDATER_DIR, flags | os.O_DIRECTORY, dir_fd=top)
+        try:
+            fd = os.open(UPDATER_PID, flags | os.O_NONBLOCK, dir_fd=sub)
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    return "unreadable"
+                raw = os.read(fd, PID_FILE_MAX + 1)
+            finally:
+                os.close(fd)
+        finally:
+            os.close(sub)
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "unreadable"
+    finally:
+        os.close(top)
+    record = _record(raw)
+    return "unreadable" if record is None else record
+
+
+def _is_updater(pid: int, home: Path, boot: str, ticks: int, proc: Path) -> bool:
+    """Whether the process `pid` is the loop Codex recorded for `home`: this boot, its start
+    ticks (field 22 of `stat`), this user, the loop's argv at the end of its cmdline, and
+    CODEX_HOME in its environment equal to `home`. Raises OSError when /proc cannot say."""
+    if (proc / "sys" / "kernel" / "random" / "boot_id").read_text().strip() != boot:
+        return False
+    base = proc / str(pid)
+    text = (base / "stat").read_text()
+    fields = text[text.rindex(")") + 2 :].split()  # field 3 onward; the name may hold spaces
+    if int(fields[19]) != ticks:  # field 22
+        return False
+    uids = [line.split()[1:] for line in (base / "status").read_text().splitlines()
+            if line.startswith("Uid:")]  # fmt: skip
+    if not uids or int(uids[0][0]) != os.getuid():
+        return False
+    argv = [part for part in (base / "cmdline").read_bytes().split(b"\0") if part]
+    if tuple(part.decode("utf-8", "replace") for part in argv[-3:]) != UPDATER_ARGV:
+        return False
+    environ = (base / "environ").read_bytes().split(b"\0")
+    return f"CODEX_HOME={home}".encode() in environ
+
+
+def end_updater(home: Path, proc: Path = Path("/proc")) -> str:
+    """End the updater loop Codex recorded in `home`, run as the loop's own user, and say how
+    it went (UPDATER_TOKENS). The pid is opened as a pidfd first, then checked (`_is_updater`),
+    then the pidfd is signalled: 0 to show the checked process is still the one opened, so no
+    reused pid can be hit, then TERM. Never KILL, never a pattern, nothing outside `home`."""
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        return "unsupported"
+    record = _read_record(home)
+    if isinstance(record, str):
+        return record
+    pid, boot, ticks = record
+    try:
+        pidfd = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return "gone"
+    except OSError:
+        return "unreadable"
+    try:
+        if not _is_updater(pid, home, boot, ticks, proc):
+            return "mismatch"
+        signal.pidfd_send_signal(pidfd, 0)
+        signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+    except ProcessLookupError:
+        return "gone"
+    except (OSError, ValueError, IndexError):
+        return "unreadable"
+    finally:
+        os.close(pidfd)
+    return "stopped"
+
+
+def main(args: Sequence[str] | None = None) -> int:
+    """`end-updater <home>`, as the agents' user (`maity runner codexd`): print one token of
+    UPDATER_TOKENS. Exit 2 on other arguments."""
+    words = list(sys.argv[1:] if args is None else args)
+    if len(words) != 2 or words[0] != "end-updater" or not Path(words[1]).is_absolute():
+        print("usage: end-updater <absolute codex-home>", file=sys.stderr)
+        return 2
+    print(end_updater(Path(words[1])))
+    return 0
+
+
+def _end_updater(as_user: AsUser, home: Path, timeout: float) -> str:
+    """`end_updater` for `home` as the agents' user: in this process where that is the
+    runner's own user, else through the runner's module on their side. An answer that is no
+    token, or no answer, is `unreadable`."""
+    if as_user.direct:
+        return end_updater(home)
+    done = as_user.run([*as_user.runner_module("codexd"), "end-updater", str(home)],
+                       timeout=timeout)  # fmt: skip
+    token = done.stdout.strip()
+    return token if done.returncode == 0 and token in UPDATER_TOKENS else "unreadable"
 
 
 def stop_argv(binary: str, home: Path, agents_home: Path, agent_path: str) -> list[str]:
@@ -133,6 +287,18 @@ def stop_codex_daemon(
         log("the codex-home check used the whole deadline; "
             "no Codex app-server daemon stopped, the start goes on")  # fmt: skip
         return
+    # The updater loop first: stopped after the daemon, it could start a replacement between.
+    try:
+        ended = _end_updater(as_user, home, min(left, CHECK_TIMEOUT))
+    except (OSError, subprocess.SubprocessError):  # a timeout included
+        ended = "unreadable"
+    if ended not in QUIET:
+        log(f"the Codex updater loop was not ended ({ended}); the daemon stop goes on")
+    left = DEADLINE - (time.monotonic() - began)
+    if left <= 0:
+        log("the updater step used the whole deadline; "
+            "no Codex app-server daemon stopped, the start goes on")  # fmt: skip
+        return
     try:
         done = as_user.run(stop_argv(binary, home, agents_home, agent_path), timeout=left)
     except subprocess.TimeoutExpired:
@@ -144,3 +310,7 @@ def stop_codex_daemon(
             return
         failed = f"exited {done.returncode}"
     log(f"`codex app-server daemon stop` {failed}; the start goes on")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
