@@ -83,7 +83,7 @@ from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
 from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, has_scope
-from maity_hub.views import join_view, member_view, principal_id, routing_boss
+from maity_hub.views import join_view, member_view, principal_id
 
 log = logging.getLogger(__name__)
 router = APIRouter(route_class=ProjectRoute)
@@ -1699,15 +1699,16 @@ def _told_of_takeover(conn: Connection, project: Any, new: Any) -> list[str]:
         return []
     told = [availability.coordinator_token(conn, project)]
     named = conn.execute(
-        select(t.membership.c.reports_to)
+        select(t.membership)
         .where(
             t.membership.c.project_id == project.id,
             t.membership.c.agent_id == new.takes_over["member_id"],
         )
         .order_by(t.membership.c.id.desc())
     ).first()
-    # An isolated lead is routed past, as everywhere events go to a boss (§6.2).
-    lead = routing_boss(conn, named.reports_to) if named is not None else None
+    # An isolated lead is routed past, and a lead of another owner is not added: it reads
+    # the event as any member does, its audience being `all` (§3.1, §6.2).
+    lead = cross_owner.notice_boss(conn, named) if named is not None else None
     if lead is not None:
         told.append(f"member:{lead}")
     return list(dict.fromkeys(told))

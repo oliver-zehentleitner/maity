@@ -1196,7 +1196,7 @@ window.Maity = window.Maity || {};
   // §6.1 agent_owners and outside_roles, §6.2 "An agent whose owner is no
   // member". Unset, the setting follows the public page; the form says what it
   // reads now, and once set it has no way back to unset, as in the hub.
-  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team"];
+  const OUTSIDE_BASES = ["coder", "designer", "writer"];  // never blue-team (B.1 of §6.30)
   function agentOwnersForm(ctx, save) {
     const pol = ctx.project.policy;
     const stored = pol.agent_owners || null;

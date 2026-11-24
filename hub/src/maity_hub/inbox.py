@@ -92,7 +92,7 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
         return bool(request.holder_member == mine.id)
     if request.holder_pool:
         return "trust:admin" in tokens_of(mine.trust, mine.role, mine.role_base)
-    return originally_addressed(conn, request, mine)
+    return originally_addressed(conn, request, mine) or relays_for_owner(request, mine)
 
 
 def open_requests(conn: Connection, membership_id: int) -> int:
@@ -136,6 +136,23 @@ def _in_own_right(request: Any, mine: Membership) -> bool:
     if request.to_kind == "owner":
         return mine.trust == "owner"
     return request.to_role in tokens_of(mine.trust, mine.role, mine.role_base)
+
+
+def relays_for_owner(request: Any, mine: Membership) -> bool:
+    """`to=me` for a proxy: an open request still addressed to `owner` or `trust:owner`,
+    which it relays (§2.3, §7), but never a project's consent to a bridge across owners,
+    which a human answers directly. A listing rule only: the proxy does not hold the
+    request, so it neither answers nor forwards it in its own right.
+
+    `routes/overview.py` `_addressed_sql` restates this: a change here is a change there."""
+    from maity_hub.bridges import PROJECT_KIND  # bridges reads this module's neighbours
+
+    if mine.role_base != "proxy" or mine.trust != "admin" or request.status != "open":
+        return False
+    to_owner = request.to_kind == "owner" or (
+        request.to_kind == "role" and request.to_role == "trust:owner"
+    )
+    return to_owner and (request.proposal or {}).get("kind") != PROJECT_KIND
 
 
 def is_asker(request: Any, mine: Membership) -> bool:

@@ -70,7 +70,18 @@ def served_of(conn: Connection, rows: Collection[Any]) -> set[str]:
     moderation hold, and its namespace owner is an organisation that is not deleted and under
     no hold, or a human who is active, not deleted and not suspended. At most four statements
     for every `chunks.CHUNK` rows, none when no row has its page on."""
-    rows = [row for row in rows if row.public_page == "on" and row.state != "archived"]
+    return standing_of(
+        conn, [row for row in rows if row.public_page == "on" and row.state != "archived"]
+    )
+
+
+def standing_of(conn: Connection, rows: Collection[Any]) -> set[str]:
+    """The ids of `rows` whose project and namespace owner may show anything in public, the
+    part of `served_of` that is not the page's own columns: the project under no moderation
+    hold, and its owner an organisation that is not deleted and under no hold, or a human who
+    is active, not deleted and not suspended. The badge asks it too (§6.20), which is served
+    without a page. At most four statements for every `chunks.CHUNK` rows, none for none."""
+    rows = list(rows)
     if not rows:
         return set()
     held: set[str] = set()

@@ -589,8 +589,9 @@ one from prose.
 
 `review_delivery` adds the sender's and the author's `reports_to` only
 when that boss is of the same owner as its subordinate. Whether it is of
-another owner is the cross-owner test of §6.2 (`_same_owner`, with the
-owners `cross_owner.owner_of` resolves): the subordinate is an agent and
+another owner is the cross-owner test of §6.2 (`cross_owner.same_side`,
+shared with the boss notices since tsk-jhjzm9bpd2jx, with the owners
+`cross_owner.owner_of` resolves): the subordinate is an agent and
 the boss is an agent of another owner or a human who is not its owner;
 an owner that cannot be resolved leaves the boss out too (61ec0486); a human's own `reports_to` is never
 cross-owner, so a human sender's or author's boss is still added, the

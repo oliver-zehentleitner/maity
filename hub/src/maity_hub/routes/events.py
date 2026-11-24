@@ -32,6 +32,7 @@ from maity_hub import (
     mentions,
     namespace,
     not_listening,
+    own_approvals,
     project_roles,
     review_delivery,
     reviews,
@@ -808,9 +809,20 @@ def post_message(
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
     if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
         payload["to_instance"] = body.to_instance
+    record: tuple[bool, int | None] | None = None
     if review is not None:  # what a review result judged and read, and what it answers (§8.4)
         payload["review"] = review
         payload["in_reply_to"] = answered.seq if answered is not None else None
+        # §2.3 "Own approvals": whether its author stands as a signer now, under the project
+        # lock, recorded with the event and never reconstructed; and the pull request its
+        # subject names, so the card it names finds it.
+        named_pr = review_delivery.PULL_REQUEST.fullmatch(review["subject"].strip())
+        record = (
+            own_approvals.signer_when_posted(
+                conn, mine.project, mine.row, bridged=caller.bridge is not None
+            ),
+            own_approvals.pr_in_range(int(named_pr.group(1)) if named_pr is not None else None),
+        )
     seq = events.emit(
         conn,
         mine.project.id,
@@ -821,6 +833,7 @@ def post_message(
         subject=("task", body.task_id) if body.task_id else None,
         conversation_id=body.conversation_id,
         card_watchers=watching,
+        review_record=record,
     )
     attachments.attach(conn, named, seq)
     if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
