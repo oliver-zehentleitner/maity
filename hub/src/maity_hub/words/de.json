@@ -100,6 +100,7 @@
   "notify.asks_you": "{who} fragt dich: {title}",
   "notify.chat": "{who} in {chat}",
   "notify.forge_added": "Forge-Zugang hinzugefügt: {login} ({source})",
+  "notify.forge_not_admin": "Forge-Zugang gestoppt: kein Owner mehr von {login}",
   "notify.jf_no_moderator": "Jour fixe ausgefallen, niemand moderiert: {topic}",
   "notify.jf_reported": "Jour-fixe-Bericht: {topic}",
   "notify.mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",

@@ -32,8 +32,11 @@ SECURITY = (
     "password_reset",  # a forgotten password reset by mail (§2.10)
     "password_changed",  # the password changed in the account (§2.1)
 )
-# The forge access changes that are a `security` item; the others are no notification.
+# The forge access changes that are a `security` item; the others are no notification: what
+# was added, and a link on a forge organisation whose linking human the forge no longer
+# reports as an owner of it (§11.4, written when the link becomes `not_admin`).
 FORGE_ADDED = ("linked", "token_set")
+FORGE_SECURITY = (*FORGE_ADDED, "not_admin")
 # Records that are `inbox` items, open until their matter is closed (§18.1).
 INBOX = ("registration_pending", "mail_disabled", "agents_not_listening")
 # Records that are `inbox` items read by a read mark, as any notice (§18.1).

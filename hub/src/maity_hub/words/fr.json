@@ -100,6 +100,7 @@
   "notify.asks_you": "{who} vous demande : {title}",
   "notify.chat": "{who} dans {chat}",
   "notify.forge_added": "Accès à la forge ajouté : {login} ({source})",
+  "notify.forge_not_admin": "Accès à la forge arrêté : vous n’êtes plus propriétaire de {login}",
   "notify.jf_no_moderator": "Point régulier ignoré, personne pour modérer : {topic}",
   "notify.jf_reported": "Rapport du point régulier : {topic}",
   "notify.mail_disabled": "E-mails vers {address} désactivés après 3 échecs",
