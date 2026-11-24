@@ -604,7 +604,9 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
     project, _, clone = args.where.partition("/")
     try:
         place = workspace.locate(cfg.local.workspaces, project, clone)
-    except workspace.Refused:
+    except workspace.Refused as refused_:
+        if refused_.why:  # a resolved-path refusal (e.g. a wildcard char) explains itself
+            raise Refused(refused_.why) from None
         raise Refused(f"not <project id>/<clone>: {onboarding.inline(args.where)}") from None
     as_user = _as_user(cfg)
     if not as_user.exists(place.path / ".git", "-d"):

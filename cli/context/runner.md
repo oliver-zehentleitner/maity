@@ -511,6 +511,94 @@ with free arguments.
   their own sandbox (Codex's `:workspace` profile, agy's
   `proceed-in-sandbox`).
 
+## Claude Code's allowlist needs `git -C <clone>` mirrored
+
+**Id:** 1e86907b-6442-4ad4-9b07-6431fbefd93b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-66zyvc4xnhtv (a placed coder's field report that its Task subagent was refused most Bash commands); a controlled reproduction with headless Claude Code 2.1.327 over a copy of a placement's settings; #1962 round-2 review; #1962 round-3 review (the raw config-parse check did not cover a root whose resolved path carries a wildcard)
+**Verification:** corroborated — on Claude Code 2.1.327 each verdict below was observed directly, including that a Task subagent resolves permissions identically to the main session
+**See:** runner.md — 4f960c44-8b9f-459e-978f-dff9237271a6 — as of 2026-11-23
+**Revisit when:** Claude Code changes how it matches a Bash allowlist, or gains a grant with a deny list that could express the `-C` escapes
+
+Additions to `claude_settings` and the start briefing. The specific
+behaviours below were observed on Claude Code 2.1.327; the matcher also
+normalises some wrapper and environment-assignment forms (its permissions
+docs), so item 2 guides phrasing rather than assuming the whole line is
+matched verbatim.
+
+1. `git -C <clone> <subcommand>` is allowed like plain git, as fixed rules
+   scoped to the placement's own clone path, with every git deny
+   (`GIT_DENIED`: `-c`, `--exec-path`, `--no-index`, …, and
+   `GIT_WORKTREE_DENIED`) mirrored in the `-C` form so the `-C` form carries
+   the same denies as plain git — gated no more and no less. A coder working
+   from a sibling directory needs `-C`; plain `git <sub>` only works from the
+   work tree. (The kernel UUID Read rule this entry first added is gone:
+   `maity uuid` makes the Ids, 4f960c44.)
+
+2. The start briefing tells the agent to run one command per Bash call, to
+   use `make -C <pkg>` and path arguments instead of `cd <pkg> && …`, and
+   not to prefix a command with a variable. This is added for every
+   claude-code placement, sandbox or not, because the `dontAsk` allowlist
+   gates commands in every one — the git-config notice and the
+   `maity`-alone hint stay sandbox-only.
+
+3. A placement is refused when the path that reaches its rules carries a
+   character Claude Code treats as a wildcard (`*`, `?`, `[]`). The clone path
+   is built under the workspaces root and embedded literally in the `git -C
+   <clone>` rule, so a wildcard in it would widen the rule past the clone. Two
+   layers: the configured root's raw string is checked at config parse as an
+   early, friendly error, but the string that actually reaches a rule is the
+   *resolved* path, and a root symlinked to a wildcard path (or a relative or
+   `~` root) carries no wildcard raw yet resolves to one. So the resolved path
+   is checked fail-closed at the placement choke point every harness passes
+   through — `workspace.locate` for the clone, `workspace.scratch_of` for the
+   scratch — the last point before it reaches a rule. The raw check alone does
+   not prevent the wildcard; it stays only as the friendlier early error.
+
+**Reason:** `git -C` must be fixed code, not a grant entry: the grant has no
+deny field, so an allow-only `git -C *` there would let `git -C <dir> -c
+<config> <subcommand>` slip past the `git -c` deny, and a free `-C` would
+point git at any repository — the allow is scoped to the clone and the
+denies are mirrored. A chain is allowed only if every segment is, and an
+env-prefixed command is a different line than the allowed one, so guiding
+the agent to phrase its checks plainly is cheaper and tighter than widening
+the allowlist to cover `cd` and every wrapper form. A Task subagent applies
+the same allowlist as the main session (observed), so the allowlist content
+is the whole lever; nothing subagent-specific is needed.
+
+**Rejected alternatives:**
+- venv creation and `pip install` in the allowlist now: left out — the flow
+  that needs them is tsk-kshm's runner-built venvs (prebuilt, so no `pip
+  install`, which the strict network allowlist would block from PyPI anyway).
+- `git -C *` unscoped, or a `git -C` allow in the per-repo grant: rejected —
+  a free `-C` reaches any repository and the grant cannot carry the matching
+  deny (see above).
+- `autoAllowBashIfSandboxed: true` to reach subagents: rejected as
+  unnecessary and a widening — subagents already apply the allowlist, and it
+  would pass every command whenever a sandbox stands (tsk-yp2bprwv9whv).
+- Validating only the raw workspaces-root string at config parse, not the
+  resolved path (the first form of this fix, #1962 round 2): adopted, then
+  found insufficient in round 3 and extended rather than replaced. The
+  original reasoning was that the realistic source is the configured root and
+  that `TOKEN` already confines the project and clone tokens, so the root
+  could be refused where it is read (`config.parse`). But `TOKEN` confines
+  only those tokens, not the root, and a root symlinked to a wildcard path (or
+  a relative or `~` root) passes the raw check yet resolves to a wildcard. So
+  the resolved path — exactly the string that reaches the rule — is now also
+  validated at the placement choke point (`workspace.locate`,
+  `workspace.scratch_of`), with the raw parse check kept as the friendlier
+  early error. `config.parse` alone was rejected; `workspace.locate` alone was
+  not chosen either — the raw check gives the operator a clearer message before
+  a placement is ever attempted.
+- Also refusing `(` and `)`, for antigravity: not done — open and unverified.
+  Refusing `(`/`)` now would be fail-wrong — a directory like `ws (old)` is
+  legitimate and common — so the set stays `*?[]`. Open question: whether agy
+  reads a resolved path holding further special characters as intended; settle by
+  probing agy 1.5.9 (alongside the agy install work, tsk-6d7mecktrqgs), and widen
+  the set for agy only then, and only if needed.
+
 ## The runner allows no UUID command; `maity uuid` makes the Ids
 
 **Id:** 4f960c44-8b9f-459e-978f-dff9237271a6
