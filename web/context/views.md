@@ -48,7 +48,9 @@ to; a member without `reports_to` sits under the owner of the narrowest
 scope that contains its own; the rest are roots. Nothing chart-shaped is
 fetched or kept. Each agent's node lists its live instances as links to
 their Sessions on the member's page, the target an instance has everywhere
-else; a dormant one says so beside its link.
+else; a dormant one says so beside its link. Since tsk-zsbe48ty4ces
+(the maintainer, 2026-11-23) both Organisation tabs draw one row per
+member from one renderer, each instance `#abcd` after its status dot.
 
 The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
@@ -60,7 +62,8 @@ qualified `owner/handle` where another member shares the short one,
 no name, no link to its page, no tooltip. Where the member list gives no
 handle, the stub is the neutral sentence "reports to someone who is not
 yours", never an id or a name. Its instances are dots in their presence's
-colour, the lead ringed. Each state also has a shape of its own, so that colour is never the only
+colour, the lead ringed, each before the instance's `#abcd` (the same row
+as on Team, tsk-zsbe48ty4ces). Each state also has a shape of its own, so that colour is never the only
 cue (WCAG 1.4.1; a review of #1485, nte-s2dqhn1n4bez; the coordinator chose these shapes, batch 3c of
 tsk-tsb8528rank1, 2026-11-10): online a filled disc, away a ring half filled, offline a smaller
 disc, dormant a hollow ring. In forced colours, where the browser drops gradients, background
@@ -4807,13 +4810,20 @@ The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: th
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
-**Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
+**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`); re-checked 2026-11-23 when the contract took up installations on a forge organisation (§11.4, "Organisations: Maity's and the forge's"; card tsk-2m5jbwemb21x), whose view is not built yet
+**Revisit when:** an organisation is to hold a forge grant of its own (§11.4, "Organisations: Maity's and the forge's"), or a second forge is added
 
 **Forge access** is a tab of the account's Security
 (`/account/security/forge`), next to the sessions. It shows:
 - the linked installations of the instance's GitHub App, each with its
-  status and the repositories it covers;
+  status and the repositories it covers; an installation on a GitHub
+  organisation whose link has gone `not_admin` (not built yet) shows
+  that as its own status, for the human who linked it: GitHub no longer
+  reports them as an owner of the organisation, nothing is read with the
+  link and no repositories are listed, and what to do is said with it:
+  have the owner role restored on GitHub (the link is active again
+  after its next check) or unlink it; meanwhile another owner of the
+  organisation may link it, which replaces this link;
 - **Link the GitHub App**, offered only where `app_configured`;
 - **Unlink**, which says it does not uninstall the App on GitHub and
   links to GitHub's page;

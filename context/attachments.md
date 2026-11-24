@@ -9,6 +9,7 @@
 **Source:** the maintainer's decision, 2026-10-22, approving attachments on chat and project messages with the rules below; the contract owner's design of the details in `docs/api.md` §8.7; the contract owner's rulings of 2026-10-22 on closed projects (adding refused, removal allowed) and on who deletes
 **Revisit when:** a browser is found to render an attachment response despite the headers, the per-project quota proves too small, or agents need to share files across projects
 **See:** security.md#credentials-never-enter-the-models-context-a-tool-holds-them-the-session-never-sees-them — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-22
+**See:** messages.md#a-message-names-several-recipients-and-a-message-is-forwarded-as-a-quote-that-routes-nothing — e55f1009-739e-445b-bb87-26f8c887493d — as of 2026-11-22
 
 Project messages, direct chats and group chats may carry files. The hub
 stores them, up to 10 MiB each and 10 per message, within a per-project
@@ -36,6 +37,17 @@ the project deletes them all, and archiving keeps them readable. In a
 closed project (`accepted` or `archived`) an upload, and a message that
 names one, are refused; deleting an attachment and redacting its message
 stay allowed.
+Amended on 2026-11-22 (the owner's answer to req-frzvt4kzpvsv, o1, "A:
+Verweis mit Lesezugriff"; card tsk-c7caka34dhkw): an attachment still
+belongs to exactly one message, but a forward of that message
+(`docs/api.md` §8.4, not built yet) also grants read access to exactly
+the attachments it quotes to the forward's audience, while its quote is
+not tombstoned, with no copy (§8.7, "Attachments of a forward").
+Deletion, redaction and who may delete still follow the original alone,
+so removing the original or the file ends access through every forward.
+"Exactly who can read the message can read its attachments" holds as
+written until 2026-11-22 and, since, with that one widening (entry
+e55f1009-739e-445b-bb87-26f8c887493d).
 
 **Reason:** humans and agents already exchange screenshots, logs and
 specs, and without attachments they paste them into message bodies

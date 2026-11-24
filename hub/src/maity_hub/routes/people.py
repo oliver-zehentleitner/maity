@@ -121,12 +121,15 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
     # members of a shared project only (§16.9); handle and name stay for everyone.
     shared = own or bool(ids & mine)
     chosen = own or bool(human.public_profile)
-    if not chosen:
-        ids &= mine
-    listed = _listed(conn, ids, mine)
+    # Before the list: the projects the caller does not share are those the public page shows
+    # (§6.27), so they count only while that page is served. A hold leaves `public_profile` as
+    # it is but serves no page (§16.8), so a held person shows a stranger nothing.
     page_served = public_people.served(conn, human) and _served(
         conn, request, public_people.KIND, human.id
     )
+    if not own and not (chosen and page_served):
+        ids &= mine
+    listed = _listed(conn, ids, mine)
     links = _links(conn, human, me) if chosen or shared else {}
     if not own and not page_served and not listed["projects_total"] and not links:
         raise not_found()  # shows the caller nothing

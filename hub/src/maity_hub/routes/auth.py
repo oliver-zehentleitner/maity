@@ -15,6 +15,7 @@ from maity_hub import account_deletion, avatars, clock, paths, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import (
     anonymous,
+    device_codes,
     email_links,
     mail_factor,
     password_limits,
@@ -285,6 +286,9 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             & (t.human_session.c.id_hash != caller.human_session),
             "password_change",
         )
+        # Every open device code of the human, the calling session's own included (§2.6.5,
+        # §2.10): ending the other sessions voids only theirs.
+        device_codes.void_open(conn, t.device_code.c.human_id == row.id)
         email_links.void_human(conn, row.id)
         # The reset links of the old password die with it, and so does an unconfirmed new
         # address (§2.10).

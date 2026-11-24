@@ -15,7 +15,18 @@ from maity_hub import account_deletion, clock, events, invitations
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_invitations import PATH, accept, issue, kinds, member, project_id, reason, token_of
+from tests.test_invitations import (
+    PATH,
+    STANDING,
+    accept,
+    ada_by_mail,
+    issue,
+    kinds,
+    member,
+    project_id,
+    reason,
+    token_of,
+)
 from tests.test_orgs import make_org
 
 
@@ -117,6 +128,69 @@ def test_go_makes_the_person_a_member_with_the_invited_trust_and_role(
     assert row.used_by == anna.id and row.used_at is not None
     assert [e.kind for e in kinds(migrated)][-1] == "invitation_used"
     assert answer(anna, pending["id"], "go").status_code == 409  # answered already
+
+
+@pytest.mark.parametrize("how", ["email_link", "email_code"])
+def test_a_go_from_a_session_fresh_from_the_mailbox_accepts_nothing(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """§3.4 "By handle": a `go` accepts with the same checks as the token's accept, good
+    standing (§2.6.5) among them; refused, the request stays open and nothing changes."""
+    two = ada_by_mail(make_client, migrated, monkeypatch, how)
+    made = invite(owner, "ada")
+    assert made.status_code == 201, made.text
+    [pending] = requests_of(two.by_mail)
+    refused = answer(two.by_mail, pending["id"], "go")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["code"] == "forbidden"
+    assert reason(refused) == "not_in_good_standing"
+    assert request_status(migrated, pending["id"]) == "open"
+    assert not is_member(migrated, two.id)
+    row = row_of(migrated, made.json()["id"])
+    assert (row.used_at, row.voided_at, row.declined_at) == (None, None, None)
+    assert [e.kind for e in kinds(migrated)] == ["invitation_created"]
+    # "This was me" from her password session: the same session's go now accepts.
+    confirmed = two.confirm_from_password()
+    assert confirmed.status_code == 200, confirmed.text
+    joined = answer(two.by_mail, pending["id"], "go")
+    assert joined.status_code == 200, joined.text
+    assert is_member(migrated, two.id)
+
+
+@pytest.mark.parametrize("way", sorted(STANDING))
+def test_a_go_from_every_way_into_good_standing_accepts(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    way: str,
+) -> None:
+    two = ada_by_mail(make_client, migrated, monkeypatch, "email_code")
+    two.mail_session(**STANDING[way])
+    assert invite(owner, "ada").status_code == 201
+    [pending] = requests_of(two.by_mail)
+    joined = answer(two.by_mail, pending["id"], "go")
+    assert joined.status_code == 200, joined.text
+    assert is_member(migrated, two.id)
+
+
+def test_a_no_from_a_session_not_in_good_standing_still_declines(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Declining grants nothing, so it needs no standing."""
+    two = ada_by_mail(make_client, migrated, monkeypatch, "email_link")
+    made = invite(owner, "ada").json()
+    [pending] = requests_of(two.by_mail)
+    assert answer(two.by_mail, pending["id"], "no").status_code == 200
+    assert row_of(migrated, made["id"]).declined_at is not None
+    assert not is_member(migrated, two.id)
 
 
 def test_go_writes_the_membership_and_its_events_as_an_accept_by_token_does(
@@ -340,6 +414,48 @@ def test_ten_invitations_by_handle_a_day_to_one_person(
     limited = invite(owner, "anna")
     assert limited.status_code == 429, limited.text
     assert int(limited.headers["Retry-After"]) > 0
+
+
+ORG_INVITATIONS = "/orgs/oz-team/members/invitations"
+
+
+def test_one_count_with_the_organisations_invitations_to_the_person(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.4, §6.26: a project's invitations by handle and an organisation's that reached the
+    person as a request share the person's count. Over it a project's issue is 429; an
+    organisation's gets the same 202 and files no request, since a 429 would tell an active
+    person from every other name."""
+    make_org(owner)
+    anna = flow.human(make_client, migrated, "anna")
+    bob = flow.human(make_client, migrated, "bob")
+    limit = invitations.INVITATIONS_PER_INVITEE_PER_DAY
+    # anna: all but one by the project, the last by the organisation; the project is refused
+    for _ in range(limit - 1):
+        made = invite(owner, "anna")
+        assert made.status_code == 201, made.text
+        assert owner.delete(f"{PATH}/{made.json()['id']}").status_code == 200
+    by_org = owner.post(ORG_INVITATIONS, {"handle": "anna", "role": "member"})
+    assert by_org.status_code == 202, by_org.text
+    assert len(requests_of(anna)) == 1  # it counted: it reached her
+    limited = invite(owner, "anna")
+    assert limited.status_code == 429, limited.text
+    assert int(limited.headers["Retry-After"]) > 0
+    # bob: the project fills the count; the organisation's answer is the same, no request
+    for _ in range(limit):
+        made = invite(owner, "bob")
+        assert made.status_code == 201, made.text
+        assert owner.delete(f"{PATH}/{made.json()['id']}").status_code == 200
+    quiet = owner.post(ORG_INVITATIONS, {"handle": "bob", "role": "member"})
+    nobody = owner.post(ORG_INVITATIONS, {"handle": "nobody-here", "role": "member"})
+    assert (quiet.status_code, nobody.status_code) == (202, 202), quiet.text
+    assert set(quiet.json()) == set(nobody.json())
+    assert requests_of(bob) == []
+    with migrated.connect() as conn:
+        filed = conn.execute(
+            select(t.org_invitation.c.request_id).where(t.org_invitation.c.handle == "bob")
+        ).scalar_one()
+    assert filed is None
 
 
 def test_a_revocation_withdraws_the_request(

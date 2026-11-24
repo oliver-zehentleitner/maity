@@ -511,6 +511,94 @@ with free arguments.
   their own sandbox (Codex's `:workspace` profile, agy's
   `proceed-in-sandbox`).
 
+## Claude Code's allowlist needs `git -C <clone>` mirrored
+
+**Id:** 1e86907b-6442-4ad4-9b07-6431fbefd93b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-66zyvc4xnhtv (a placed coder's field report that its Task subagent was refused most Bash commands); a controlled reproduction with headless Claude Code 2.1.327 over a copy of a placement's settings; #1962 round-2 review; #1962 round-3 review (the raw config-parse check did not cover a root whose resolved path carries a wildcard)
+**Verification:** corroborated — on Claude Code 2.1.327 each verdict below was observed directly, including that a Task subagent resolves permissions identically to the main session
+**See:** runner.md — 4f960c44-8b9f-459e-978f-dff9237271a6 — as of 2026-11-23
+**Revisit when:** Claude Code changes how it matches a Bash allowlist, or gains a grant with a deny list that could express the `-C` escapes
+
+Additions to `claude_settings` and the start briefing. The specific
+behaviours below were observed on Claude Code 2.1.327; the matcher also
+normalises some wrapper and environment-assignment forms (its permissions
+docs), so item 2 guides phrasing rather than assuming the whole line is
+matched verbatim.
+
+1. `git -C <clone> <subcommand>` is allowed like plain git, as fixed rules
+   scoped to the placement's own clone path, with every git deny
+   (`GIT_DENIED`: `-c`, `--exec-path`, `--no-index`, …, and
+   `GIT_WORKTREE_DENIED`) mirrored in the `-C` form so the `-C` form carries
+   the same denies as plain git — gated no more and no less. A coder working
+   from a sibling directory needs `-C`; plain `git <sub>` only works from the
+   work tree. (The kernel UUID Read rule this entry first added is gone:
+   `maity uuid` makes the Ids, 4f960c44.)
+
+2. The start briefing tells the agent to run one command per Bash call, to
+   use `make -C <pkg>` and path arguments instead of `cd <pkg> && …`, and
+   not to prefix a command with a variable. This is added for every
+   claude-code placement, sandbox or not, because the `dontAsk` allowlist
+   gates commands in every one — the git-config notice and the
+   `maity`-alone hint stay sandbox-only.
+
+3. A placement is refused when the path that reaches its rules carries a
+   character Claude Code treats as a wildcard (`*`, `?`, `[]`). The clone path
+   is built under the workspaces root and embedded literally in the `git -C
+   <clone>` rule, so a wildcard in it would widen the rule past the clone. Two
+   layers: the configured root's raw string is checked at config parse as an
+   early, friendly error, but the string that actually reaches a rule is the
+   *resolved* path, and a root symlinked to a wildcard path (or a relative or
+   `~` root) carries no wildcard raw yet resolves to one. So the resolved path
+   is checked fail-closed at the placement choke point every harness passes
+   through — `workspace.locate` for the clone, `workspace.scratch_of` for the
+   scratch — the last point before it reaches a rule. The raw check alone does
+   not prevent the wildcard; it stays only as the friendlier early error.
+
+**Reason:** `git -C` must be fixed code, not a grant entry: the grant has no
+deny field, so an allow-only `git -C *` there would let `git -C <dir> -c
+<config> <subcommand>` slip past the `git -c` deny, and a free `-C` would
+point git at any repository — the allow is scoped to the clone and the
+denies are mirrored. A chain is allowed only if every segment is, and an
+env-prefixed command is a different line than the allowed one, so guiding
+the agent to phrase its checks plainly is cheaper and tighter than widening
+the allowlist to cover `cd` and every wrapper form. A Task subagent applies
+the same allowlist as the main session (observed), so the allowlist content
+is the whole lever; nothing subagent-specific is needed.
+
+**Rejected alternatives:**
+- venv creation and `pip install` in the allowlist now: left out — the flow
+  that needs them is tsk-kshm's runner-built venvs (prebuilt, so no `pip
+  install`, which the strict network allowlist would block from PyPI anyway).
+- `git -C *` unscoped, or a `git -C` allow in the per-repo grant: rejected —
+  a free `-C` reaches any repository and the grant cannot carry the matching
+  deny (see above).
+- `autoAllowBashIfSandboxed: true` to reach subagents: rejected as
+  unnecessary and a widening — subagents already apply the allowlist, and it
+  would pass every command whenever a sandbox stands (tsk-yp2bprwv9whv).
+- Validating only the raw workspaces-root string at config parse, not the
+  resolved path (the first form of this fix, #1962 round 2): adopted, then
+  found insufficient in round 3 and extended rather than replaced. The
+  original reasoning was that the realistic source is the configured root and
+  that `TOKEN` already confines the project and clone tokens, so the root
+  could be refused where it is read (`config.parse`). But `TOKEN` confines
+  only those tokens, not the root, and a root symlinked to a wildcard path (or
+  a relative or `~` root) passes the raw check yet resolves to a wildcard. So
+  the resolved path — exactly the string that reaches the rule — is now also
+  validated at the placement choke point (`workspace.locate`,
+  `workspace.scratch_of`), with the raw parse check kept as the friendlier
+  early error. `config.parse` alone was rejected; `workspace.locate` alone was
+  not chosen either — the raw check gives the operator a clearer message before
+  a placement is ever attempted.
+- Also refusing `(` and `)`, for antigravity: not done — open and unverified.
+  Refusing `(`/`)` now would be fail-wrong — a directory like `ws (old)` is
+  legitimate and common — so the set stays `*?[]`. Open question: whether agy
+  reads a resolved path holding further special characters as intended; settle by
+  probing agy 1.5.9 (alongside the agy install work, tsk-6d7mecktrqgs), and widen
+  the set for agy only then, and only if needed.
+
 ## The runner allows no UUID command; `maity uuid` makes the Ids
 
 **Id:** 4f960c44-8b9f-459e-978f-dff9237271a6
@@ -974,7 +1062,8 @@ An `antigravity` placement runs agy in a folder the runner creates per
 placement, with the clone as `repo` inside it and nothing else. The
 runner refuses to start when the folder holds anything else. Every
 session gets settings the runner writes (`--settings`): the default agent
-mode, commands in the sandbox without asking, the sandbox on, the folder
+mode (`accept-edits` for an interactive start since 7aa15a74), commands in
+the sandbox without asking, the sandbox on, the folder
 trusted, `.git/maity` denied to the file tools, `maity` and the
 repository's grants allowed. agy uses the home of the user the agents run
 as, so that user's own agy settings apply to every agent.
@@ -1447,6 +1536,103 @@ docs/runners.md, with no example.
 - A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
+
+## agy runs in both modes: accept-edits interactive, the supervised turn reaped and bounded
+
+**Id:** 7aa15a74-2d23-46a2-b50d-7480fb331107
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (a supervised `-p` turn that spawned a background `maity wait` and never ended); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits` and rejects an unknown `agentMode`); the lead's ruling on pre-review A2498 of #1939, 2026-11-24
+**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
+**See:** runner.md#supervised-agy-ends-each-turns-own-process-group-agy-has-no-setting-to-stop-a-background-task-outliving-a-turn — c69eb132-ec8c-41e2-bab5-f83763d9b307 — as of 2026-11-24
+**Revisit when:** a live probe shows agy's denies on `.git/config`, `.git/hooks` and `.git/maity` hold inside a writable mount (then a clone write allow can be weighed again), agy changes what `agentMode` means, or a turn that ends at its time limit is seen to leave an event no later turn handles
+
+agy offers both modes. An interactive start sets `agentMode: accept-edits`,
+the agy mode that accepts the file tools' edits without a prompt; a supervised
+start keeps the empty default mode, since it runs headless. `auto` is still
+refused: its reviewer model may let a command leave the sandbox (b0646ec1).
+The file contract is the one af2e96d9 records, unchanged by this entry: no
+`write_file` allow, the clone's `.git` as agy's sandbox mounts it, a scratch
+clone for fetch and commit, and the delivered skill read through a `read_file`
+allow.
+
+A supervised turn runs in a process group of its own, which the loop ends
+when the turn ends, and at most for a time limit (`TURN_TIMEOUT`, which the
+spec may lower); c69eb132 records the reap. A turn that hits the limit is
+ended and reaped and not run again: the loop logs that the turn hit its time
+limit, counts no crash, and goes back to waiting for the next event.
+
+**Reason:** `accept-edits` is set only interactively because a person may be
+at the pane, while a supervised run has nobody to answer and needs no
+auto-accept. The time limit exists for a harness that keeps running while it
+reports idle or waits on a background task. A turn that long is past the
+restart policy's `quick_exit`, so if the loop treated the limit like any
+failed run it would back off and run the same turn again with the crash count
+reset each time: the retries would have no cap and the next event would never
+start. Ending the turn and waiting for the next event bounds it.
+
+**Rejected alternatives:**
+- A clone-wide `read_file`/`write_file` allow, with empty placeholders seeded
+  for the `.git` files a plain clone lacks, so the clone and its `.git` would
+  be agy's writable region. Rejected by the lead for main's file contract
+  (af2e96d9) until a live probe shows the denies hold inside a writable
+  mount; deferred as a note on the card.
+- Only rewording the time-limit behaviour in the docs: it would leave the
+  uncapped retry of a turn that hits the limit.
+
+## Supervised agy ends each turn's own process group; agy has no setting to stop a background task outliving a turn
+
+**Id:** c69eb132-ec8c-41e2-bab5-f83763d9b307
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17; the my22 incident ("root agent idle; waiting for 1 background task(s)": a supervised `-p` turn spawned a background `maity wait` and never ended); agy 1.5.10's `--settings` keys and `AGY_`/`ANTIGRAVITY_` environment probed directly for a background-disable switch, none found; the Claude Code adapter's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which has no agy equivalent
+**Revisit when:** agy gains a setting or environment variable to keep a background task from outliving a turn (then set it instead), or a background task that double-forks past its process group is seen to escape the reap
+
+agy has no `--settings` key and no environment variable to stop a background
+task outliving a turn — every candidate was probed against agy 1.5.10 and
+refused as unknown, and there is no `AGY_*`/`ANTIGRAVITY_*` variable for it —
+unlike Claude Code's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. So the
+supervised loop enforces it instead: an agy spec carries `reap_process_group`,
+and for such a spec the loop runs each turn with `start_new_session=True`, so
+the turn's harness process leads a session and process group of its own whose
+id is that process's pid. The loop waits at most a bound (`TURN_TIMEOUT`, which
+the spec may lower) for the harness, then ends the turn either way: when the
+turn ends the loop sends SIGTERM, then after a short grace SIGKILL, to exactly
+that group id, ending any background process the turn left (a stray `maity
+wait`, say). A turn that hits the bound is not run again: the loop waits for
+the next event (7aa15a74).
+
+**Reason:** in my22 a supervised turn spawned a background `maity wait`; the
+turn's process ended but the child kept the turn's group alive, and the run
+sat "idle; waiting for 1 background task(s)" instead of ending, so the agent
+stopped answering. The prompt already tells the agent not to run `maity wait`,
+but the enforcement must not depend on the prompt. Two cases have to be bounded:
+a harness that ends while a background task keeps its group alive, and a harness
+that never ends at all (it keeps running while it reports idle or waits on the
+task), which would otherwise hold the loop forever; the wait bound covers the
+second so a turn always ends. Scoping to a process group the loop creates fresh
+for each run is the hard safety requirement: the group id is that one run's own
+leader pid, so the signal reaches only that run's descendants and never another
+session's or placement's processes; the loop itself runs in the tmux pane's
+separate group and is untouched. `_reap` refuses a group id of 0 or 1, which
+could name a wide group, treats an empty group (ProcessLookupError) as the
+normal case — most turns leave nothing behind — and treats a group left with
+only zombies (already-exited, unreaped processes) as gone, so it does not wait
+out the full grace on an already-dead group (in a PID namespace the leftover's
+reaper can be the loop itself, where a plain "is the group still there" probe
+would call a zombie alive and stall).
+
+**Rejected alternatives:**
+- Relying on the prompt alone: a background task is a correctness-and-cost
+  bug when it holds the turn open; the loop must enforce it, not ask.
+- Killing the loop's own (the tmux pane's) process group minus the loop:
+  it would need to exclude the loop and anything the pane shares, and a
+  slip would kill the pane; a fresh per-run group has no such ambiguity.
+- A global sweep of the agents' user's stray processes: it could kill
+  another placement's work, the one thing that must never happen.
 
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
@@ -7374,3 +7560,87 @@ socket room of the scratch's `tmp` is unchanged.
 - Keeping a running placement's former scratch across its restart: nothing
   in a scratch is unsaved work, and one path rule for every start keeps the
   former layout to measuring, removing and denying what is left.
+
+## The service account's login shell stays nologin
+
+**Id:** 04049caf-6525-4bf7-a6a2-82da77e477fe
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fjq2k0sx1n3r (the fix it states: keep the account shell at nologin, so no login is possible)
+**Revisit when:** the service account is made a login account for another reason, or `install` stops making the account
+
+`maity runner install` makes the service account with
+`--shell /usr/sbin/nologin` (`install.py`), and the fix for the sessions'
+shell leaves it so. The sessions get their shell from the environment the
+runner builds instead (next entry).
+
+**Reason:** a login shell on the service account would allow logging in as
+the account that holds the runner's credential and the agents' logins.
+
+**Rejected alternative:** changing the account's shell to `/bin/sh` or
+`/bin/bash`, which would have fixed the sessions as well, rejected for the
+login it opens.
+
+## Every session gets SHELL `/bin/bash`, else `/bin/sh`, and tmux's `default-shell` with it
+
+**Id:** cc4a3c0e-77f1-4852-b940-3a0f7c0f5303
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-fjq2k0sx1n3r (on agents03 every command of the Grok placements xai-001, xai-002 and xai-005 answered "This account is currently not available.", exit 1, and they never joined); tmux's manual and spawn code on `default-shell`; the code of `tmux.py`
+**See:** runner.md#the-service-accounts-login-shell-stays-nologin — 04049caf-6525-4bf7-a6a2-82da77e477fe — as of 2026-11-23
+**Revisit when:** a harness needs a shell of its own choosing, a supported host has neither `/bin/bash` nor `/bin/sh`, or sessions stop going through tmux
+
+`Tmux.environment` (the one environment every session of every harness
+starts with, local, agent_user and ssh) carries `SHELL=/bin/bash` where the
+agents' user can run it, else `SHELL=/bin/sh`, and every start sets tmux's
+`default-shell` to the same value in the same tmux call. The value is
+resolved once per start, so the two never differ. `runner check` names the
+value and calls it an error when it is or links to nologin or false.
+
+After review A2352 of #2160, three refinements:
+- The probe (`tmux.probe_shell`) runs as the agents' user wherever that is
+  not the runner's own user: through sudo in the agent_user layout, over ssh
+  on an ssh host, with the same command run through `AsUser.argv`. A check by
+  the runner's own `os.access` would miss an ACL that shuts the agents' user
+  out, so the check would pass while starts fail.
+- The probe prints its answer, so a probe that prints nothing (sudo refused,
+  ssh's 255) is "no answer", never "cannot run". A start without an answer
+  takes `/bin/sh` for that start and asks again at the next; an answer is
+  kept.
+- `check` has an outcome of its own, a warning and no ok, for a shell that
+  runs but whose target `readlink -f` could not read: nologin or false is
+  not ruled out then, so an ok would claim more than was checked. The same
+  warning covers no answer, which differs from the error for a shell the
+  agents' user cannot run.
+
+What is confirmed and what is derived: the symptom and the nologin account
+are from the card. That OpenCode's commands go through the session's shell
+is the card's diagnosis; that tmux is what handed the panes nologin is
+derived: tmux takes `default-shell` from the SHELL it starts with and, under
+`env -i` without one, from the account's passwd shell, and gives each pane
+`SHELL` from `default-shell` (its manual for the first part, its spawn code
+for the second). Not reproduced here:
+the sandbox the change was written in refuses Unix sockets, so the real-tmux
+test of a server started with another shell did not run.
+
+**Reason:** the fix belongs where every harness goes through, and only the
+tmux environment is common to all of them; a per-harness variable would
+leave the next harness that runs commands through its shell with the same
+failure. bash first because harnesses that run commands through a shell
+expect bash-like behaviour more often than plain POSIX sh; `/bin/sh` is the
+fallback that every POSIX host has. `default-shell` is set at every start
+because a running tmux server keeps the shell it started with: the runner
+adopts sessions across its own restart, so after an upgrade a server an
+older runner started would go on handing new sessions nologin until every
+session on it ended.
+
+**Rejected alternatives:**
+- The harness's own shell (a per-harness setting): no harness here names
+  one, and it would be one more setting per harness for the same value.
+- `SHELL` only through `new-session -e`: as read from tmux's spawn code,
+  a pane's `SHELL` is set from `default-shell` after the `-e` values, so it
+  would not win (not checked against a live tmux).
+- Changing the account's shell: see the constraint above.

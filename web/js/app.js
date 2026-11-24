@@ -804,7 +804,7 @@ window.Maity = window.Maity || {};
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx, save) => languageSection(ctx, save) },
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx, save) => stateForm(ctx, save) },
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => repositoryForm(ctx) },
-    { tab: "general", when: (ctx) => ctx.canAdmin && !!M.forge, build: (ctx) => M.forge.repositoryPart(ctx) },
+    { tab: "general", when: (ctx) => ctx.canAdmin && !!M.forge, build: (ctx, save) => M.forge.repositoryPart(ctx, save) },
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => linksForm(ctx) },
     // Its name: rename and transfer, for a human owner (§6.25).
     { tab: "general", when: (ctx) => !!M.projectNames, build: (ctx) => M.projectNames.section(ctx) },
@@ -1196,7 +1196,7 @@ window.Maity = window.Maity || {};
   // §6.1 agent_owners and outside_roles, §6.2 "An agent whose owner is no
   // member". Unset, the setting follows the public page; the form says what it
   // reads now, and once set it has no way back to unset, as in the hub.
-  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team"];
+  const OUTSIDE_BASES = ["coder", "designer", "writer"];  // never blue-team (B.1 of §6.30)
   function agentOwnersForm(ctx, save) {
     const pol = ctx.project.policy;
     const stored = pol.agent_owners || null;

@@ -55,6 +55,13 @@ CLAUDE_MAITY_PROMPT = (
     "or a `$` outside single quotes is refused. Pass longer text in a file in this clone "
     "(`--body-file`)."
 )
+# Claude Code matches the allowlist against the command line as written, so a form that wraps an
+# allowed command is refused (tsk-66zyvc4xnhtv). This tells the agent how to phrase its checks.
+CLAUDE_COMMAND_PROMPT = (
+    " Run one command per Bash call: a chain (`cd pkg && …`) is allowed only if every part is, "
+    "so use `make -C <pkg>` and path arguments (`python3 -m pytest cli/tests`) instead of "
+    "`cd <pkg> && …`, and do not prefix a command with a variable (`PYTHONPATH=… python3 …`)."
+)
 # What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
 MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
 # An interactive session the runner ended because its agent stopped listening (§15.14) starts
@@ -94,8 +101,9 @@ GIT_DENIED = (
 # about git running programs or reading configuration, and which agy's rules mirror.
 # Only the subcommand itself: a pattern with a wildcard before `worktree` (`git * worktree *`,
 # also `git -C * worktree *`) would deny ordinary commands that only mention the word
-# (`git log --grep worktree`, a commit message), so it is not used. `git -C <dir> worktree …`
-# is not matched; no allow rule matches it either (cli/context/runner.md).
+# (`git log --grep worktree`, a commit message), so it is not used. For Claude Code these
+# denies are mirrored as `git -C <clone> worktree …` (claude_settings); `git -C <dir>` with any
+# other directory matches no allow rule (cli/context/runner.md).
 GIT_WORKTREE_DENIED = ("git worktree", "git worktree *")
 # No session runs gh: the token is the operator's and reaches every repository it may, and no
 # glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests
@@ -564,8 +572,18 @@ def _write(ctx: Context, path: Path, data: Any) -> Path:
     return ctx.as_user.write(path, json.dumps(data, indent=2) + "\n")
 
 
-def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str, str]) -> Launch:
-    """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen."""
+def _supervised(
+    ctx: Context,
+    first: list[str],
+    again: list[str],
+    env: dict[str, str],
+    *,
+    reap: bool = False,
+) -> Launch:
+    """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen. With
+    `reap`, the loop runs each turn in a process group of its own and ends that group when the
+    turn ends, so no background process the turn started outlives it (§6.2); it is scoped to
+    that one run's group and reaches no other session's processes (loop.py)."""
     policy = ctx.restart
     spec = _write(ctx, ctx.agent_dir / "loop.json",
         {
@@ -573,6 +591,10 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             "again": again,
             "env": env,
             "clone": str(ctx.clone),  # where `maity wait` runs: agy starts above it
+            # Every turn in its own process group, ended when the turn ends: no background
+            # task may hold a supervised run open past its turn, and the prompt that forbids
+            # `maity wait` is not relied on (cli/context/runner.md).
+            **({"reap_process_group": True} if reap else {}),
             # agy's workspace folder, checked before every run as before the start (§15.5).
             **({"folder": str(ctx.folder)} if ctx.folder is not None else {}),
             "restart": {
@@ -631,6 +653,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    # The same subcommands through `git -C <clone>`, which agents working from a sibling
+    # directory (a package subfolder, another clone's path) need. Scoped to this clone's exact
+    # path, never `git -C *`: a free `-C` would point git at any repository. The `-C` form
+    # carries the same denies as plain git (mirrored below), so it is gated no more and no less
+    # than `git <sub>` (tsk-66zyvc4xnhtv).
+    allow += [f"Bash(git -C {ws} {sub})" for sub in GIT_SUBCOMMANDS]
+    allow += [f"Bash(git -C {ws} {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
@@ -651,6 +680,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         deny += [f"Edit(/{ctx.skill}/**)"]
     deny += [f"Bash({rule})" for rule in
              (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
+    # The same git escapes through `git -C <clone>` (the allow forms above), mirrored so a deny
+    # wins over the `git -C <clone> <sub> *` allow: every git deny begins `git `, replaced here by
+    # `git -C <clone> ` (tsk-66zyvc4xnhtv).
+    deny += [f"Bash(git -C {ws} {rule[len('git '):]})" for rule in
+             (*GIT_DENIED, *GIT_WORKTREE_DENIED)]  # fmt: skip
     deny += list(CLAUDE_WORKTREE_DENIED)  # every placement, with or without the sandbox
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
@@ -823,12 +857,17 @@ def lead_record(ctx: Context) -> str:
 
 
 def _sandbox_prompt(ctx: Context) -> str:
-    """What the start prompt adds: under the harness's sandbox the git commands that fail, and
-    for Claude Code that `maity` runs alone; with the grant's pull requests, `maity gh`."""
+    """What the start prompt adds. Claude Code's `dontAsk` allowlist is set for every placement
+    (claude_settings), sandbox or not, so a claude-code session always gets the command-phrasing
+    guidance; the git-config notice and the `maity`-alone hint are only about the sandbox (the
+    unwritable `.git/config`, the plaincall hook); with the grant's pull requests, `maity gh`."""
     pulls = PULL_REQUEST_PROMPT if pull_requests_record(ctx) else ""
+    is_claude = ctx.harness.id == "claude-code"
+    command = CLAUDE_COMMAND_PROMPT if is_claude else ""
     if not writes_denied(ctx):
-        return pulls
-    return GIT_PROMPT + (CLAUDE_MAITY_PROMPT if ctx.harness.id == "claude-code" else "") + pulls
+        return command + pulls
+    maity = CLAUDE_MAITY_PROMPT if is_claude else ""
+    return GIT_PROMPT + maity + command + pulls
 
 
 def hide_placeholders(ctx: Context) -> None:
@@ -1002,6 +1041,8 @@ def codex_config(ctx: Context) -> str:
     return (
         'approval_policy = "never"\n'
         'default_permissions = "maity"\n'
+        # One poll covers Maity's 600-second wait with time for the response (docs/agents.md).
+        "background_terminal_max_timeout = 660000\n"
         + (f"model_reasoning_effort = {json.dumps(effort)}\n" if effort else "")
         # A version the runner manages is never swapped by Codex itself (§15.16).
         + ("check_for_update_on_startup = false\n" if managed(ctx) else "") + "\n"
@@ -1253,17 +1294,21 @@ def _agy_private(path: Path) -> Path:
 
 
 def antigravity_settings(ctx: Context) -> dict[str, Any]:
-    """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
-    `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
-    the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity`, URLs of the hub, the forge and the
-    grant's `network` hosts, and reads of the delivered skill.
+    """The session's settings (`--settings`, never saved; §15.3): the agent mode `accept-edits`
+    for an interactive start, so the file tools' edits are accepted without a prompt, and the
+    empty default mode for a supervised one; never `auto`, whose reviewer may let a command
+    leave the sandbox. Commands no rule names run in the sandbox without asking; the sandbox
+    on; the workspace folder trusted, so an interactive start asks nothing. Allowed: `maity`,
+    URLs of the hub, the forge and the grant's `network` hosts, and reads of the delivered
+    skill; no `write_file` allow.
     A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
-    left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
-    tools: the clone's credential, what makes git run something (GIT_PROTECTED), the other
-    clones' credentials and the runner's private paths. agy merges these with the agents'
-    user's own settings (cli/context/runner.md)."""
+    left out and runs in agy's sandbox, named by `maity runner check`.
+
+    Denied: the clone's credential (`.git/maity`), writing what makes git run something
+    (GIT_PROTECTED), the other clones' credentials, the runner's private paths and writing the
+    delivered skill. agy merges these with the agents' user's own settings
+    (cli/context/runner.md)."""
     assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
@@ -1281,7 +1326,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
         deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {
-        "agentMode": "",
+        # `accept-edits` auto-accepts the file tools' edits in interactive mode; supervised
+        # runs headless and needs no auto-accept, so it keeps the empty default mode.
+        "agentMode": "accept-edits" if not headless(ctx) else "",
         "toolPermission": "proceed-in-sandbox",
         "enableTerminalSandbox": True,
         "trustedWorkspaces": [str(ctx.folder)],
@@ -1313,4 +1360,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     # `-c` continues the latest conversation of the working directory: the placement's own
     # folder, so never another placement's (cli/context/runner.md).
     prompt = folder + SUPERVISED_PROMPT + extra
-    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env)
+    # agy has no setting or environment variable to keep a background task from outliving the
+    # turn (unlike Claude Code's CLAUDE_CODE_DISABLE_BACKGROUND_TASKS); the loop ends the
+    # turn's own process group instead (reap, §6.2).
+    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env, reap=True)

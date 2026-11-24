@@ -127,6 +127,19 @@ def test_create_runs_gh_on_the_recorded_repository_with_the_body_on_stdin(
     assert {name: call["env"][name] for name in DROPPED} == {name: None for name in DROPPED}
 
 
+def test_gh_gets_no_all_proxy(tmp_path: Path) -> None:
+    """gh's proxy names are ENV_PASSED's; git's wider list (clonecheck.ENV_PROXY) is not
+    merged in."""
+    environ = {
+        "ALL_PROXY": "http://proxy.invalid:3128",
+        "all_proxy": "http://proxy.invalid:3128",
+        "HTTPS_PROXY": "http://proxy.invalid:3128",
+    }
+    env = ghpr.gh_env(environ, str(tmp_path / "bin" / "gh"))
+    assert "ALL_PROXY" not in env and "all_proxy" not in env
+    assert env["HTTPS_PROXY"] == "http://proxy.invalid:3128"
+
+
 @runs_gh
 def test_view_takes_a_number_or_branch_after_the_options_end(placed: dict[str, Any]) -> None:
     assert cli.main(["gh", "pr", "view", "1663", "--json", "state,headRefOid", "--comments"]) == 0

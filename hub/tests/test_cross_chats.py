@@ -384,6 +384,27 @@ def test_closing_redaction_and_leaving(owner: flow.Human, make_client: ClientFac
     assert twice.json()["error"]["details"]["reason"] == "already_redacted"
 
 
+def test_removing_someone_from_a_chat_one_cannot_see_is_not_found(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """Visibility comes first, as in the other cross-chat routes (§9, §1.3): an agent that is
+    not in the chat gets the same not_found whether the chat exists or not."""
+    flow.project(owner, "other")
+    home = flow.agent(make_client, owner)
+    away = flow.agent(make_client, owner, "other")
+    outside = flow.agent(make_client, owner)
+    chat = create(owner, home.id, away.id).json()
+    existing = outside.delete(f"/me/cross-chats/{chat['id']}/participants/{owner.id}")
+    unknown = outside.delete(f"/me/cross-chats/xch-missing/participants/{owner.id}")
+    assert existing.status_code == 404, existing.text
+    assert unknown.status_code == 404, unknown.text
+    assert existing.json() == unknown.json()
+    assert existing.json()["error"]["code"] == "not_found"
+    assert existing.headers["Maity-Error"] == unknown.headers["Maity-Error"] == "not_found"
+    still = owner.get(f"/me/cross-chats/{chat['id']}").json()
+    assert owner.id in [p["member_id"] for p in still["participants"]]
+
+
 def test_the_owner_pays_mentions_from_the_account(
     owner: flow.Human, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

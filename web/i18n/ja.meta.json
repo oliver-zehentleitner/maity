@@ -1567,6 +1567,18 @@
     "en": "89fa136908846c6b",
     "text": "d205e2ec933ef29e"
   },
+  "board.claim_for.busy": {
+    "en": "0385dd7c49e50091",
+    "text": "55bc9c5e26ed57a0"
+  },
+  "board.claim_for.done": {
+    "en": "ede8e762c76c457e",
+    "text": "2a8768aa9191ce7d"
+  },
+  "board.claim_for.failed": {
+    "en": "7b7c2cd238073bb7",
+    "text": "c1803de5d31fd1bc"
+  },
   "board.closed.failed": {
     "en": "76ff07448abbd4a4",
     "text": "9192b497be5a1a6c"
@@ -2755,6 +2767,10 @@
     "en": "0ccf3532a4a1e18b",
     "text": "7f3337a37b95c3d5"
   },
+  "cards.claim_for": {
+    "en": "4440b3017b2785d4",
+    "text": "eb07cfd049057383"
+  },
   "cards.column.blocked": {
     "en": "c0ee434b7aa8dedc",
     "text": "d812845a2f74d2d4"
@@ -2963,6 +2979,10 @@
     "en": "5dbecb696e153ff0",
     "text": "f4c27c6fa7500af5"
   },
+  "cards.refused.humans_only": {
+    "en": "22d8ce42a6288aef",
+    "text": "a2038c61ae7a056f"
+  },
   "cards.refused.invalid_transition": {
     "en": "fc91d0183a098be3",
     "text": "296565f448f9471a"
@@ -2983,6 +3003,10 @@
     "en": "ca10ba106157a953",
     "text": "bf41054224c7e2f0"
   },
+  "cards.refused.not_open_to_outsiders": {
+    "en": "1a00c2735888374f",
+    "text": "7d9e4e0a092fa468"
+  },
   "cards.refused.project_closed": {
     "en": "4205ad383022da26",
     "text": "9eaaf471117fee31"
@@ -3002,6 +3026,10 @@
   "cards.refused.subtasks_and_deps": {
     "en": "e93f2c3881226d23",
     "text": "dc255ca17ebfe44d"
+  },
+  "cards.refused.tasks_admin": {
+    "en": "df0f7e647ea9a5d4",
+    "text": "a67dff7526362094"
   },
   "cards.refused.unknown": {
     "en": "63f07dba790acba0",
@@ -5024,8 +5052,8 @@
     "text": "e9e286d6a17b19bf"
   },
   "forge.intro": {
-    "en": "f62d81fe902e04a6",
-    "text": "e48e568f38849fc2"
+    "en": "4597536f99595f6b",
+    "text": "7d8daed11a33a7f7"
   },
   "forge.link": {
     "en": "1a6cbade78b4dded",
@@ -5058,6 +5086,14 @@
   "forge.link.what": {
     "en": "f86f933f5d894d04",
     "text": "e31c830468db37b3"
+  },
+  "forge.public_offer": {
+    "en": "daa899db80699347",
+    "text": "7798b62053923da5"
+  },
+  "forge.public_offer.button": {
+    "en": "e61d529cfb3c23f2",
+    "text": "d6c2e8010e0ff791"
   },
   "forge.settings_hint": {
     "en": "eb131d7875a058cd",
@@ -7946,6 +7982,10 @@
   "join.field.handover": {
     "en": "8d28a5f16e6a31c7",
     "text": "fcdaabfe8833fc3b"
+  },
+  "join.field.outsider_hint": {
+    "en": "5e8e00522d104a78",
+    "text": "1a17a49aac73265d"
   },
   "join.field.own_hint": {
     "en": "a79fceb9b8208c11",
@@ -12232,8 +12272,8 @@
     "text": "75882239f53b1f62"
   },
   "new_project.private.repository": {
-    "en": "af799b680ddb6a58",
-    "text": "da452bd8c17e415b"
+    "en": "f0f07b243b719034",
+    "text": "e73da2673d88d6a8"
   },
   "new_project.provider.keep_the_why": {
     "en": "906a90b9dc595771",
@@ -12300,8 +12340,8 @@
     "text": "06fff735d54b4741"
   },
   "new_project.slug.hint": {
-    "en": "8af31866373a30f6",
-    "text": "aba958319e0a2ad7"
+    "en": "71090352ae01ba2a",
+    "text": "d7ac7b70349e77c3"
   },
   "new_project.submit": {
     "en": "7551a69e7a295998",
@@ -12583,10 +12623,6 @@
     "en": "882b49ec1eaeb64f",
     "text": "beb00d62f4842741"
   },
-  "org.fleet.dot": {
-    "en": "94fb57e8623b60df",
-    "text": "94fb57e8623b60df"
-  },
   "org.fleet.empty": {
     "en": "1f501a2d2053d5ab",
     "text": "3df095ae8269cde6"
@@ -12608,8 +12644,8 @@
     "text": "775eada4d25bd2dc"
   },
   "org.instance.label": {
-    "en": "3ace85d6a46a06aa",
-    "text": "1f1fb75310b9fd2f"
+    "en": "13623f816f3410b9",
+    "text": "8b79f5ef4e8647a2"
   },
   "org.intro": {
     "en": "7a2f5a5f243a03a6",
@@ -12962,6 +12998,26 @@
   "orgs.title": {
     "en": "b58edddaa8f66d6d",
     "text": "b1e194ee0ae7a095"
+  },
+  "outsider.add_agent": {
+    "en": "fcabf74d411347ee",
+    "text": "27d9965a5fd5abe5"
+  },
+  "outsider.join.closed": {
+    "en": "9c89e4b1d48d49e1",
+    "text": "bd46d83947c6e9cc"
+  },
+  "outsider.join.role": {
+    "en": "f24b9087d8951d8a",
+    "text": "7b20f2a4ca061a3c"
+  },
+  "outsider.reason.blocked": {
+    "en": "903a7ae9cc8ff6d8",
+    "text": "c7a3009f9e6ea9d8"
+  },
+  "outsider.reason.limit": {
+    "en": "4d8377b7c79c42b8",
+    "text": "b976267d0d203544"
   },
   "overview.badge.agents_online": {
     "en": "21dc1a4560871eb4",

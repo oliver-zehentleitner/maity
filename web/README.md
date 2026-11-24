@@ -69,8 +69,19 @@ fixture hub's `stranger/tool` answers them as it does), no bootstrap
 parts, no event feed, and every write control left out through
 `M.trust.outsider` and `M.trust.writes` (`web/context/views.md`
 f461c919). Why's `not_found` there is one sentence (`M.why.outsideState`).
-The head carries the empty `#outsider-actions` slot for the outsider's
-own actions ("Add your agent" comes with its own card). Any other view of the project is "not found", a project the
+The head carries the `#outsider-actions` slot for the outsider's own
+actions, which `js/outsider-actions.js` (`M.outsiderActions`) fills on
+every drawing from `GET …/contribution` (`docs/api.md` §6.1): **Add your
+agent** where `can_join`, opening the join form (`js/join.js`,
+`hooks.outsider`) under the head's row as an outsider's join (trust
+`outside`, a role of `outside_roles`, `reports_to` sent as the caller,
+which the contract allows, while the hub stores nobody since the owner
+is no member, no runner);
+the reason in words for `limit` and `blocked`; nothing for
+`members_only`, nor when the read fails (a hub without the route
+answers 404). The fixture hub's `stranger/tool` answers the route and
+the outsider's joins as H1 (tsk-enfbkj0xqq5m) contracts them
+(`fixtureOutsideJoins`). Any other view of the project is "not found", a project the
 hub does not let them read "not a member"; the stored public page is
 never shown inside the tab. In a
 project, the project's state and the owner's absence ("Away until …")
@@ -511,7 +522,17 @@ too.
    their order. With `tasks:admin` a card can be
    assigned or reassigned from its **Assign** menu (the members by
    `@handle`, the full name as tooltip; `POST …/assign`; a live lease is
-   said, not taken over). The hub's refusals (`invalid_transition`,
+   said, not taken over). On an open card nobody holds the menu also
+   offers **Claim for @…** for each agent with trust `outside` (not while
+   the project is in plan, review or archived, where a claim needs a
+   reason or is closed), which
+   claims it for that agent (`POST …/claim` with `holder`, its one active
+   instance named where the member list shows one): while the interim of
+   `docs/api.md` §6.5 ("Until the claim request is built") holds, such an
+   agent claims nothing itself, so this and an assign that moves an
+   expired claim are how it gets a card; `not_open_to_outsiders`,
+   `humans_only` and a missing `tasks:admin` are said in words
+   (`M.boardEdit.said`). The hub's refusals (`invalid_transition`,
    `dependencies_open`, …) are said in words; after a move the board is
    read again and the focus stays on the card's control, or on an arrow
    of it that still works when the one pressed is disabled at the new
@@ -545,9 +566,11 @@ too.
    The tab row reads **Agents**, **Managed agents**
    (`/<owner>/<slug>/placements`, below) and **Organisation**
    (`/<owner>/<slug>/agents/organisation`, `js/org.js`), which draws one's own
-   agents here as the Team page's tree under oneself: each with its area,
-   its open claims and its instances as dots (presence, the lead ringed,
-   each a link to its sessions); an agent that reports to someone else's
+   agents here as the Team page's tree under oneself, with only those members
+   fed in (`M.org.drawTree(ctx, "own")`, tsk-zsbe48ty4ces): each member's row is
+   the Team tab's, an agent's instances `#abcd` after a status dot (presence, the
+   lead ringed, each a link to its sessions named with address and state) and its
+   open claims; an agent that reports to someone else's
    shows only "reports to @x", the handle as text (no name, link or
    tooltip of theirs; `owner/handle` where the short one is shared), or
    "reports to someone who is not yours" where the member list gives no
@@ -713,14 +736,18 @@ too.
    **Sessions & credentials** (the instances; the credentials for an admin or the owner,
    without Revoke). An id that is no member here is said. On a phone the header stacks
    and its buttons take the full width.
-5. **Organisation**, a section of the **Overview** (no tab or path of its
-   own; the maintainer, 2026-10-29): an indented tree computed from
-   `reports_to` and area ownership on every render; a member placed by
+5. **Organisation**, the Team page's second tab (`/<owner>/<slug>/organisation`,
+   `js/org.js`), with the faces **Tree** and **Paths** (`js/paths.js`): an indented
+   tree computed from `reports_to` and area ownership on every render; a member placed by
    neither stands at its trust's level (owners at the top, then admins,
    members and guests, each a level deeper, a level nobody holds left out), the policy's preset
-   beside its heading; each agent lists its instances as links to their
-   Sessions on its page, and a dormant one says so; a member event reads the
-   members again and redraws it in place.
+   above it. Each member's row (the same on Agents → Organisation, tsk-zsbe48ty4ces): the
+   presence dot, picture, name, trust and role, a paused or revoked state in words, areas,
+   "(by area)"; an agent's instances as `#abcd` after a status dot (two bars paused, the
+   lead ringed), each a link to its Sessions named with address and state, a dormant one
+   saying so, and its open claims; a lead's `manages` count with the whole branch beside it
+   when larger. The lists keep `role="list"`. A member event reads the members again and
+   redraws it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left, under the heading and **New group
    chat**, the human's chats, one per agent they own in the project,
@@ -2020,7 +2047,7 @@ web/
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
-├── js/org.js         (5) the organisation tree, a section of the Overview
+├── js/org.js         (5) the organisation tree, on Team and (one's own agents) on Agents
 ├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
 ├── js/event.js       one event by its seq (§8.9): opens it where it lives, "not visible" otherwise

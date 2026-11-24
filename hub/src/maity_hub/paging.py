@@ -131,6 +131,16 @@ def _id_shaped(row_id: str) -> bool:
     return 0 < len(row_id) <= ID and _bindable(row_id)
 
 
+def id_shaped(value: Any) -> bool:
+    """`_id_shaped` for a value a route decodes from a cursor of its own shape."""
+    return isinstance(value, str) and _id_shaped(value)
+
+
+def bindable(value: Any) -> bool:
+    """`_bindable` for a value a route decodes from a cursor of its own shape."""
+    return isinstance(value, str) and _bindable(value)
+
+
 def _bindable(text: str) -> bool:
     """Whether `text` can be bound as a query's text on every database: no NUL and
     encodable as UTF-8 (`_id_shaped`). Otherwise the driver fails and the client gets a 500,

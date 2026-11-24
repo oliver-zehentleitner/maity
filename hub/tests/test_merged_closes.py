@@ -416,6 +416,31 @@ def test_the_done_authority_closes_a_merged_card_blocked_in_review(
     assert card["closed_at"] is not None
 
 
+def test_an_outside_reviewer_does_not_close_a_merged_card_blocked_in_review(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§2.3 "Own approvals": a reviewing role gives an outside agent no done authority, the
+    merged `blocked→done` included (§6.4, §6.6), which the hub reads as a `review→done`.
+    Refused exactly as a member coder that is no editor of the card is; the card stays
+    blocked, and a member reviewer still closes it."""
+    github.pull(7, merged=True)
+    agent, card_id = _reported(github, owner, make_client)
+    _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)
+    outside = flow.agent(make_client, owner, role="reviewer")
+    _owned_by(migrated, outside.id, _stranger(make_client, migrated).id)
+    refused = outside.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    coder = flow.agent(make_client, owner).patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert refused.status_code == coder.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == coder.json()["error"]["details"]
+    card = _card(owner, card_id)
+    assert card["status"] == "blocked" and card["closed_at"] is None
+    member = flow.agent(make_client, owner, role="reviewer")
+    closed = member.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert closed.status_code == 200, closed.text
+    assert _card(owner, card_id)["status"] == "done"
+
+
 def test_two_signatures_still_need_review_for_a_blocked_card(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
@@ -856,7 +881,7 @@ def test_auto_never_closes_outsiders_work_on_a_merge(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
     """§6.6: `auto` acts as `notify` on outsiders' work without its own approvals on the
-    reported head; the hub counts none yet, so the done authority closes it."""
+    reported head: with none given, the merge leaves the card for its done authority."""
     _policy(owner, done_authority="holder", merged_closes="auto")
     github.pull(7, merged=True)
     agent, card_id = _reported(github, owner, make_client)
@@ -866,6 +891,39 @@ def test_auto_never_closes_outsiders_work_on_a_merge(
     assert (told.payload["closed"], told.payload["blocked_by"]) == (False, ["own_approvals"])
     assert _card(owner, card_id)["status"] == "review"
     assert any(agent.id in x for x in told.audience)  # the done authority under `holder`
+
+
+def test_auto_closes_outsiders_work_once_it_has_its_own_approval(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.6: with its own approvals on the reported head, a merge under `auto` closes
+    outsiders' work as any other card (tsk-3ggnhdmgmkf3)."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(github, owner, make_client)
+    _owned_by(migrated, agent.id, _stranger(make_client, migrated).id)
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    approved = reviewer.post(
+        f"{BASE}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": "all",
+            "body": "Approved.",
+            "task_id": card_id,
+            "review": {
+                "subject": "#7",
+                "head": _report()["head"],
+                "verdict": "approve",
+                "cites": [{"path": "docs/api.md", "line": 1, "quote": "x"}],
+            },
+        },
+    )
+    assert approved.status_code == 201, approved.text
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert told.payload["closed"] is True and "blocked_by" not in told.payload
+    assert _card(owner, card_id)["status"] == "done"
 
 
 def test_auto_never_closes_a_card_whose_current_report_an_outsider_filed(
