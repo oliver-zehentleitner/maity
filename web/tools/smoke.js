@@ -10400,8 +10400,65 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(fgConfirms) === JSON.stringify([{ url: "https://github.com/oliver-zehentleitner/maity" }])
       && text(fgRepo()).includes("Confirmed for the grants of @maintainer") && text(fgRepo()).includes("GitHub App installation") && !btn(fgRepo(), "Confirm this repository for my grants"),
       "forge: confirmed with the URL the owner saw; then read with the owner's installation");
-    // Another owner of the project, not its namespace owner, is offered no confirmation: the hub would refuse it.
+    // Confirmed, its page off: the namespace owner is offered the page with one click, never switched on by
+    // itself (req-6jht73f66j1g); only where the page would be served: not archived, no moderation
+    // hold (§16.8).
     const fgGet = win.Maity.api.get;
+    const fgPatchReal = win.Maity.api.patch;
+    const fgOffer = () => btn(fgRepo(), "Turn the public page on now");
+    let fgPage = "off";
+    let fgExtra = {};
+    let fgAs = {};  // who reads: an agent's kind, and an organisation role on the members list
+    win.Maity.api.get = (p) => (p === "/projects/maintainer/maity"
+      ? fgGet(p).then((x) => Object.assign({}, x, { public_page: fgPage }, fgExtra, fgExtra.repository ? { repository: Object.assign({}, x.repository, fgExtra.repository) } : {}))
+      : p === "/me" && fgAs.kind
+        ? fgGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: fgAs.kind }) }))
+        : p === "/projects/maintainer/maity/members" && "orgOwner" in fgAs
+          ? fgGet(p).then((x) => Object.assign({}, x, { items: x.items.map((m) => (m.id === "hum-maintainer" ? Object.assign({}, m, { org_owner: fgAs.orgOwner }) : m)) }))
+          : fgGet(p));
+    const fgShown = async (extra, as) => {
+      fgExtra = extra || {};
+      fgAs = as || {};
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+      return !!fgOffer();
+    };
+    const fgOn = await fgShown();
+    const fgOnText = fgOn && text(fgRepo()).includes("The repository is confirmed. The project's public page is still off");
+    const fgNoneOn = (fgPage = "on", !(await fgShown()));
+    fgPage = "off";
+    const fgNoneUnconfirmed = !(await fgShown({ repository: { owner_confirmed: false, confirmed_by: null } }));
+    const fgNoneArchived = !(await fgShown({ state: "archived" }));
+    const fgNoneHeld = !(await fgShown({ moderation: { action: "hide" } }));
+    const fgNoneOther = !(await fgShown({ owner: { id: "hum-someone", handle: "someone" } }));
+    // An agent, even one the view names as the namespace's owner, is never offered it: the hub
+    // answers humans_only (A2221 P3-1).
+    const fgNoneAgent = !(await fgShown({}, { kind: "agent" }));
+    // An organisation's project: its owners are offered it, an admin who is no owner of it not (A2221 P3-2).
+    const fgOrg = { owner: { id: "org-acme", handle: "acme" } };
+    const fgOrgOwner = await fgShown(fgOrg, { orgOwner: true });
+    const fgNoneOrgAdmin = !(await fgShown(fgOrg, { orgOwner: false }));
+    expect(fgOn && fgOnText && fgNoneOn && fgNoneUnconfirmed && fgNoneArchived && fgNoneHeld && fgNoneOther && fgNoneAgent && fgOrgOwner && fgNoneOrgAdmin,
+      "forge: the page offered after a confirm with the page off, to the namespace owner only (an organisation's owners); not with the page on, unconfirmed, archived, held, to another owner, an agent or an organisation's admin "
+      + JSON.stringify([fgOn, fgOnText, fgNoneOn, fgNoneUnconfirmed, fgNoneArchived, fgNoneHeld, fgNoneOther, fgNoneAgent, fgOrgOwner, fgNoneOrgAdmin]));
+    // A refusal is said in words, and the offer stays.
+    win.Maity.api.patch = (p, b) => (p === "/projects/maintainer/maity"
+      ? Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "org_role" })) : fgPatchReal(p, b));
+    await fgShown();
+    fgOffer().click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(main).includes("Public page not saved") && !!fgOffer(), "forge: a refused offer is said in words, and the offer stays");
+    // Taken: exactly the page, nothing else, and then it is gone.
+    const fgPatches = [];
+    win.Maity.api.patch = (p, b) => {
+      if (p === "/projects/maintainer/maity") { fgPatches.push(b); fgPage = b.public_page || fgPage; return Promise.resolve({}); }
+      return fgPatchReal(p, b);
+    };
+    await fgShown();
+    fgOffer().click(); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(fgPatches) === JSON.stringify([{ public_page: "on" }]) && text(main).includes("Public page saved.") && !fgOffer(),
+      "forge: the offer sends exactly public_page on, says it is saved, and is gone " + JSON.stringify(fgPatches));
+    win.Maity.api.patch = fgPatchReal;
+    win.Maity.api.get = fgGet;
+    // Another owner of the project, not its namespace owner, is offered no confirmation: the hub would refuse it.
     win.Maity.api.get = (p) => (p === "/projects/maintainer/sample"
       ? fgGet(p).then((x) => Object.assign({}, x, { owner: { id: "hum-someone", handle: "someone" }, repository: Object.assign({}, x.repository, { owner_confirmed: false, confirmed_by: null }) }))
       : fgGet(p));

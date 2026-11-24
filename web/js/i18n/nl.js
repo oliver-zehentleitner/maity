@@ -1404,6 +1404,8 @@ window.MAITY_I18N["nl"] = {
   },
   "forge.link.selected": "geselecteerde repositories",
   "forge.link.what": "De GitHub App koppelen",
+  "forge.public_offer": "De repository is bevestigd. De openbare pagina van het project staat nog uit: zet die nu aan, of later onder Openbare pagina hieronder.",
+  "forge.public_offer.button": "De openbare pagina nu aanzetten",
   "forge.settings_hint": "Je machtigingen stel je in bij {link}.",
   "forge.settings_link": "Forge-toegang",
   "forge.status.active": "actief",

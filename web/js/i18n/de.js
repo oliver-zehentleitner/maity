@@ -1404,6 +1404,8 @@ window.MAITY_I18N["de"] = {
   },
   "forge.link.selected": "ausgewählte Repositories",
   "forge.link.what": "Das Verknüpfen der GitHub App",
+  "forge.public_offer": "Das Repository ist bestätigt. Die öffentliche Seite des Projekts ist noch aus: Schalte sie jetzt ein oder später unten unter Öffentliche Seite.",
+  "forge.public_offer.button": "Öffentliche Seite jetzt einschalten",
   "forge.settings_hint": "Deine Berechtigungen legst du in {link} fest.",
   "forge.settings_link": "Forge-Zugriff",
   "forge.status.active": "aktiv",
