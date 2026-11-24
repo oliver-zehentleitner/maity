@@ -15221,6 +15221,183 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && Array.from(chLinks).some((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // Cross-project group chats (§9.5, #1422 ported) sit in their own list: no project, no pin,
+  // and the pane takes text only.
+  const xcLinks = () => main.querySelectorAll(".cross-chat-list a.conv");
+  const xcPane = () => main.querySelector("section.cross-chat");
+  expect(xcLinks().length === 1 && xcLinks()[0].getAttribute("href") === "#/chats/cross/xch-0001"
+    && text(xcLinks()[0]).includes("Across the projects") && text(xcLinks()[0]).includes("across your agents")
+    && text(xcLinks()[0]).includes("1 unread") && xcLinks()[0].querySelector(".mention-count")
+    && !xcLinks()[0].querySelector(".conv-project") && !xcLinks()[0].parentNode.querySelector(".pin-toggle")
+    && main.querySelector("a.new-cross").getAttribute("href") === "#/chats/cross/new" && chLinks.length === 7,
+    "cross chat: listed beside the project chats, with its unread and its mention, no project and no pin");
+  {
+    // The list's row after main's pin column (#1586): heading, Lead, 📌, then New chat across agents as an icon.
+    const row = main.querySelector(".chat-list-pane .toolbar");
+    const kids = Array.from(row.childNodes);
+    const at = (sel) => kids.findIndex((n) => n.matches && n.matches(sel));
+    const nc = main.querySelector(".chat-list-pane .toolbar a.new-cross");
+    expect(kids[0].tagName === "H2" && at(".chats-lead") === 1 && at(".pin-column-toggle") === 2 && at("a.new-cross") === 3
+      && nc.className.split(" ").includes("icon-button") && nc.getAttribute("aria-label") === "New chat across agents"
+      && nc.getAttribute("title") === "New chat across agents" && !text(nc).includes("New chat"),
+      "cross chat: New chat across agents is an icon after the pin column's toggle " + JSON.stringify(kids.map((n) => n.className || n.tagName)));
+  }
+  {
+    // A cross chat with one agent left is a room, not a direct chat (A2494 P3): no "Agent · @handle", no presence.
+    const one = win.Maity.chatParts.listItem({ slug: "cross", me: { id: "hum-maintainer", kind: "human" }, link: () => "/chats" },
+      { id: "xch-one", kind: "cross", title: "Just one", unread: 0, mentions: 0, last_message: null, last_message_at: null,
+        participants: [{ id: "agt-a", kind: "agent", handle: "agent-a", display_name: "Agent A", presence: "online" }] }, null, null);
+    expect(text(one.querySelector(".conv-sub")) === "Agent A" && !text(one).includes("online"),
+      "cross chat: one agent left reads as a room, not a direct chat " + text(one));
+  }
+  await go("#/chats/cross/xch-0001"); for (let k = 0; k < 8; k++) await tick();
+  const xcMarks = () => xcPane().querySelectorAll(".group-people-line .msg-project").map((s) => s.getAttribute("title"));
+  expect(xcPane() && text(xcPane()).includes("Both of you, a look across the projects.")
+    && text(xcPane()).includes("@maintainer done on my side") && text(xcPane()).includes("In this chat:")
+    && xcMarks().includes("Maity") && xcMarks().includes("Sample shop")
+    && !xcPane().querySelector("input[type=\"file\"]") && !xcPane().querySelector(".meat-chat-toggle")
+    && byId("chat-text") && main.querySelector(".chat-back").getAttribute("href") === "#/chats",
+    "cross chat: opens with its messages and the agents' projects, and offers no file and no meat-proxy switch " + JSON.stringify(xcMarks()));
+  {
+    // A person, a mention and an instance link where a project's context would (the Team route, #1588),
+    // through a project of the reader's that has them (A2494 P1).
+    const hrefs = xcPane().querySelectorAll("a").map((a) => a.getAttribute("href"));
+    const people = xcPane().querySelectorAll(".group-people-line a.member-ref").map((a) => a.getAttribute("href"));
+    const inst = xcPane().querySelectorAll("li.msg a.member-instance").map((a) => a.getAttribute("href"));
+    const ment = xcPane().querySelectorAll("li.msg a.mention").map((a) => a.getAttribute("href"));
+    expect(people.includes("#/maintainer/maity/team/agt-a") && people.includes("#/maintainer/sample/team/agt-s1")
+      && inst.includes("#/maintainer/sample/team/agt-s1/sessions/wqe2")
+      && ment.includes("#/maintainer/maity/team/hum-maintainer")
+      && !hrefs.some((x) => (x || "").includes("/members/")),
+      "cross chat: members, mentions and instances link to the Team view of a project that has them " + JSON.stringify([people, inst, ment]));
+  }
+  {
+    // The heading row carries the full-screen button, as a group chat's (A2494 P2).
+    const xfs = () => xcPane().querySelector(".toolbar button.chat-full-toggle");
+    expect(xfs() && xfs().getAttribute("aria-label") === "Read in full screen" && xfs().getAttribute("aria-pressed") === "false",
+      "cross chat: the full-screen button in its heading row");
+  }
+  // A removal made elsewhere (another session of the owner) leaves the open pane on its next read (4hv7's review of #1422).
+  const xcFar = (await win.Maity.api.get("/me/cross-chats/xch-0001/messages?before=100000")).items.find((m) => (m.body || "").includes("Both of you, a look across the projects."));
+  await win.Maity.api.post("/me/cross-chats/xch-0001/messages/" + xcFar.id + "/redact", { reason: "elsewhere" });
+  expect(text(xcPane()).includes("Both of you, a look across the projects."), "cross chat: the removal elsewhere is not drawn before the next read");
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(xcPane() && !text(xcPane()).includes("Both of you, a look across the projects.") && text(xcPane()).includes("@maintainer done on my side"),
+    "cross chat: a message removed in another session leaves the open pane on its next read");
+  {
+    // One round reads the list once (A2494 P3): the pane leaves it to the page.
+    const lgGet = win.Maity.api.getAll;
+    let lists = 0;
+    win.Maity.api.getAll = (p, ...a) => { if (p === "/me/cross-chats") lists++; return lgGet(p, ...a); };
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    win.Maity.api.getAll = lgGet;
+    expect(lists === 1, "cross chat: a round with the chat open reads the list once " + lists);
+  }
+  const xcPosts = [], xcPatches = [];
+  const xcPost = win.Maity.api.post, xcPatch = win.Maity.api.patch, xcPrompt = win.prompt;
+  win.Maity.api.post = (p, b) => { xcPosts.push([p, b]); return xcPost(p, b); };
+  win.Maity.api.patch = (p, b) => { xcPatches.push([p, b]); return xcPatch(p, b); };
+  byId("chat-text").value = "@agent-a from both sides";
+  main.querySelector("section.cross-chat form.compose").dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  const xcSent = (await win.Maity.api.get("/me/cross-chats/xch-0001/messages?after=2")).items.find((m) => (m.body || "").includes("@agent-a"));
+  expect(xcPosts.length === 1 && xcPosts[0][0] === "/me/cross-chats/xch-0001/messages"
+    && JSON.stringify(xcPosts[0][1]) === JSON.stringify({ body: "@agent-a from both sides" })
+    && xcSent && text(xcPane()).includes("@agent-a from both sides"),
+    "cross chat: a message is sent as text only");
+  expect(xcPane().querySelectorAll("li.msg a.mention").some((a) => a.getAttribute("href") === "#/maintainer/maity/team/agt-a"),
+    "cross chat: a mention of an agent links to its Team page");
+  win.prompt = () => "a secret";
+  const xcMsg = () => main.querySelectorAll("section.cross-chat li.msg").find((li) => text(li).includes("@agent-a from both sides") || text(li).includes("a secret"));
+  btn(xcMsg(), "Remove").click();
+  for (let k = 0; k < 4; k++) await tick();
+  expect(xcPosts.length === 2 && xcPosts[1][0] === "/me/cross-chats/xch-0001/messages/" + xcSent.id + "/redact"
+    && xcPosts[1][1].reason === "a secret" && text(xcPane()).includes("a secret"),
+    "cross chat: the owner removes a message, with the reason");
+  {
+    // A 404 on a call about the chat says the chat is gone, not "No such agent." (A2494 P2).
+    win.Maity.api.patch = (p) => Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found"));
+    byId("cross-rename").value = "Gone already";
+    byId("cross-rename").parentNode.dispatch("submit");
+    for (let k = 0; k < 4; k++) await tick();
+    expect(text(xcPane()).includes("No such chat, or you no longer read it.") && !text(xcPane()).includes("No such agent."),
+      "cross chat: a 404 on a rename says the chat is gone, not that an agent is unknown");
+    win.Maity.api.patch = (p, b) => { xcPatches.push([p, b]); return xcPatch(p, b); };
+  }
+  byId("cross-rename").value = "Both sides";
+  byId("cross-rename").parentNode.dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  expect(xcPatches.length === 1 && xcPatches[0][0] === "/me/cross-chats/xch-0001" && xcPatches[0][1].title === "Both sides"
+    && text(xcPane().querySelector(".group-title")) === "Both sides",
+    "cross chat: the owner renames it");
+  for (let k = 0; k < 8 && !byId("cross-add"); k++) await tick();
+  {
+    // Adding names an agent: there a 404 is still "No such agent."
+    win.Maity.api.post = (p, b) => (p.endsWith("/participants") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found")) : xcPost(p, b));
+    byId("cross-add").value = "agt-c";
+    byId("cross-add").parentNode.dispatch("submit");
+    for (let k = 0; k < 4; k++) await tick();
+    expect(text(xcPane()).includes("No such agent."), "cross chat: a 404 on adding an agent says the agent is unknown");
+    win.Maity.api.post = (p, b) => { xcPosts.push([p, b]); return xcPost(p, b); };
+  }
+  byId("cross-add").value = "agt-c";
+  byId("cross-add").parentNode.dispatch("submit");
+  for (let k = 0; k < 6; k++) await tick();
+  expect(xcPosts.some((p) => p[0] === "/me/cross-chats/xch-0001/participants" && p[1].member_id === "agt-c")
+    && text(xcPane().querySelector(".group-people-line")).includes("Agent C"),
+    "cross chat: the owner adds an agent");
+  {
+    // Removing someone no longer in the chat answers with their last participation (§9.5), as the hub does.
+    const again = await win.Maity.api.del("/me/cross-chats/xch-0001/participants/agt-c").then(() => win.Maity.api.del("/me/cross-chats/xch-0001/participants/agt-c"));
+    let never = null;
+    try { await win.Maity.api.del("/me/cross-chats/xch-0001/participants/agt-r"); } catch (err) { never = err.status; }
+    expect(again && again.member_id === "agt-c" && again.left_at && never === 404,
+      "cross chat fixture: a former participant's removal answers 200 with the last participation, 404 when there was none");
+  }
+  {
+    // A failed read of one's agents is said on the open chat, not hidden (A2494 P3).
+    const agGet = win.Maity.api.getAll;
+    win.Maity.api.getAll = (p, ...a) => (p === "/agents" ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable")) : agGet(p, ...a));
+    await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
+    await go("#/chats/cross/xch-0001"); for (let k = 0; k < 8; k++) await tick();
+    expect(xcPane() && text(xcPane()).includes("Your agents could not be read: down"),
+      "cross chat: a failed read of one's agents is said on the open chat " + (xcPane() ? text(xcPane()).slice(-200) : "no pane"));
+    win.Maity.api.getAll = agGet;
+  }
+  await go("#/chats/cross/new"); for (let k = 0; k < 8; k++) await tick();
+  byId("cross-member-agt-a").checked = true;
+  byId("cross-member-agt-b").checked = true;
+  main.querySelector("section.cross-new form").dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("already share a project") && win.location.hash === "#/chats/cross/new",
+    "cross chat: two agents who already share a project you can open are refused");
+  byId("cross-member-agt-b").checked = false;
+  byId("cross-member-agt-x").checked = true;
+  main.querySelector("section.cross-new form").dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  // The shim assigns location.hash without hashchange (as a browser would). route.go
+  // relies on that event, so the test fires it, the same as go().
+  win.onhashchange();
+  for (let k = 0; k < 8; k++) await tick();
+  const xcMade = main.querySelector("section.cross-chat");
+  expect(/^#\/chats\/cross\/xch-/.test(win.location.hash) && xcMade
+    && /spare/i.test(text(xcMade)) && text(xcMade).includes("Agent A"),
+    "cross chat: two agents who share no project of yours make a chat " + win.location.hash
+      + " " + (xcMade ? text(xcMade).slice(0, 180) : "no pane"));
+  {
+    // Leaving closes it; the page drawn anew says so (A2494 P3: the line was never shown).
+    const xcConfirm = win.confirm;
+    win.confirm = () => true;
+    btn(xcMade, "Leave and close").click();
+    for (let k = 0; k < 10; k++) await tick();
+    win.confirm = xcConfirm;
+    expect(text(main).includes("You left. The chat is closed.") && xcPane() && text(xcPane()).includes("This chat is closed."),
+      "cross chat: leaving closes it, and the page says so");
+  }
+  win.Maity.api.post = xcPost;
+  win.Maity.api.patch = xcPatch;
+  win.prompt = xcPrompt;
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // On a phone the header hides the Lead (tsk-m9ew7v609fq0): the Chats page, where Chat leads, carries it, once.
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   expect(main.querySelectorAll(".chats-lead .lead-button").length === 1 && header.querySelectorAll(".lead-button").length === 1
