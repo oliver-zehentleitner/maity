@@ -532,6 +532,7 @@ Latin) passes.
 | A review's `subject` (§8.4) | one | `details.fields["review.subject"]: "format"` |
 | A bridge's `purpose` (§2.3) | one | as §2.3 says |
 | A human's preferences, written or proposed (§19.4) | several | `details.fields.markdown: "control_character"` |
+| An item of a role rule's `checklist` (§6.1) | one | `details.fields["settings.role_rules.<role>.checklist"]: "multiline"` |
 
 A value stored before the rule is kept as it is and shown as it is in
 JSON. Where the hub puts a project's name into a text or Markdown line
@@ -6875,12 +6876,12 @@ silently: `invalid` with `details.fields` naming the field —
 `"settings.role_rules.<key>": "unknown_role"` for a key other than the three roles,
 `"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
 `coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
-is empty after trimming, `"multiline"` for one that holds a line break,
-a control character or an invisible format character that hides or turns text
-(Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
-marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
+is empty after trimming, `"multiline"` for one that holds a character the
+plain-text rule refuses (§1.7.1: a line break, a control or format character,
+a surrogate, a private-use character, an unassigned code point; nothing of the
+set is kept, U+200D and U+FE0F included; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
-Only those four categories are checked: a character outside them that shows
+Only the rule's categories are checked: a character outside them that shows
 nothing (a Hangul filler such as U+3164, the Braille blank U+2800, the combining
 grapheme joiner U+034F) counts as text, so an item made only of such characters is
 stored, not refused as `empty_item`.
