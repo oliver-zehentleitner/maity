@@ -63,7 +63,7 @@ def test_help_is_markdown_and_names_the_api_version(client: TestClient) -> None:
 @pytest.mark.wheel
 def test_help_keeps_literal_braces(client: TestClient) -> None:
     text = client.get("/api/v1/help").text
-    assert "`/api/v1/projects/{project_id}`" in text
+    assert "`/api/v1/projects/{owner}/{slug}`" in text
     assert '`{"title": "…"}`' in text
 
 
