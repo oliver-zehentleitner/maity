@@ -18,6 +18,10 @@ from maity_hub import tables as t
 
 MODES = ("nobody_except", "all_except")
 GUEST = "guest"
+# The trusts that may be in the set (§6.1 "Who is in the set"): named, never "all but guest",
+# so that a trust added later, `outside` among them (§2.3 "Outside"), stays out of the
+# restricted texts until the contract names it.
+SEATED_TRUSTS = ("owner", "admin", "member")
 
 
 def access(project: Any) -> dict[str, Any] | None:
@@ -29,8 +33,8 @@ def access(project: Any) -> dict[str, Any] | None:
 
 
 def _seated(row: Any) -> bool:
-    """An active member with trust above `guest`."""
-    return row is not None and row.removed_at is None and row.trust != GUEST
+    """An active member with trust `owner`, `admin` or `member` (`SEATED_TRUSTS`)."""
+    return row is not None and row.removed_at is None and row.trust in SEATED_TRUSTS
 
 
 def resolve(conn: Connection, project: Any) -> set[int]:
@@ -91,11 +95,12 @@ def would_admit_agent(
 ) -> bool:
     """Whether the set would hold an agent membership that does not exist yet, resolved now
     as `resolve` does (§3.2 item 2, §6.1 "Who is in the set"): a setting is stored, `trust`
-    is above `guest`, the owner is an active member above `guest`, and the mode names the
-    agent — listed under `nobody_except`; not listed under `all_except`, with the owner in
-    the set. `agent_id` None is a profile the exchange creates: listed nowhere."""
+    is one of `SEATED_TRUSTS` (owner, admin, member), the owner is an active member with one
+    of them, and the mode names the agent — listed under `nobody_except`; not listed under
+    `all_except`, with the owner in the set. `agent_id` None is a profile the exchange
+    creates: listed nowhere."""
     setting = access(project)
-    if setting is None or trust == GUEST or owner_id is None:
+    if setting is None or trust not in SEATED_TRUSTS or owner_id is None:
         return False
     owner = conn.execute(
         select(t.membership.c.id, t.membership.c.trust, t.membership.c.removed_at).where(
@@ -114,10 +119,10 @@ def would_admit_agent(
 
 
 def invitation_enters(project: Any, trust: str) -> bool:
-    """`restricted_texts` of an invitation's page (§3.4): `all_except` and trust above
-    `guest`, from the project and the invitation alone, never from who reads."""
+    """`restricted_texts` of an invitation's page (§3.4): `all_except` and a trust of
+    `SEATED_TRUSTS`, from the project and the invitation alone, never from who reads."""
     setting = access(project)
-    return setting is not None and setting["mode"] == "all_except" and trust != GUEST
+    return setting is not None and setting["mode"] == "all_except" and trust in SEATED_TRUSTS
 
 
 def cards_with_text(conn: Connection, project_id: str) -> int:
@@ -337,8 +342,29 @@ def _set_changed(
     seq = events.emit(
         conn, project.id, KIND, [SET_TOKEN], payload, actor=actor, restricted_list=sorted(listed)
     )
-    _notify(conn, project.id, None, seq, sorted(listed), named)
+    # The members it names are not told of themselves, nor the member who made the change
+    # of its own (§18.1), nor the human `by` names where the actor is someone else (a join
+    # exchange's new membership, the hub's own keep of an organisation's owner).
+    own = {actor.membership_id} if getattr(actor, "membership_id", None) is not None else set()
+    by_own = _by_membership(conn, project.id, by)
+    _notify(conn, project.id, None, seq, sorted(listed), named | own | by_own)
     return seq
+
+
+def _by_membership(conn: Connection, project_id: str, by: dict[str, Any] | str | None) -> set[int]:
+    """The active membership in the project of the human `by` names; none for `"hub"`."""
+    if not isinstance(by, dict) or by.get("kind") != "human":
+        return set()
+    return set(
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.human_id == by["id"],
+                t.membership.c.agent_id.is_(None),
+                t.membership.c.removed_at.is_(None),
+            )
+        ).scalars()
+    )
 
 
 def entered(

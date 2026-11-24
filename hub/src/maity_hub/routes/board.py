@@ -14,10 +14,10 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import access, clock, events, forge, idempotency, mentions, namespace, paging
+from maity_hub import access, cards, clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, leaks
 from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
@@ -251,16 +251,8 @@ def delete_link(
             select(t.card_link).where(t.card_link.c.id == link_id, t.card_link.c.card_id == card.id)
         ).first()
         if row is None:
-            # Removed already: a DELETE is idempotent (§1.5) and answers with what it
-            # removed, from the removal's entry; a link that never was is not_found.
-            removal = history.link_entry(conn, card.id, link_id, removed=True)
-            if removal is None:
-                raise not_found()
-            shown_removal = history.link_shown(removal, mine)
-            return idempotency.Outcome(200, "removed_link", removal.id, shown_removal)
-        holder = card.claim_holder == mine.id
-        if not (row.added_by == mine.id or holder or card.created_by == mine.id):
-            mine.require("tasks:admin")
+            return _removed_already(conn, mine, card, link_id)
+        _may_remove(mine, card, row.added_by)
         shown = links.link_view(conn, row)
         conn.execute(t.card_link.delete().where(t.card_link.c.id == row.id))
         entry = history.record(
@@ -271,6 +263,48 @@ def delete_link(
         return idempotency.Outcome(200, "removed_link", entry[0], shown)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _may_remove(mine: Membership, card: Any, adder: int | None) -> None:
+    """`tasks:admin`, or `tasks:write` and the link's adder, the card's holding instance
+    (§6.4) or its creator (§6.13), on the membership read under the project lock. A caller
+    with neither scope is refused `tasks:write`, as on any card write; a writer that is
+    none of the three, `tasks:admin`."""
+    if mine.may("tasks:write"):
+        if not (adder == mine.id or cards.holds(mine, card) or card.created_by == mine.id):
+            mine.require("tasks:admin")
+    elif not mine.may("tasks:admin"):
+        mine.require("tasks:write")
+
+
+def _removed_already(
+    conn: Connection, mine: Membership, card: Any, link_id: str
+) -> idempotency.Outcome:
+    """A DELETE is idempotent (§1.5): a link removed already answers with what was removed,
+    from the removal's entry, to whom the removal rule lets remove it and whose history
+    shows the entry (its isolation windows, §6.2, §6.15). Anyone else, and a link that
+    never was, is not_found."""
+    removal = history.link_entry(conn, card.id, link_id, removed=True)
+    if removal is None:
+        raise not_found()
+    # The adder by the add entry, which a redaction keeps; a link the card was created
+    # with has none and is its creator's (§6.4).
+    added = history.link_entry(conn, card.id, link_id, removed=False)
+    try:
+        _may_remove(mine, card, card.created_by if added is None else added.actor_membership)
+    except ApiError as refused:
+        if refused.status != 403:
+            raise
+        raise not_found() from None
+    visible = events.outside_window_times(conn, mine.project.id, mine.row, t.card_history.c.at)
+    if visible is not None and (
+        conn.execute(
+            select(t.card_history.c.id).where(t.card_history.c.id == removal.id, visible)
+        ).first()
+        is None
+    ):
+        raise not_found()
+    return idempotency.Outcome(200, "removed_link", removal.id, history.link_shown(removal, mine))
 
 
 # --- history (§6.15) -----------------------------------------------------------------------
@@ -719,8 +753,9 @@ def _refuse_credentials(request: Request, issue: dict[str, Any]) -> None:
     found = credentials.find_all(text.encode())
     if not found:
         return
-    with transaction(engine_of(request)) as conn:
-        revoke_leaked(conn, found)
+    if leaks.lookups(found):  # only an id the hub could have made is worth the database
+        with transaction(engine_of(request)) as conn:
+            revoke_leaked(conn, found)
     raise ApiError(
         400,
         "credential_in_payload",

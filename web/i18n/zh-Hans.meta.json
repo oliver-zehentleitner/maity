@@ -1567,6 +1567,18 @@
     "en": "89fa136908846c6b",
     "text": "bb0c17a854fe6921"
   },
+  "board.claim_for.busy": {
+    "en": "0385dd7c49e50091",
+    "text": "08b7103d19b31307"
+  },
+  "board.claim_for.done": {
+    "en": "ede8e762c76c457e",
+    "text": "e941abfe27a4f5d0"
+  },
+  "board.claim_for.failed": {
+    "en": "7b7c2cd238073bb7",
+    "text": "3d38dd2c8e5c0859"
+  },
   "board.closed.failed": {
     "en": "76ff07448abbd4a4",
     "text": "452f576bb3706077"
@@ -2755,6 +2767,10 @@
     "en": "0ccf3532a4a1e18b",
     "text": "84f5b8ae4cc19cb8"
   },
+  "cards.claim_for": {
+    "en": "4440b3017b2785d4",
+    "text": "2ef66f690b843b66"
+  },
   "cards.column.blocked": {
     "en": "c0ee434b7aa8dedc",
     "text": "f31e1548791c257e"
@@ -2963,6 +2979,10 @@
     "en": "5dbecb696e153ff0",
     "text": "4f8c77e409a039f6"
   },
+  "cards.refused.humans_only": {
+    "en": "22d8ce42a6288aef",
+    "text": "c9a011b427f17502"
+  },
   "cards.refused.invalid_transition": {
     "en": "fc91d0183a098be3",
     "text": "803d05299410e489"
@@ -2983,6 +3003,10 @@
     "en": "ca10ba106157a953",
     "text": "27d6911cd81573b1"
   },
+  "cards.refused.not_open_to_outsiders": {
+    "en": "1a00c2735888374f",
+    "text": "a522150fe5b7159e"
+  },
   "cards.refused.project_closed": {
     "en": "4205ad383022da26",
     "text": "28c3d5d7b0e036cc"
@@ -3002,6 +3026,10 @@
   "cards.refused.subtasks_and_deps": {
     "en": "e93f2c3881226d23",
     "text": "b8cb2424db239b2d"
+  },
+  "cards.refused.tasks_admin": {
+    "en": "df0f7e647ea9a5d4",
+    "text": "902baf112e6e632e"
   },
   "cards.refused.unknown": {
     "en": "63f07dba790acba0",
@@ -7947,6 +7975,10 @@
     "en": "8d28a5f16e6a31c7",
     "text": "cac4685bcdf37dd4"
   },
+  "join.field.outsider_hint": {
+    "en": "5e8e00522d104a78",
+    "text": "8b223dde65b65ec8"
+  },
   "join.field.own_hint": {
     "en": "a79fceb9b8208c11",
     "text": "9dafb5ecd7707c11"
@@ -12583,10 +12615,6 @@
     "en": "882b49ec1eaeb64f",
     "text": "a3924ce5126c96b7"
   },
-  "org.fleet.dot": {
-    "en": "94fb57e8623b60df",
-    "text": "d8e6d0ac60a3539b"
-  },
   "org.fleet.empty": {
     "en": "1f501a2d2053d5ab",
     "text": "5f8487f81f271bc1"
@@ -12608,8 +12636,8 @@
     "text": "d41a275087b9a71e"
   },
   "org.instance.label": {
-    "en": "3ace85d6a46a06aa",
-    "text": "f94db44b70d3063a"
+    "en": "13623f816f3410b9",
+    "text": "96f227c4ec8d5981"
   },
   "org.intro": {
     "en": "7a2f5a5f243a03a6",
@@ -12962,6 +12990,26 @@
   "orgs.title": {
     "en": "b58edddaa8f66d6d",
     "text": "303a1e1bffb24d23"
+  },
+  "outsider.add_agent": {
+    "en": "fcabf74d411347ee",
+    "text": "79e2798b15c1ed80"
+  },
+  "outsider.join.closed": {
+    "en": "9c89e4b1d48d49e1",
+    "text": "07f18533397a0d2e"
+  },
+  "outsider.join.role": {
+    "en": "f24b9087d8951d8a",
+    "text": "e7d9cef233e98ecc"
+  },
+  "outsider.reason.blocked": {
+    "en": "903a7ae9cc8ff6d8",
+    "text": "d417682299f665fb"
+  },
+  "outsider.reason.limit": {
+    "en": "4d8377b7c79c42b8",
+    "text": "be418e881256500c"
   },
   "overview.badge.agents_online": {
     "en": "21dc1a4560871eb4",

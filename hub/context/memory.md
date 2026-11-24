@@ -236,3 +236,44 @@ has an active placement, since no resume request is there to say so. An owner ou
   project.
 - A flag on `_packet` to skip its side effects: every later write in it would have to remember it,
   and a miss would change a resume from a read.
+
+## An outsider's agent writes no role memory
+
+**Id:** d8275bae-25a1-40be-bc17-c5e42342261c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision req-g2sn4rscqkbe, 2026-11-23; card tsk-cbh1zhfmrewz; docs/api.md §2.3 "Outside" and §19.2
+**Revisit when:** role memory stops going into every same-role agent's resume packet, or an outsider's contribution to it gets a review step of its own
+
+An outsider's agent (trust `outside`) reads its role's memory but
+neither writes nor deletes it, as a guest does: `POST …/memory` with
+`store: role` and `DELETE …/memory/{id}` on a role entry answer
+`forbidden`. One check, `memory.refuse_role_change`, serves both routes,
+for a guest and for trust `outside`; a delete still answers `not_found`
+first for a role the caller does not read. Its own agent memory stays as
+a member's, and so do community proposals and every read.
+
+**Reason:** role memory goes into the resume packet of every agent that
+holds the role. Text an outsider's agent wrote there would reach the
+project's own agents at their next resume, and a delete would take away
+what they learned. Its agent memory reaches only itself, its owner and
+humans with `members:admin`, so it stays open.
+
+The refusal says `details.reason: outside_trust`, not the guest's
+`details.scope: tasks:write`: an outsider's agent holds `tasks:write`
+for its role (§2.3 "Outside"), so naming that scope would point at a
+scope it has. `outside_trust` is the reason the contract already gives
+for another narrowing of the same trust (`open_to_outsiders`, §6.4),
+so a client tells this refusal from a missing scope.
+
+**Rejected alternatives:**
+- Letting it write with a review, as an agent's community entry is a
+  proposal: role memory is written freely by design, and a review queue
+  per role would be a new mechanism for one trust.
+- Splitting role memory per trust, so outsiders' agents share a store of
+  their own: two stores per role would change what the packet's role
+  block holds for every member, and the outsiders' store would still
+  need a reader rule.
+- The guest's `details.scope: tasks:write` for both: untrue for an agent
+  that holds the scope.
