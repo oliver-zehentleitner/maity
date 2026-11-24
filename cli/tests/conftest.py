@@ -31,6 +31,7 @@ collect_ignore = (
         "test_confinement.py",
         "test_gitignore_placeholders.py",
         "test_operate.py",
+        "test_python_tools.py",
         "test_runner.py",
         "test_runner_install.py",
         "test_runner_installers.py",

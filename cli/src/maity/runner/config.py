@@ -31,6 +31,11 @@ DEFAULT_SKILLS_DIR = "~/.local/share/maity-runner/skills"
 DEFAULT_VENVS_DIR = "~/.local/share/maity-runner/venvs"
 # A subpackage of the clone `clone_venvs` names: one plain directory name at the clone's root.
 VENV_SUBPACKAGE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+# A directory of the clone whose scripts `python_tools` lets a Claude Code session run with
+# python3 (plaincall.python_tool): relative to the clone's root, up to four plain names joined
+# by `/`. No `.` anywhere, so no `..`, no hidden directory and no leading or trailing `/`.
+_TOOLS_PART = r"[A-Za-z0-9_][A-Za-z0-9_-]{0,63}"
+PYTHON_TOOLS_DIR = re.compile(rf"{_TOOLS_PART}(?:/{_TOOLS_PART}){{0,3}}")
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -187,6 +192,10 @@ class RepositoryGrant:
     # `allow` entries for gh, which no session runs any more: left out of `allow`, named by
     # `maity runner check`, never a reason to stop the runner or its other placements.
     refused: tuple[str, ...] = ()
+    # Directories of the clone (PYTHON_TOOLS_DIR) whose `<name>.py` scripts a sandboxed Claude
+    # Code session may run as `python3 <dir>/<name>.py …` from the clone's root, held to that
+    # form by the runner's hook (plaincall.python_tool, cli/context/runner.md). Empty: none.
+    python_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -598,7 +607,11 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
                 pull_requests=table.get("pull_requests", bool, False),
                 lead=table.get("lead", bool, False),
                 refused=gh,
-            )
+                python_tools=tuple(dict.fromkeys(table.get(
+                    "python_tools", list, [],
+                    check=_strings(PYTHON_TOOLS_DIR, "a directory of the clone like web/tools"),
+                ))),
+            )  # fmt: skip
             table.done()
 
     git = GitIdentity()

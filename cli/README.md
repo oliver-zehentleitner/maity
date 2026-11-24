@@ -1103,6 +1103,23 @@ and `maity` as any part of an argument (between `/`, `:`, `=` and the
 other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
 case or with a Windows extension. `maity` is the runner's own rule.
 
+`python_tools` names directories of the clone whose scripts a sandboxed
+Claude Code session may run as `python3 <dir>/<name>.py` with plain
+arguments, from the clone's root:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+python_tools = ["tools", "web/tools"]
+```
+
+Each entry is a path relative to the clone's root of up to four names
+of letters, digits, `_` and `-`, joined by `/`: no `.`, so no `..` and
+no hidden directory. The default is none. The runner writes the
+matching rules only where the sandbox is on and the hook is its own
+(not on an ssh host), and its hook holds such a line to that exact form
+([`docs/runners.md`](../docs/runners.md#letting-agents-run-the-repositorys-own-python-tools)
+has the rules and a full configuration). The sandbox stays the boundary.
+
 Every agent commits as the identity in `[git]`, author and committer
 alike:
 
