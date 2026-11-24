@@ -7689,14 +7689,8 @@ A venv that cannot be had is logged and never fails a start. Elsewhere (the agen
 ssh host) the runner builds none and says so: the agents' user could not read the runner's
 directory, and a build there would need its own path, as the skill has (skills.deliver).
 
-**Not verified:** the rules name the venv by its resolved path, while the session reaches it
-through the link in its clone, a path the clone's Edit and Write allow matches. For commands the
-OS sandbox resolves the link and its denyWrite holds. Claude Code's file tools apply its
-permission rules themselves, and whether their Edit deny follows the link to its target is not
-tested here; so writing the venv through the clone's link with the file tools is not claimed to
-be refused. The venv's `bin/python` links on to the runner's python3, which in the `single`
-layout may belong to the agents' user. Follow-up: a live probe on the pinned Claude Code (an
-Edit and a Write through `<sub>/.venv` into the venv, and through `bin/python`), recorded here.
+**Not verified:** file-tool writes through the clone's link are not tested here; follow-up: a
+live probe on the pinned Claude Code, recorded here (the details are in the card's notes).
 
 The same card's other parts: tools/guards.sh takes `hub/.venv/bin/python` when it is there, else
 `python3` as before; the repository's `.gitignore` hides the sandbox's placeholders, which
