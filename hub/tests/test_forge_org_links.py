@@ -12,6 +12,7 @@ fake opener at the end.
 from __future__ import annotations
 
 import base64
+import contextvars
 import io
 import json
 import urllib.error
@@ -35,6 +36,7 @@ from maity_hub import (
     ktw,
     probe,
     secretbox,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
@@ -1221,6 +1223,218 @@ def test_a_link_that_changes_during_the_replacements_check_is_forge_unavailable(
     assert (row.human_id, row.status) == (owner.id, "suspended")
     assert _records(migrated, owner.id) == [] and _records(migrated, anna.id) == []
     assert app.calls.count("membership:acme/maintainer-gh") == 1  # no retry
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "unlinked",  # its human unlinked it, or their account went
+        "removed",  # the forge reported it removed
+        "linked_by_the_caller",  # the caller's own link of it, by another request, won
+    ],
+)
+def test_any_change_of_the_link_during_the_replacements_check_is_forge_unavailable(
+    owner: flow.Human, anna: flow.Human, app: FakeApp, migrated: Engine, change: str
+) -> None:
+    """Review A2545 #1: the replacement's link is compared before anything else, so no change
+    of it lets the new link through on a check that did not decide it (Q2, seq 214797)."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=5), ok=timedelta(minutes=5))
+    app.memberships[("acme", "maintainer-gh")] = None  # the check would say "no owner"
+
+    def meanwhile() -> None:
+        with migrated.begin() as conn:
+            if change == "unlinked":
+                conn.execute(t.forge_link.delete())
+            elif change == "removed":
+                conn.execute(update(t.forge_link).values(status="removed"))
+            else:
+                conn.execute(update(t.forge_link).values(human_id=anna.id, forge_user_id=43))
+
+    app.during_check = meanwhile
+    with migrated.connect() as conn:
+        before = list(conn.execute(select(t.forge_link)))
+    assert _anna_links(anna) == DONE + "?error=forge_unavailable"
+    with migrated.connect() as conn:
+        after = list(conn.execute(select(t.forge_link)))
+    assert len(after) == (0 if change == "unlinked" else 1)
+    if after:
+        assert after[0].id == before[0].id  # the row as `meanwhile` left it, not a new link
+    assert _records(migrated, owner.id) == [] and _records(migrated, anna.id) == []
+
+
+def _caller_ends(engine: Engine, project_id: str, how: str) -> tuple[Any, Any]:
+    """A calling request's binding and what ends it during the owner check: a human the guard
+    checks who is deleted or suspended meanwhile, or a bridged call whose connection is gone."""
+    caller = factory.human(engine, "carol")
+
+    def bind() -> None:
+        if how == "bridge":
+            write_guard.bind_bridge(project_id, "brg-ended")
+        else:
+            write_guard.bind(caller)
+
+    def end() -> None:
+        if how == "bridge":
+            return  # no such connection: `bridges.still_live` refuses it
+        column = "deleted_at" if how == "deleted" else "suspended_at"
+        with engine.begin() as conn:
+            conn.execute(
+                update(t.human).where(t.human.c.id == caller).values({column: clock.now()})
+            )
+
+    return bind, end
+
+
+@pytest.mark.parametrize("how", ["deleted", "suspended", "bridge"])
+def test_a_definite_no_is_written_whatever_becomes_of_the_calling_request(
+    owner: flow.Human, app: FakeApp, migrated: Engine, how: str
+) -> None:
+    """Review A2545 #2: the check's write is the link human's, not the caller's; a caller that
+    ends while the check runs, after the claim moved `checked_at`, must not drop it."""
+    _org_link(migrated, owner.id, checked=TEN, ok=TEN)
+    bind, end = _caller_ends(migrated, _project_id(migrated), how)
+    app.memberships[("acme", "maintainer-gh")] = None
+    app.during_check = end
+
+    def as_the_caller() -> Any:
+        bind()
+        return forge_links.refresh(migrated, APP, _link_row(migrated))
+
+    row = contextvars.copy_context().run(as_the_caller)
+    assert row.status == "not_admin"
+    assert _records(migrated, owner.id) == ["not_admin"]
+
+
+@pytest.mark.parametrize("how", ["deleted", "suspended", "bridge"])
+def test_a_refused_mint_is_written_whatever_becomes_of_the_calling_request(
+    owner: flow.Human, migrated: Engine, how: str
+) -> None:
+    """`ForgeAccess._gone`, as `refresh` (A2545 #2)."""
+    _org_link(migrated, owner.id)
+    bind, end = _caller_ends(migrated, _project_id(migrated), how)
+
+    def as_the_caller() -> None:
+        bind()
+        end()
+        _access(migrated)._gone(forge_links.Link.of(_link_row(migrated)), "suspended")
+
+    contextvars.copy_context().run(as_the_caller)
+    assert _link_row(migrated).status == "suspended"
+
+
+def test_a_replacement_drops_the_tokens_and_its_check_keeps_none(
+    owner: flow.Human, anna: flow.Human, app: FakeApp, migrated: Engine
+) -> None:
+    """Review A2545 #7: the existing link served, so its own reads keep their token; the
+    replacement's check mints one for itself alone, and the replacement drops what is held."""
+    _org_link(migrated, owner.id)
+    github_app._tokens[(APP.app_id, INSTALLATION)] = ("held", 2**40)
+    app.memberships[("acme", "maintainer-gh")] = None
+    assert _anna_links(anna) == DONE
+    assert app.kept == [False]
+    assert (APP.app_id, INSTALLATION) not in github_app._tokens
+
+
+def test_a_replacements_unlinked_record_names_the_login_its_check_read(
+    owner: flow.Human, anna: flow.Human, app: FakeApp, migrated: Engine
+) -> None:
+    _org_link(migrated, owner.id)
+    app.login = "acme-renamed"
+    app.memberships[("acme-renamed", "maintainer-gh")] = None
+    assert _anna_links(anna) == DONE
+    with migrated.connect() as conn:
+        logins = conn.execute(
+            select(t.account_record.c.data)
+            .where(
+                t.account_record.c.human_id == owner.id,
+                t.account_record.c.type == "forge_access_changed",
+            )
+            .order_by(t.account_record.c.n)
+        ).scalars()
+        assert [(d["change"], d["login"]) for d in logins] == [
+            ("not_admin", "acme-renamed"),
+            ("unlinked", "acme-renamed"),
+        ]
+
+
+def test_a_check_overtaken_by_a_newer_one_writes_nothing(
+    owner: flow.Human, app: FakeApp, migrated: Engine
+) -> None:
+    """Review A2545 #8: a replacement's check that kept the link, or a relink of its human,
+    wrote a newer `checked_at` while this one ran: this one's "no" is not written over it, and
+    no token is dropped for it."""
+    _org_link(migrated, owner.id, checked=TEN, ok=TEN)
+    app.memberships[("acme", "maintainer-gh")] = None
+    github_app._tokens[(APP.app_id, INSTALLATION)] = ("held", 2**40)
+
+    def newer() -> None:
+        later = clock.now() + timedelta(seconds=1)
+        with migrated.begin() as conn:
+            conn.execute(update(t.forge_link).values(checked_at=later, owner_ok_at=later))
+
+    app.during_check = newer
+    row = forge_links.refresh(migrated, APP, _link_row(migrated))
+    assert row is not None and row.status == "active" and _records(migrated, owner.id) == []
+    assert (APP.app_id, INSTALLATION) in github_app._tokens
+
+
+def test_a_relink_locks_the_callers_own_link(
+    owner: flow.Human, app: FakeApp, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A2545 #10: the caller's own link is read under its row lock too, so a concurrent
+    relink or replacement waits for this one."""
+    assert _json_setup(owner).status_code == 200
+    locks: list[bool] = []
+    existing = forge_links._existing
+
+    def spied(conn: Any, installation_id: int, lock: bool = False) -> Any:
+        locks.append(lock)
+        return existing(conn, installation_id, lock)
+
+    monkeypatch.setattr(forge_links, "_existing", spied)
+    assert _json_setup(owner).status_code == 200
+    assert locks == [False, True]
+
+
+def test_a_relink_of_a_link_gone_meanwhile_is_forge_unavailable(
+    owner: flow.Human, app: FakeApp, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gone = forge_links.Link(
+        "fgl-gone", owner.id, INSTALLATION, "active", "Organization", ORG_ID, "acme", 42,
+        clock.now(), clock.now(),
+    )  # fmt: skip
+    monkeypatch.setattr(forge_links, "_existing", lambda conn, iid, lock=False: gone)
+    assert _error(_json_setup(owner)) == (503, "forge_unavailable", {})
+    assert _records(migrated, owner.id) == []
+
+
+def test_a_first_link_that_loses_to_another_is_forge_unavailable(
+    owner: flow.Human,
+    anna: flow.Human,
+    app: FakeApp,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two first links of one installation at once: the one whose insert meets the other's
+    committed row answers `forge_unavailable` (the human links again), never a 500, and never
+    `installation_linked`, which it could not tell from the caller's own."""
+    _org_link(migrated, owner.id)  # the other request's link, committed after this one read
+    monkeypatch.setattr(forge_links, "_existing", lambda conn, iid, lock=False: None)
+    assert _error(_json_setup(anna, "anna")) == (503, "forge_unavailable", {})
+    assert _link_row(migrated).human_id == owner.id
+    assert _records(migrated, anna.id) == []
+
+
+def test_a_removed_link_keeps_its_choice_no_longer_than_any_other(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """Review A2545 #9 (its second part): a `removed` link is never checked again, so the
+    choice that rests on it has no check to end with."""
+    _org_link(migrated, owner.id, status="removed")
+    _confirm(owner)
+    access = _access(migrated)
+    forge.Forge(OPERATOR, access=access).for_project(_project_id(migrated))
+    assert access._chosen[_project_id(migrated)][3] is None
 
 
 def test_a_former_owner_cannot_take_the_link_back_while_the_new_owner_passes(
