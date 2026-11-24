@@ -307,7 +307,7 @@ always encodes.
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (for an installation on a forge organisation also when the caller's owner check, or the check of the link it would replace, gave no definite answer; not built yet) or checking an owner's own token before it is stored (`PUT /me/forge/github/token`) (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11); also, for the human named in `confirmed_by`, a read resting on a link to an installation on a forge organisation that has had no successful owner check in the last 10 minutes (§11.4; not built yet) |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11); also, for the human named in `confirmed_by`, a probe read of a repository whose only covering source would be an `active` link to an installation on a forge organisation that has had no successful owner check in the last 10 minutes and whose check has no answer (§11.4, "What a project sees"; not built yet) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached, or no pooled connection to it came free in time (`/health`, and any call that needs it); `Retry-After` is set, the same for both causes; `details` is `{}`, the message carries no driver text |
 | 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
@@ -19816,26 +19816,41 @@ any other `403`, one for a missing permission or a spent budget
 included, and a `429` — and no answer at all count as no answer: no
 status changes, but once the last successful check is 10 minutes old
 the link serves nothing until a check succeeds, and a read that would
-rest on it answers `probe_unavailable` for the human named in
-`confirmed_by` (and as below for the project's other readers).
+rest on it, when no other source covers the repository, answers
+`probe_unavailable` for the human named in `confirmed_by` (and as below
+for the project's other readers).
 
-*What a project sees.* While the link is `not_admin`, the source
-choice goes on as for any installation that no longer covers the
-repository (the order at the top of this section): the confirming
-owner's own token if it covers it, then the instance token where it may
-serve. When none covers it, every read answers `probe_not_configured`
-with `details.reason: installation_not_admin` for the human named in
-`confirmed_by`. There is one reason for every link that serves nothing:
-for the project's other `project:admin` readers every read that rests
-on a link to an installation on a forge organisation that serves
-nothing — `not_admin`, suspended, removed, or without a successful
-owner check in the last 10 minutes — answers `probe_not_configured`
-with `details.reason: installation_link_invalid`, and for everyone else
-`probe_not_configured` with `details: {}`. The human named in
-`confirmed_by` gets the specific reason where there is one:
-`installation_not_admin`, `installation_suspended` or
-`installation_removed`, and `probe_unavailable` while the owner check
-has no answer (above). An installation on a user account keeps the
+*What a project sees.* A link to an installation on a forge
+organisation that serves nothing — `not_admin`, suspended, removed, or
+without a successful owner check in the last 10 minutes, `active` ones
+included and whatever its check, when due, answered — is not the
+project's source. The source choice goes on as for any installation
+that no longer covers the repository (the order at the top of this
+section): the confirming owner's own token if it covers it, then the
+instance token where it may serve; `probe_via` names the source that
+covers it, or is `null` when none does. That holds while the owner
+check has no answer too: only a forge that does not answer the choice's
+own lookup of the repository's installation (above) stops the choice
+before the other sources. When none covers it, every read answers by
+reader:
+
+- the human named in `confirmed_by` gets the specific reason:
+  `probe_not_configured` with `details.reason` `installation_not_admin`,
+  `installation_suspended` or `installation_removed`, and
+  `probe_unavailable` while the link is `active` and its owner check has
+  no answer (above), with `details.last` on `GET …/probe` as every
+  `probe_unavailable` there carries it;
+- the project's other `project:admin` readers get one reason for every
+  such state: `probe_not_configured` with `details.reason:
+  installation_link_invalid`;
+- everyone else gets `probe_not_configured` with `details: {}`.
+
+The Keep the Why views' reads (§11.5) answer the same, with one
+difference for the human named in `confirmed_by` while the owner check
+has no answer: `ktw_unavailable` with `details.reason:
+forge_unavailable`, as §11.5 answers a forge that does not answer, and
+without `details.last`, since no export read through the link outlives
+its last successful check. An installation on a user account keeps the
 reasons above for every `project:admin` reader.
 
 Nothing is learned from the forge about the organisation beyond that
@@ -20193,7 +20208,12 @@ member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
 `repository_moved` or `bodies_url_invalid`, and only this code with
 `details.last`, the last good answer in the shape above, when the hub
 holds one: `probe_unavailable`, `probe_not_configured` and `not_found`
-from §11.5 never carry an export. The dashboard's provider turns
+from §11.5 never carry an export. A read that would rest on a link to an
+installation on a forge organisation that serves nothing answers as
+§11.4 says ("What a project sees"; not built yet): for the human named
+in `confirmed_by`, while that link's owner check has no answer,
+`ktw_unavailable` with reason `forge_unavailable` and no
+`details.last`. The dashboard's provider turns
 each into the library's `{ error }`, so a view says why it has nothing
 instead of failing.
 

@@ -35,7 +35,11 @@
   project admins see the new neutral reason `installation_link_invalid` for a
   `not_admin`, suspended, removed or overdue link on an organisation, and the human who
   confirmed the project the specific reason (the new `installation_not_admin` among
-  them). One human holds an installation's link at a time, but another owner's link may
+  them). Such a link is not the project's source: the choice goes on to the confirming
+  owner's own token and the instance token, `probe_via` naming the one that covers or
+  `null`, also while the owner check has no answer; only then does a read answer, the
+  confirming human getting `probe_unavailable` (and, from the Keep the Why views,
+  `ktw_unavailable` without the last export). One human holds an installation's link at a time, but another owner's link may
   replace it: a link is checked again right before another owner's link replaces it,
   `active`, `not_admin` or `suspended`, at once, the one exception to the 10-minute
   cadence (a `removed` link is replaced without a check), since
