@@ -21,8 +21,9 @@
 # checkout's hub. A run that did not check never ends in 0: every step runs in an environment
 # of its own (see `clean`), so no inherited setting can make it pass without testing.
 #
-# Trusted, not checked: the caller's shell and PATH, and the clone's own git configuration and
-# hooks. An author who sets their clone against the guards can get past them; CI stays the gate.
+# Trusted, not checked: the caller's shell and PATH, the clone's own git configuration and
+# hooks, and the work tree's hub/.venv/bin/python, whoever made it (the default HUB_PYTHON). An
+# author who sets their clone against the guards can get past them; CI stays the gate.
 set -uo pipefail
 # Messages from git, make and Python in one language, whatever the reader's locale.
 export LC_ALL=C

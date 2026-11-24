@@ -28,6 +28,7 @@ collect_ignore = (
         "test_availability.py",
         "test_claude_sandbox_probe.py",
         "test_confinement.py",
+        "test_gitignore_placeholders.py",
         "test_operate.py",
         "test_runner.py",
         "test_runner_install.py",
@@ -40,6 +41,7 @@ collect_ignore = (
         "test_supervisor_notes.py",
         "test_supervisor_pickup.py",
         "test_supervisor_watch.py",
+        "test_venvs.py",
         "test_watch.py",
     ]
     if sys.platform == "win32"

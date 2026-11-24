@@ -53,6 +53,12 @@ def test_a_uv_lock_with_markers_extras_and_comments_passes_one_line_per_requirem
         f"./local.whl --hash=sha256:{H}",
         f"anyio==4.15.1 --hash=md5:{'a' * 32}",
         f"anyio==4.15.1 --hash=sha256:{H} --no-binary=:all:",
+        # After an environment marker too, whose characters alone would let an option through.
+        f"anyio==4.15.1 ; python_version>'3' --pre --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' --find-links=. --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' --config-settings=x=y --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' --global-option=x --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' -e . --hash=sha256:{H}",
     ],
 )
 def test_anything_but_a_pinned_hashed_requirement_refuses_the_lock(line: str) -> None:

@@ -25,7 +25,9 @@ maity-hub.db
 # keeps the two equal). The runner hides them in .git/info/exclude, but tools/guards.sh reads
 # .gitignore files alone, so without these lines it refuses to start in a placed coder's clone.
 # Each is anchored at the root; `.idea/` above matches a directory only, and the placeholder is
-# a file. A real .gitmodules is tracked, so this line hides only an untracked one.
+# a file. A real .gitmodules is tracked, so this line hides only an untracked one. These lines
+# hide real content at these paths too, in every checkout (a project .mcp.json, .vscode/ or
+# .claude/skills entry): such a file is committed with `git add -f`, and shows in the diff then.
 /.bash_profile
 /.bashrc
 /.claude/agents

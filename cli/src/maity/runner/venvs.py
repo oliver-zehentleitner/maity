@@ -9,15 +9,17 @@ runs nothing from the clone while it does:
   configuration). The work tree's copy is never read: the agent can write it, and the runner runs
   no git in a clone (workspace.py).
 - Every requirement must be `name==version`, optionally with extras and an environment marker,
-  with at least one `--hash=sha256:`; anything else (an option, a URL, a path, an include)
-  refuses the lock.
+  with at least one `--hash=sha256:`; anything else (an option, also one after a marker, a URL,
+  a path, an include) refuses the lock.
 - pip installs wheels only (`--only-binary=:all:`), each checked against its hash, with no
   resolution of its own (`--no-deps`): no build script of any package runs.
 - The clone's own package is not built, since its build script is clone code: a `.pth` names
   `<clone>/<sub>/src`.
-- Each venv is built into a new directory with the system Python and swapped in by rename; the
+- Each venv is built into a new directory with the runner's python3 (the first on its PATH) and
+  swapped in by rename; the
   runner never runs a venv's interpreter after a session could reach it. A session reads and
-  runs it and writes nothing there (adapters.claude_settings).
+  runs it; its commands cannot write it (adapters.claude_settings), and whether Claude Code's
+  file tools refuse a write through the clone's link is not verified (cli/context/runner.md).
 - `<clone>/<sub>/.venv` is made a link to it only where nothing stands there, and only below a
   real directory: a link the agent put on the way is never followed.
 """
@@ -46,6 +48,7 @@ _REQUIREMENT = re.compile(
     r"(?:\s*;\s*[A-Za-z0-9_ .<>=!'\"(),~-]+?)?"
     r"(?:\s+--hash=sha256:[0-9a-f]{64})+"
 )
+_HASH = re.compile(r"--hash=sha256:[0-9a-f]{64}")
 _PIP_ENV = ("PATH", "HOME", "LANG", "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY",
             "no_proxy", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR")  # fmt: skip
 
@@ -65,7 +68,10 @@ def check_lock(text: str) -> str:
         if not line or line.startswith("#"):
             continue
         line = " ".join(line.split())
-        if not _REQUIREMENT.fullmatch(line):
+        # An option rides on no line: every token that starts with '-' is a sha256 hash, also
+        # after an environment marker, whose characters alone would let one through.
+        options = [w for w in line.split() if w.startswith("-") and not _HASH.fullmatch(w)]
+        if options or not _REQUIREMENT.fullmatch(line):
             raise Unavailable(
                 f"the lock holds a line that is no pinned, hashed requirement: {line[:80]!r}"
             )
