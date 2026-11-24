@@ -12461,7 +12461,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const createPrivateGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/orgs" ? Promise.resolve({ items: [{ handle: "ours", display_name: "Ours", my_role: "owner" }, { handle: "theirs", display_name: "Theirs", my_role: "admin" }] }) : createPrivateGet(p));
   await go("#/all"); await go("#/new"); await tick(); await tick();
-  expect(byId("project-private") && !byId("project-private").checked && !byId("project-private").disabled && text(main).includes("A private repository keeps the project private"),
+  expect(byId("project-private") && !byId("project-private").checked && !byId("project-private").disabled && text(main).includes("With a repository the project starts private, whatever is chosen here, unless the hub can already read the repository as public."),
     "create: Private starts unticked for the namespace owner, with the repository's note");
   byId("project-owner").value = "theirs"; byId("project-owner").dispatch("change");
   expect(byId("project-private").checked && byId("project-private").disabled && text(main).includes("an owner of the organisation can make it public"),
