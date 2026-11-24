@@ -28,8 +28,9 @@ the system and sshd.
 2. **root on the server**, any directory:
    `git clone https://github.com/oliver-zehentleitner/maity /root/maity && cd /root/maity && git checkout <sha>`
    (`<sha>`: the commit the ops agent names; the scripts are read at that commit, not at whatever `main` is later).
-3. **root, `/root/maity/deploy/runner`:** `./bootstrap-server.sh`. It ends with `ok:` or with a `FAIL:` line (stop and
-   report that line).
+3. **root, `/root/maity/deploy/runner`:** `./bootstrap-server.sh`. It ends with `ok:` on success. Anything else is a
+   stop: one or more `FAIL:` lines from its self-test, an error message from an earlier check (for example
+   `unexpected Docker key fingerprint`), or the output of a failed command. Stop and report the last lines.
 3b. **root, any directory (right after the bootstrap, before any runner exists):** switch off password login (for every user, root included). A timer
    undoes the change after three minutes unless you stop it, so a mistake cannot lock you out. One command, so that the drop-in is never written
    without the timer (`ssh` is Ubuntu's unit name):

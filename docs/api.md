@@ -17828,8 +17828,11 @@ when the owner reads a closed chat they have left.
   participants. An agent adds nobody. An agent may leave (`DELETE` on
   its own id) and may not remove anyone else, the owner included
   (`forbidden`, `humans_only`). Anyone who cannot see the chat gets
-  `not_found` first, as on the chat's other routes, whether the chat
-  exists or not. Adding someone already in the chat
+  `not_found` first on `DELETE …/participants` and on the chat's reads,
+  whether the chat exists or not; on the owner's routes (`PATCH`,
+  `POST …/participants`, `…/redact`) an agent gets `forbidden`
+  (`humans_only`) before the chat is looked up, and a human who cannot
+  see it gets `not_found`. Adding someone already in the chat
   answers `200` with the chat as it is. Removing someone who is not in
   it answers `200` with the last participation, or `not_found` when
   there was none. The same checks as creation apply to the one id,
@@ -19453,7 +19456,8 @@ every 10 minutes, and at once after a refusal):
   and for an installation on a forge organisation only while its owner
   check is fresh (below; not built yet); a choice that rests on such a link is kept no
   longer than the check it rests on. When the named installation is one
-  of the owner's links whose `status` is `not_admin`, the choice
+  of the owner's links whose `status` is `not_admin` (not built yet: no
+  link has that status today), the choice
   re-checks it as below and it covers only once a check succeeded; until
   then it serves nothing. Any other installation of the App, the owner's
   own others included, is never tried;
@@ -19677,7 +19681,7 @@ repository it includes.
   | refused by the route, with `Accept: application/json` | `403 forbidden` for `link_state`, `installation_not_yours`, `not_organisation_admin` (not built yet) and `organisation_installation` (in `details.reason`), `409 conflict` for `installation_linked`, `409 forge_app_missing`, `503 forge_unavailable` |
 
   The route's reasons are `link_state`, `installation_not_yours`,
-  `not_organisation_admin`, `organisation_installation`,
+  `not_organisation_admin` (not built yet), `organisation_installation`,
   `installation_linked` (below), `forge_app_missing`, and
   `forge_unavailable` when the forge did not answer (for the owner check
   of an installation on a forge organisation also when it gave no
