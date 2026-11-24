@@ -5446,7 +5446,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aoForm() && byId("agent-owners-select").value === "" && text(byId("agent-owners-select")).includes("Not set, follows the public page (now: "),
     "agent owners: unset, the form says what it reads now");
   const aoRoles = aoForm().querySelectorAll("input").filter((b) => b.attrs.type === "checkbox").map((b) => b.attrs.value);
-  expect(aoRoles.join() === "coder,designer,writer,blue-team" && byId("outside-role-coder").checked && !byId("outside-role-writer").checked,
+  expect(aoRoles.join() === "coder,designer,writer" && byId("outside-role-coder").checked && !byId("outside-role-writer").checked,
     "agent owners: only the working roles are offered, coder by default " + aoRoles.join());
   const aoPatches = [];
   const aoPatch = win.Maity.api.patch;
@@ -15803,6 +15803,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(!main.querySelector(".leave-dialog") && win.location.hash === "#/maintainer/maity/settings/mine"
       && !win.Maity.api.fixtureAsked.slice(beforeEscape).some((p) => p.startsWith("DELETE ")),
       "leave: Escape cancels and sends nothing");
+    // An owned agent on blue-team (§6.2, B.1 of §6.30): where coder is listed it continues as a
+    // coder, a fate the dialog does not name, so it states the rule; without coder, isolated.
+    {
+      const savedRoles = project.policy.outside_roles;
+      const toBlue = () => {
+        const b = fx["maity/members.json"].items.find((x) => x.display_name === "Agent B");
+        b.role = "blue-team"; b.role_base = "blue-team";
+      };
+      setCaller("member", "anyone"); toBlue();
+      project.policy.outside_roles = ["coder"];
+      await leaveOpen();
+      expect(leaveDialog() && leaveDialog().querySelector(".leave-rule") && !leaveDialog().querySelector(".leave-agent"),
+        "leave: a blue-team agent that continues as a coder makes the dialog state the rule, naming no fate");
+      leaveDialog().dispatch("keydown", { key: "Escape" });
+      setCaller("member", "anyone"); toBlue();
+      project.policy.outside_roles = ["designer"];
+      await leaveOpen();
+      expect(fateOf("Agent B") === "isolated",
+        "leave: a blue-team agent without coder on the list is isolated " + fateOf("Agent B"));
+      leaveDialog().dispatch("keydown", { key: "Escape" });
+      project.policy.outside_roles = savedRoles;
+    }
     setCaller("member", "anyone");
     const opener = await leaveOpen();
     expect(!opener.disabled && fateOf("Agent A") === "isolated" && fateOf("Agent B") === "stays" && fateOf("Reviewer") === "isolated",
