@@ -19,3 +19,32 @@ dist/
 .ruff_cache/
 .mypy_cache/
 maity-hub.db
+
+# The empty placeholders Claude Code's sandbox leaves at the root of a clone it runs in
+# (cli/src/maity/runner/adapters.py CLAUDE_PLACEHOLDERS; cli/tests/test_gitignore_placeholders.py
+# keeps the two equal). The runner hides them in .git/info/exclude, but tools/guards.sh reads
+# .gitignore files alone, so without these lines it refuses to start in a placed coder's clone.
+# Each is anchored at the root; `.idea/` above matches a directory only, and the placeholder is
+# a file. A real .gitmodules is tracked, so this line hides only an untracked one.
+/.bash_profile
+/.bashrc
+/.claude/agents
+/.claude/commands
+/.claude/hooks
+/.claude/launch.json
+/.claude/loop.md
+/.claude/output-styles
+/.claude/routines
+/.claude/scheduled_tasks.json
+/.claude/settings.local.json
+/.claude/skills
+/.claude/workflows
+/.gitconfig
+/.gitmodules
+/.idea
+/.mcp.json
+/.profile
+/.ripgreprc
+/.vscode
+/.zprofile
+/.zshrc
