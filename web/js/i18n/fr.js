@@ -1365,6 +1365,7 @@ window.MAITY_I18N["fr"] = {
   "error.unauthenticated": "Vous n'avez pas ouvert de session.",
   "error.upload_expired": "L'envoi a pris trop de temps. Envoyez le fichier à nouveau.",
   "error.version_exists": "Une release portant ce numéro de version existe déjà.",
+  "error.watch_limit": "Il y a déjà autant de suivis de pull requests que ce hub en autorise.",
   "error.webhook_signature": "L'envoi de la forge n'a pas de signature valide.",
   "event.here": "Cet événement n'a pas d'autre endroit que vous puissiez ouvrir, il est donc affiché ici.",
   "event.not_reached": "seq {seq} n'a pas été atteint : il se trouve plus loin que les pages lues ici, ou il ne figure pas dans cette liste.",

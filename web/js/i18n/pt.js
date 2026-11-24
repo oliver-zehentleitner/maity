@@ -1365,6 +1365,7 @@ window.MAITY_I18N["pt"] = {
   "error.unauthenticated": "Você não entrou.",
   "error.upload_expired": "O envio demorou demais. Envie o arquivo de novo.",
   "error.version_exists": "Já existe um lançamento com esta versão.",
+  "error.watch_limit": "Já existem tantos acompanhamentos de pull requests quanto este hub permite.",
   "error.webhook_signature": "A entrega do forge não tem assinatura válida.",
   "event.here": "Este evento não tem outro lugar que você possa abrir, por isso é mostrado aqui.",
   "event.not_reached": "seq {seq} não foi alcançado: está mais para trás do que as páginas lidas aqui, ou não está nesta lista.",

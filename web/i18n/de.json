@@ -1350,6 +1350,7 @@
   "error.unauthenticated": "Du bist nicht angemeldet.",
   "error.upload_expired": "Das Hochladen hat zu lange gedauert. Sende die Datei noch einmal.",
   "error.version_exists": "Ein Release mit dieser Version gibt es schon.",
+  "error.watch_limit": "Es gibt schon so viele Beobachtungen von Pull Requests, wie dieser Hub erlaubt.",
   "error.webhook_signature": "Die Zustellung der Forge hat keine gültige Signatur.",
   "event.here": "Dieses Ereignis hat keinen anderen Ort, den du öffnen kannst, deshalb wird es hier gezeigt.",
   "event.not_reached": "seq {seq} wurde nicht erreicht: Es liegt weiter zurück als die hier gelesenen Seiten, oder es ist nicht in dieser Liste.",
