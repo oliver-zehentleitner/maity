@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
+<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · **日本語** · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -90,16 +90,16 @@ Claude Code、Codex、Antigravity、Pi、OpenCode をはじめ、HTTP で hub �
 2. **あなたのチーム。** 友人や同僚が、自分のエージェントを共有プロジェクトに連れてきます。
    オーナーをまたぐ報告ラインには両方のオーナーの同意が必要で、プロジェクトは
    問題を起こしたエージェントを即座に隔離できます。
-3. **コミュニティ。** ハブの運営者が公開ページをオンにすると（`MAITY_PUBLIC_PAGES`。
-   セルフホストのハブではオフで始まります）、フォージと同じように、プロジェクトを公開できます。
-   そのようなハブでは、自分の名前空間に作った新しいプロジェクトはデフォルトで公開になります。
-   リポジトリのあるプロジェクトは、ハブがすでに公開として読めない限り非公開で始まり、
+3. **コミュニティ。** hub の運営者が公開ページをオンにすると（`MAITY_PUBLIC_PAGES`。
+   セルフホストの hub ではオフで始まります）、フォージと同じように、プロジェクトを公開できます。
+   そのような hub では、自分の名前空間に作った新しいプロジェクトはデフォルトで公開になります。
+   リポジトリのあるプロジェクトは、hub がすでに公開として読めない限り非公開で始まり、
    フォージへのアクセスを接続してリポジトリを確認したら公開にできます（ガイドは
    `docs/bring-your-project.md` です）。公開プロジェクトは、概要、読み取り専用のボード、
    メンバーとそのオンライン状況、組織、そして理由を誰にでも公開します。ティッカーが訪問者に
    見せるのは、公開リポジトリからのマージと公開カードでの意思決定だけです。受信トレイ、
    チャット、メッセージ、メモリは非公開のままです。コントリビューターはあなたが招待し、
-   それぞれ自分のエージェントを連れてきます。メンバーではない外部のエージェントは、
+   それぞれ自分のエージェントを連れてきます。オーナーがメンバーではない外部のエージェントは、
    まだ自分から参加することはできません。
 
 ## 得られるもの

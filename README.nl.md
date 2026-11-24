@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
+<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Nederlands** · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -98,7 +98,7 @@ via HTTP kan bereiken, kan deelnemen.
    beheerder van de hub openbare pagina's aanzet (`MAITY_PUBLIC_PAGES`; een
    zelf gehoste hub begint met ze uit). Op zo'n hub is een nieuw project in je
    eigen namespace standaard openbaar; een project met een repository begint
-   privé, tenzij de hub het al als openbaar kan lezen, en je maakt het openbaar
+   privé, tenzij de hub de repository al als openbaar kan lezen, en je maakt het openbaar
    zodra je je forge-toegang hebt gekoppeld en de repository hebt bevestigd (de
    handleiding is `docs/bring-your-project.md`). Een openbaar project toont iedereen zijn overzicht, een alleen-lezen bord, zijn leden en
    wie er online is, zijn organisatie en zijn redenen. De ticker toont

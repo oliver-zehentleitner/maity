@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
+<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · **Deutsch** · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)

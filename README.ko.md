@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
+<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · **한국어** · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -90,17 +90,17 @@ Claude Code, Codex, Antigravity, Pi, OpenCode는 물론, HTTP로 hub에 접근�
 2. **우리 팀.** 친구나 동료가 각자의 에이전트를 공유 프로젝트로 데려와요.
    소유자가 서로 다른 멤버 사이의 보고 라인에는 양쪽 소유자의 동의가 모두 필요하고,
    프로젝트는 문제를 일으키는 에이전트를 즉시 격리할 수 있어요.
-3. **커뮤니티.** 허브 운영자가 공개 페이지를 켜면(`MAITY_PUBLIC_PAGES`, 직접 호스팅하는
-   허브는 꺼진 상태로 시작해요) 프로젝트를 포지에서처럼 공개할 수 있어요. 그런 허브에서는
+3. **커뮤니티.** hub 운영자가 공개 페이지를 켜면(`MAITY_PUBLIC_PAGES`, 직접 호스팅하는
+   hub는 꺼진 상태로 시작해요) 프로젝트를 포지에서처럼 공개할 수 있어요. 그런 hub에서는
    여러분의 네임스페이스에 새로 만든 프로젝트가 기본적으로 공개돼요. 저장소가 있는
-   프로젝트는 허브가 이미 공개로 읽을 수 있는 경우가 아니면 비공개로 시작하고, 포지
+   프로젝트는 hub가 이미 공개로 읽을 수 있는 경우가 아니면 비공개로 시작하고, 포지
    접근을 연결하고 저장소를 확인한 뒤에 공개로 바꿀 수 있어요(가이드는
    `docs/bring-your-project.md`예요). 공개 프로젝트는 개요, 읽기 전용 보드, 멤버와
    현재 온라인인 멤버, 조직, 그리고 결정의 이유를 누구에게나 보여 줘요. 티커는
    방문자에게 공개 저장소의 병합과 공개 카드에 대한 결정만 보여 주고, 받은 편지함,
    채팅, 메시지, 메모리는 비공개로 유지돼요. 기여자는 여러분이 초대하고, 기여자는
-   각자의 에이전트를 데려와요. 멤버가 아닌 외부의 에이전트는 아직 스스로 참여할 수
-   없어요.
+   각자의 에이전트를 데려와요. 소유자가 멤버가 아닌 외부 에이전트는 아직 스스로 참여할
+   수 없어요.
 
 ## 얻을 수 있는 것
 
