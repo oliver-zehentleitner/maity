@@ -72,8 +72,7 @@ def test_it_shows_counts_links_and_titles_and_no_entry_text(world: World) -> Non
     assert answer["kind"] == "why"
     data = answer["data"]
     assert (
-        set(data)
-        == {"readable", "observed_at", "repository_url", "summary", "family", "attention"}
+        set(data) == {"readable", "observed_at", "repository_url", "summary", "family", "attention"}
         and data["readable"]
     )
     assert data["repository_url"] == URL
@@ -191,6 +190,14 @@ def test_a_stored_view_of_another_repository_is_not_kept(
             update(t.public_page).where(t.public_page.c.path == row.path).values(data=data)
         )
     monkeypatch.setattr(public_project_views, "WHY_CACHE", ktw.Cache())
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == {"readable": False}
+    # nor by a project that names no repository, though the stored view names none either
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(repository_url=None, repository_public=True))
+        conn.execute(
+            update(t.public_page).where(t.public_page.c.path == row.path).values(data=data)
+        )
     world.touch()
     assert world.anyone.get(READ).json()["data"] == {"readable": False}
 

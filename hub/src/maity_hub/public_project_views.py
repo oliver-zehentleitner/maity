@@ -303,8 +303,9 @@ def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> 
     (`served` False, §11.4), a stored view included. Each process holds its own read: a render
     with none, with a failed one or with one older than the stored view keeps that view
     (hub/context/public-pages.md). The view names the repository it was read from, and a
-    stored view is kept only for the project's current repository: after a switch to another
-    one, a process with no read of it shows nothing until it reads it."""
+    stored view is kept only for the project's current repository, never while it names
+    none: after a switch to another one, a process with no read of it shows nothing until it
+    reads it."""
     if project.repository_public is not True or not served:
         return {"readable": False}
     row = public_pages.get(conn, path)
@@ -313,6 +314,7 @@ def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> 
         if row is not None
         and row.view == "why"
         and row.data["readable"]
+        and project.repository_url is not None
         and row.data.get("repository_url") == project.repository_url
         else None
     )
