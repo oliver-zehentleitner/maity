@@ -5546,6 +5546,45 @@ def report_pages_round(run: Run, browser) -> None:
 OUTSIDER_TAB = "header nav.switcher a.outsider[data-outsider='owner/e2e-alpha']"
 DASHED = ("(s) => { const e = document.querySelector(s);"
           " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
+CONTRIBUTION = "{base}/api/v1/projects/owner/e2e-alpha/contribution"
+
+
+def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
+    """Add your agent, as this hub has it (docs/api.md §6.1 "What the project allows", §3.1 "An
+    outsider's agent"; tsk-pgcm6wvyxxj4): the hub ships its outsiders' joins switched off
+    (`outsiders.JOINS_ON = False`, #2142), a module constant no setting or environment turns on,
+    so `GET …/contribution` answers REPORTER `200` with `can_join: false, reason: members_only`
+    and the head's slot stays empty and silent: no button, no reason in words, no join panel, no
+    console error (watch_page). The button itself, the reasons
+    `limit` and `blocked` and Claim for are the smoke test's, against the fixture hub. The empty
+    head at 1280 and 390 px in both schemes."""
+    run.step("outsider: Add your agent stays out while the hub's outsiders' joins are off (members_only)")
+    assert answer.status == 200, f"GET …/contribution answered {answer.status}: {answer.text()}"
+    body = answer.json()
+    assert body.get("can_join") is False and body.get("reason") == "members_only", body
+    # The slot's own drawing runs after the answer is read: let it, then look.
+    answer.finished()
+    page.evaluate("() => new Promise((done) => setTimeout(done, 0))")
+    slot = page.locator("header .project-state #outsider-actions")
+    expect(slot).to_be_hidden()
+    expect(slot).to_have_text("")
+    expect(slot.locator("*")).to_have_count(0)
+    expect(page.get_by_role("button", name="Add your agent", exact=True)).to_have_count(0)
+    expect(page.locator(".outsider-add-agent, .outsider-reason, #outsider-join")).to_have_count(0)
+    for width, height in ((1280, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            settle(page, NOT_WIDER, None)
+            wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"the outsider's empty head slot at {width}x{height} {scheme}: {wide} px wider than the window"
+            run.shot(page, f"outsider-add-agent-off-{width}-{scheme}")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.emulate_media(color_scheme="light")
+    # Silent so far: no console or page error, and nothing said of the read; the round's own
+    # no_problems judges the rest after its excuses.
+    said = [p for p in run.problems if "/contribution" in p or p.startswith(("console error", "page error"))]
+    assert not said, "outsider add agent:\n  " + "\n  ".join(said)
 
 
 def outsider_tab_round(run: Run, browser) -> None:
@@ -5556,7 +5595,8 @@ def outsider_tab_round(run: Run, browser) -> None:
     The hub reads a public project to an outsider (#2001, #2078): a signed-in non-member at the
     project's address is taken to its Overview, drawn with the dashed tab current, and never gets
     the public page (no `section.view-visitor`, no `GET /public/pages/…`); the Board has no New
-    card, the head's `#outsider-actions` slot is there and takes no room, and Why draws either the
+    card, the head's `#outsider-actions` slot is there and takes no room, and stays empty on the
+    hub's `200 members_only` (outsider_add_agent_case), and Why draws either the
     project's Why or the outsider's one sentence, whichever the hub's answer is. Every control
     the views leave out is the smoke test's, against the fixture hub.
     Starred through `PATCH /me`, the project is a dashed tab with a filled star linking to its
@@ -5572,7 +5612,9 @@ def outsider_tab_round(run: Run, browser) -> None:
     fill_sign_in(page, address, password)
     expect(page.locator("header .me")).to_contain_text(name)
     tab = page.locator(OUTSIDER_TAB)
-    page.goto(run.base + "/owner/e2e-alpha")
+    # The head's slot asks the hub what the project allows an outsider (§6.1; tsk-pgcm6wvyxxj4).
+    with page.expect_response(lambda r: r.url == CONTRIBUTION.format(base=run.base)) as contribution:
+        page.goto(run.base + "/owner/e2e-alpha")
     expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
     expect(page.locator("#main section.view-overview")).to_have_count(1)
     expect(page.locator("section.view-visitor")).to_have_count(0)
@@ -5585,6 +5627,7 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(slot).to_have_count(1)
     expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
     expect(slot).to_be_hidden()
+    outsider_add_agent_case(run, page, contribution.value)
     run.shot(page, "outsider-tab-overview")
     run.a11y(page, "an outsider's Overview in the dashed tab")
     # This session's unstarred tab at phone width: no wider than the window (its hidden words
@@ -6990,7 +7033,9 @@ def page_heads_step(run: Run, page: Page) -> None:
 def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     """One's own fleet on the Agents page's Organisation tab (tsk-q989pagmk2x9): the owner on top,
     E2E Agent under them, E2E Reviewer (which reports to it) under that; each agent's instances
-    as dots linking to their sessions; light and dark at 1280 and 390 px, nothing wider than the window."""
+    as `#abcd` with a status dot, linking to their sessions; light and dark at 1280 and 390 px,
+    nothing wider than the window. The Team page's Organisation tab draws the same row for the same
+    member (tsk-zsbe48ty4ces), shot in the same four ways."""
     run.step("agents: the Organisation tab shows one's own agents as a tree under oneself")
     members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
@@ -7028,40 +7073,71 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     tabs.get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
     expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()
-    tree = page.locator("ul.fleet-tree")
-    node = lambda mid: tree.locator(f"li.fleet-member[data-member='{mid}']")
+    tree = page.locator("main ul.org-tree")
+    node = lambda mid: tree.locator(f"li.org-tree-member[data-member='{mid}']")
     expect(node(me["id"])).to_have_count(1)
-    expect(node(me["id"]).locator(f"li.fleet-member[data-member='{agent_id}']")).to_have_count(1)
-    expect(node(agent_id).locator(f"li.fleet-member[data-member='{reviewer['id']}']")).to_have_count(1)
+    expect(node(me["id"]).locator(f"li.org-tree-member[data-member='{agent_id}']")).to_have_count(1)
+    expect(node(agent_id).locator(f"li.org-tree-member[data-member='{reviewer['id']}']")).to_have_count(1)
     owned = {m["id"] for m in members if m["kind"] == "agent" and m.get("owner_id") == me["id"]}
-    shown = set(tree.locator("li.fleet-member").evaluate_all("(all) => all.map((li) => li.dataset.member)"))
+    shown = set(tree.locator("li.org-tree-member").evaluate_all("(all) => all.map((li) => li.dataset.member)"))
     assert shown == owned | {me["id"]}, (shown, owned)
-    dots = node(agent_id).locator(":scope > .fleet-node a.fleet-dot")
+    dots = node(agent_id).locator(":scope > .org-node a.member-instance.org-dot")
     live = [i for i in next(m for m in members if m["id"] == agent_id)["instances"] if not i.get("revoked_at")]
     expect(dots).to_have_count(len(live))
     expect(dots.first).to_have_attribute("href", re.compile(rf"/owner/e2e-alpha/team/{agent_id}/sessions/"))
+    expect(dots.first).to_have_text(re.compile(r"^#[0-9a-z]+$"))
+    expect(dots.first).to_have_attribute("aria-label", re.compile(r"^Sessions of @\S+#[0-9a-z]+: (online|away|offline|dormant)"))
+    # The row without its picture (a generated one may differ by its drawing's ids), as both tabs draw it.
+    row_html = """(li) => { const row = li.querySelector(':scope > .org-node').cloneNode(true);
+      row.querySelectorAll('svg, img, .avatar-svg, .avatar-img').forEach((e) => e.remove()); return row.outerHTML; }"""
+    # A member's item stacks: its stub and the list under it start at or below the bottom of its row, not beside
+    # it (A2289: a global .org-member rule once made the item a flex row). Returns the items that do not.
+    stacked = """(tree) => Array.from(tree.querySelectorAll('li.org-tree-member')).flatMap((li) => {
+      const row = li.querySelector(':scope > .org-node').getBoundingClientRect();
+      return Array.from(li.querySelectorAll(':scope > ul, :scope > .org-stub'))
+        .filter((e) => e.getBoundingClientRect().top < row.bottom - 0.5).map((e) => li.dataset.member + ' ' + e.tagName); })"""
     try:
         for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
-            page.reload()
+            page.goto(f"{run.base}/owner/e2e-alpha/agents/organisation")
             expect(node(reviewer["id"])).to_be_visible()
             wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
             assert wide[0] <= wide[1], f"the fleet at {width} px {scheme} is {wide[0]} px wide"
+            beside = tree.evaluate(stacked)
+            assert not beside, f"Agents at {width} px {scheme}: beside their row, not under it: {beside}"
             size = dots.first.bounding_box()
-            assert size and size["width"] >= 24 and size["height"] >= 24, f"a dot's target at {width} px: {size}"
-            run.shot(page, f"agents-fleet-{width}-{scheme}")
+            assert size and size["width"] >= 24 and size["height"] >= 24, f"an instance's target at {width} px: {size}"
+            # The reviewer stands under E2E Agent by reports_to on both tabs; E2E Agent itself only where it
+            # reports to the owner (placed by area on Team, it would add "(by area)" there, rightly).
+            agent = next(m for m in members if m["id"] == agent_id)
+            same = [reviewer["id"]] + ([agent_id] if agent.get("reports_to") == me["id"] else [])
+            on_agents = {mid: node(mid).evaluate(row_html) for mid in same}
+            run.shot(page, f"organisation-agents-{width}-{scheme}")
+            # The Team page's tab: the whole project, the same row for the same member.
+            page.goto(f"{run.base}/owner/e2e-alpha/organisation")
+            expect(node(reviewer["id"])).to_be_visible()
+            wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+            assert wide[0] <= wide[1], f"the team's tree at {width} px {scheme} is {wide[0]} px wide"
+            beside = tree.evaluate(stacked)
+            assert not beside, f"Team at {width} px {scheme}: beside their row, not under it: {beside}"
+            for mid, html in on_agents.items():
+                assert node(mid).evaluate(row_html) == html, f"{mid}: Team and Agents draw different rows at {width} px {scheme}"
+            run.shot(page, f"organisation-team-{width}-{scheme}")
+        run.a11y(page, "team, the Organisation tab with instance dots")
+        page.goto(f"{run.base}/owner/e2e-alpha/agents/organisation")
+        expect(node(reviewer["id"])).to_be_visible()
         run.a11y(page, "agents, the Organisation tab")
         # Each state's dot differs in shape or size, not in colour alone (WCAG 1.4.1, nte-s2dqhn1n4bez): one probe
         # dot per state in the page's own stylesheet, compared with the colours left out; shown at 390 px for the PR.
         probe = """(states) => {
-          const box = document.createElement('span'); box.className = 'fleet-dots fleet-probe';
-          document.querySelector('ul.fleet-tree').before(box);
-          return states.map((st) => { const a = document.createElement('a'); a.className = 'fleet-dot ' + st; box.appendChild(a);
+          const box = document.createElement('span'); box.className = 'org-instances org-probe';
+          document.querySelector('main ul.org-tree').before(box);
+          return states.map((st) => { const a = document.createElement('a'); a.className = 'member-instance org-dot ' + st; box.appendChild(a);
             const b = getComputedStyle(a, '::before');
             return [st, b.width, b.height, b.borderTopWidth, b.borderLeftWidth, b.backgroundImage === 'none' ? 'none' : 'image', b.backgroundColor === 'rgba(0, 0, 0, 0)' ? 'clear' : 'filled'];
           }); }"""
-        states = ["online", "away", "offline", "dormant", "online lead"]
+        states = ["online", "away", "offline", "dormant", "paused", "online lead"]
         # Forced colours too (#1598 review): there the browser would drop a gradient, a background colour and a
         # shadow, so the check runs with forced-colors active as well, and the lead keeps its ring.
         for forced in ("none", "active"):
@@ -7073,12 +7149,12 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
                 shapes = page.evaluate(probe, states)
                 plain = [x for x in shapes if x[0] != "online lead"]
                 assert len({tuple(x[1:]) for x in plain}) == len(plain), f"two dot states look alike ({scheme}, forced colours {forced}): {shapes}"
-                ring = page.evaluate("""() => { const b = getComputedStyle(document.querySelector('.fleet-probe .fleet-dot.lead'), '::before');
+                ring = page.evaluate("""() => { const b = getComputedStyle(document.querySelector('.org-probe .org-dot.lead'), '::before');
                   return [b.boxShadow, b.outlineStyle]; }""")
                 assert ring[0] != "none" or ring[1] not in ("none", ""), f"the lead dot has no ring ({scheme}, forced colours {forced}): {ring}"
-                run.shot(page, f"agents-fleet-states-390-{scheme}" + ("-forced" if forced == "active" else ""))
-                page.evaluate("() => document.querySelectorAll('.fleet-probe').forEach((e) => e.remove())")
-                print(f"   fleet dots, {scheme}, forced colours {forced}: four shapes {plain}, lead ring kept")
+                run.shot(page, f"organisation-dot-states-390-{scheme}" + ("-forced" if forced == "active" else ""))
+                page.evaluate("() => document.querySelectorAll('.org-probe').forEach((e) => e.remove())")
+                print(f"   fleet dots, {scheme}, forced colours {forced}: five shapes {plain}, lead ring kept")
         page.emulate_media(forced_colors="none")
         # A stack of pictures overlaps whether a picture is generated or loaded (nte-b3pfhm2bp0vt (b)): every picture
         # after the first moves 10 px under the one before, mixed kinds included, so the stack keeps its width.
@@ -7129,15 +7205,16 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
             page.reload()
-            stub = node(agent_id).locator(":scope > p.fleet-stub")
+            stub = node(agent_id).locator(":scope > p.org-stub")
             expect(stub).to_have_text("reports to @e2e-foreign-boss")
             expect(stub.locator("a, span")).to_have_count(0)
             expect(node(foreign["id"])).to_have_count(0)
             html = tree.evaluate("(t) => t.outerHTML")
             assert "Foreign Boss E2E" not in html and foreign["id"] not in html and not foreign_instance.search(html), html
-            expect(node(agent_id).locator(":scope > .fleet-node a.fleet-dot.lead")).to_have_count(1)
+            expect(node(agent_id).locator(":scope > .org-node a.org-dot.lead")).to_have_count(1)
+            expect(node(agent_id).locator(":scope > .org-node a.org-dot.lead").first).to_have_attribute("aria-label", re.compile(r", lead instance$"))
             expect(node(reviewer["id"])).to_be_visible()
-            run.shot(page, f"agents-fleet-foreign-boss-{width}-{scheme}")
+            run.shot(page, f"organisation-agents-foreign-boss-{width}-{scheme}")
     finally:
         page.unroute(listing, with_foreign_boss)
         page.unroute(BOOTSTRAP, boss_in_bundle)

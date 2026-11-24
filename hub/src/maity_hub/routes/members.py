@@ -53,7 +53,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -415,7 +415,11 @@ def validate_assignment(
     errors: dict[str, str] = {}
     values: dict[str, Any] = {}
     if trust is not None:
-        if trust not in TRUSTS:
+        if OUTSIDE in (trust, current[0]):
+            # Only the outsider's join gives trust `outside`, and nothing changes it after
+            # (§2.3 "Outside"): naming it, or any trust on a member who holds it, is refused.
+            errors["trust"] = OUTSIDE
+        elif trust not in TRUSTS:
             errors["trust"] = "unknown"
         elif trust == "owner" and kind != "human":
             errors["trust"] = "humans_only"
@@ -467,6 +471,10 @@ def validate_assignment(
         values["capabilities"] = list(dict.fromkeys(capabilities))
     if errors:
         raise invalid(errors)
+    if member is not None and current[0] == OUTSIDE:
+        # What an outsider's agent keeps holds after its join too, whoever asks (§2.3).
+        target = conn.execute(select(t.membership).where(t.membership.c.id == member)).one()
+        agent_owners.check_outside_fields(conn, target, values)
     return values
 
 
@@ -827,6 +835,9 @@ def apply_patch(
         # the role, and a field PATCH waiting at the lock reads the new role (§6.2).
         lock_project(conn, target.project_id)
         target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    # Again as the change is written, after any consent: an outsider's agent keeps no areas or
+    # capabilities and reports to its owner or nobody (§2.3 "Outside").
+    agent_owners.check_outside_fields(conn, target, values)
     if values.get("role", "expert") != "expert":
         # The fields belong to the role: any other role has none (§6.2).
         values = {**values, "expert_for": None, "expert_sources": None}
@@ -913,6 +924,8 @@ def apply_patch(
             cards.drop_signatures(
                 conn, change.project.id, row.agent_id or row.human_id, change.actor
             )
+            # A seat the new trust or role may not hold goes as at a removal (§2.3, §6.2).
+            seats.demoted(conn, change.project.id, row, change.actor)
         if "trust" in changed and row.trust == restricted.GUEST:
             # A guest holds and takes no cards (§2.3): its claims go back to the board and
             # its open takeovers end, as on an isolation (§6.2, §6.19).

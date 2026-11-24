@@ -644,9 +644,12 @@ A signed-in human without an active membership reads a public project through th
 §2.3). The risk eb7fd1c7 names for a visitor caller in those routes (a field added later becomes public) is met
 for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
 
-- A closed allow-list of routes: `access.OUTSIDE_READS`, twelve GETs (the project, its members and one member, the
-  cards and one card, a card's history and notes, the logo and the banner, and the three reads of the Why view
-  below). Only those endpoints call
+- A closed allow-list of routes: `access.OUTSIDE_READS`, GETs only: the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner, what the project allows an outsider
+  (`GET …/contribution`, §6.1, so the outsider's tab can say why a button is missing; added with the outsider's
+  join, tsk-enfbkj0xqq5m, hub/context/joins.md 0bd49a9b), and the three reads of the Why view below. The list
+  in `access.py` is the reference; this entry names what is in it rather than how many, so that it does not go
+  stale when a read is added on purpose. Only those endpoints call
   `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
   member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
   together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
@@ -913,6 +916,30 @@ export any more empties it.
 **Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
 would need a rule for the one kind without a row, and search engines would lose the page.
 
+## The stored public Why names its repository and is kept only for the current one
+
+**Id:** 3d16a8b6-8125-446d-8d4a-2ae31e826e78
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 "Why"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); review A2470 (the guard for a project with no repository); `public_project_views.why_data`
+**See:** public-pages.md#the-public-why-is-a-stored-row-an-exception-to-the-export-stays-in-memory — aed779e9-be9c-40d2-a7ea-217cee06e470 — as of 2026-11-24
+**Revisit when:** `public_page` gets columns per view, or a migration touches the stored Why rows anyway
+
+The view's data carries `repository_url`, the repository its export was read from, and `why_data` keeps a stored view
+only while the project names a repository and it is that one. A process with no read of the current repository (a
+restart, a switch to another public repository) shows nothing until it reads it. A view stored before the field names
+none and is kept by no process.
+
+**Reason:** aed779e9 lets a process without its own read keep the stored view, which after a repository change would
+show the old repository's counts and titles under the new one. Comparing on read covers every way the repository
+changes and every restart, and needs no migration.
+
+**Rejected alternatives:**
+- A column for the repository on `public_page`: it needs a migration for one view's data.
+- Clearing the stored view in the project PATCH that changes the URL: it misses a process that restarts with no read,
+  and any other path that changes the repository.
+
 ## An organisation's page reads none of its members
 
 **Id:** 3f7a9d24-6c1e-4b58-9e02-7d41c8a5b6f3
@@ -1005,8 +1032,9 @@ text names what the card rule does not cover. `public_snapshot.Worker` renders e
 that may take a ticker item off renders the project page at once, so a removal never waits for the timer; a new
 item waits for it. Who is online is counted as the names are shown: a member the page does not name (a profile
 under a hold, a person who keeps their online status off) is not counted either, since a count beside the names
-would point at them; the contract always said so, and the hub counted them until the online switch's change. Known and left so: a decision's text keeps
-the card's title from the moment it was decided, since a ticker item is stored text; a later rename does not change it.
+would point at them; the contract always said so, and the hub counted them until the online switch's change. Until 2026-11-24 a decision's text kept
+the card's title from the moment it was decided, since a ticker item is stored text, and a later rename did not change it;
+since then the page builds the text from the card as it is now (the entry on a decision's current title, below).
 
 The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
 reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.
@@ -1062,6 +1090,28 @@ change who is online and so wait for the snapshot. Every other member change, a 
 pages they hold; narrowed since to the card pages that name the member (fe966f9c-3557-4473-a0d6-14aa4d714a43).
 Rejected: naming the fields a page shows instead (an allowlist), because a field added later
 would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
+## A public decision entry shows its card's current title, and a title edit renders the page
+
+**Id:** 36da28f1-a262-4e25-a93d-b087baa386d3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 "Recently"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); `ticker.decision_text`, `public_snapshot._text`, `events._hides_ticker_entries`
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-24
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-24
+
+The public snapshot builds a decision entry's text again from its card as it is now (`ticker.decision_text`, the one
+function the ticker item's stored text also comes from); a merge keeps its stored text, the forge's own title. A
+`task_updated` with `title` among its fields renders the project's own page at once, like a label change, so an old
+title is not served until the next snapshot. The members' ticker keeps its stored text. This replaces what 65c0167c
+had left so, where a rename did not reach the page.
+
+**Reason:** a title is edited to fix it, sometimes because it said too much; the public page should not keep what the
+card no longer says.
+
+**Rejected alternative:** dropping the decision entry from the page when the card's title changes: the decision itself
+would vanish from Recently for a change of wording.
 
 ## A member change takes off and renders only the card pages that name that member
 
@@ -1408,3 +1458,26 @@ and 3, the landing page's counters 11 and 10), and from two projects on they cos
 costs one statement more for each further batch of each question, which
 `test_the_public_lists_ask_in_batches_of_a_bounded_size` counts with the batch patched to 2 under a lowered SQLite
 limit.
+
+## The badge asks the standing a page needs, through `standing_of`
+
+**Id:** ffa4a3e0-2422-4457-838d-b03926e6a955
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.20 "When nothing is served"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); `public_projects.standing_of`, `routes.badges._served`
+**See:** public-pages.md#whether-a-project-has-a-page-is-one-rule-over-rows-served-judges-the-row-it-is-given — 1def6e81-4be2-4e03-8bd7-4426d59407e5 — as of 2026-11-24
+
+The part of `served_of` that is not the page's own columns (no hold on the project; an owner organisation not deleted
+and under no hold, or a human owner active, not deleted and not suspended) is `public_projects.standing_of`, and
+`served_of` filters the page's columns and calls it. The badge, which needs no public page, asks `standing_of` after
+its own switch and the project's state, so a held project or an owner out of standing gives `not_found`.
+
+**Reason:** the badge shows nothing a page would not, and one function keeps the two from drifting apart, the reason
+1def6e81 wrote the page rule once.
+
+**Rejected alternative:** a copy of the hold and owner checks inside the badge route: two copies of one serving rule
+drift apart, as the badge had already drifted from the page, which is the bug this card fixes.
+
+The extraction and its reason are confirmed (the agreed plan); the rejected alternative is inferred, since the plan
+names none for this point, and it sets the entry's Evidence.

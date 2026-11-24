@@ -608,7 +608,7 @@ window.Maity = window.Maity || {};
     const E = M.boardEdit;
     // An outsider (docs/api.md §2.3) moves, assigns and places no card: no row of controls, no drag.
     const writes = manage && M.trust.writes(ctx);
-    const controls = writes ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
+    const controls = writes ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign, manage.handOver),
       E.orderControl(ctx, c, manage.columnOf, manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
     const movable = writes && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
@@ -971,6 +971,15 @@ window.Maity = window.Maity || {};
         : null));
     const assign = (c, who, focusKey) => write({ busy: M.t("board.assign.busy"), failed: M.t("board.assign.failed") }, M.t("board.assign.done", { id: c.id, name: ctx.nameOf(who) }),
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
+    // An open card claimed for an outsider's agent (§6.5 "Until the claim request is built",
+    // js/board-edit.js assignControl): its one active instance named where the member list shows
+    // one, else the member, which the agent's distribution resolves (§6.5).
+    const handOver = (c, m, focusKey) => {
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      const holder = active.length === 1 ? m.id + "#" + active[0].id : m.id;
+      return write({ busy: M.t("board.claim_for.busy"), failed: M.t("board.claim_for.failed") }, M.t("board.claim_for.done", { id: c.id, name: ctx.nameOf(m.id) }),
+        () => M.api.post(cardPath(c) + "/claim", { holder }), focusKey);
+    };
 
     // Dragging: the columns the card may go to are marked, the others refused.
     // A browser fires drop only where dragover allowed it, so a card let go
@@ -1037,7 +1046,7 @@ window.Maity = window.Maity || {};
       [panelCard, byId[updated.id], items.find((t) => t.id === updated.id), boardItems.find((t) => t.id === updated.id)]
         .forEach((t) => { if (t && t !== updated && t.id === updated.id) Object.assign(t, updated); });
     };
-    const manage = { move, assign, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
+    const manage = { move, assign, handOver, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
