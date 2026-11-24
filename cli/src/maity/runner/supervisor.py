@@ -36,6 +36,7 @@ from .. import __version__, clonecheck, hub, onboarding, state
 from . import (
     adapters,
     capabilities,
+    codexd,
     config,
     keeper,
     limitread,
@@ -2310,6 +2311,8 @@ class Supervisor:
                 # Any value but null names a skill, a malformed one included (skills.named).
                 rec.skill_missing = skill is None and p.get("keep_the_why") is not None
                 rec.skill_key = skill.parent.name if skill is not None else None
+            # Before `_context` removes the old TMPDIR leaf and before the session starts.
+            self._stop_codex_daemon(p, harness, target, scratch, view)
             built = self._venvs(p, harness, place, target)
             if not self._wants(p["id"], p["generation"]):  # so may a build of the venvs
                 with self.lock:
@@ -2675,6 +2678,51 @@ class Supervisor:
             assert target.agent_files is not None  # noqa: S101 - connected before a start
             return target.agent_files.parent
         return config.home_of(target.as_user.user) if target.as_user.user else Path.home()
+
+    def _stop_codex_daemon(
+        self,
+        p: dict[str, Any],
+        harness: config.Harness,
+        target: Target,
+        scratch: Path | None,
+        view: GateView | None,
+    ) -> None:
+        """A Codex start stops the app-server daemon an earlier start left in the placement's
+        CODEX_HOME (codexd): it is detached from the pane's process group, so a stop's TERM
+        never reached it, and it keeps the first start's TMPDIR, a leaf `_context` is about to
+        remove (tsk-n6sajs3gyh8h). In the start thread, outside the lock: it may take seconds.
+        With the binary the session starts and the home its launch env names. A failed stop is
+        logged and the start goes on."""
+        if harness.id != "codex":
+            return
+        found = (view or GateView.of(target, harness.id)).found
+        if found is None or not found.path:
+            return  # the gate refuses a Codex start without its binary
+        assert target.agent_files is not None  # noqa: S101 - connected before a launch
+
+        def say(line: str) -> None:
+            self.log(f"{p['id']}: {line}")
+
+        # The agents' home as the target found it when it was set up or connected: no account
+        # lookup or remote call outside the stop's deadline.
+        if target.agents_home is None:
+            say("the agents' home is not known; no Codex app-server daemon stopped, "
+                "the start goes on")  # fmt: skip
+            return
+        # The path `agent_dir_for` returns, made nothing of: `_context` makes it, and here no
+        # work may run outside the stop's deadline. With a scratch the home ignores it anyway.
+        agent_dir = target.agent_files / "agents" / p["id"]
+        # The root the home is checked from, link by link: a directory the runner makes and
+        # checks itself. For a scratch, the workspaces root every scratch op is anchored at
+        # (scratch._under, three levels up in either layout); without one, the agents' files.
+        root = scratch.parents[2] if scratch is not None else target.agent_files
+        try:
+            codexd.stop_codex_daemon(
+                target.as_user, found.path, adapters.codex_home_of(scratch, agent_dir), root,
+                target.agents_home, target.agent_path, say,
+            )  # fmt: skip
+        except Exception as exc:  # noqa: BLE001 - a daemon stop never refuses the start
+            self.log(f"{p['id']}: the Codex app-server daemon stop failed: {type(exc).__name__}")
 
     def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
         """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a
