@@ -286,14 +286,46 @@ def test_items_are_stored_trimmed_up_to_the_limits(owner: flow.Human) -> None:
 
 
 @pytest.mark.parametrize("blank", ["\u3164", "\u2800", "\u115f\u1160", "\u034f"])
-def test_only_the_four_categories_are_checked_so_a_blank_looking_item_is_stored(
+def test_only_the_plain_text_set_is_checked_so_a_blank_looking_item_is_stored(
     owner: flow.Human, blank: str
 ) -> None:
-    """§6.1: Cc, Cf, Zl and Zp are refused; a character outside them that shows nothing counts
-    as text, as the contract says, so the item is stored, not `empty_item`."""
+    """§6.1, §1.7.1: the plain-text rule's categories are refused; a character outside them
+    that shows nothing counts as text, as the contract says, so the item is stored, not
+    `empty_item`."""
     response = owner.patch(BASE, {"settings": {"role_rules": {"tester": {"checklist": [blank]}}}})
     assert response.status_code == 200, response.text
     assert response.json()["settings"]["role_rules"]["tester"]["checklist"] == [blank]
+
+
+@pytest.mark.parametrize("item", ["café, naïve, Ærø", "emoji 🙂 and 🚀", "日本語", "a – b — c"])
+def test_an_item_of_letters_accents_and_emoji_is_stored(owner: flow.Human, item: str) -> None:
+    """§1.7.1: letters of every script, accents and emoji are plain text."""
+    response = owner.patch(BASE, {"settings": {"role_rules": {"tester": {"checklist": [item]}}}})
+    assert response.status_code == 200, response.text
+    assert response.json()["settings"]["role_rules"]["tester"]["checklist"] == [item]
+
+
+@pytest.mark.parametrize(
+    ("escaped", "category"),
+    [(b"\\ud800", "Cs"), (b"\\udfff", "Cs"), (b"\\ue000", "Co"), (b"\\u0378", "Cn")],
+)
+def test_an_item_with_a_character_the_plain_text_rule_refuses_is_multiline(
+    owner: flow.Human, migrated: Engine, escaped: bytes, category: str
+) -> None:
+    """§6.1 "each plain text on one line", §1.7.1: a lone surrogate (Cs), a private-use
+    character (Co) and an unassigned code point (Cn) are refused like Cc, Cf, Zl and Zp, with
+    the same reason, and never stored. Sent as the JSON escape, so a lone surrogate reaches
+    the handler, which the client's own encoder would not send; the answer is a 400, not a
+    500."""
+    before = _version(migrated)
+    body = b'{"settings": {"role_rules": {"tester": {"checklist": ["ok", "a%sb"]}}}}' % escaped
+    response = owner.raw("PATCH", BASE, body)
+    assert response.status_code == 400, (category, response.text)
+    assert response.headers["Maity-Error"] == "invalid"
+    fields = response.json()["error"]["details"]["fields"]
+    assert fields == {"settings.role_rules.tester.checklist": "multiline"}
+    assert "role_rules" not in owner.get(BASE).json()["settings"]
+    assert _version(migrated) == before
 
 
 @pytest.mark.parametrize(

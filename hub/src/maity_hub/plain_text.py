@@ -10,9 +10,9 @@ import unicodedata
 # marks, BOM, soft hyphen, the tag block U+E0000), a lone surrogate (Cs), a private-use
 # character (Co), a code point this Python's Unicode data does not assign (Cn: unassigned ones
 # and the noncharacters such as U+FFFF) and both Unicode line breaks (Zl, Zp). By category, as
-# `routes/projects.py` `NOT_PLAIN` checks a checklist line and `routes/restricted.py` a
-# restricted text, so a character nobody named is refused as well. A field that takes several
-# lines keeps the line feed and the tab (`keep`).
+# `routes/restricted.py` checks a restricted text, so a character nobody named is refused as
+# well; a role rule's checklist line (`routes/projects.py`) calls `plain`. A field that takes
+# several lines keeps the line feed and the tab (`keep`).
 NOT_PLAIN = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
 
