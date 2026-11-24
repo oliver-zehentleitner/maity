@@ -532,6 +532,8 @@ Latin) passes.
 | A review's `subject` (§8.4) | one | `details.fields["review.subject"]: "format"` |
 | A bridge's `purpose` (§2.3) | one | as §2.3 says |
 | A human's preferences, written or proposed (§19.4) | several | `details.fields.markdown: "control_character"` |
+| An item of a role rule's `checklist` (§6.1) | one | `details.fields["settings.role_rules.<role>.checklist"]: "multiline"` |
+| A card's restricted text (§6.4) | several; a carriage return is stored as a line feed first | `details.fields.text: "control_character"` |
 
 A value stored before the rule is kept as it is and shown as it is in
 JSON. Where the hub puts a project's name into a text or Markdown line
@@ -6875,12 +6877,13 @@ silently: `invalid` with `details.fields` naming the field —
 `"settings.role_rules.<key>": "unknown_role"` for a key other than the three roles,
 `"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
 `coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
-is empty after trimming, `"multiline"` for one that holds a line break,
-a control character or an invisible format character that hides or turns text
-(Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
-marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
+is empty after trimming, `"multiline"` for one that holds a character the
+plain-text rule refuses (§1.7.1: a line break, a control or format character,
+a surrogate, a private-use character, an unassigned code point; nothing of the
+set is kept, so the zero-width joiner U+200D (Cf) is refused even inside an emoji
+sequence, while U+FE0F, a combining mark (Mn), passes; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
-Only those four categories are checked: a character outside them that shows
+Only the rule's categories are checked: a character outside them that shows
 nothing (a Hangul filler such as U+3164, the Braille blank U+2800, the combining
 grapheme joiner U+034F) counts as text, so an item made only of such characters is
 stored, not refused as `empty_item`.
@@ -8967,12 +8970,13 @@ Line endings are stored as `\n`. It is 1 to 1000 characters (Unicode
 code points) after that; the hub refuses, never trims or drops:
 `invalid` with `details.fields.text` `"empty"` for a text that is
 empty or white space only (`DELETE` clears), `"too_long"` over 1000,
-and `"control_character"` for a control character other than line
-feed and tab, an invisible format character, a private-use character
-or a lone surrogate (Unicode categories Cc, Cf, Co, Cs, Zl and Zp: the
-four of `role_rules`, §6.1, and Co and Cs on top, since a private-use
-character renders differently by font and a lone surrogate is no
-character at all). `credential_in_payload` applies as to every body
+and `"control_character"` for a character the plain-text rule refuses
+in a field of several lines (§1.7.1): a control character other than
+line feed and tab, an invisible format character, a private-use
+character, a lone surrogate or an unassigned code point (Unicode
+categories Cc, Cf, Co, Cs, Cn, Zl and Zp; a private-use character
+renders differently by font, a lone surrogate is no character at all).
+`credential_in_payload` applies as to every body
 (§1.3).
 
 **Versions.** `version` starts at 0, grows by one with every `PUT` that
