@@ -7826,7 +7826,13 @@ real directory or a regular file (lstat, no link), and `python3` on the hook's P
 clone and every writable path. That last check takes the program as found, as resolved, and the
 directory it was found in resolved, against each root as given and as resolved, so a `python3`
 link in a writable directory under a linked ancestor (macOS's `/tmp`) counts as the session's.
-When it cannot decide (no working directory, a lookup that fails, no python3), it refuses. The
+When it cannot decide (no absolute working directory, a lookup that fails, no python3, a PATH
+that is unset or holds a relative or empty entry, which counts as a place the session can
+write), it refuses. With `python_tools` set it also refuses every line that holds a character
+`_odd` finds (a control character but a tab or a newline, a non-ASCII space, a format
+character), whatever program the line names: a harness may trim or split at one where the
+shell does not, and the lead chose to close that door rather than mirror any harness's
+normalisation. A plain `maity` call is not held to the tool form; it runs no python3. The
 check is wider than the rules on purpose, so a line with a tool directory right after a python3
 word for another reason (`git grep python3 tools/`) is refused too; `python3 -m pytest
 tools/…` is not, since no `python_tools` rule can match it.
@@ -7854,3 +7860,6 @@ allowed `make` runs. The rule limits the form, not what the code can reach.
 - An absolute form (`python3 /<clone>/tools/x.py`): the session's commands start at the clone's
   root, so the relative form is enough, and a second form is a second thing to hold (the lead).
 - Letting the hook pass a line it cannot check: an undecided hook that allows is no hold.
+- Normalising odd characters the way a harness might (trimming them, or splitting at them)
+  before the check: it would have to match each harness's reading exactly, and refusing such
+  a line costs a session nothing it needs (the lead).
