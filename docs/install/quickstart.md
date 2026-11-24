@@ -10,7 +10,7 @@ instead: it covers TLS, backups and upgrades.
 
 ## What you need
 
-- Python 3.12 or newer, and [pipx](https://pipx.pypa.io/)
+- Python 3.12 or newer for the hub (the CLI alone needs 3.11), and [pipx](https://pipx.pypa.io/)
   (`python3 -m pip install --user pipx`, or your package manager's
   `pipx`).
 - git.

@@ -480,6 +480,126 @@ def test_the_role_of_an_outsiders_agent_stays_within_the_outside_roles(
     assert owner.patch(f"{P}/members/{agent.id}", {"role": "designer"}).status_code == 202
 
 
+# --- what it keeps holds after the join too (§2.3 "Outside", tsk-x028b4hk6r08) ----------------
+
+
+def _kept(row: Any) -> tuple[Any, ...]:
+    return (row.areas, row.capabilities, row.reports_to)
+
+
+def _beyond(answer: Any, field: str) -> None:
+    """The join's own refusal (`_outside_values`): `forbidden`, `member_join_limit`."""
+    assert answer.status_code == 403, answer.text
+    assert answer.json()["error"]["details"] == {"reason": "member_join_limit", "field": field}
+
+
+def _open_requests(engine: Engine) -> list[Any]:
+    with engine.connect() as conn:
+        return list(conn.execute(select(t.request.c.id).where(t.request.c.status == "open")))
+
+
+def test_a_member_change_gives_an_outsiders_agent_no_areas(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    before = _kept(_row(migrated, agent.id))
+    _beyond(owner.patch(f"{P}/members/{agent.id}", {"areas": ["web/"]}), "areas")
+    assert _kept(_row(migrated, agent.id)) == before
+    assert _open_requests(migrated) == []  # refused up front: no consent request waits
+
+
+def test_a_member_change_gives_an_outsiders_agent_no_capabilities(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    before = _kept(_row(migrated, agent.id))
+    _beyond(owner.patch(f"{P}/members/{agent.id}", {"capabilities": ["tag"]}), "capabilities")
+    assert _kept(_row(migrated, agent.id)) == before
+    assert _open_requests(migrated) == []
+
+
+def test_a_member_change_has_an_outsiders_agent_report_to_no_other_member(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    third = flow.agent(make_client, owner, role="manager")
+    sibling = _outside_agent(make_client, owner, outsider)  # another agent of the same owner
+    before = _kept(_row(migrated, agent.id))
+    for boss in (third.id, owner.id, sibling.id):
+        _beyond(owner.patch(f"{P}/members/{agent.id}", {"reports_to": boss}), "reports_to")
+    # Its owner, once a member, names another member for it: the same refusal.
+    _member_now(migrated, outsider)
+    _beyond(outsider.patch(f"{P}/members/{agent.id}", {"reports_to": third.id}), "reports_to")
+    assert _kept(_row(migrated, agent.id)) == before
+    assert _open_requests(migrated) == []
+
+
+@pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        ({"areas": ["web/"]}, "areas"),
+        ({"capabilities": ["tag"]}, "capabilities"),
+        ({"reports_to": "third"}, "reports_to"),  # a pair with the boss's owner (§6.2)
+        ({"reports_to": "sibling"}, "reports_to"),  # inside its owner: the owner's consent
+    ],
+)
+def test_the_owners_go_on_a_request_filed_before_is_refused_too(
+    on: None,
+    owner: flow.Human,
+    outsider: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    body: dict[str, Any],
+    field: str,
+) -> None:
+    """The change is checked again as it is written: a consent request that waits, filed while
+    the call did not check it, takes no effect on the owner's `go`, and stays open."""
+    agent = _outside_agent(make_client, owner, outsider)
+    if body.get("reports_to") == "third":
+        body = {"reports_to": flow.agent(make_client, owner).id}
+    elif body.get("reports_to") == "sibling":
+        body = {"reports_to": _outside_agent(make_client, owner, outsider).id}
+    before = _kept(_row(migrated, agent.id))
+    with monkeypatch.context() as m:
+        m.setattr(agent_owners, "check_outside_fields", lambda *_: None)
+        filed = owner.patch(f"{P}/members/{agent.id}", body)
+    assert filed.status_code == 202, filed.text
+    waiting = [r.id for r in _open_requests(migrated)]
+    assert waiting
+    for request_id in waiting:
+        _beyond(outsider.post(f"/requests/{request_id}/answer", {"reply_id": "go"}), field)
+    assert _kept(_row(migrated, agent.id)) == before
+    assert [r.id for r in _open_requests(migrated)] == waiting
+
+
+def test_an_outsiders_agent_keeps_empty_fields_and_its_owner_as_its_boss(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = _outside_agent(make_client, owner, outsider)
+    emptied = owner.patch(f"{P}/members/{agent.id}", {"areas": [], "capabilities": []})
+    assert emptied.status_code in (200, 202), emptied.text
+    if emptied.status_code == 202:  # another owner's agent: its owner consents (§6.2)
+        done = outsider.post(f"/requests/{emptied.json()['id']}/answer", {"reply_id": "go"})
+        assert done.status_code == 200, done.text
+    row = _row(migrated, agent.id)
+    assert (row.areas, row.capabilities) == ([], [])
+    # Nobody, from its owner outside the project.
+    assert outsider.patch(f"{P}/members/{agent.id}", {"reports_to": None}).status_code == 204
+    assert _row(migrated, agent.id).reports_to is None
+    # Its owner, once the owner is a member.
+    _member_now(migrated, outsider)
+    moved = outsider.patch(f"{P}/members/{agent.id}", {"reports_to": outsider.id})
+    assert moved.status_code == 200, moved.text
+    with migrated.connect() as conn:
+        mine = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.human_id == outsider.id, t.membership.c.active.is_(True)
+            )
+        ).scalar_one()
+    assert _row(migrated, agent.id).reports_to == mine
+
+
 def test_trust_outside_holds_a_members_scopes_for_its_role_and_never_more() -> None:
     admin_only = {"tasks:admin", "members:admin", "project:admin", "requests:answer", "line:lead"}
     for role in ("coder", "reviewer", "manager", "proxy", "ops"):

@@ -50,7 +50,7 @@ Pause it in the **Agents** view: it hears about it at once and takes no new work
 
 ## Is my project public?
 
-Only where the hub's operator has turned public pages on (`MAITY_PUBLIC_PAGES`, off by default); until then no project is public. There, a new project is public unless you tick **Private** when you create it, or the hub can't see that its repository is public. In an organisation you don't own, it starts private. A public project shows its overview, board, members, organisation and Why to anyone (Why with counts, family names and the titles of what needs attention, where those are readable); its inbox, chats and messages stay private ([Open, and public unless you choose otherwise](how/what-we-deliver.md#open-and-public-unless-you-choose-otherwise)).
+Only where the hub's operator has turned public pages on (`MAITY_PUBLIC_PAGES`, off by default); until then no project is public. There, a new project is public unless you tick **Private** when you create it, or the hub can't see that its repository is public. On a shared hub such as maity.team, it can't see that until you have connected your forge access and confirmed the repository; then you make the project public in its settings ([Bring your open-source project](bring-your-project.md)). In an organisation you don't own, it starts private. A public project shows its overview, board, members, organisation and Why to anyone (Why with counts, family names and the titles of what needs attention, where those are readable); its inbox, chats and messages stay private ([Open, and public unless you choose otherwise](how/what-we-deliver.md#open-and-public-unless-you-choose-otherwise)).
 
 ## What is Keep the Why, and do I have to use it?
 

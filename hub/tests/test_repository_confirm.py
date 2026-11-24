@@ -56,6 +56,78 @@ def test_a_new_repository_is_unconfirmed_until_the_owner_confirms_it(owner: flow
     assert owner.post(CONFIRM, {"url": URL + "/"}).status_code == 200  # the same URL
 
 
+@pytest.mark.parametrize(
+    "sent",
+    [
+        URL + ".git",
+        URL + ".git/",
+        "HTTPS://GitHub.com/acme/maity",
+        "https://GITHUB.COM/acme/maity.git",
+        URL + "//",  # as before: the stored spelling with its trailing slashes (A2220 P3-1)
+    ],
+)
+def test_a_url_creation_would_store_the_same_confirms(owner: flow.Human, sent: str) -> None:
+    """The URL is compared as creation stores one (§6.1): the scheme and host in any case, a
+    trailing slash and a `.git` are the same repository (tsk-vt6gwx7h86c0)."""
+    answer = owner.post(CONFIRM, {"url": sent})
+    assert answer.status_code == 200, answer.text
+    assert confirmed(owner) is True
+
+
+@pytest.mark.parametrize(
+    "sent",
+    [
+        "https://github.com/ACME/maity",  # the path's own case is kept at creation
+        "https://github.com/acme/maity.GIT",  # only a lower-case `.git` is dropped
+        "http://github.com/acme/maity",  # creation refuses it: no repository at all
+        "not a url",
+        # Guards against over-accepting (A2220 P3-1): none names the stored repository. They pass
+        # with the comparison before tsk-vt6gwx7h86c0 and after it; they fail only if a later
+        # change widens it too far (A2275, lotse's ruling).
+        URL + "/tree/main",
+        "https://www.github.com/acme/maity",
+        "https://github.com:443/acme/maity",
+        URL + "?x=1",
+        URL + "#readme",
+        "https://github.com/acme/ma%69ty",
+        URL + " ",
+        "https://github.com/acme/mait",
+    ],
+)
+def test_another_url_or_one_creation_refuses_is_not_confirmed(owner: flow.Human, sent: str) -> None:
+    refused = owner.post(CONFIRM, {"url": sent})
+    assert error(refused) == (409, "conflict", {"reason": "repository_changed", "url": URL})
+    assert confirmed(owner) is False
+
+
+LEGACY = "https://GitHub.com/acme/maity.git"  # stored before URLs were normalised
+
+
+@pytest.mark.parametrize("sent", [LEGACY, LEGACY + "/", URL, URL + ".git"])
+def test_a_row_stored_before_normalisation_still_confirms(
+    owner: flow.Human, migrated: Engine, sent: str
+) -> None:
+    """20261114130000_repo_url_2048 kept such a row's spelling: the dashboard sends it as stored,
+    and the normalised form names the same repository (tsk-vt6gwx7h86c0, A2219)."""
+    with migrated.begin() as conn:
+        conn.execute(t.project.update().values(repository_url=LEGACY))
+    answer = owner.post(CONFIRM, {"url": sent})
+    assert answer.status_code == 200, answer.text
+    assert confirmed(owner) is True
+
+
+def test_a_row_stored_before_normalisation_refuses_another_repository(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """A guard, as the near misses above: it passes before and after the change and fails only
+    if the comparison over-accepts a legacy row."""
+    with migrated.begin() as conn:
+        conn.execute(t.project.update().values(repository_url=LEGACY))
+    refused = owner.post(CONFIRM, {"url": "https://github.com/acme/other"})
+    assert error(refused) == (409, "conflict", {"reason": "repository_changed", "url": LEGACY})
+    assert confirmed(owner) is False
+
+
 def test_a_url_the_project_no_longer_carries_is_refused(
     owner: flow.Human, anna: flow.Human
 ) -> None:
