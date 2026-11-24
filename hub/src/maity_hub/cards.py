@@ -107,12 +107,15 @@ def sibling_holds(mine: Membership, card: Any) -> bool:
     return card.claim_holder == mine.id and not holds(mine, card)
 
 
-def has_done_authority(mine: Membership, card: Any) -> bool:
+def has_done_authority(conn: Connection, mine: Membership, card: Any) -> bool:
     """Who moves a card to done, by `policy.done_authority` (§6.1); under
-    `reviewer_and_tester` who may sign it (`sign`)."""
+    `reviewer_and_tester` who may sign it (`sign`). A role that reviews or tests gives an
+    outside agent none (`outside_caller`); the holder's is the holder's (§2.3)."""
     authority = mine.project.done_authority
     if authority == "holder":
         return holds(mine, card)
+    if authority in ("reviewer", "tester", "reviewer_and_tester") and outside_caller(conn, mine):
+        return False
     if authority == "reviewer":
         return mine.may("tasks:review")
     if authority == "tester":
@@ -120,6 +123,18 @@ def has_done_authority(mine: Membership, card: Any) -> bool:
     if authority == "reviewer_and_tester":
         return mine.may("tasks:review") or mine.may("tasks:test")
     return mine.may("tasks:admin")
+
+
+def outside_caller(conn: Connection, mine: Membership) -> bool:
+    """The caller is an agent `own_approvals.outside_agent` counts as outside (§2.3): trust
+    `outside`, the `joined_outside` mark, or an owner who is no member. Whatever its role, it
+    holds no done authority through `tasks:review` or `tasks:test` and signs no approval
+    (§2.3 "Own approvals", §6.2)."""
+    if mine.kind != "agent":
+        return False
+    from maity_hub import own_approvals  # own_approvals reads cards
+
+    return own_approvals.outside_agent(conn, mine.project, mine.principal_id)
 
 
 def two_signatures(project: Any) -> bool:
@@ -133,7 +148,8 @@ def sign(
     scope gives, or under both the one it names. One member never fills both; a place
     already filled keeps its signature while its signer still stands (`standing`)."""
     slot = approve or _only_slot(mine)
-    if not mine.may(SIGNATURES[slot]):
+    # An outside agent signs nothing, as for a missing scope (§2.3 "Own approvals").
+    if not mine.may(SIGNATURES[slot]) or outside_caller(conn, mine):
         raise forbidden(SIGNATURES[slot], "this signature needs another scope")
     current = standing(conn, mine.project.id, card.approvals)
     other = current["test" if slot == "review" else "review"]
@@ -247,7 +263,7 @@ def signed_by_two(approvals: dict[str, Any], revision: int | None) -> bool:
     return all(m is not None and m["revision"] == revision for m in marks)
 
 
-def check_transition(mine: Membership, card: Any, wanted: str) -> None:
+def check_transition(conn: Connection, mine: Membership, card: Any, wanted: str) -> None:
     """A `PATCH {status}`: the transition table of §6.4."""
     current = card.status
     if wanted == current:
@@ -265,7 +281,7 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
         # A merged report waits behind a request: the merge is what review asked for (§6.6).
         current = "review"
     if (current, wanted) in {("review", "done"), ("review", "in_progress")}:
-        if has_done_authority(mine, card):
+        if has_done_authority(conn, mine, card):
             refuse_same_team_review(mine, card)
             return
         raise ApiError(
