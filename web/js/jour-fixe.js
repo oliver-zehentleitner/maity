@@ -31,7 +31,8 @@ window.Maity = window.Maity || {};
   const TRIAGE = { decided: () => M.t("jf.triage.decided"), to_owner: () => M.t("jf.triage.to_owner") };
   const START = { jour_fixe_open: () => M.t("jf.start.open"), project_closed: () => M.t("jf.skip.project_closed"),
     no_moderator: () => M.t("jf.skip.no_moderator"), too_few: () => M.t("jf.skip.too_few"), rate_limited: () => M.t("jf.start.rate_limited"),
-    circle_owner_gone: () => M.t("jfs.refused.circle_owner_gone"), not_series_keeper: () => M.t("jfs.refused.not_series_keeper") };
+    // Starting a round is a keeper's or a moderator's (§20.2): said as such, not as a keeper's alone (A2568).
+    circle_owner_gone: () => M.t("jfs.refused.circle_owner_gone"), not_series_keeper: () => M.t("jfs.refused.not_starter") };
   const words = (table, key) => (Object.hasOwn(table, key) ? table[key]() : String(key || ""));
 
   // ---- The view: rounds, the next slot, a start by hand -------------------
