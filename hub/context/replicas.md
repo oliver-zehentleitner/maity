@@ -790,7 +790,7 @@ production and would otherwise have passed as a test system's name (found in the
 means the same host and port as reached (`https://a` and `https://a:443`); another port on one
 host stays another target, as a test system's pods may be port-forwards on one machine.
 
-Changed on 2026-11-04: the prefix is now reserved. The lead (@lotse) approved the plan on card
+Changed on 2026-11-04: the prefix is now reserved. The lead approved the plan on card
 tsk-ch8nt5dfgmp7. A person or an organisation may not take a handle of the form `lt-` followed by
 digits. The pattern is not in `RESERVED_FIRST`, because that list is also read by the robots file
 (`routes/seo.py`), the join host (`join_host.py`) and the migration's holder check

@@ -63,7 +63,7 @@ existing second-factor flow.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qez5k81hnkjc (the maintainer found the page bare, 2026-11-03) and lotse#wtwy's answers on it (2026-11-04): the frame's footer instead of the product line, as on the framed `/login` (req-5k1gvfsmcg9k); `render.door_document`, `routes/email_sign_in.py`. The policy's shape is this entry's reading of the legal pages' entry (landing.md, dde46a41)
+**Source:** card tsk-qez5k81hnkjc (the maintainer found the page bare, 2026-11-03) and the lead's answers on it (2026-11-04): the frame's footer instead of the product line, as on the framed `/login` (req-5k1gvfsmcg9k); `render.door_document`, `routes/email_sign_in.py`. The policy's shape is this entry's reading of the legal pages' entry (landing.md, dde46a41)
 **Revisit when:** the page needs a script, the dashboard takes the link over, the dashboard's `/login` gets the product line back, anything a user stores can be answered under the public host's origin as a stylesheet or a font, or `public-pages.css` stops colouring the header's mark
 
 `GET /mail/sign-in/{token}` and every dead link of it (`404`, never which reason) are drawn by
@@ -94,7 +94,7 @@ leaves the page. `form-action 'self'` is new: the old policy did not restrict wh
 **Rejected alternatives:**
 - The registration link page's shell (`render.form_document`, mail.md f63430e9): it looks like the
   old legal pages, not like `/login`, which the card asked for.
-- The product line under the frame's footer, as the card first said: superseded by lotse#wtwy,
+- The product line under the frame's footer, as the card first said: superseded by the lead,
   so that every page without a session ends the same way as the framed `/login`.
 - `'unsafe-inline'` for the fallback, as the legal pages have: it would allow every inline style on
   a page with a token in its address, where a hash allows the one block the hub writes.
@@ -105,7 +105,7 @@ leaves the page. `form-action 'self'` is new: the old policy did not restrict wh
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-w62n5p0v9d47 and lotse#wtwy's go on its plan (2026-11-05); contract `docs/api.md` §16.7.5, §18.6 (#1394); `link_frame.py`, `routes/mail_links.py`; why the policy changed is the root's context/security.md, 8191d964
+**Source:** card tsk-w62n5p0v9d47 and the lead's go on its plan (2026-11-05); contract `docs/api.md` §16.7.5, §18.6 (#1394); `link_frame.py`, `routes/mail_links.py`; why the policy changed is the root's context/security.md, 8191d964
 
 The four pages of `routes/mail_links.py` and the sign-in link's page are drawn by one helper,
 `link_frame.page`, which reads the frame's model and answers with `link_frame.HEADERS`

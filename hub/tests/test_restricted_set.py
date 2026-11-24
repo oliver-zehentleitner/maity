@@ -396,6 +396,60 @@ def test_the_set_notice_names_no_member_and_skips_those_it_names(
     assert _notices(owner) == []  # the member who entered is not told of itself
 
 
+def test_the_set_notice_skips_the_human_who_changed_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§18.1: a human's own actions never notify them, the set's change as any other."""
+    anna = _member(make_client, migrated, "anna")
+    bert = _member(make_client, migrated, "bert")
+    assert (
+        _setting(owner, {"mode": "nobody_except", "members": [anna.id, owner.id]}).status_code
+        == 200
+    )
+    assert _notices(anna) == [] and _notices(owner) == []  # both named by the first change
+    widened = _setting(owner, {"mode": "nobody_except", "members": [anna.id, owner.id, bert.id]})
+    assert widened.status_code == 200
+    [notice] = _notices(anna)  # in the set, not named: told
+    assert notice["title"] == "The restricted-access set changed"
+    assert _notices(bert) == []  # named
+    assert _notices(owner) == []  # in the set, not named, but the one who changed it
+
+
+def test_the_set_notice_skips_the_human_whose_join_exchange_let_an_agent_in(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A2462: the join exchange's actor is the new membership, its `by` the human who made
+    the join. That human, in the set, is not told of their own change (§18.1)."""
+    anna = _member(make_client, migrated, "anna")
+    _set(migrated, "all_except", [])
+    flow.agent(make_client, owner)
+    [entered] = _set_events(anna)
+    assert entered["payload"]["cause"] == "joined" and entered["payload"]["by"]["id"] == owner.id
+    [notice] = _notices(anna)  # in the set, not named: told
+    assert notice["title"] == "The restricted-access set changed"
+    assert _notices(owner) == []  # in the set, the one `by` names
+
+
+def test_the_set_notice_skips_the_human_whose_call_made_an_organisation_keep(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A2462: an organisation keep's actor is the hub, its `by` the human whose call made it.
+    That human, in the set, is not told of their own change (§18.1)."""
+    from maity_hub import org_projects
+
+    anna = _member(make_client, migrated, "anna")
+    _set(migrated, "all_except", [])
+    carla = factory.human(migrated, "carla")
+    project = _project(migrated)
+    with events.transaction(migrated) as conn:
+        org_projects.keep_owner(conn, project, carla, owner.id)
+    [entered] = _set_events(anna)
+    assert entered["payload"]["by"]["id"] == owner.id
+    [notice] = _notices(anna)  # in the set, not named: told
+    assert notice["title"] == "The restricted-access set changed"
+    assert _notices(owner) == []  # in the set, the one `by` names
+
+
 # --- the guide --------------------------------------------------------------------------------
 
 

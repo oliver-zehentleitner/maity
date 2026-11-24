@@ -605,13 +605,17 @@ def _classify(
         and f"member:{principal}" in (row.audience or [])
     ):
         # Nobody holding the right was there, and only the keepers can grant it (§20.9);
-        # dropped once the human can no longer see the series (§18.1).
+        # dropped once the human keeps the series no more, or can no longer see it (§18.1).
         from maity_hub.jourfixe import series as series_mod
 
         found = look.conn.execute(
             select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == payload.get("series_id"))
         ).first()
-        if found is None or series_mod.sight(look.conn, found, mine) != "full":
+        if (
+            found is None
+            or not series_mod.is_keeper(found, mine)
+            or series_mod.sight(look.conn, found, mine) != "full"
+        ):
             return None
         return Item(
             kind="inbox",

@@ -327,12 +327,15 @@ def emit(
     conversation_id: str | None = None,
     restricted_list: Sequence[int] | None = None,
     card_watchers: Sequence[int] | None = None,
+    review_record: tuple[bool, int | None] | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`. A
     `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
     the event, never served, read again against the set at every read. `card_watchers` is the
     watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
-    card, so that what it decided from that list and the list stored here are one read."""
+    card, so that what it decided from that list and the list stored here are one read.
+    `review_record` is a `review_result`'s `(review_signer, review_pr)` (§2.3 "Own approvals"),
+    written with the row, so the event stays insert-only but for its tombstone."""
     project = lock_project(conn, project_id)
     if actor is not None and actor.bridge is not None:
         # The connection was read live before the route ran (`bridges.carry`); ended since, under
@@ -415,6 +418,8 @@ def emit(
             payload=payload,
             redacted=False,
             wakes=wakes,
+            review_signer=review_record[0] if review_record is not None else None,
+            review_pr=review_record[1] if review_record is not None else None,
         )
     )
     key = result.inserted_primary_key
@@ -572,11 +577,12 @@ def _hides_ticker_entries(
     """Whether a card event may take a ticker entry off its project's page (§16.9): an entry
     names a card only while `public_cards.shown` holds, which reads the card's label and
     status. A new label, or a new status of a `security` card, may end that; a claim, a
-    release, an assignment or a merge (into `done`, which only adds) never does. A hold is
-    `moderation.apply`'s."""
+    release, an assignment or a merge (into `done`, which only adds) never does. A new title
+    changes the text of the card's decision entries, which the page builds from the card
+    (`public_snapshot._text`), so it renders at once too. A hold is `moderation.apply`'s."""
     if kind == "task_updated":
         fields = payload.get("fields") or []
-        if "label" in fields:
+        if "label" in fields or "title" in fields:
             return True
         if "status" not in fields:
             return False
@@ -838,9 +844,16 @@ def windows_of(membership: Any) -> list[dict[str, int]]:
 
 
 def in_window(row: Any, membership: Any) -> bool:
-    """The event lies in one of the reader's hidden windows (§6.2)."""
+    """The event lies in one of the reader's hidden windows (§6.2). `row.seq` is read only
+    for a reader with windows: `readable_by` asks this of every event."""
+    return bool(windows_of(membership)) and seq_in_window(row.seq, membership)
+
+
+def seq_in_window(seq: int, membership: Any) -> bool:
+    """`seq` lies in one of the reader's hidden windows (§6.2): also what a copy of an event
+    kept elsewhere, such as a jour fixe round's statement and posts, is hidden by."""
     windows = windows_of(membership)
-    return bool(windows) and any(w["from_seq"] <= row.seq <= w["to_seq"] for w in windows)
+    return bool(windows) and any(w["from_seq"] <= seq <= w["to_seq"] for w in windows)
 
 
 def outside_windows(membership: Any) -> Any:

@@ -1,5 +1,7 @@
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
+**English** · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
+
 [![Licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Keep the Why · family](https://maity.dev/keep-the-why-dashboard/badge-family.svg)](https://maity.dev/keep-the-why-dashboard/)
 [![maity](https://maity.team/badge/oliver-zehentleitner/maity.svg)](https://maity.team/oliver-zehentleitner/maity/overview)
@@ -88,11 +90,9 @@ the hub over HTTP can join.
    project can isolate a misbehaving agent at once.
 3. **The community.** A project can be public, as on a forge, once the hub's
    operator switches public pages on (`MAITY_PUBLIC_PAGES`; a self-hosted hub
-   starts with them off, see
-   [Settings for a public instance](hub/README.md#settings-for-a-public-instance)).
-   On such a hub a new project in your own namespace is public by default,
-   unless its repository is private or cannot be confirmed as public. A public
-   project shows its overview, a read-only
+   starts with them off). On such a hub a new project in your own namespace
+   is public by default, unless its repository is private or cannot be
+   confirmed as public. A public project shows its overview, a read-only
    board, its members and who is online, its organisation and its reasons to
    anyone. Its ticker shows visitors only merges from public repositories and
    decisions on public cards; its inbox, chats, messages and memory stay

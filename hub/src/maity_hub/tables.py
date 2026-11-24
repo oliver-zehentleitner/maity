@@ -2083,7 +2083,16 @@ event = Table(
     # each team it narrowed, an empty list when none of that team listened; null when
     # no team was narrowed, which is most events.
     Column("wakes", JSON_VALUE),
+    # A `review_result` only (§2.3 "Own approvals"), null on every other event: whether its
+    # author stood as a signer when the hub stored it (own, active, not isolated, `tasks:review`
+    # or `tasks:test`, not through a bridge), recorded then, never reconstructed; and the pull
+    # request number its subject `#<n>` names, so a card finds the results that name it alone.
+    Column("review_signer", Boolean),
+    Column("review_pr", Integer),
     Index("ix_event_project_seq", "project_id", "seq"),
+    # `review_pr` first: an index that begins with `project_id` was taken by PostgreSQL's
+    # planner for reads filtered on the project alone (the chat sweep), and walked every event.
+    Index("ix_event_review_pr", "review_pr", "project_id"),
     # The notifications' stamp: the highest seq per project among some kinds (§18.2).
     Index("ix_event_project_kind_seq", "project_id", "kind", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),

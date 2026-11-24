@@ -85,7 +85,7 @@ def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
         found.append(
             {
                 "type": payload["type"],
-                "text": str(payload.get("text") or ""),
+                "text": _text(conn, payload),
                 "url": (
                     url
                     if payload["type"] == "merge"
@@ -100,6 +100,20 @@ def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
         if len(found) == TICKER_LIMIT:
             break
     return found
+
+
+def _text(conn: Connection, payload: dict[str, Any]) -> str:
+    """The entry's text. A decision's is built again from its card as it is now
+    (`ticker.decision_text`), so the page never keeps a title the card no longer has; a
+    merge's is the stored one, the forge's own title."""
+    if payload.get("type") == "decision":
+        from maity_hub import ticker as ticker_items
+
+        request = payload.get("request") or {}
+        card = conn.execute(select(t.card).where(t.card.c.id == request.get("task_id"))).first()
+        if card is not None and isinstance(request.get("id"), str):
+            return ticker_items.decision_text(card, request["id"])
+    return str(payload.get("text") or "")
 
 
 def _merge(payload: dict[str, Any]) -> dict[str, Any]:

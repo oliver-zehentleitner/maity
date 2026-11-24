@@ -376,6 +376,15 @@ def _principal_of(conn: Connection, membership_id: int | None) -> str | None:
     return (row.agent_id or row.human_id) if row else None
 
 
+def decision_text(card: Any, request_id: str) -> str:
+    """A decision entry's text: the card's id and title as the card has them, or the request
+    alone. Stored with the entry, and built again from the card as it is now wherever a
+    visitor reads the entry (§16.9), so a later title edit leaves no old title on a page."""
+    if card is None:
+        return f"Decided: {request_id}"
+    return f"Decided: {card.id} {_card_title(card)} ({request_id})"
+
+
 def on_request_answered(
     conn: Connection, project: Any, request: Any, actor: events.Actor | None
 ) -> None:
@@ -425,11 +434,7 @@ def on_request_answered(
         protected=protected,
         may_read=lambda m: m.principal in may,
     )
-    text = (
-        f"Decided: {card.id} {_card_title(card)} ({request.id})"
-        if card is not None
-        else f"Decided: {request.id}"
-    )
+    text = decision_text(card, request.id)
     write(
         conn,
         project.id,

@@ -109,9 +109,11 @@ def _announce(conn: Connection, project: Any, target: Any, actor: Actor) -> None
     )
 
 
-def _tell_owner(
+def tell_owner(
     conn: Connection, project: Any, target: Any, human_id: str, title: str, lines: list[str]
 ) -> None:
+    """A personal notice (class `info`, §7) to the agent's owner, naming the project and who
+    made the change (`the hub` for `BY_HUB`)."""
     from maity_hub import namespace
     from maity_hub.routes.requests import file_hub_notice
 
@@ -161,7 +163,7 @@ def isolate(
     _announce(conn, project, target, actor)
     cards.drop_signatures(conn, project.id, target.agent_id or target.human_id, actor)  # §6.4
     tell_released(conn, released, actor, project)
-    _tell_owner(
+    tell_owner(
         conn,
         project,
         target,
@@ -245,7 +247,7 @@ def lift(
         restricted.person(conn, actor.membership_id) if actor.membership_id else "hub",
         actor,
     )
-    _tell_owner(
+    tell_owner(
         conn,
         project,
         target,

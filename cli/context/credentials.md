@@ -466,7 +466,7 @@ unreachable URL through `safe_url` like the other hub errors.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
+**Source:** the Windows test of a coder (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
 **Revisit when:** a platform maity supports gains a directory removal bound to an open handle, or a leftover directory turns out to break a retry
 
 A `maity join` that fails before anything is kept (an expired or wrong code, a refused hub)
@@ -551,4 +551,57 @@ tsk-t03pp2ftd1f3.
   is easily missed.
 - Binding the hub's origin into the request signature: a change to the signing contract
   between hub and CLI, a separate decision and not this one.
+
+## A GET answered with `nonce_reused` is signed again and sent once more; a write is not
+
+**Id:** c3f73129-6ee0-469c-87bf-d79fbd1953fc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-d9b3t5wprwgc (jour fixe of 2026-11-06: three instances got `nonce_reused` on `GET …/events` in the same minute, a restart helped each time) and the lead's go for the plan, 2026-11-09; its re-cut on main, card tsk-tsqzj6snvgpa, 2026-11-23; `hub/tests/test_two_processes.py` (the identical signed GET at a second hub process is refused), `cli/tests/test_nonce_reused.py`
+**Revisit when:** the hub can tell a re-delivered request from a replay, a write gets a safe way to be sent again after `nonce_reused`, or a `nonce_reused` turns up that a re-delivery cannot explain
+**See:** https://github.com/oliver-zehentleitner/maity — 1c65bb74-d5a1-41ff-8741-dafd80ce449f — as of 2026-11-23
+**See:** https://github.com/oliver-zehentleitner/maity — fbc8c3e0-d945-4237-89dc-0a4cc8e1282d — as of 2026-11-23
+
+`hub._send` makes a new nonce for every attempt (`sign.new_nonce`, 16 random bytes), so a
+401 `nonce_reused` answer to it usually means the request reached the hub twice: something
+between the client and the hub delivered a copy, and the hub refused the second delivery. (A
+real replay by someone else gets the same answer; the client's one more read then only reads
+again.) A `GET` answered that way is signed again with a new nonce and sent once more, within
+what is left of the call's timeout; a second `nonce_reused` ends the call as before. Only
+status 401 with that code triggers this retry: no other response does (that code on another
+status, another 401); the separate `timestamp_skew` retry, a 401 with the hub's time, is
+unchanged. `POST`, `PATCH`, `PUT` and `DELETE` are never sent again on it.
+
+**Reason:** the hub has no path that spends one request's nonce twice. On PostgreSQL the nonce is
+spent by an insert that skips a conflict, inside the short auth transaction; the transaction's
+retry rolls the nonce row back with the rest, and the claim again after a refusal only keeps a
+refused request's own nonce spent while that request is answered with its refusal. On the other
+databases the process window keys a nonce by the request, so a re-run of the same request still
+counts as its first use. The client shares no counter between instances, and a clock jump is
+answered with `timestamp_skew`, not `nonce_reused`. What remains is a re-delivery. The likely one
+is a proxy re-sending a long-poll `GET` to a restarted or another pod after its upstream broke,
+which would hit every open wait in the same minute. That trigger on the production hub is
+inferred, not reproduced, and what fronted it then is still unanswered; the mechanism is shown by
+the tests named above. `maity wait` ended on that 401, so the agent stopped waiting until someone
+restarted it. A `GET` is not free of writes, but sending it once more repeats no write: the hub
+refuses `nonce_reused` while it authenticates (`deps.authenticated`, `auth/caller._signed`),
+before the route runs, and rolls that transaction back, so the refused attempt did nothing. The
+new one is one more read, as `maity wait` already makes with the same cursor after a 5xx, and
+what the events read writes comes out the same when it is read again: the acknowledged cursor
+only moves forward, and a chat message's delivery is recorded only the first time
+(`routes/events._acknowledge`, `events.mark_delivered`). A write gets no such repeat, since the
+delivery the hub accepted may have done it already.
+
+**Rejected alternatives:**
+- The hub accepting a re-delivered request: a copy a proxy re-sent and a replay by someone who
+  captured the request carry the same credential, nonce and signature, so the hub cannot tell
+  one from the other; accepting it is accepting replays, which is what the nonce window exists
+  to refuse.
+- Retrying writes too: the first delivery may have done the write; idempotency keys cover only
+  some writes, and a repeat could act twice.
+- Only telling operators to switch off their proxy's retries: it helps one deployment, not every
+  hub a client talks to; the Helm README says it as a note instead.
+- Retrying without limit: a hub that refuses every attempt would keep the call busy until its
+  timeout for nothing; one more attempt covers a single re-delivery.
 

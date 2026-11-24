@@ -180,6 +180,49 @@ the settlement of the request that follows a no-op, so nothing is closed twice.
 **Known limit:** an invitation names a human by their current handle only; the alias of §6.24
 joins it with #523, together with the duplicate-name case above.
 
+## A `go` on an organisation's invitation to a suspended account is refused and leaves the request open
+
+**Id:** f0597e82-f3ee-4d9a-9fde-b207f65821c0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.26 "Adding a member"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); `org_invitations._invitee`, `org_invitations.settle`
+**See:** orgs.md#an-invitation-is-closed-by-whoever-closes-it-with-its-reason-the-answer-only-closes-one-that-is-still-open — 506a6ea2-4f34-4174-a86f-09c3c5c66200 — as of 2026-11-24
+**Revisit when:** a suspended account keeps a session that can answer requests, or a suspension should also end the invitations open to the account
+
+An organisation files no request to a suspended account (`_invitee` treats it as a name nobody has, so the inviter's
+202 stays the same). If a request is already open when the account is suspended and a `go` reaches `settle`, it raises
+403 `account_suspended`: the answer's transaction rolls back, the request and the invitation stay open, and a lifted
+suspension lets the same `go` through while the invitation lasts. A suspended account's sessions end, so no signed-in
+person reaches this today; it is a backstop, tested by calling `settle` directly.
+
+**Reason:** a suspension can be lifted, and the invitation was not wrong when it was sent; nothing about it has gone
+stale. Refusing without closing keeps the invitee's word for when they can give it.
+
+**Rejected alternative:** a `409 invalid_transition` with `invitation_stale`, as for an invitation that is no longer
+open: a stale `go` withdraws the request, so the suspension would close the path for good although it may be lifted.
+
+## One count of invitations per person across projects and organisations; an organisation's inviter over it gets the same 202
+
+**Id:** 440a01b9-9d47-4dbe-a3e9-a746c7191b0d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §3.4 "Limits and secrecy", §6.26 "Adding a member"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); `invitations.invitee_wait`, `invitations.check_invitee_rate`, `org_invitations.create`
+**See:** joins.md#an-invitation-by-handle-tells-an-active-person-from-every-other-name-as-adding-a-contact-does — 810c8189-95d8-4b6c-be3b-4ef7f425490c — as of 2026-11-24
+**Revisit when:** an organisation's invitation answer starts telling an active person from other names, or the per-invitee count moves out of the rows
+
+`invitations.invitee_wait` counts, under the person's row lock, a project's invitations by handle and an organisation's
+invitations whose request went to the person in the last 24 hours, one count of 10 for both. A project's inviter over it
+gets 429 with `Retry-After`, as before. An organisation's inviter gets the same 202 with the item as for any other name,
+and no request is filed: the invitation stays open, unseen, until it expires.
+
+**Reason:** the limit protects the invitee from being flooded, whichever kind of invitation does it. The organisation's
+answer never tells an active person from other names (§6.26), unlike an invitation by handle, which may (joins.md
+810c8189); a 429 only for real, active people over the count would be the one answer that does.
+
+**Rejected alternative:** a 429 on the organisation path too: it would reveal that the handle names an active account.
+
 ## A project's owner is a human or an organisation: `owner_id` for readers, two foreign keys for the database
 
 **Id:** 5332d7e2-c492-4083-8527-9cff0630e16a
