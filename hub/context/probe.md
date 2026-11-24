@@ -461,7 +461,17 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
   ends (`serves_until`, the success plus 10 minutes): past it the
   cache answers it nowhere, the project view's `keep_the_why_export`
   included, a failed read afterwards keeps none of it, and no member
-  falls back on a last good read made through it (A2574 P2-3).
+  falls back on a last good read made through it (A2574 P2-3). The
+  project view and the list ask the stored link too, from the database
+  alone since a view never waits on a read: while the grants hold such a
+  link that serves nothing, `keep_the_why_export` is `null` (review
+  A2573 F1). The choice marks a reader whose grants hold such a link
+  (`org_grants`) whatever it chose, and §11.3 answers such a reader's
+  refusal by reader, never from the cache: the forge no longer naming the
+  link's installation for the repository leaves only `no_grant` behind
+  (A2573 F2). Rejected: forgetting the reads when the forge stops naming
+  the installation, since no write happens then and other replicas would
+  not learn of it; and asking the forge while a view is built.
 - The probe asks the operator's token's visibility on every call before
   a cached observation is answered, as §11.5 does: after such a link
   that serves nothing (A2545 #6) and after one that was unlinked,
