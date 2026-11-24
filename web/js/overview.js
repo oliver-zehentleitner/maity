@@ -50,10 +50,12 @@ window.Maity = window.Maity || {};
   const NARROW_MS = 60000;
   // The tabs (the maintainer, 2026-10-30: one page was too full). Getters:
   // the labels are the catalog's when shown.
+  // An outsider of a public project (docs/api.md §2.3) reads Summary alone: Swarm reads …/swarm
+  // and Project the repository, the policy and the export, none of which the hub gives them.
   const TABS = [
     { key: "", get label() { return M.t("overview.tab.summary"); } },
-    { key: "swarm", get label() { return M.t("overview.tab.swarm"); }, when: () => !!M.swarm },
-    { key: "project", get label() { return M.t("overview.tab.project"); } },
+    { key: "swarm", get label() { return M.t("overview.tab.swarm"); }, when: (ctx) => !!M.swarm && M.trust.writes(ctx) },
+    { key: "project", get label() { return M.t("overview.tab.project"); }, when: (ctx) => M.trust.writes(ctx) },
   ];
 
   // A link from data: plain https only, in a new tab; anything else is text.
@@ -176,10 +178,14 @@ window.Maity = window.Maity || {};
     const humans = list.filter((m) => m.kind === "human").length;
     const agents = list.filter((m) => m.kind === "agent").length;
     const online = list.filter((m) => m.presence === "online").length;
+    const counted = [M.t("overview.team.humans", { count: humans }), M.t("overview.team.agents", { count: agents })];
+    // An outsider reads no presence (§2.3): no count of who is online, which would read 0.
+    const facts = !list.length ? null : M.trust.outsider(ctx) ? M.fmt.list(counted)
+      : M.t("overview.team.facts", { humans: counted[0], agents: counted[1], online });
     return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
       head("overview-members", M.t("overview.team.title"),
-        list.length ? M.t("overview.team.facts", { humans: M.t("overview.team.humans", { count: humans }), agents: M.t("overview.team.agents", { count: agents }), online }) : null,
-        h("a", { href: ctx.link("members"), "data-key": "members" }, M.t("overview.team.all"))),
+        facts,
+        h("a", { href: ctx.link("team"), "data-key": "members" }, M.t("overview.team.all"))),
       list.length
         // By trust (§2.3); each chip names its role on hover.
         ? h("div", { class: "overview-roles" }, M.trust.TRUSTS.filter((t) => list.some((m) => m.trust === t)).map((t) =>
@@ -275,18 +281,33 @@ window.Maity = window.Maity || {};
   }
 
   function tabsNav(ctx, chosen) {
+    const offered = TABS.filter((t) => !t.when || t.when(ctx));
+    // One tab alone (an outsider's Summary) is no row of tabs.
+    if (offered.length < 2) return null;
     return h("nav", { class: "view-tabs overview-tabs", "aria-label": M.t("overview.tabs.label") },
-      TABS.filter((t) => !t.when || t.when()).map((t) =>
+      offered.map((t) =>
         h("a", { href: t.key ? ctx.link("overview", t.key) : ctx.link("overview"), class: "view-tab", "aria-current": t.key === chosen ? "page" : null }, t.label)));
   }
 
   // args[0]: the tab (overview/<tab>); none, or one not offered, is Summary.
   M.views.overview = async function (ctx, root, args) {
     const asked = args && args[0];
-    const tab = TABS.some((t) => t.key === asked && t.key && (!t.when || t.when())) ? asked : "";
+    const tab = TABS.some((t) => t.key === asked && t.key && (!t.when || t.when(ctx))) ? asked : "";
+    // A tab an outsider is not offered is Summary, at its own address.
+    if (asked && !tab && M.trust.outsider(ctx)) { M.route.go(ctx.link("overview"), { replace: true }); return; }
     const counts = tab === "";
     const since = new Date(Date.now() - M.boardWindowDays * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const path = ctx.base + "/overview?closed_after=" + encodeURIComponent(since);
+    // GET …/overview is a member's: an outsider's Summary counts the board from the cards they
+    // read (§2.3, `GET …/tasks`, the closed ones of the same window), with no requests and no
+    // reports, which the hub reads only for members.
+    const read = M.trust.outsider(ctx)
+      ? () => M.api.getAll(ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since)).then((r) => {
+        const tally = {};
+        r.items.forEach((c) => { tally[c.status] = (tally[c.status] || 0) + 1; });
+        return { board: { counts: tally, closed_after: since }, requests: null, reports: null };
+      })
+      : () => M.api.get(path);
     const status = M.statusLine();
     const box = h("div", { class: "overview" });
     // The swarm reads on its own, on its tab only, and is kept across the redraws below.
@@ -301,7 +322,7 @@ window.Maity = window.Maity || {};
       // A failed read stands where the counts would.
       const missing = counts && !o && h("p", { class: "send-status failed" }, M.t("overview.counts_failed", { reason: err.message }));
       append(clear(box), layout(ctx, tab, !counts ? null : o
-        ? { requests: requests(ctx, o), board: board(ctx, o), reports: reports(ctx, o) }
+        ? { requests: o.requests ? requests(ctx, o) : null, board: board(ctx, o), reports: o.reports ? reports(ctx, o) : null }
         : { requests: missing, board: null, reports: null }, swarm));
       const again = had && Array.from(box.querySelectorAll("a, button")).find((e) => e.getAttribute("data-key") === had);
       if (again) again.focus();
@@ -309,12 +330,17 @@ window.Maity = window.Maity || {};
     if (!counts) draw(null, null);
     else {
       try {
-        draw(await M.api.get(path));
+        draw(await read());
       } catch (err) {
         draw(null, err);
       }
     }
-    append(root, h("h2", null, M.t("overview.title")), tabsNav(ctx, tab), status.el, box);
+    // Report the project to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by its full name: at the
+    // end of the overview, out of the way of its summary.
+    const reporting = M.report && ctx.me.kind === "human" ? M.report.control({ type: "project", id: ctx.slug }, "project") : null;
+    append(root, h("h2", null, M.t("overview.title")), tabsNav(ctx, tab), status.el, box,
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null);
+    if (reporting && M.report.asked()) reporting.open();
     // A summary is not read line by line: it is drawn again in place. A
     // trigger during a read runs one more read after it, so none is lost.
     let reading = false;
@@ -324,7 +350,7 @@ window.Maity = window.Maity || {};
       if (reading) { pendingRead = true; return; }
       reading = true;
       try {
-        draw(await M.api.get(path));
+        draw(await read());
         status.done();
       } catch (err) {
         status.fail(M.t("overview.refresh_failed"), err);

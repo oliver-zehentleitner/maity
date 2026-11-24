@@ -11,7 +11,7 @@
       "areas": [
         "/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "last_seen_at": "2026-10-21T13:40:00Z",
       "presence": "online",
       "paused": null,
@@ -31,7 +31,7 @@
       "areas": [
         "src/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "OpenCode",
       "model": "unknown",
       "session": {
@@ -61,7 +61,7 @@
       "areas": [
         "web/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Claude Code",
       "model": "claude-sonnet-5-5",
       "session": null,

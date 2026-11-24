@@ -13,8 +13,18 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
-  // The open column groups the board reads side by side; the closed one, with its window, after them.
+  // A hub search's closed column draws the cards closed last up to this, the rest on "Show more"
+  // (tsk-a5pxwgkgr73e): 783 closed cards cost a full redraw about 640 ms in Chromium, 100 of them about 100 ms.
+  const CLOSED_SHOWN = 50;
+  // The board reads a closed column one page at a time, the cards closed last first, and the next
+  // page only on its "Show more" (tsk-d4anfsk1e94j, the owner's req-aa0jka1xsfsy).
+  const CLOSED_PAGE = 50;
+  // The hub's largest page (docs/api.md §1.4): a reload reads again at most this many of a column.
+  const PAGE_MAX = 200;
+  // The open column groups the board reads side by side; the closed columns, with their window, each
+  // its own first page.
   const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
+  const CLOSED_GROUPS = ["done", "cancelled"];
   // The read of the cards changed while the groups were read (below): a page of the newest, and how
   // far before the reads began it looks.
   const RECENT_PAGE = 50;
@@ -81,6 +91,8 @@ window.Maity = window.Maity || {};
   // nobody yet. The dot is decoration; the words say it.
   function holderPresence(ctx, holder) {
     const member = (ctx.memberById || {})[holder];
+    // An outsider reads no presence (docs/api.md §2.3): nothing to say beside the holder.
+    if (M.trust.outsider(ctx)) return h("span", { class: "holder-presence", "data-holder": holder });
     return h("span", { class: "holder-presence", "data-holder": holder }, member
       ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
         " " + presenceWord(member.presence), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
@@ -107,7 +119,7 @@ window.Maity = window.Maity || {};
     if (!c.assigned_to) return null;
     const m = (ctx.memberById || {})[c.assigned_to];
     const name = ctx.nameOf(c.assigned_to);
-    return h("a", { class: "card-assignee kind-" + (m && m.kind === "human" ? "human" : "agent"), href: ctx.link("members", c.assigned_to),
+    return h("a", { class: "card-assignee kind-" + (m && m.kind === "human" ? "human" : "agent"), href: ctx.link("team", c.assigned_to),
       title: name, "aria-label": M.t("board.assigned_to", { name }) },
       m ? M.avatar(m, 16) : null, h("span", { "aria-hidden": "true" }, handleOf(ctx, c.assigned_to)));
   }
@@ -182,9 +194,13 @@ window.Maity = window.Maity || {};
   // In the opened card: its parent and related cards for whoever may edit
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
-    if (!manage || !manage.reload) return null;
+    // An outsider (docs/api.md §2.3) edits no card and starts no subtask.
+    if (!manage || !manage.reload || !M.trust.writes(ctx)) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
-    const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    // The board's cards as they are now: byId is filled in place at every draw, and the late draw
+    // may keep this part (draw, showPanelPart), so New subtask reads them when it is opened.
+    const othersNow = () => Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    const others = othersNow();
     const parts = [];
     if (M.boardEdit.editable(ctx, c)) {
       const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
@@ -239,7 +255,7 @@ window.Maity = window.Maity || {};
       const start = h("button", { type: "button", class: "small", "aria-expanded": "false", "data-focus": "subtask:" + c.id,
         onclick: () => {
           if (start.getAttribute("aria-expanded") === "true") { clear(box); start.setAttribute("aria-expanded", "false"); return; }
-          const f = M.boardEdit.newCardForm(ctx, others, async (body) => {
+          const f = M.boardEdit.newCardForm(ctx, othersNow(), async (body) => {
             try {
               await M.api.post(ctx.base + "/tasks", body);
             } catch (err) {
@@ -289,7 +305,7 @@ window.Maity = window.Maity || {};
     if (rc) observed = M.t("board.report.required_check", { text: observed, name: rc.name, status: word(CHECK_WORDS, rc.status) });
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: word(VERIFICATION_WORDS, r.verification) })),
-      h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("members", id), ctx })),
+      h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("team", id), ctx })),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, M.t("board.report.mismatch")) : null,
       whyLine(ctx, r));
@@ -590,10 +606,12 @@ window.Maity = window.Maity || {};
       if (target) target.focus();
     };
     const E = M.boardEdit;
-    const controls = manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
-      E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null;
+    // An outsider (docs/api.md §2.3) moves, assigns and places no card: no row of controls, no drag.
+    const writes = manage && M.trust.writes(ctx);
+    const controls = writes ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign, manage.handOver),
+      E.orderControl(ctx, c, manage.columnOf, manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
-    const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
+    const movable = writes && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const draggable = movable && !inPanel;
     const el = h("article", {
       class: "card card-" + c.kind + (draggable ? " movable" : ""),
@@ -629,7 +647,8 @@ window.Maity = window.Maity || {};
       family(ctx, c, inPanel),
       edges(c.kind === "release" ? M.t("board.edges.ships") : M.t("board.edges.depends_on"), c.depends_on, byId, frozen),
       edges(M.t("board.edges.ships_with"), c.ships_with, byId),
-      c.blocked_by_request
+      // A request it waits for is answered in the inbox, a member's (§7): not offered to an outsider.
+      c.blocked_by_request && M.trust.writes(ctx)
         ? h("p", { class: "flag" }, M.tn("board.waits", {
           answer: h("a", { href: ctx.link("inbox") }, M.t("board.waits.answer")),
           request: h("span", { class: "request-id" }, c.blocked_by_request),
@@ -641,8 +660,8 @@ window.Maity = window.Maity || {};
             watchers: c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)]) })
           : M.tn("board.contract.line", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
-      // Its section from the repository (§6.8).
-      c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
+      // Its section from the repository (§6.8); not for an outsider, who reads no …/contract (§2.3).
+      c.contract && M.contractPanel && M.trust.writes(ctx) ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       subtasks(ctx, c, byId, inPanel),
       inPanel ? familyEditor(ctx, c, byId, manage) : null,
@@ -672,7 +691,8 @@ window.Maity = window.Maity || {};
     // whatever the filters said; the board's own title keeps them.
     const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
     let marked = wanted || returning;
-    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin.
+    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin; an outsider has
+    // no trust and no role, so none.
     ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -681,7 +701,7 @@ window.Maity = window.Maity || {};
     // project of 1,135 cards). The closed window applies to the closed group alone. Each column is
     // ordered by the board itself (byOrder), so the groups may answer in any order. The statuses are
     // the contract's seven (§6.4).
-    // The groups are five snapshots, not one: a card moved from a group not yet answered into one
+    // The groups are six snapshots, not one: a card moved from a group not yet answered into one
     // already answered would be in neither (review of #1536). So, once they have all answered, the
     // cards changed since the reads began are read again, newest first (`order=updated`, §6), until
     // the first one older than that; each replaces or adds its card. The start is taken on the hub's
@@ -692,8 +712,13 @@ window.Maity = window.Maity || {};
     // least as new as the newest the pass before saw; a pass of one page has no gap and ends it.
     // After RECONCILE_PASSES passes that all paged (the board changing faster than it can be read),
     // one list of every status in the window is read instead and replaces the cards.
-    const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g)
-      .concat([ctx.base + "/tasks?status=done,cancelled&closed_after=" + encodeURIComponent(since)]);
+    // The closed columns are read apart, done and cancelled each with its own first page: the hub
+    // orders a closed list by column first (hub/context/persistence.md, 7bad4e04), so one page of
+    // both would hold no cancelled card until every done card in the window had been read.
+    const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g);
+    const closedPath = (s, limit) => ctx.base + "/tasks?status=" + s + "&closed_after=" + encodeURIComponent(since) + "&limit=" + limit;
+    // Each closed column's cursor to its next page, as the hub handed it out; null: none to read.
+    let closedNext = {};
     const windowPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
     const recentPath = windowPath + "&order=updated&limit=" + RECENT_PAGE;
     // One pass: from the first page, every card updated at or after `from`; whether it followed a
@@ -714,20 +739,108 @@ window.Maity = window.Maity || {};
       }
       return { paged, newest };
     };
-    const readList = async () => {
+    // shown(cards), where given, is called once the four open groups have answered, with their cards,
+    // before the closed columns' pages (tsk-a5pxwgkgr73e): on the maintainer's project those were
+    // 783 cards in four pages one after the other, about 0.9 s after the other groups had answered.
+    // A closed column is one page now (tsk-d4anfsk1e94j): CLOSED_PAGE cards, or for a reload as many
+    // as the column held (limits, at most PAGE_MAX), so that a write does not fold back what Show more
+    // loaded. Resolves with the cards and each closed column's next cursor.
+    // The first draw takes each open group's first page (tsk-qw08c8ds214g): the open column's second
+    // page came about 95 ms after its first, on the way to that draw. shown(cards, partial) names the
+    // columns whose later pages are still read: they keep their count back until the whole read is
+    // in, as the closed columns do (tsk-ywf14h6qd6kq). A later page that fails after the first draw
+    // fails that group alone: its column keeps its first page and says so, every other column takes
+    // what it read (openFailed in the answer). A read failing otherwise after the first draw (a
+    // closed column, the recheck) carries the open groups' cards with it (err.open).
+    const readList = async (shown, limits) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
-      const parts = await Promise.all(listPaths.map((path) => M.api.getAll(path)));
+      const firsts = [];
+      const groups = listPaths.map((path) => {
+        let firstPage = null;
+        firsts.push(new Promise((resolve) => { firstPage = resolve; }));
+        return M.api.getAll(path, shown ? (items, more) => firstPage({ items, more }) : undefined);
+      }).concat(CLOSED_GROUPS.map((s) => M.api.get(closedPath(s, (limits && limits[s]) || CLOSED_PAGE))));
+      // A closed column failing while the open ones are awaited is handled by Promise.all below.
+      groups.forEach((read) => read.catch(() => {}));
+      let pages = null;
+      if (shown) {
+        const open = new Map();
+        // A group's first page, or the whole group where that comes first; a group failing before
+        // its first page fails the read here, before any draw, as before.
+        pages = await Promise.all(firsts.map((first, i) => Promise.race([first, groups[i].then((r) => ({ items: r.items, more: false }))])));
+        pages.forEach((page) => page.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        const partial = new Set();
+        pages.forEach((page, i) => { if (page.more) LIST_GROUPS[i].split(",").forEach((s) => partial.add(s)); });
+        shown([...open.values()], partial);
+      }
+      const asError = (err) => (err instanceof Error ? err : new Error(String(err)));
+      // openFailed: each failed group's statuses with that group's own error (statuses), and the
+      // first error that came (err).
+      let openFailed = null;
+      const openParts = groups.slice(0, LIST_GROUPS.length).map((read, i) => (pages
+        ? read.catch((err) => {
+          const e = asError(err);
+          if (!openFailed) openFailed = { statuses: new Map(), err: e };
+          LIST_GROUPS[i].split(",").forEach((s) => openFailed.statuses.set(s, e));
+          return { items: pages[i].items, next_cursor: null };
+        })
+        : read));
+      // A read that failed after the first draw still hands over the open groups' cards it read
+      // (open: their cards and openFailed), so that no open column is left at its first page with
+      // a count; the closed columns say the failure, as before (tsk-ywf14h6qd6kq).
+      const withOpen = async (err, extra) => {
+        const e = Object.assign(asError(err), extra);
+        if (!pages) return e;
+        const open = new Map();
+        (await Promise.all(openParts)).forEach((r) => r.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        e.open = { cards: [...open.values()], openFailed };
+        return e;
+      };
+      let parts;
+      try {
+        parts = await Promise.all(openParts.concat(groups.slice(LIST_GROUPS.length)));
+      } catch (err) {
+        throw await withOpen(err, {});
+      }
       const cards = new Map();
       parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
-      let from = began;
-      for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
-        const { paged, newest } = await recentPass(cards, from);
-        if (!paged) return [...cards.values()];
-        from = newest;
+      const next = {};
+      CLOSED_GROUPS.forEach((s, i) => { next[s] = parts[LIST_GROUPS.length + i].next_cursor || null; });
+      // The groups have answered; a failure from here on is the read again of the cards changed
+      // meanwhile, said as such (recheck), not as a failed read of the closed cards.
+      try {
+        let from = began;
+        for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
+          const { paged, newest } = await recentPass(cards, from);
+          if (!paged) return { cards: [...cards.values()], next, openFailed };
+          from = newest;
+        }
+        // The one list of the whole window holds every closed card in it: no page is left to read,
+        // nor an open page that failed before.
+        return { cards: (await M.api.getAll(windowPath)).items, next: {}, openFailed: null };
+      } catch (err) {
+        throw await withOpen(err, { recheck: true });
       }
-      return (await M.api.getAll(windowPath)).items;
     };
-    let items = await readList();
+    // The first draw takes the open groups' cards; the closed columns say they are being read until
+    // the whole read is in (closedPending), or why it failed (closedError). Each read has a number
+    // (reads); an answer is drawn only when no later read's has been (applied), so a slow first read
+    // never replaces a reload's cards, and a failed reload leaves the first read to fill the columns.
+    let closedPending = true;
+    let closedError = null;
+    // The open columns whose later pages are still read, their count kept back as a closed column's
+    // is; and those whose later page failed, their first page kept and the failure said in its own
+    // line above the columns (openStatus) and in the column (tsk-ywf14h6qd6kq, A1711).
+    let openPartial = new Set();
+    let openFailed = null;
+    let reads = 1;
+    let applied = 0;
+    const apply = (read) => { if (read < applied) return false; applied = read; return true; };
+    let openShown;
+    const openRead = new Promise((resolve) => { openShown = resolve; });
+    const firstRead = readList((open, partial) => { openPartial = partial || new Set(); openShown(open); });
+    firstRead.catch(() => {});
+    let items = await Promise.race([openRead, firstRead.then((r) => r.cards)]);
     let boardItems = items;
     let searchVersion = 0;
     let hubResults = false;
@@ -777,7 +890,19 @@ window.Maity = window.Maity || {};
     }
 
     async function reload(focusKey, inPanel) {
-      boardItems = await readList();
+      const read = ++reads;
+      const limits = {};
+      CLOSED_GROUPS.forEach((s) => { limits[s] = Math.min(PAGE_MAX, Math.max(CLOSED_PAGE, boardItems.filter((t) => t.status === s).length)); });
+      const fresh = await readList(null, limits);
+      if (!apply(read)) return;
+      boardItems = fresh.cards;
+      closedNext = fresh.next;
+      closedPending = false;
+      closedError = null;
+      openPartial = new Set();
+      openFailed = null;
+      sayClosed();
+      sayOpen();
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
@@ -846,6 +971,15 @@ window.Maity = window.Maity || {};
         : null));
     const assign = (c, who, focusKey) => write({ busy: M.t("board.assign.busy"), failed: M.t("board.assign.failed") }, M.t("board.assign.done", { id: c.id, name: ctx.nameOf(who) }),
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
+    // An open card claimed for an outsider's agent (§6.5 "Until the claim request is built",
+    // js/board-edit.js assignControl): its one active instance named where the member list shows
+    // one, else the member, which the agent's distribution resolves (§6.5).
+    const handOver = (c, m, focusKey) => {
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      const holder = active.length === 1 ? m.id + "#" + active[0].id : m.id;
+      return write({ busy: M.t("board.claim_for.busy"), failed: M.t("board.claim_for.failed") }, M.t("board.claim_for.done", { id: c.id, name: ctx.nameOf(m.id) }),
+        () => M.api.post(cardPath(c) + "/claim", { holder }), focusKey);
+    };
 
     // Dragging: the columns the card may go to are marked, the others refused.
     // A browser fires drop only where dragover allowed it, so a card let go
@@ -912,7 +1046,7 @@ window.Maity = window.Maity || {};
       [panelCard, byId[updated.id], items.find((t) => t.id === updated.id), boardItems.find((t) => t.id === updated.id)]
         .forEach((t) => { if (t && t !== updated && t.id === updated.id) Object.assign(t, updated); });
     };
-    const manage = { move, assign, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
+    const manage = { move, assign, handOver, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
@@ -945,9 +1079,322 @@ window.Maity = window.Maity || {};
           }
         },
       },
-      h("h3", { class: "column-head" }, label, h("span", { class: "count" }, String(cards.length))),
-      cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+      h("h3", { class: "column-head" }, label, closedWaiting(s) || openWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
+      closedWaiting(s) && !cards.length
+        ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
+        : cards.length ? shownOf(s, cards).drawn.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"),
+      openIncomplete(s)
+        ? h("p", { class: "send-status failed open-read" }, openMoreFailed(openFailed.statuses.get(s)))
+        : null,
+      moreButton(s, cards));
+      if ((closedWaiting(s) && !closedError) || (openWaiting(s) && !openIncomplete(s))) col.setAttribute("aria-busy", "true");
+      cardsOf.set(col, cards);
       return col;
+    }
+
+    // The late draw keeps a column as it stands where the column drawn anew would be the same: the
+    // same card objects in the same order (its cards' listeners act on them, and a Place arrow on
+    // its neighbours), and the same tree (M.dom.sameTree). Only the columns that changed are
+    // replaced, so the browser styles and lays out those alone (tsk-3b2t7hwc352s: the late draw
+    // emptied and rebuilt every column, and each draw cost a style recalculation over about 16k
+    // elements). A menu's id is made up anew for every draw (js/menu.js, M.isMenuId); the kept
+    // column keeps its own, which its button names.
+    const cardsOf = new WeakMap();
+    const madeUp = (name, a, b) => (name === "id" || name === "aria-controls") && M.isMenuId(a) && M.isMenuId(b);
+    const sameCards = (a, b) => !!a && !!b && a.length === b.length && a.every((c, i) => c === b[i]);
+    const keyOf = (col) => col.getAttribute("data-status") || "other";
+    function placeColumns(fresh) {
+      const old = new Map(Array.from(columnsBox.childNodes).map((col) => [keyOf(col), col]));
+      const next = fresh.map((col) => {
+        const was = old.get(keyOf(col));
+        return was && sameCards(cardsOf.get(was), cardsOf.get(col)) && M.dom.sameTree(was, col, madeUp) ? was : col;
+      });
+      // The columns that go are taken out first, so that a kept one never moves (a moved node is
+      // styled again); each new one goes in where it stands.
+      const kept = new Set(next);
+      Array.from(columnsBox.childNodes).forEach((col) => { if (!kept.has(col)) columnsBox.removeChild(col); });
+      let at = columnsBox.firstChild;
+      next.forEach((col) => {
+        if (col === at) at = at.nextSibling;
+        else columnsBox.insertBefore(col, at);
+      });
+    }
+
+    // The cards a column draws. The board's own closed columns hold the pages read so far and draw
+    // them all. A hub search's closed column, which comes whole, draws the CLOSED_SHOWN closed last
+    // (by closed_at, newest first) until Show more opened it for this view, and the marked card wherever
+    // it stands, so a link to it still finds it, folded under a parent or not. They keep the column's
+    // order; only which of them are drawn changes.
+    const shownWhole = new Set();
+    const closedLater = (a, b) => ((a.closed_at || "") < (b.closed_at || "") ? 1 : (a.closed_at || "") > (b.closed_at || "") ? -1
+      : a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+    function shownOf(s, cards) {
+      if (!hubResults || !(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
+      const kept = new Set(cards.slice().sort(closedLater).slice(0, CLOSED_SHOWN).map((c) => c.id));
+      // The marked card, and the card it is folded under: a folded child is found under its parent only
+      // where that parent is drawn (review of #1645). The walk up stops after three ids, whatever the data.
+      for (let id = marked, depth = 0; id && depth < 3; id = byId[id] && byId[id].parent, depth++) kept.add(id);
+      const drawn = cards.filter((c) => kept.has(c.id));
+      return { drawn, rest: cards.length - drawn.length };
+    }
+    // The board's closed column: Show more reads its next page with the cursor the hub handed out and
+    // adds it, saying how many of the column's cards are loaded. It is there while the hub names a
+    // next page, and disabled while that page is read, so that a second click reads nothing twice.
+    const closedBusy = new Set();
+    const loadedOf = (s) => boardItems.filter((t) => t.status === s).length;
+    const moreKey = (s) => "more:" + s;
+    const moreButtonOf = (s) => Array.from(columnsBox.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === moreKey(s)) || null;
+    // Whether the focus is still where the click left it: on this column's Show more (the one clicked,
+    // gone or not, or the one a redraw put in its place), or nowhere, as when the clicked button was
+    // taken away. Anywhere else the reader moved it while the page was read, and it stays there.
+    const focusOnMore = (s, clicked) => {
+      const at = document.activeElement;
+      return !at || at === document.body || at === document.documentElement || at === clicked
+        || (!!at.getAttribute && at.getAttribute("data-focus") === moreKey(s));
+    };
+    // The page read, or the column read again: the focus stays on Show more; on the last page, which
+    // takes the button away, it goes to the first card the page added, or to the status line. Where the
+    // reader moved the focus meanwhile, it stays.
+    function moreShown(s, ours, added) {
+      if (ours) {
+        const stays = moreButtonOf(s);
+        const first = added.length ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === added[0].id) : null;
+        const title = first && first.querySelector("a.card-open");
+        if (stays) stays.focus();
+        else if (title || first) (title || first).focus();
+        else status.el.focus();
+      }
+      closedStatus.textContent = M.t("board.closed.more_loaded", { count: loadedOf(s) });
+    }
+    // Taken before a draw: puts back after it the focus the reader moved away from Show more, and an
+    // open menu's item.
+    const keepFocus = (ours) => {
+      const back = ours ? null : focusSpot();
+      const menuBack = openMenuSpot();
+      return () => {
+        if (back) back();
+        if (menuBack) menuBack();
+      };
+    };
+    // again: the column was read again from its first page after the hub refused the cursor; a second
+    // refusal is said as a failure, not read again once more.
+    async function readMore(s, again) {
+      const cursor = closedNext[s];
+      if (!cursor || closedBusy.has(s)) return;
+      closedBusy.add(s);
+      const button = moreButtonOf(s);
+      if (button) button.disabled = true;
+      // A reload that starts meanwhile reads the column again and supersedes this page.
+      const read = reads;
+      // Settled on every way out: a reload drawn meanwhile drew the button disabled (closedBusy), by
+      // its attribute.
+      const settle = () => {
+        closedBusy.delete(s);
+        const now = moreButtonOf(s);
+        if (now) { now.disabled = false; now.removeAttribute("disabled"); }
+      };
+      let page;
+      try {
+        page = await M.api.get(closedPath(s, CLOSED_PAGE) + "&cursor=" + encodeURIComponent(cursor));
+      } catch (err) {
+        // A closed cursor is bound to the list's filters (the hub's fingerprint), so one from before a
+        // hub release is refused as invalid and would be refused again: the board is read again, each
+        // closed column from its first page with as many cards as it held, and the page asked for is
+        // read with the fresh cursor; the button stays disabled meanwhile. A reload started meanwhile
+        // already reads them so.
+        const refused = err && err.code === "invalid" && err.details && err.details.fields && err.details.fields.cursor;
+        if (refused && !again && read === reads && closedNext[s] === cursor) {
+          const restore = keepFocus(focusOnMore(s, button));
+          try {
+            await reload();
+          } catch (failed) {
+            settle();
+            restore();
+            status.fail(M.t("board.closed.more_failed"), failed);
+            return;
+          }
+          settle();
+          restore();
+          if (closedNext[s] && !hubResults) return readMore(s, true);
+          moreShown(s, focusOnMore(s, button), []);
+          return;
+        }
+        settle();
+        status.fail(M.t("board.closed.more_failed"), err);
+        return;
+      }
+      settle();
+      if (read !== reads || closedNext[s] !== cursor) return;
+      const known = new Set(boardItems.map((t) => t.id));
+      const added = page.items.filter((t) => !known.has(t.id));
+      boardItems = boardItems.concat(added);
+      closedNext = { ...closedNext, [s]: page.next_cursor || null };
+      if (!hubResults) items = boardItems;
+      const ours = focusOnMore(s, button);
+      const restore = keepFocus(ours);
+      draw(true);
+      restore();
+      moreShown(s, ours, added);
+    }
+    // A hub search's Show more draws the column whole; the first card it adds takes the focus, the button being gone.
+    function moreButton(s, cards) {
+      if (!hubResults) {
+        if (!CLOSED_GROUPS.includes(s) || closedWaiting(s) || !closedNext[s]) return null;
+        return h("button", { type: "button", class: "small show-more", "data-focus": moreKey(s), disabled: closedBusy.has(s) ? true : null,
+          onclick: () => readMore(s) }, M.t("board.closed.show_more_loaded", { count: loadedOf(s) }));
+      }
+      const { drawn, rest } = shownOf(s, cards);
+      if (!rest) return null;
+      const first = cards.find((c) => !drawn.includes(c));
+      return h("button", { type: "button", class: "small show-more", "data-focus": "more:" + s, onclick: () => {
+        shownWhole.add(s);
+        draw();
+        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === first.id);
+        const title = el && el.querySelector("a.card-open");
+        if (title || el) (title || el).focus();
+      } }, M.t("board.closed.show_more", { count: rest }));
+    }
+
+    // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
+    const closedWaiting = (s) => (closedPending || !!closedError) && !hubResults && (s === "done" || s === "cancelled");
+    // An open column whose later pages are still read, or failed: no count, as for a closed column
+    // still read; a failed one keeps its first page and says so (tsk-ywf14h6qd6kq). A hub search
+    // lists its own cards.
+    const openIncomplete = (s) => !hubResults && !!openFailed && openFailed.statuses.has(s);
+    const openWaiting = (s) => !hubResults && (openPartial.has(s) || openIncomplete(s));
+    const closedWords = () => (closedError
+      ? (closedError.recheck
+        ? M.t("board.closed.recheck_failed", { reason: closedError.message || String(closedError) })
+        : M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
+      : M.t("board.closed.loading"));
+    // What the closed read is doing, said once for a screen reader: the columns are drawn anew, so
+    // the live region stands outside them and keeps its place from pending to done or failed.
+    const closedStatus = h("p", { class: "visually-hidden", role: "status", "aria-live": "polite" });
+    const sayClosed = () => { closedStatus.textContent = closedPending || closedError ? closedWords() : ""; };
+    // A later open page that failed (openFailed), each column with its group's own reason; the line
+    // above the columns names the first that came. That line is the background read's own, shown
+    // under every column filter: the status line stays the reader's actions', so a refusal said
+    // there is never replaced by it (A1711). Emptied, and hidden, by any read that clears openFailed;
+    // empty, it carries neither send-status nor failed, so no query for a failure or a status line
+    // finds it.
+    const openMoreFailed = (err) => M.t("board.open.more_failed", { reason: err.message || String(err) });
+    const openStatus = h("p", { class: "open-read-status", role: "status" });
+    const sayOpen = () => {
+      openStatus.textContent = openFailed ? openMoreFailed(openFailed.err) : "";
+      openStatus.className = openFailed ? "send-status failed open-read-status" : "open-read-status";
+      openStatus.hidden = !openFailed;
+    };
+    // The focused element in the columns, so that the next draw can find it again: its data-focus
+    // key, or its card and its place among that card's controls and links (a card's title link has
+    // no key). Returns what puts the focus back after the draw, or null when it was elsewhere.
+    const FOCUSABLE = "a, button, select, input, textarea";
+    // A control of the opened card's panel, by its data-focus key, its id, or its place among the
+    // panel's focusable elements.
+    const controlKey = (el, all) => el.getAttribute("data-focus") || el.getAttribute("id") || "#" + all.indexOf(el);
+    const controlIn = (root, key) => {
+      const all = Array.from(root.querySelectorAll(FOCUSABLE));
+      return all.find((e) => controlKey(e, all) === key) || null;
+    };
+    // The late draw, the one redraw no action of the reader starts, draws the panel's card part
+    // anew, since its subtask list and dependency lines read the closed cards that came with it
+    // (review of #1622). What the reader chose or typed in its controls and has not saved, each
+    // control's state against how it was drawn (panelDrawn), is carried onto the controls drawn
+    // anew, and an open New subtask form is moved into the new part as it is, its draft and the
+    // focus in it included, where the new part offers one.
+    let panelDrawn = null;
+    let panelPart = null;
+    // The card the panel's part was drawn from.
+    let panelData = null;
+    const CONTROLS = "input, select, textarea";
+    const controlsOf = (root) => {
+      const all = Array.from(root.querySelectorAll(CONTROLS));
+      return all.map((e) => [controlKey(e, all), e]);
+    };
+    const choiceBox = (el) => el.getAttribute("type") === "checkbox" || el.getAttribute("type") === "radio";
+    const stateOf = (el) => (el.tagName === "SELECT" && el.multiple
+      ? Array.from(el.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value")).join("\n")
+      : choiceBox(el) ? String(!!el.checked) : String(el.value == null ? "" : el.value));
+    const setState = (el, state) => {
+      if (el.tagName === "SELECT" && el.multiple) {
+        const chosen = state.split("\n");
+        Array.from(el.querySelectorAll("option")).forEach((o) => { o.selected = chosen.includes(o.getAttribute("value")); });
+      } else if (choiceBox(el)) el.checked = state === "true";
+      else if (el.tagName !== "SELECT" || Array.from(el.querySelectorAll("option")).some((o) => o.getAttribute("value") === state)) el.value = state;
+    };
+    const drawnState = (part) => new Map(controlsOf(part).map(([k, e]) => [k, stateOf(e)]));
+    // The open New subtask form of a part (its button and box), found by the button's key.
+    const openEditor = (part, id) => {
+      const start = Array.from(part.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === "subtask:" + id);
+      return start ? { start, open: start.getAttribute("aria-expanded") === "true" } : null;
+    };
+    function showPanelPart(part, keepTyped, data) {
+      const typed = keepTyped && panelPart && panelDrawn
+        ? controlsOf(panelPart).filter(([k, e]) => panelDrawn.has(k) && panelDrawn.get(k) !== stateOf(e)).map(([k, e]) => [k, stateOf(e)])
+        : [];
+      const was = keepTyped && panelPart ? openEditor(panelPart, data.id) : null;
+      const spot = was && was.open ? openEditor(part, data.id) : null;
+      if (spot) spot.start.parentNode.parentNode.replaceChild(was.start.parentNode, spot.start.parentNode);
+      if (panelPart) panel.update(part);
+      panelPart = part;
+      panelData = data;
+      panelDrawn = drawnState(part);
+      const fresh = new Map(controlsOf(part));
+      typed.forEach(([k, state]) => { if (fresh.has(k)) setState(fresh.get(k), state); });
+    }
+    // A card's open menu (status, assign) and its focused item, for a redraw that no action of the
+    // reader starts: the draw builds every card anew, each with its menus closed, so a menu opened
+    // just before would close under the reader's click (tsk-wp8hsgvha3n6). The old menu is closed
+    // here, without moving the focus, so that its listener for clicks elsewhere goes with it. The
+    // item is found again by its key (data-key: `member:<id>`, `move:<status>`, `sign:<slot>`),
+    // neither by its place nor by its words: a refresh that changed the members shifts the places,
+    // and a handle's words change when another member takes the same short handle (review of #1654).
+    // Returns what opens the same menu of the redrawn card on that item, or null when no keyed item
+    // of an open menu had the focus. An item gone meanwhile leaves the menu closed and the focus on
+    // its button, so that Enter lands on no other item.
+    function openMenuSpot() {
+      const open = Array.from(columnsBox.querySelectorAll(".menu-button"))
+        .find((b) => b.getAttribute("aria-expanded") === "true" && b.getAttribute("data-focus"));
+      if (!open) return null;
+      const key = open.getAttribute("data-focus");
+      const focused = Array.from(open.parentNode.querySelectorAll(".menu-item")).find((e) => e === document.activeElement);
+      const was = M.menuOf(open);
+      if (was) was.close(false);
+      const itemKey = focused ? focused.getAttribute("data-key") : null;
+      if (!itemKey) return null;
+      return () => {
+        const again = Array.from(columnsBox.querySelectorAll(".menu-button")).find((b) => b.getAttribute("data-focus") === key);
+        const menu = again && M.menuOf(again);
+        if (!menu || again.getAttribute("aria-expanded") === "true") return;
+        menu.open("first");
+        const item = Array.from(again.parentNode.querySelectorAll(".menu-item")).find((e) => e.getAttribute("data-key") === itemKey);
+        if (item) item.focus();
+        else menu.close(true);
+      };
+    }
+    function focusSpot() {
+      const at = document.activeElement;
+      if (at && panel && panel.el.contains(at)) {
+        const key = controlKey(at, Array.from(panel.el.querySelectorAll(FOCUSABLE)));
+        const opened = panel;
+        return () => {
+          if (panel !== opened) return;
+          const again = controlIn(panel.el, key);
+          if (again) again.focus(); else panel.focus();
+        };
+      }
+      if (!at || !columnsBox.contains(at)) return null;
+      const key = at.getAttribute("data-focus");
+      let article = at;
+      while (article && article !== columnsBox && !(article.tagName === "ARTICLE" && article.getAttribute("data-card"))) article = article.parentNode;
+      const id = article && article !== columnsBox ? article.getAttribute("data-card") : null;
+      const place = id ? Array.from(article.querySelectorAll(FOCUSABLE)).indexOf(at) : -1;
+      return () => {
+        if (key) { refocus(key); if (columnsBox.contains(document.activeElement)) return; }
+        const again = id ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === id) : null;
+        const target = again && place >= 0 ? Array.from(again.querySelectorAll(FOCUSABLE))[place] : null;
+        if (target) target.focus();
+        else status.el.focus();
+      };
     }
 
     let byId = {};
@@ -959,7 +1406,9 @@ window.Maity = window.Maity || {};
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
       panelCard = c;
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }),
+      const part = card(ctx, c, byId, manage, true);
+      panelPart = null;
+      panel = M.cardPanel.render(ctx, c, part, () => M.route.go(ctx.link("board"), { replace: true }),
         (updated) => {
           // Every copy, the list a search replaced included, which comes back when it ends; and the card
           // this panel was opened for, whichever panel is open by now.
@@ -967,6 +1416,7 @@ window.Maity = window.Maity || {};
           if (c.id === updated.id && c !== updated) Object.assign(c, updated);
           draw();
         });
+      showPanelPart(part, false, c);
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       // Closed, or another card opened, before the timer: the focus stays where that left it.
@@ -981,6 +1431,9 @@ window.Maity = window.Maity || {};
       boardBody.className = "board-body";
       panel = null;
       panelCard = null;
+      panelPart = null;
+      panelDrawn = null;
+      panelData = null;
     }
 
     function shown(c) {
@@ -996,10 +1449,14 @@ window.Maity = window.Maity || {};
       return true;
     }
 
-    function draw() {
+    // keepTyped: the late draw, which keeps what the reader typed in the opened card's panel.
+    function draw(keepTyped) {
       areaOptions();
       needsOptions();
-      byId = {};
+      // Filled in place, not replaced: a column the late draw keeps (placeColumns) holds the cards
+      // drawn before, and a card edited there is drawn again from this map, with the closed cards
+      // the late draw brought.
+      Object.keys(byId).forEach((id) => { delete byId[id]; });
       items.forEach((t) => { byId[t.id] = t; });
       const known = new Set(COLUMNS.map(([s]) => s));
       const visible = items.filter(shown);
@@ -1010,19 +1467,31 @@ window.Maity = window.Maity || {};
       columns = {};
       COLUMNS.forEach(([s]) => { columns[s] = standing.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
-      if (!items.length && !searchInput.value) {
+      if (!items.length && !searchInput.value && !closedPending && !closedError) {
         append(intro, h("p", { class: "first-hint" }, M.t("board.empty")));
-      } else if (!visible.length) {
+      } else if (!visible.length && !(closedWaiting("done") && inGroup(filter.column, "done"))) {
+        // No verdict while the closed cards the filter would show are still unknown.
         append(intro, h("p", { class: "muted" }, M.t("board.no_match")));
       }
-      append(clear(columnsBox),
-        COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s])),
-        other.length && !filter.column
-          ? h("section", { class: "column", "aria-label": M.t("board.column.other") },
-            h("h3", { class: "column-head" }, M.t("board.column.unknown")),
-            other.map((c) => card(ctx, c, byId, manage)))
-          : null);
-      if (panel) panel.update(card(ctx, byId[panel.id] || panelCard, byId, manage, true));
+      const fresh = COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s]));
+      if (other.length && !filter.column) {
+        const otherCol = h("section", { class: "column", "aria-label": M.t("board.column.other") },
+          h("h3", { class: "column-head" }, M.t("board.column.unknown")),
+          other.map((c) => card(ctx, c, byId, manage)));
+        cardsOf.set(otherCol, other);
+        fresh.push(otherCol);
+      }
+      // The late draw replaces only the columns that changed; every other draw, one the reader's
+      // action starts, draws them all anew.
+      if (keepTyped) placeColumns(fresh);
+      else append(clear(columnsBox), fresh);
+      if (panel) {
+        const data = byId[panel.id] || panelCard;
+        const part = card(ctx, data, byId, manage, true);
+        // The late draw keeps the panel's card part too where it would be the same, drawn from the
+        // same card: what the reader typed or opened in it, and the focus, stay as they are.
+        if (!(keepTyped && panelPart && panelData === data && M.dom.sameTree(panelPart, part, madeUp))) showPanelPart(part, !!keepTyped, data);
+      }
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         // A folded child: its parent unfolds, and the child's row is marked.
@@ -1066,9 +1535,13 @@ window.Maity = window.Maity || {};
       try {
         const result = await M.api.getAll(ctx.base + "/tasks?status=all&q=" + encodeURIComponent(query));
         if (version !== searchVersion) return;
+        // Outside the window by its closed_at, not by the loaded cards: while the closed group is
+        // still read, those are the open groups' alone (review of #1622).
         const loaded = new Set(boardItems.map((c) => c.id));
+        // closed_after is strict (§6, docs/api.md): a card closed at the cutoff is outside.
+        const inWindow = (c) => !!c.closed_at && Date.parse(c.closed_at) > Date.parse(since);
         items = result.items.map((c) => ({ ...c,
-          _searchClosed: !loaded.has(c.id) && ["done", "cancelled"].includes(c.status) }));
+          _searchClosed: ["done", "cancelled"].includes(c.status) && !loaded.has(c.id) && !inWindow(c) }));
         hubResults = true;
         searchStatus.textContent = M.t("board.search.found", { count: items.length });
         draw();
@@ -1121,10 +1594,11 @@ window.Maity = window.Maity || {};
       silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
     }
 
-    const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
+    // An outsider (docs/api.md §2.3) creates no card.
+    const newButton = !M.trust.writes(ctx) ? null : h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
     formBox.id = "new-card-box";
     const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
-    newButton.addEventListener("click", () => {
+    if (newButton) newButton.addEventListener("click", () => {
       if (newButton.getAttribute("aria-expanded") === "true") { closeForm(); return; }
       const f = E.newCardForm(ctx, items, async (body) => {
         const created = await M.api.post(ctx.base + "/tasks", body);
@@ -1156,8 +1630,64 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-area" }, M.t("board.filter.area")), areaSel,
         h("label", { for: "board-needs" }, M.t("cards.new.field.needs")), needsFilter,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
-      searchStatus, formBox, status.el, intro, wantedNote, boardBody);
+      searchStatus, formBox, status.el, intro, wantedNote, closedStatus, openStatus, boardBody);
+    sayClosed();
+    sayOpen();
     let markedCard = draw();
+    // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
+    // search filters it too; a hub search keeps its own results), and the focus put back on the
+    // element in the columns that had it (focusSpot), after a failed read too, where that element
+    // still stands in a column. One whose card is now folded under a parent that came with the closed
+    // cards, or is gone from the columns, hands the focus to the status line. A board left from a
+    // closed card finds that card only now, and its title takes the focus if nothing else took it
+    // meanwhile. A reload drawn meanwhile supersedes it.
+    const markedFirst = !!markedCard;
+    firstRead.then((all) => {
+      if (!apply(1)) return;
+      const at = document.activeElement;
+      const back = focusSpot();
+      const menuBack = openMenuSpot();
+      boardItems = all.cards;
+      closedNext = all.next;
+      closedPending = false;
+      openPartial = new Set();
+      openFailed = all.openFailed || null;
+      sayClosed();
+      sayOpen();
+      if (!hubResults) items = boardItems;
+      else {
+        // A hub search drawn meanwhile: a card it found that the board has now loaded is in the window.
+        const loaded = new Set(boardItems.map((c) => c.id));
+        items = items.map((c) => (c._searchClosed && loaded.has(c.id) ? { ...c, _searchClosed: false } : c));
+      }
+      const found = draw(true);
+      if (back) back();
+      else if (found && !markedFirst && returning && (!at || at === document.body)) {
+        const title = found.querySelector("a.card-open");
+        window.setTimeout(() => (title || found).focus(), 0);
+      }
+      // After the focus is back: an open menu's item takes it again (null when no item had it).
+      if (menuBack) menuBack();
+    }, (err) => {
+      if (applied > 1) return;
+      const back = focusSpot();
+      const menuBack = openMenuSpot();
+      closedPending = false;
+      closedError = err;
+      openPartial = new Set();
+      // The open groups' cards it read, every page or a failed group's first: the closed columns
+      // say the failure and stay empty, as before.
+      if (err && err.open) {
+        openFailed = err.open.openFailed || null;
+        boardItems = err.open.cards;
+        if (!hubResults) items = boardItems;
+      }
+      sayClosed();
+      sayOpen();
+      draw(true);
+      if (back) back();
+      if (menuBack) menuBack();
+    });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {
       searchInput.value = kept.search;
@@ -1174,11 +1704,16 @@ window.Maity = window.Maity || {};
     else if (wanted) {
       wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, days: CLOSED_WINDOW_DAYS });
     }
-    ctx.every(30000, async () => {
+    // The holders' presence, read again every 30 s; an outsider reads none (§2.3), so not for them.
+    if (!M.trust.outsider(ctx)) ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
         M.withMembers(ctx, fresh);
-        if (filter.silent) draw();
+        if (filter.silent) {
+          const menuBack = openMenuSpot();
+          draw();
+          if (menuBack) menuBack();
+        }
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
         });

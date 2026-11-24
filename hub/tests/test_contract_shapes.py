@@ -30,7 +30,28 @@ PAGE = ('{ "items": [ ... ], "next_cursor": "..." }', {"items", "next_cursor"})
 # The routes checked, as "/path with {}": (anchor, keys). The anchor is a line, or part of one,
 # of docs/api.md; each key must be named after it, before the next heading.
 SHAPES: dict[str, tuple[str, set[str]]] = {
+    "/admin/projects/{}/{}/limits": (
+        "### 16.5.1 Limits per project and per account",
+        {
+            "max_placements", "member_agents_max", "max_open_claims", "max_instances",
+            "max_attachment_storage_per_project",
+        },
+    ),  # fmt: skip
+    "/admin/users/{}/limits": (
+        "### 16.5.1 Limits per project and per account",
+        {
+            "max_placements", "member_agents_max", "max_open_claims", "max_instances",
+            "max_agents_per_human", "max_orgs_per_human", "max_projects_per_owner",
+        },
+    ),  # fmt: skip
+    "/admin/instance": (
+        "### 16.14 The instance's settings",
+        {"version", "schema", "settings", "docs"},
+    ),
     "/me": ("### 5.1 `GET /me`", {"member", "projects", "maintenance", "server_time"}),
+    "/bootstrap": ("### 5.4 `GET /bootstrap`", {"maintenance", "session", "me"}),
+    "/me/chat-access": ("| `GET /me/chat-access` | human |", {"allow", "deny"}),
+    "/me/chat-access/history": PAGE,  # §9.6 "History": newest first, paged (§1.4)
     "/me/contact-of": PAGE,
     "/me/contacts": PAGE,
     "/projects/{}/{}": (
@@ -42,12 +63,17 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
             "rules_version", "created_at", "public_page", "public_about",
         },
     ),  # fmt: skip
+    "/projects/{}/{}/contribution": (
+        "What is built so far answers `{agent_owners, outside_roles,",
+        {"agent_owners", "outside_roles", "open_cards", "agents_max", "can_join", "reason"},
+    ),
+    "/projects/{}/{}/limits": ("**The overview.**", {"project", "agents", "runners"}),
     "/projects/{}/{}/members": PAGE,
     "/projects/{}/{}/requests": PAGE,
     "/projects/{}/{}/roles": (
         '`GET` with `project:read` answers `{"builtin": [{name, description, guide, scopes}], '
         '"custom": […]}`',
-        {"builtin", "custom"},
+        {"builtin", "custom", "version"},
     ),
     "/projects/{}/{}/tasks": PAGE,
 }
@@ -135,6 +161,7 @@ PENDING = {
     "/projects/{}/{}/conversations/{}",
     "/projects/{}/{}/conversations/{}/messages",
     "/projects/{}/{}/events",
+    "/projects/{}/{}/events/{}",
     "/projects/{}/{}/forge/webhook",
     "/projects/{}/{}/invitations",
     "/projects/{}/{}/joins",
@@ -176,11 +203,13 @@ PENDING = {
     "/public/pages/{}",
     "/requests",
     "/requests/{}",
+    "/runner",  # the runner's credential only, like its siblings; the owner fixture gets 403
     "/runner/events",
     "/runner/placements",
     "/runners",
     "/runners/enrollments",
     "/runners/{}",
+    "/runners/{}/placements",  # the owner line's keys are checked in test_placements
     "/site/chrome",
 }
 
@@ -242,6 +271,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 def _answer(owner: flow.Human, path: str) -> dict[str, Any]:
     concrete = path.replace("/projects/{}/{}", "/projects/maintainer/maity", 1)
+    concrete = concrete.replace("/users/{}", f"/users/{owner.id}", 1)  # the admin's own account
     assert "{}" not in concrete, f"{path}: say here which ids the test calls it with"
     response = owner.get(concrete)
     assert response.status_code == 200, response.text

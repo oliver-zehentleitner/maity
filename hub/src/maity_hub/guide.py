@@ -36,11 +36,16 @@ ROLE: dict[str, str] = {
     ),
     "reviewer": (
         "You review: check the exact head you were given against the contract and the recorded "
-        "reasons, name each finding with file and line, and say approve or changes."
+        "reasons, name each finding with file and line, and say approve or changes. When "
+        "$MAITY_SCRATCH is set (a runner placement under Claude Code or Codex), keep evidence, "
+        "scratch clones and venvs there and delete them once you have reported; docs/agents.md "
+        "says how to check out another head there."
     ),
     "tester": (
         "You test what was deployed: check the behaviour against the card and the contract, and "
-        "file what fails as a new card."
+        "file what fails as a new card. When $MAITY_SCRATCH is set (a runner placement under "
+        "Claude Code or Codex), keep evidence, scratch clones and venvs there and delete them "
+        "once you have reported; docs/agents.md says how to check out another head there."
     ),
     "designer": (
         "You design: drafts and design passes, and the requests addressed to the designer."
@@ -134,7 +139,7 @@ DESCRIPTION: dict[str, str] = {
         "documentation — and answers others' questions about them with the source (file and "
         "line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, "
         "writes no code and does not review; a merge that changes one of its declared sources "
-        "is to wake it (§17.3, not built; below)"
+        "(`expert_sources`, §6.2) wakes it (§17.3; below)"
     ),
 }
 

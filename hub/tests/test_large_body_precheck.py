@@ -5,7 +5,6 @@ caller and is handled before the cap table, with its own limit (§17.4, test_for
 
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import Any
 
@@ -70,7 +69,7 @@ def _drive(
             *headers,
         ],
     }  # fmt: skip
-    asyncio.run(client.app(scope, receive, send))
+    flow.drive(client, scope, receive, send)
     start = sent[0]
     error = dict(start["headers"]).get(b"maity-error", b"").decode()
     return start["status"], error, asked[0]

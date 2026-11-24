@@ -14,14 +14,15 @@ from typing import Any
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
-from maity_hub import avatars, catalog, clock, events, inbox, namespace
+from maity_hub import avatars, catalog, clock, events, inbox, invitations, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
+from maity_hub.plain_text import plain_line
+from maity_hub.text_language import text_language
 from maity_hub.views import deleted, deleted_person
 
 WINDOW = timedelta(days=30)
-KINDS = ("inbox", "chat", "mention", "security")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (
@@ -31,10 +32,9 @@ EVENT_KINDS = (
     "jour_fixe_skipped",
     "jour_fixe_reported",
 )
+NOT_MESSAGES = tuple(kind for kind in EVENT_KINDS if kind != "message")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
-
-# The texts the hub itself composes for a human, in that human's language (§6.2, §18.4).
 
 
 @dataclass
@@ -90,9 +90,7 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
         )
     ).all()
     found = Scope(human_id, public_url)
-    from maity_hub.notifications import preferences  # preferences reads what this module shows
-
-    found.language = preferences.text_language(conn, human_id)
+    found.language = text_language(conn, human_id)
     if not members:
         return found
     projects = {
@@ -101,26 +99,11 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
             select(t.project).where(t.project.c.id.in_({m.project_id for m in members}))
         )
     }
-    # Joining never replays a project's history (§18.2): the highest seq at the join.
-    joined = dict(
-        conn.execute(
-            select(t.membership.c.id, func.coalesce(func.max(t.event.c.seq), 0))
-            .select_from(t.membership)
-            .outerjoin(
-                t.event,
-                and_(
-                    t.event.c.project_id == t.membership.c.project_id,
-                    t.event.c.at <= t.membership.c.joined_at,
-                ),
-            )
-            .where(t.membership.c.id.in_([m.id for m in members]))
-            .group_by(t.membership.c.id)
-        ).all()
-    )
     for member in members:
         project = projects[member.project_id]
         found.memberships.append(Membership(project, member, "human"))
-        found.joined_seq[project.id] = int(joined[member.id])
+        # Joining never replays a project's history (§18.2): the seq stored with the join.
+        found.joined_seq[project.id] = int(member.joined_seq)
     return found
 
 
@@ -142,12 +125,16 @@ def derive(conn: Connection, where: Scope, *, sign_ins: bool = False) -> list[It
 
 
 def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime) -> list[Item]:
-    rows = conn.execute(
-        select(t.event)
-        .where(*_event_window(where, mine, now), t.event.c.kind.in_(EVENT_KINDS))
-        .order_by(t.event.c.seq)
-    ).all()
-    return _items_of(conn, where, mine, rows)
+    window = _event_window(where, mine, now)
+    rows = [
+        *conn.execute(select(t.event).where(*window, t.event.c.kind.in_(NOT_MESSAGES))),
+        *conn.execute(
+            select(t.event).where(
+                *window, t.event.c.kind == "message", _recipient(where.human_id, mine, now)
+            )
+        ),
+    ]
+    return _items_of(conn, where, mine, sorted(rows, key=lambda row: row.seq))
 
 
 def _event_window(where: Scope, mine: Membership, now: datetime) -> tuple[Any, ...]:
@@ -208,6 +195,8 @@ def derive_page(
     newest_first: bool,
     wanted: Callable[[Item], bool],
     since: Any = None,
+    kinds: set[str] | None = None,
+    projects: set[str] | None = None,
 ) -> list[Item]:
     """The items a page of `count` can reach: of each project's events, of its plain chat
     messages and of the account records, only the first `count` that `wanted` accepts,
@@ -215,11 +204,20 @@ def derive_page(
     cut from `derive`, which holds every item of 30 days and costs that much per call;
     the counts read `count_items` instead.
 
-    A message row whose payload text names the human may be a mention, so it is derived
-    with the rest; the text test only selects (a false hit is classified like any row)."""
+    A message row that `notification_recipient` lists as naming the human may be a mention,
+    so it is derived with the rest; the row only selects (`_classify` decides).
+
+    `kinds` and `projects`, the page's filters (`wanted` applies them too): a source that can
+    give no item of them is not read at all, since every row it holds would be rejected one
+    chunk at a time to the end of the window (tsk-p8w1s1zwsx2y). The plain chats give only
+    `chat`; the events besides them give `inbox` only from requests and the jour fixe, so
+    without `inbox` only their messages and mentions are read; the records give no `chat` and
+    no `mention`; a project outside `projects` gives nothing."""
     now = clock.now()
     found: list[Item] = []
     for mine in where.memberships:
+        if projects is not None and mine.project.id not in projects:
+            continue
         window = _event_window(where, mine, now)
         if since is not None:
             # Read after a position (`after`, oldest first): start right behind it, so a held
@@ -230,7 +228,7 @@ def derive_page(
         # A personal request's events never make an item (`_classify`: it is one item,
         # from its record), nor do a request's that is another member's alone, so both
         # are left out in SQL, not read and dropped one by one.
-        concerned = _may_concern(mine)
+        concerned = may_concern_member(mine.id)
         # One item per request, the latest addressed one (`ADDRESSED`): `_items_of` keeps
         # it only among the rows it is given, so a page read in chunks takes only the
         # newest such event of each request. Every one of them is classified alike, since
@@ -247,32 +245,61 @@ def derive_page(
             )
             .exists()
         )
-        others = (
-            t.event.c.kind.in_(EVENT_KINDS),
-            or_(t.event.c.kind != "message", _names(where.human_id)),
+        others: tuple[Any, ...] = (
+            t.event.c.kind.in_(NOT_MESSAGES),
             or_(t.event.c.kind.notin_(REQUEST_EVENTS), concerned),
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
+        )
+        if kinds is not None and "inbox" not in kinds:
+            others = (*others, t.event.c.kind == "mentioned")
+        # The messages that may mention the human, apart: from `notification_recipient`, so
+        # the project's other messages are never read (hub/context/notifications.md
+        # fc79a4a6). Kept out of `others`, where an OR with the other kinds walked every
+        # message of the window on PostgreSQL. Both sources are cut to the page alike.
+        mentions = (
+            t.event.c.kind == "message",
+            _recipient(where.human_id, mine, now, mention=True),
         )
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
         # Its first chunk is a whole one: few of these rows are rejected, so one statement
         # covers a page whatever the history, as the load test keeps (test_load.py).
-        found += _paged(
-            conn, where, mine, window, others, lambda i: True, count, newest_first, wanted, CHUNK
+        if kinds is None or kinds & {"inbox", "mention", "chat"}:
+            for condition in (others, mentions):
+                found += _paged(
+                    conn,
+                    where,
+                    mine,
+                    window,
+                    condition,
+                    lambda i: True,
+                    count,
+                    newest_first,
+                    wanted,
+                    CHUNK,
+                )
+        if kinds is None or "chat" in kinds:
+            found += _chats(conn, where, mine, window, count, newest_first, wanted)
+    if kinds is None or kinds - {"chat", "mention"}:
+        found += _records_paged(
+            conn,
+            where,
+            now,
+            count,
+            newest_first,
+            wanted,
+            None if since is None else since.account,
         )
-        found += _chats(conn, where, mine, window, count, newest_first, wanted)
-    found += _records_paged(
-        conn, where, now, count, newest_first, wanted, None if since is None else since.account
-    )
     found.sort(key=lambda item: item.order, reverse=True)
     return found
 
 
-def _may_concern(mine: Membership) -> Any:
+def may_concern_member(member_id: int) -> Any:
     """A request event's request is not personal and may concern the member: a superset of
     `_request_concerns` (the exact test, in `_classify`). Left out is a request filed to
     another member that no admin pool holds, nobody covers, and the member neither holds
     nor asked: agents asking each other, which make no item of the human's
-    (tsk-spa1tad26vs1)."""
+    (tsk-spa1tad26vs1). By the membership's id, so the held long-poll's look
+    (`listing.quietly_moved`) can use it on the stamp's memberships."""
     r = t.request.c
     return (
         select(r.id)
@@ -281,19 +308,19 @@ def _may_concern(mine: Membership) -> Any:
             r.personal.is_(False),
             or_(
                 r.to_kind != "member",
-                r.to_member == mine.id,
-                r.holder_member == mine.id,
+                r.to_member == member_id,
+                r.holder_member == member_id,
                 r.holder_pool.is_(True),
                 r.cover.is_not(None),
-                r.asked_by == mine.id,
-                r.on_behalf_of == mine.id,
+                r.asked_by == member_id,
+                r.on_behalf_of == member_id,
             ),
         )
         .exists()
     )
 
 
-def _names(human_id: str) -> Any:
+def names(human_id: str) -> Any:
     """A message row whose payload text has a `member_id` and the human's id: a superset
     of the rows that mention them (the exact test is `_classify`). The id alone would not
     do, a chat message names its addressee in `to`."""
@@ -303,10 +330,34 @@ def _names(human_id: str) -> Any:
     )
 
 
-def _addressed(human_id: str) -> Any:
+def addressed(human_id: str) -> Any:
     """A row whose audience text holds the human's `member:` token: a superset of the rows
     whose audience lists it (the exact test is `_classify`)."""
     return cast(t.event.c.audience, String).contains(f'"member:{human_id}"', autoescape=True)
+
+
+def _recipient(
+    human_id: str,
+    mine: Membership,
+    now: datetime,
+    *,
+    chat: bool | None = None,
+    mention: bool | None = None,
+) -> Any:
+    """The message rows of one project that may make an item of the human: those
+    `notification_recipient` lists for them in the window, narrowed by its flags. An index
+    range per person and project, where the payload and audience text was matched over
+    every message of the window (hub/context/notifications.md fc79a4a6); `_classify` stays
+    the exact test."""
+    r = t.notification_recipient.c
+    found = select(r.seq).where(
+        r.human_id == human_id, r.project_id == mine.project.id, r.at >= now - WINDOW
+    )
+    if chat is not None:
+        found = found.where(r.chat.is_(chat))
+    if mention is not None:
+        found = found.where(r.mention.is_(mention))
+    return t.event.c.seq.in_(found)
 
 
 def _paged(
@@ -325,29 +376,46 @@ def _paged(
     `wanted` accept, read in chunks of the order the listing uses (`at`, then `seq`) until
     they are found: a page costs the page, not every row of the window. `first` is the
     first chunk's size, by default as many as are wanted."""
-    taken: list[Item] = []
-    last: tuple[datetime, int] | None = None
+
+    def read(beyond: tuple[Any, ...], sort: tuple[Any, ...], size: int) -> Sequence[Any]:
+        query = select(t.event).where(*window, *condition, *beyond)
+        return conn.execute(query.order_by(*sort).limit(size)).all()
+
+    def take(rows: Sequence[Any]) -> list[Item]:
+        found = _items_of(conn, where, mine, sorted(rows, key=lambda r: r.seq))
+        return [item for item in found if keep(item) and wanted(item)]
+
     size = first or max(count, 1)  # then more while a filter rejects them
-    sort = (
-        (t.event.c.at.desc(), t.event.c.seq.desc())
-        if newest_first
-        else (t.event.c.at, t.event.c.seq)
-    )
+    return _chunked(t.event.c.at, t.event.c.seq, read, take, count, newest_first, size)
+
+
+def _chunked(
+    at: Any,
+    tie: Any,
+    read: Callable[[tuple[Any, ...], tuple[Any, ...], int], Sequence[Any]],
+    take: Callable[[Sequence[Any]], list[Item]],
+    count: int,
+    newest_first: bool,
+    size: int,
+) -> list[Item]:
+    """The first `count` items `take` makes of the rows `read` gives, in the order of `at`,
+    then `tie`, read in chunks after the last row read (a keyset) until they are found,
+    each chunk up to four times the one before, at most `CHUNK`. `read` gets the
+    condition to continue after the last row, the order and the chunk's size."""
+    taken: list[Item] = []
+    last: tuple[Any, Any] | None = None
+    sort = (at.desc(), tie.desc()) if newest_first else (at, tie)
     while len(taken) < count:
         beyond: tuple[Any, ...] = ()
         if last is not None:
-            before = (t.event.c.at < last[0]) if newest_first else (t.event.c.at > last[0])
-            tie = (t.event.c.seq < last[1]) if newest_first else (t.event.c.seq > last[1])
-            beyond = (or_(before, and_(t.event.c.at == last[0], tie)),)
-        rows = conn.execute(
-            select(t.event).where(*window, *condition, *beyond).order_by(*sort).limit(size)
-        ).all()
+            before = (at < last[0]) if newest_first else (at > last[0])
+            later = (tie < last[1]) if newest_first else (tie > last[1])
+            beyond = (or_(before, and_(at == last[0], later)),)
+        rows = read(beyond, sort, size)
         if not rows:
             break
-        last = (rows[-1].at, rows[-1].seq)
-        for item in _items_of(conn, where, mine, sorted(rows, key=lambda r: r.seq)):
-            if keep(item) and wanted(item):
-                taken.append(item)
+        last = (getattr(rows[-1], at.key), getattr(rows[-1], tie.key))
+        taken += take(rows)
         if len(rows) < size:
             break
         size = min(size * 4, CHUNK)
@@ -370,9 +438,8 @@ def _chats(
     other, are no item of the human's however many there are (tsk-spa1tad26vs1)."""
     plain = (
         t.event.c.kind == "message",
-        ~_names(where.human_id),
         t.event.c.conversation_id.is_not(None),
-        _addressed(where.human_id),
+        _recipient(where.human_id, mine, clock.now(), chat=True, mention=False),
     )
     return _paged(
         conn, where, mine, window, plain, lambda i: i.kind == "chat", count, newest_first, wanted
@@ -390,29 +457,19 @@ def _records_paged(
 ) -> list[Item]:
     """The first `count` record items that `wanted` accepts, read as `_paged` reads rows;
     with `after_record`, only the records after a position's record number."""
-    taken: list[Item] = []
-    last: tuple[datetime, int] | None = None
-    size = CHUNK  # a whole chunk first, as for the events: one statement for most pages
     c = t.account_record.c
-    sort = (c.at.desc(), c.n.desc()) if newest_first else (c.at, c.n)
-    while len(taken) < count:
+
+    def read(beyond: tuple[Any, ...], sort: tuple[Any, ...], size: int) -> Sequence[Any]:
         query = _record_rows(where, now)
         if after_record is not None:
             query = query.where(c.n > after_record)
-        if last is not None:
-            before = (c.at < last[0]) if newest_first else (c.at > last[0])
-            tie = (c.n < last[1]) if newest_first else (c.n > last[1])
-            query = query.where(or_(before, and_(c.at == last[0], tie)))
-        rows = conn.execute(query.order_by(*sort).limit(size)).all()
-        if not rows:
-            break
-        last = (rows[-1].at, rows[-1].n)
-        taken += [item for item in _record_items(conn, where, now, rows) if wanted(item)]
-        if len(rows) < size:
-            break
-        size = min(size * 4, CHUNK)
-    taken.sort(key=lambda item: item.order, reverse=newest_first)
-    return taken[:count]
+        return conn.execute(query.where(*beyond).order_by(*sort).limit(size)).all()
+
+    def take(rows: Sequence[Any]) -> list[Item]:
+        return [item for item in _record_items(conn, where, now, rows) if wanted(item)]
+
+    # A whole chunk first, as for the events: one statement for most pages.
+    return _chunked(c.at, c.n, read, take, count, newest_first, CHUNK)
 
 
 def count_items(conn: Connection, where: Scope) -> list[Item]:
@@ -431,7 +488,10 @@ def count_items(conn: Connection, where: Scope) -> list[Item]:
                 *window,
                 or_(
                     t.event.c.kind == "mentioned",
-                    and_(t.event.c.kind == "message", _names(where.human_id)),
+                    and_(
+                        t.event.c.kind == "message",
+                        _recipient(where.human_id, mine, now, mention=True),
+                    ),
                 ),
             )
             .order_by(t.event.c.seq)
@@ -545,13 +605,17 @@ def _classify(
         and f"member:{principal}" in (row.audience or [])
     ):
         # Nobody holding the right was there, and only the keepers can grant it (§20.9);
-        # dropped once the human can no longer see the series (§18.1).
+        # dropped once the human keeps the series no more, or can no longer see it (§18.1).
         from maity_hub.jourfixe import series as series_mod
 
         found = look.conn.execute(
             select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == payload.get("series_id"))
         ).first()
-        if found is None or series_mod.sight(look.conn, found, mine) != "full":
+        if (
+            found is None
+            or not series_mod.is_keeper(found, mine)
+            or series_mod.sight(look.conn, found, mine) != "full"
+        ):
             return None
         return Item(
             kind="inbox",
@@ -585,13 +649,18 @@ def _classify(
         )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):
         task = payload.get("task") or {}
+        copied = task.get("title")
+        if isinstance(copied, dict):  # redacted since (§20.8): the card's own title now
+            from maity_hub.jourfixe.redaction import REDACTED_TITLE
+
+            copied = REDACTED_TITLE
         return Item(
             kind="mention",
             title=_cut(
                 where.say(
                     "mentioned",
                     who=look.name(row.actor_membership),
-                    chat=f"{task.get('id')} {task.get('title')}",
+                    chat=f"{task.get('id')} {copied}",
                 )
             ),
             target={"type": "task", "id": str(task.get("id"))},
@@ -617,7 +686,9 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    if change not in catalog.section("notify", "en") or change in ("tf_changed", "tf_failed"):
+    # Not changes; other placeholders.
+    alarms = ("tf_changed", "tf_failed", "tf_failed_reset", "tf_failed_daily")
+    if change not in catalog.section("notify", "en") or change in alarms:
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
 
@@ -638,6 +709,14 @@ def _from_records(
     conn: Connection, where: Scope, now: datetime, types: Sequence[str] = RECORD_TYPES
 ) -> list[Item]:
     return _record_items(conn, where, now, conn.execute(_record_rows(where, now, types)).all())
+
+
+def _personal_kind(request: Any) -> str:
+    """The kind of a personal request's item (§18.1): `invitation` for the consent request
+    an invitation by handle files (§3.4), so that its bell, push and mail follow that kind's
+    settings (§18.4); `inbox` for every other."""
+    proposal = request.proposal if isinstance(request.proposal, dict) else {}
+    return "invitation" if proposal.get("kind") == invitations.KIND else "inbox"
 
 
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:
@@ -686,7 +765,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
             )
             items.append(
                 Item(
-                    kind="inbox",
+                    kind=_personal_kind(request),
                     at=row.at,
                     record=row.n,
                     project_id=request.project_id,
@@ -741,7 +820,33 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "tf_failed",
+                            # The reset's alarm says so: the mailbox, not the app, is
+                            # in other hands (§2.10, §18.1); the daily cap says what
+                            # stopped (§2.8.6).
+                            {
+                                "password_reset": "tf_failed_reset",
+                                "daily_limit": "tf_failed_daily",
+                            }.get(str(data.get("method")), "tf_failed"),
+                            browser=data.get("browser") or where.say("a_browser"),
+                            os=data.get("os") or where.say("unknown_os"),
+                            ip=data.get("ip") or "?",
+                        )
+                    ),
+                    target={"type": "settings", "id": "security"},
+                    url=_url(where, "/account/security"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
+        elif row.type in ("password_reset", "password_changed"):
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        where.say(
+                            row.type,
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",
@@ -1259,6 +1364,9 @@ def _url(where: Scope, route: str) -> str:
 
 
 def _cut(text: str) -> str:
-    """Text only, at most 200 characters (§18.2)."""
-    flat = " ".join(text.split())
+    """Text only, at most 200 characters (§18.2), on one line: every title is built through
+    here from the catalog's words and stored names and titles (a display name, a project's
+    name, a request's or card's title), so `plain_line` folds each stored part that holds a
+    character the plain-text rule refuses (§1.7.1); the catalog's words hold none."""
+    flat = " ".join(plain_line(text).split())
     return flat if len(flat) <= TITLE_MAX else flat[: TITLE_MAX - 1] + "…"

@@ -10,6 +10,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -184,6 +187,7 @@
      "avatar_source": "null",
      "avatar_url": "null",
      "display_name": "string",
+     "experiment_notice_understood_at": "null",
      "handle": "string",
      "id": "string",
      "instance_admin": "boolean",
@@ -202,6 +206,9 @@
      "public_stats": "boolean",
      "social": {
       "object": {}
+     },
+     "starred": {
+      "array": null
      },
      "start_tabs": "null",
      "terms": "null",
@@ -222,6 +229,7 @@
       },
       "name": "string",
       "open_requests": "number",
+      "public_page": "string",
       "role": "string",
       "slug": "string",
       "state": "string",
@@ -387,6 +395,7 @@
     "object": {
      "chat": "null",
      "discussions": "null",
+     "docs": "null",
      "issues": "null",
      "wiki": "null"
     }
@@ -429,6 +438,8 @@
      "outside_roles": {
       "array": "string"
      },
+     "own_agents": "string",
+     "own_approvals": "number",
      "preset": "string",
      "signing": "string",
      "spawn_consent_by": "string",
@@ -479,7 +490,8 @@
        },
        "enabled": "boolean"
       }
-     }
+     },
+     "why_merge_children": "boolean"
     }
    },
    "setup": {
@@ -525,7 +537,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -596,7 +611,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -711,6 +729,10 @@
       },
       "cross_owner": "boolean",
       "display_name": "string",
+      "expert_for": "null",
+      "expert_sources": {
+       "array": null
+      },
       "handle": "string",
       "handover": "null",
       "harness": "string",
@@ -800,6 +822,17 @@
         "id": "string",
         "runner_name": "string",
         "state": "string"
+       }
+      },
+      "placements": {
+       "array": {
+        "object": {
+         "desired": "string",
+         "id": "string",
+         "instance": "null",
+         "runner_name": "string",
+         "state": "string"
+        }
        }
       },
       "presence": "string",
@@ -901,6 +934,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -945,6 +981,26 @@
     }
    },
    "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/roles": {
+  "object": {
+   "builtin": {
+    "array": {
+     "object": {
+      "description": "string",
+      "guide": "string",
+      "name": "string",
+      "scopes": {
+       "array": "string"
+      }
+     }
+    }
+   },
+   "custom": {
+    "array": null
+   },
+   "version": "number"
   }
  },
  "GET /projects/{project}/tasks": {
@@ -1321,6 +1377,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -1390,6 +1449,9 @@
            "available": "boolean",
            "confinement": "string",
            "default_mode": "string",
+           "efforts": {
+            "array": null
+           },
            "id": "string",
            "models": {
             "array": "string"
@@ -1476,6 +1538,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -1617,6 +1682,9 @@
    "forwarding": {
     "array": null
    },
+   "held": {
+    "array": null
+   },
    "holder": "string",
    "humans_only": "boolean",
    "id": "string",
@@ -1702,8 +1770,21 @@
    "covering": {
     "array": null
    },
+   "credentials": {
+    "object": {
+     "active": "number",
+     "last_used_at": "string",
+     "last_used_via": "string",
+     "never_resumed": "number",
+     "revoked_recent": "number"
+    }
+   },
    "cross_owner": "boolean",
    "display_name": "string",
+   "expert_for": "null",
+   "expert_sources": {
+    "array": null
+   },
    "handle": "string",
    "handover": "null",
    "harness": "null",
@@ -1714,6 +1795,7 @@
       "address": "string",
       "claims": "number",
       "created_at": "string",
+      "credential_id": "string",
       "dormant": "null",
       "harness": "null",
       "id": "string",
@@ -1728,7 +1810,10 @@
       "presence": "string",
       "replaces": "null",
       "revoked_at": "null",
-      "session": "null"
+      "session": "null",
+      "shared_environment": {
+       "array": null
+      }
      }
     }
    },
@@ -1741,16 +1826,51 @@
    "kind": "string",
    "last_seen_at": "string",
    "line_consent": "boolean",
+   "manages": {
+    "object": {
+     "direct": {
+      "object": {
+       "dormant": "number",
+       "instances": "number",
+       "members": "number",
+       "online": "number"
+      }
+     },
+     "total": {
+      "object": {
+       "dormant": "number",
+       "instances": "number",
+       "members": "number",
+       "online": "number"
+      }
+     }
+    }
+   },
    "model": "null",
    "name": "string",
+   "owner": {
+    "object": {
+     "avatar_url": "null",
+     "display_name": "string",
+     "handle": "string",
+     "id": "string"
+    }
+   },
    "owner_id": "string",
+   "owner_preferences": "boolean",
    "paused": "null",
    "placement": "null",
+   "placements": {
+    "array": null
+   },
    "presence": "string",
    "reports_to": "null",
    "role": "string",
    "role_base": "string",
    "session": "null",
+   "shared_environment": {
+    "array": null
+   },
    "subagents": "boolean",
    "subagents_by": {
     "object": {
@@ -1798,6 +1918,9 @@
    "created_at": "string",
    "filed_by": "null",
    "forwarding": {
+    "array": null
+   },
+   "held": {
     "array": null
    },
    "holder": "string",
@@ -1857,7 +1980,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/conversations/{group}/messages": {
@@ -1878,7 +2004,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/tasks": {

@@ -187,27 +187,42 @@ def route_of(scope: Any) -> str:
     return "-"
 
 
-def pool_fields(engine: Engine) -> str:
-    """The pool of a server database as `key=value`; SQLite has no pool worth counting."""
+def pool_fields(engine: Engine, prefix: str = "") -> str:
+    """The engine's pool as `key=value`, a file SQLite's included (SQLAlchemy's default, 5 + 10);
+    `pool=none` for a pool without the counts (an in-memory database's). The async engine's pool
+    (its `sync_engine`'s) is named with the prefix `async_`."""
     pool: Any = engine.pool
     if not all(hasattr(pool, name) for name in ("checkedout", "checkedin", "size")):
-        return "pool=none"
+        return f"{prefix}pool=none"
     checked_out, checked_in = pool.checkedout(), pool.checkedin()
     ceiling = pool.size() + max(getattr(pool, "_max_overflow", 0), 0)
-    return f"pool_open={checked_out + checked_in} pool_checked_out={checked_out} pool_max={ceiling}"
+    return (
+        f"{prefix}pool_open={checked_out + checked_in} {prefix}pool_checked_out={checked_out} "
+        f"{prefix}pool_max={ceiling}"
+    )
 
 
-def lines(window: Window, engine: Engine, seconds: float, load: LoadWindow) -> list[str]:
+def lines(
+    window: Window,
+    engine: Engine,
+    seconds: float,
+    load: LoadWindow,
+    async_engine: Engine | None = None,
+) -> list[str]:
     """The `stats` line, then the routes with a slow request, the worst first. `slow_routes` says
-    how many there were, so a cut list shows itself."""
+    how many there were, so a cut list shows itself. `async_engine` is the async engine's
+    `sync_engine`, whose pool every call's authentication takes (`deps._resolve`)."""
     taken = window.take()
+    pools = pool_fields(engine)
+    if async_engine is not None:
+        pools += " " + pool_fields(async_engine, "async_")
     slow = sorted(
         ((key, times) for key, times in taken.routes.items() if times.over_1s),
         key=lambda item: (-item[1].over_1s, -item[1].total_ms, item[0]),
     )
     return [
         f"stats window={seconds:g}s requests={taken.requests} 5xx={taken.errors} "
-        f"max_ms={taken.slowest_ms} slow_routes={len(slow)} {pool_fields(engine)} {load.fields()} "
+        f"max_ms={taken.slowest_ms} slow_routes={len(slow)} {pools} {load.fields()} "
         f"pid={os.getpid()}",
         *(
             f"stats_route window={seconds:g}s method={method} route={route} "
@@ -227,8 +242,10 @@ class Reporter:
         interval: float | None = None,
         window: Window | None = None,
         load: LoadWindow | None = None,
+        async_engine: Engine | None = None,
     ) -> None:
         self.engine = engine
+        self.async_engine = async_engine
         self.interval = INTERVAL if interval is None else interval  # read now: tests set it
         self.window = WINDOW if window is None else window
         self.load = LOAD if load is None else load
@@ -247,7 +264,9 @@ class Reporter:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                for text in lines(self.window, self.engine, self.interval, self.load):
+                for text in lines(
+                    self.window, self.engine, self.interval, self.load, self.async_engine
+                ):
                     log.info(text)
             except Exception:
                 log.exception("the stats line failed")

@@ -17,6 +17,7 @@ from maity_hub.routes import conversations as routes
 from maity_hub.views import ts
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.statements import count_statements
 from tests.test_group_chats import BASE, create, other_human, read, say
 
@@ -220,6 +221,7 @@ def test_the_list_equals_the_list_built_one_chat_at_a_time(
     assert new == old
 
 
+@flat_rows("/projects/{}/{}/conversations")
 def test_the_list_costs_the_same_statements_for_more_chats(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

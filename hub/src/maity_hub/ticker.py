@@ -13,12 +13,12 @@ import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, events
+from maity_hub import cards, chat_gate, clock, events
 from maity_hub import tables as t
 from maity_hub.scopes import tokens_of
 from maity_hub.ticker_read import may_read_request, reason_of
@@ -26,9 +26,13 @@ from maity_hub.views import event_views
 
 log = logging.getLogger(__name__)
 
-TYPES = ("merge", "decision", "deploy", "release", "rename", "note")
+# The item types (§17.1); the listing filters by every one of them (§17.9).
+TYPES = ("merge", "decision", "deploy", "release", "jour_fixe", "rename", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
-FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "rename", "note")
+FILTER_TYPES = ("contract", *TYPES)
+# What follow and mute act on (§17.8): not `jour_fixe` and `rename`, whose audience is `all`
+# alone, so that a subscription to them would change nothing.
+SUBSCRIPTION_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
 TEXT_MAX = 280
 ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
 SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
@@ -79,6 +83,8 @@ class Member:
     role_base: str  # the built-in role whose scopes `role` has (§2.3)
     kind: str  # human, agent
     areas: tuple[str, ...]
+    # An expert's declared sources (§2.3 "The expert", §17.3); empty for everyone else.
+    expert_sources: tuple[str, ...] = ()
 
 
 def members(conn: Connection, project_id: str) -> list[Member]:
@@ -96,6 +102,7 @@ def members(conn: Connection, project_id: str) -> list[Member]:
             r.role_base,
             "agent" if r.agent_id else "human",
             tuple(r.areas or ()),
+            tuple(r.expert_sources or ()) if r.role == "expert" else (),
         )
         for r in rows
     ]
@@ -276,18 +283,26 @@ def write(
     readers: Sequence[str] = (),
     broadcast: bool = True,
     facts: dict[str, Any] | None = None,
+    held: Sequence[str] = (),
+    people: Sequence[Member] | None = None,
 ) -> int | None:
     """Emit one item; `None` when its dedupe key is taken (the first item stands, §17.7).
 
     `broadcast` puts `all` in the audience (every type but a decision, §17.12);
     `readers` are further members who may read it without a reason (a decision's
     request readers). Only members with a waking reason get a `member:` token beside
-    `all`; the actor is never woken by its own item."""
+    `all`; the actor is never woken by its own item. `held` names the agents a manual
+    post's `to` was held for (§9.6, `gate_manual`): `held:<id>` each, which keeps `all`
+    from reaching them and lets their owner read it along. `people` is the project's
+    active members as the caller has just read them; without it they are read here, and only
+    when the audience names anyone."""
     events.lock_project(conn, project_id)
     if dedupe_key is not None and existing(conn, project_id, dedupe_key) is not None:
         return None
     # The hub wakes no human (§17.10): for a human the item is "for me", never a wake.
-    humans = {m.principal for m in members(conn, project_id) if m.kind == "human"}
+    if people is None and audience.entries:
+        people = members(conn, project_id)
+    humans = {m.principal for m in people or () if m.kind == "human"}
     for principal, entry in audience.entries.items():
         if principal in humans:
             entry.wake = False
@@ -300,6 +315,7 @@ def write(
     for principal in readers:
         if f"member:{principal}" not in tokens:
             tokens.append(f"member:{principal}")
+    tokens.extend(f"held:{principal}" for principal in held)
     base: dict[str, Any] = {
         "merge": None,
         "request": None,
@@ -313,6 +329,7 @@ def write(
         "tasks": [],
     }
     payload = {
+        "held": list(held),
         "type": kind,
         "text": cut(text),
         "url": url,
@@ -357,6 +374,15 @@ def _principal_of(conn: Connection, membership_id: int | None) -> str | None:
         )
     ).first()
     return (row.agent_id or row.human_id) if row else None
+
+
+def decision_text(card: Any, request_id: str) -> str:
+    """A decision entry's text: the card's id and title as the card has them, or the request
+    alone. Stored with the entry, and built again from the card as it is now wherever a
+    visitor reads the entry (§16.9), so a later title edit leaves no old title on a page."""
+    if card is None:
+        return f"Decided: {request_id}"
+    return f"Decided: {card.id} {_card_title(card)} ({request_id})"
 
 
 def on_request_answered(
@@ -408,11 +434,7 @@ def on_request_answered(
         protected=protected,
         may_read=lambda m: m.principal in may,
     )
-    text = (
-        f"Decided: {card.id} {_card_title(card)} ({request.id})"
-        if card is not None
-        else f"Decided: {request.id}"
-    )
+    text = decision_text(card, request.id)
     write(
         conn,
         project.id,
@@ -435,6 +457,7 @@ def on_request_answered(
             },
             "tasks": [request.task_id] if request.task_id else [],
         },
+        people=people,
     )
 
 
@@ -463,6 +486,7 @@ def on_release_done(
         subject=("task", card.id),
         dedupe_key=f"release:{version}",
         facts={"release": {"task_id": card.id, "version": version}, "tasks": [card.id]},
+        people=people,
     )
 
 
@@ -521,6 +545,37 @@ def manual_audience(
             audience.add(m.principal, "addressed")
     apply_subscriptions(conn, people, audience, kind, False, areas)
     return audience
+
+
+# The reasons a manual post's own `to` gives (§17.6), which reach an agent of another owner
+# only on its owner's yes (§9.6); the computed ones (an area's owner, a release, a deploy to
+# whom it concerns) and a member's own follow stay open.
+GATED_REASONS = frozenset({"addressed", "posted_to_all"})
+
+
+def gate_manual(
+    conn: Connection, mine: Any, people: Sequence[Member], audience: Audience
+) -> list[str]:
+    """The agents a manual post's `to` (a token list or `all`) reaches on another side than
+    its poster without their owner's yes (`chat_gate.gate`), each with the gated reasons taken
+    off its entry, and the entry dropped where no other reason is left; those agents whose
+    entry is dropped are returned, the ones the item is held for. One that a follow of its
+    own keeps listed is not held."""
+    agents = {m.principal for m in people if m.kind == "agent"}
+    reached = [
+        p for p, entry in audience.entries.items() if p in agents and GATED_REASONS & set(entry.why)
+    ]
+    if not reached:
+        return []
+    _, judged = chat_gate.gate(conn, mine.project.id, mine, [], reaches=reached)
+    held = []
+    for principal in judged:
+        entry = audience.entries[principal]
+        entry.why = [why for why in entry.why if why not in GATED_REASONS]
+        if not entry.why:
+            del audience.entries[principal]
+            held.append(principal)
+    return held
 
 
 # --- the listing and the resume packet (§17.9) -----------------------------------------
@@ -671,6 +726,24 @@ def store_subscription(conn: Connection, membership_id: int, lists: dict[str, An
 # --- merges (§17.2–§17.4): written from what the probe observed --------------------------
 
 
+# A merge the probe did not see while it happened is delivered only inside this
+# window (§17.4). Exactly this old is still delivered; older is discarded.
+MISSED_MERGE_MAX = timedelta(hours=1)
+
+
+def missed_merge_too_old(merged_at: str, at: datetime) -> bool:
+    """Whether a forge `merged_at` (RFC 3339, such as `2099-01-01T10:00:00Z`) is more
+    than `MISSED_MERGE_MAX` before `at`. Exactly one hour before `at` is not too old.
+    A value that is not a timestamp is not too old: the scan's other checks decide it."""
+    if not isinstance(merged_at, str):
+        return False
+    try:
+        moment = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return moment < at - MISSED_MERGE_MAX
+
+
 def switched_on(conn: Connection, project_id: str) -> None:
     """The ticker was switched on: the probe announces merges from this moment (§17.4)."""
     now = clock.now()
@@ -801,7 +874,7 @@ def linked_cards(conn: Connection, project_id: str, number: int, head: str | Non
     ).all()
     found = []
     for card in rows:
-        report_pr = ((card.report or {}).get("pr") or {}).get("number")
+        report_pr = cards.pr_number(card)
         branch = (card.checkpoint or {}).get("branch")
         typed = [p.get("number") for p in (card.release_data or {}).get("pull_requests_typed", [])]
         if report_pr == number or (head is not None and branch == head) or number in typed:
@@ -851,8 +924,17 @@ def write_merge(
         for m in people:
             if m.areas:
                 audience.add(m.principal, "area_owner:*")
-    cards = linked_cards(conn, project.id, merge.number, merge.head)
-    for card in cards:
+    for m in people:  # an expert whose declared source changed (§2.3 "The expert", §17.3)
+        if not m.expert_sources:
+            continue
+        if merge.paths_truncated:
+            audience.add(m.principal, "expert_source:*")
+            continue
+        for source in m.expert_sources:
+            if any(contains(source, path) for path in merge.paths):
+                audience.add(m.principal, f"expert_source:{source}")
+    linked = linked_cards(conn, project.id, merge.number, merge.head)
+    for card in linked:
         holder = _principal_of(conn, card.claim_holder)
         assignee = _principal_of(conn, card.assigned_to)
         if holder:
@@ -927,17 +1009,25 @@ def write_merge(
             "paths_truncated": merge.paths_truncated,
             "areas": areas,
             "contract": contract,
-            "tasks": [c.id for c in cards],
+            "tasks": [c.id for c in linked],
         },
+        people=people,
     )
 
 
+URL_MAX = 2048
+_HTTPS = re.compile(r"https://\S+", re.IGNORECASE)  # fullmatch; the scheme in any case
+
+
+def https_url(value: Any) -> bool:
+    """One absolute https URL of at most URL_MAX characters (§17.1): an item's `url` and a
+    deploy's `log_url`, whether a forge or a manual post names it."""
+    return isinstance(value, str) and len(value) <= URL_MAX and _HTTPS.fullmatch(value) is not None
+
+
 def _https_or_none(value: Any) -> str | None:
-    """A forge's URL as an item's `url`: one absolute https URL of at most 2048 characters,
-    else none (§17.1)."""
-    if isinstance(value, str) and len(value) <= 2048 and re.fullmatch(r"https://\S+", value):
-        return value
-    return None
+    """A forge's URL as an item's `url`, or none (§17.1)."""
+    return value if https_url(value) else None
 
 
 def write_deploy(

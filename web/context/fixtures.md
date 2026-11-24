@@ -126,10 +126,9 @@ from the record when the seed lacks that state, and an empty list says
 nothing about its items. So the seed fills what is cheap: settings,
 mentions, a note, a link, a dependency, a request. `banner.etag` and
 `logo.etag` (only with an image) stay in the baseline as keys "the hub
-sends no such key", and so does `owner_preferences` in the answer to
-`PATCH …/members/{agent}`: §6.2 puts it in the member view where
-`briefing` is, but the hub builds that answer without the view's
-`details`, so the gap there is the hub's; a personal request from a project the reader is no
+sends no such key" (`owner_preferences` in the answer to
+`PATCH …/members/{agent}` was one until that answer became the member view
+as `GET` gives it, members.md 76f27814 in the root context); a personal request from a project the reader is no
 member of is seeded because only its notification carries
 `project.member`; without that state the record reads as if the hub never
 sent the key, and a fixture "fixed" to match would be wrong.

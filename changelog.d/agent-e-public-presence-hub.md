@@ -1,6 +1,0 @@
-### Added
-
-- hub: `public_presence` on `PATCH /me` and `GET /me` (default `true`, migration `20261102120000_public_presence`). While it is `false`, a project page's Online neither names nor counts the person (page, `online.humans`, `online.named`); the landing page still counts them; switching it off renders the person's project pages at once, also under `interval`. Their agents are named as before (§16.9, tsk-my5gvj4warte).
-### Fixed
-
-- hub: a project page's Online no longer counts a member under a moderation hold, whom it already did not name, as §16.9 says.

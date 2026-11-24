@@ -1,6 +1,6 @@
 // The frame of the pages without a session (docs/api.md §16.7.5): the landing page's header and
 // full footer around the sign-in and registration wherever they are drawn without a session, from GET /site/chrome in the page's language, with
-// the landing page's two stylesheets under /assets/landing/. The hub draws the same frame around
+// the frame's three stylesheets under /assets/landing/. The hub draws the same frame around
 // its landing and legal pages from the same model (hub/src/maity_hub/render.py), so the markup
 // here is that file's. The stylesheets are on only while such a page stands: landing.css sets
 // :root, body, headings and links for the whole document, so every other view leaves the frame
@@ -14,7 +14,12 @@ window.Maity = window.Maity || {};
   const { h, append } = M.dom;
   // Asked without ?v=<digest>: the hub then answers the current file with no-cache and an ETag
   // (hub/src/maity_hub/landing_files.py), so a revalidation costs no body and never goes stale.
-  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css"];
+  // Where the hub's shell already links one with its digest (a stored page in the dashboard's
+  // design, §16.9), that link is taken over instead, so the file is loaded once.
+  // The third is the public pages' design (the project's hero, its figures band, its tab bar, the
+  // sections), the hub's own as it stores those pages in it (§16.9); it builds on the landing's
+  // tokens and classes, so it comes last.
+  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css", "/assets/landing/public-sections.css"];
   const ON = "public-frame";
   let links = [];
   let header = null;
@@ -22,9 +27,24 @@ window.Maity = window.Maity || {};
   // Each drawing counts; an answer for an earlier one, or one after leave(), draws nothing.
   let round = 0;
 
+  // The frame's sheets already in the head: the shell's, with their digest, or ours.
+  function linkedSheets() {
+    return Array.from(document.head.querySelectorAll("link"))
+      .filter((l) => l.getAttribute("rel") === "stylesheet" && SHEETS.includes((l.getAttribute("href") || "").split("?")[0]));
+  }
   function sheets(on) {
+    if (!on && !links.length) {
+      // Leaving before the frame was ever entered (a failed page, a session found after all):
+      // the shell's links are not taken over yet, but are on, and landing.css styles the whole
+      // document, so they go off too.
+      linkedSheets().forEach((link) => { link.disabled = true; });
+      return;
+    }
     if (on && !links.length) {
+      const linked = linkedSheets();
       links = SHEETS.map((href) => {
+        const had = linked.find((l) => (l.getAttribute("href") || "").split("?")[0] === href);
+        if (had) return had;
         const link = document.createElement("link");
         link.setAttribute("rel", "stylesheet");
         link.setAttribute("href", href);
@@ -99,16 +119,26 @@ window.Maity = window.Maity || {};
     return a;
   }
 
+  // The model's address with ?next=, its own query (the language) kept.
+  function withNext(href, next) {
+    const cut = href.indexOf("#");
+    const before = cut < 0 ? href : href.slice(0, cut);
+    return before + (before.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(next) + (cut < 0 ? "" : href.slice(cut));
+  }
+
   // The landing page's header: the mark, the sections, sign in and the call to action. The page
   // being drawn marks its own link as the current one.
-  function siteHeader(model, current) {
+  function siteHeader(model, current, next) {
     const top = model.header || {};
+    // A page a visitor reads (js/visitor.js): Sign in comes back to it, as the app's bar's link did.
+    const signIn = top.sign_in && next && typeof top.sign_in.href === "string" && top.sign_in.href.split(/[?#]/)[0] === "/login"
+      ? Object.assign({}, top.sign_in, { href: withNext(top.sign_in.href, next) }) : top.sign_in;
     const mine = (item) => (current && item && typeof item.href === "string" && item.href.split("?")[0] === current ? { "aria-current": "page" } : null);
     return h("header", { class: "site-header dz", id: "site-header" }, h("div", { class: "wrap" },
       home(),
       h("nav", { class: "site-nav" }, (top.nav || []).map((item) => link(item))),
       themeButton(),
-      top.sign_in ? link(top.sign_in, Object.assign({ class: "signin" }, mine(top.sign_in))) : null,
+      signIn ? link(signIn, Object.assign({ class: "signin" }, mine(top.sign_in))) : null,
       top.cta ? link(top.cta, Object.assign({ class: "btn btn-primary" }, mine(top.cta))) : null));
   }
 
@@ -156,8 +186,9 @@ window.Maity = window.Maity || {};
   // Called by the page that stands in the frame, once its own content is drawn. `current` is its
   // path (/login, /register), so the header's link to it is marked. Resolves true once the frame
   // stands, false where the read failed or another drawing came first; `drawn` runs then, with
-  // the model, before anything else of the page changes.
-  async function enter(current, drawn) {
+  // the model, before anything else of the page changes. options.next: the address Sign in
+  // comes back to (a visitor's page).
+  async function enter(current, drawn, options) {
     const mine = ++round;
     // Every read holds the line back until it decides, also one a page starts itself without
     // render() (the login's language picker), after an earlier read failed and let it go.
@@ -183,7 +214,7 @@ window.Maity = window.Maity || {};
     drop();
     const app = bar;
     const main = document.getElementById("main");
-    header = siteHeader(model, current);
+    header = siteHeader(model, current, options && options.next);
     footer = siteFooter(model);
     // The words of the model are in its language, the page's may be another (§16.7.5).
     if (model.language && model.language !== M.i18n.language) {
@@ -213,5 +244,7 @@ window.Maity = window.Maity || {};
     mark(false);
   }
 
-  M.siteChrome = { enter, leave, line, active: () => (document.documentElement.className || "").split(/\s+/).includes(ON) };
+  // `link`: an address of the model as the header draws it, for a page that repeats one of its
+  // links in its own content (a visitor's project page repeats the call to action, js/visitor.js).
+  M.siteChrome = { enter, leave, line, link, active: () => (document.documentElement.className || "").split(/\s+/).includes(ON) };
 })(window.Maity);

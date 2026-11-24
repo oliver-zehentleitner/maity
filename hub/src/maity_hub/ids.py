@@ -37,6 +37,8 @@ PREFIXES = {
     "notification_position": "npos",
     "link": "lnk",
     "forge_link": "fgl",
+    "chat_access": "cha",
+    "chat_access_history": "chh",
     "history": "hst",
     "note": "nte",
     "pending_registration": "preg",
@@ -55,8 +57,24 @@ PREFIXES = {
 }
 
 
+RANDOM_LENGTH = 12
+
+
 def new_id(entity: str) -> str:
-    return f"{PREFIXES[entity]}-{''.join(secrets.choice(CROCKFORD) for _ in range(12))}"
+    return f"{PREFIXES[entity]}-{''.join(secrets.choice(CROCKFORD) for _ in range(RANDOM_LENGTH))}"
+
+
+def has_shape(entity: str, value: str) -> bool:
+    """Whether `value` is an id `new_id(entity)` could have made: the hub checks an id a
+    request presents before it asks the database for it. A change of `new_id`'s form must
+    keep accepting the ids made before it (hub/context/credentials.md dcc12e31)."""
+    prefix = f"{PREFIXES[entity]}-"
+    random = value[len(prefix) :]
+    return (
+        value.startswith(prefix)
+        and len(random) == RANDOM_LENGTH
+        and all(c in CROCKFORD for c in random)
+    )
 
 
 # An agent instance's id (docs/api.md §6.17): no 0, 1, i, l or o, so that it reads

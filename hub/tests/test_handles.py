@@ -372,11 +372,11 @@ def test_lookups_by_handle_follow_aliases_where_a_person_is_named(
         # An invitation by the handle given up still finds the account (§6.24).
         assert org_invitations._invitee(conn, "maintainer") == owner.id
         assert org_invitations._invitee(conn, "boss") == owner.id
-        # A global name takes the owner's alias and the profile's alias alike.
-        assert reports._agent_by_name(conn, "maintainer/bee") == profile["id"]
-        assert reports._agent_by_name(conn, "boss/wasp") == profile["id"]
-        with pytest.raises(ApiError):
-            reports._agent_by_name(conn, "nobody/wasp")
+        # A report's global name takes current names only, never an alias (§16.8).
+        assert reports._agent_by_name(conn, "boss/wasp")[0].id == profile["id"]
+        for former in ("maintainer/bee", "maintainer/wasp", "boss/bee", "nobody/wasp"):
+            with pytest.raises(ApiError):
+                reports._agent_by_name(conn, former)
     # A project may be created under the namespace of one's own alias.
     created = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "maintainer"})
     assert created.status_code == 201, created.text

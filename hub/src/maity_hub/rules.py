@@ -19,6 +19,7 @@ from sqlalchemy import Connection, or_, select, update
 from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
+from maity_hub.plain_text import plain_line
 
 KEEP_THE_WHY = "Load the keep-the-why skill and read context/index.md before working."
 RELEASED = (
@@ -173,11 +174,7 @@ REVIEW = (
 def reviews(project: Any, role: str) -> bool:
     """Whether `role` gets the review line: `reviewer`, a security team that counts as it
     (`purple-team`), or a project role built on either (§2.3, §6.9)."""
-    from maity_hub import project_roles
-    from maity_hub.scopes import counts_as
-
-    base = project_roles.base_of(project, role)
-    return base is not None and counts_as(base) == "reviewer"
+    return rule_role(project, role) == "reviewer"
 
 
 # The naming line (§6.9): how an agent names a member in what a human reads.
@@ -221,8 +218,7 @@ def _project_role_lines(project: Any, role: str) -> list[str]:
     found = rule_role(project, role)
     if found is None:
         return []
-    # `getattr`: a project row always has `settings`; a stand-in of a unit test may not.
-    rules = ((getattr(project, "settings", None) or {}).get("role_rules") or {}).get(found)
+    rules = ((project.settings or {}).get("role_rules") or {}).get(found)
     if not rules:
         return []
     paragraphs: list[list[str]] = []
@@ -267,7 +263,12 @@ def generate(
     section ends with what a bridge does (§2.3, "The guide"). Its duty line follows
     `hints.duty` (§5.2, §6.9): the supervised one, else the one for a session that waits for
     itself."""
-    lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
+    lines = [
+        f"# Rules for {plain_line(project.name)}",
+        "",
+        f"Rules version {project.rules_version}.",
+        "",
+    ]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
         lines += ["", f"Note: {project.state_note}"]

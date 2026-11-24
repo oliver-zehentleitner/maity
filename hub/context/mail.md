@@ -104,7 +104,8 @@ queue loses its text at once, since the text carries the mail's links (a
 confirmation, a sign-in, a registration link), and its headers (the signed
 unsubscribe link is one), and keeps its recipient and subject; the row is
 deleted after seven days, so the outbox keeps no lasting record of who got
-what. A row that left before this change loses its text on the next sweep.
+what. A row that left before this change lost its text on a later sweep
+(done and superseded on 2026-11-14: that sweep is removed, see the update below).
 A row still waiting keeps its text for the seconds it takes to send; a mail
 that keeps failing is dropped on the first failed attempt after 24 hours, so
 the text of a row nobody retries can stay longer.
@@ -126,6 +127,17 @@ like the images worker needs no new process for one replica.
   text at all. Clearing the text when the row leaves the queue closes the
   long exposure (a backup taken a week later) without that dependency
   (card tsk-ayng0czsxp11, from the review of #489).
+
+**Updated 2026-11-14 (tsk-3ar6h2s0kff5):** the sweep's UPDATE that emptied rows which left the
+queue before their text went at once is removed; `forget_old` only deletes rows past the week.
+Those rows left in late October (#544) and were deleted after their week, and every way out of
+the queue empties the row: `_finish` for `sent`, `failed` (a refusal, and a row that cannot be
+built or whose handling raises, tsk-dv8f620hjebf) and `dropped` (over budget, a disabled address,
+an ended membership, 24 hours of retries); an account's deletion drops its waiting rows and
+empties every row of the account in the same transaction (`account_deletion._forget_mail`). The
+UPDATE cast the headers to text over the whole table every five seconds. `mail_delivery` rows
+are now deleted after a day by the hourly retention sweep (notifications.md —
+c28a0dba-829b-4476-a422-9eadcca9337a).
 
 ## An outbox row is claimed before it is sent; the claim lapses after two minutes
 
@@ -173,6 +185,44 @@ part of the outbox from its first version, not a later change on top.
   one transaction depends on no commit and no clock.
 - Counting when a mail is sent: the place would be free again for a mail that fails for good;
   counting when it is admitted keeps a place used, the strict side of a budget against abuse.
+
+## One row never stops the outbox: a mail that cannot be built is failed before it is admitted, and rows left in `sending` need no migration
+
+**Id:** 34e5cd71-12cb-4484-b03c-2c4309665605
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dv8f620hjebf (outbox robustness and header cleaning), 2026-11-13; `mail/outbox.py` `_deliver`, `_unsendable`
+**Revisit when:** the outbox gets a schedule of its own for retries, or a row could fail to build only for a while (a setting that changes the message)
+**See:** mail.md#an-outbox-row-is-claimed-before-it-is-sent-the-claim-lapses-after-two-minutes — 92cf47a5-5206-4552-a493-2255cb3a1e48 — as of 2026-11-13
+
+Each row of a pass is claimed, built, admitted and sent inside its own handler. The message is
+built (and turned into bytes once) in the claim's transaction, before the budget is asked: a row
+that cannot be built is `failed` there, emptied as every finished row is, counted as `failed` in
+`mail_delivery` and logged by id, kind and the error's class, never its text or headers. Any
+other failure of a row that is not the database's (`SQLAlchemyError` ends the pass, as before)
+marks that row `failed` too, and the pass goes on with the next one. Header text is folded to
+one line (every Unicode Cc, Zl and Zp character, not only ASCII ones), so a name a human typed
+builds.
+
+Rows that an earlier version left in `sending` get no migration and no startup step: their claim
+lapses after two minutes like any claim, the next pass takes them again, and under this version
+they are built first, then sent or failed.
+
+**Reason:** a build failure does not go away by retrying, so a row that raised would come back on
+every pass, and a mail that never leaves should hold no place in its kind's budget. Building
+before admitting means such a row takes no place at all; failing it ends its loop. The lapse already is the path back for a row
+whose process did not finish, so a separate unstick step would repeat it.
+
+**Rejected alternatives:**
+- A migration that sets every `sending` row back to `waiting`: the lapse does the same within
+  two minutes, and a migration would also release a row a running old process is in the middle
+  of sending.
+- A startup step that does the same: the same overlap with a live process, every start.
+- Retrying a row that failed to build with backoff, as a server's failure is: the same data
+  builds the same way, so it would only delay the `failed`.
+- Admitting first and handing the place back when the build fails: two writes to the budget's
+  row for nothing; building first needs none.
 
 ## A registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction
 
@@ -253,7 +303,8 @@ password sees an error that depends on an account (a taken handle).
 
 **Id:** f63430e9-d5ca-430e-afef-d44ec980bd35
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** e3267520-bfef-40e3-aa6f-17cecd17147c
 **Evidence:** inferred
 **Source:** the card tsk-7sw2a2bd5srp from the coordinator, 2026-10-31: the maintainer, testing the registration live, found the page bare HTML (no stylesheet) and asked for the legal pages' shell; docs/api.md §2.7.1 and §16.7.1. Why not the app and not the landing assets is this entry's reading
 **Revisit when:** the dashboard takes over the form, or the legal pages move to the landing page's stylesheet and fonts
@@ -284,19 +335,23 @@ from elsewhere, and no script runs before there is an account.
 **Evidence:** inferred
 **Source:** `docs/api.md` §2.7.5, §3.4, §16.2, §18.5; implementation of the `TODO(#280)` mails (tsk-pb3vs6d65800) and its review (#776), 2026-10-30
 **Revisit when:** the registration keeps the person's language past the confirmation, or the security budget is counted per recipient
+**See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-18
 
 The approval, rejection and expiry mails of registration (`registration_accounts._mail`) and the
 invitation's mail (`invitation_mail.send`) are queued only when mail is complete and enabled
 (`registration.mail_ready`), as the security mail of the outbox otherwise is not: without mail a
-decision queues nothing. Each is queued in the deciding transaction on the `security` budget, which
-is counted per instance and kind (`mail_budget`), not per recipient; "the recipient's security
-budget" of §3.4 is that budget. A rejection's or an expiry's mail has no `human_id`: the account and
+decision queues nothing. Each is queued in the deciding transaction. The registration's account
+mails go on the `security` budget, which is counted per instance and kind (`mail_budget`), not per
+recipient. The invitation's mail went there too, and "the recipient's security budget" of §3.4 was
+that budget, until it got a budget of its own, kind `invitation` (`invitation_max_per_hour`, §3.4
+now names it), counted the same way (d3113259), which replaces this entry's budget for the invitation's mail;
+the rest of this entry stands. A rejection's or an expiry's mail has no `human_id`: the account and
 everything it made are deleted in the same transaction, and the address was read before. The
 invitation's mail is tied to an account only where one holds the address as verified (or disabled),
 so a disabled address stops it as it stops that account's other mail (§18.7); most often nobody
 holds it yet. The texts are English: at the decision the hub no longer knows the person's language,
 which only the pending registration kept. What the hub did not write (the operator's reason, the
-inviter's and the project's names, the note) goes through `mailer.defang` and `mailer.quoted`, so
+inviter's and the project's names, the note) goes through `mail.text.defang` and `mail.text.quoted`, so
 the only links are the hub's own (§18.5).
 
 **Reason:** a mail held while mail is off would go out when someone switches mail on, possibly
@@ -308,3 +363,67 @@ the inviter passes the link on; the account mails follow the same rule so the tw
   delivers stale news once mail comes back.
 - Mail in the registration's language: the account registration does not keep it; keeping it would
   need a column and a migration for four mails the card asked to have in English.
+
+## The registration's link page stands in the frame of the pages without a session, like the sign-in link's page
+
+**Id:** e3267520-bfef-40e3-aa6f-17cecd17147c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-tp97v64vpy5z, PR 4, as the lead split it (2026-11-13): the registration link page and the maintenance page go into the door frame; `routes/register_page.py`, `render.door_document`. The reasons are this entry's reading of the sign-in link page's entry (email-links.md, 89e8318d)
+**Revisit when:** the dashboard takes the form over, the page needs a script, or the dashboard's `/login` gets the product line back
+
+`GET /mail/register/{token}`, its refusals and its dead-link page are drawn by
+`render.door_document`, as the sign-in link's page is: the landing page's header and footer around
+the door of `public-pages.css`, the form in the form's column. The form keeps its fields, its
+errors under each field (`aria-invalid`, `aria-describedby`), its signed terms version and its
+statuses; the legal links that stood under it are the frame footer's Legal column now, so the page
+has no links of its own and no words for them (`register_page.legal_*` are gone). The answers carry
+`render.DOOR_CSP` and `Referrer-Policy: no-referrer`, with `Cache-Control: no-store` as before.
+`render.form_document` and its inline style are removed; nothing else used them.
+
+**Reason:** the page is the step after the mail on the way into the dashboard, and every other page
+a person reaches without a session (`/login`, `/register`, the sign-in link, §18.6) already stands in
+this frame. The old shell looked like the legal pages as they were before they took the landing
+stylesheets (landing.md, dde46a41), so it had become the one page unlike its neighbours.
+
+**Rejected alternatives:**
+- Keep the legal pages' old shell (mail.md, f63430e9): unlike every page around it.
+- The product line under the frame's footer: the framed pages end with the frame's footer
+  (email-links.md, 89e8318d).
+
+
+## The mail factor's mails have a budget of their own, `second_factor_max_per_hour`
+
+**Id:** 443bdca8-64b0-4a07-9ea5-daf368945d35
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.8, §16.2; tsk-q4zynccy5t0b; `hub/src/maity_hub/mail/outbox.py` `BUDGETS`, `hub/src/maity_hub/auth/mail_factor.py`
+**See:** auth.md#a-forgotten-password-is-reset-by-mail-also-where-the-mail-is-the-second-factor — 2caa97c3-3a24-401b-a29f-02579a503559 — as of 2026-11-13
+
+The mail factor's links and codes, and the confirmation code that turns `email` on, go into the outbox as kind `second_factor`, counted against `second_factor_max_per_hour` (default 60, `MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR`) with `second_factor_sent_last_hour` and `second_factor_dropped_last_hour` beside the other counters. Over it a mail is dropped, never held, as for the other kinds that answer a request: a late code is useless. `mail_outbox.kind` and `mail_budget.kind` are free `String(16)` columns without a check, so the kind needed no migration.
+
+**Reason:** each kind of mail is counted on its own so that no kind's volume stops another (§16.2), and a human without TOTP cannot finish a sign-in without this mail. The reset's budget was split off for the same reason (2caa97c3); this finishes the split.
+
+**Rejected alternatives:**
+- Keep the factor's mails on `sign_in_max_per_hour`: the sign-in link's mails and the factor's would share one hour.
+- Held over budget like security mail: a code that arrives after its 15 minutes helps nobody.
+
+## Mails anyone can send to an address have budgets of their own and wait over them: verification and invitation
+
+**Id:** d3113259-e9eb-4321-8a8a-70080feaf52b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.2, §3.4, §18.4; tsk-q4zynccy5t0b and the lead's ruling on it, 2026-11-14; `hub/src/maity_hub/mail/outbox.py` `BUDGETS`, `DROPPED_OVER_BUDGET`
+**See:** mail.md#the-mail-factors-mails-have-a-budget-of-their-own-second_factor_max_per_hour — 443bdca8-64b0-4a07-9ea5-daf368945d35 — as of 2026-11-14
+
+An address verification mail is kind `verification` (`verification_max_per_hour`) and an address-bound invitation's mail kind `invitation` (`invitation_max_per_hour`), both default 60, each with its `…_sent_last_hour` and `…_queued` counters. Over its budget such a mail waits for the next hour, as security mail does; it is never dropped. The security budget is left to mail about the account's own security.
+
+**Reason:** any account can ask for verification mails and any project's admins can send invitations, to any address and from as many projects as they hold; on the security budget they could hold real security alerts back for hours. Unlike a sign-in code, a verification link and an invitation stay useful for a day, so waiting beats dropping.
+
+**Rejected alternatives:**
+- Leave both on the security budget with only the per-project and per-human limits: those bound one source, not the sum over many projects or accounts that fills the budget.
+- Drop them over budget like the anonymous kinds: the invitee or the human would get nothing, with no sign why, for a link that would still have worked hours later.
+- One shared budget for the two: invitations sent in bulk would stop a human's own address confirmation.

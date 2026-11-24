@@ -9,6 +9,7 @@
 **Source:** the maintainer's decision, 2026-10-22, approving attachments on chat and project messages with the rules below; the contract owner's design of the details in `docs/api.md` §8.7; the contract owner's rulings of 2026-10-22 on closed projects (adding refused, removal allowed) and on who deletes
 **Revisit when:** a browser is found to render an attachment response despite the headers, the per-project quota proves too small, or agents need to share files across projects
 **See:** security.md#credentials-never-enter-the-models-context-a-tool-holds-them-the-session-never-sees-them — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-22
+**See:** messages.md#a-message-names-several-recipients-and-a-message-is-forwarded-as-a-quote-that-routes-nothing — e55f1009-739e-445b-bb87-26f8c887493d — as of 2026-11-22
 
 Project messages, direct chats and group chats may carry files. The hub
 stores them, up to 10 MiB each and 10 per message, within a per-project
@@ -24,8 +25,8 @@ downloaded: `application/octet-stream`, `Content-Disposition:
 attachment`, `nosniff` and a sandboxing CSP, never HTML, SVG or script.
 Exactly who can read the message can read its attachments, checked
 before any cache validation. Agents fetch the content with the CLI
-into `./maity-files/` under their working directory, never into the
-working directory itself (`docs/api.md` §13); events and the resume
+into a folder outside their work tree, never into it (`docs/api.md`
+§13, cli/context/commands.md d1d6b49d); events and the resume
 packet carry only name, size, type and id. For an agent an attachment is untrusted input,
 like a web page. An attachment is deleted by its uploader, by a human
 who is a participant of the chat now (for a chat message) or by a human
@@ -36,6 +37,17 @@ the project deletes them all, and archiving keeps them readable. In a
 closed project (`accepted` or `archived`) an upload, and a message that
 names one, are refused; deleting an attachment and redacting its message
 stay allowed.
+Amended on 2026-11-22 (the owner's answer to req-frzvt4kzpvsv, o1, "A:
+Verweis mit Lesezugriff"; card tsk-c7caka34dhkw): an attachment still
+belongs to exactly one message, but a forward of that message
+(`docs/api.md` §8.4, not built yet) also grants read access to exactly
+the attachments it quotes to the forward's audience, while its quote is
+not tombstoned, with no copy (§8.7, "Attachments of a forward").
+Deletion, redaction and who may delete still follow the original alone,
+so removing the original or the file ends access through every forward.
+"Exactly who can read the message can read its attachments" holds as
+written until 2026-11-22 and, since, with that one widening (entry
+e55f1009-739e-445b-bb87-26f8c887493d).
 
 **Reason:** humans and agents already exchange screenshots, logs and
 specs, and without attachments they paste them into message bodies
@@ -88,7 +100,7 @@ found late and has to be removable whatever the project's state.
 - Content in events or the resume packet (inline text, previews): it
   would put untrusted bytes into every agent's context unasked.
 
-## The CLI fetches attachments into `./maity-files/`, never into the working directory itself
+## The CLI fetches attachments outside the work tree, never into the working directory
 
 **Id:** b623825e-e5b0-4567-bec6-2aaa03140527
 **Type:** decision
@@ -97,17 +109,21 @@ found late and has to be removable whatever the project's state.
 **Source:** `docs/api.md` §13 (`maity files get`) and the description of PR #216, both stating the rule and its reason; neither records it as a maintainer decision
 **Revisit when:** `maity files get` gets a different default target, or agents need a fetched file in place in the working tree
 **See:** attachments.md#files-on-messages-stored-by-the-hub-images-re-encoded-and-shown-inline-everything-else-an-inert-download — 2ff6d336-5d04-41f9-b6b9-f2979233b915 — as of 2026-10-23
+**See:** https://github.com/oliver-zehentleitner/maity — d1d6b49d-17b8-4572-a61d-28fe99a4ac05 — as of 2026-11-13
 
-`maity files get <id>` without `-o` writes the file into `./maity-files/`
-under the current directory, created with mode 0700 if missing, and
-never into the current directory itself. `-o PATH` still writes
-wherever the agent names.
+`maity files get <id>` without `-o` writes the file outside the work
+tree: into the state directory's `files/`, under a runner placement into
+the clone's `.git/maity-files/` (cli/context/commands.md d1d6b49d).
+Until 2026-11-13 it went into `./maity-files/` under the current
+directory. `-o PATH` still writes wherever the agent names.
 
 **Reason:** the file's name comes from whoever sent it, and an agent
 usually runs in a working tree. Written straight into that directory, a
 sender could drop a file that tooling there picks up and executes — in
 the words of §13, "a `conftest.py` or a `Makefile`". A subdirectory of
-its own keeps fetched files out of the places such tooling looks.
+its own in the work tree was not enough: test runners search every folder
+below the clone, and `git add -A` commits what is there; outside the work
+tree neither sees the file.
 
 **Rejected alternative:** fetching straight into the working directory,
 as the attachments entry above first described it: it lets the sender
@@ -200,14 +216,22 @@ area.
 **Source:** card tsk-qa9r26kb2teq; the maintainer's note of 2026-11-05 on the card (every limit has both sources, the environment variable and the admin field) and his decisions through the lead on 2026-11-07: requests req-h185j92my7zq (default and range), req-a4j6x89a679z (names, "no legacy"), req-xhz9dwn5z1a8 (wording); `docs/api.md` §8.7 and §16.5
 **Revisit when:** plans (§2.7) set storage per account or per plan, or a project's owner needs a quota of their own below the instance's value
 **See:** attachments.md#the-instance-caps-all-attachments-together-checked-under-the-projects-lock-and-without-numbers-for-the-member — 67adfb38-efa6-4636-986c-33fad578a128 — as of 2026-11-07
+**See:** scope.md#the-operator-lifts-or-lowers-a-limit-for-one-project-or-one-account-the-hubs-own-bounds-stay — 7d8669c6-3dd9-4b4f-a257-8a9135cf1141 — as of 2026-11-17
 
 The bytes one project may store are the limit `max_attachment_storage_per_project`
 in the admin section Limits (§16.5), with the environment variable
 `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` under the same source rules as every
-other limit: a set variable wins and the field shows it read-only, else the
-admin's value, else the default of 1 GiB. The range is 1 MiB to 1 PiB, or
+other limit. For the instance's value — and since 2026-11-17 only for it — a set
+variable wins and the field shows it read-only, else the admin's value, else the
+default of 1 GiB. The range is 1 MiB to 1 PiB, or
 `unlimited`. The refusal stays `attachment_quota` with `scope: "project"` and its
 numbers, and lowering the value deletes nothing.
+Changed on 2026-11-17 (the lead's decision on card tsk-spmhjqm7szag): the
+instance admin may set another value for one project (§16.5.1, not built yet),
+and that override comes before the instance's value from any of these sources,
+a set variable included. "The variable wins" no longer holds for such a
+project; it holds for the instance's value, which every other project takes
+(entry 7d8669c6).
 
 **Reason:** the operator sets every other limit in the admin area, and this one
 was the only one that needed a restart and a deployment change. The name

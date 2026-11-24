@@ -14,7 +14,6 @@ ended; of two links racing only the first succeeds.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta
@@ -22,15 +21,19 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import catalog, clock, handles
+from maity_hub import catalog, clock, handles, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
+from maity_hub.codes import digest
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
-from maity_hub.notifications import mailer, preferences, tokens
+from maity_hub.mail.text import quoted
+from maity_hub.notifications import tokens
+from maity_hub.notifications.address import verified_row
 from maity_hub.ratelimit import Limiter
+from maity_hub.text_language import text_language
 
 PURPOSE = "second_factor_reset"
 LINK_FOR = timedelta(hours=24)
@@ -42,7 +45,7 @@ BY_HUMAN = Limiter(
 
 def _nonce_id(nonce: str) -> str:
     """The row's id: the hash of the nonce, so the table holds nothing that opens a link."""
-    return hashlib.sha256(nonce.encode()).hexdigest()
+    return digest(nonce)
 
 
 def _mail_ready(conn: Connection, hub: Settings) -> bool:
@@ -67,15 +70,12 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
     second_factor.require_step_up(conn, hub, caller)
     if not _mail_ready(conn, hub):
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
-    settings_row = conn.execute(
-        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
-    ).first()
-    if (
-        settings_row is None
-        or settings_row.address_status != "verified"
-        or settings_row.address is None
-    ):
+    settings_row = verified_row(conn, human_id)
+    if settings_row is None:
         raise ApiError(409, "address_unverified", "the human has no verified address")
+    # The human's account lock before their factor's row, as against a deletion: the
+    # admin's own write guard holds only the admin's.
+    write_guard.share(conn, human_id)
     factor = second_factor.factor_of(conn, human_id, lock=True)
     if not second_factor.enrolled(factor):
         raise ApiError(409, "conflict", "no second factor is enrolled")
@@ -109,7 +109,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
         },
     )
     admin_handle = second_factor._handle(conn, caller.principal_id)
-    language = preferences.text_language(conn, human_id)
+    language = text_language(conn, human_id)
     words = catalog.section("second_factor_reset", language)
     outbox.enqueue(
         conn,
@@ -119,7 +119,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
         body=words["text"].format(
             admin=admin_handle,
             url=hub.public_url,
-            reason=mailer.quoted(cleaned),
+            reason=quoted(cleaned),
             link=f"{hub.public_url}/mail/second-factor-reset/{token}",
         ),
         human_id=human_id,
@@ -136,6 +136,8 @@ def _alive(conn: Connection, hub: Settings, token: str, *, lock: bool) -> Any | 
     nonce, human_id = payload.get("n"), payload.get("h")
     if not isinstance(nonce, str) or not isinstance(human_id, str):
         return None
+    if lock:
+        write_guard.share(conn, human_id)  # before any other, as against a deletion
     factor = second_factor.factor_of(conn, human_id, lock=lock)
     query = select(t.second_factor_reset).where(
         t.second_factor_reset.c.id == _nonce_id(nonce),
@@ -169,7 +171,7 @@ def page(conn: Connection, hub: Settings, token: str) -> dict[str, str] | None:
         "display_name": human.display_name,
         "admin": second_factor._handle(conn, row.requested_by),
         "reason": row.reason,
-        "language": preferences.text_language(conn, row.human_id),
+        "language": text_language(conn, row.human_id),
     }
 
 
@@ -196,6 +198,7 @@ def operator_reset(conn: Connection, handle: str) -> bool:
     human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
     if human_id is None:
         raise not_found()
+    write_guard.share(conn, human_id)  # before any other, as against a deletion
     if not second_factor.enrolled(second_factor.factor_of(conn, human_id, lock=True)):
         return False
     _reset(conn, human_id, "operator")

@@ -61,7 +61,20 @@ def load(conn: Connection, attachment_id: str) -> dict[str, Any]:
     return attachments.view(conn, [row])[0]
 
 
-idempotency.LOADERS["attachment"] = idempotency.plain(load)
+def _readable(conn: Connection, mine: Membership, attachment_id: str) -> bool:
+    """As its GET (§8.7): a pending upload its uploader's, a sent one its message's readers.
+    The uploader's replay of an upload deleted since still shows it gone."""
+    row = conn.execute(select(t.attachment).where(t.attachment.c.id == attachment_id)).one()
+    if row.message_seq is None:
+        return bool(row.uploaded_by == mine.id)
+    return attachments.message_readable(conn, mine, row.message_seq)
+
+
+idempotency.register(
+    "attachment",
+    idempotency.plain(load),
+    idempotency.in_project(idempotency.column_of(t.attachment), _readable),
+)
 
 
 def _admin_human(mine: Membership) -> bool:
@@ -113,7 +126,9 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             raise
     try:
         if sniffed is not None:
-            image = avatars.decode_attachment(settings, data, sniffed)
+            image = avatars.decode_attachment(
+                settings, data, sniffed, holder=avatars.holder_of(caller)
+            )
             data, kept_type, width, height, kind = (
                 image.data,
                 image.type,
@@ -121,8 +136,12 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
                 image.height,
                 "image",
             )
-    except ApiError:
-        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
+    except ApiError as refused:
+        # An image the decoder refused (undecodable, its size, its time) was decoded: it
+        # counts, as a refused avatar does, or a stream of malformed images would run the
+        # decoder for free. Only a call that found no decode slot ran nothing.
+        if refused.code == "rate_limited":
+            attachments.give_back(rate_key, charged)
         raise
     name = attachments.clean_name(raw_name, image_type=sniffed)
     store = blobs.store_of(settings)
@@ -133,8 +152,9 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         with engine.begin() as conn:
             _check_room(conn, membership(conn, caller, slug), settings, len(data))
     except BaseException:
-        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
-        raise
+        if sniffed is None:  # nothing was stored or decoded: not counted
+            attachments.give_back(rate_key, charged)
+        raise  # an image was decoded: that counts, as a refused one does
     # The blob first, the row after (§8.7), and the blob outside every transaction: for `s3`
     # the write is a network call, and none may wait under the project's lock or hold a
     # database connection. The sweep leaves a blob without a row alone for `BLOB_GRACE`; the
@@ -204,7 +224,7 @@ def _check_room(conn: Connection, mine: Any, settings: Any, size: int | None) ->
     instance: concurrent uploads into different projects may pass it by at most the sizes of
     the other uploads in flight when the last of them to be accepted was checked (§8.7)."""
     if size is not None:
-        quota = limits.of(conn, settings, limits.PROJECT_STORAGE)
+        quota = limits.project_storage(conn, settings, mine.project.id)
         used = attachments.used(conn, mine.project.id)
         if quota is not None and used + size > quota:
             raise attachments.quota_error("project", used=used, quota=quota)

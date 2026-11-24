@@ -205,6 +205,26 @@ class ReleaseTest(Base):
         self.assertEqual(repo.run("release", "0.2.0", "--date", "2026-02-30")[0], 1)
         self.assertEqual(repo.text(), HEAD)
 
+    def test_accepts_pep440_pre_releases(self) -> None:
+        # The hub's tags and PyPI name 0.1.0a2, so the section does too.
+        for version in ("0.1.0a2", "0.1.0b1", "0.1.0rc12"):
+            with self.subTest(version=version):
+                root = self.tmp / version
+                root.mkdir()
+                repo = Repo(root, HEAD, a="### Added\n\n- x\n")
+                code, _, err = repo.run("release", version, "--date", "2026-11-10")
+                self.assertEqual(code, 0, err)
+                self.assertIn(f"## [{version}] - 2026-11-10", repo.text())
+
+    def test_refuses_malformed_pre_releases(self) -> None:
+        repo = Repo(self.tmp, HEAD, a="### Added\n\n- x\n")
+        for version in ("0.1.0a", "0.1.0.a2", "0.1.0alpha2", "0.1.0c1", "0.1a2"):
+            with self.subTest(version=version):
+                code, _, err = repo.run("release", version)
+                self.assertEqual(code, 1)
+                self.assertIn("neither PEP 440 nor SemVer", err)
+        self.assertEqual(repo.text(), HEAD)
+
     def test_refuses_changelog_without_unreleased(self) -> None:
         repo = Repo(self.tmp, "# Changelog\n", a="### Added\n\n- x\n")
         code, _, err = repo.run("release", "0.2.0")

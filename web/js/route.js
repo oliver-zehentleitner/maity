@@ -199,6 +199,14 @@ window.Maity = window.Maity || {};
     return true;
   }
 
+  // The message an event's page sent the reader to (js/event.js, docs/api.md §8.9): the
+  // place's address carries `#seq-<n>`, and the view that draws the place reads it here. The
+  // number as written (a string: a seq may pass 2⁵³), or null.
+  function seqTarget() {
+    const m = /^seq-([1-9][0-9]{0,18})$/.exec(current().fragment);
+    return m ? m[1] : null;
+  }
+
   // The address without its fragment, nothing drawn again: the device code
   // is read once and then no longer stands in the address bar (§16.11).
   function dropFragment() {
@@ -225,5 +233,5 @@ window.Maity = window.Maity || {};
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump };
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump, seqTarget };
 })(window.Maity);

@@ -62,6 +62,18 @@
   --shadow: 0 1px 2px rgba(20, 24, 29, 0.04), 0 6px 18px rgba(20, 24, 29, 0.06);
 }
 
+/* One reading column for the forms of a settings or manage panel (web/context/views.md): the
+   panel's parts stop at --form-column, left-aligned; its lists, tables and tab rows keep the
+   panel's full width (.full-width for one built of other elements). A part that holds a list,
+   however deep, keeps the full width too, and its own parts without one stop at the column
+   again, level by level down to the list (a list counts inside the column only: a column may
+   itself stand in a table or list, Manage's row, an agent's card). Inside the column, fields and help texts fill it and
+   a form's buttons start at its left. */
+:root { --form-column: 42rem; }
+:is(.form-column, .form-column :not(nav, ul, ol, table, .table-wrap, .full-width, .form-column :is(ul, ol, table, .table-wrap, .full-width) *):has(nav, ul, ol, table, .table-wrap, .full-width))
+  > :not(nav, ul, ol, table, .table-wrap, .full-width, :has(nav, ul, ol, table, .table-wrap, .full-width)) { max-width: var(--form-column); }
+/* Its buttons start at the column's left: the block at the end of this file, after the forms' own rules. */
+
 /* Dark: by the system's choice unless this browser picked Light, or when it
    picked Dark (data-theme on <html>, set by js/theme.js before the first
    paint). The two blocks hold the same tokens. */
@@ -305,6 +317,12 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
   opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
 .page-loading .maity-loader { width: 48px; height: 48px; }
 @keyframes page-loading-shows { to { opacity: 1; } }
+/* The hub's own page of a public address (§16.9, shell.py page_in_shell) waits invisible: the
+   first view replaces it with the page in its frame and final layout, so a visitor never sees
+   the stored layout first (tsk-777vkhtzmq6f). Shown after 3 s where no script replaces it (none
+   loaded, or its read failed and the view keeps the hub's page); a crawler reads it either way. */
+.hub-page { visibility: hidden; animation: hub-page-shows 0s linear 3s forwards; }
+@keyframes hub-page-shows { to { visibility: visible; } }
 /* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
    A bar and the dimmed view say at once that the click was taken. The bar stands in main's top
    padding, under the header and above the sign-in banner, and its margins give back the 3 px, so
@@ -355,7 +373,6 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
-.mention-note { margin: 4px 0 0; font-size: 0.88rem; }
 
 /* The header's rows of links (js/app.js): not every nav, the chat list is one too. */
 nav.switcher, nav.views { display: flex; gap: 4px; overflow-x: auto; margin-top: 8px; }
@@ -379,13 +396,30 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The project switcher: always visible, one chip per project. At its
    right, behind a separator, the project's state and absence; on a narrow
    screen that block goes under the chips. */
-.switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+.switcher-row { --switcher-row-gap: 12px; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--switcher-row-gap); }
 /* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
    a project's state keeps the far end of the row. */
 .switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
+/* On a wide screen many tabs scroll before the row wraps, so the tabs menu stays beside the last one
+   instead of falling to a line of its own (tsk-qa2r972wjsws). The room kept is the menu's
+   width as the font scales: 22px of padding and border, the 0.88rem glyph, 2px to spare (its negative
+   margin cancels the column gap). A phone gives the tabs the room the menu leaves (below). */
+@media (min-width: 601px) { .switcher-row:has(> .tabs-menu-box) .switcher { max-width: calc(100% - 24px - 0.88rem); } }
 /* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
 .tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
 .tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }
+/* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
+   pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
+   behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
+   it keeps the row's right end while the tabs scroll. Its gap to the last tab is the tabs' own: the
+   negative margin cancels the row's column gap, and nav.switcher's end padding (the drop line's room) remains. */
+.switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: calc(-1 * var(--switcher-row-gap)); }
+.tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-bottom: 2px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); font-size: 0.88rem;
+  line-height: inherit; }
+.tabs-menu-box .menu-button.tabs-menu:hover:not(:disabled) { border-color: var(--border); border-bottom-color: transparent; }
+/* Open, it reads like the current tab: the accent edge, the raised ground. */
+.tabs-menu-box .menu-button.tabs-menu[aria-expanded="true"] { border-color: var(--accent); background: var(--surface-2); color: var(--text); }
 .switcher a[draggable="true"] { cursor: grab; }
 /* Where a dragged tab will go: an upright line in the gap before or after the tab under it (js/app.js
    dragTab). Placed absolutely, it moves nothing; the row keeps room for the line after its last tab. */
@@ -423,6 +457,36 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
+/* A public project the human is no member of (js/app.js outsiderTab, docs/api.md §5.1 "Stars"): the
+   pill drawn dashed, in both themes, current or not. A starred one is the link and its star's button
+   side by side; the button keeps a 24 px target (WCAG 2.5.8) and the star takes the accent colour. */
+/* Positioned, so its visually-hidden words stay inside it: a session tab is not draggable, and
+   only a[draggable="true"] is positioned above (390 px was 125 px wider without it). */
+.switcher a.outsider { border-style: dashed; position: relative; }
+.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.switcher .tab-star { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+  padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer; }
+.switcher .tab-star:hover { border-color: var(--border); background: var(--surface-2); }
+.switcher .tab-star:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.switcher .tab-star .icon-fill { fill: currentColor; }
+/* An unstarred tab's star is an outline in the muted colour, so it reads apart from a starred one's
+   filled accent star in both themes (the tokens follow the theme). */
+.switcher .tab-star.unstarred { color: var(--muted); }
+.switcher .tab-star.unstarred .icon-fill { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.switcher .tab-star.unstarred:hover { color: var(--accent); }
+/* The tabs menu marks the dashed tabs as such: the same dashed edge, small, after the name. */
+.tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
+  color: var(--muted); font-size: 0.8rem; }
+/* The outsider's actions in the project's head (js/app.js, `#outsider-actions`): a slot that takes no
+   room while nothing is drawn into it. */
+.project-state .outsider-actions { display: inline-flex; align-items: center; gap: 6px; }
+.project-state .outsider-actions:empty { display: none; }
+/* What is drawn into it (js/outsider-actions.js): Add your agent, or why it is missing; the join
+   panel under the head's row. */
+.outsider-actions .outsider-add-agent { min-height: 28px; padding: 2px 10px; font-size: 0.85rem; }
+.outsider-actions .outsider-reason { color: var(--muted); font-size: 0.85rem; }
+.outsider-join { margin-top: 8px; }
+.outsider-join:empty { display: none; }
 
 .dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }
@@ -557,10 +621,35 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .reply.later, .reply.talk { background: transparent; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
+/* An option is the agent's own label, a word or five lines: a rounded box that grows in height with
+   it and wraps inside it. A pill would turn round around a long label and let it run over its edge. */
+.reply.option { border-radius: var(--r-field); white-space: normal; overflow-wrap: anywhere; min-height: 44px; max-width: 100%; }
 
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
 .free-text label { font-size: 0.85rem; color: var(--muted); }
 .free-text button { justify-self: end; }
+/* The request to chat with one's agents (§9.6): its boxes and two rules above the note (js/inbox.js). */
+.chat-access { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; gap: 6px; }
+.chat-access legend { font-weight: 600; padding: 0 4px; }
+/* The request's two parts (js/inbox.js chatAccessPicker): one's own agents, then with whom. */
+.chat-access fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-access fieldset legend { padding: 0; }
+.chat-access fieldset p { margin: 0; }
+.chat-access fieldset + fieldset { margin-top: 6px; }
+.chat-access label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.chat-access label:not(.check) { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+.chat-access .hint, .chat-access .muted { margin: 0; }
+/* Who may chat with one's agents, the /agents page's tab Chat access (js/chat-access.js). */
+.chat-access-list { list-style: none; padding: 0; margin: 6px 0 12px; display: grid; gap: 8px; }
+.chat-access-entry { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 0; overflow-wrap: anywhere; }
+.chat-access-entry p { margin: 2px 0; }
+.chat-access-entry .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chat-access-add, .chat-access-edit { margin-top: 12px; }
+.chat-access-agents { border: 0; padding: 0; margin: 0; }
+.chat-access-page label.check { display: flex; align-items: center; gap: 6px; color: var(--text); min-height: 28px; }
+.chat-access-page input[type=checkbox] { width: 18px; height: 18px; margin: 0; flex: none; }
+/* A row of a subject not chosen, and the side's fields under a project: `hidden` wins over .field-stack's grid. */
+.chat-access-page [hidden] { display: none; }
 /* The @ picker under its text field; a stored mention as a member link. */
 .mention-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: 24rem; }
 .mention-list[hidden] { display: none; }
@@ -613,6 +702,12 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
    paragraph with several ids stays quiet (the designer's pass part 3). */
 .id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }
 a.id-ref { text-decoration: none; }
+/* A full reference (owner/slug/tsk-…, docs/api.md §6.25) is longer than a phone's
+   chat bubble: it wraps in the project's name or before the id, the id itself stays
+   whole (js/ids.js refText, tsk-e9d52pfhvk3v). */
+.id-ref.full { white-space: normal; }
+.id-ref .ref-prefix { overflow-wrap: anywhere; }
+.id-ref .ref-id { white-space: nowrap; }
 a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
@@ -730,9 +825,10 @@ a.icon-button:hover { border-color: var(--accent); }
 
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--muted); flex: none; }
 .dot.online { background: var(--ok); }
-.dot.away { background: var(--warn); opacity: 0.6; }
-.dot.paused { background: var(--warn); }
+.dot.away, .dot.paused { background: var(--warn); }
 .dot.human { background: var(--accent); }
+/* Forced colours drop the background: the dot keeps a border in the system's text colour (A2290). */
+@media (forced-colors: active) { .dot { box-sizing: border-box; border: 5px solid CanvasText; } }
 
 .presence.online { color: var(--ok); }
 .presence.away { color: var(--warn); }
@@ -758,6 +854,11 @@ a.icon-button:hover { border-color: var(--accent); }
 .briefing { margin-top: 10px; }
 .inline-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 /* Project logos: the image or a monogram, beside the project's name. */
+/* A private project's lock after its name (js/app.js privateMark, tsk-5t3qd0m9rj6r): 12 px, in the
+   muted text colour of either theme, on the name's line. */
+.private-mark { display: inline-flex; align-items: center; margin-inline-start: 4px; color: var(--muted); vertical-align: -1px; }
+.private-mark .icon { width: 12px; height: 12px; }
+.private-mark .icon .icon-fill { fill: currentColor; }
 .project-mark { display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 20px; height: 20px; border-radius: 4px; object-fit: cover; vertical-align: middle; }
 .project-mark.small { width: 16px; height: 16px; border-radius: 3px; }
@@ -802,6 +903,12 @@ a.icon-button:hover { border-color: var(--accent); }
 .outside-roles input[type=checkbox], .restricted-members input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
+.pair-steps ol[hidden] { display: none; }
+.pair-steps ol > li { min-width: 0; }
+.pair-steps pre.paste-line { overflow-wrap: anywhere; }
+.pair-way { border: 0; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.pair-way .check { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--text); }
+.placement-new-no-tool-why { margin: 4px 0 0; padding-left: 20px; }
 .runner-config { max-height: 16rem; overflow: auto; background: var(--surface); padding: 8px; border-radius: 4px; font-size: 0.8rem; white-space: pre; }
 pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
@@ -841,14 +948,14 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .member-manage td { background: var(--surface); }
 .member-manage .member-edit { margin: 4px 0 8px; }
 /* The team's rulebook, for the agent's owner (§6.18). */
-.member-team { display: grid; grid-template-columns: max-content minmax(0, 26rem); gap: 6px 12px; align-items: center; margin: 8px 0; }
+.member-team { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; margin: 8px 0; }
 .member-team h4, .member-team > .hint, .member-team > .muted, .member-team > .field-error, .member-team > .actions, .member-team > label.check { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 600px) { .member-team { grid-template-columns: minmax(0, 1fr); } }
 .member-manage .member-pause, .member-manage .member-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .member-manage .hint { flex-basis: 100%; margin: 0; }
 .member-manage label { font-size: 0.85rem; color: var(--muted); }
-.member-manage .member-remove { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
-.member-edit .member-fields { display: grid; grid-template-columns: max-content minmax(0, 26rem); gap: 6px 12px; align-items: center; }
+.member-manage .member-remove { justify-content: flex-start; border-top: 1px solid var(--border); padding-top: 8px; }
+.member-edit .member-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; }
 .member-edit .member-fields .hint { grid-column: 2; margin: 0; }
 .member-edit .member-fields .label { font-size: 0.85rem; color: var(--muted); }
 .member-edit textarea { width: 100%; }
@@ -877,30 +984,31 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* Team (the members view) and Agents in the refreshed look (design refresh step 6): the table
    as a panel, quiet head cells, rows with room and a hover ground, Chat and Manage as pills, the
    runner cards as cards. Styling only: the selectors the checks use stay as they are. */
-:is(.view-members, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
-:is(.view-members, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
+:is(.view-team, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
+:is(.view-team, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-card); box-shadow: var(--shadow); }
-:is(.view-members, .view-agents) .members th, :is(.view-members, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
-:is(.view-members, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+:is(.view-team, .view-agents) .members th, :is(.view-team, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
+:is(.view-team, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--muted); padding-block: var(--s2); }
-:is(.view-members, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
+:is(.view-team, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
 /* A light hover ground, so the warn text in a row keeps AA on it (4.6:1 light, 6.2:1 dark). */
-:is(.view-members, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
-:is(.view-members, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
-:is(.view-members, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
+:is(.view-team, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
+:is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
   border: 1px solid var(--field); background: transparent; padding: 4px 12px; }
 /* The open Manage row (members: .member-manage, Agents: .agent-manage) on the same light ground as the hover. */
-:is(.view-members, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
-:is(.view-members, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
+:is(.view-team, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+/* No side padding: its fields start and end with the panel's other parts (the form column). */
+:is(.view-team, .view-agents) .member-manage .member-edit { padding: var(--s2) 0; }
 .view-agents .profile { border-radius: var(--r-card); }
 /* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
 .placement button:not(:disabled):not(.primary) { border-color: var(--field); }
 @media (max-width: 600px) {
-  .view-members .table-wrap { background: none; border: 0; box-shadow: none; }
-  :is(.view-members, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
-  :is(.view-members, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
-  :is(.view-members, .view-agents) .members tr.member:hover > * { background: none; }
-  :is(.view-members, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
+  .view-team .table-wrap { background: none; border: 0; box-shadow: none; }
+  :is(.view-team, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
+  :is(.view-team, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
+  :is(.view-team, .view-agents) .members tr.member:hover > * { background: none; }
+  :is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
 }
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
@@ -920,22 +1028,37 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .org-tree, .org-tree ul { list-style: none; margin: 0; padding-left: 0; }
 .org-tree ul { padding-left: 20px; border-left: 1px solid var(--border); margin-left: 4px; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
-.org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
 .role { color: var(--muted); }
-/* One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): an instance a dot in its presence's
-   colour inside a 24 px target, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
-.fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
-.fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
-.fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
-.fleet-dot.online::before { background: var(--ok); }
-.fleet-dot.away::before { background: var(--warn); }
-.fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
-.fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-.fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
-.fleet-stub a { color: inherit; }
-.fleet-me { font-size: 1.02rem; }
+/* An instance in the tree (Team and Agents, tsk-zsbe48ty4ces): `#abcd` after a dot in its presence's
+   colour, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
+.org-dot { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; }
+.org-dot::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+/* Each state differs in shape or size as well as colour (WCAG 1.4.1, nte-s2dqhn1n4bez): online a filled
+   disc, away a ring half filled, offline a smaller disc, dormant hollow, paused two bars; the lead keeps its ring. */
+.org-dot.online::before { background: var(--ok); }
+.org-dot.away::before { background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); border: 2px solid var(--warn); }
+.org-dot.offline::before { width: 6px; height: 6px; margin: 0 2px; }
+.org-dot.dormant::before { background: none; border: 2px solid var(--muted); }
+.org-dot.paused::before { background: none; border: solid var(--warn); border-width: 0 3px; border-radius: 0; }
+.org-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); margin: 0 3px 0 4px; }
+/* In forced colours the browser drops a gradient, a background colour and a shadow, which made away
+   and dormant the same ring and the filled dots vanish (#1598 review). There each state is drawn with
+   borders, size and an outline alone, which forced colours keep in the user's own system colours:
+   online a disc filled by its border, away a ring with a thick left side, offline the smaller disc,
+   dormant the thin ring, paused two bars, and the lead an outline instead of the shadow ring. */
+@media (forced-colors: active) {
+  .org-dot::before { background: none; border: 5px solid CanvasText; }
+  .org-dot.away::before { border-width: 2px 2px 2px 5px; }
+  .org-dot.offline::before { border-width: 3px; }
+  .org-dot.dormant::before { border-width: 2px; }
+  .org-dot.paused::before { border-width: 0 3px; }
+  .org-dot.lead::before { box-shadow: none; outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
+.org-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 600px) {
-  .fleet-tree ul { padding-left: 12px; }
+  .org-tree ul { padding-left: 12px; }
 }
 .org-faces, .paths-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .org-face[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -1043,7 +1166,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }
 .avatars { grid-area: av; position: relative; display: flex; align-self: start; }
-.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img { margin-inline-start: -10px; }
+/* Every picture after the first overlaps, generated or loaded alike, so a stack keeps its width while
+   pictures load one by one (nte-b3pfhm2bp0vt (b)). */
+.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img,
+.avatars .avatar-svg + .avatar-img, .avatars .avatar-img + .avatar-svg { margin-inline-start: -10px; }
 .avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
@@ -1080,8 +1206,12 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    height, and a grid's default (stretch) would share it out among few rows. */
 .messages { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; align-content: start; }
 
+/* A bubble is up to 60% of the message column, at least 36rem where the column allows, never
+   past 60rem or 90%: in a column up to 960px (the page's chat, a phone) that is the old
+   min(36rem, 90%); wider, as in full screen on a desktop, it grows to 60%, from 1600px on
+   60rem (tsk-e305sjdqes86, context/views.md). */
 .msg {
-  max-width: min(36rem, 90%);
+  max-width: min(max(36rem, 60%), 60rem, 90%);
   padding: 8px 12px;
   border-radius: var(--radius);
   background: var(--surface);
@@ -1127,6 +1257,16 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 .msg.in.grouped { margin-top: -4px; padding-inline-start: 48px; }
 .msg-avatar { flex: none; }
 .msg-body { min-width: 0; }
+/* §9.7: the verdicts under a message, and Agree, Disagree and Take back. */
+.msg-verdicts:empty { display: none; }
+.msg-verdicts .verdict-list { list-style: none; margin: 4px 0 0; padding: 0; font-size: 0.8rem; }
+.msg-verdicts .verdict-list li { margin: 1px 0; overflow-wrap: anywhere; }
+.msg-verdicts .verdict-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.msg-verdicts .verdict-actions button, .msg-verdicts .verdict-form button { font-size: 0.75rem; padding: 1px 6px; }
+.msg-verdicts button[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+.msg-verdicts .verdict-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; font-size: 0.8rem; }
+.msg-verdicts .verdict-form input { flex: 1 1 12rem; min-width: 0; }
+.msg-verdicts .send-status:empty { display: none; }
 /* A grouped message says only when; muted, never fainter than --muted (contrast). */
 .msg.grouped .meta { font-size: 0.74rem; }
 .messages .empty p { margin: 0 0 4px; }
@@ -1141,6 +1281,8 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    here so that selecting the number copies the number alone. */
 .msg-seq { font-variant-numeric: tabular-nums; }
 .msg-seq::before { content: "#"; }
+/* The message an event's link opened (js/event.js, docs/api.md §8.9), marked where it stands. */
+.msg.seq-target .msg-body, .pmsg.seq-target, .event-one.seq-target { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
 .msg-projects .project-mark.small, .conv-project .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }
@@ -1233,6 +1375,9 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 /* The series' settings at the top of the jour fixe view, folded until opened (js/jour-fixe-series.js). */
 .jf-series-settings { margin: 8px 0 16px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series-settings > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+/* A round's date link is a 24 px target, so the stacked rows do not crowd each other (WCAG 2.5.8,
+   nte-ynsymv950zq4). */
+.jf-rounds a { display: inline-block; min-height: 24px; line-height: 24px; }
 .jf-series-settings[open] > summary { margin-bottom: 8px; }
 .jf-series-block { margin: 12px 0; }
 .jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
@@ -1318,8 +1463,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .facts dt { margin-top: 4px; }
   /* The answers two by two, a thumb's size; Send across the whole row. */
   .replies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .reply { min-height: 40px; min-width: 0; }
-  .reply.send, .reply:only-child { grid-column: 1 / -1; }
+  .reply { min-height: 44px; min-width: 0; }
+  /* An option one per row, its label from the start of the line. */
+  .reply.send, .reply.option, .reply:only-child { grid-column: 1 / -1; }
+  .reply.option { text-align: start; }
 }
 
 /* Pictures on the account (docs/api.md §6.10). */
@@ -1494,6 +1641,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .sessions-ended { margin-top: 8px; }
 .address-change { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius); }
 .signin-banner { margin: 0 0 12px; }
+.factor-banner { margin: 0 0 12px; }
+.factor-banner .flag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.factor-banner .flag p { flex: 1 1 20em; margin: 0; }
 
 /* The change ticker (js/ticker.js). */
 .ticker-tabs { display: flex; gap: 6px; margin: 8px 0; }
@@ -1508,9 +1658,26 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .ticker-sub, .ticker-post-box { margin-top: 16px; }
 
 /* Joining in Agents (js/join.js): the panel under the title, open joins as seats in the grid. */
-/* + Add an agent and Join an agent, the same at the head of /agents and of a project's Agents. */
+/* + Add an agent and Join an agent at the head of /agents. */
 .agents-head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; }
 .agents-head-actions button { min-height: 40px; }
+/* The head of a page with tabs (js/page-head.js; the project's Agents and Team pages,
+   tsk-vkyp71qp95n9): the heading, the buttons at the right end, the tab bar under them, all at the
+   page's full width. Join an agent opens the join panel under the head (tsk-hdczmsq2r431). */
+.page-head { display: block; width: 100%; }
+.page-head-bar { margin-bottom: 8px; }
+.page-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; }
+.page-head-actions :is(button, a.button) { min-height: 40px; display: inline-flex; align-items: center; }
+/* A button the page hides stays hidden (the rule above would show it): Join an agent until its
+   panel is read, New agent profile while its form is open. As specific as that rule and after it:
+   :is() counts its most specific argument (a.button), so a bare [hidden] loses (#1919 web-e2e). */
+.page-head-actions :is(button, a.button)[hidden] { display: none; }
+.page-head-actions button.join-open { padding: 6px 14px; border-radius: var(--radius); }
+.page-head .view-tabs { width: 100%; margin-top: 0; }
+.join-slot > .send-status:empty { min-height: 0; margin: 0; }
+/* The project's name in the hint may be one long word (63 characters): it wraps rather than widening
+   the page (nte-fk0fzcsma0e7). */
+.agents-project-hint { overflow-wrap: anywhere; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .agents-count { margin: -6px 0 12px; }
 .join-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
@@ -1554,8 +1721,18 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .seat-actions { display: flex; justify-content: flex-end; }
 .earlier-joins { margin-top: 16px; }
 .earlier-joins summary { cursor: pointer; }
+/* The join form's last part, a start on a runner instead of a line (tsk-hdczmsq2r431): its fields
+   in the grid the join's own fields have, so a label stands over its control. */
+.join-runner { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 12px 0 0; min-width: 0; min-inline-size: 0; }
+.join-runner legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.join-runner .hint { margin: 4px 0; }
+.join-runner-fields { border: 0; padding: 0; margin: 8px 0 0; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.join-runner-fields .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; align-content: start; }
+.join-runner-fields .field > :is(select, input, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
+.join-runner-fields .wide { grid-column: 1 / -1; }
+.join-runner-box[hidden], .join-runner-why[hidden], .join-runner-fields [hidden] { display: none; }
 @media (max-width: 700px) {
-  .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+  .join-fields, .join-fields .new-agent:not([hidden]), .join-runner-fields { grid-template-columns: minmax(0, 1fr); }
 }
 
 
@@ -1710,10 +1887,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 600; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
-   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
-.placement-new select, .placement-new input { max-width: 100%; }
-.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
@@ -1764,6 +1937,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    control. One class for every such wrapper (tsk-jpaqk8m7j52v), so none runs label and field inline. */
 .field-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .sign-in-form button, .register-form button { justify-self: end; }
+/* The reset of a forgotten password (js/password-reset.js) lays out as registration does. */
+.reset-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.reset-form button[type="submit"] { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
 .device-account { display: flex; align-items: center; gap: 8px; }
@@ -1933,7 +2109,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
 /* Agents that stop listening, on the account (js/notify-settings.js). */
-.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
 .mail-address { margin: 16px 0; max-width: 32rem; }
@@ -1967,7 +2143,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
 .member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
-/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+/* A view's own tabs (Overview, the Team page, a project's Settings): links, the shown one marked. */
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
@@ -2003,11 +2179,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .review-quote { white-space: pre-wrap; }
 @media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
 
-/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
-.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
-.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
-.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
-
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
 .meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
@@ -2025,6 +2196,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-picture-none.size-20 { width: 20px; height: 20px; }
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+/* A person's agents (§16.9, "A person's agents"), in the person view and on the visitor's page: each
+   with its picture at 64 px beside its name, handle, roles, model and harness. */
+.person-agents { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); overflow-wrap: anywhere; }
+.person-agents li { display: flex; align-items: flex-start; gap: var(--s3); min-width: 0; }
+.person-agents li > div { min-width: 0; }
+.person-agents li p { margin: 2px 0 0; }
+.person-agents .avatar-img, .person-agents .person-picture-none { flex: none; width: 64px; height: 64px; border-radius: 50%; }
 
 /* The person or organisation view in the refreshed look (design refresh step 4): the head as a
    panel with a round picture, the name in the display face, links and the public page as pills,
@@ -2053,7 +2231,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
-.handle-form .handle-explain { flex-basis: 100%; margin: 0; }
+.handle-form .handle-explain, .handle-form .hint { flex-basis: 100%; margin: 0; }
+/* A handle field's word while what is typed breaks the rule (js/handles.js rule()). */
+.handle-check:empty { display: none; }
 .handle-at { color: var(--muted, inherit); }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -2085,6 +2265,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    while it runs, the admin's form and changes, the owner's choice on /agents. */
 .maintenance-banner { margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
 .maintenance-banner.running { font-weight: 600; }
+/* A newer dashboard deployed under an open page (docs/api.md §1.1, js/new-version.js): a band
+   above the header with Reload and Later; it never reloads by itself. */
+.new-version-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
 .maintenance-page { display: grid; gap: 12px; max-width: 36rem; width: 100%; margin: 24px auto; box-sizing: border-box; }
 .maintenance-page h2 { margin: 0; }
 .maintenance-page p { margin: 0; }
@@ -2096,6 +2279,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts { margin-top: 24px; }
 .broadcasts-agents { display: grid; gap: 4px; border: 1px solid var(--border); padding: 8px; margin: 0; }
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
+/* As Allowed projects' boxes: a row tall enough that each box keeps axe's 24 px target (its own tab now, e2e). */
+.broadcasts-agents .check { min-height: 28px; }
+.broadcasts-agents input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 
 /* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
    never sticky, small and muted; wider than phone width it wraps between its parts, never sideways. */
@@ -2124,3 +2310,36 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 }
 :root[data-theme="dark"] .product-mark-t { fill: #4c8dff; }
 :root[data-theme="dark"] .product-mark-seat { fill: #e6e9ec; }
+/* Report to the instance's admins (§16.8, js/report.js): a small button where a view keeps its
+   actions, the form opening under it; Your account → Reports as a plain list. */
+.report-row { margin: 16px 0 0; }
+.report-form { margin-top: 8px; max-width: 40rem; }
+.report-form select, .report-form textarea { width: 100%; box-sizing: border-box; }
+.report-sent { margin-top: 8px; }
+.report-list { list-style: none; margin: 0; padding: 0; }
+.report-item { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+
+/* Settings → Mine: leaving the project (§6.2). The dialog sits over the page. */
+.leave-project { margin-top: 1.75rem; padding-top: 1rem; border-top: 1px solid var(--border); max-width: 36rem; }
+.leave-project h3 { margin: 0 0 0.35rem; font-size: 1rem; }
+.leave-backdrop { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+  padding: 1rem; background: color-mix(in srgb, var(--text) 45%, transparent); }
+.leave-dialog { width: min(36rem, 100%); max-height: calc(100vh - 2rem); overflow: auto; margin: 0;
+  padding: 1rem 1.1rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); }
+.leave-dialog h3 { margin: 0 0 0.5rem; }
+.leave-dialog .actions { justify-content: flex-end; }
+.leave-agents { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+/* The page as the focus's place where what held it went (the authenticator banner): no ring
+   around the whole page. */
+#main[tabindex="-1"]:focus { outline: none; }
+
+/* The form column's buttons (web/context/views.md): at the column's left, Remove included, after
+   the forms' own rules above that put them at the right edge. */
+.form-column :is(.actions, .row) { justify-content: flex-start; }
+.form-column :is(form, .field-stack, .image-row) button { justify-self: start; }
+/* Inside the column a form fills it: its own width (32, 36 or 48rem) holds only outside one;
+   the preferences' versions are a list, at the full width. */
+.form-column :is(.inline-form, .project-form, .image-row, .preferences-form, .preferences-projects, .not-listening-settings, .mail-address, .mail-modes, .leave-project) { max-width: var(--form-column); }
+.form-column .preferences-history { max-width: none; }
+/* A fieldset's own side margin (2px by the browser) would end it past the column's edge. */
+.form-column > fieldset { margin-inline: 0; }

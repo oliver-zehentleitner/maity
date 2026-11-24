@@ -1,0 +1,2568 @@
+"""The `antigravity` harness (agy): its adapter, its workspace folder and its checks (docs/api.md
+§15.3, §15.5, §15.7; cli/context/runner.md, the Antigravity entry)."""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import tomllib
+import unicodedata
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import pytest
+from conftest import git
+from test_supervisor import FakeTmux
+
+from maity import cli, clonecheck, proc
+from maity.runner import (
+    adapters,
+    capabilities,
+    commands,
+    config,
+    loop,
+    operate,
+    skills,
+    supervisor,
+    targets,
+    workspace,
+)
+from maity.runner.asuser import AsUser
+
+PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "gemini-3-pro"}
+REPO = "https://github.com/oliver-zehentleitner/maity"
+
+
+def context(tmp_path: Path, **overrides: Any) -> adapters.Context:
+    harness = config.Harness("antigravity", ("interactive", "supervised"), "interactive",
+                             ("gemini-3-pro",), binary="agy")  # fmt: skip
+    agent_dir = tmp_path / "st" / "agents" / "plc-0003"
+    agent_dir.mkdir(parents=True, mode=0o700)
+    folder = tmp_path / "ws" / "maity" / "agent-3"
+    (folder / "repo" / ".git").mkdir(parents=True)
+    data: dict[str, Any] = {
+        "placement": PLACEMENT, "harness": harness, "binary": "/usr/bin/agy",
+        "clone": folder / "repo", "folder": folder, "agent_dir": agent_dir,
+        "grant": config.RepositoryGrant(allow=("python3 -m pytest *", "make test")),
+        "restart": config.Restart(), "hosts": ("maity.team", "github.com"),
+    }  # fmt: skip
+    data.update(overrides)
+    return adapters.Context(**data)
+
+
+def prompt_of(ctx: adapters.Context, start: str) -> str:
+    folder = adapters.AGY_FOLDER_PROMPT.format(repo="repo")
+    return folder + start + adapters.AGY_MAITY_PROMPT
+
+
+# --- the adapter: argv per mode ---------------------------------------------------------------
+
+
+def test_interactive_starts_agy_with_the_start_prompt_in_the_workspace_folder(
+    tmp_path: Path,
+) -> None:
+    ctx = context(tmp_path)
+    launch = adapters.launch(ctx)
+    settings = ctx.agent_dir / "agy-settings.json"
+    assert launch.argv == [
+        "/usr/bin/agy", "--settings", str(settings), "--model", "gemini-3-pro",
+        "-i", prompt_of(ctx, adapters.START_PROMPT),
+    ]  # fmt: skip
+    assert json.loads(settings.read_text()) == adapters.antigravity_settings(ctx)
+    # agy takes the work tree from $PWD: the folder, never the clone (§15.3).
+    assert launch.env["PWD"] == str(ctx.folder)
+    assert launch.env["GIT_COMMON_DIR"] == str(ctx.clone / ".git")
+    assert "MAITY_SUPERVISOR" not in launch.env  # nothing wakes an interactive session
+    # The deny of `.git/config` may or may not reach agy's sandbox: git works either way.
+    pairs = {(launch.env[f"GIT_CONFIG_KEY_{i}"], launch.env[f"GIT_CONFIG_VALUE_{i}"])
+             for i in range(int(launch.env["GIT_CONFIG_COUNT"]))}  # fmt: skip
+    assert set(adapters.SANDBOX_GIT_CONFIG) <= pairs
+    # The clone is marked as the runner's, as for every harness.
+    assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
+
+
+def test_the_start_prompt_sends_the_agent_into_the_clone(tmp_path: Path) -> None:
+    prompt = adapters.launch(context(tmp_path)).argv[-1]
+    assert "`cd repo`" in prompt and "`repo/AGENTS.md`" in prompt
+    assert "Leave nothing in this folder besides `repo`" in prompt
+    assert prompt.index("cd repo") < prompt.index("maity resume")
+    assert adapters.GIT_PROMPT not in prompt  # agy's sandbox is not seen to refuse config
+
+
+def test_interactive_resume_continues_the_folders_conversation(tmp_path: Path) -> None:
+    launch = adapters.launch(context(tmp_path, resume=True))
+    assert launch.argv[-3:] == ["-c", "-i", adapters.RESUME_PROMPT]
+    assert not any(adapters.START_PROMPT in arg for arg in launch.argv)
+
+
+def test_supervised_runs_agy_headless_and_continues_with_c(tmp_path: Path) -> None:
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
+    launch = adapters.launch(ctx)
+    assert launch.argv[-2] == "--spec"
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    base = ["/usr/bin/agy", "--settings", str(ctx.agent_dir / "agy-settings.json")]
+    prompt = prompt_of(ctx, adapters.SUPERVISED_PROMPT)
+    assert spec["first"] == [*base, "-p", prompt]  # no model named: none passed
+    # `-c` is scoped to the working directory, the placement's own folder.
+    assert spec["again"] == [*base, "-c", "-p", prompt]
+    assert spec["clone"] == str(ctx.clone)  # `maity wait` runs in the clone
+    assert spec["env"]["PWD"] == str(ctx.folder)
+    assert spec["env"]["MAITY_SUPERVISOR"].startswith("maity-runner/")
+    assert spec["limit"]["exit_codes"] == []  # no limit signal seen in a real run yet
+
+
+def test_supervised_with_a_model(tmp_path: Path) -> None:
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised", "model": "m-1"})
+    spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
+    for argv in (spec["first"], spec["again"]):
+        assert argv[argv.index("--model") + 1] == "m-1"
+
+
+def test_an_effort_reaches_the_first_and_every_continued_command(tmp_path: Path) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): agy's `--effort`, so a continued run keeps the level."""
+    effort = {"id": "plc-0003", "mode": "supervised", "effort": "medium"}
+    launch = adapters.launch(context(tmp_path, placement=effort))
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    for argv in (spec["first"], spec["again"]):
+        assert argv[argv.index("--effort") + 1] == "medium"
+    shown = {**effort, "mode": "interactive"}
+    interactive = adapters.launch(context(tmp_path / "i", placement=shown))
+    assert interactive.argv[interactive.argv.index("--effort") + 1] == "medium"
+    resumed = adapters.launch(context(tmp_path / "r", placement=shown, resume=True))
+    assert resumed.argv[resumed.argv.index("--effort") + 1] == "medium"
+
+
+def test_no_effort_passes_no_flag(tmp_path: Path) -> None:
+    assert "--effort" not in adapters.launch(context(tmp_path)).argv
+
+
+def test_the_pull_request_line_reaches_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = tmp_path / "bin" / "gh"
+    gh.parent.mkdir()
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{gh.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+    grant = config.RepositoryGrant(pull_requests=True)
+    placement = {**PLACEMENT, "workspace": {"repository": REPO}}
+    prompt = adapters.launch(context(tmp_path, grant=grant, placement=placement)).argv[-1]
+    assert prompt.endswith(adapters.PULL_REQUEST_PROMPT)
+
+
+# --- the adapter: the settings profile --------------------------------------------------------
+
+
+def test_the_settings_profile(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    other = tmp_path / "ws" / "maity" / "agent-4" / "repo" / ".git" / "maity"
+    ctx = context(tmp_path, private=(tmp_path / "st", home / ".ssh", home / ".gemini", other),
+                  grant=config.RepositoryGrant(allow=("python3 -m pytest *", "make test"),
+                                               network=("pypi.org",)))  # fmt: skip
+    git_dir = ctx.clone / ".git"
+    token = home / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+    hidden = [git_dir / "maity", tmp_path / "st", home / ".ssh", token, other]
+    assert adapters.antigravity_settings(ctx) == {
+        # Not `auto`, agy 1.5.7's default, whose reviewer may let a command leave the sandbox.
+        "agentMode": "",
+        "toolPermission": "proceed-in-sandbox",
+        "enableTerminalSandbox": True,
+        "trustedWorkspaces": [str(ctx.folder)],
+        "permissions": {
+            # No command grant is applied to agy: `python3 -m pytest *` and `make test` both
+            # run in agy's sandbox, so only `command(maity)` and the hosts are allowed.
+            "allow": [
+                "command(maity)",
+                "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
+            ],
+            "deny": [
+                *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
+                *(f"write_file({git_dir / name})" for name in adapters.GIT_PROTECTED),
+                "command(git -c)", "command(git --config-env)", "command(git --exec-path)",
+                "command(gh)", "command(maity runner)",  # S201/S202: not from an agent's shell
+            ],
+        },
+    }  # fmt: skip
+
+
+def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None:
+    """agy's sandboxed commands keep scratch under `~/.gemini`; only its sign-in is denied."""
+    home = tmp_path / "home"
+    deny = adapters.antigravity_settings(context(tmp_path, private=(home / ".gemini",)))[
+        "permissions"
+    ]["deny"]
+    assert f"read_file({home / '.gemini'})" not in deny
+    assert f"read_file({home / '.gemini' / adapters.AGY_LOGIN.relative_to('.gemini')})" in deny
+
+
+def test_the_delivered_skill_is_never_written_by_agys_file_tools(tmp_path: Path) -> None:
+    # The review of #2056: read through MAITY_KTW_SKILL_DIR, so its write_file is denied.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    deny = adapters.antigravity_settings(context(tmp_path, skill=skill))["permissions"]["deny"]
+    assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+    plain = adapters.antigravity_settings(context(tmp_path / "n"))["permissions"]["deny"]
+    assert not [rule for rule in plain if "skills" in rule]
+
+
+def test_in_the_agent_user_layout_agy_never_writes_the_agents_copy(tmp_path: Path) -> None:
+    # tsk-7casfxb7cn49: the copy the runner puts below the agents' user's home gets the same
+    # write_file deny as the runner's own copy in the single layout.
+    skill = Path("/home/agents/.local/share/maity-runner/skills/keep-the-why") / (
+        "a" * 40 + "-" + "b" * 16) / "plugin"  # fmt: skip
+    ctx = context(tmp_path, skill=skill, as_user=AsUser("agents"))
+    deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
+    assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+
+
+def test_agys_sandbox_mounts_the_delivered_skill_read_only(tmp_path: Path) -> None:
+    # tsk-c16hnxm0vc37: agy's sandbox hides what no rule allows, so the skill gets a read_file
+    # allow (mounted read-only) while its write_file deny stays and wins over any allow.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    permissions = adapters.antigravity_settings(context(tmp_path, skill=skill))["permissions"]
+    assert f"read_file({skill})" in permissions["allow"]
+    assert f"write_file({skill})" in permissions["deny"]
+    assert f"write_file({skill})" not in permissions["allow"]
+    plain = adapters.antigravity_settings(context(tmp_path / "n"))["permissions"]["allow"]
+    assert not [rule for rule in plain if "skills" in rule]
+
+
+def test_agys_git_denies_stand_and_no_write_allow_is_given(tmp_path: Path) -> None:
+    # tsk-c16hnxm0vc37: `.git` stays as agy's sandbox mounts it until a live probe shows that a
+    # write deny inside a writable mount holds, so agy gets no `write_file` allow at all; a
+    # skill read allow does not change that. The names are spelled out, not read from
+    # GIT_PROTECTED, so a shorter tuple fails here too.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    for ctx in (context(tmp_path / "plain"), context(tmp_path / "skilled", skill=skill)):
+        git_dir = ctx.clone / ".git"
+        permissions = adapters.antigravity_settings(ctx)["permissions"]
+        assert not [rule for rule in permissions["allow"] if rule.startswith("write_file(")]
+        for tool in ("read_file", "write_file"):
+            assert f"{tool}({git_dir / 'maity'})" in permissions["deny"]
+        for name in ("config", "config.worktree", "hooks", "info", "objects/info/alternates"):
+            assert f"write_file({git_dir / name})" in permissions["deny"]
+
+
+# --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
+
+
+# agy 1.5.9 compiles each word of a `regex:` rule with Go's regexp.Compile (syntax.Perl: `.`
+# matches every character but a line feed). Python's `.` without DOTALL does the same, so only
+# the POSIX classes Go knows and Python does not are written out.
+_GO_CLASSES = {"[:ascii:]": "\\x00-\\x7f", "[:^ascii:]": "\\x80-\\U0010ffff"}
+
+
+def _go_regex(word: str) -> str:
+    for go, python in _GO_CLASSES.items():
+        word = word.replace(go, python)
+    return word
+
+
+# Go's strings.TrimSpace for ASCII; a non-ASCII space sends agy to its whole-line match.
+_GO_ASCII_SPACE = " \t\n\v\f\r"
+
+
+def _drop_dollar_quotes(line: str) -> str:
+    """mvdan/sh reads `$'…'` and `$"…"` as quotes with a `Dollar` flag, and agy's wordLiteral
+    takes their raw text, flag ignored: the same as without the `$`."""
+    out: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote == "'":
+            quote = "" if c == "'" else quote
+        elif c == "\\":
+            out.append(line[i : i + 2])
+            i += 2
+            continue
+        elif quote == '"':
+            quote = "" if c == '"' else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "$" and line[i + 1 : i + 2] in ("'", '"'):
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+# agy's terminal.extractSimpleCommands reads the invoked command from a line: a leading
+# environment assignment (terminal.isEnvAssignmentToken) and a leading command wrapper
+# (terminal.isCommandWrapper) are stepped over before any `command(...)` rule is compared, so
+# no rule ever sees them. `env` consumes the assignments that follow it as well. The wrappers
+# agy steps over, read from agy 1.5.9 (the agy grants entry in cli/context/runner.md).
+_AGY_WRAPPERS = frozenset({"env", "nohup", "time", "nice", "sudo", "xargs", "timeout"})
+_AGY_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _agy_strip_prefixes(words: list[str]) -> list[str]:
+    """Drop the leading environment assignments and command wrappers agy steps over before it
+    reads the invoked command, so the words left are the ones its rules see. `env GIT_PAGER=x`
+    and a bare `GIT_PAGER=x` both fall away, so `GIT_PAGER=x git status` is `git status`."""
+    rest = list(words)
+    while rest and (rest[0] in _AGY_WRAPPERS or _AGY_ASSIGNMENT.match(rest[0])):
+        rest.pop(0)
+    return rest
+
+
+def _agy_words(line: str) -> list[str]:
+    """A line split into words like a shell line, as agy 1.5.9 does with mvdan/sh: each word's
+    text without its quotes, trimmed at both edges (terminal.wordLiteral ends in
+    strings.TrimSpace), a word that comes out empty dropped (extractSimpleCommands.func1 skips
+    it), and the leading assignments and wrappers agy steps over removed
+    (_agy_strip_prefixes). So `git status ''` and `GIT_PAGER=x git status` are both
+    `git status` for agy, though the shell passes the command more than those words."""
+    words = (word.strip(_GO_ASCII_SPACE) for word in shlex.split(_drop_dollar_quotes(line)))
+    return _agy_strip_prefixes([word for word in words if word])
+
+
+def _agy_exact(command: str) -> bool:
+    """agy's RequiresExactMatch for the characters: a NUL, or a non-ASCII character that is a
+    control, format or space character (U+2028 and U+2029 among them), makes agy match the
+    whole line instead of its words."""
+    return "\0" in command or any(
+        ord(c) > 0x7F and (unicodedata.category(c)[0] == "C" or c.isspace()) for c in command
+    )
+
+
+def _agy_rule_matches(rule: str, command: str) -> bool:
+    """agy's documented `command(...)` match for a simple command, as agy 1.5.9 does it: the
+    rule split into words like a shell line; more words than the command, no match; else the
+    command's first words, each equal to the rule's, or for `regex:` each matched as
+    `^(?:word)$` with Go's regexp, where a word that does not compile matches nothing. A line
+    agy must match exactly is compared whole: char for char, or as `^(?:rule)$`."""
+    target = rule.removeprefix("command(").removesuffix(")")
+    if target == "*":
+        return True
+    regex = target.startswith("regex:")
+    pattern = target.removeprefix("regex:").strip()
+    try:
+        if _agy_exact(command):
+            if not regex:
+                return pattern == command.strip()
+            return re.fullmatch(f"(?:{_go_regex(pattern)})", command.strip()) is not None
+        words = _agy_words(pattern)
+        line = _agy_words(command)
+        if len(words) > len(line):
+            return False
+        for word, given in zip(words, line, strict=False):
+            if not regex:
+                if word != given:
+                    return False
+            elif re.fullmatch(f"(?:{_go_regex(word)})", given) is None:
+                return False
+    except re.error:
+        return False
+    return True
+
+
+def agy_decides(settings: dict[str, Any], command: str) -> str:
+    """What agy does with `command` under these settings: deny beats allow; a command no rule
+    names runs in the sandbox (`proceed-in-sandbox`), never with the grant's reach."""
+    rules = settings["permissions"]
+    for decision, kind in (("denied", "deny"), ("allowed", "allow")):
+        named = [rule for rule in rules[kind] if rule.startswith("command(")]
+        if any(_agy_rule_matches(rule, command) for rule in named):
+            return decision
+    return "sandbox"
+
+
+def agy_settings(tmp_path: Path, *allow: str) -> dict[str, Any]:
+    return adapters.antigravity_settings(
+        context(tmp_path, grant=config.RepositoryGrant(allow=allow))
+    )
+
+
+def test_the_matcher_models_agys_prefix_match(tmp_path: Path) -> None:
+    """The counter-check: an allow rule alone, as before, lets every longer form through,
+    and a deny that does not compile denies nothing."""
+    bare = {"permissions": {"allow": ["command(make test)"], "deny": []}}
+    assert agy_decides(bare, "make test --anything") == "allowed"
+    assert agy_decides(bare, "make") == "sandbox"
+    broken = {
+        "permissions": {"allow": ["command(make test)"], "deny": ["command(regex:make (test .*)"]}
+    }
+    assert agy_decides(broken, "make test --anything") == "allowed"
+
+
+def test_an_exact_grant_is_left_out_and_runs_in_the_sandbox(tmp_path: Path) -> None:
+    """An exact entry (no `*`) is not given to agy: no allow rule, named as left out. It runs
+    in agy's sandbox like every unlisted command, the entry itself and every longer form."""
+    found = adapters.agy_grants(["git status"])
+    assert [left for left, _ in found.left_out] == ["git status"]
+    settings = agy_settings(tmp_path, "git status")
+    assert "command(git status)" not in settings["permissions"]["allow"]
+    assert agy_decides(settings, "git status") == "sandbox"
+    assert agy_decides(settings, "git status --anything") == "sandbox"
+    assert agy_decides(settings, "git log") == "sandbox"  # unrelated: not granted either
+    assert agy_decides(settings, "maity status") == "allowed"  # maity stays a prefix
+
+
+def test_the_matcher_drops_a_leading_assignment_or_wrapper() -> None:
+    """agy reads the invoked command after stepping over a leading environment assignment
+    (isEnvAssignmentToken) and a command wrapper (isCommandWrapper), `env` eating the
+    assignment that follows it; the test matcher models that in _agy_words."""
+    assert _agy_words("GIT_PAGER=x git status") == ["git", "status"]
+    assert _agy_words("env GIT_PAGER=x git status") == ["git", "status"]
+    assert _agy_words("PATH=. git status") == ["git", "status"]
+    assert _agy_words("sudo nice timeout git status") == ["git", "status"]
+    assert _agy_words("LD_PRELOAD=/tmp/x git push") == ["git", "push"]
+    assert _agy_words("git status") == ["git", "status"]  # nothing to step over
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["GIT_PAGER=x git status", "env GIT_PAGER=x git status",
+     "PATH=. git status", "LD_PRELOAD=/tmp/x git status"],
+)  # fmt: skip
+def test_a_leading_assignment_does_not_run_an_exact_grant_outside_the_sandbox(
+    tmp_path: Path, line: str
+) -> None:
+    """The regression: a line that puts an environment assignment (or `env` with one) in front
+    of what would be an exact grant must not run outside agy's sandbox. agy steps over such a
+    prefix before it matches, so a bare `command(git status)` allow would match the line (the
+    counter-check); dropping the exact grant is what keeps the real settings from matching it,
+    so the line runs in agy's sandbox instead."""
+    bare = {"permissions": {"allow": ["command(git status)"], "deny": []}}
+    assert agy_decides(bare, line) == "allowed"  # the exact allow would have matched it
+    settings = agy_settings(tmp_path, "git status")  # the real settings leave it out
+    assert agy_decides(settings, line) == "sandbox"
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["LD_PRELOAD=/tmp/x git push", "env LD_PRELOAD=/tmp/x git push",
+     "GIT_SSH=/tmp/x git push", "sudo git push"],
+)  # fmt: skip
+def test_a_leading_assignment_does_not_run_a_prefix_grant_outside_the_sandbox(
+    tmp_path: Path, line: str
+) -> None:
+    """The same regression for a ` *` prefix grant: `git *` would become `command(git)`, and
+    agy steps over a leading assignment or wrapper before matching, so a bare `command(git)`
+    prefix allow would match the line (the counter-check). The prefix grant is dropped too,
+    so the real settings leave it out and the line runs in agy's sandbox instead."""
+    bare = {"permissions": {"allow": ["command(git)"], "deny": []}}
+    assert agy_decides(bare, line) == "allowed"  # the bare prefix allow would have matched it
+    settings = agy_settings(tmp_path, "git *")  # the real settings leave it out
+    assert agy_decides(settings, line) == "sandbox"
+    assert agy_decides(settings, "git push") == "sandbox"  # the prefix grant no longer stands
+
+
+def test_a_grant_ending_in_a_star_is_left_out_too(tmp_path: Path) -> None:
+    """A ` *` prefix entry is no longer a prefix allow for agy: it is left out and named, and
+    runs in agy's sandbox like an unlisted command, just as an exact entry does."""
+    found = adapters.agy_grants(["python3 -m pytest *", "ruff *"])
+    assert [left for left, _ in found.left_out] == ["python3 -m pytest *", "ruff *"]
+    settings = agy_settings(tmp_path, "python3 -m pytest *", "ruff *")
+    assert [r for r in settings["permissions"]["allow"] if r.startswith("command(")] == [
+        "command(maity)"
+    ]
+    assert agy_decides(settings, "python3 -m pytest tests/x.py -k y") == "sandbox"
+    assert agy_decides(settings, "ruff check .") == "sandbox"
+
+
+def test_a_star_inside_a_grant_is_left_out_without_a_word(tmp_path: Path) -> None:
+    found = adapters.agy_grants(["npm run test:*", "foo *.py", "*"])
+    assert found == adapters.AgyGrants()  # an interior `*`: no rule and nothing named
+    assert agy_decides(agy_settings(tmp_path, "npm run test:*"), "npm run test:unit") == "sandbox"
+
+
+@pytest.mark.parametrize(
+    "rule",
+    ["python3 tests/x.py", "make c++", "pytest -k a.b", "ls ~/x", "git status",
+     "cargo build --release", "git *", "ruff *"],
+)  # fmt: skip
+def test_every_command_grant_is_left_out_and_named(tmp_path: Path, rule: str) -> None:
+    """No command grant, exact or ` *` prefix, becomes a rule for agy: none is allowed, each is
+    named as left out, and runs in the sandbox, the entry itself and every longer form."""
+    found = adapters.agy_grants([rule])
+    assert [left for left, _ in found.left_out] == [rule]
+    settings = agy_settings(tmp_path, rule) if config.plain_command(rule) else None
+    if settings is not None:
+        probe = rule.removesuffix(" *")
+        assert agy_decides(settings, probe) == "sandbox"
+        assert agy_decides(settings, probe + " --more") == "sandbox"
+
+
+def test_exact_and_prefix_entries_are_all_left_out(tmp_path: Path) -> None:
+    """A mix: every exact entry and every ` *` prefix entry is left out and named; only an
+    entry with an interior `*` is left out without a word. agy gets no command allow."""
+    rules = ("make test", "python3 -m pytest *", "go test ./...", "ruff *",
+             "git status", "npm run test:*")  # fmt: skip
+    found = adapters.agy_grants(rules)
+    assert [left for left, _ in found.left_out] == [
+        "make test", "python3 -m pytest *", "go test ./...", "ruff *", "git status"
+    ]  # fmt: skip
+
+
+def test_overlapping_entries_are_each_named(tmp_path: Path) -> None:
+    """With prefixes dropped too, an entry a ` *` prefix once covered is named like any other;
+    nothing is silently allowed."""
+    found = adapters.agy_grants(["git log -1", "git log *", "git log"])
+    assert [left for left, _ in found.left_out] == ["git log -1", "git log *", "git log"]
+    settings = agy_settings(tmp_path, "git log -1", "git log *")
+    assert agy_decides(settings, "git log -1 --stat") == "sandbox"
+
+
+def test_check_names_every_command_grant_left_out_for_antigravity() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["git status", "git status --short", "pytest tests/x.py", "python3 -m pytest *",'
+        ' "npm run test:*"]\n'
+    )
+    text = CHECK_CONFIG + grant
+    report = commands.Report()
+    commands._check_repositories(report, config.parse(tomllib.loads(text), Path("runner.toml")))
+    texts = [text for level, text in report.lines if level == "warn"]
+    # Three exact entries and the ` *` prefix are each named; only the `*`-inside entry is not.
+    assert not report.failed and len(texts) == 4
+    assert "'git status' is left out for antigravity" in texts[0] and "agy's sandbox" in texts[0]
+    assert "'git status --short' is left out" in texts[1]
+    assert "'pytest tests/x.py' is left out" in texts[2]
+    assert "'python3 -m pytest *' is left out" in texts[3]
+    assert all("agy does not match a command grant" in t for t in texts)
+    without = text.replace("[harness.antigravity]\n", "")
+    quiet = commands.Report()
+    commands._check_repositories(quiet, config.parse(tomllib.loads(without), Path("runner.toml")))
+    assert quiet.lines == []
+
+
+CHECK_CONFIG = """\
+[hub]
+url = "https://hub.example"
+state_dir = "/srv/state"
+
+[limits]
+projects = ["oliver/maity"]
+repositories = ["github.com/oliver-zehentleitner/maity"]
+
+[harness.stub]
+
+[harness.antigravity]
+"""
+
+
+def test_no_command_grant_reaches_agy(tmp_path: Path) -> None:
+    # No command grant is applied to agy (exact or prefix), and the front-loaded entries are
+    # refused by plain_command before that; agy keeps only `command(maity)`.
+    refused = ("FOO=1 make test", "env make test", "make test; maity *", "maity.exe *",
+               "xargs /tmp/tools:local/maity")  # fmt: skip
+    ctx = context(tmp_path, grant=config.RepositoryGrant(allow=("make *", "make test", *refused)))
+    allow = adapters.antigravity_settings(ctx)["permissions"]["allow"]
+    assert [rule for rule in allow if rule.startswith("command(")] == ["command(maity)"]
+
+
+def test_agy_accepts_the_settings_profile(tmp_path: Path) -> None:
+    """agy refuses an unknown setting or value at start (`--settings`), before any sign-in:
+    `agy --settings <file> agents` in a home of its own checks the profile without a session.
+    Its permission rules are not checked there; their form is from agy's documentation and
+    the runs recorded in cli/context/runner.md."""
+    import pwd
+
+    own = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local" / "bin"  # the tests move HOME
+    binary = shutil.which("agy") or shutil.which("agy", path=str(own))
+    if binary is None:
+        pytest.skip("agy is not installed here")
+    ctx = context(tmp_path, private=(tmp_path / "home" / ".gemini",))
+    path = tmp_path / "agy-settings.json"
+    path.write_text(json.dumps(adapters.antigravity_settings(ctx)))
+    home = tmp_path / "agy-home"
+    home.mkdir()
+    env = {"HOME": str(home), "PATH": os.environ.get("PATH", "")}
+    ok = subprocess.run([binary, "--settings", str(path), "agents"], cwd=ctx.folder, env=env,
+                        capture_output=True, text=True, timeout=60, check=False)  # fmt: skip
+    assert ok.returncode == 0, ok.stderr
+    path.write_text(json.dumps({**adapters.antigravity_settings(ctx), "agentMode": "nope"}))
+    bad = subprocess.run([binary, "--settings", str(path), "agents"], cwd=ctx.folder, env=env,
+                         capture_output=True, text=True, timeout=60, check=False)  # fmt: skip
+    assert bad.returncode != 0 and "agentMode" in bad.stderr  # the check is real
+
+
+# --- the supervised loop waits in the clone ---------------------------------------------------
+
+
+def test_the_loop_waits_in_the_clone_its_spec_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[Any] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.append(kwargs.get("cwd"))
+        return subprocess.CompletedProcess(argv, 3, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert loop._wait(str(tmp_path))[0] == 3
+    assert loop._wait()[0] == 3
+    assert seen == [str(tmp_path), None]
+
+    waits: list[Any] = []
+
+    def main(self: loop.Loop) -> int:
+        waits.append(self.wait)
+        return 0
+
+    monkeypatch.setattr(loop.Loop, "main", main)
+    spec = tmp_path / "loop.json"
+    spec.write_text(json.dumps({"first": [], "again": [], "clone": "/ws/p/c/repo"}))
+    assert loop.main(["--spec", str(spec)]) == 0
+    called: list[Any] = []
+
+    def wait(cwd: str | None = None) -> tuple[int, str, str]:
+        called.append(cwd)
+        return 0, "", ""
+
+    monkeypatch.setattr(loop, "_wait", wait)
+    waits[0]()
+    assert called == ["/ws/p/c/repo"]
+
+
+# --- what the runner advertises ---------------------------------------------------------------
+
+
+AGY = config.Harness("antigravity", ("supervised",), "supervised", binary="agy")
+
+
+@pytest.mark.parametrize("platform", [True, False])
+def test_agy_is_advertised_with_its_allowlist_and_its_sandbox_off(
+    monkeypatch: pytest.MonkeyPatch, platform: bool
+) -> None:
+    """§15.3: `sandbox: on` only once the runner has seen agy's sandbox start, which nothing
+    checks yet: namespaces that start do not turn it on."""
+    ran: list[list[str]] = []
+
+    def fake(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        ran.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
+    monkeypatch.setattr(proc, "run", lambda argv, cwd, timeout: fake(argv))
+    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: fake(argv))
+    assert not capabilities.sandbox_available(AGY)
+    assert not capabilities.sandbox_available(AGY, "/usr/bin", AsUser("agents"))
+    entry = capabilities.harness_entry(AGY, capabilities.Probe("/usr/bin/agy", "1.5.7", None))
+    assert (entry["id"], entry["version"], entry["confinement"], entry["sandbox"]) == (
+        "antigravity", "1.5.7", "allowlist", "off"
+    )  # fmt: skip
+    assert ran == []  # the namespaces are tried by `maity runner check` only
+
+
+PROBE = ["/usr/bin/unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork", "--net",
+         "true"]  # fmt: skip
+UID_MAP = "unshare: write failed /proc/self/uid_map: Operation not permitted\n"
+
+
+@pytest.fixture
+def real_agy_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The probe itself, which conftest stubs for every other test (the review of #2119)."""
+    from conftest import REAL_AGY_SANDBOX
+
+    monkeypatch.setattr(capabilities, "agy_sandbox", REAL_AGY_SANDBOX, raising=False)
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_the_agy_sandbox_probe_tells_its_four_answers_on_the_runners_side(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-xjy2d5617sar: the namespaces start; they are refused but a profile named for agy is
+    loaded (the Ubuntu host with AppArmor's userns restriction, 3yc2); they are refused and
+    nothing lifts that; or the probe cannot tell. Only a definite refusal is `cannot`."""
+    assert (capabilities.AGY_STARTS, capabilities.AGY_PROFILE, capabilities.AGY_CANNOT,
+            capabilities.AGY_UNKNOWN) == ("starts", "profile", "cannot", "unknown")  # fmt: skip
+    profiles = tmp_path / "profiles"
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    looked_up: list[str | None] = []
+
+    def which(name: str, path: str | None = None) -> str:
+        looked_up.append(path)
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr("shutil.which", which)
+    answer: dict[str, Any] = {"code": 0, "err": ""}
+    ran: list[tuple[list[str], Any]] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        ran.append((list(argv), env))
+        return subprocess.CompletedProcess(argv, answer["code"], "", answer["err"])
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox() == capabilities.AGY_STARTS
+    assert [argv for argv, _ in ran] == [PROBE] and ran[0][1]["LC_ALL"] == "C"  # in English
+    # Looked up on the system's own PATH, never the agents' (the review of #2119): an unshare
+    # of theirs that exits 0 would hide the error.
+    assert looked_up == [capabilities.SYSTEM_PATH]
+    answer.update(code=1, err=UID_MAP)
+    assert capabilities.agy_sandbox() == capabilities.AGY_CANNOT  # no AppArmor at all
+    (profiles / "bwrap.10").mkdir(parents=True)
+    (profiles / "bwrap.10" / "name").write_text("bwrap\n")
+    assert capabilities.agy_sandbox() == capabilities.AGY_CANNOT  # none for agy
+    (profiles / "agy.0").mkdir()
+    (profiles / "agy.0" / "name").write_text("agy\n")
+    assert capabilities.agy_sandbox() == capabilities.AGY_PROFILE
+    (profiles / "agy.0" / "name").write_text("/opt/bin/agy\n")  # named after agy's path
+    assert capabilities.agy_sandbox() == capabilities.AGY_CANNOT
+    assert capabilities.agy_sandbox(binary="/opt/bin/agy") == capabilities.AGY_PROFILE
+    answer.update(err="unshare: unrecognized option '--fork'\n")  # no refusal: tells nothing
+    assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+    # The same call failing for another cause is no refusal (the review of #2119).
+    for other in ("unshare failed: Cannot allocate memory\n",
+                  "unshare failed: No space left on device\n"):  # fmt: skip
+        answer.update(err=other)
+        assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN, other
+    # A list read only in part: an unread name may be agy's, so it is no refusal (#2119).
+    answer.update(err=UID_MAP)
+    (profiles / "agy.0" / "name").unlink()
+    (profiles / "agy.0" / "name").mkdir()  # a name that cannot be read as a file
+    assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+    (profiles / "bwrap.10" / "name").write_text("agy\n")  # a readable one is agy's: enough
+    assert capabilities.agy_sandbox() == capabilities.AGY_PROFILE
+    monkeypatch.setattr("shutil.which", lambda name, path=None: None)
+    assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+
+
+def refusing(monkeypatch: pytest.MonkeyPatch, profiles: Path, err: str, code: int = 1) -> list[Any]:
+    """unshare refused with `err` and exit `code` on the direct side, a profile named `agy`
+    loaded; the envs the probe's runs got."""
+    (profiles / "agy.0").mkdir(parents=True, exist_ok=True)
+    (profiles / "agy.0" / "name").write_text("agy\n")
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    envs: list[Any] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        envs.append(env)
+        return subprocess.CompletedProcess(argv, code, "", err)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    return envs
+
+
+@pytest.mark.parametrize("code", [-9, 2, 126, 255])
+@pytest.mark.parametrize("err", [UID_MAP, "unshare: unshare failed: Operation not permitted\n"])
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refusal_line_counts_only_with_unshares_own_failure_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, err: str
+) -> None:
+    """The review of #2119: unshare reports its own failure with status 1. A signal, sudo's or
+    ssh's own status (255) or any other code is no refusal it reported, whatever stderr says:
+    `unknown`, never `cannot` or `refused`."""
+    (tmp_path / "profiles").mkdir()
+    refusing(monkeypatch, tmp_path / "profiles", err, code)
+    (tmp_path / "profiles" / "agy.0" / "name").write_text("bwrap\n")  # nothing lifts it
+    assert capabilities.agy_sandbox() == "unknown"
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_the_probe_runs_unshare_with_the_system_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2119: run with the agents' PATH, unshare could still call out to a tool of
+    theirs; the probe runs with the system's PATH, in English for the refusal's words."""
+    envs = refusing(monkeypatch, tmp_path / "profiles", UID_MAP)
+    capabilities.agy_sandbox()
+    assert envs == [{"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"}]
+
+
+@pytest.mark.parametrize(
+    "err",
+    [
+        UID_MAP + "unshare: unshare failed: No space left on device\n",
+        "unshare: unshare failed: Cannot allocate memory\nsetgroups: Operation not permitted\n",
+        "unshare: write failed /proc/self/uid_map: Invalid argument\nOperation not permitted\n",
+    ],
+)
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refusal_counts_only_as_one_whole_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, err: str
+) -> None:
+    """The review of #2119: a refusal beside another failure, or its words spread over two
+    lines, is no refusal: `unknown`, not `profile` or `cannot`."""
+    (tmp_path / "profiles").mkdir()
+    refusing(monkeypatch, tmp_path / "profiles", err)
+    (tmp_path / "profiles" / "agy.0" / "name").write_text("bwrap\n")  # nothing lifts it
+    assert capabilities.agy_sandbox() == "unknown"
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_refused_unshare_call_is_not_lifted_by_a_profile_for_agy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2119: the unshare call itself refused is the kernel or a container, which a
+    profile named `agy` does not lift; it stays an unsandboxed answer, never `profile`."""
+    refused = "unshare: unshare failed: Operation not permitted\n"
+    refusing(monkeypatch, tmp_path / "profiles", refused)
+    assert capabilities.agy_sandbox() == "refused"
+    assert capabilities.agy_sandbox(binary="/opt/bin/agy") == "refused"
+    assert "refused" in capabilities.AGY_UNSANDBOXED
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_profile_named_after_agys_real_path_counts_when_agy_is_a_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2119: a profile without a name of its own is named after the path it
+    attaches to, agy's real one, while `which` gives the symlink on the PATH; a path that
+    cannot be resolved leaves it untold, never `cannot`."""
+    real = tmp_path / "opt" / "agy"
+    real.parent.mkdir()
+    real.write_text("")
+    link = tmp_path / "bin" / "agy"
+    link.parent.mkdir()
+    link.symlink_to(real)
+    profiles = tmp_path / "profiles"
+    (profiles / "agy.0").mkdir(parents=True)
+    (profiles / "agy.0" / "name").write_text(f"{real}\n")
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: subprocess.CompletedProcess(
+        argv, 1, "", UID_MAP))  # fmt: skip
+    assert capabilities.agy_sandbox(binary=str(link)) == capabilities.AGY_PROFILE
+    (profiles / "agy.0" / "name").write_text("bwrap\n")
+    assert capabilities.agy_sandbox(binary=str(link)) == capabilities.AGY_CANNOT
+    gone = str(tmp_path / "bin" / "gone")  # not resolvable: its profile not looked for
+    assert capabilities.agy_sandbox(binary=gone) == capabilities.AGY_UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "real, expected",
+    [
+        ((0, "/opt/agy/agy\n"), "profile"),
+        ((0, "/opt/other\n"), "cannot"),
+        ((1, ""), "unknown"),  # realpath failed there: its profile not looked for
+    ],
+)
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_agys_path_is_resolved_as_the_agents_user(
+    monkeypatch: pytest.MonkeyPatch, real: tuple[int, str], expected: str
+) -> None:
+    """On the agents' user's side (and on an ssh host) agy's path is resolved there, by the
+    user whose PATH found it."""
+    calls: list[list[str]] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        calls.append(argv)
+        if argv[0] == "realpath":  # a realpath of the agents' would name any path (#2119)
+            assert env is not None and env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin"
+        if argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES:
+            return subprocess.CompletedProcess(argv, 0, "bwrap\n/opt/agy/agy\n", "")
+        if argv[:2] == ["sh", "-c"]:  # capabilities.which
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        if argv[0] == "realpath":
+            return subprocess.CompletedProcess(argv, real[0], real[1], "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    found = capabilities.agy_sandbox(AsUser("agents"), "/usr/local/bin/agy")
+    assert found == expected
+    # -e: a missing last part is no path, as on the direct side (the review of #2119).
+    assert ["realpath", "-e", "--", "/usr/local/bin/agy"] in calls
+
+
+@pytest.mark.usefixtures("real_agy_sandbox")
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory whatever its mode")
+def test_an_unreadable_profile_list_is_no_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    monkeypatch.setattr(capabilities, "APPARMOR_PROFILES", str(profiles))
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: subprocess.CompletedProcess(
+        argv, 1, "", UID_MAP))  # fmt: skip
+    profiles.chmod(0)
+    try:
+        assert capabilities.agy_sandbox() == capabilities.AGY_UNKNOWN
+    finally:
+        profiles.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory whatever its mode")
+@pytest.mark.skipif(shutil.which("sh") is None, reason="the listing runs in sh")
+def test_the_agents_side_profile_listing_tells_missing_from_unreadable(tmp_path: Path) -> None:
+    """The review of #2119: the script the agents' user runs is run itself, on a real tree.
+    A missing part under a directory that can be searched is no AppArmor (3); a part that
+    cannot be reached, or is no directory, is an unreadable list (4), never an empty one; an
+    empty tree is a complete empty list, as on the direct side; every entry is read, hidden ones
+    included, and one whose name cannot be read makes the list partial (5)."""
+
+    def listing(path: Path) -> tuple[int, list[str]]:
+        done = subprocess.run(["sh", "-c", capabilities._PROFILE_NAMES, "sh", str(path)],
+                              capture_output=True, text=True, check=False)  # fmt: skip
+        return done.returncode, done.stdout.splitlines()
+
+    profiles = tmp_path / "apparmor" / "profiles"
+    assert listing(profiles) == (3, [])  # missing, its parent missing under a searchable one
+    profiles.mkdir(parents=True)
+    assert listing(profiles) == (0, [])  # empty: complete, not the literal glob
+    (profiles / "bwrap.10").mkdir()
+    (profiles / "bwrap.10" / "name").write_text("bwrap\n")
+    (profiles / ".agy.1").mkdir()  # a hidden entry is listed as os.listdir lists it
+    (profiles / ".agy.1" / "name").write_text("agy\n")
+    assert listing(profiles) == (0, ["agy", "bwrap"]) or listing(profiles) == (0, ["bwrap", "agy"])
+    unreadable = profiles / "x.2"
+    unreadable.mkdir()
+    (unreadable / "name").write_text("x\n")
+    (unreadable / "name").chmod(0)
+    try:
+        code, names = listing(profiles)
+        assert code == 5 and sorted(names) == ["agy", "bwrap"]  # a name unreadable
+    finally:
+        (unreadable / "name").chmod(0o600)
+    unreadable.chmod(0o600)  # an entry that cannot be searched is not skipped unseen
+    try:
+        assert listing(profiles)[0] == 5
+    finally:
+        unreadable.chmod(0o700)
+    locked = tmp_path / "apparmor"
+    locked.chmod(0)  # an ancestor that cannot be searched: unreadable, not "no AppArmor"
+    try:
+        assert listing(profiles) == (4, [])
+        assert listing(profiles / "deeper") == (4, [])
+    finally:
+        locked.chmod(0o700)
+    plain = tmp_path / "plain"
+    plain.write_text("")
+    assert listing(plain) == (4, [])  # no directory: cannot be read as a list
+    assert listing(plain / "profiles") == (4, [])
+
+
+# The answers by value, so the parametrized tests below collect on code without them too (a
+# counter-check against main then fails test by test, not at collection).
+@pytest.mark.parametrize(
+    "listing, expected",
+    [
+        ((0, "bwrap\nagy\n"), "profile"),
+        ((0, "bwrap\n"), "cannot"),
+        ((3, ""), "cannot"),  # no AppArmor on that side
+        ((4, ""), "unknown"),  # the list cannot be read there
+        ((5, "bwrap\n"), "unknown"),  # read in part: an unread name may be agy's (#2119)
+        ((5, "agy\n"), "profile"),  # read in part, but agy's is among what was read
+    ],
+)
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_the_agy_sandbox_probe_reads_the_profiles_as_the_agents_user(
+    monkeypatch: pytest.MonkeyPatch, listing: tuple[int, str], expected: str
+) -> None:
+    calls: list[list[str]] = []
+    envs: list[Any] = []
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        calls.append(argv)
+        envs.append(env)
+        if argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES:
+            return subprocess.CompletedProcess(argv, listing[0], listing[1], "")
+        if argv[:2] == ["sh", "-c"]:  # capabilities.which
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox(AsUser("agents")) == expected
+    assert PROBE in calls  # the namespaces tried as the agents' user
+    assert ["sh", "-c", capabilities._PROFILE_NAMES, "sh", capabilities.APPARMOR_PROFILES] in calls
+    # Every step runs with the system's PATH, never the agents' (the review of #2119).
+    assert all(env is not None and env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin" for env in envs)
+
+
+@pytest.mark.parametrize("step", ["lookup", "probe", "listing"])
+@pytest.mark.usefixtures("real_agy_sandbox")
+def test_a_timed_out_step_of_the_agy_probe_is_not_checked(
+    monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """The review of #2119: a timeout anywhere, the lookup as the agents' user included,
+    answers `unknown`; nothing escapes to the start that asks it."""
+
+    def run(self: AsUser, argv: Sequence[str], env: Any = None, **kw: Any) -> Any:
+        argv = list(argv)
+        listing = argv[:2] == ["sh", "-c"] and argv[2] == capabilities._PROFILE_NAMES
+        kind = "listing" if listing else "lookup" if argv[:2] == ["sh", "-c"] else "probe"
+        if kind == step:
+            raise subprocess.TimeoutExpired(argv, 30)
+        if kind == "lookup":
+            return subprocess.CompletedProcess(argv, 0, "/usr/bin/unshare\n", "")
+        if kind == "listing":
+            return subprocess.CompletedProcess(argv, 0, "bwrap\n", "")
+        return subprocess.CompletedProcess(argv, 1, "", UID_MAP)
+
+    monkeypatch.setattr(AsUser, "run", run)
+    assert capabilities.agy_sandbox(AsUser("agents")) == capabilities.AGY_UNKNOWN
+
+
+@dataclass
+class Host:
+    """An ssh host as `probe_remote` and the check ask it: `command -v`, `--version`, the
+    namespaces."""
+
+    namespaces: bool = True
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(self, argv: Sequence[str], env: Any = None, timeout: float = 60, **kw: Any) -> Any:
+        argv = list(argv)
+        self.calls.append(argv)
+        if argv[:2] == ["sh", "-c"]:
+            found = {"agy": "/opt/bin/agy", "unshare": "/usr/bin/unshare"}
+            names = argv[4:]
+            if argv[2] != targets.WHICH:  # capabilities.which
+                return subprocess.CompletedProcess(argv, 0, found.get(names[0], "") + "\n", "")
+            out = "".join(f"{name}\t{found.get(name, '')}\n" for name in names)
+            return subprocess.CompletedProcess(argv, 0, out, "")
+        if argv[-1] == "--version":
+            return subprocess.CompletedProcess(argv, 0, "1.5.7\n", "")
+        return subprocess.CompletedProcess(argv, 0 if self.namespaces else 1, "", "")
+
+
+@pytest.mark.parametrize("namespaces", [True, False])
+def test_an_ssh_host_advertises_agy_sandbox_off_too(namespaces: bool) -> None:
+    host = Host(namespaces)
+    probes, sandbox, held = targets.probe_remote(host, {"antigravity": AGY}, "/usr/bin")  # type: ignore[arg-type]
+    assert probes["antigravity"] == capabilities.Probe("/opt/bin/agy", "1.5.7", None)
+    assert sandbox == {"antigravity": False} and held == set()
+    assert not any(call[0] == "/usr/bin/unshare" for call in host.calls)
+
+
+def test_the_configuration_takes_antigravity_with_agy_as_its_binary(tmp_path: Path) -> None:
+    cfg = load(tmp_path)
+    harness = cfg.harnesses["antigravity"]
+    assert (harness.binary, harness.modes) == ("agy", ("supervised", "interactive"))
+    assert "antigravity" in adapters.READY
+
+
+# --- the workspace folder ---------------------------------------------------------------------
+
+
+CONFIG = """\
+[hub]
+url = "https://hub.example"
+state_dir = "{root}/st"
+
+[limits]
+projects = ["oliver/maity"]
+repositories = ["github.com/oliver-zehentleitner/*"]
+
+[backend.local]
+workspaces = "{root}/ws"
+
+[harness.stub]
+
+[harness.antigravity]
+modes = ["supervised", "interactive"]
+"""
+
+
+def load(root: Path) -> config.Config:
+    path = root / "runner.toml"
+    path.write_text(CONFIG.format(root=root))
+    (root / "st").mkdir(mode=0o700, exist_ok=True)
+    return config.load(path)
+
+
+@pytest.fixture
+def origin_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A local repository; cloning it needs the file transport, which the runner refuses."""
+    monkeypatch.setattr(workspace, "PROTOCOLS", ("https", "ssh", "file"))
+    monkeypatch.setattr(config, "repository_url_ok", lambda url: True)
+    repo = tmp_path / "origin"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "init")
+    return repo
+
+
+def folder_of(cfg: config.Config, n: int = 3) -> workspace.Workspace:
+    assert cfg.local is not None
+    return workspace.locate(cfg.local.workspaces, "maity", f"agent-{n}", folder=True)
+
+
+def test_the_folder_layout_puts_the_clone_into_repo(tmp_path: Path) -> None:
+    place = workspace.locate(tmp_path, "maity", "agent-3", folder=True)
+    assert place.path == tmp_path.resolve() / "maity" / "agent-3"  # the folder: the record's key
+    assert place.repo == place.path / "repo" and place.key == str(place.path)
+    assert place.credential == place.repo / ".git" / "maity" / "credential"
+    plain = workspace.locate(tmp_path, "maity", "agent-3")
+    assert plain.repo == plain.path == place.path and plain.layout == "clone"
+    assert workspace.uses_folder("antigravity") and not workspace.uses_folder("claude-code")
+
+
+def test_prepare_clones_into_the_folder_and_records_its_layout(
+    tmp_path: Path, origin_repo: Path
+) -> None:
+    cfg = load(tmp_path)
+    place = folder_of(cfg)
+    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    assert sorted(os.listdir(place.path)) == ["repo"]
+    assert workspace.origin(place.repo) == str(origin_repo)
+    assert workspace.records(cfg.state_dir)[str(place.path)]["layout"] == "folder"
+    workspace.check_folder(place)  # nothing but the clone: a start may go on
+    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0005")  # found again
+    with pytest.raises(workspace.Refused) as other:
+        workspace.prepare(cfg, place, str(origin_repo), "agt-4", "plc-0004")
+    assert other.value.detail == "other_agent"
+
+
+@pytest.mark.parametrize(
+    "planted",
+    [".agents", ".agent", "_agents", "GEMINI.md", "AGENTS.md", ".gitignore", "notes.txt",
+     "repo2"],
+)  # fmt: skip
+def test_a_start_refuses_a_folder_holding_anything_besides_the_clone(
+    tmp_path: Path, origin_repo: Path, planted: str
+) -> None:
+    """agy loads its start directory's hooks, MCP servers, plugins, skills and rules, so an
+    entry a run left beside the clone would load at the next start: refused, by any name,
+    and nothing is deleted (§15.5, `workspace_not_bare`)."""
+    cfg = load(tmp_path)
+    place = folder_of(cfg)
+    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    entry = place.path / planted
+    if planted.startswith((".agent", "_agent")):
+        (entry / "hooks").mkdir(parents=True)
+        (entry / "hooks.json").write_text("{}")
+    else:
+        entry.write_text("x")
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place)
+    assert (refused.value.reason, refused.value.detail) == (
+        "workspace_in_use", "workspace_not_bare"
+    )  # fmt: skip
+    assert planted in (refused.value.why or "") and "{}" not in (refused.value.why or "")
+    assert entry.exists()  # deleted: nothing
+
+
+def test_repo_as_a_link_is_not_the_clone(tmp_path: Path, origin_repo: Path) -> None:
+    cfg = load(tmp_path)
+    place = folder_of(cfg)
+    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    elsewhere = tmp_path / "elsewhere"
+    place.repo.rename(elsewhere)
+    place.repo.symlink_to(elsewhere)
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place)
+    assert refused.value.detail == "workspace_not_bare"
+    assert workspace.beside(place) == ["repo"]
+
+
+def test_a_folder_without_its_clone_is_refused(tmp_path: Path) -> None:
+    place = workspace.locate(tmp_path / "ws", "maity", "agent-3", folder=True)
+    place.path.mkdir(parents=True)
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place)
+    assert refused.value.detail == "workspace_not_bare"
+
+
+@pytest.mark.parametrize("level", ["parent", "root"])
+@pytest.mark.parametrize("kind", ["dir", "file", "dangling"])
+def test_a_folder_inside_a_git_work_tree_is_refused(tmp_path: Path, level: str, kind: str) -> None:
+    """agy loads every directory's configuration up to the work tree's root: a `.git` entry
+    of any kind in the folder's parent or above refuses the start (`workspace_in_repository`)."""
+    outer = tmp_path / "outer"
+    root = outer / "ws"
+    place = workspace.locate(root, "maity", "agent-3", folder=True)
+    (place.repo / ".git").mkdir(parents=True)
+    above = place.path.parent if level == "parent" else outer
+    if kind == "dir":
+        (above / ".git").mkdir()
+    elif kind == "file":
+        (above / ".git").write_text("gitdir: /elsewhere\n")
+    else:
+        (above / ".git").symlink_to(tmp_path / "gone")
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place)
+    assert refused.value.detail == "workspace_in_repository"
+    assert str(above) in (refused.value.why or "")
+
+
+def test_a_folder_whose_path_is_not_its_real_path_is_refused(tmp_path: Path) -> None:
+    """agy takes the work tree from $PWD: a link in the path could lead it into a repository
+    the physical walk does not see, so the folder's path must be its real path."""
+    real = workspace.locate(tmp_path / "ws", "maity", "agent-3", folder=True)
+    (real.repo / ".git").mkdir(parents=True)
+    (tmp_path / "linked").symlink_to(tmp_path / "ws")
+    place = dataclasses.replace(real, path=tmp_path / "linked" / "maity" / "agent-3")
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place)
+    assert refused.value.detail == "workspace_in_repository"
+    workspace.check_folder(real)
+
+
+class Agents(AsUser):
+    """The agents' user's side, run here: every read goes through its shell templates."""
+
+    @property
+    def direct(self) -> bool:
+        return False
+
+    def run(self, argv: Sequence[str], env: Any = None, input: Any = None, cwd: Any = None,
+            timeout: float = 60) -> subprocess.CompletedProcess[str]:  # fmt: skip
+        return subprocess.run(list(argv), capture_output=True, text=True, input=input,
+                              timeout=timeout, check=False)  # fmt: skip
+
+
+def test_the_agents_users_side_reads_the_folder_alike(tmp_path: Path) -> None:
+    place = workspace.locate(tmp_path / "outer" / "ws", "maity", "agent-3", folder=True)
+    (place.repo / ".git").mkdir(parents=True)
+    for name in ("GEMINI.md", ".agents", "line\nbreak", "..odd", ".x"):
+        (place.path / name).mkdir()
+    (place.path / "dangling").symlink_to(tmp_path / "gone")
+    (tmp_path / "outer" / ".git").mkdir()
+    agents = workspace.read_folder(place.path, Agents("a"))
+    assert workspace.read_folder(place.path) == agents
+    assert agents.names == tuple(sorted(("GEMINI.md", ".agents", "line\nbreak", "..odd", ".x",
+                                         "dangling", "repo")))  # fmt: skip
+    assert agents.in_repository == (str(tmp_path / "outer"),) and agents.repo_dir
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place, Agents("a"))
+    assert refused.value.detail == "workspace_in_repository"
+    shutil.rmtree(tmp_path / "outer" / ".git")
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.check_folder(place, Agents("a"))
+    assert refused.value.detail == "workspace_not_bare"
+    assert "line?break" in (refused.value.why or "")  # printable in the log
+
+
+def test_no_clone_moves_between_the_layouts(tmp_path: Path, origin_repo: Path) -> None:
+    """A path recorded in the other layout is `workspace_in_use` (§15.5)."""
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    plain = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    workspace.prepare(cfg, plain, str(origin_repo), "agt-3", "plc-0003")
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.prepare(cfg, folder_of(cfg), str(origin_repo), "agt-3", "plc-0004")
+    assert (refused.value.reason, refused.value.detail) == ("workspace_in_use",
+                                                            "workspace_unrecorded")  # fmt: skip
+    place = folder_of(cfg, 5)
+    workspace.prepare(cfg, place, str(origin_repo), "agt-5", "plc-0005")
+    moved = workspace.locate(cfg.local.workspaces, "maity", "agent-5")
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.inspect(cfg, moved, str(origin_repo), "agt-5", "plc-0006")
+    assert refused.value.detail == "workspace_unrecorded"
+
+
+def test_an_existing_folder_takes_the_clone_only_when_empty(
+    tmp_path: Path, origin_repo: Path
+) -> None:
+    cfg = load(tmp_path)
+    place = folder_of(cfg)
+    place.path.mkdir(parents=True)  # an earlier start made it, then its clone failed
+    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    assert workspace.origin(place.repo) == str(origin_repo)
+    stray = folder_of(cfg, 4)
+    stray.path.mkdir(parents=True)
+    (stray.path / ".agents").mkdir()
+    with pytest.raises(workspace.Refused) as refused:
+        workspace.prepare(cfg, stray, str(origin_repo), "agt-4", "plc-0004")
+    assert refused.value.detail == "workspace_not_bare"
+    assert (stray.path / ".agents").is_dir() and not stray.repo.exists()
+
+
+@pytest.mark.parametrize("direct", [True, False])
+def test_other_folders_credentials_are_private(tmp_path: Path, direct: bool) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3" / "repo"
+    for clone in (own, ws / "maity" / "agent-4" / "repo", ws / "maity" / "agent-5"):
+        (clone / ".git" / "maity").mkdir(parents=True)
+    found = supervisor.other_credentials(ws, own, AsUser() if direct else Agents("a"))
+    assert found == [ws / "maity" / "agent-4" / "repo" / ".git" / "maity",
+                     ws / "maity" / "agent-5" / ".git" / "maity"]  # fmt: skip
+
+
+class Remote(Agents):
+    """An ssh host's side, run here: not this machine's paths (`here` false)."""
+
+    @property
+    def here(self) -> bool:
+        return False
+
+
+SIDES: dict[str, Callable[[], AsUser]] = {
+    "single": AsUser,
+    "agent_user": lambda: Agents("a"),
+    "ssh": lambda: Remote("a"),
+}
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): a session reaches its own scratch only;
+    every other placement's, in its project and in others, goes to the sandbox's deny. Another
+    project's `.scratch` goes whole, even empty, so a scratch made in it later is hidden too
+    (tsk-07dwr3t80rg0); in the own project's, each other entry goes."""
+    ws = tmp_path / "ws"
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    root = ws if host else ws.resolve()
+    own = root / "maity" / ".scratch" / "plc-0003"
+    sibling = root / "maity" / ".scratch" / "plc-0004"
+    for room in (own, sibling, root / "other" / ".scratch" / "plc-0009"):
+        (room / "tmp").mkdir(parents=True)
+    (ws / "empty" / ".scratch").mkdir(parents=True)  # no scratch in it yet
+    (ws / "maity" / "agent-3").mkdir()  # a clone is no scratch
+    # An entry the agents' user names `.scratch` is an entry, on every side: records are told
+    # apart by their depth below the root, not by their last name.
+    odd = root / "maity" / ".scratch" / ".scratch"
+    (ws / "maity" / ".scratch" / ".scratch").mkdir()
+    holders = [root / "empty" / ".scratch", root / "other" / ".scratch"]
+    assert supervisor.other_scratches(ws, own, as_user, host) == sorted([sibling, odd, *holders])
+    everything = sorted([root / "maity" / ".scratch", *holders])
+    assert supervisor.other_scratches(ws, None, as_user, host) == everything
+    assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_holder_layout_is_listed_beside_the_former_one(tmp_path: Path, side: str) -> None:
+    """tsk-c7zzd440x8pn: in the holder `<root>/.scratch/<project>/<id>`, another project's
+    directory goes whole, even empty, and in the own project's each other entry. Every former
+    per-project `.scratch` goes whole while it is left, so a placement still on the former
+    layout stays hidden from a start in the holder. The same on every side."""
+    ws = tmp_path / "ws"
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    root = ws if host else ws.resolve()
+    new = root / ".scratch"
+    own = new / "maity" / "plc-0003"
+    sibling = new / "maity" / "plc-0004"
+    legacy = root / "legacy" / ".scratch" / "plc-0007"  # a placement still on the former layout
+    for room in (own, sibling, new / "other" / "plc-0009", legacy):
+        (room / "tmp").mkdir(parents=True)
+    (ws / ".scratch" / "empty").mkdir()  # a project's directory with no scratch yet
+    (ws / "maity" / "agent-3").mkdir(parents=True)  # a clone is no scratch
+    expected = sorted([sibling, new / "empty", new / "other", root / "legacy" / ".scratch"])
+    assert supervisor.other_scratches(ws, own, as_user, host) == expected
+    everything = sorted([new / "maity", new / "empty", new / "other", root / "legacy" / ".scratch"])
+    assert supervisor.other_scratches(ws, None, as_user, host) == everything
+
+
+@pytest.mark.parametrize("side", ["single", "agent_user"])
+def test_gc_lists_the_scratches_as_the_agents_user(
+    tmp_path: Path, side: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2112 (A2045): in the agent_user layout the holder is the agents' user's
+    0700 directory, closed to the runner, so gc lists both layouts through the agents' side.
+    Here the runner's own directory listing fails on the agents' side, as it would there; a
+    link is listed as one and never gone into, and a name that is no project id is left out."""
+    ws = tmp_path / "ws"
+    new = ws / ".scratch"
+    for room in (new / "maity" / "plc-0003", new / "other" / "plc-0004",
+                 ws / "legacy" / ".scratch" / "plc-0005"):  # fmt: skip
+        (room / "tmp").mkdir(parents=True)
+    (tmp_path / "elsewhere" / "plc-0006").mkdir(parents=True)
+    (new / "linked").symlink_to(tmp_path / "elsewhere")  # a project's directory as a link
+    (new / "maity" / "plc-0009").symlink_to(tmp_path / "elsewhere")
+    new.chmod(0o700)
+    as_user = SIDES[side]()
+
+    def closed(self: Path) -> Any:
+        raise PermissionError(13, "closed to the runner", str(self))
+
+    if side == "agent_user":
+        monkeypatch.setattr(Path, "iterdir", closed)
+    holders, links = operate._scratch_holders(ws, as_user)
+    assert sorted(holders) == sorted([new / "maity", new / "other", ws / "legacy" / ".scratch"])
+    assert links == [new / "linked"]  # named for gc's line, never gone into (A2055)
+    found = {(h / name, kind) for h in holders for name, kind in as_user.entries(h, 1)}
+    assert found == {
+        (new / "maity" / "plc-0003", "d"), (new / "maity" / "plc-0009", "l"),
+        (new / "other" / "plc-0004", "d"), (ws / "legacy" / ".scratch" / "plc-0005", "d"),
+    }  # fmt: skip
+    two_down = [("maity/plc-0003", "d"), ("maity/plc-0009", "l"), ("other/plc-0004", "d")]
+    assert sorted(as_user.entries(new, 2)) == two_down  # `linked` is not gone into
+    # A workspaces root configured as a link is gone into on both sides (A2056): the former
+    # `.scratch` below it is found as on the real path.
+    (tmp_path / "ws-link").symlink_to(ws)
+    via, _ = operate._scratch_holders(tmp_path / "ws-link", as_user)
+    assert tmp_path / "ws-link" / "legacy" / ".scratch" in via
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_layout_probe_answers_there_not_there_or_nothing(tmp_path: Path, side: str) -> None:
+    """The reviews of #2112 (A2073, A2074): the probe `_host_layout` asks with is an answer on
+    every side: a directory is there; a missing one is "not there" only below a parent that
+    can be searched, else no answer; the holder's name is never followed, so a link at it,
+    even dangling, is there."""
+    import types
+
+    target: Any = types.SimpleNamespace(as_user=SIDES[side]())
+    probe = supervisor.Supervisor._is_there_on
+    nobody: Any = None
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert probe(nobody, target, ws) is True
+    assert probe(nobody, target, ws / "gone") is False
+    assert probe(nobody, target, ws / "gone" / "deeper") is False  # the nearest parent searched
+    (ws / ".scratch").symlink_to(tmp_path / "nowhere")
+    assert probe(nobody, target, ws / ".scratch", True) is True  # never followed
+    assert probe(nobody, target, ws / ".scratch") is False  # a dangling link is no directory
+    shut = tmp_path / "shut"
+    shut.mkdir(mode=0o000)
+    try:
+        if os.access(shut, os.X_OK):  # root searches a 0000 directory anyway
+            pytest.skip("running as a user that searches a 0000 directory")
+        assert probe(nobody, target, shut / "ws") is None  # a denied look is no answer
+    finally:
+        shut.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_holder_that_is_a_link_refuses_the_listing(tmp_path: Path, side: str) -> None:
+    """The holder must be a real directory: a link (or a file) in its place could point the
+    deny elsewhere, so the listing refuses the start on every side."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (ws / ".scratch").symlink_to(tmp_path / "elsewhere")
+    as_user = SIDES[side]()
+    with pytest.raises(workspace.Refused):
+        supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, side: str) -> None:
+    """A clone's content is never read (an unreadable directory in a clone refuses nothing), a
+    workspaces root reached through a link is listed through it, and a `.scratch` higher up in
+    the root's own path matches nothing extra."""
+    real = tmp_path / ".scratch" / "real-ws"  # `.scratch` on the way to the root itself
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    other = real / "maity" / ".scratch" / "plc-0004"
+    other.mkdir(parents=True)
+    locked = real / "maity" / "agent-3" / "deep"
+    locked.mkdir(parents=True)
+    (locked / "x").mkdir()
+    linked = tmp_path / "ws"
+    linked.symlink_to(real)
+    root = linked if host else linked.resolve()
+    locked.chmod(0o000)
+    try:
+        found = supervisor.other_scratches(linked, None, as_user, host)
+    finally:
+        locked.chmod(0o700)
+    assert found == [root / "maity" / ".scratch"]  # no own scratch: the holder whole
+    own = root / "maity" / ".scratch" / "plc-0003"
+    own.mkdir()
+    locked.chmod(0o000)
+    try:
+        found = supervisor.other_scratches(linked, own, as_user, host)
+    finally:
+        locked.chmod(0o700)
+    assert found == [root / "maity" / ".scratch" / "plc-0004"]  # in the own holder: entries
+
+
+@dataclass(frozen=True)
+class Listed(Remote):
+    """An ssh host's side whose scratch listing prints the records given: what a find there
+    returns, for a root this test cannot list itself (`/`). `given` keeps the root it got."""
+
+    records: tuple[str, ...] = ()
+    given: list[str] = field(default_factory=list)
+
+    def run(self, argv: Sequence[str], env: Any = None, input: Any = None, cwd: Any = None,
+            timeout: float = 60) -> subprocess.CompletedProcess[str]:  # fmt: skip
+        if argv[0] == "sh":
+            self.given.append(argv[-1])
+            return subprocess.CompletedProcess(argv, 0, "".join(f"{r}\0" for r in self.records))
+        return subprocess.CompletedProcess(argv, 0, "")  # `test -d` on the root
+
+
+def test_a_root_of_slash_is_listed_without_a_doubled_separator_and_strays_refuse() -> None:
+    """A1930: a root of `/` was handed to the listing as `//`, which find keeps, and every
+    record then failed to fall below `/` and was dropped, so the deny list got shorter. The
+    separator is added only when absent, and a record not below the root, or at a depth the
+    listing never prints, refuses the start (A1932)."""
+    root = Path("/")
+    records = ("/maity/.scratch", "/maity/.scratch/plc-0004", "/other/.scratch")
+    listed = Listed("a", records)
+    found = supervisor.other_scratches(root, None, listed, "host")
+    assert listed.given == ["/"]
+    assert found == [Path("/maity/.scratch"), Path("/other/.scratch")]
+    # Outside the root, or at a depth the listing never prints (A1932): refused, not skipped.
+    for stray in ("//maity/.scratch", "/srv/elsewhere/.scratch", "/srv/mw/maity",
+                  "/srv/mw/maity/.scratch/plc-0004/tmp", "/srv/mw/maity/clone"):  # fmt: skip
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(Path("/srv/mw"), None, Listed("a", (stray,)), "host")
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("locked", ["root", "project", "holder"])
+def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(
+    tmp_path: Path, side: str, locked: str
+) -> None:
+    """An unreadable root, project or `.scratch` could hide a scratch: every side refuses the
+    start, none returns a short list (the review of #2032). That holds for another project's
+    `.scratch`, now named whole, and for the own one, whose entries are named (A1921)."""
+    ws = tmp_path / "ws"
+    holder = ws / "maity" / ".scratch"
+    (holder / "plc-0004").mkdir(parents=True)
+    at = {"root": ws, "project": ws / "maity", "holder": holder}[locked]
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    own = (ws if host else ws.resolve()) / "maity" / ".scratch" / "plc-0003"
+    at.chmod(0o000)
+    try:
+        if os.access(at, os.R_OK):  # root reads it anyway: nothing to prove here
+            pytest.skip("running as a user that reads a 0000 directory")
+        for mine in (None, own):  # the holder another project's, then the own project's
+            with pytest.raises(workspace.Refused):
+                supervisor.other_scratches(ws, mine, as_user, host)
+    finally:
+        at.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", ["clone", "repo", "git", "maity"])
+def test_other_credentials_are_listed_where_they_lie(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A clone's credential reached through a link (the clone, its `repo`, its `.git` or the
+    directory itself) is listed where it lies, on every side the runner reaches."""
+    ws, elsewhere = tmp_path / "ws", tmp_path / "elsewhere"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-5" / ".git" / "maity").mkdir(parents=True)
+    slot = {"clone": ws / "maity" / "agent-4", "repo": ws / "maity" / "agent-4" / "repo",
+            "git": ws / "maity" / "agent-4" / ".git",
+            "maity": ws / "maity" / "agent-4" / ".git" / "maity"}[linked]  # fmt: skip
+    target = elsewhere / slot.name
+    real = {"clone": target / ".git" / "maity", "repo": target / ".git" / "maity",
+            "git": target / "maity", "maity": target}[linked]  # fmt: skip
+    real.mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(target)
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    inside = ws / "maity" / "agent-5" / ".git" / "maity"
+    assert real.resolve() in found and inside in found
+    assert own / ".git" / "maity" not in found
+    kept = adapters.outermost((ws, *found), opened=(own,))
+    assert real.resolve() in kept and inside not in kept
+
+
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+def test_a_linked_workspaces_root_still_lists_every_clone(tmp_path: Path, side: str) -> None:
+    real = tmp_path / "disk" / "ws"
+    for agent in ("agent-3", "agent-4"):
+        (real / "maity" / agent / ".git" / "maity").mkdir(parents=True)
+    ws = tmp_path / "ws"
+    ws.symlink_to(real)
+    as_user = SIDES[side]()
+    found = supervisor.other_credentials(ws, ws / "maity" / "agent-3", as_user)
+    base = ws.resolve() if as_user.here else ws  # named as the runner names the clone there
+    assert found == [base / "maity" / "agent-4" / ".git" / "maity"]
+
+
+def test_on_a_host_whose_root_lies_below_a_link_its_own_credential_is_not_listed(
+    tmp_path: Path,
+) -> None:
+    """An ssh host's workspaces below a linked directory: the clone's own credential is
+    told apart, and the others stay below the root as configured, so its deny covers them."""
+    (tmp_path / "mnt" / "data").mkdir(parents=True)
+    (tmp_path / "data").symlink_to(tmp_path / "mnt" / "data")
+    ws = tmp_path / "data" / "ws"
+    own = ws / "maity" / "agent-3"
+    for agent in ("agent-3", "agent-4"):
+        (ws / "maity" / agent / ".git" / "maity").mkdir(parents=True)
+    found = supervisor.other_credentials(ws, own, Remote("a"))
+    assert found == [ws / "maity" / "agent-4" / ".git" / "maity"]
+    assert adapters.outermost((ws, *found), opened=(own,)) == (ws,)
+
+
+SLOTS = {"clone": ("agent-4",), "repo": ("agent-4", "repo"), "git": ("agent-4", ".git"),
+         "maity": ("agent-4", ".git", "maity")}  # fmt: skip
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_place_that_cannot_be_looked_at_refuses_the_start(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A clone's place for a credential reached through a link into a directory the agents'
+    user cannot search: it could hide one, so the listing fails closed on every side."""
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused) as refused:
+            supervisor.other_credentials(ws, own, SIDES[side]())
+        assert refused.value.reason == "harness_refused"
+    finally:
+        locked.chmod(0o700)
+
+
+def _pathlib_as_on_314(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pathlib's predicates as Python 3.14 and later answer them: False for a path below a
+    directory that cannot be searched, where 3.13 raised PermissionError (tsk-0tje3vzzedtx).
+    So the fail-closed listings are checked against that on every interpreter."""
+    for name in ("is_dir", "is_file", "exists", "is_symlink"):
+        original = getattr(Path, name)
+
+        def quiet(self: Path, *args: Any, _original: Any = original, **kwargs: Any) -> bool:
+            try:
+                return bool(_original(self, *args, **kwargs))
+            except PermissionError:
+                return False
+
+        monkeypatch.setattr(Path, name, quiet)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_an_unsearchable_place_refuses_also_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """The runner's own side decides with stat, not with pathlib's predicates: where those
+    answer False instead of raising (3.14+), a slot linked into a directory the agents' user
+    cannot search still refuses the start, never an empty list (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_an_unsearchable_project_refuses_the_scratch_listing_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same for the scratches: a project that cannot be searched could hide a `.scratch`,
+    so the runner's own side refuses, also where pathlib answers False (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws = tmp_path / "ws"
+    (ws / "maity" / ".scratch" / "plc-0004").mkdir(parents=True)
+    (ws / "maity").chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(ws, None, AsUser())
+    finally:
+        (ws / "maity").chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_the_check_needs_no_realpath_option_a_host_may_lack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """A host's `realpath` may take no option but `--` (BSD, macOS): the listing still
+    finds and still refuses what the runner's own side does."""
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    real = shutil.which("realpath")
+    assert real is not None
+    (shim / "realpath").write_text(
+        "#!/bin/sh\nfor a; do case $a in --) break ;; -*) exit 64 ;; esac; done\n"
+        f'exec {real} "$@"\n'
+    )
+    (shim / "realpath").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}:{os.environ['PATH']}")
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    (ws / "maity" / "agent-5" / ".git" / "maity").mkdir(parents=True)
+    linked_one = [locked / "maity"] if linked == "maity" else []  # it is a credential itself
+    assert supervisor.other_credentials(ws, own, Remote("a")) == sorted(
+        [*linked_one, ws / "maity" / "agent-5" / ".git" / "maity"]
+    )
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, Remote("a"))
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_credential_lying_under_a_name_with_a_line_break_is_named_whole(
+    tmp_path: Path, side: str
+) -> None:
+    ws, elsewhere = tmp_path / "ws", tmp_path / "else\nwhere"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    for name in ("agent-4", "agent-5"):
+        (ws / "maity" / name / ".git").mkdir(parents=True)
+    (elsewhere / "ends\n").mkdir(parents=True)  # the whole path ends in the line break
+    (elsewhere / "mid\ndle").mkdir()
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(elsewhere / "ends\n")
+    (ws / "maity" / "agent-5" / ".git" / "maity").symlink_to(elsewhere / "mid\ndle")
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    assert found == sorted([elsewhere / "ends\n", elsewhere / "mid\ndle"])
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_loop_of_links_is_no_credential_here_and_refused_elsewhere(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A loop leads nowhere: the runner's own side sees no credential in it; another side,
+    which follows the links itself, gives up after a bound and refuses the start (stricter,
+    never a missing deny)."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "loop-a").symlink_to(tmp_path / "loop-b")
+    (tmp_path / "loop-b").symlink_to(tmp_path / "loop-a")
+    slot.symlink_to(tmp_path / "loop-a")
+    as_user = SIDES[side]()
+    if as_user.direct:
+        assert supervisor.other_credentials(ws, own, as_user) == []
+    else:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, as_user)
+
+
+MODES = {  # what lies at agent-4 (and its mode): every side must answer as the runner's own
+    "clone-0111": ("agent-4", 0o111), "clone-0000": ("agent-4", 0o000),
+    "git-0111": ("agent-4/.git", 0o111), "git-0000": ("agent-4/.git", 0o000),
+    "maity-0111": ("agent-4/.git/maity", 0o111), "maity-0000": ("agent-4/.git/maity", 0o000),
+    "project-0111": ("", 0o111), "gitfile": ("agent-4/.git", None),
+}  # fmt: skip
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+@pytest.mark.parametrize("case", sorted(MODES))
+@pytest.mark.parametrize("through_link", [False, True])
+def test_every_side_answers_as_the_runners_own_side_whatever_the_modes(
+    tmp_path: Path, side: str, case: str, through_link: bool
+) -> None:
+    """Directories only searchable, not even that, and a `.git` that is a file (a worktree's):
+    another side lists or refuses exactly as the runner's own side does, also when the clone
+    is reached through a link."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    clone = (tmp_path / "elsewhere" / "agent-4") if through_link else ws / "maity" / "agent-4"
+    (clone / ".git" / "maity").mkdir(parents=True)
+    if through_link:
+        (ws / "maity" / "agent-4").symlink_to(clone)
+    rel, mode = MODES[case]
+    where = (ws / "maity") if rel == "" else clone.joinpath(*rel.split("/")[1:])
+    if mode is None:
+        shutil.rmtree(where)
+        where.write_text("gitdir: /nowhere\n")
+    else:
+        where.chmod(mode)
+
+    def answer(as_user: AsUser) -> object:
+        try:
+            return supervisor.other_credentials(ws, own, as_user)
+        except workspace.Refused:
+            return "refused"
+
+    try:
+        single, other = answer(AsUser()), answer(SIDES[side]())
+    finally:
+        if mode is not None:
+            where.chmod(0o700)
+    assert other == single
+
+
+def bsd_readlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`readlink` as BSD and macOS print it without `-n`: a line break added only when the
+    name does not end in one already (with `-n`, as everywhere, none)."""
+    shim = tmp_path / "bsd-bin"
+    shim.mkdir()
+    (shim / "readlink").write_text(
+        "#!/usr/bin/env python3\nimport os, sys\n"
+        "args = [a for a in sys.argv[1:] if a != '--']\n"
+        "plain = args[0] == '-n'\nname = os.readlink(args[-1])\n"
+        "sys.stdout.write(name if plain or name.endswith('\\n') else name + '\\n')\n"
+    )
+    (shim / "readlink").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}:{os.environ['PATH']}")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+@pytest.mark.parametrize("bsd", [False, True])
+def test_a_link_whose_target_ends_in_a_line_break_is_followed_to_where_it_leads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, side: str, bsd: bool
+) -> None:
+    """A credential's place linked to a name ending in a line break, itself a link into a
+    directory that cannot be searched: refused as on the runner's own side, whatever
+    `readlink` prints."""
+    if bsd:
+        bsd_readlink(tmp_path, monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    (locked / "maity").mkdir(parents=True)
+    hop = tmp_path / "hop\n"
+    hop.symlink_to(locked / "maity")
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(hop)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, SIDES[side]())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("depth", [38, 45])
+def test_a_link_into_a_long_missing_path_is_no_credential(
+    tmp_path: Path, side: str, depth: int
+) -> None:
+    """Only links count towards the bound on following them: a link into a path of many
+    directories that do not exist leads nowhere, as on the runner's own side."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    gone = tmp_path.joinpath(*(f"d{i}" for i in range(depth)))
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(gone)
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+def chain(start: Path, links: int, end: Path, where: Path) -> None:
+    """`start` -> `where/l1` -> ... -> `where/l<links-1>` -> `end`: `links` links in all."""
+    hops = [start, *(where / f"l{i}" for i in range(1, links))]
+    for here, there in zip(hops, [*hops[1:], end], strict=True):
+        here.symlink_to(there)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize(("linked", "links"), [("clone", 36), ("repo", 37), ("git", 38),
+                                                ("maity", 39), ("maity", 40)])  # fmt: skip
+def test_a_dead_chain_of_up_to_forty_links_is_no_credential(
+    tmp_path: Path, side: str, linked: str, links: int
+) -> None:
+    """Every slot, the longest dead chains found to be refused before: none of them is a
+    credential, as on the runner's own side."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "hops").mkdir()
+    chain(slot, links, tmp_path / "gone", tmp_path / "hops")
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", ["clone", "repo"])
+def test_one_dead_link_into_a_deep_missing_path_is_no_credential(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(tmp_path.joinpath("gone", *(f"d{i}" for i in range(35))))
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("links", [41, 60, 72])  # 72: within 32 + 40 on BSD too
+def test_a_chain_the_system_does_not_resolve_is_no_credential_on_every_side(
+    tmp_path: Path, side: str, links: int
+) -> None:
+    """A finite chain to a real credential, longer than the system follows a path's links:
+    the runner's own side sees no credential there, and neither does any other."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    (tmp_path / "real" / "maity").mkdir(parents=True)
+    (tmp_path / "hops").mkdir()
+    chain(ws / "maity" / "agent-4" / ".git" / "maity", links, tmp_path / "real" / "maity",
+          tmp_path / "hops")  # fmt: skip
+    assert supervisor.other_credentials(ws, own, AsUser()) == []
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(tmp_path / "gone")
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_every_side_lists_what_the_runners_own_side_lists(tmp_path: Path, side: str) -> None:
+    """Names with a line break (one at the end too) are listed whole, and only a clone's two
+    places count: what lies deeper in a clone, readable or not, is not looked at."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    for name in ("agent-4\nx", "agent-5\n", "agent-6"):
+        (ws / "maity" / name / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "repo" / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "sub" / "deeper" / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "repo" / "sub" / ".git" / "maity").mkdir(parents=True)
+    closed = ws / "maity" / "agent-6" / "closed"
+    closed.mkdir()
+    closed.chmod(0)
+    try:
+        found = supervisor.other_credentials(ws, own, SIDES[side]())
+        single = supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        closed.chmod(0o700)
+    base = ws.resolve() if SIDES[side]().here else ws
+    clones = ("agent-4\nx", "agent-5\n", "agent-6", "agent-6/repo")
+    assert found == sorted(base / "maity" / c / ".git" / "maity" for c in clones)
+    assert found == single
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_clone_reached_through_a_link_never_lists_its_own_credential(
+    tmp_path: Path, side: str
+) -> None:
+    ws, real = tmp_path / "ws", tmp_path / "elsewhere" / "agent-3"
+    (real / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git" / "maity").mkdir(parents=True)
+    own = ws / "maity" / "agent-3"
+    own.symlink_to(real)
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    base = ws.resolve() if SIDES[side]().here else ws
+    assert found == [base / "maity" / "agent-4" / ".git" / "maity"]
+
+
+def test_the_agents_home_hides_agys_directory_from_other_sandboxes(tmp_path: Path) -> None:
+    clone = tmp_path / "ws" / "maity" / "agent-3"
+    assert tmp_path / "home" / ".gemini" in supervisor.private_paths(None, tmp_path / "home", clone)
+
+
+# --- the supervisor ---------------------------------------------------------------------------
+
+
+@dataclass
+class Backend(FakeTmux):
+    """The supervisor's fake tmux, keeping the directory each session starts in."""
+
+    cwds: list[Path] = field(default_factory=list)
+
+    def start(self, name: str, cwd: Path, argv: Sequence[str], env: dict[str, str],
+              placement: str, generation: int) -> None:  # fmt: skip
+        self.cwds.append(cwd)
+        super().start(name, cwd, argv, env, placement, generation)
+
+
+def placement(**overrides: Any) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "id": "plc-0003", "project": "oliver/maity", "project_id": "maity",
+        "generation": 1, "desired": "running",
+        "agent": {"id": "agt-3", "handle": "agent-3", "member": True,
+                  "credential_expected": True},
+        "harness": "antigravity", "mode": "supervised", "model": None, "target": None,
+        "workspace": {"clone": "agent-3", "branch": None, "repository": REPO},
+        "rejoin": False, "stop_grace_seconds": 120, "seq": 0,
+    }  # fmt: skip
+    data.update(overrides)
+    return data
+
+
+def recorded_folder(cfg: config.Config) -> workspace.Workspace:
+    place = folder_of(cfg)
+    (place.repo / ".git" / "maity").mkdir(parents=True, mode=0o700)
+    (place.repo / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}.git\n')
+    (place.repo / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
+    workspace.record(cfg.state_dir, place, "agt-3", "plc-0003")
+    return place
+
+
+def started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sandbox: bool = False
+) -> tuple[Any, Backend, list[str]]:
+    monkeypatch.setattr(
+        capabilities, "sandbox_available", lambda h, p=None, a=None, t=None: sandbox
+    )
+    cfg = load(tmp_path)
+    backend, logs = Backend(), list[str]()
+    probes = {"stub": capabilities.Probe(None, None, None),
+              "antigravity": capabilities.Probe("/usr/bin/agy", "1.5.7", None)}  # fmt: skip
+    monkeypatch.setattr(clonecheck, "not_inspectable", lambda path, as_user=None: None)
+    sup = supervisor.Supervisor(cfg, backend, None, logs.append, probes)  # type: ignore[arg-type]
+    return sup, backend, logs
+
+
+def settle(sup: supervisor.Supervisor) -> None:
+    sup.tick()
+    for task in list(sup.tasks.values()):
+        task.join(10)
+    sup.tick()
+
+
+def test_a_skill_store_behind_a_link_reaches_the_session_and_agy_resolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2147 (kduz, A2266): a link above the skills directory (a linked home)
+    gave MAITY_KTW_SKILL_DIR and agy's `read_file` allow a path other than the one agy's
+    sandbox mounts. On a local target the supervisor hands out the resolved copy, so the
+    session's directory and every rule name the same real path."""
+    sup, _, _ = started(tmp_path, monkeypatch)
+    real = tmp_path / "home-real"
+    real.mkdir()
+    (tmp_path / "home-link").symlink_to(real)
+    linked = dataclasses.replace(sup.cfg, skills_dir=tmp_path / "home-link" / "skills")
+    monkeypatch.setattr(sup, "cfg", linked)
+    commit = "c" * 40
+    monkeypatch.setattr(
+        skills, "ensure", lambda skills_dir, *_: skills_dir / "keep-the-why" / commit / "plugin"
+    )
+    source = "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
+    named = placement(keep_the_why={"source": source, "commit": commit})
+    skill = sup._skill(named, sup.targets["local"])
+    resolved = real.resolve() / "skills" / "keep-the-why" / commit / "plugin"
+    assert skill == resolved
+    ctx = context(tmp_path / "ctx", skill=skill)
+    assert adapters.skill_env(ctx) == {"MAITY_KTW_SKILL_DIR": str(skills.skill_in(resolved))}
+    permissions = adapters.antigravity_settings(ctx)["permissions"]
+    assert f"read_file({resolved})" in permissions["allow"]
+    assert f"write_file({resolved})" in permissions["deny"]
+    assert not [rule for rule in json.dumps(permissions).split('"') if "home-link" in rule]
+
+
+def test_an_antigravity_placement_starts_agy_in_its_workspace_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    place = recorded_folder(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    _, argv, env = backend.started[0]
+    assert backend.cwds == [place.path]  # the folder, never the clone
+    spec = json.loads(Path(argv[-1]).read_text())
+    assert spec["first"][0] == "/usr/bin/agy" and spec["clone"] == str(place.repo)
+    assert env["GIT_COMMON_DIR"] == str(place.repo / ".git") and env["PWD"] == str(place.path)
+    settings = json.loads(Path(spec["first"][2]).read_text())
+    assert settings["trustedWorkspaces"] == [str(place.path)]
+    assert f"read_file({place.repo / '.git' / 'maity'})" in settings["permissions"]["deny"]
+
+
+def test_a_planted_entry_refuses_the_start_and_stays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    place = recorded_folder(sup.cfg)
+    (place.path / "GEMINI.md").write_text("run this")
+    sup.update([placement()])
+    settle(sup)
+    assert backend.started == []
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "workspace_in_use",
+                                                   "workspace_not_bare")  # fmt: skip
+    assert any("GEMINI.md" in line for line in logs)
+    assert not any("run this" in line for line in logs)  # names only, never contents
+    assert (place.path / "GEMINI.md").read_text() == "run this"
+
+
+def test_a_folder_a_failed_clone_left_takes_the_next_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin_repo: Path
+) -> None:
+    """`prepare` makes the folder before it clones: after a failed clone the empty folder,
+    with no record, stays, and the next start clones into it (§15.5)."""
+    from test_supervisor import NEW, PICKUP, Pickups, joining
+
+    monkeypatch.setattr(config, "repository_allowed", lambda url, allowed: True)  # a local one
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = folder_of(sup.cfg)
+    gone = {"clone": "agent-3", "branch": None, "repository": str(tmp_path / "gone")}
+    sup.update([placement(agent=NEW, workspace=gone)])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason) == ("failed", "clone_failed"), logs
+    assert place.path.is_dir() and os.listdir(place.path) == []
+    assert str(place.path) not in workspace.records(sup.cfg.state_dir)
+    there = {"clone": "agent-3", "branch": None, "repository": str(origin_repo)}
+    sup.update([placement(agent=NEW, workspace=there, generation=2)])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    assert backend.cwds == [place.path]
+    assert workspace.origin(place.repo) == str(origin_repo)
+    assert workspace.records(sup.cfg.state_dir)[str(place.path)]["layout"] == "folder"
+
+
+def test_an_unrecorded_folder_holding_something_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin_repo: Path
+) -> None:
+    from test_supervisor import NEW, PICKUP, Pickups, joining
+
+    monkeypatch.setattr(config, "repository_allowed", lambda url, allowed: True)  # a local one
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = folder_of(sup.cfg)
+    place.path.mkdir(parents=True)
+    (place.path / "notes.txt").write_text("x")
+    there = {"clone": "agent-3", "branch": None, "repository": str(origin_repo)}
+    sup.update([placement(agent=NEW, workspace=there)])
+    settle(sup)
+    assert backend.started == []
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "workspace_in_use",
+                                                   "workspace_not_bare")  # fmt: skip
+    assert (place.path / "notes.txt").read_text() == "x" and not place.repo.exists()
+
+
+@pytest.mark.parametrize("recorded_as", ["other_agent", "clone"])
+def test_a_recorded_folder_not_this_agents_is_refused_before_its_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded_as: str
+) -> None:
+    sup, backend, _ = started(tmp_path, monkeypatch)
+    place = folder_of(sup.cfg)
+    place.path.mkdir(parents=True)
+    if recorded_as == "other_agent":
+        workspace.record(sup.cfg.state_dir, place, "agt-4", "plc-0004")
+    else:
+        plain = dataclasses.replace(place, folder=False)
+        workspace.record(sup.cfg.state_dir, plain, "agt-3", "plc-0003")
+    sup.update([placement()])
+    sup.tick()
+    assert backend.started == [] and sup.tasks == {}
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason) == ("failed", "workspace_in_use")
+    assert rec.detail == ("other_agent" if recorded_as == "other_agent"
+                          else "workspace_unrecorded")  # fmt: skip
+
+
+def test_the_loop_checks_the_folder_before_every_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """47me F1: an entry planted between two runs of the supervised loop stops it with the
+    supervisor's refusal; the next run never starts, and only the name is logged."""
+    sup, backend, _ = started(tmp_path, monkeypatch)
+    place = recorded_folder(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    _, argv, _ = backend.started[0]
+    spec = json.loads(Path(argv[-1]).read_text())
+    assert spec["folder"] == str(place.path)
+    ran: list[list[str]] = []
+    logs: list[str] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> int:
+        ran.append(argv)
+        (place.path / "GEMINI.md").write_text("run this")  # what the run leaves behind
+        return 0
+
+    events = iter([(0, '{"seq": 5}', "")])
+    the_loop = loop.Loop(spec, run, lambda: next(events), sleep=lambda s: None, log=logs.append)
+    assert the_loop.main() == loop.EXIT_FOLDER["workspace_not_bare"] == 24
+    assert ran == [spec["first"]]  # the second run was refused before it started
+    assert any("GEMINI.md" in line for line in logs)
+    assert not any("run this" in line for line in logs)
+    assert (place.path / "GEMINI.md").read_text() == "run this"  # nothing deleted
+    # The runner maps the loop's exit to the refusal it reports before a start.
+    backend.exit(next(iter(backend.live)), 24)
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
+        "failed", "workspace_in_use", "workspace_not_bare", None
+    )  # fmt: skip
+
+
+def test_the_loop_checks_the_folder_after_a_failed_run_too(tmp_path: Path) -> None:
+    folder = tmp_path.resolve() / "ws"
+    (folder / "repo").mkdir(parents=True)
+    spec = {"first": ["agy"], "again": ["agy", "-c"], "folder": str(folder),
+            "restart": {"initial": 1, "factor": 2, "max": 4, "crash_window": 600,
+                        "crash_cap": 9, "quick_exit": 0}}  # fmt: skip
+    ran: list[list[str]] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> int:
+        ran.append(argv)
+        (tmp_path / ".git").mkdir()  # a work tree above the folder appears
+        return 1
+
+    the_loop = loop.Loop(spec, run, lambda: (3, "", ""), sleep=lambda s: None, log=lambda _: None)
+    assert the_loop.main() == loop.EXIT_FOLDER["workspace_in_repository"]
+    assert ran == [["agy"]]
+
+
+def test_a_loop_without_a_folder_checks_nothing() -> None:
+    spec = {"first": ["claude"], "again": ["claude"], "restart": {}}
+    checked: list[str] = []
+    the_loop = loop.Loop(spec, lambda argv, env: 0, lambda: (3, "", ""), check=checked.append)
+    assert the_loop.refused() is None and checked == []
+
+
+def test_an_interactive_restart_checks_the_folder_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restart of an interactive session (after an exit, or after the idle check ended it,
+    `-c -i`) is a new start: the folder is checked before it, as before the first."""
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    place = recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    sup.update([placement(mode="interactive")])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    backend.exit(next(iter(backend.live)), 1)
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert rec.state == "exited" and rec.retry_at is not None
+    rec.resume = True  # as after the idle check's end: the restart is `-c -i`
+    (place.path / "GEMINI.md").write_text("run this")
+    clock[0] = rec.retry_at + 1
+    settle(sup)
+    assert len(backend.started) == 1  # no second start
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "workspace_in_use",
+                                                   "workspace_not_bare")  # fmt: skip
+    (place.path / "GEMINI.md").unlink()  # with the entry gone, the same restart is `-c -i`
+    rec.enter(clock[0], "exited", retry_at=clock[0])
+    clock[0] += 1
+    settle(sup)
+    assert len(backend.started) == 2, logs
+    assert backend.started[1][1][-3:-1] == ["-c", "-i"]
+
+
+def test_a_reset_starts_agy_on_a_fresh_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reset (`fresh_session`, §15.6): the generation's first start is `-i` with the start
+    prompt, never `-c`, even with a resume left on the record; a resume later in the same
+    generation continues the new conversation, and only the fresh start counts in
+    `sessions` (§15.7)."""
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    # A record that would resume: the reset must not hand the last conversation back.
+    sup.records["plc-0003"] = supervisor.Record(generation=2, since=clock[0], resume=True)
+    sup.update([placement(mode="interactive", generation=2, fresh_session=True)])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    argv = backend.started[0][1]
+    assert "-c" not in argv and argv[-2] == "-i" and adapters.START_PROMPT in argv[-1]
+    rec = sup.records["plc-0003"]
+    assert rec.sessions == 1 and sup._body(rec)["sessions"] == 1
+    assert any("reset: a fresh session" in line for line in logs), logs
+    backend.exit(next(iter(backend.live)), 1)
+    sup.tick()
+    assert rec.state == "exited" and rec.retry_at is not None
+    rec.resume = True  # as after the idle check's end, now inside the reset's generation
+    clock[0] = rec.retry_at + 1
+    settle(sup)
+    assert len(backend.started) == 2, logs
+    assert backend.started[1][1][-3:-1] == ["-c", "-i"]
+    assert rec.sessions == 1 and sup._body(rec)["sessions"] == 1
+
+
+def test_running_without_agys_sandbox_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _ = started(tmp_path, monkeypatch, sandbox=False)
+    recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    sup.update([placement()])
+    settle(sup)
+    clock[0] += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.detail) == ("running", "sandbox_unavailable")
+
+
+@pytest.mark.parametrize("at_start", [True, False])
+def test_running_reports_the_sandbox_the_start_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, at_start: bool
+) -> None:
+    """`sandbox_unavailable` says how the session started, not how the tool in use now
+    would start: the keeper swapping it after the start changes nothing the owner is told."""
+    sup, _, _ = started(tmp_path, monkeypatch, sandbox=at_start)
+    recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    sup.update([placement()])
+    settle(sup)
+    sup.targets["local"].sandbox["antigravity"] = not at_start  # a swap after the start
+    clock[0] += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert rec.sandbox is at_start
+    assert (rec.state, rec.detail) == ("running", None if at_start else "sandbox_unavailable")
+
+
+def test_the_version_warning_names_the_version_that_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The warning after a start reads the gate's view, not the tool in use by the time the
+    session is up: a swap during the start changes nothing it says."""
+    monkeypatch.setitem(capabilities.CHECKED, "antigravity", "1.5.7")
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    recorded_folder(sup.cfg)
+    start = backend.start
+
+    def start_then_swap(*args: Any, **kwargs: Any) -> Any:
+        done = start(*args, **kwargs)
+        sup.targets["local"].probes["antigravity"] = capabilities.Probe(
+            "/usr/bin/agy-new", "1.6.0", None
+        )  # the keeper's update, landing while the session comes up
+        return done
+
+    monkeypatch.setattr(backend, "start", start_then_swap)
+    sup.update([placement()])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    assert not any("sandbox was checked with" in line for line in logs), logs
+
+
+# --- removal and claim ------------------------------------------------------------------------
+
+
+def test_gc_lists_what_lies_beside_the_clone_and_removes_the_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = load(tmp_path)
+    path = tmp_path / "runner.toml"
+    place = folder_of(cfg)
+    place.repo.mkdir(parents=True)
+    git(place.repo, "init", "-q")
+    (place.repo / "draft.txt").write_text("unsaved")
+    (place.path / "notes.md").write_text("left beside")
+    workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
+    monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
+    monkeypatch.setattr(operate, "_active_with_skills", lambda cfg: (set(), set(), set(), set()))
+    assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "?? draft.txt" in out and "notes.md (beside the clone)" in out
+    assert place.path.exists()
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert not place.path.exists()  # the folder as a whole, on the operator's --yes
+    assert str(place.path) not in workspace.records(cfg.state_dir)
+
+
+def test_gc_leaves_a_folder_whose_repo_is_a_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = load(tmp_path)
+    place = folder_of(cfg)
+    place.path.mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    git(elsewhere, "init", "-q")
+    place.repo.symlink_to(elsewhere)
+    workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
+    monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
+    monkeypatch.setattr(operate, "_active_with_skills", lambda cfg: (set(), set(), set(), set()))
+    path = tmp_path / "runner.toml"
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert "not removed" in capsys.readouterr().out
+    assert place.path.exists() and elsewhere.exists()
+
+
+def test_claim_records_a_workspace_folder_as_one(tmp_path: Path) -> None:
+    cfg = load(tmp_path)
+    place = folder_of(cfg)
+    place.repo.mkdir(parents=True)
+    git(place.repo, "init", "-q")
+    path = tmp_path / "runner.toml"
+    assert cli.main(["runner", "workspace", "claim", "maity/agent-3", "--agent", "agt-3",
+                     "--config", str(path)]) == 0  # fmt: skip
+    assert workspace.records(cfg.state_dir)[str(place.path)]["layout"] == "folder"
+
+
+# --- maity runner check -----------------------------------------------------------------------
+
+
+def checked(
+    monkeypatch: pytest.MonkeyPatch, namespaces: bool | str, home: Path,
+    harness: config.Harness = AGY, platform: bool = True,
+) -> list[tuple[str, str]]:  # fmt: skip
+    """`namespaces`: what `agy_sandbox` answers; True and False for starts and cannot."""
+    if namespaces is True or namespaces is False:
+        namespaces = "starts" if namespaces else "cannot"
+    state = namespaces
+    monkeypatch.setattr(AsUser, "home", lambda self: home)
+    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
+    monkeypatch.setattr(capabilities, "agy_sandbox", lambda *args, **kw: state, raising=False)
+    report = commands.Report()
+    commands._check_antigravity(report, harness, AsUser())
+    return report.lines
+
+
+OFF = "harness antigravity: sandbox reported off: the runner has not seen agy's sandbox start"
+
+
+def test_check_reports_agys_sandbox_off_and_the_namespaces_as_a_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§15.3: namespaces that start are a diagnostic; the sandbox stays reported off."""
+    login = tmp_path / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+    login.parent.mkdir(parents=True)
+    login.write_text("secret")
+    lines = checked(monkeypatch, True, tmp_path)
+    assert lines == [
+        ("ok", "harness antigravity: the namespaces agy's terminal sandbox needs start; agy's "
+               "sandbox start not verified"),
+        ("warn", OFF + "; agents run as `sandbox_unavailable`"),
+    ]  # fmt: skip
+    login.unlink()
+    lines = checked(monkeypatch, False, tmp_path)
+    assert [level for level, _ in lines] == ["error", "warn", "warn"]
+    assert "cannot start" in lines[0][1] and OFF in lines[1][1] and "no sign-in" in lines[2][1]
+    strict = dataclasses.replace(AGY, require_sandbox=True)
+    for namespaces in (True, False):  # refused whether the namespaces start or not
+        found = checked(monkeypatch, namespaces, tmp_path, strict)
+        assert found[1] == ("error", OFF + "; agents run as `sandbox_unavailable`, and "
+                                           "require_sandbox = true refuses them")  # fmt: skip
+    assert "on this platform" in checked(monkeypatch, True, tmp_path, platform=False)[0][1]
+    assert not any("secret" in text for _, text in lines)
+
+
+@pytest.mark.parametrize(
+    "state, level, words",
+    [
+        # The Ubuntu host with AppArmor's userns restriction and a profile for agy (3yc2): a
+        # warning, never the error the plain refusal alone would give.
+        ("profile", "warn", ("profile named for agy", "not verified")),
+        # Refused and nothing lifts it: an error that names the profile that clears it, and
+        # says require_sandbox only refuses the starts (the review of #2119).
+        (
+            "cannot",
+            "error",
+            (
+                "cannot start",
+                "named `agy`",
+                "agy's real path",
+                "userns",
+                "restart",
+                "require_sandbox = true",
+                "stays an error",
+            ),
+        ),
+        # The unshare call itself refused: the kernel or a container, which a profile for agy
+        # does not clear, so the profile route is not offered (the review of #2119).
+        (
+            "refused",
+            "error",
+            ("cannot start", "kernel or a container", "does not clear", "stays an error"),
+        ),
+        ("unknown", "warn", ("not checked",)),
+    ],
+)
+def test_check_says_what_the_agy_sandbox_probe_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str, level: str,
+    words: tuple[str, ...],
+) -> None:  # fmt: skip
+    """tsk-xjy2d5617sar, lotse's ruling: "cannot start" is an error, everything short of a
+    definite refusal is a warning."""
+    first = checked(monkeypatch, state, tmp_path)[0]
+    assert first[0] == level and all(word in first[1] for word in words), first
+    if state == "refused":
+        assert "named `agy`" not in first[1] and "uid_map" not in first[1]
+
+
+def test_an_agy_start_where_its_sandbox_cannot_start_says_so_aloud_once_probed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """lotse's ruling on tsk-xjy2d5617sar: with `require_sandbox = false` the start goes on and
+    the runner says at every such start that it runs unsandboxed; the probe is asked once per
+    target and agy binary, as the Codex sandbox probe is."""
+    sup, _backend, logs = started(tmp_path, monkeypatch)
+    target = sup.targets[sup._default_target()]
+    asked: list[tuple[str, str | None]] = []
+    answer = capabilities.AGY_CANNOT
+
+    def probe(*args: Any) -> str:  # (as_user, binary)
+        asked.append((args[0], args[-1]))
+        return answer
+
+    monkeypatch.setattr(capabilities, "agy_sandbox", probe)
+    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: True)
+    view = supervisor.GateView(capabilities.Probe("/usr/bin/agy", "1.5.7", None), False, False)
+    harness = sup.cfg.harnesses["antigravity"]
+    sup._say_if_unsandboxed("plc-0003", harness, target, view)
+    sup._say_if_unsandboxed("plc-0004", harness, target, view)
+    loud = [line for line in logs if "UNSANDBOXED" in line]
+    assert [line.split(":")[0] for line in loud] == ["plc-0003", "plc-0004"]  # every start
+    assert "require_sandbox = true" in loud[0]
+    assert len(asked) == 1 and asked[0][1] == "/usr/bin/agy"  # probed once for the binary
+    sup.agy_sandbox.clear()
+    for answer in (capabilities.AGY_STARTS, capabilities.AGY_PROFILE, capabilities.AGY_UNKNOWN):
+        sup.agy_sandbox.clear()
+        logs.clear()
+        sup._say_if_unsandboxed("plc-0005", harness, target, view)
+        assert not any("UNSANDBOXED" in line for line in logs), answer
+    # `unknown` is not kept: the next start asks again, and says it aloud once the probe can
+    # tell (the review of #2119).
+    sup.agy_sandbox.clear()
+    asked.clear()
+    answer = capabilities.AGY_UNKNOWN
+    sup._say_if_unsandboxed("plc-0007", harness, target, view)
+    answer = capabilities.AGY_CANNOT
+    logs.clear()
+    sup._say_if_unsandboxed("plc-0007", harness, target, view)
+    assert len(asked) == 2 and any("UNSANDBOXED" in line for line in logs)
+    # The unshare call itself refused is as unsandboxed, and the log names the kernel or a
+    # container, not a profile (the review of #2119).
+    sup.agy_sandbox.clear()
+    answer = "refused"
+    logs.clear()
+    sup._say_if_unsandboxed("plc-0008", harness, target, view)
+    loud = [line for line in logs if "UNSANDBOXED" in line]
+    assert len(loud) == 1 and "kernel or a container" in loud[0]
+    sandboxed = supervisor.GateView(view.found, True, False)  # never asked where it is on
+    sup.agy_sandbox.clear()
+    asked.clear()
+    sup._say_if_unsandboxed("plc-0006", harness, target, sandboxed)
+    sup._say_if_unsandboxed("plc-0006", sup.cfg.harnesses["stub"], target, view)
+    assert asked == []
+
+
+def test_check_warns_about_the_agents_users_own_agy_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cli_dir = tmp_path / ".gemini" / "antigravity-cli"
+    cli_dir.mkdir(parents=True)
+    (cli_dir / "antigravity-oauth-token").write_text("x")
+    (cli_dir / "settings.json").write_text(json.dumps({"permissions": {"allow": ["command(*)"]}}))
+    (tmp_path / ".gemini" / "config").mkdir()
+    (tmp_path / ".gemini" / "config" / "mcp_config.json").write_text('{"mcpServers": {"x": {}}}')
+    lines = checked(monkeypatch, True, tmp_path)
+    assert [level for level, _ in lines] == ["ok", "warn", "warn", "warn"]
+    assert "allows 1 rule(s)" in lines[2][1] and "MCP servers" in lines[3][1]
+    (tmp_path / ".gemini" / "config" / "mcp_config.json").write_text("")  # as agy creates it
+    (cli_dir / "settings.json").write_text(json.dumps({"trustedWorkspaces": ["/x"]}))
+    assert [level for level, _ in checked(monkeypatch, True, tmp_path)] == ["ok", "warn"]
+
+
+def test_check_refuses_workspaces_inside_a_work_tree(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    report = commands.Report()
+    commands._check_agy_workspaces(report, tmp_path / "ws", AsUser())
+    assert report.failed and "workspace_in_repository" in report.lines[0][1]
+    shutil.rmtree(tmp_path / ".git")
+    clean = commands.Report()
+    commands._check_agy_workspaces(clean, tmp_path / "ws", AsUser())
+    assert not clean.failed

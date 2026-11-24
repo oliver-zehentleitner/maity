@@ -32,8 +32,22 @@ window.Maity = window.Maity || {};
     missing: () => M.t("cards.refused.missing"),
   };
   const refusal = (code) => (Object.hasOwn(REFUSALS, code) ? REFUSALS[code]() : null);
+  // The refusals of handing a card to an outsider's agent while the claim request is not built
+  // (docs/api.md §6.5 "Until the claim request is built"), in words: the agent's own claim, a call
+  // from an agent, a human without tasks:admin.
+  const FORBIDDEN = {
+    not_open_to_outsiders: () => M.t("cards.refused.not_open_to_outsiders"),
+    humans_only: () => M.t("cards.refused.humans_only"),
+  };
+  function forbidden(err) {
+    const d = (err.code === "forbidden" && err.details) || null;
+    if (!d) return null;
+    if (Object.hasOwn(FORBIDDEN, d.reason || "")) return FORBIDDEN[d.reason]();
+    return !d.reason && d.scope === "tasks:admin" ? M.t("cards.refused.tasks_admin") : null;
+  }
 
   function said(err) {
+    if (forbidden(err)) return { message: forbidden(err) };
     // A parent waits for its subtasks (§6.4): the open ones by id.
     const kids = err.code === "dependencies_open" && err.details && err.details.children;
     if (kids && kids.length) {
@@ -151,17 +165,23 @@ window.Maity = window.Maity || {};
     ["down", () => M.t("cards.place.down")],
     ["bottom", () => M.t("cards.place.bottom")],
   ];
-  function orderControl(ctx, c, column, place) {
-    if (!orderable(ctx, c) || column.length < 2) return null;
-    const at = column.findIndex((x) => x.id === c.id);
-    if (at < 0) return null;
-    const last = column.length - 1;
-    const bodies = {
-      top: at > 0 ? { to: "top" } : null,
-      up: at > 0 ? { before: column[at - 1].id } : null,
-      down: at < last ? { after: column[at + 1].id } : null,
-      bottom: at < last ? { to: "bottom" } : null,
+  // columnOf(c): its column as the board shows it now. A click reads the neighbours again: the
+  // board's late draw may keep a part drawn before (the opened card's, tsk-3b2t7hwc352s) while a
+  // card arrived beside it.
+  function orderControl(ctx, c, columnOf, place) {
+    const bodiesIn = (column) => {
+      const at = column.findIndex((x) => x.id === c.id);
+      if (column.length < 2 || at < 0) return null;
+      const last = column.length - 1;
+      return {
+        top: at > 0 ? { to: "top" } : null,
+        up: at > 0 ? { before: column[at - 1].id } : null,
+        down: at < last ? { after: column[at + 1].id } : null,
+        bottom: at < last ? { to: "bottom" } : null,
+      };
     };
+    const bodies = orderable(ctx, c) ? bodiesIn(columnOf(c)) : null;
+    if (!bodies) return null;
     return h("div", { class: "card-order", role: "group", "aria-label": M.t("cards.place.label") },
       PLACES.map(([way, word]) => {
         const label = word();
@@ -173,7 +193,7 @@ window.Maity = window.Maity || {};
           title: label,
           "data-focus": key,
           disabled: bodies[way] ? null : true,
-          onclick: bodies[way] ? () => place(c, bodies[way], key) : null,
+          onclick: bodies[way] ? () => { const now = bodiesIn(columnOf(c)); if (now && now[way]) place(c, now[way], key); } : null,
         }, arrow(way));
       }));
   }
@@ -187,8 +207,8 @@ window.Maity = window.Maity || {};
     const menu = M.menuButton({
       label: M.t("cards.move.label", { id: c.id, column: columnName(c.status) }),
       face: [columnName(c.status), h("span", { "aria-hidden": "true" }, " ▾")],
-      items: () => slots.map((slot) => ({ label: slot === "review" ? M.t("cards.sign.review") : M.t("cards.sign.test"), onSelect: () => move(c, "done", "move:" + c.id, slot) }))
-        .concat(allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) }))),
+      items: () => slots.map((slot) => ({ key: "sign:" + slot, label: slot === "review" ? M.t("cards.sign.review") : M.t("cards.sign.test"), onSelect: () => move(c, "done", "move:" + c.id, slot) }))
+        .concat(allowed.map((s) => ({ key: "move:" + s, label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) }))),
     });
     menu.button.setAttribute("data-focus", "move:" + c.id);
     menu.el.className = "menu-box card-move";
@@ -197,18 +217,31 @@ window.Maity = window.Maity || {};
 
   // Assign or reassign: a menu of the project's members, by handle, the
   // full name as the tooltip; picking one assigns at once.
-  function assignControl(ctx, c, assign) {
+  // handOver(c, member, focusKey): an open card nobody holds, claimed for an outsider's agent
+  // (docs/api.md §6.5 "Until the claim request is built"): such an agent takes no card itself, and
+  // an assign alone gives it no claim, so the menu also offers the claim with `holder`. An expired
+  // claim moves to it by the assign above. The hub decides; its refusal is said in words (said).
+  function assignControl(ctx, c, assign, handOver) {
     if (!isAdmin(ctx) || CLOSED.has(c.status)) return null;
     const word = c.assigned_to ? M.t("cards.reassign") : M.t("cards.assign");
+    // In plan and review a claim needs a reason (§6.5), archived takes none: not offered there
+    // until the menu asks for one.
+    const free = !!handOver && c.status === "open" && !c.claim && !["plan", "review", "archived"].includes(ctx.project.state);
     const menu = M.menuButton({
       label: c.assigned_to ? M.t("cards.reassign.label", { id: c.id }) : M.t("cards.assign.label", { id: c.id }),
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
       // A guest is never assigned a card (§2.3).
       items: () => ctx.members.filter((m) => m.id !== c.assigned_to && !M.trust.guest(m)).map((m) => ({
+        key: "member:" + m.id,
         label: [M.avatar(m, 16), " @" + M.dom.handleOf(ctx, m)],
         title: m.display_name,
         onSelect: () => assign(c, m.id, "assign:" + c.id),
-      })),
+      })).concat(free ? ctx.members.filter((m) => m.kind === "agent" && m.trust === "outside" && !m.removed_at).map((m) => ({
+        key: "claim-for:" + m.id,
+        label: [M.avatar(m, 16), " ", M.t("cards.claim_for", { handle: M.dom.handleOf(ctx, m) })],
+        title: m.display_name,
+        onSelect: () => handOver(c, m, "assign:" + c.id),
+      })) : []),
     });
     menu.button.setAttribute("data-focus", "assign:" + c.id);
     menu.el.className = "menu-box card-assign";

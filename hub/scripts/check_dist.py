@@ -19,6 +19,7 @@ Usage: python scripts/check_dist.py <dist directory>    exit 0 = all three hold
 from __future__ import annotations
 
 import ast
+import hashlib
 import os
 import re
 import shutil
@@ -36,7 +37,10 @@ from pathlib import Path
 HUB = Path(__file__).resolve().parents[1]
 REPOSITORY = HUB.parent
 # The files the shell names relative to itself (`href="css/app.css"`, `src="js/…"`).
-NAMED = re.compile(rb'(?:href|src)="((?:brand|css|js|vendor)/[^"?#]+)"')
+NAMED = re.compile(rb'(?:href|src)="((?:brand|css|js|vendor)/[^"?#]+)(?:\?v=([0-9a-f]{16}))?"')
+# A stylesheet is served with its `url()`s under their versions (docs/api.md §16.11): taken out
+# again, it is the wheel's file.
+URL_VERSION = re.compile(rb"\?v=[0-9a-f]{16}(?=[\"')])")
 
 
 def bundled() -> dict[str, str]:
@@ -159,13 +163,22 @@ def check_install(wheel: Path, files: dict[str, bytes], work: Path) -> None:
             raise SystemExit("check_dist: the installed hub did not answer within 60 s")
         if b'<base href="/assets/">' not in page:
             raise SystemExit("check_dist: / is not the dashboard's page")
-        named = sorted({found.decode() for found in NAMED.findall(page)})
+        found = sorted({(name.decode(), version.decode()) for name, version in NAMED.findall(page)})
+        named = [name for name, _ in found]
         if not any(name.startswith("css/") for name in named) or not any(
             name.startswith("js/") for name in named
         ):
             raise SystemExit(f"check_dist: the page names no stylesheet or no script: {named}")
-        for name in named:
-            if fetch(f"{base}/assets/{name}") != files[f"maity_hub/web/{name}"]:
+        for name, version in found:
+            # The shell names each file under the version of the body the hub sends (§16.11).
+            if not version:
+                raise SystemExit(f"check_dist: the page names {name} without its version")
+            body = fetch(f"{base}/assets/{name}?v={version}")
+            if hashlib.sha256(body).hexdigest()[:16] != version:
+                raise SystemExit(f"check_dist: /assets/{name} is not the body its version names")
+            if name.endswith(".css"):
+                body = URL_VERSION.sub(b"", body)
+            if body != files[f"maity_hub/web/{name}"]:
                 raise SystemExit(f"check_dist: /assets/{name} is not the wheel's file")
         print(f"check_dist: the installed hub serves its page and the {len(named)} files it names")
     finally:

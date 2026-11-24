@@ -301,6 +301,8 @@ window.Maity = window.Maity || {};
     { key: "notifications", path: "/account/notifications", label: () => M.t("menu.notifications") },
     { key: "security", path: "/account/security", label: () => M.t("menu.security"), human: true },
     { key: "orgs", path: "/account/orgs", label: () => M.t("menu.orgs"), human: true },
+    // What one reported and what became of it (§16.8, GET /me/reports, tsk-7ze5w6ymf7bw).
+    { key: "reports", path: "/account/reports", label: () => M.t("menu.reports") },
     { key: "linked", label: () => M.t("menu.linked_accounts"), later: true },
   ];
   const SECURITY = [
@@ -534,6 +536,7 @@ window.Maity = window.Maity || {};
     else if (chosen === "settings") headings = await settingsTab(ctx, root);
     else if (chosen === "notifications") headings = await notificationsTab(ctx, root);
     else if (chosen === "security") headings = await securityTab(ctx, root, args[1]);
+    else if (chosen === "reports" && M.report) await M.report.mine(root);
     // The part a moved address asked for starts in sight, its heading focused. The view is put in
     // the page when this returns (js/app.js), before the timeout runs, so the focus holds.
     const wanted = wantedHeading;

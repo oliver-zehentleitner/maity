@@ -14,6 +14,7 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_moderation import resolve
+from tests.test_public_pages import only_the_frames_script
 from tests.test_reports import report
 from tests.test_reports import team as team  # noqa: F401  (the fixture)
 from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
@@ -71,7 +72,7 @@ def test_turning_the_page_on_publishes_it_and_off_takes_it_away_at_once(
     assert "<h1>Maity</h1>" in text and "maintainer/maity" in text and "build" in text
     assert "<strong>agents</strong>" in text and 'rel="nofollow ugc"' in text
     assert '<link rel="canonical" href="https://hub.example/maintainer/maity">' in text
-    assert "<script" not in text
+    assert only_the_frames_script(text)
     assert owner.patch("/projects/maintainer/maity", {"public_page": "off"}).status_code == 200
     assert shown(anyone) is None
     # the text stays the owner's, and the page comes back with the switch
@@ -126,6 +127,15 @@ def test_a_text_the_markdown_rules_refuse_is_invalid(
     refused = owner.patch("/projects/maintainer/maity", {"public_about": text})
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"]["fields"] == {"public_about": problem}
+
+
+def test_a_lone_surrogate_is_a_control_character_and_an_emoji_is_text(owner: flow.Human) -> None:
+    refused = owner.raw("PATCH", "/projects/maintainer/maity", b'{"public_about": "a \\ud800 b"}')
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"public_about": "control_character"}
+    kept = owner.raw("PATCH", "/projects/maintainer/maity", b'{"public_about": "\\ud83d\\ude42"}')
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["public_about"] == "🙂"
 
 
 def test_a_text_of_4_kib_is_fine(owner: flow.Human) -> None:
@@ -315,8 +325,22 @@ def test_any_owner_of_an_organisation_sets_the_page_of_its_project_and_a_suspens
     factory.membership(migrated, project_id, "member", human_id=pat.id)
     made = report(pat, {"type": "project", "id": "oz-team/shop"}, "spam")
     assert made.status_code == 201, made.text
+    assert "<loc>https://hub.example/oz-team/shop</loc>" in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" in str(shown(anyone, "/second"))
     assert (
         admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "suspend"}).status_code
         == 200
     )
     assert shown(anyone, "/oz-team/shop") is None
+    # not served and not listed while the organisation is suspended; the owners' switch is kept
+    # (§16.8), so the page needs nobody to turn it on again once the project is back
+    assert "oz-team/shop" not in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" not in str(shown(anyone, "/second"))
+    assert second.get("/projects/oz-team/shop").json()["public_page"] == "on"
+    lifted = admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "dismiss"})
+    assert lifted.status_code == 200, lifted.text
+    back = second.patch("/projects/oz-team/shop", {"state": "build", "reason": "back again"})
+    assert back.status_code == 200, back.text
+    assert shown(anyone, "/oz-team/shop") is not None
+    assert "<loc>https://hub.example/oz-team/shop</loc>" in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" in str(shown(anyone, "/second"))

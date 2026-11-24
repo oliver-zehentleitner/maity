@@ -14,14 +14,15 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, events, forge, idempotency, mentions, namespace, paging
+from maity_hub import access, cards, clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, leaks
 from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import (
     ApiError,
@@ -36,7 +37,14 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.routes.tasks import TaskCreate, _locked, _project_card, audience, create_card
+from maity_hub.routes.tasks import (
+    TaskCreate,
+    _locked,
+    _project_card,
+    audience,
+    create_card,
+    of_read_card,
+)
 from maity_hub.views import shape_deleted
 
 router = APIRouter(route_class=ProjectRoute)
@@ -72,7 +80,7 @@ class NoteRedactIn(RedactIn):
 # --- shared --------------------------------------------------------------------------------
 
 
-def _card(conn: Connection, mine: Membership, card_id: str) -> Any:
+def _card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     return _project_card(conn, mine, card_id)
 
 
@@ -156,7 +164,18 @@ def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
         worker.links_added(project.id)
 
 
-def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
+def _reader(conn: Connection, project_id: str | None, request: Request) -> Membership | None:
+    """The caller's membership for a replay, which shows a redaction's reason only to whom
+    §8.5 gives it; none when the caller is no member (the replay's read check stops them
+    first)."""
+    slug = namespace.name_of(conn, project_id) if project_id else None
+    try:
+        return membership(conn, request.state.caller, slug) if slug else None
+    except ApiError:
+        return None
+
+
+def load_link(conn: Connection, link_id: str, request: Request) -> dict[str, Any]:
     """A replayed add: the link as it is, or once removed as its add entry holds it."""
     row = conn.execute(select(t.card_link).where(t.card_link.c.id == link_id)).first()
     if row is not None:
@@ -168,16 +187,56 @@ def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
     ).first()
     if entry is None:
         raise not_found()
-    return history.link_shown(entry)
+    return history.link_shown(entry, _reader(conn, _card_project(conn, entry.card_id), request))
 
 
-def load_removed_link(conn: Connection, entry_id: str) -> dict[str, Any]:
+def load_removed_link(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    return history.link_shown(row)
+    return history.link_shown(row, _reader(conn, _card_project(conn, row.card_id), request))
 
 
-idempotency.LOADERS["link"] = idempotency.plain(load_link)
-idempotency.LOADERS["removed_link"] = idempotency.plain(load_removed_link)
+def _card_project(conn: Connection, card_id: str | None) -> str | None:
+    if card_id is None:
+        return None
+    found: str | None = conn.execute(
+        select(t.card.c.project_id).where(t.card.c.id == card_id)
+    ).scalar()
+    return found
+
+
+def _link_project(conn: Connection, link_id: str) -> str | None:
+    """A link's project through its card, once removed through its add entry."""
+    card_id = conn.execute(
+        select(t.card_link.c.card_id).where(t.card_link.c.id == link_id)
+    ).scalar()
+    if card_id is None:
+        card_id = conn.execute(
+            select(t.card_history.c.card_id).where(
+                t.card_history.c.link_id == link_id, t.card_history.c.link_change == "added"
+            )
+        ).scalar()
+    return _card_project(conn, card_id)
+
+
+def _entry_project(conn: Connection, entry_id: str) -> str | None:
+    """A history entry's project, through its card."""
+    return _card_project(
+        conn,
+        conn.execute(
+            select(t.card_history.c.card_id).where(t.card_history.c.id == entry_id)
+        ).scalar(),
+    )
+
+
+def _note_project(conn: Connection, note_id: str) -> str | None:
+    return _card_project(
+        conn,
+        conn.execute(select(t.card_note.c.card_id).where(t.card_note.c.id == note_id)).scalar(),
+    )
+
+
+idempotency.register("link", load_link, idempotency.in_project(_link_project))
+idempotency.register("removed_link", load_removed_link, idempotency.in_project(_entry_project))
 
 
 @router.delete("/projects/{owner}/{slug}/tasks/{card_id}/links/{link_id}")
@@ -192,15 +251,8 @@ def delete_link(
             select(t.card_link).where(t.card_link.c.id == link_id, t.card_link.c.card_id == card.id)
         ).first()
         if row is None:
-            # Removed already: a DELETE is idempotent (§1.5) and answers with what it
-            # removed, from the removal's entry; a link that never was is not_found.
-            removal = history.link_entry(conn, card.id, link_id, removed=True)
-            if removal is None:
-                raise not_found()
-            return idempotency.Outcome(200, "removed_link", removal.id, history.link_shown(removal))
-        holder = card.claim_holder == mine.id
-        if not (row.added_by == mine.id or holder or card.created_by == mine.id):
-            mine.require("tasks:admin")
+            return _removed_already(conn, mine, card, link_id)
+        _may_remove(mine, card, row.added_by)
         shown = links.link_view(conn, row)
         conn.execute(t.card_link.delete().where(t.card_link.c.id == row.id))
         entry = history.record(
@@ -213,10 +265,53 @@ def delete_link(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _may_remove(mine: Membership, card: Any, adder: int | None) -> None:
+    """`tasks:admin`, or `tasks:write` and the link's adder, the card's holding instance
+    (§6.4) or its creator (§6.13), on the membership read under the project lock. A caller
+    with neither scope is refused `tasks:write`, as on any card write; a writer that is
+    none of the three, `tasks:admin`."""
+    if mine.may("tasks:write"):
+        if not (adder == mine.id or cards.holds(mine, card) or card.created_by == mine.id):
+            mine.require("tasks:admin")
+    elif not mine.may("tasks:admin"):
+        mine.require("tasks:write")
+
+
+def _removed_already(
+    conn: Connection, mine: Membership, card: Any, link_id: str
+) -> idempotency.Outcome:
+    """A DELETE is idempotent (§1.5): a link removed already answers with what was removed,
+    from the removal's entry, to whom the removal rule lets remove it and whose history
+    shows the entry (its isolation windows, §6.2, §6.15). Anyone else, and a link that
+    never was, is not_found."""
+    removal = history.link_entry(conn, card.id, link_id, removed=True)
+    if removal is None:
+        raise not_found()
+    # The adder by the add entry, which a redaction keeps; a link the card was created
+    # with has none and is its creator's (§6.4).
+    added = history.link_entry(conn, card.id, link_id, removed=False)
+    try:
+        _may_remove(mine, card, card.created_by if added is None else added.actor_membership)
+    except ApiError as refused:
+        if refused.status != 403:
+            raise
+        raise not_found() from None
+    visible = events.outside_window_times(conn, mine.project.id, mine.row, t.card_history.c.at)
+    if visible is not None and (
+        conn.execute(
+            select(t.card_history.c.id).where(t.card_history.c.id == removal.id, visible)
+        ).first()
+        is None
+    ):
+        raise not_found()
+    return idempotency.Outcome(200, "removed_link", removal.id, history.link_shown(removal, mine))
+
+
 # --- history (§6.15) -----------------------------------------------------------------------
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/history")
+@access.outside_read
 def get_history(
     slug: str,
     card_id: str,
@@ -225,15 +320,16 @@ def get_history(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+    with read_transaction(engine_of(request)) as conn:
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_history.c
-        query = select(t.card_history).where(c.card_id == card.id)
-        for start, end in events.window_times(conn, mine.project.id, mine.row):
-            # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
-            query = query.where(or_(c.at < start, c.at > end))
+        query = of_read_card(select(t.card_history).where(c.card_id == card.id), mine, c.card_id)
+        # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
+        visible = events.outside_window_times(conn, mine.project.id, mine.row, c.at)
+        if visible is not None:
+            query = query.where(visible)
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor)
             query = query.where(or_(c.at < after_at, and_(c.at == after_at, c.id < after_id)))
@@ -243,19 +339,25 @@ def get_history(
         next_cursor = paging.cursor(page[-1].at, page[-1].id) if len(rows) > limit else None
         return JSONResponse(
             {
-                "items": shape_deleted(conn, [history.view(r, actors) for r in page]),
+                "items": shape_deleted(conn, [history.view(r, actors, mine) for r in page]),
                 "next_cursor": next_cursor,
             }
         )
 
 
-def load_history(conn: Connection, entry_id: str) -> dict[str, Any]:
+def load_history(conn: Connection, entry_id: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    entry = history.view(row, history.members(conn, [row.actor_membership]))
+    entry = history.view(row, history.members(conn, [row.actor_membership]), reader)
     return dict(shape_deleted(conn, [entry])[0])
 
 
-idempotency.LOADERS["history"] = idempotency.plain(load_history)
+def _load_history_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
+    """A replay shows the entry as the caller sees it now (§8.5)."""
+    row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
+    return load_history(conn, entry_id, _reader(conn, _card_project(conn, row.card_id), request))
+
+
+idempotency.register("history", _load_history_for_caller, idempotency.in_project(_entry_project))
 
 
 def _redactor(mine: Membership, caller: Caller) -> None:
@@ -291,7 +393,7 @@ def redact_history(
                 actor=caller.actor(mine.id),
                 subject=("task", card.id),
             )
-        return idempotency.Outcome(200, "history", row.id, load_history(conn, row.id))
+        return idempotency.Outcome(200, "history", row.id, load_history(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -314,16 +416,10 @@ def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> d
     """A replay shows the note as the caller sees it: a redaction's reason only to whom
     §8.5 gives it."""
     row = conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
-    card = conn.execute(select(t.card.c.project_id).where(t.card.c.id == row.card_id)).one()
-    slug = namespace.name_of(conn, card.project_id)
-    try:
-        reader = membership(conn, request.state.caller, slug) if slug else None
-    except ApiError:
-        reader = None
-    return _note_view(conn, row, reader)
+    return _note_view(conn, row, _reader(conn, _card_project(conn, row.card_id), request))
 
 
-idempotency.LOADERS["note"] = _load_note_for_caller
+idempotency.register("note", _load_note_for_caller, idempotency.in_project(_note_project))
 
 
 def _note(conn: Connection, card: Any, note_id: str) -> Any:
@@ -360,6 +456,12 @@ def _conflict(conn: Connection, mine: Membership, row: Any, base_version: int) -
     )
 
 
+def _redacted_note() -> ApiError:
+    """What an edit of a redacted note gets (§6.16), before the write or after losing the
+    row to a redaction."""
+    return ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+
+
 def _task_ref(card: Any) -> dict[str, Any]:
     return {"id": card.id, "title": card.title, "status": card.status}
 
@@ -372,6 +474,7 @@ def _members(conn: Connection, *membership_ids: int | None) -> list[str]:
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/notes")
+@access.outside_read
 def list_notes(
     slug: str,
     card_id: str,
@@ -381,12 +484,17 @@ def list_notes(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+    with read_transaction(engine_of(request)) as conn:
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_note.c
-        query = select(t.card_note).where(c.card_id == card.id)
+        query = of_read_card(select(t.card_note).where(c.card_id == card.id), mine, c.card_id)
+        # A note written in one of the reader's hidden windows, as its history's entries
+        # (§6.2, §6.16).
+        visible = events.outside_window_times(conn, mine.project.id, mine.row, c.created_at)
+        if visible is not None:
+            query = query.where(visible)
         if state != "all":
             wanted = [s for s in state.split(",") if s]
             if not wanted or any(s not in notes.STATES for s in wanted):
@@ -498,7 +606,7 @@ def edit_note(
             if not body.reason:
                 raise invalid({"reason": "required"}, "say why you edit someone else's note")
         if row.redacted:
-            raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+            raise _redacted_note()
         _precondition(conn, mine, row, body.base_version)
         if len(body.body.encode()) > notes.BODY_MAX:
             raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
@@ -514,9 +622,7 @@ def edit_note(
             # Another write won the row after it was read: say what it was.
             now = _note(conn, card, note_id)
             if now.redacted:
-                raise ApiError(
-                    400, "invalid", "a redacted note is not edited", {"reason": "redacted"}
-                )
+                raise _redacted_note()
             raise _conflict(conn, mine, now, row.version)
         shown = load_note(conn, row.id)
         for event in notes.carriers(conn, mine.project.id, row):
@@ -647,8 +753,9 @@ def _refuse_credentials(request: Request, issue: dict[str, Any]) -> None:
     found = credentials.find_all(text.encode())
     if not found:
         return
-    with transaction(engine_of(request)) as conn:
-        revoke_leaked(conn, found)
+    if leaks.lookups(found):  # only an id the hub could have made is worth the database
+        with transaction(engine_of(request)) as conn:
+            revoke_leaked(conn, found)
     raise ApiError(
         400,
         "credential_in_payload",
@@ -670,6 +777,11 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
     if replayed is not None:
         return replayed
     project = mine.project
+    # Off GitHub the import is a probe read that does not run (§6.14, §11). Checked
+    # before the URL is parsed, so a non-GitHub repository is never fetched.
+    admin = mine.may("project:admin")
+    if project.repository_url is not None and forge.kind_of(project.repository_url) != "github":
+        raise probe_not_configured("forge_not_github" if admin else None)
     # The project's own reader (§11.4): the owner's grant for its repository, or the
     # operator's token for a public one.
     fg = reader_of(request).for_project(project.id)
@@ -679,9 +791,10 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
         raise invalid({"issue_url": error.code}) from None
     if not links.is_own_repository(ref, project.repository_url):
         raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
-    admin = mine.may("project:admin")
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured((fg.refused or "no_grant") if admin else None)
+        raise probe_not_configured(
+            forge.unread_reason(fg, project.repository_url) if admin else None
+        )
     at = clock.rfc3339(clock.now())
     try:
         assert ref.number is not None  # an issue's URL names its number

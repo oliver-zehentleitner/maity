@@ -9,7 +9,7 @@ measures kept for later.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts
+**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts; the step-2 plan on that card, approved by the lead on 2026-11-18 (measure again before the later items become cards); notes nte-ksp8m8crdtkc and nte-d1jaydnt671c on tsk-ym4a7c9rvsn2 (2026-11-09, why item 2 was stopped); the prod rerun of 2026-11-20 (nte-6t6wyf3dna2d), the budget built from it (nte-qswgka9xkdf9) and the result notes of the four measure-only cards approved by the lead after it (tsk-jaw0g9fe3trz, tsk-nwq3azjf63db, tsk-rfv3a7ccbfv1, tsk-kpbwm5cae99g); the lead's note parking loading on demand (nte-5w9yj3028y09 on tsk-vv8wbd9b3n57, 2026-11-20); for the report lists, pull request #2069 (tsk-sn8keg63p6k6) and its review
 **Revisit when:** a page meets the goal on a cold load, or a measure on the list turns out to cost more than it gains
 
 Every dashboard view (inbox, board, card panel, chat, members, settings, public pages)
@@ -22,40 +22,110 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
 
 - **Cold load, every page:** 100–106 script and style files, all fetched again (never a
   304) in 4 waves as the browser finds each ES module's imports. The last file arrives
-  3.2–5.1 s after the HTML.
+  3.2–5.1 s after the HTML. **Contradicted, open:** a later local measurement
+  (nte-ksp8m8crdtkc, 2026-11-09) found no ES modules: `web/index.html` loads classic
+  `<script src=… defer>` tags, the requests the HTML names all start within 76–85 ms, and
+  the last script's arrival was transfer time, not discovery. The two measurements were
+  taken differently (the hub's request log against a local browser run), and which one
+  explains the 2026-11-08 waves is not settled.
 - **Inbox:** 3 request pages one after another, 1.1–1.9 s each. About 6 statements per
   request: 1,219 for a page of 200.
 - **Board:** all cards (1,135) in 6 pages of 200, one after another, 1.4–2.8 s.
 - **Members page:** the credentials are read once per member (27 at once), about 1.2 s.
 - **Card panel and chat:** fast on the server, but `…/members` and the chat list are read
   again every 0.4–3 s.
-- **Flat per row** (3 vs 30 rows): every other list.
+- **Flat per row** (3 vs 30 rows): every other list. **Contradicted, open:** the statement
+  test of every list route (item 15, 2026-11-20, on SQLite and PostgreSQL) found 25 of the 59
+  list routes growing per row, plus `…/jour-fixe/rounds` for two readers of an owner circle,
+  among them `/me`, `/projects`, `/agents`, a project's placements and runners, and the org
+  lists; they are listed in `GROWING` in `hub/tests/list_rows.py`, each to
+  become a card. The 2026-11-08 count covered the lists the pages read most, not every route.
+  2026-11-21 (tsk-sn8keg63p6k6, #2069): `/admin/registrations`, `/admin/reports` and
+  `/me/reports` (also with public pages served) left `GROWING`. Each reads its people,
+  names, handles, agents, the agents' projects and the pages once per page. Reason: these
+  lists ran 1–2 reads per row (up to 74 statements for 30 rows, as counted in the review of
+  #2069). Alternatives to reading once per page: unknown, none was recorded. Kept on
+  purpose: filing a report (`reports._agent_shown`) reads the agent's projects only when its
+  own and its owner's pages do not show it, because a filing is one target, not a list.
+  2026-11-21 (tsk-e37ckp87r9cp): the public lists outside `/api/v1/`, which `GROWING` never
+  held (`/explore`, an organisation's page, a person's and an agent's projects, the landing
+  page's count), ask whether their projects have a page once for the rows they read
+  (`public_projects.served_of`) and read the full names once, instead of 1–3 statements per
+  project (`/explore` 22 statements for 3 projects and 143 for 30 before, 10 for both after;
+  `hub/tests/test_public_lists_cost.py`), in IN lists of at most 500 ids, since `/explore` and
+  the count judge every public project on the instance and no quota bounds that number.
 - **Baseline with a test account** (headless browser, median of 3 runs, cold and warm):
   the load event at 0.7–0.8 s on every page, warm no faster than cold, because all 101–103
   files come back 200 on a reload. The board and a card's panel end at 2.9–3.4 s: about 28
   avatar reads per page, 300–500 ms each as they queue. On a reload they answer 304, but
   each one is still a round trip.
 
+Measured again on 2026-11-20 on prod (the same tool and test account, from a different
+host than the baseline, so absolute times carry an offset; one run of 3 per page, and one
+traced cold load of the board, a card and settings):
+
+- **Warm, every page:** the goal is met (385–884 ms to the last request; the load event
+  53–75 ms, the files now come from the browser cache).
+- **Cold:** the load event is at 621–703 ms on every page, so the files fit. What is
+  over is the tail of API reads after it: board 1546 ms, card 1534, settings 1287; chat,
+  all, account, members and inbox at 1033–1142.
+- **The boot is serial:** `/bootstrap` starts at the load event and runs alone; the
+  notifications head (`/me/notifications?limit=0`, about 100–150 ms) only starts after it.
+  In `web/js/app.js` the boot fires `/bootstrap` up front (`M.api.prime`), then awaits the
+  maintenance window, the session and `/me`, which all wait on it; only then does a
+  `Promise.all` start the notifications head (`M.notify.read()`), beside `loadContext` and
+  the project views. On settings a third wave follows (fonts, the event head and a second
+  notifications head, at 997–1124 ms), then `…/me/settings` alone, then the last parallel
+  reads; its main thread is idle throughout.
+- **Board and card:** the open column's second page is read only after its first (the
+  open column is 245 kB, 45 % of a warm load's bytes), the avatars only after a fourth
+  wave, and style recalculation over about 16,000 elements, repeated 3–4 times as the
+  waves land, keeps the main thread busy until about 1.9 s (board) and 2.1 s (card),
+  after the last request.
+- **Size:** `web/index.html` loads 110 files, 807 kB gzip (+130 kB since the baseline:
+  10 new files, +27.3 kB, and the 11 that grew by more than 2 kB gzip, +81.5 kB, each
+  from a feature pull request; the remaining ~21 kB is smaller growth, not itemized).
+  Every page reads `/auth/sessions?ended=true` (16 kB), and a project page reads its
+  `/bootstrap` (83 kB) again on every warm load.
+- **Counting caveat:** until 2026-11-20 the tool's long-poll filter dropped every
+  `/me/notifications` URL, the notifications head included. The "gaps" with no request in
+  flight that the earlier runs showed after `/bootstrap` were that call. The tool counts
+  the heads from then on (only waiting long polls stay out), so request counts from before
+  and after the fix do not compare one to one; the times to the last request are not
+  affected as far as the traces show, since the head never came last.
+
 The list, in the order agreed (gain is the expected share of a page's time):
 
 | # | Measure | Gain | Cost | Status, card |
 |---|---|---|---|---|
-| 1 | Caching: content-hashed files `immutable`, ETag/304 on avatars and reads | warm load without ~100 requests and their waves | M | in progress, tsk-pcw785rhymyg |
-| 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | tsk-vvyqmk9vwg8e |
-| 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | card to come |
+| 1 | Caching: content-hashed files `immutable`, ETag/304 on avatars and reads | warm load without ~100 requests and their waves | M | done, tsk-pcw785rhymyg (revalidation) and tsk-0pp41wxp6f75 (content-hashed URLs) |
+| 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | done, tsk-vvyqmk9vwg8e |
+| 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | cancelled, tsk-ym4a7c9rvsn2: does not apply, the dashboard has no ES modules (below) |
 | 3 | A page of requests in one batch | inbox −~4 s | S | done, tsk-fxjtwmkc4md5 (#1515) |
-| 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | tsk-y8gkq1kvt63c |
-| 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | tsk-d61rvjm6gteh |
-| 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | tsk-d61rvjm6gteh |
-| 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
+| 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | done, tsk-y8gkq1kvt63c |
+| 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | done for the column groups, tsk-d61rvjm6gteh; done for the closed columns, tsk-d4anfsk1e94j (a page of 50 each at load, the next on Show more, no follow-up pages) |
+| 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | done, tsk-d61rvjm6gteh |
+| 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | done, tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
-| 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | with the owner |
-| 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
-| 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
-| 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
-| 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | later |
-| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | later |
+| 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | done, tsk-x4z69ff785y6 and tsk-j591fzgnmspf (below) |
+| 11 | Bundling the scripts with a build step | fewer of a cold load's ~100 script and stylesheet requests, if a new measurement still needs it | L | later; measured 2026-11-20, tsk-kpbwm5cae99g: no case for it, the cold load event fits (621–703 ms); about 16 kB gzip of scripts that serve one page or flow were the first candidates for loading on demand. That card, tsk-vv8wbd9b3n57, is parked (the lead, 2026-11-20, nte-5w9yj3028y09): without a change to `docs/api.md` §16.11 a script loaded later loses its immutable URL, so every warm load of its pages pays a revalidation (~130 ms for a 304); `report.js` is a control on many pages, not one dialog; the expected gain was 10–30 ms cold. Revisit when the shell's cold size is the bottleneck |
+| 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later; measured 2026-11-20, tsk-rfv3a7ccbfv1, tsk-jaw0g9fe3trz and tsk-nwq3azjf63db: it would pay only if one statement dominated. It does not apply to `/bootstrap`: its time rises with the statement count at a flat 1.3–1.9 ms per statement, a round trip each, and no single statement is slow. For `…/members` it is not yet shown: it was measured only in aggregate, 34–35 statements at about 2.0–3.2 ms each on average (median database time 71–108 ms in the two runs), with no per-statement split and no EXPLAIN |
+| 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | measured 2026-11-20, tsk-jaw0g9fe3trz and tsk-kpbwm5cae99g: the board's open column 245 kB (45 % of a warm load), `/auth/sessions?ended=true` 16 kB on every page, a project's `/bootstrap` 83 kB on every warm load; a fix is not decided |
+| 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | measured 2026-11-20 for the board and a card, tsk-jaw0g9fe3trz: style recalculation over ~16k elements, 3–4 times, holds the main thread to ~1.9 s and ~2.1 s, past the last request; a fix is not decided, a chat not traced |
+| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | done, tsk-xdn21ph67js9 (`hub/tests/test_list_rows.py`, `web/tools/shell_budget.py`; 25 list routes that grow are exceptions, each to become a card) |
+
+Statuses as of 2026-11-18, read from the board; items 11 to 14 as of 2026-11-20. Items 11
+to 14 waited for a new measurement against the 2026-11-08 baseline, each to become a card
+only where that run shows a page still missing the goal (the step-2 plan). That run and its
+four measure-only cards are in (above); which fixes become cards is the lead's decision and
+not made yet. Item 2 was stopped by the lead on 2026-11-09,
+after a measurement before any code (nte-ksp8m8crdtkc): the dashboard loads classic
+deferred scripts, not ES modules, and `modulepreload` applies to module scripts only; on a
+classic script it would fetch the file a second time. After the compression and
+revalidation of item 1 went live, the script phase measured about 0.5–0.6 s cold and
+0.25 s warm, signed out (nte-d1jaydnt671c), no longer well over the ~1 s budget, and that
+note saw no case for the build-step question (item 11) then.
 
 **Reason:** the owner set the goal and the order. Working by expected gain puts the shared
 cold-load cost first, since every page pays it. A kept list lets a measure that is not done
@@ -64,7 +134,8 @@ now be picked up later without measuring again from scratch.
 **Rejected alternatives:**
 - Bundling the scripts first: the owner's order puts the one load wave first and keeps
   bundling for later, if it is still needed. A `modulepreload` list needs no build step,
-  which the project does not have.
+  which the project does not have. (That `modulepreload` list turned out not to apply,
+  item 2 above; the owner's order of bundling after it stands, and bundling stays item 11.)
 
 ## `Server-Timing` for the instance admin only, with counts and durations only
 
@@ -111,3 +182,89 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
   where the slow pages are, and there it would have to stay off.
 - Durations only, no count: a duration leaks the same, only noisier, and it loses the N+1
   signal.
+
+## One boot read bundles the single routes' answers, each with its own status
+
+**Id:** b77c193d-6561-4f9a-8af6-7e072780b49e
+**Type:** decision
+**Status:** needs-review
+**Evidence:** confirmed
+**Source:** the owner's decision of 2026-11-11 on measure 10 of the list above, and his second answer the same day, after the saving was found to be two round trips and not five to eight: build it for slow and mobile connections, with the hub reading the parts concurrently; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
+**Revisit when:** the route is measured against the dashboard's waves (the saving is expected until then), a part needs a field or a right its single route does not give, or the dashboard's boot no longer reads these routes in waves
+
+`GET /bootstrap` gives the dashboard's first reads (the maintenance window, the session,
+`GET /me`, and for a project view the event head, the project and its members) in one
+round trip. Each part is `{status, body}`: what the single route answers the same caller,
+errors included. The route needs no sign-in. The whole request is answered with no parts only
+for what the hub answers before any route (a route limit, a credential in the query) and, as
+the route's own rule, for a caller it would refuse (a cross-site cookie, plain HTTP, a runner
+credential, `Maity-For`), §5.4. Every single
+route stays.
+
+**Reason:** the dashboard's boot reads them in three waves, each waiting for the one before
+(the window and the session together, decision 63c48583 in `web/context/views.md`; then
+`/me`; then the project, its members and the head together). The bundle saves two round
+trips on a project view and one elsewhere. One round trip from a development machine to the
+hub measured about 30 ms on a kept connection (2026-11-11, `GET /api/v1/maintenance`, ten
+runs, 29–45 ms), more on a slow or mobile connection, which is what the route is for. The
+time the route saves is expected, not measured, until it is measured against the waves. Its
+server time was measured in-process against PostgreSQL when the hub route was written
+(2026-11-11, a project with 21 members, 60 runs, medians): 45 ms for the route, against
+41 ms for its slowest chain and 79 ms for the six single routes one after another. The
+saving holds only
+because the hub reads the parts concurrently, the head before the project and its members:
+read one after another, their server time would eat it. That concurrency is measured on
+PostgreSQL here; on MariaDB (a server with a pool and no lock at a transaction's start) a
+reviewer's local run on MariaDB 11.4.4 (review 111841 of #1656, not CI) saw three part
+bodies at once and the request take its slowest chain's time (0.89 s against at least
+2.0 s serial). On SQLite every transaction takes the one write lock at its start
+(`db._sqlite_begin_immediate`), so the parts' reads run one after another there, and the
+bundle saves the round trips and the repeated authentication only; the lock stays, since
+it is what keeps SQLite's transactions from failing to upgrade to a write. The price of
+the concurrency is the pool: one request holds up to five of its connections at once,
+where a single call holds one (`project` and `members` start once `head` is read, while
+`maintenance`, `session` and `me` may still hold theirs). Once the hub answers the
+route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
+come, and that entry is checked again with the web change. A part
+built by the single route's own code for the same caller has one place to get each field
+wrong, and a test can compare each part with its route. Per-part statuses keep the pages
+that are drawn before or without a full session (signed out, the second-factor step, a
+pending account, a running maintenance window) on the same call: each of them needs the
+window and the session even when the rest is refused.
+
+**Measured on prod, 2026-11-20 (the route, for the Revisit when above; card
+tsk-rfv3a7ccbfv1, from the hub log of all pods over 60 minutes and the browser timelines of
+that day's rerun):** the route takes about 130–165 ms on a project view (73–100
+statements) and 31–62 ms without one (medians of the 10–49 statement bands; the hub log
+puts agents' and project-less boots in the 30–39 band, median 47 ms), not the ~45 ms
+measured in-process on a project view. Its time rises linearly with the statement count
+at a flat 1.3–1.9 ms per statement, the round trip to the managed PostgreSQL that the
+in-process run did not have; no single statement is slow. The log does not record the
+pool's checkout wait, but on that load no request showed signs of one. Database time
+summed over the statements is 1.21 times the request's time in the median, so the parts
+do run on several connections at once. In the browser the route
+starts at the load event and runs alone, and the dashboard's next read (the notifications
+head) starts only after it. The basis of `needs-review`: the route was measured on prod
+(130–165 ms on a project view against the ~45 ms in-process figure in the Reason), the old
+waves were not, so the saving against them is still expected, not measured. The re-check
+of this entry is open.
+
+**Rejected alternatives:**
+- A shape of its own that picks fields from each source, as the project overview (§6.11)
+  does for counts: the overview repeats no shape that has a home elsewhere so that a view's
+  restricted fields have one place to get wrong; a picked copy of the member view would be
+  a second place.
+- One status for the whole answer, failing as soon as one part fails: a signed-out reader
+  or a second-factor session would then lose the maintenance window and the session, which
+  are the parts its page is drawn from.
+- The parts read one after another, in the order of the table: their server time would be
+  added back and eat the round trips the route saves (the owner's second answer,
+  req-h59ppnhbg0xz).
+- All parts in one concurrent wave, the head with the project and its members: a change
+  made between the members read and the head read would fall below the cursor and never
+  arrive as an event (reviews of #1640).
+- The hub calling its own single routes in-process, one request per part: each would pass
+  the middleware again, so the request would count against six route limits, authenticate
+  six times (six presence and lease writes instead of one call's), and its parts would carry
+  the single routes' headers, which §5.4 leaves out. The route calls the single routes' body
+  functions instead and decides their refusals per part.

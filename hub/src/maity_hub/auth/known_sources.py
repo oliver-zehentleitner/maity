@@ -10,6 +10,11 @@ the pepper sits in the same database, so a full copy of it lets an address be fo
 them all; with one, it does not. Until the pepper exists no source is remembered or known. A
 fingerprint goes 30 days after its last sign-in and with the account (§2.9): `Worker` deletes the
 old ones every hour whether anyone signs in or not, and every completed sign-in deletes them too.
+
+Every limit keyed by a mail address counts under `address_key`, an HMAC of the normalised
+address from the same base under a purpose of its own (`rate_count.address`): a count's row
+(`rate_count.subject`) never holds an address, nor a plain hash a guessed address could be
+checked against (hub/context/auth.md 7d3f0a52).
 """
 
 from __future__ import annotations
@@ -20,13 +25,10 @@ import logging
 import threading
 from datetime import timedelta
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, worker_runs
-from maity_hub import instance_settings as store
+from maity_hub import clock, secretbox, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import address as addresses
 
@@ -34,6 +36,7 @@ log = logging.getLogger(__name__)
 
 KEPT_FOR = timedelta(days=30)
 PURPOSE = "sign_in.known_source"
+ADDRESS_PURPOSE = "rate_count.address"  # the key of every count keyed by a mail address
 INTERVAL = 3600.0  # seconds between sweeps of old fingerprints
 
 # The instance key of the app that serves (`configure`, from `create_app`): a session is made
@@ -45,17 +48,13 @@ def configure(secret_key: bytes | None) -> None:
     _secret_key[0] = secret_key
 
 
-def _key(conn: Connection) -> bytes | None:
+def _key(conn: Connection, purpose: str = PURPOSE) -> bytes | None:
     base = _secret_key[0]
     if base is None:
-        stored = store.sealed(conn, addresses.LOCK_PEPPER)
-        if stored is None or len(stored) != 32:
+        base = secretbox.stored_fallback(conn, addresses.LOCK_PEPPER)
+        if base is None:
             return None
-        base = stored
-    derived: bytes = HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=None, info=PURPOSE.encode()
-    ).derive(base)
-    return derived
+    return secretbox.derive(base, purpose)
 
 
 def fingerprint(conn: Connection, source: str) -> str | None:
@@ -64,6 +63,17 @@ def fingerprint(conn: Connection, source: str) -> str | None:
     if key is None:
         return None
     return hmac.new(key, source.encode(), hashlib.sha256).hexdigest()
+
+
+def address_key(conn: Connection, normalized_address: str) -> str:
+    """The key of every limit keyed by a mail address: an HMAC-SHA-256 of the address as the
+    caller normalised it, under `ADDRESS_PURPOSE`. The caller runs `addresses.prepare` before
+    its transaction, as for a lock; without the pepper this fails loudly, since one bucket for
+    every address would let a few requests stop every address's mail."""
+    key = _key(conn, ADDRESS_PURPOSE)
+    if key is None:
+        raise RuntimeError("the address lock pepper is not prepared")
+    return hmac.new(key, normalized_address.encode(), hashlib.sha256).hexdigest()
 
 
 def remember(conn: Connection, human_id: str, source: str | None) -> None:

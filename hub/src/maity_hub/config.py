@@ -23,7 +23,12 @@ DEFAULT_BIND = "127.0.0.1:8080"
 KTW_SKILL_SOURCE = (
     "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
 )
+# The commit KTW_SKILL_SOURCE's release tag points to, the tag in the comment: what a runner
+# fetches and delivers to its placements (§15.5). A tag can move, a commit id cannot;
+# tools/ktw_pin.py holds the comment to the release, a reviewer the id to the tag (git ls-remote).
+KTW_SKILL_COMMIT = "2771046616a3c6bcd62916ed072f71feb5afd222"  # v0.20.3
 KTW_SKILL_GUIDE = "https://keepthewhy.com/installation/"
+_COMMIT = re.compile(r"[0-9a-fA-F]{40}")
 
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
@@ -98,12 +103,20 @@ class Settings:
     # whole hub: with several workers each process holds its share (`per_worker`).
     db_pool_size: int = 16
     db_max_overflow: int = 16
+    # MAITY_DB_ASYNC_POOL_SIZE: how much of that pool the async engine holds on a server
+    # database, carved out of it, never on top: the sync engine keeps the rest and the whole
+    # overflow; SQLite takes no pool sizes. Unset (None) it is 8, but at most half the process's
+    # pool share (`serving.pool_shares`, hub/context/replicas.md).
+    db_async_pool_size: int | None = None
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
     db_pool_recycle: int = 1800
     # MAITY_DB_STATEMENT_TIMEOUT, MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT: seconds, set on every
     # PostgreSQL connection of the hub (30 and 60; 0 turns one off, hub/context/persistence.md).
     db_statement_timeout: float = 30.0
     db_idle_in_transaction_timeout: float = 60.0
+    # MAITY_DB_ALLOW_PRIVILEGED: `maity-hub serve` on PostgreSQL refuses a role that is a superuser
+    # or owns the schema or one of its tables, unless this is set (hub/context/deploy-access.md).
+    db_allow_privileged: bool = False
     # MAITY_DIRECT_DATABASE_URL: PostgreSQL past a pooler, for the one connection per process
     # that listens for other replicas' wake-ups (hub/context/replicas.md 387c2409); unset, the
     # listener uses `database_url`.
@@ -111,13 +124,21 @@ class Settings:
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
+    # MAITY_SEAL_VERIFIERS: 1 seals the credentials' verifiers at rest with `secret_key`
+    # (§2.2, hub/context/credentials.md); opt-in, default off. Sealed rows are read either way.
+    seal_verifiers: bool = False
+    # MAITY_SEALED_VERIFIERS_ONLY: 1 refuses a plain verifier when it authenticates, and the
+    # start while a live one is left (§2.2); needs `seal_verifiers`. Default off.
+    sealed_verifiers_only: bool = False
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
-    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK: the sign-in methods when the
-    # environment switches them (§2.6.6); None leaves them to the instance admin.
+    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK, MAITY_SIGN_IN_PASSWORD_RESET: the
+    # sign-in methods and the reset by mail when the environment switches them (§2.6.6,
+    # §2.10); None leaves them to the instance admin.
     sign_in_device_code: bool | None = None
     sign_in_email_link: bool | None = None
+    sign_in_password_reset: bool | None = None
     # MAITY_ON_RUNNER_REVOKE: what revoking a runner does to its agents where a project
     # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
     # is refused).
@@ -125,6 +146,9 @@ class Settings:
     # MAITY_KTW_SKILL_SOURCE: where the Keep the Why skill is published, as told to a
     # joining agent (§6.23); an operator who mirrors the skill points it elsewhere.
     ktw_skill_source: str = KTW_SKILL_SOURCE
+    # MAITY_KTW_SKILL_COMMIT: the git commit of that source a runner fetches for its placements
+    # (§15.5); required whenever MAITY_KTW_SKILL_SOURCE is set.
+    ktw_skill_commit: str = KTW_SKILL_COMMIT
     # MAITY_KTW_SKILL_GUIDE: the skill's installation guide for every harness, the page an
     # agent names to its human when `install` or `load` does not fit (§6.23).
     ktw_skill_guide: str = KTW_SKILL_GUIDE
@@ -134,6 +158,10 @@ class Settings:
     # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
     # leaves it to the instance admin.
     sign_in_second_factor: str | None = None
+    # MAITY_SECOND_FACTOR_WRONG_PER_DAY: wrong second-factor codes per human and UTC day, 10 to
+    # 10000; at it every check of that human is refused until the day ends or the link mailed
+    # then lifts it (§2.8.6).
+    second_factor_wrong_per_day: int = 50
     # MAITY_MAX_AGENTS_PER_HUMAN, MAITY_MAX_ORGS_PER_HUMAN, MAITY_MAX_PROJECTS_PER_OWNER (§16.5):
     # a number from 1 to 10000 or `unlimited`; None where the environment leaves the value to
     # the instance admin.
@@ -149,6 +177,12 @@ class Settings:
     # MAITY_MAX_ALIASES (§16.5, §6.24): the aliases one human, organisation, agent profile or
     # project may hold, 1–8 and never `unlimited`; None leaves it to the instance admin.
     max_aliases: int | None = None
+    # MAITY_MAX_STARRED_PER_HUMAN (§16.5, §5.1 "Stars"): the public projects one human may keep
+    # as starred tabs, 1–1000 and never `unlimited`; None leaves it to the instance admin.
+    max_starred_per_human: int | None = None
+    # MAITY_MAX_READS_PER_MINUTE (§16.5, §1.7): reads one credential may make per minute, 60 to
+    # 100000, or `unlimited`; None leaves it to the instance admin.
+    max_reads_per_minute: int | str | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -158,6 +192,11 @@ class Settings:
     public_pages_snapshot_minutes: int = 5
     public_pages_startup_seconds: int = 30
     public_pages_render_seconds: int = 2
+    # MAITY_AGENT_FIREWALL (`on`/`off`, §9.6, "The switch"): whether the agent firewall's gate
+    # holds an agent of one side back from a group chat or a work message of another until its
+    # owner's yes; off (the default), chats and messages reach as before the gate, while the
+    # allow and deny entries stay editable (req-5tngzfgp3nne o2).
+    agent_firewall: bool = False
     # MAITY_ROUTE_LIMITS: limits on single routes the operator sets in an emergency, counted per
     # client address in each process; empty, no route has one beyond its own (§1.7).
     route_limits: tuple[RouteLimit, ...] = ()
@@ -165,6 +204,15 @@ class Settings:
     # (§16.9) and of the badges (§6.20), as (count, seconds).
     public_page_limit: tuple[int, int] = (60, 60)
     badge_limit: tuple[int, int] = (60, 60)
+    # MAITY_HSTS_MAX_AGE: the `Strict-Transport-Security` max-age, in seconds, sent on every
+    # answer that went out over TLS (§1.1, §2.5); 0 sends none.
+    hsts_max_age: int = 31536000
+    # The `MAITY_*` variables set at start, name and value as written (a parser that keeps
+    # spaces, like the SMTP password's, must be seen as set), for the admin's overview of the
+    # settings (§16.14, settings_overview); never printed, compared or hashed.
+    environment: tuple[tuple[str, str], ...] = field(
+        default=(), repr=False, compare=False, hash=False
+    )
 
     @property
     def join_host(self) -> str | None:
@@ -224,6 +272,11 @@ class Settings:
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
             ),
+            db_async_pool_size=(
+                int(parse_number(env, "MAITY_DB_ASYNC_POOL_SIZE", 1, minimum=1, maximum=500))
+                if env.get("MAITY_DB_ASYNC_POOL_SIZE", "").strip()
+                else None
+            ),
             db_pool_recycle=int(
                 parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
             ),
@@ -233,19 +286,31 @@ class Settings:
             db_idle_in_transaction_timeout=parse_number(
                 env, "MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", 60.0, minimum=0, maximum=3600
             ),
+            db_allow_privileged=parse_flag(
+                env.get("MAITY_DB_ALLOW_PRIVILEGED", ""), "MAITY_DB_ALLOW_PRIVILEGED"
+            ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
+            seal_verifiers=parse_seal_verifiers(env),
+            sealed_verifiers_only=parse_sealed_verifiers_only(env),
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
+            sign_in_password_reset=parse_switch(env, "MAITY_SIGN_IN_PASSWORD_RESET"),
             on_runner_revoke=parse_choice(
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
             ktw_skill_source=parse_skill_source(env.get("MAITY_KTW_SKILL_SOURCE", "")),
+            ktw_skill_commit=parse_skill_commit(
+                env.get("MAITY_KTW_SKILL_SOURCE", ""), env.get("MAITY_KTW_SKILL_COMMIT", "")
+            ),
             ktw_skill_guide=parse_skill_url(
                 "MAITY_KTW_SKILL_GUIDE", env.get("MAITY_KTW_SKILL_GUIDE", ""), KTW_SKILL_GUIDE
             ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
+            second_factor_wrong_per_day=parse_whole(
+                env, "MAITY_SECOND_FACTOR_WRONG_PER_DAY", 50, 10, 10000
+            ),
             public_pages=parse_choice(env, "MAITY_PUBLIC_PAGES", ("on", "off"), "off") == "on",
             public_pages_render=parse_choice(
                 env, "MAITY_PUBLIC_PAGES_RENDER", ("on_change", "interval"), "on_change"
@@ -272,15 +337,36 @@ class Settings:
                 env, "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT", 1024**2, 1024**5
             ),
             max_aliases=parse_alias_limit(env),
+            max_starred_per_human=parse_bounded(env, "MAITY_MAX_STARRED_PER_HUMAN", 1, 1000),
+            max_reads_per_minute=parse_limit(env, "MAITY_MAX_READS_PER_MINUTE", 60, 100000),
+            agent_firewall=parse_choice(env, "MAITY_AGENT_FIREWALL", ("on", "off"), "off") == "on",
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
+            hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
+            environment=tuple(
+                sorted((k, v) for k, v in env.items() if k.startswith("MAITY_") and v)
+            ),
         )
 
 
 def parse_skill_source(value: str) -> str:
     """Unset is the skill's published tree; anything but an https URL stops the hub."""
     return parse_skill_url("MAITY_KTW_SKILL_SOURCE", value, KTW_SKILL_SOURCE)
+
+
+def parse_skill_commit(source: str, value: str) -> str:
+    """Unset is the default source's commit, but only while the source is the default too: a
+    source set without its commit stops the hub (req-b3q6ttwgrp1v), since every runner would
+    otherwise fetch a commit of another tree. Anything but 40 hex digits stops it as well."""
+    value = value.strip()
+    if not value:
+        if source.strip():
+            raise ConfigError("MAITY_KTW_SKILL_COMMIT must be set with MAITY_KTW_SKILL_SOURCE")
+        return KTW_SKILL_COMMIT
+    if not _COMMIT.fullmatch(value):
+        raise ConfigError("MAITY_KTW_SKILL_COMMIT must be a full git commit id (40 hex digits)")
+    return value.lower()
 
 
 def parse_skill_url(name: str, value: str, default: str) -> str:
@@ -505,11 +591,18 @@ def parse_limit(
 def parse_alias_limit(env: dict[str, str]) -> int | None:
     """MAITY_MAX_ALIASES (§16.5): a whole number from 1 to 8; unlike the other caps it has no
     `unlimited`, since other bounds rest on 8 (§6.25). Unset or empty is None."""
-    value = env.get("MAITY_MAX_ALIASES", "").strip()
+    return parse_bounded(env, "MAITY_MAX_ALIASES", 1, 8)
+
+
+def parse_bounded(env: dict[str, str], name: str, low: int, high: int) -> int | None:
+    """A cap with no `unlimited` (§16.5: `max_aliases`, `max_starred_per_human`): a whole
+    number from `low` to `high`; unset or empty is None, the instance admin's to decide,
+    anything else stops the hub."""
+    value = env.get(name, "").strip()
     if not value:
         return None
-    if not value.isdigit() or not 1 <= int(value) <= 8:
-        raise ConfigError("MAITY_MAX_ALIASES must be a number from 1 to 8")
+    if not value.isdigit() or not low <= int(value) <= high:
+        raise ConfigError(f"{name} must be a number from {low} to {high}")
     return int(value)
 
 
@@ -695,6 +788,25 @@ def parse_second_factor(env: dict[str, str]) -> str | None:
     return value
 
 
+def parse_seal_verifiers(env: dict[str, str]) -> bool:
+    """MAITY_SEAL_VERIFIERS: sealing needs the instance key it seals with."""
+    seal = parse_flag(env.get("MAITY_SEAL_VERIFIERS", ""), "MAITY_SEAL_VERIFIERS")
+    if seal and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
+        raise ConfigError("MAITY_SEAL_VERIFIERS=1 needs MAITY_SECRET_KEY")
+    return seal
+
+
+def parse_sealed_verifiers_only(env: dict[str, str]) -> bool:
+    """MAITY_SEALED_VERIFIERS_ONLY: refusing plain verifiers needs sealing on, or every new
+    join would write a plain row and be refused at once."""
+    only = parse_flag(env.get("MAITY_SEALED_VERIFIERS_ONLY", ""), "MAITY_SEALED_VERIFIERS_ONLY")
+    if only and not parse_seal_verifiers(env):
+        raise ConfigError(
+            "MAITY_SEALED_VERIFIERS_ONLY=1 needs MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY"
+        )
+    return only
+
+
 def parse_switch(env: dict[str, str], name: str) -> bool | None:
     """A switch the environment may leave unset (None) for the instance admin."""
     value = env.get(name, "")
@@ -775,8 +887,13 @@ def normalize_database_url(url: str, name: str = "MAITY_DATABASE_URL") -> str:
 
 
 def redact_database_url(url: str) -> str:
-    """The URL with its password masked, for messages and logs."""
+    """The URL with its password masked and its query string left out (`?***` in its place), for
+    messages and logs. The query is dropped whole rather than masked by name: the drivers take a
+    password there too (`password`, `passwd`, `sslpassword`, also percent-encoded), any other key
+    can carry a secret as well, and a list of names would miss the next one."""
     try:
-        return make_url(url).render_as_string(hide_password=True)
+        parsed = make_url(url)
+        shown = parsed.set(query={}).render_as_string(hide_password=True)
+        return f"{shown}?***" if parsed.query else shown
     except (ArgumentError, ValueError):
         return "<unparseable MAITY_DATABASE_URL>"

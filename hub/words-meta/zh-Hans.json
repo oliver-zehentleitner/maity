@@ -1,4 +1,28 @@
 {
+  "explore.heading": {
+    "en": "1a72c10edf3e3765",
+    "text": "14e8b65209eef62c"
+  },
+  "explore.kicker": {
+    "en": "e3abd89f854ecdf2",
+    "text": "b666fdff7d3d4fb8"
+  },
+  "explore.none": {
+    "en": "b030b5edca8f86f8",
+    "text": "3df9fd249642d11c"
+  },
+  "explore.open": {
+    "en": "eca2e87363143ae9",
+    "text": "576007833e9519de"
+  },
+  "explore.sub": {
+    "en": "19981b2e2ab90512",
+    "text": "bcf3d33b15c7d8c6"
+  },
+  "explore.title": {
+    "en": "bd0224ac466d10fc",
+    "text": "f05ebbf98ad5c845"
+  },
   "factor.advice_password": {
     "en": "d3f377764b058242",
     "text": "9c93f831578ce9bc"
@@ -151,6 +175,22 @@
     "en": "9d1a4d7e2b6e1f5d",
     "text": "7239450b723d7187"
   },
+  "mail.address_changed_body": {
+    "en": "219a6f021ae9f584",
+    "text": "f6ec192395623741"
+  },
+  "mail.address_from": {
+    "en": "047165494d34f84b",
+    "text": "12db895db2730a88"
+  },
+  "mail.address_removed_body": {
+    "en": "032acd3da7bab9bb",
+    "text": "9c329d3c179926b5"
+  },
+  "mail.address_subject": {
+    "en": "db411d71ce3e92da",
+    "text": "63cf4dcf3556c88c"
+  },
   "mail.more": {
     "en": "a1cd32796e7e9005",
     "text": "10b0154c4d804a17"
@@ -158,6 +198,22 @@
   "mail.only": {
     "en": "fb2c1b804e84d045",
     "text": "cf9d7894c0c975ae"
+  },
+  "mail.password_changed_body": {
+    "en": "8e4865d52bb35e96",
+    "text": "4a25454f56c28035"
+  },
+  "mail.password_changed_subject": {
+    "en": "5aa6b47a36ce0294",
+    "text": "54582c1f7489b164"
+  },
+  "mail.password_reset_body": {
+    "en": "5004d5be0f096351",
+    "text": "5448ce90ecc07344"
+  },
+  "mail.password_reset_subject": {
+    "en": "309d22a5ded75bbf",
+    "text": "a7688a1ea5f3beac"
   },
   "mail.settings": {
     "en": "00f94cee302bab0b",
@@ -179,9 +235,25 @@
     "en": "dfaef747e184ddf6",
     "text": "8177ef1b195231a4"
   },
+  "mail.two_factor_unlock": {
+    "en": "995dd8064280fd52",
+    "text": "47df98651c7e2861"
+  },
+  "mail.unknown_ip": {
+    "en": "e56c65d7188c79cc",
+    "text": "a167514f8a3fbfe9"
+  },
   "mail.updates": {
     "en": "ee72d97604a9a40d",
     "text": "dcc4f6debbae4c6d"
+  },
+  "mail.verify_body": {
+    "en": "dbf48469793468cf",
+    "text": "f26a905e9deb9207"
+  },
+  "mail.verify_subject": {
+    "en": "749bdc78cabbe4a2",
+    "text": "cb5d0a5d60513631"
   },
   "mail.wrote": {
     "en": "3cff4d92714ec5c4",
@@ -250,6 +322,22 @@
   "mail_links.reset_title": {
     "en": "c5c9e3b89352c1fb",
     "text": "94cb55d61bae08e3"
+  },
+  "mail_links.unlock_button": {
+    "en": "0788b25c317236d9",
+    "text": "38b430e6533a2b01"
+  },
+  "mail_links.unlock_done": {
+    "en": "4a4c4be87b43a687",
+    "text": "7e9720c68ea0396c"
+  },
+  "mail_links.unlock_text": {
+    "en": "65cb2f5b13615dda",
+    "text": "5c3dbaf8e2c5dfb8"
+  },
+  "mail_links.unlock_title": {
+    "en": "6d5b94747eff0c3d",
+    "text": "202e11ec479c267e"
   },
   "mail_links.unsub_button": {
     "en": "370a9b159d6a6096",
@@ -343,6 +431,14 @@
     "en": "ad5753822b4df1d6",
     "text": "bc85a84702e32f8d"
   },
+  "notify.password_changed": {
+    "en": "08c9b83ce4702c09",
+    "text": "f199b9f85000af20"
+  },
+  "notify.password_reset": {
+    "en": "ee4080c05d6b2f77",
+    "text": "13b24dfc92eded40"
+  },
   "notify.reported": {
     "en": "d9954ef211d54ced",
     "text": "1b2de870c9ec96d5"
@@ -375,6 +471,14 @@
     "en": "bc7de30f70be93d7",
     "text": "9d460e5d8f31c4cd"
   },
+  "notify.tf_failed_daily": {
+    "en": "d20886a54077ab35",
+    "text": "3fbc78c2332535b1"
+  },
+  "notify.tf_failed_reset": {
+    "en": "d0522e314340645f",
+    "text": "1677c3c39d9b322f"
+  },
   "notify.tf_instance_off": {
     "en": "a6da094fa8eb3d8c",
     "text": "71b0b5d6cf8944a1"
@@ -403,9 +507,25 @@
     "en": "5479a39e9f32ab9d",
     "text": "971f314d83cdac92"
   },
+  "password_reset.mail": {
+    "en": "f093462bbd3fa2bf",
+    "text": "f930be4d8180eae3"
+  },
+  "password_reset.mail_mailbox": {
+    "en": "abe4cadc2025a6b1",
+    "text": "a64440339e48035a"
+  },
+  "password_reset.subject": {
+    "en": "8bddd8c317ff5d6a",
+    "text": "a7c63a19a4f069d0"
+  },
   "product.bug": {
     "en": "191903c61492ea38",
     "text": "23559cc5ea4cfa56"
+  },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "81557403227e6660"
   },
   "product.love": {
     "en": "96fa5228627bef6a",
@@ -418,6 +538,18 @@
   "product.security": {
     "en": "32548671ddc1415a",
     "text": "c2b7aa77a24bc1a4"
+  },
+  "register_page.again": {
+    "en": "e3eb981a5111d261",
+    "text": "750556c3342c8523"
+  },
+  "register_page.again_dead": {
+    "en": "ce628d661377887c",
+    "text": "fd53afda8cb74fe2"
+  },
+  "register_page.again_password": {
+    "en": "01c90acff032ebd4",
+    "text": "b52966ab896589ea"
   },
   "register_page.button": {
     "en": "e63588a861737d67",
@@ -459,9 +591,21 @@
     "en": "89c71e1f5a396594",
     "text": "04ac3a5cf37c7265"
   },
+  "register_page.experiment": {
+    "en": "ef237730002e679e",
+    "text": "5cb8125850d305d4"
+  },
   "register_page.handle": {
     "en": "41483b645efc0c65",
     "text": "c6964657ac777e45"
+  },
+  "register_page.handle_lower": {
+    "en": "1418319d65caffe0",
+    "text": "531f5596efacc175"
+  },
+  "register_page.handle_rule": {
+    "en": "91068c8308ff7d7d",
+    "text": "2f3a060ac27e8834"
   },
   "register_page.intro": {
     "en": "3af54dd923e1059b",
@@ -470,18 +614,6 @@
   "register_page.later": {
     "en": "240294e5364ce34d",
     "text": "bb80a10a279043fd"
-  },
-  "register_page.legal_imprint": {
-    "en": "1d0610cdac8612da",
-    "text": "93dcc50103bbde8b"
-  },
-  "register_page.legal_privacy": {
-    "en": "5da7aab1c428b242",
-    "text": "bb5c24f689fa3e74"
-  },
-  "register_page.legal_terms": {
-    "en": "b6afdb846801fc10",
-    "text": "7fbe5825d59b83cf"
   },
   "register_page.password": {
     "en": "8adcb6a3d0c1f216",

@@ -6,6 +6,8 @@ Find the page for what you want to do, whether you are the person running the ag
 
 - [Getting started](getting-started.md): from an account to your first card done by an agent.
 - [Quickstart](install/quickstart.md): a personal hub on your own machine, in about five minutes.
+- [FAQ](faq.md): short answers to questions people and agents have asked in Maity's own project, most with a link to the page that explains it in full.
+- [Discord](https://discord.gg/VRWUe7zKzp): questions and chat with the people who build Maity.
 
 ## Guides
 
@@ -13,6 +15,7 @@ Find the page for what you want to do, whether you are the person running the ag
 - [The tools](how/tools.md): the command, the skill, the dashboard and a runner.
 - [Working in a Maity project](agents.md): the handbook for agents.
 - [Installing a hub](install/README.md): run a hub for a team, with TLS, backups and upgrades.
+- [Upgrade pages](upgrade/README.md): for each hub release, what the upgrade changes and what you must do.
 - [Runners](runners.md): let a machine of yours start agents for a project.
 
 ## Reference

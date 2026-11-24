@@ -27,17 +27,19 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, Engine, and_, case, func, insert, select, update
 
-from maity_hub import clock, maintenance, worker_runs
+from maity_hub import clock, maintenance, worker_runs, write_guard
 from maity_hub import tables as t
 from maity_hub.cards import SOME_INSTANCE, open_claims
-from maity_hub.events import lock_project, transaction
+from maity_hub.events import lock_projects, transaction
 from maity_hub.notifications import preferences, records
+from maity_hub.seen import latest_call
 
 log = logging.getLogger(__name__)
 
@@ -75,10 +77,12 @@ class Away:
 
 
 def _episodes(conn: Connection, owner_id: str | None = None) -> list[Any]:
-    """Every session in an episode, with its agent's owner, handle, instance and project."""
+    """Every session in an episode in one of its projects (`agent_session_project`), with its
+    agent's owner, handle, instance and project."""
+    p = t.agent_session_project
     query = (
         select(
-            t.agent_session.c.not_listening_since.label("since"),
+            p.c.not_listening_since.label("since"),
             t.agent_session.c.last_seen_at,
             t.membership.c.id.label("membership_id"),
             t.membership.c.agent_id,
@@ -87,10 +91,12 @@ def _episodes(conn: Connection, owner_id: str | None = None) -> list[Any]:
             t.agent_profile.c.handle,
             t.credential.c.instance,
         )
-        .join(t.membership, t.membership.c.id == t.agent_session.c.membership_id)
+        .select_from(p)
+        .join(t.agent_session, t.agent_session.c.id == p.c.session_id)
+        .join(t.membership, t.membership.c.id == p.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .join(t.credential, t.credential.c.id == t.agent_session.c.credential_id)
-        .where(t.agent_session.c.not_listening_since.isnot(None))
+        .where(p.c.not_listening_since.isnot(None))
     )
     if owner_id is not None:
         query = query.where(t.agent_profile.c.owner_id == owner_id)
@@ -135,16 +141,21 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         entry["cards"].append(row.card_id)
     if not held:
         return []
+    from maity_hub.instances import credential_rows  # instances imports this module's callers
+
+    # Each instance as it is in the holder's project: its pause there, on the attachment. A
+    # revoked or detached one on purpose: the digest reports the claims it still holds there.
     credentials = {
         (r.membership_id, r.instance): r
         for r in conn.execute(
-            select(t.credential).where(t.credential.c.membership_id.in_({k[0] for k in held}))
+            credential_rows().where(t.instance_attachment.c.membership_id.in_({k[0] for k in held}))
         )
         if (r.membership_id, r.instance) in held
     }
-    sessions = {
-        r.credential_id: r for r in _latest_sessions(conn, {c.id for c in credentials.values()})
-    }
+    latest, episodes = _latest_sessions_and_episodes(
+        conn, {c.id for c in credentials.values()}, {k[0] for k in held}
+    )
+    sessions = {r.credential_id: r for r in latest}
     found = []
     for key, entry in held.items():
         row, credential = entry["row"], credentials.get(key)
@@ -153,28 +164,36 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         session = sessions.get(credential.id)
         if session is None:
             continue  # never resumed: no sign of life to count from
+        episode = episodes.get((session.id, row.membership_id))
         found.append(
             (
                 row,
                 credential,
                 session,
                 tuple(entry["cards"]),
-                _reason(row, credential, session, now),
+                _reason(row, credential, session, episode, now),
             )
         )
     return found
 
 
-def _latest_sessions(conn: Connection, credential_ids: set[str]) -> list[Any]:
-    """Each credential's latest session, ended or not, one row per credential: the bell reads
-    this live, and the history of ended sessions grows without bound, so the latest start is
-    found once per credential along `ix_agent_session_credential_started`. Two sessions can
-    start at the same moment (a resume ends the old one and starts the new in one tick); then
-    the live one wins, then the later `last_seen_at`, then the id, so the choice never depends
-    on the random ids alone."""
+def _latest_sessions_and_episodes(
+    conn: Connection, credential_ids: Collection[str], membership_ids: Collection[int]
+) -> tuple[list[Any], dict[tuple[str, int], datetime]]:
+    """Each credential's latest session, ended or not, one row per credential, and beside
+    them, in the same read, the start of each one's open not-listening episode (§5.3) in the
+    projects of `membership_ids`, by (session id, membership id); one without an open episode
+    is absent, as in `instances._live_sessions_and_episodes`.
+
+    The bell reads this live, and the history of ended sessions grows without bound, so the
+    latest start is found once per credential along `ix_agent_session_credential_started`. Two
+    sessions can start at the same moment (a resume ends the old one and starts the new in one
+    tick); then the live one wins, then the later `last_seen_at`, then the id, so the choice
+    never depends on the random ids alone."""
     if not credential_ids:
-        return []
+        return [], {}
     s = t.agent_session
+    p = t.agent_session_project
     latest = (
         select(s.c.credential_id, func.max(s.c.started_at).label("started_at"))
         .where(s.c.credential_id.in_(credential_ids))
@@ -182,12 +201,24 @@ def _latest_sessions(conn: Connection, credential_ids: set[str]) -> list[Any]:
         .subquery()
     )
     rows = conn.execute(
-        select(s)
+        select(
+            s,
+            p.c.membership_id.label("episode_membership"),
+            p.c.not_listening_since.label("episode_since"),
+        )
         .join(
             latest,
             and_(
                 s.c.credential_id == latest.c.credential_id,
                 s.c.started_at == latest.c.started_at,
+            ),
+        )
+        .outerjoin(
+            p,
+            and_(
+                p.c.session_id == s.c.id,
+                p.c.membership_id.in_(membership_ids),
+                p.c.not_listening_since.is_not(None),
             ),
         )
         .order_by(
@@ -198,20 +229,26 @@ def _latest_sessions(conn: Connection, credential_ids: set[str]) -> list[Any]:
         )
     )
     chosen: dict[str, Any] = {}
+    episodes: dict[tuple[str, int], datetime] = {}
     for row in rows:
         chosen[row.credential_id] = row  # the last of a tie is the one to keep
-    return list(chosen.values())
+        if row.episode_since is not None:
+            episodes[(row.id, row.episode_membership)] = row.episode_since
+    return list(chosen.values()), episodes
 
 
-def _reason(member: Any, credential: Any, session: Any, now: datetime) -> str:
-    """Why a stalled holder stopped, as far as the hub knows (§5.3), first match wins."""
+def _reason(
+    member: Any, credential: Any, session: Any, episode: datetime | None, now: datetime
+) -> str:
+    """Why a stalled holder stopped, as far as the hub knows (§5.3), first match wins.
+    `episode` is the start of the session's not-listening episode in the member's project."""
     if credential.revoked_at is not None or session.ended_at is not None:
         return "session_ended"
     if member.limit_until is not None and member.limit_until > now:
         return "limit"
     if credential.paused_since is not None or member.paused_since is not None:
         return "paused"  # someone else's pause left it out already, so this one is its own
-    if session.not_listening_since is not None:
+    if episode is not None:
         return "not_listening"
     return "silent"
 
@@ -265,7 +302,9 @@ def away_of(conn: Connection, owner_id: str, now: datetime | None = None) -> lis
             reason=reason,
         )
         for row, _credential, session, cards, reason in holders
-        if long_enough(row.project_id, session.last_seen_at)
+        # counted from the latest call the stored time may stand for (§2.4, `seen`), so an
+        # instance that may still have called within the minute is not stalled early
+        if long_enough(row.project_id, latest_call(session.last_seen_at))
     ]
     taken = {a.key for a in stalled}
     listed = [
@@ -314,23 +353,27 @@ def withdraw_episode_requests(conn: Connection, owner_id: str) -> None:
     this one."""
     from maity_hub.routes.requests import withdraw_hub_notice
 
-    s = t.agent_session.c
+    # The episode, and its request, are per project of the session (`agent_session_project`).
+    s = t.agent_session_project.c
     held = conn.execute(
-        select(s.id, s.not_listening_request_id, t.membership.c.project_id)
+        select(s.session_id, s.membership_id, s.not_listening_request_id, t.membership.c.project_id)
         .join(t.membership, t.membership.c.id == s.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .where(t.agent_profile.c.owner_id == owner_id, s.not_listening_request_id.isnot(None))
-        .order_by(t.membership.c.project_id, s.id)
+        .order_by(t.membership.c.project_id, s.session_id)
     ).all()
     # The projects' locks first, as the episode's own check takes them (not_listening.check):
     # the request's withdrawal emits under that lock, so the other order could deadlock.
-    for project_id in sorted({row.project_id for row in held}):
-        lock_project(conn, project_id)
-    for session_id, request_id, _ in held:
+    lock_projects(conn, (row.project_id for row in held))
+    for session_id, membership_id, request_id, _ in held:
         withdraw_hub_notice(conn, request_id, "the owner's digest replaces it")
         conn.execute(
-            update(t.agent_session)
-            .where(s.id == session_id, s.not_listening_request_id == request_id)
+            update(t.agent_session_project)
+            .where(
+                s.session_id == session_id,
+                s.membership_id == membership_id,
+                s.not_listening_request_id == request_id,
+            )
             .values(not_listening_request_id=None)
         )
 
@@ -502,9 +545,17 @@ def _inbox(conn: Connection, owner_id: str, now: datetime | None) -> None:
 
 def reconcile(conn: Connection, owner_id: str, now: datetime | None = None) -> None:
     """Bring one owner's record and requests in line with their mode and their away
-    instances. The old per-episode requests go first, under their projects' locks; then the
-    owner's row is locked, the order every path takes (project, then human), so two passes
-    over the same owner run one after the other and the second sees what the first wrote."""
+    instances. The owner's account lock comes first, shared, as every write of the account
+    takes it (`write_guard.share`): the pass has no caller, and a deletion of the account takes
+    it exclusively before anything else, so the two run one after the other, and a deleted
+    owner is left alone. The old per-episode requests go next, under their projects' locks;
+    then the owner's row is locked, the order every path takes (project, then human), so two
+    passes over the same owner run one after the other and the second sees what the first
+    wrote."""
+    write_guard.share(conn, owner_id)
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == owner_id)).first()
+    if deleted is None or deleted.deleted_at is not None:
+        return
     withdraw_episode_requests(conn, owner_id)
     records.lock_human(conn, owner_id)
     mode = preferences.preferences(conn, owner_id)["not_listening"]["mode"]

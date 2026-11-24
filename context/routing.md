@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-29 in the team chat (paths like a forge, indexable public pages, alpha without legacy layers); the details are the contract owner's; contract `docs/api.md` §16.11, §16.7, §16.9, §6.25
+**Source:** the maintainer's decision of 2026-10-29 in the team chat (paths like a forge, indexable public pages, alpha without legacy layers); the maintainer's decision of 2026-11-07 (req-0d6vhrr0xqh8: a 404 for addresses that can never be a page), its boundary drawn in card tsk-85dc596aty5w; the details are the contract owner's; contract `docs/api.md` §16.11, §16.7, §16.9, §6.25
 **Revisit when:** Maity leaves alpha (from then on an address change needs the §1.6 rule of a stated period, not a removal); or the hub must render a dashboard page itself beyond the public pages; or a word the hub or the dashboard needs as a first segment is already held by a handle
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 **See:** scope.md#public-pages-are-static-html-public-by-default-and-the-instances-operator-must-allow-them — 2571d046-a270-4680-b50a-dc4e9ad60f19 — as of 2026-10-29
@@ -16,7 +16,8 @@ Every dashboard route is a path (`/<owner>/<slug>/board`, `/inbox`,
 The hub serves the app shell for every `GET` that is not one of its own
 paths (`/api/…`, `/assets/…`, `/mail/…`, `/badge/…`, the join, the
 legal pages, the files for search engines), unknown paths included,
-`no-cache` and `noindex`. A project's public page is served at
+`no-cache` and `noindex`; an address that can never be a page gets the
+same shell with `404` (below). A project's public page is served at
 `/<owner>/<slug>`, a person's or an organisation's at `/<handle>`: to a
 visitor without a session the static page where it is public, the app
 shell otherwise, never a status that tells whether the name exists;
@@ -30,6 +31,24 @@ webhook addresses, and the answers for one-segment project routes
 address is simply `not_found` or the app shell. The CLI's one-time read
 of `full_name` from `GET /me` for a state written before the namespace
 stays, because it needs no hub route.
+
+An address that can never be a page is told by its words alone: a
+first segment that is no handle by §6.24's syntax, a reserved first word
+that names no route (`components`, `health`, `imprint`), more than 6
+segments (the deepest route, `/<owner>/<slug>/team/<id>/sessions/<instance>`)
+outside a project's Why, a project's view word that is no view, and
+`/<handle>/agents` (§16.11 has the exact shapes, and splits the path at
+its slashes before it decodes a segment, as the dashboard does). The hub answers
+those `404` with the shell as the body, so that the dashboard still draws
+its "not found" and a crawler sees the status. The boundary leaks
+nothing because no lookup decides it: an address gets the same status
+whether or not any name in it exists, and a handle- or project-shaped
+address stays `200`. Words under the dashboard's own first words
+(`/inbox/x`, `/admin/x`) stay the shell with `200`: the hub does not
+route them, and the dashboard's sign-in leads on there
+(web/context/routing.md 4062e001). The Why view is no part of the depth
+rule, since a topic's file path goes into the address segment by
+segment.
 
 Aliases from a rename or a transfer (handles, §6.24; projects, §6.25)
 are not part of what is removed: they are a feature, not a transition —
@@ -75,6 +94,12 @@ a project or a person exists.
   served; without them mentions and links would break on each rename
   and a given-up name could be taken by someone posing as its former
   holder.
+- A `404` for every address under the dashboard's own first words that
+  names no view (`/inbox/x`, `/admin/x`, a tab under a view): the hub
+  would need the dashboard's whole route table, and the sign-in there
+  leads on from a mail's link (`/sign-in/code`, `/requests/<id>`).
+- One bound on the depth for every path: the Why view writes a topic's
+  file path into the address, whose depth no number bounds.
 
 ## Agents and people get pages of their own; `/invite` gathers a human's person invitations without a route of its own
 
@@ -105,3 +130,50 @@ segment, so the path costs nothing.
 - Keeping the invitation form on each Members page: the maintainer asked
   for one place.
 
+## "Where they run" is a project tab of its own at `placements`, the noun the contract uses, not the tab's words
+
+**Id:** b32bb82c-acdb-4e91-aa2a-4c257a6cc6b3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat (2026-11-11, card tsk-3s3eb6bsp15n: the section becomes a tab between Agents and Organisation); the coordinator's choice of the word the same day; contract `docs/api.md` §16.11, §15.6
+**See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-11
+**Revisit when:** a second view of placements needs the word, or the `/agents` tab is found slow for a human with many projects (then `GET /me/placements`, below)
+
+Re-checked 2026-11-12: the tab is now named "Managed agents" (web/context/views.md,
+79438329-b7bb-435a-b384-3f597a2d7d04) and the path stays `placements`. The reason below still holds: a path should name what the contract names.
+
+"Where they run", the list of where the project's agents run (§15.5–§15.7:
+the wanted and reported state, Stop, Restart, Logs, the start on a
+runner), moves from the bottom of the Agents page to a project tab of
+its own between Agents and Organisation, at `/<owner>/<slug>/placements`.
+Every member who reads the project sees it, as they saw the section;
+the actions on it stay as §15.6 grants them. `placements` joins the
+project views of §16.11 (`PROJECT_VIEWS`); as an API route word it was
+already no slug (§6.25).
+The global agents page `/agents` gets the same treatment (the maintainer,
+2026-11-11): "Where they run" at `/agents/placements` and "Maintenance
+notices", which was at its bottom, at `/agents/maintenance`, each a tab
+beside the list. §16.11 states that the hub never issues either word as
+an id, since ids are otherwise opaque; neither is a first segment, so no
+reserved word changes. The `/agents` "Where they run" tab reads
+`GET …/placements` (§15.6) in each project the human reads where one of
+their agents is a member, grouped by project, only when the tab is opened.
+
+**Reason:** the Team view moved to `team` so that the path says what
+the tab says (§16.11, 2026-11-10). "Where they run" is no path word, so
+that rule cannot be met word for word here. `placements` is the noun the
+contract (§15.6, `/projects/{owner}/{slug}/placements`), the CLI
+(`maity placement …`) and the code (`js/placements.js`, the `placement_*`
+events) already use for this list, so an address read from the API, a
+log or the CLI names the same thing.
+
+**Rejected alternatives:**
+- `running`, closer to the tab's words: too close to the project view
+  `runners` (the machines), easy to confuse in a link or a log.
+- Keeping the section on the Agents page: the maintainer asked for a tab.
+- `GET /me/placements` for the `/agents` tab, one call across projects:
+  a new route with its own rights and paging, where one read per project,
+  made only when the tab opens, gives the same list for the projects the
+  human reads (the coordinator's choice, 2026-11-11). Revisited if a human
+  with many projects finds it slow.

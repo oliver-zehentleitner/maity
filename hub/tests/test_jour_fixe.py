@@ -386,14 +386,37 @@ def test_minutes_online_count_working_calls_not_only_long_polls(
     with migrated.begin() as conn:
         member_of = dict(conn.execute(select(t.membership.c.agent_id, t.membership.c.id)).all())
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.membership_id == member_of[idle.id])
-            .values(last_seen_at=now[0] - timedelta(minutes=5))
+            update(t.credential)
+            .where(t.credential.c.id == idle.credential_id)
+            .values(last_used_at=now[0] - timedelta(minutes=5))
         )
         rounds.record_presence(conn, now[0])
         counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
     agents = {member_of[a.id] for a in (working, idle)}
     assert counted & agents == {member_of[working.id]}  # humans online count too (§20.2)
+
+
+def test_an_instance_that_called_within_the_minute_after_a_write_is_online_from_its_credential(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """The session's `last_seen_at` is written at most once a minute (§2.4); the minutes online
+    and the instance choice read each instance's latest call from its credential, written on
+    every call."""
+    agent = flow.agent(make_client, owner, role="admin")
+    start = now[0]
+    agent.resume()  # T: the session's last_seen_at
+    now[0] = start + timedelta(seconds=59)
+    assert agent.get("/me").status_code == 200  # T + 59: the session's last_seen_at stays
+    now[0] = start + timedelta(seconds=121)
+    with migrated.begin() as conn:
+        membership = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent.id)
+        ).scalar_one()
+        [instance] = rounds._instances(conn, [membership])[membership]
+        rounds.record_presence(conn, now[0])
+        counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
+    assert instance["last_seen_at"].replace(tzinfo=UTC) == start + timedelta(seconds=59)
+    assert membership in counted  # its latest call was 62 s ago
 
 
 def test_two_pods_counting_one_minute_both_commit(
@@ -455,6 +478,45 @@ def test_the_schedule_opens_skips_and_records_a_missed_slot(
         "hub_down",
         3,
     )
+
+
+def test_a_changed_schedule_opens_no_second_round_the_same_day(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§20.1: a change of the schedule rests until 20 hours after the last round it opened,
+    so moving the time cannot open round after round."""
+    lead, member = team(owner, make_client)
+    daily_utc = {**DAILY, "timezone": "UTC"}
+    sid = series_id(owner)
+    path = f"{BASE}/jour-fixe/series/{sid}"
+    owner.patch(path, {**daily_utc, "reason": "t"})
+    next_at = datetime.fromisoformat(owner.get(f"{BASE}/jour-fixe").json()["series"][0]["next_at"])
+    now[0] = next_at + timedelta(seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    with migrated.begin() as conn:
+        [first] = conn.execute(select(t.jour_fixe_round)).all()
+        conn.execute(update(t.jour_fixe_round).values(status="reported"))
+    assert first.status == "answering"
+    soon = (next_at + timedelta(hours=1)).strftime("%H:%M")
+    moved = owner.patch(path, {"time": soon, "reason": "again"})
+    assert moved.status_code == 200, moved.text
+    shown = datetime.fromisoformat(owner.get(f"{BASE}/jour-fixe").json()["series"][0]["next_at"])
+    assert shown == next_at + timedelta(days=1, hours=1)  # not within the rest
+    now[0] = next_at + timedelta(hours=1, seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    with migrated.connect() as conn:
+        assert len(conn.execute(select(t.jour_fixe_round)).all()) == 1
+    now[0] = next_at + timedelta(days=1, hours=1, seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.jour_fixe_round.c.status)).scalars().all()
+    assert sorted(rows) == ["answering", "reported"]  # the next day it opens again
 
 
 def test_an_archived_project_records_its_slot_as_project_closed(

@@ -11,11 +11,12 @@
       "areas": [
         "/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "last_seen_at": "2026-10-21T13:40:00Z",
       "presence": "online",
       "paused": null,
-      "joined_at": "2026-10-21T08:00:00Z"
+      "joined_at": "2026-10-21T08:00:00Z",
+      "placements": []
     },
     {
       "id": "agt-a",
@@ -34,7 +35,7 @@
       ],
       "capabilities": [
         "tag"
-      ],
+      ], "expert_for": null, "expert_sources": [],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
       "session": {
@@ -49,6 +50,7 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T07:55:00Z",
+      "placements": [],
       "briefing": null,
       "owner_preferences": false,
       "subagents": true,
@@ -78,7 +80,7 @@
       "areas": [
         "hub/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
       "session": {
@@ -93,6 +95,9 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T10:12:00Z",
+      "placements": [
+        { "id": "plc-0001", "instance": "wle2", "state": "running", "desired": "running", "runner_name": "home-laptop" }
+      ],
       "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3."
     },
     {
@@ -114,7 +119,7 @@
       "areas": [
         "cli/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Pi",
       "model": "claude-sonnet-5-5",
       "session": null,
@@ -126,6 +131,9 @@
         "by": "agt-c"
       },
       "joined_at": "2026-10-21T08:00:00Z",
+      "placements": [
+        { "id": "plc-0002", "instance": "k3pa", "state": "stopped", "desired": "stopped", "runner_name": "home-laptop" }
+      ],
       "briefing": null
     },
     {
@@ -142,7 +150,7 @@
       "areas": [
         "web/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "takes_over": { "member_id": "agt-c", "handle": "agent-c", "name": "maintainer/agent-c" },
       "handover": { "kind": "message", "id": 6001 },
       "harness": "Claude Code",
@@ -159,6 +167,9 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T13:00:00Z",
+      "placements": [
+        { "id": "plc-0003", "instance": null, "state": "failed", "desired": "running", "runner_name": "home-laptop" }
+      ],
       "briefing": null
     },
     {
@@ -173,14 +184,17 @@
       "trust": "member", "role": "reviewer",
       "reports_to": "agt-a",
       "areas": [],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Codex",
-      "model": "unknown",
+      "model": null,
       "session": null,
       "last_seen_at": "2026-10-20T18:30:00Z",
       "presence": "offline",
       "paused": null,
       "joined_at": "2026-10-21T08:00:00Z",
+      "placements": [
+        { "id": "plc-0004", "instance": null, "state": null, "desired": "running", "runner_name": "home-laptop" }
+      ],
       "briefing": null
     }
   ],

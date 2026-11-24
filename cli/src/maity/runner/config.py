@@ -21,18 +21,49 @@ from typing import Any
 from ..hub import HubError, hub_base
 
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
+# The configuration `maity runner install` writes (install.CONFIG): named when the default is
+# missing, never read in its place.
+SERVICE_PATH = Path("/etc/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
+DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
+DEFAULT_SKILLS_DIR = "~/.local/share/maity-runner/skills"
+# Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
+# domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
+# configuration, which in the `single` layout is the operator's (cli/context/runner.md).
+DEFAULT_GIT_NAME = "Maity agent"
+DEFAULT_GIT_EMAIL = "maity-agent@invalid"
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
-# Built but not offered: the maintainer decides on these when the runner goes into use.
-NOT_OFFERED_YET = ("opencode",)
-BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode", "pi": "pi",
-            "hermes": "hermes", "kimi": "kimi", "cline": "cline", "omp": "omp"}  # fmt: skip
+# Built but not offered yet: a harness named here is refused until the maintainer offers it.
+# Empty now -- both earlier entries were offered. Antigravity was held back while its one
+# command grant was unconfined; the owner accepted that residual risk (req-9spwe33neh1z) and it
+# is offered again, with OS-level confinement of command(maity) added incrementally
+# (tsk-zjv2xyhyggnm). OpenCode (Grok) is likewise offered now (req-g4d2cskx6zxv): it has no OS
+# sandbox the runner switches on, so its command rules are not a security boundary and an
+# opencode agent must be treated as able to run any command as the agents' OS user (give it a
+# separate OS user). The owner accepted that residual risk (req-kezp8rppfhn5, "ship now, harden
+# next"), with an OS-level sandbox the planned hardening (tsk-nynpvag9zvhh).
+NOT_OFFERED_YET: tuple[str, ...] = ()
+# Why a not-offered harness is held back, where there is a specific reason to name.
+NOT_OFFERED_WHY: dict[str, str] = {}
+BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",
+            "antigravity": "agy", "pi": "pi", "hermes": "hermes", "kimi": "kimi", "cline": "cline",
+            "omp": "omp"}  # fmt: skip
 MODES = ("interactive", "supervised")
+# The harnesses whose launch passes a placement's effort (adapters.py): Codex's
+# model_reasoning_effort, agy's --effort. Claude Code and opencode take none yet.
+EFFORT_HARNESSES = ("codex", "antigravity")
+# The hub's shape for an effort (§15.5), the whole string: `\Z`, not `$`, which also matches
+# before a trailing newline the hub refuses (A1994).
+EFFORT_PATTERN = re.compile(r"\A[a-z]{1,16}\Z")
+EFFORTS_MAX = 16  # the hub's bound on a harness's advertised efforts (HarnessOffer.efforts)
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # A project as the hub names it (§6.25): the namespace owner's handle and the slug.
 FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}/[a-z0-9][a-z0-9-]{1,62}$")
@@ -59,6 +90,17 @@ class Restart:
 
 
 @dataclass(frozen=True)
+class Watch:
+    """The runner's watch (`[limits.watch]`, docs/api.md §15.14, docs/runners.md): when it
+    looks at a quiet or never-joined placement, and how often it restarts one by itself."""
+
+    not_listening_grace_minutes: int = 15  # 1 to 1440
+    join_within_minutes: int = 10  # 1 to 120
+    auto_restarts: int = 1  # 0 to 3
+    retry_window_minutes: int = 120  # 10 to 1440
+
+
+@dataclass(frozen=True)
 class Limits:
     projects: tuple[str, ...]
     repositories: tuple[str, ...]
@@ -67,6 +109,7 @@ class Limits:
     restart: Restart = field(default_factory=Restart)
     log_keep_bytes: int = 10 * 1024 * 1024
     require_local_approval: bool = False
+    watch: Watch = field(default_factory=Watch)
 
 
 @dataclass(frozen=True)
@@ -107,17 +150,46 @@ class Harness:
     default_mode: str
     models: tuple[str, ...] = ()
     default_model: str | None = None
+    # The reasoning efforts a placement may name (§15.3); only for EFFORT_HARNESSES.
+    efforts: tuple[str, ...] = ()
     binary: str | None = None
-    require_sandbox: bool = False
+    # True: no start without the harness's sandbox. None (unset): Claude Code is refused when
+    # its sandbox tools are there but its version keeps the sandbox off. False: never refused
+    # for the sandbox (capabilities.sandbox_refused).
+    require_sandbox: bool | None = None
     env_file: Path | None = None
     stub_exit_code: int = 0
     stub_run_seconds: int = 30
+    # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
+    install: bool = False
+    update: str = "never"
+    # Which version the runner's update takes, for a harness with a sandbox-checked version
+    # (capabilities.CHECKED): "checked" at most that one, "newest" the vendor's newest. It also
+    # decides whether `check` warns about a newer version or only notes it (docs/runners.md).
+    track: str = "checked"
 
 
 @dataclass(frozen=True)
 class RepositoryGrant:
     allow: tuple[str, ...] = ()
     network: tuple[str, ...] = ()
+    # Agents open and read their pull requests through `maity gh` (cli/context/runner.md).
+    pull_requests: bool = False
+    # A placed lead (role `manager`, read from the hub per call) also merges, edits, readies
+    # and reads CI through `maity gh`; only together with `pull_requests` (cli/context/runner.md).
+    lead: bool = False
+    # `allow` entries for gh, which no session runs any more: left out of `allow`, named by
+    # `maity runner check`, never a reason to stop the runner or its other placements.
+    refused: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GitIdentity:
+    """The author and committer of every placed session's commits (`[git]`)."""
+
+    name: str = DEFAULT_GIT_NAME
+    email: str = DEFAULT_GIT_EMAIL
+    configured: bool = False  # `[git]` named one; else the default, which `check` warns about
 
 
 @dataclass(frozen=True)
@@ -131,6 +203,14 @@ class Config:
     harnesses: dict[str, Harness]
     repositories: dict[str, RepositoryGrant]
     ssh: Ssh | None = None
+    git: GitIdentity = GitIdentity()
+    maity_update: str = "never"  # `[maity] update` (§15.16)
+    # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
+    # sandboxed command may read, while a harness's sandbox runs the harness's own files.
+    tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
+    # The Keep the Why skill the runner delivers to its placements (§15.5, skills.py): beside
+    # state_dir for the same reason, a session reads it and writes nothing there.
+    skills_dir: Path = Path(DEFAULT_SKILLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -208,6 +288,11 @@ def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
 
 
+def _between(low: int, high: int) -> Callable[[Any], str | None]:
+    """An integer from `low` to `high`, both included."""
+    return lambda value: None if low <= value <= high else f"{low} to {high}"
+
+
 # A command allowed by a repository's grant: a program, then plain arguments, nothing else.
 # The program is a name or a path, never an assignment (`NAME=…`, `NAME+=…`), quoted, `env`
 # or maity (which runs outside the harness's sandbox and is granted on its own), whatever
@@ -251,6 +336,32 @@ def _names_maity(argument: str) -> bool:
     return any(_program_name(part) == "maity" for part in _ARGUMENT_PARTS.split(argument))
 
 
+# A name or an address git records as written: git drops `<` and `>` from a name and trims
+# its ends, so those are refused here instead of committed changed. Only what
+# `str.isprintable()` takes (the ASCII space included): no control character (C0, DEL, C1),
+# whose NUL cannot be passed in the session's environment at all and the rest would land in
+# every commit, and no format character, line or paragraph separator, other space, private
+# or unassigned code point either. That also refuses U+200C, which some names use; an
+# identity for agents does without it, and nothing invisible reaches a commit
+# (cli/context/runner.md). At most 200 characters.
+_GIT_NAME = re.compile(r"[^<>]{1,200}")
+_GIT_EMAIL = re.compile(r"[^<>\s@]+@[^<>\s@]+")
+
+
+def _git_name(value: Any) -> str | None:
+    if not _GIT_NAME.fullmatch(value) or value != value.strip() or not value.isprintable():
+        return ("a name of 1 to 200 printable characters (no control or format characters), "
+                "no < or >, no space at either end")  # fmt: skip
+    return None
+
+
+def _git_email(value: Any) -> str | None:
+    if len(value) > 200 or not _GIT_EMAIL.fullmatch(value) or not value.isprintable():
+        return ("an address like team@example.org: printable characters (no control or format "
+                "characters), one @, no spaces, < or >")  # fmt: skip
+    return None
+
+
 def _commands(values: Any) -> str | None:
     problem = _strings()(values)
     if problem is not None:
@@ -271,7 +382,8 @@ def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable
         if not all(isinstance(v, str) and v for v in values):
             return "expected a list of non-empty strings"
         if pattern is not None:
-            bad = [v for v in values if not pattern.match(v)]
+            # The whole value: `match` with `$` also takes one ending in a newline (A1994).
+            bad = [v for v in values if not pattern.fullmatch(v)]
             if bad:
                 return f"not {what}: {', '.join(repr(v) for v in bad)}"
         return None
@@ -284,13 +396,13 @@ def _projects(values: Any) -> str | None:
     bare `shop` would let every owner's `shop` run here."""
     if not all(isinstance(v, str) and v for v in values):
         return "expected a list of non-empty strings"
-    slugs = [v for v in values if SLUG.match(v)]
+    slugs = [v for v in values if SLUG.fullmatch(v)]
     if slugs:
         return (
             f"a project is named <owner>/<slug> now: write {', '.join(repr(v) for v in slugs)} "
             "with its owner's handle, e.g. 'oliver/maity'"
         )
-    bad = [v for v in values if not FULL_NAME.match(v)]
+    bad = [v for v in values if not FULL_NAME.fullmatch(v)]
     return f"not a project full name: {', '.join(repr(v) for v in bad)}" if bad else None
 
 
@@ -307,12 +419,29 @@ def _https_url(value: Any) -> str | None:
     return None
 
 
+def _missing(path: Path) -> str:
+    """Why `path` is no configuration. Where it is the default and the service of `maity runner
+    install` has its own, the message names that one: the service's commands read it only when
+    given, never in place of the default (cli/context/runner.md)."""
+    said = f"{path}: no such file; write it first (runner design §5.1)"
+    try:  # an /etc/maity-runner this user cannot search names nothing (review A2159 of #2125)
+        service = SERVICE_PATH.is_file()
+    except OSError:
+        service = False
+    if path == DEFAULT_PATH.expanduser() and service:
+        said += (
+            f"; the service of `maity runner install` reads {SERVICE_PATH}: pass "
+            f"--config {SERVICE_PATH}, as its user (sudo -u maity-runner -H)"
+        )
+    return said
+
+
 def load(path: Path) -> Config:
     """The configuration at `path`; ConfigError listing every problem otherwise."""
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ConfigError([f"{path}: no such file; write it first (runner design §5.1)"]) from None
+        raise ConfigError([_missing(path)]) from None
     except OSError as exc:
         raise ConfigError([f"{path}: cannot be read ({exc.strerror})"]) from None
     except tomllib.TOMLDecodeError as exc:
@@ -346,6 +475,26 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             quick_exit=restart_in.get("quick_exit", int, _RESTART.quick_exit, check=_positive),
         )
         restart_in.done()
+    watch = _WATCH
+    watch_in = limits_in.table("watch")
+    if watch_in is not None:
+        watch = Watch(
+            not_listening_grace_minutes=watch_in.get(
+                "not_listening_grace_minutes", int, _WATCH.not_listening_grace_minutes,
+                check=_between(1, 1440),
+            ),
+            join_within_minutes=watch_in.get(
+                "join_within_minutes", int, _WATCH.join_within_minutes, check=_between(1, 120)
+            ),
+            auto_restarts=watch_in.get(
+                "auto_restarts", int, _WATCH.auto_restarts, check=_between(0, 3)
+            ),
+            retry_window_minutes=watch_in.get(
+                "retry_window_minutes", int, _WATCH.retry_window_minutes,
+                check=_between(10, 1440),
+            ),
+        )  # fmt: skip
+        watch_in.done()
     limits = Limits(
         projects=tuple(projects),
         repositories=tuple(normalise_repository(r) for r in repositories),
@@ -356,6 +505,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             "log_keep_bytes", int, _LIMITS.log_keep_bytes, check=_positive
         ),
         require_local_approval=limits_in.get("require_local_approval", bool, False),
+        watch=watch,
     )
     limits_in.done()
 
@@ -377,7 +527,9 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             else state_dir
         )
         local = Local(
-            workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
+            workspaces=Path(
+                local_in.get("workspaces", str, DEFAULT_WORKSPACES, check=_no_glob)
+            ).expanduser(),
             tmux_socket=Path(
                 local_in.get("tmux_socket", str, str(agent_files / "tmux.sock"), check=_absolute)
             ).expanduser(),
@@ -419,24 +571,62 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
     if repos_in is not None:
         for name in list(repos_in.data):
             table = repos_in.table(name)
-            if not REPOSITORY.match(normalise_repository(name)) or name.endswith("*"):
+            if not REPOSITORY.fullmatch(normalise_repository(name)) or name.endswith("*"):
                 problems.append(f"repositories.{name}: expected host/owner/name")
                 continue
             if table is None:
                 continue
+            allow = tuple(table.get("allow", list, [], check=_commands))
+            gh = tuple(rule for rule in allow if _program_name(rule.split(" ")[0]) == "gh")
             grants[normalise_repository(name)] = RepositoryGrant(
-                allow=tuple(table.get("allow", list, [], check=_commands)),
+                allow=tuple(rule for rule in allow if rule not in gh),
                 network=tuple(table.get("network", list, [], check=_strings())),
+                pull_requests=table.get("pull_requests", bool, False),
+                lead=table.get("lead", bool, False),
+                refused=gh,
             )
             table.done()
+
+    git = GitIdentity()
+    git_in = root.table("git")
+    if git_in is not None:
+        git = GitIdentity(
+            name=git_in.get("name", str, DEFAULT_GIT_NAME, required=True, check=_git_name),
+            email=git_in.get("email", str, DEFAULT_GIT_EMAIL, required=True, check=_git_email),
+            configured=True,
+        )
+        git_in.done()
+
+    maity_update = "never"
+    maity_in = root.table("maity")
+    if maity_in is not None:
+        maity_update = maity_in.get("update", str, "never", check=_one_of("daily", "never"))
+        maity_in.done()
+
+    # §15.16 "Where": the runner manages tools on its local target only; on an ssh target it
+    # reports what it finds. Managed versions live in the runner user's own tools_dir, which
+    # the agents' own user in the agent_user layout cannot rely on (lotse 131453, not yet).
+    for name, harness in harnesses.items():
+        if not harness.install and harness.update == "never":
+            continue
+        if kind != "local":
+            problems.append(f"harness.{name}: install and update work on the local backend only")
+        elif local is not None and local.layout == "agent_user":
+            problems.append(
+                f"harness.{name}: install and update are not available in the agent_user "
+                "layout yet"
+            )
 
     root.done()
     if problems:
         raise ConfigError(problems)
-    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh)
+    return Config(
+        path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git, maity_update
+    )
 
 
 _RESTART = Restart()
+_WATCH = Watch()
 _LIMITS = Limits(projects=(), repositories=())
 
 
@@ -492,7 +682,7 @@ def repository_allowed(url: str, allowed: tuple[str, ...]) -> bool:
 def _repositories(values: Any) -> str | None:
     if not all(isinstance(v, str) and v for v in values):
         return "expected a list of non-empty strings"
-    bad = [v for v in values if not REPOSITORY.match(normalise_repository(v))]
+    bad = [v for v in values if not REPOSITORY.fullmatch(normalise_repository(v))]
     if bad:
         return "expected host/owner/name or host/owner/* (no other wildcard): " + ", ".join(
             repr(v) for v in bad
@@ -502,6 +692,32 @@ def _repositories(values: Any) -> str | None:
 
 def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
+
+
+# Characters Claude Code's permission matcher treats as wildcards (observed on 2.1.327; the set
+# the project's rules use throughout). The clone path, built under the workspaces root, is
+# embedded literally in a `Bash(git -C <clone> …)` allow rule (adapters.claude_settings); one of
+# these in the root would make that rule match more than the clone. The raw root string is
+# checked here as an early, friendly error, but the string that actually reaches a rule is the
+# resolved path: a root that is a symlink to a wildcard path, or a relative or `~` root, carries
+# no wildcard in its raw form yet resolves to one, so the resolved path is checked fail-closed at
+# the placement choke point (workspace.locate, workspace.scratch_of) through `rule_glob_chars`.
+# The ssh host's workspaces path is already confined by REMOTE_PATH, and the project and clone
+# tokens by TOKEN.
+_GLOB_CHARS = "*?[]"
+
+
+def rule_glob_chars(value: str) -> str:
+    """The characters of `value` that Claude Code's Bash permission matcher treats as
+    wildcards (`*`, `?`, `[`, `]`), sorted and space-separated; "" when there are none. The
+    raw workspaces-root check here and the resolved-path check at the placement choke point
+    share this one set, so the early error and the final fail-closed refusal cannot diverge."""
+    return " ".join(sorted({c for c in str(value) if c in _GLOB_CHARS}))
+
+
+def _no_glob(value: Any) -> str | None:
+    bad = rule_glob_chars(str(value))
+    return f"must not contain the character(s) {bad}" if bad else None
 
 
 def home_of(user: str) -> Path:
@@ -528,6 +744,8 @@ def unsupported(cfg: Config) -> list[str]:
     for harness in cfg.harnesses.values():
         if harness.env_file is not None:
             found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
+    if cfg.maity_update != "never":
+        found.append('maity.update is not carried out yet; remove it or set "never"')
     return found
 
 
@@ -584,7 +802,9 @@ def _port(value: Any) -> str | None:
 
 
 def _pattern(pattern: re.Pattern[str], what: str) -> Callable[[Any], str | None]:
-    return lambda v: None if pattern.match(v) and ".." not in v.split("/") else f"not {what}"
+    """The whole value must match: `match` with `$` also takes one ending in a newline, which
+    the hub's hello or an ssh command line then meets (tsk-3jzeck5m208a)."""
+    return lambda v: None if pattern.fullmatch(v) and ".." not in v.split("/") else f"not {what}"
 
 
 def _grace(value: Any) -> str | None:
@@ -599,9 +819,9 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
             "(runner design §6.3)"
         )
     elif name in NOT_OFFERED_YET:
-        problems.append(
-            f"{where}: not offered yet; for now the runner runs claude-code and codex (and stub)"
-        )
+        why = NOT_OFFERED_WHY.get(name)
+        reason = f": {why}" if why else ""
+        problems.append(f"{where}: not offered yet{reason}")
     modes = tuple(
         table.get(
             "modes",
@@ -619,16 +839,59 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     default_model = table.get("default_model", str, models[0] if models else None)
     if default_model is not None and default_model not in models:
         problems.append(f"{where}.default_model: must be one of its models")
+    efforts = tuple(
+        table.get("efforts", list, [], check=_strings(EFFORT_PATTERN, "an effort ([a-z]{1,16})"))
+    )
+    if efforts and name not in EFFORT_HARNESSES:
+        # Never advertise what the launch cannot pass: the hub would accept a placement the
+        # harness then runs on its default (tsk-0fr0xzy2ce95).
+        problems.append(f"{where}.efforts: the runner passes no effort to this harness")
+    if len(set(efforts)) != len(efforts):
+        problems.append(f"{where}.efforts: an effort is named twice")
+    if len(efforts) > EFFORTS_MAX:
+        # A hello the hub refuses stops the whole runner (serve exits 78), so the check refuses
+        # what the hub would (A1994).
+        problems.append(f"{where}.efforts: at most {EFFORTS_MAX}, the hub's bound")
     env_file = table.get("env_file", str, None)
+    install = table.get("install", bool, False)
+    update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    from maity.runner.capabilities import CHECKED
+
+    if name in CHECKED and not isinstance(table.data.get("track", ""), str):
+        # A Boolean, number, list or table names the choices too, not only "expected a string".
+        track = "checked"
+        table.used.add("track")
+        problems.append(f"{where}.track: expected a string, one of checked, newest")
+    elif name in CHECKED:
+        track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
+    else:  # one problem for any value: the key itself does not belong here
+        track = "checked"
+        table.used.add("track")
+        if "track" in table.data:
+            problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
+    if install or update != "never":
+        from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
+        from maity.runner.tools import INSTALLERS
+
+        if name not in INSTALLERS:
+            problems.append(
+                f"{where}: the runner has no installer for this harness; " "drop install and update"
+            )
+        if "binary" in table.data:
+            problems.append(f"{where}.binary: a tool the runner installs or updates is its own")
     harness = Harness(
         id=name,
         modes=modes,
         default_mode=default_mode,
         models=models,
         default_model=default_model,
+        efforts=efforts,
         binary=None if name == "stub" else table.get("binary", str, BINARIES.get(name)),
-        require_sandbox=table.get("require_sandbox", bool, False),
+        require_sandbox=table.get("require_sandbox", bool, None),
         env_file=Path(env_file).expanduser() if env_file else None,
+        install=install,
+        update=update,
+        track=track,
     )
     if name == "stub":
         return Harness(

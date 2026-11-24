@@ -38,8 +38,8 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = factory.human(migrated, "maintainer")
-    maity = factory.project(migrated, "maity", name="Maity")
-    sample = factory.project(migrated, "sample", name="Sample shop", state="review")
+    maity = factory.project(migrated, "maity", name="Maity", public_page="on")
+    sample = factory.project(migrated, "sample", name="Sample shop", state="review")  # private
     other = factory.project(migrated, "other")  # not a member: never listed or counted
     me_maity = factory.membership(migrated, maity, "owner", human_id=owner)
     factory.membership(migrated, sample, "proxy", human_id=owner)
@@ -55,7 +55,8 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     _request(migrated, maity, agent.membership_id, to_kind="owner", status="answered")
     _request(migrated, other, stranger.membership_id, to_kind="owner")
     _request(migrated, sample, agent.membership_id, to_kind="role", to_role="role:proxy")
-    _request(migrated, sample, agent.membership_id, to_kind="owner")  # the proxy is not owner
+    # Not the proxy's own, but it relays what is open and addressed to the owner (§2.3, §7).
+    _request(migrated, sample, agent.membership_id, to_kind="owner")
 
     client = make_client()
     factory.login_handle(client, "maintainer")
@@ -85,8 +86,10 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "links_visible": "private",
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
+        "experiment_notice_understood_at": None,  # not confirmed yet (§5.1)
         "limit": None,  # no limit declared (§6.12)
         "start_tabs": None,  # §5.1: every membership opens as a tab
+        "starred": [],  # §5.1 "Stars": no public project kept without a membership
     }
     assert body["projects"] == [
         {
@@ -99,6 +102,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "role": "coder",
             "logo": {"available": False, "etag": None},
             "open_requests": 3,
+            "public_page": "on",  # the project's own setting, for the tabs' lock (§5.1, §16.9)
         },
         {
             "id": sample,
@@ -109,7 +113,8 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "trust": "admin",
             "role": "proxy",
             "logo": {"available": False, "etag": None},
-            "open_requests": 1,
+            "open_requests": 2,  # role:proxy, and the one it relays for the owner
+            "public_page": "off",
         },
     ]
     assert factory.at(body["server_time"])

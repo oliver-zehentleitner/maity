@@ -4,13 +4,14 @@ as online and is a part of it, never added to it."""
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, landing_stats, moderation
+from maity_hub import clock, events, landing_stats, moderation
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -36,17 +37,26 @@ def sibling(
 ) -> None:
     """A further instance of `agent`'s team: called just now, put to rest, or revoked."""
     now = clock.now()
+    credential_id = f"crd-{agent.agent_id[-6:]}-{instance}"
     with engine.begin() as conn:
         conn.execute(
             insert(t.credential).values(
-                id=f"crd-{agent.agent_id[-6:]}-{instance}",
-                membership_id=agent.membership_id,
+                id=credential_id,
+                agent_id=agent.agent_id,
                 instance=instance,
                 verifier="0" * 64,
                 created_at=now,
                 last_used_at=now if seen else None,
-                dormant_since=now if dormant else None,
                 revoked_at=now if revoked else None,
+            )
+        )
+        conn.execute(
+            insert(t.instance_attachment).values(
+                credential_id=credential_id,
+                membership_id=agent.membership_id,
+                instance=instance,
+                attached_at=now,
+                dormant_since=now if dormant else None,
             )
         )
 
@@ -154,6 +164,25 @@ def test_the_landing_counts_instances_and_dormant_ones_as_online(
     assert found["agents_online"] == 3  # sub, leaf and the resting solo
 
 
+@pytest.mark.parametrize(("ago", "online"), [(121, 1), (180, 1), (181, 0)])
+def test_the_landing_counts_a_human_online_up_to_a_minute_past_the_stored_time(
+    setup: tuple[flow.Human, TestClient, str], migrated: Engine, ago: int, online: int
+) -> None:
+    """The stored `last_seen_at` may be up to a minute older than the latest call (§2.4)."""
+    owner, _, _ = setup
+    moment = clock.now()
+    clock.set_source(lambda: moment)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == owner.id)
+            .values(last_seen_at=moment - timedelta(seconds=ago))
+        )
+        landing_stats.reset()
+        found: dict[str, Any] = landing_stats.compute(conn)
+    assert found["people_online"] == online
+
+
 def test_the_resume_packet_carries_the_agents_own_manages(
     setup: tuple[flow.Human, TestClient, str], make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -176,7 +205,7 @@ def test_the_resume_packet_carries_the_agents_own_manages(
 def hold(engine: Engine, agent: factory.Agent, how: str) -> None:
     """Hold the agent's membership or instances the way `how` names (§6.2, §6.17, §16.8)."""
     now = clock.now()
-    with engine.begin() as conn:
+    with events.transaction(engine) as conn:  # a suspension says its revocations
         if how in ("isolated", "paused"):
             column = "isolated_since" if how == "isolated" else "paused_since"
             conn.execute(
@@ -186,8 +215,8 @@ def hold(engine: Engine, agent: factory.Agent, how: str) -> None:
             )
         elif how == "instances_paused":
             conn.execute(
-                update(t.credential)
-                .where(t.credential.c.membership_id == agent.membership_id)
+                update(t.instance_attachment)
+                .where(t.instance_attachment.c.membership_id == agent.membership_id)
                 .values(paused_since=now)
             )
         elif how == "suspended_by_moderation":  # the real path, which also ends its credentials
@@ -253,8 +282,8 @@ def test_a_paused_dormant_instance_is_not_online_beside_a_live_one(
     sibling(migrated, agent, "bbbb", dormant=True)
     with migrated.begin() as conn:
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.instance == "bbbb")
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.instance == "bbbb")
             .values(paused_since=clock.now())
         )
 

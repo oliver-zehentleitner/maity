@@ -7,12 +7,15 @@ database empties them together, and `nonce_epoch` says since when the nonces are
 request signed before that moment is refused (as a request signed before the process started
 is refused on the other databases, which keep the window in the process). The claim runs in the
 caller's transaction, the short one that authenticates and commits before the route runs
-(`deps._resolve`).
+(`deps._resolve`); a refusal later in that transaction rolls the claim back, and
+`deps.authenticated` claims the nonce again in a transaction of its own before it answers
+(`caller.keep_nonces_spent`), so a refused request keeps its nonce spent.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import cast
 
 from sqlalchemy import Connection, delete, func, select
 from sqlalchemy.dialects import postgresql
@@ -39,7 +42,7 @@ def epoch(conn: Connection) -> datetime:
     found = conn.execute(select(t.nonce_epoch.c.since).where(t.nonce_epoch.c.id == EPOCH_ID))
     since = found.scalar()
     if since is not None:
-        return since  # type: ignore[no-any-return]
+        return cast(datetime, since)
     # The database's clock, not the replica's: a replica whose clock runs behind could put the
     # boundary before nonces another replica spent just before the loss.
     conn.execute(
@@ -47,9 +50,12 @@ def epoch(conn: Connection) -> datetime:
         .values(id=EPOCH_ID, since=func.timezone("UTC", func.now()))
         .on_conflict_do_nothing()
     )
-    return conn.execute(  # type: ignore[no-any-return]
-        select(t.nonce_epoch.c.since).where(t.nonce_epoch.c.id == EPOCH_ID)
-    ).scalar_one()
+    return cast(
+        datetime,
+        conn.execute(
+            select(t.nonce_epoch.c.since).where(t.nonce_epoch.c.id == EPOCH_ID)
+        ).scalar_one(),
+    )
 
 
 def first_use(conn: Connection, credential_id: str, nonce: str) -> bool:

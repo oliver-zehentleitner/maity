@@ -28,6 +28,7 @@ READS = frozenset({"GET", "HEAD"})
 COMPRESSED = (f"/api/{API_VERSION}/", "/assets/")
 UNCOMPRESSED = (
     f"/api/{API_VERSION}/auth/",
+    f"/api/{API_VERSION}/bootstrap",  # its `session` part holds the CSRF token (§5.4)
     f"/api/{API_VERSION}/join/",
     f"/api/{API_VERSION}/invitations/",
 )

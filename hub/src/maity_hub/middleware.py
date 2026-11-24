@@ -3,7 +3,9 @@
 - the client address and scheme, from forwarded headers of trusted proxies only;
 - the body cap (64 KiB) and the credential filter over body and query string;
 - the headers every response carries: `Maity-Server-Time`, `Cache-Control:
-  no-store`, `X-Content-Type-Options: nosniff`, and a CSP on HTML.
+  no-store`, `X-Content-Type-Options: nosniff`, HSTS over TLS, and on HTML a CSP and the
+  framing, opener, referrer and permissions headers.
+  An API answer also carries the dashboard's version, `Maity-Web-Version`.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from urllib.parse import unquote_to_bytes
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import Response
@@ -37,12 +40,13 @@ from maity_hub import (
     paths,
     request_stats,
     route_limits,
+    shell,
 )
 from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, error_response, rate_limited
+from maity_hub.errors import ApiError, database_unavailable, error_response, rate_limited
 
 log = logging.getLogger(__name__)
 # The hub's own request log; the server's access log is off (§1.1).
@@ -71,7 +75,23 @@ _LANDING_PREVIEWS = (
     "/api/v1/admin/settings/legal/preview",
     f"{_AUTH_PAGES}/check",
 )
-CSP = "default-src 'self'"
+# The policy of every HTML document that brings none of its own: the app shell at every path
+# (§1.1, §16.11). `base-uri` is `'self'`, not `'none'`: the shell's own `<base href="/assets/">`
+# (shell.BASE) must keep working.
+CSP = (
+    "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+    "object-src 'none'"
+)
+# What every HTML document carries unless its route set the header itself (§1.1): no page of the
+# hub is ever framed, opens a window that keeps a handle on it, or needs these devices.
+HTML_HEADERS = (
+    (b"x-frame-options", b"DENY"),
+    (b"cross-origin-opener-policy", b"same-origin"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+)
+# With the default policy goes the dashboard's referrer rule; a page with a policy of its own
+# chooses its own (the landing and legal pages, the pages with a token in their path).
+DEFAULT_REFERRER = (b"referrer-policy", b"same-origin")
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
 # own answer that names it so, as `GET /people/{handle}` (§6.27).
@@ -97,18 +117,27 @@ PUBLIC_PATHS = re.compile(
 # once the picture stops being public.
 PUBLIC_AVATARS = re.compile(r"/api/v1/avatars/public/[^/]+")
 PUBLIC_AVATARS_CACHE = b"public, max-age=86400, s-maxage=60"
+# A member's picture asked for under its current digest (§6.10): that address never names
+# another picture, so the reader's browser keeps it for good; `private`, because the route
+# answers only a caller who may read it. Any other request keeps `private, no-cache`.
+AVATARS = re.compile(r"/api/v1/avatars/[^/]+")
+AVATARS_CACHE = b"private, max-age=31536000, immutable"
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # The landing page's own files (§16.7): a file asked for under its digest may be cached for good;
 # one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
 LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
+# The dashboard's files (§16.11) the same way: one asked for under its version may be cached for
+# good, any other answers `no-cache` (shell.AssetFiles decides, hub/context/serving.md).
+DASHBOARD_FILES = re.compile(r"/assets/(?:brand|css|js|vendor)/.+")
 
 
-# Not refused during a maintenance window (§16.12): health, the window's own routes, and the
-# sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
+# Not refused during a maintenance window (§16.12): health, the window's own routes, the
+# sign-in a signed-out admin needs to end it early, and `GET /bootstrap`, whose project parts
+# carry the refusal themselves (§5.4). Registration is refused like the rest.
 MAINTENANCE_OPEN = re.compile(
-    r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
+    r"/api/v1/(health|maintenance|bootstrap|admin/maintenance(/end|/changes)?"
     r"|auth/(login|logout|session|methods|pages/sign_in|email-link|email-code|second-factor/(verify|email)))"
     r"|/mail/sign-in/[^/]+"
 )
@@ -146,24 +175,64 @@ class HubMiddleware:
                 public = b"public, max-age=60"
             elif PUBLIC_AVATARS.fullmatch(path):
                 public = PUBLIC_AVATARS_CACHE
+            elif AVATARS.fullmatch(path):
+                public = AVATARS_CACHE  # only `routes.avatars.get_avatar` chooses it
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
-            elif LANDING_FILES.fullmatch(path):
+            elif LANDING_FILES.fullmatch(path) or DASHBOARD_FILES.fullmatch(path):
                 public = LANDING_FILES_CACHE
             elif self.settings.public_pages and not paths.is_hub_path(path):
                 # A public page may be cached; only the stored page's answer asks for it, the
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
-        send = _noting_refusal(_with_headers(send, public=public), scope["state"])
+        # HSTS only on an answer that went out over TLS (§2.5): a plain-HTTP hub at home never
+        # tells a browser to insist on a TLS it does not have.
+        hsts = (
+            f"max-age={self.settings.hsts_max_age}".encode()
+            if origin.tls and self.settings.hsts_max_age
+            else None
+        )
+        # Every API answer (§1.1); on the join host only the exchange, which answers as
+        # `POST /api/v1/join/{token}` does, never the redirects and `404`s there.
+        if (
+            join_host.TOKEN_PATH.match(path) is not None and scope.get("method") == "POST"
+            if on_join_host
+            else path.startswith("/api/v1/")
+        ):
+            kept = shell.kept_web_version(self.settings.web_dir)
+            # The walk over the files reads the disk: off the event loop.
+            web = (
+                await run_in_threadpool(shell.web_version, self.settings.web_dir)
+                if kept is shell.STALE
+                else kept if isinstance(kept, str) else None
+            )
+        else:
+            web = None
+        send = _noting_refusal(
+            _with_headers(send, public=public, hsts=hsts, web=web), scope["state"]
+        )
+
+        raw_query: bytes = scope.get("query_string", b"")
+        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too. It needs no
+        # body, so it answers before every other answer here (a maintenance window, a route
+        # limit, the forge webhook, an unknown path, a body over its cap): a credential leaked
+        # in the query is revoked whoever sends it, wherever to. The body is not read.
+        in_query = credentials.find_all(raw_query) + credentials.find_all(
+            unquote_to_bytes(raw_query)
+        )
+        if in_query:
+            await self._leaked(in_query, scope, receive, send)
+            return
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
 
         table = getattr(getattr(scope.get("app"), "state", None), "route_limits", None)
         if table:
-            # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), before any
-            # other work: no body is read, no caller looked up.
-            wait = route_limits.wait(scope, table, origin.address)
+            # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), after the
+            # query's credential filter and before any other work: no body is read, no
+            # caller looked up.
+            wait = route_limits.wait(scope, table, origin.limit_key)
             if wait:
                 refused = rate_limited(wait)
                 await error_response(
@@ -179,6 +248,11 @@ class HubMiddleware:
                 status = await forge_webhook.handle(
                     scope, receive, send, self.engine, self.settings.secret_key
                 )
+            except PoolTimeout:
+                # A used-up pool is load: the retryable 503 of any other call (§1.3).
+                log.error("database unavailable: no pooled connection was free in time")
+                status = 503
+                await database_unavailable()(scope, receive, send)
             except Exception:
                 # In the envelope like any other route (§1.3); the body is not logged.
                 log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
@@ -198,20 +272,11 @@ class HubMiddleware:
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
             return
-        raw_query: bytes = scope.get("query_string", b"")
-        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
-        in_query = credentials.find_all(raw_query) + credentials.find_all(
-            unquote_to_bytes(raw_query)
-        )
         if cap > BODY_CAP:
             # A body above the default cap (an attachment, an image, the landing, legal and
             # sign-in pages' settings and their previews) is read only for a caller the
             # headers may authenticate (§1.7, §8.7). Every one of these routes takes a caller.
-            if in_query:
-                # The filter answers before the pre-check, so a credential leaked in the
-                # query is revoked whoever sends it (§2.2); the body is not read.
-                await self._leaked(in_query, scope, receive, send)
-                return
+            # The query was checked above, before this pre-check (§2.2).
             refusal = await self._precheck(scope)
             if refusal is not None:
                 await refusal(scope, receive, send)
@@ -227,7 +292,7 @@ class HubMiddleware:
             return  # or the client went away
         body = read
 
-        found = credentials.find_all(body) + in_query
+        found = credentials.find_all(body)
         if found:
             await self._leaked(found, scope, receive, send)
             return
@@ -284,6 +349,7 @@ class HubMiddleware:
         facts = caller.RequestFacts(
             method=scope.get("method", ""),
             raw_path=scope.get("raw_path") or scope.get("path", "").encode(),
+            path=scope.get("path", ""),
             raw_query=scope.get("query_string", b""),
             headers={k.lower(): v for k, v in request.headers.items()},
             cookies=dict(request.cookies),
@@ -305,6 +371,10 @@ class HubMiddleware:
             )
         except (OperationalError, InterfaceError):
             return None
+        except PoolTimeout:
+            # Not handed on to the route: it would wait the pool's timeout a second time.
+            log.error("database unavailable: no pooled connection was free in time")
+            return database_unavailable()
         return None
 
     async def _maintenance_refused(
@@ -323,6 +393,12 @@ class HubMiddleware:
             found = await run_in_threadpool(maintenance.window_now, self.engine)
         except (OperationalError, InterfaceError):
             return False  # the database's own answer follows on the route
+        except PoolTimeout:
+            # Answered here: the route would wait the pool's timeout a second time (§1.3).
+            log.error("database unavailable: no pooled connection was free in time")
+            await database_unavailable()(scope, receive, send)
+            _access(scope, 503)
+            return True
         if found is None or found["state"] != "running":
             return False
         headers = {"Retry-After": str(maintenance.retry_after(found))}
@@ -336,7 +412,16 @@ class HubMiddleware:
 
             response = Response(status_code=503, headers=headers)
         else:
-            response = maintenance.refusal_page(found)
+            # The frame as last read, never read in this request: the 503 must not wait for the
+            # database (§16.12). The small page while none is kept, and on the join host, which
+            # serves none of the frame's stylesheets (§1.1).
+            frame = (
+                None
+                if scope["state"].get("on_join_host")
+                else maintenance.cached_frame(self.engine)
+            )
+            accept = Request(scope).headers.get("accept-language")
+            response = maintenance.refusal_page(found, frame, accept)
         await response(scope, receive, send)
         _access(scope, 503)
         return True
@@ -346,7 +431,7 @@ class HubMiddleware:
     ) -> None:
         # Refused all the same when the database is down; a verified leak is
         # revoked on its next sighting.
-        with contextlib.suppress(OperationalError, InterfaceError):
+        with contextlib.suppress(OperationalError, InterfaceError, PoolTimeout):
             await run_in_threadpool(self._revoke, found)
         response = error_response(
             400,
@@ -369,8 +454,8 @@ _TOKEN_PATHS = (
     re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
     re.compile(r"^(/api/v1/invitations/)[^/]+"),  # the invitation's token (§3.4)
     re.compile(
-        r"^(/mail/(?:verify|unsubscribe|register|second-factor-reset|account-deletion|sign-in)/)"
-        r"[^/]+"
+        r"^(/mail/(?:verify|unsubscribe|register|second-factor-reset|second-factor-unlock"
+        r"|account-deletion|sign-in)/)[^/]+"
     ),  # §18.6
 )
 
@@ -552,8 +637,12 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     _access(scope, 400)
 
 
-def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
-    """`public` is the one caching a successful answer of this path may choose."""
+def _with_headers(
+    send: Send, *, public: bytes | None = None, hsts: bytes | None = None, web: str | None = None
+) -> Send:
+    """`public` is the one caching a successful answer of this path may choose; `hsts` the
+    `Strict-Transport-Security` value of a request that arrived over TLS (§2.5), or None;
+    `web` the dashboard's version an API answer carries as `Maity-Web-Version` (§1.1)."""
 
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
@@ -574,14 +663,29 @@ def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
                 (b"cache-control", cache),
                 (b"x-content-type-options", b"nosniff"),
             ]
-            if content_type.startswith(b"text/html") and not any(
-                k.lower() == b"content-security-policy" for k, _ in headers
-            ):  # the landing and legal pages bring a stricter one of their own (§16.7)
-                headers.append((b"content-security-policy", CSP.encode()))
+            if hsts is not None:
+                headers.append((b"strict-transport-security", hsts))
+            if web is not None:
+                headers.append((b"maity-web-version", web.encode()))
+            if content_type.startswith(b"text/html"):
+                named = {k.lower() for k, _ in headers}
+                extra = [h for h in HTML_HEADERS if h[0] not in named]
+                if b"content-security-policy" not in named:
+                    # the landing and legal pages bring a stricter one of their own (§16.7)
+                    extra.append((b"content-security-policy", CSP.encode()))
+                    if b"referrer-policy" not in named:
+                        extra.append(DEFAULT_REFERRER)
+                headers += extra
             message["headers"] = headers
         await send(message)
 
     return wrapped
 
 
-_SET = {b"maity-server-time", b"cache-control", b"x-content-type-options"}
+_SET = {
+    b"maity-server-time",
+    b"cache-control",
+    b"x-content-type-options",
+    b"strict-transport-security",
+    b"maity-web-version",
+}

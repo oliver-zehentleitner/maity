@@ -5,9 +5,14 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
+  // An <img> h() gave an on* handler. Listeners cannot be compared, so
+  // keepImages never swaps one of these for an older node (context/rendering.md).
+  const handledImgs = new WeakSet();
+
   // h("div", {class: "card", onclick: fn}, child, "text", [more])
   function h(tag, attrs) {
     const el = document.createElement(tag);
+    let handled = false;
     if (attrs) {
       for (const [key, value] of Object.entries(attrs)) {
         if (value === null || value === undefined || value === false) continue;
@@ -15,6 +20,7 @@ window.Maity = window.Maity || {};
           // Handlers are functions; a string here would be inline script.
           if (typeof value !== "function") throw new TypeError("h(): " + key + " must be a function");
           el.addEventListener(key.slice(2), value);
+          handled = true;
         } else if (key === "href" && M.route.isRoute(value)) {
           // A path of the dashboard, as the address bar holds it (js/route.js).
           el.setAttribute("href", M.route.href(value));
@@ -38,6 +44,7 @@ window.Maity = window.Maity || {};
         }
       }
     }
+    if (handled && String(tag).toLowerCase() === "img") handledImgs.add(el);
     for (let i = 2; i < arguments.length; i++) append(el, arguments[i]);
     return el;
   }
@@ -63,8 +70,14 @@ window.Maity = window.Maity || {};
   // A relative file of the dashboard (brand/…) is local. No anchor and no
   // bare query: under the shell's <base href="/assets/"> (§16.11) they would
   // lead into /assets/. A route is a path (js/route.js), never a fragment.
+  // A file of the dashboard's own, by its relative name, as the shell names it under its version
+  // (`?v=` and 16 hex digits, js/assets.js) or without one; nothing else after the name.
   function isLocalRef(value) {
-    return typeof value === "string" && /^[a-z0-9_-]+\/[a-z0-9_./-]+$/i.test(value) && !/^[a-z]+:/i.test(value);
+    if (typeof value !== "string") return false;
+    const cut = value.indexOf("?");
+    const name = cut < 0 ? value : value.slice(0, cut);
+    if (cut >= 0 && !/^\?v=[0-9a-f]{16}$/.test(value.slice(cut))) return false;
+    return /^[a-z0-9_-]+\/[a-z0-9_./-]+$/i.test(name) && !/^[a-z]+:/i.test(name);
   }
 
   // An image the page itself points at: a project's logo or banner on the
@@ -107,9 +120,88 @@ window.Maity = window.Maity || {};
     return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
+  // Every child gone in one change (tsk-3b2t7hwc352s: the board's columns emptied one removeChild
+  // at a time).
   function clear(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
+    el.replaceChildren();
     return el;
+  }
+
+  // Whether two trees draw the same: the same elements with the same attributes and the same text,
+  // in the same order. Listeners and properties (a value typed, a box ticked) are not compared, so
+  // only the caller knows whether the older tree's listeners still act on the right data. loose(name,
+  // a, b), where given, says that two different values of an attribute count as the same (an id
+  // made up anew for every draw). A view keeps the older tree where it would draw the same, and the
+  // browser has nothing to lay out or style again (tsk-3b2t7hwc352s). A missing tree (null or
+  // undefined) is never the same as any, another missing one included: there is nothing to keep.
+  // Nodes of different kinds (an element, text, a comment) are never the same, whatever their text.
+  function sameTree(a, b, loose) {
+    if (a == null || b == null) return false;
+    if (a.nodeType !== b.nodeType) return false;
+    if (a.nodeType !== 1) return a.textContent === b.textContent; // text, a comment: no element
+    if (a.tagName !== b.tagName || !sameAttrs(a, b, null, loose)) return false;
+    const ac = a.childNodes;
+    const bc = b.childNodes;
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) if (!sameTree(ac[i], bc[i], loose)) return false;
+    return true;
+  }
+
+  // Every <img> under root, the root itself included, in document order.
+  function imgsIn(root) {
+    const out = [];
+    if (!root || !root.querySelectorAll) return out;
+    if (root.tagName === "IMG") out.push(root);
+    const found = root.querySelectorAll("img");
+    for (let i = 0; i < found.length; i++) out.push(found[i]);
+    return out;
+  }
+
+  // Whether two elements have the same attributes, the one named `skip` left out of both (keepImages:
+  // src). loose(name, a, b), where given, says that two different values count as the same (sameTree).
+  function sameAttrs(a, b, skip, loose) {
+    const an = a.getAttributeNames().filter((name) => name !== skip);
+    const bn = b.getAttributeNames().filter((name) => name !== skip);
+    if (an.length !== bn.length) return false;
+    for (let i = 0; i < an.length; i++) {
+      const av = a.getAttribute(an[i]);
+      const bv = b.getAttribute(an[i]);
+      if (av !== bv && !(loose && bv != null && loose(an[i], av, bv))) return false;
+    }
+    return true;
+  }
+
+  // Before a fresh tree replaces an old one: where an <img> in the fresh
+  // tree has the same src and the same other attributes as one in the old,
+  // in document order, put that old node in its place. Each old node is
+  // used once. The browser then keeps the load it already started instead
+  // of aborting it and starting again. An <img> h() gave an on* handler is
+  // never swapped: listeners cannot be compared.
+  function keepImages(oldRoot, freshRoot) {
+    if (!oldRoot || !freshRoot || oldRoot === freshRoot) return freshRoot;
+    const oldImgs = imgsIn(oldRoot);
+    const used = new Set();
+    const freshImgs = imgsIn(freshRoot);
+    for (let i = 0; i < freshImgs.length; i++) {
+      const fresh = freshImgs[i];
+      if (handledImgs.has(fresh)) continue;
+      const src = fresh.getAttribute("src");
+      if (!src) continue;
+      let old = null;
+      for (let k = 0; k < oldImgs.length; k++) {
+        const candidate = oldImgs[k];
+        if (used.has(candidate) || handledImgs.has(candidate)) continue;
+        // Every attribute other than src: a different alt, class, width or anything else means a
+        // different image, and the fresh node stays.
+        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh, "src")) continue;
+        old = candidate;
+        break;
+      }
+      if (!old || old === fresh) continue;
+      used.add(old);
+      if (fresh.parentNode) fresh.parentNode.replaceChild(old, fresh);
+    }
+    return freshRoot;
   }
 
   // A date and time in the reader's locale, through Intl (js/i18n.js).
@@ -311,7 +403,8 @@ window.Maity = window.Maity || {};
     const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
     // Without a handle (a reference read across projects carries none) the
     // name stands before the #id: the instance is said all the same.
-    const linkable = !!m && !ctx.outsider && typeof ctx.link === "function";
+    // A member's page opens for a member and for an outsider in the dashed tab, not read along (/observe).
+    const linkable = !!m && opensViews(ctx) && typeof ctx.link === "function";
     const suffix = inst && agent
       ? (linkable
         ? h("a", { class: "member-instance muted", href: instanceHref(ctx, id, inst.id), title: instanceTitle(inst) }, "#" + inst.id)
@@ -322,12 +415,15 @@ window.Maity = window.Maity || {};
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
     const ref = !linkable
       ? h("span", { class: "member-ref plain", title: name }, pic, label)
-      : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+      : h("a", { class: "member-ref", href: ctx.link("team", id), title: name, "data-member": id }, pic, label);
     // The #id is a link of its own beside the handle's, never inside it.
     return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
+  // Whether the project's views open for this reader (js/trust.js `opensViews`), so a name links
+  // into them; where trust.js is not loaded, a reader from outside gets no link, as before.
+  const opensViews = (ctx) => (M.trust ? M.trust.opensViews(ctx) : !ctx.outsider);
   // Where an instance's #id leads: its member's page, Sessions, with it chosen.
-  const instanceHref = (ctx, memberId, instanceId) => ctx.link("members", memberId, "sessions", instanceId);
+  const instanceHref = (ctx, memberId, instanceId) => ctx.link("team", memberId, "sessions", instanceId);
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
   function instanceOf(x) {
     const src = typeof x === "string" ? { instance: x } : x;
@@ -353,16 +449,20 @@ window.Maity = window.Maity || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = (id && ctx.memberById && ctx.memberById[id]) || (typeof who === "object" ? who : null) || { id };
     const handle = handleOf(ctx, m) || m.handle || id;
-    const presence = m.presence || "offline";
-    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind, Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence].filter(Boolean).join(" · ");
+    // An outsider reads no presence (§2.3): where none came, no dot and no presence word, never
+    // "offline" (a read-along's own agents, /observe, still carry theirs).
+    const outside = M.trust ? M.trust.outsider(ctx) : !!ctx.outsider;
+    const presence = m.presence || (outside ? null : "offline");
+    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind,
+      presence ? (Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence) : null].filter(Boolean).join(" · ");
     const face = [
       h("span", { class: "chip-avatar " + (m.kind === "agent" ? "agent" : "human") }, M.avatar ? M.avatar(m, 22) : null,
-        h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
+        presence ? h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" }) : null),
       h("span", { class: "chip-handle" }, "@" + handle),
     ];
-    const linkable = ctx.memberById && ctx.memberById[id] && !ctx.outsider && typeof ctx.link === "function";
+    const linkable = ctx.memberById && ctx.memberById[id] && opensViews(ctx) && typeof ctx.link === "function";
     return linkable
-      ? h("a", { class: "member-chip", href: ctx.link("members", id), title: said, "aria-label": said, "data-member": id }, face)
+      ? h("a", { class: "member-chip", href: ctx.link("team", id), title: said, "aria-label": said, "data-member": id }, face)
       : h("span", { class: "member-chip plain", title: said }, face);
   }
 
@@ -407,9 +507,12 @@ window.Maity = window.Maity || {};
   const managesText = (manages, half) => {
     const c = manages && manages[half];
     if (!c || !c.members) return null;
-    const live = [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ");
-    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
+    // An outsider's `manages` holds `members` and `instances` alone (§2.3, routes/members.py
+    // OUTSIDE_COUNT_KEYS): no "(… online)" then, rather than a count the hub did not send.
+    const live = typeof c.online === "number"
+      ? " (" + [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ") + ")" : "";
+    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + live : null].filter(Boolean).join(" · ");
   };
 
-  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, sameTree, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

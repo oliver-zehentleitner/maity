@@ -1,6 +1,6 @@
 """Notification mail (docs/api.md §18.4, §18.5): which items a human gets by mail, when,
-and what the mail says. The kinds are `inbox`, `chat` and `mention`; `security` is a mail
-of its own for a new sign-in.
+and what the mail says. The kinds are `inbox`, `chat`, `mention` and `invitation`; `security`
+is a mail of its own for a new sign-in.
 
 Per kind the human chose `immediate` (within about two minutes, every item that fell due
 in that window in one mail, at most ten such mails an hour), `hourly` (at the full hour),
@@ -13,14 +13,13 @@ human put security in one (context/notifications.md da12f2b5).
 
 A mail carries only the hub's own links. Every text the hub did not write is quoted as
 plain text, an agent's marked as such, and anything a mail client could turn into a
-link is defanged.
+link is defanged (`maity_hub.mail.text`).
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 import threading
 from datetime import UTC, datetime, time, timedelta, tzinfo
 from typing import Any
@@ -31,11 +30,15 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import catalog, clock, worker_runs
 from maity_hub import tables as t
+from maity_hub.auth import second_factor
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
-from maity_hub.notifications import items, listing, preferences, records
+from maity_hub.mail.text import defang, quoted, subject_line
+from maity_hub.notifications import items, listing, preferences, presence, records, retention
 from maity_hub.notifications.items import Item
+from maity_hub.plain_text import plain_line
+from maity_hub.text_language import text_language
 
 log = logging.getLogger(__name__)
 
@@ -43,9 +46,8 @@ INTERVAL = 60.0  # seconds between passes
 WINDOW = timedelta(minutes=2)  # the immediate batching window (§18.5)
 IMMEDIATE_PER_HOUR = 10
 DIGEST_MAX = 50
-SUBJECT_MAX = 120
 CONTENT_MAX = 500
-MAILED_KINDS = ("inbox", "chat", "mention")
+MAILED_KINDS = ("inbox", "chat", "mention", "invitation")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
 # The alert of a new sign-in: a security mail of its own while `security` is immediate, an
@@ -53,51 +55,8 @@ NEVER_MAILED = ("registration_pending", "mail_disabled")
 SIGN_IN_ALERT = records.SIGN_IN
 # A takeover under way: a security mail of its own at once, whatever the mode, never held
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
-AT_ONCE = ("second_factor_changed", "second_factor_failed")
-
-
-_SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
-_WORD = re.compile(r"\w")
-_DOT = re.compile(r"(?<=[A-Za-z0-9-])\.(?=[A-Za-z])")
-
-
-def _schemes(text: str) -> str:
-    """`scheme://` as `scheme[:]//`: a letter at a word's start, then letters, digits, `+`,
-    `.` or `-` up to the `:`. Each `://` looks back over its own run only, so the work grows
-    with the text's length; the pattern it replaces tried every word start of a long run."""
-    out = []
-    last = 0
-    at = text.find("://")
-    while at >= 0:
-        start = at
-        while start > last and text[start - 1] in _SCHEME_CHARS:
-            start -= 1
-        # The leftmost letter at a word boundary: the run's first character after a
-        # character that is no word character, or one after a `+`, `.` or `-`.
-        boundary = (start == 0 or not _WORD.match(text[start - 1])) and start < at
-        found = start < at and text[start].isascii() and text[start].isalpha() and boundary
-        found = found or any(
-            text[i - 1] in "+.-" and text[i].isascii() and text[i].isalpha()
-            for i in range(start + 1, at)
-        )
-        if found:
-            out.append(text[last:at])
-            out.append("[:]")
-            last = at + 1
-        at = text.find("://", at + 1)
-    out.append(text[last:])
-    return "".join(out)
-
-
-def defang(text: str) -> str:
-    """No mail client turns this into a link: `https[:]//`, `example[.]org`,
-    `www[.]x`, `me@example[.]org` (§18.5)."""
-    return _DOT.sub("[.]", _schemes(text))
-
-
-def quoted(text: str) -> str:
-    """Text the hub did not write, as plain quoted text on one line."""
-    return '"' + defang(" ".join(text.split())) + '"'
+AT_ONCE = ("second_factor_changed", "second_factor_failed", "password_reset", "password_changed")
+PASSWORD = ("password_reset", "password_changed")
 
 
 def key(item: Item) -> str:
@@ -127,20 +86,26 @@ def run(
             ).scalars()
         )
     budget = int(resolved.value("max_per_hour"))
+    grace = timedelta(minutes=int(resolved.value("online_grace_minutes")))
     queued = 0
     for human_id in humans:
         if stop is not None and stop.is_set():
             break
         try:
             with engine.begin() as conn:
-                queued += for_human(conn, human_id, env.signing_key, public_url, budget)
+                queued += for_human(conn, human_id, env.signing_key, public_url, budget, grace)
         except Exception:  # one human's failure must not stop the others
             log.exception("notification mail for %s failed", human_id)
     return queued
 
 
 def for_human(
-    conn: Connection, human_id: str, signing_key: bytes, public_url: str, budget: int = 500
+    conn: Connection,
+    human_id: str,
+    signing_key: bytes,
+    public_url: str,
+    budget: int = 500,
+    grace: timedelta = timedelta(minutes=5),
 ) -> int:
     """One human's pass. It holds the human's settings row (`FOR UPDATE`) to its end, so
     a second process passing over the same human waits, then finds what the first one
@@ -155,7 +120,7 @@ def for_human(
     state = _state(conn, human_id)
     # The settings, with the language this mail is in (§6.2).
     email = preferences.preferences(conn, human_id)["email"]
-    prefs = {**email, "language": preferences.text_language(conn, human_id)}
+    prefs = {**email, "language": text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
@@ -168,9 +133,14 @@ def for_human(
     now = clock.now()
     local = now.astimezone(zone)
     where = items.scope(conn, human_id, public_url)
+    # What was mailed within the age of the oldest item `derive` can give (`retention`): an
+    # older row names no item that could come again.
     sent = set(
         conn.execute(
-            select(t.mail_item_sent.c.item).where(t.mail_item_sent.c.human_id == human_id)
+            select(t.mail_item_sent.c.item).where(
+                t.mail_item_sent.c.human_id == human_id,
+                t.mail_item_sent.c.mailed_at >= now - retention.SENT_KEPT,
+            )
         ).scalars()
     )
     since = row.verified_at
@@ -187,8 +157,10 @@ def for_human(
     queued = 0
     # Security mails of their own; quiet hours do not hold them (§2.6.5, §18.4).
     for item in pending:
-        if item.record_type in AT_ONCE:
-            _two_factor_mail(conn, row, item, prefs, public_url, local)
+        if item.record_type in PASSWORD:
+            _password_mail(conn, row, item, prefs, public_url, local)
+        elif item.record_type in AT_ONCE:
+            _two_factor_mail(conn, row, item, prefs, signing_key, public_url, local)
         elif item.record_type == SIGN_IN_ALERT and modes.get("security") == "immediate":
             _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
         else:
@@ -205,20 +177,37 @@ def for_human(
     if _quiet(prefs.get("quiet_hours"), local):
         _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes))
         return queued
+    # Held while present (§18.5): the immediate items wait while the human is in the web app
+    # and for the grace after; the mail of a suspension (`urgent`) never does. A held item
+    # stays in `mailable`, so `waiting` keeps the passes coming until the hold ends.
+    present = bool(prefs.get("hold_while_online", True)) and presence.held(
+        conn, human_id, now, grace
+    )
+
+    def held(item: Item) -> bool:
+        return present and not item.urgent and _mode(item, modes) == "immediate"
+
     # What falls due in this pass goes out as one mail, so a pass sends at most one per
     # human and the instance's budget is checked right before that one send.
     due: list[Item] = []
     clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
-        due = [i for i in mailable if _mode(i, modes) != "off"]
+        due = [i for i in mailable if _mode(i, modes) != "off" and not held(i)]
         clocks = {"hourly_at": now, "daily_at": now, "weekly_at": now}
     else:
-        immediate = [i for i in mailable if _mode(i, modes) == "immediate"]
+        immediate = [i for i in mailable if _mode(i, modes) == "immediate" and not held(i)]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
+        hour = now.replace(minute=0, second=0, microsecond=0)
         if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
             due += immediate
             immediate = []
-        hour = now.replace(minute=0, second=0, microsecond=0)
+        elif capped:
+            # A capped item from an hour that ended while the human was present missed that
+            # hour's mail: it goes with the first pass after the grace, as the hour's mail
+            # would have, not at a later hour's end (§18.5, "Held while present").
+            late = [i for i in immediate if i.at < hour]
+            due += late
+            immediate = [i for i in immediate if i.at >= hour]
         if state.hourly_at is None:
             clocks["hourly_at"] = hour
         elif state.hourly_at < hour:
@@ -255,7 +244,7 @@ def for_human(
             )
             return queued
         unique = list({key(i): i for i in due}.values())
-        queued += _send(conn, row, unique, prefs, signing_key, public_url, zone)
+        queued += _send(conn, row, where, unique, prefs, signing_key, public_url, zone)
         clocks["held_since"] = None
         mailed = {key(i) for i in unique}
         mailable = [i for i in mailable if key(i) not in mailed]
@@ -370,9 +359,41 @@ def _mark(conn: Connection, human_id: str, chosen: list[Item]) -> None:
 # --- the mails -----------------------------------------------------------------------
 
 
+def _footer(
+    words: dict[str, str],
+    public_url: str,
+    stops: dict[str, str] | None = None,
+    *,
+    settings: bool = True,
+) -> str:
+    """The closing lines of a mail to a known human, from the catalog's `mail` section: one
+    unsubscribe line per kind in `stops` (kind → link), the settings link unless `settings`
+    is off, and the line that names the only host Maity links to."""
+    lines = [words["stop"].format(kind=kind, url=url) for kind, url in (stops or {}).items()]
+    if settings:
+        lines.append(words["settings"].format(url=f"{public_url}/account/notifications"))
+    closing = "\n" + "\n".join(lines) if lines else ""
+    return closing + "\n\n" + words["only"].format(url=public_url) + "\n"
+
+
+def _unsubscribe_headers(link: str) -> dict[str, str]:
+    """The one-click unsubscribe pair of RFC 8058 for `link` (§18.6)."""
+    return {
+        "List-Unsubscribe": f"<{link}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+
+
+def _record(conn: Connection, item: Item, local: datetime) -> tuple[str, dict[str, Any]]:
+    """A record item's time in the mail's zone, and the record's data."""
+    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    return record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"), record.data or {}
+
+
 def _send(
     conn: Connection,
     row: Any,
+    where: items.Scope,
     chosen: list[Item],
     prefs: dict[str, Any],
     signing_key: bytes,
@@ -387,9 +408,7 @@ def _send(
         for kind in kinds
     }
     links = {kind: f"{public_url}/mail/unsubscribe/{token}" for kind, token in tokens.items()}
-    body += "\n" + "\n".join(words["stop"].format(kind=k, url=links[k]) for k in kinds)
-    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    body += _footer(words, public_url, links)
     outbox.enqueue(
         conn,
         kind="notification",
@@ -398,12 +417,27 @@ def _send(
         subject=subject,
         body=body,
         extra_headers={
-            "List-Unsubscribe": f"<{links[kinds[0]]}>",
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            **_unsubscribe_headers(links[kinds[0]]),
+            outbox.MEMBERSHIPS_MARK: _memberships_of(where, chosen),
         },
     )
     _mark(conn, row.human_id, chosen)
     return 1
+
+
+def _memberships_of(where: items.Scope, chosen: list[Item]) -> str:
+    """The membership rows the mail's items were read through, as the scope that derived
+    them loaded them: the outbox drops the mail if one of these rows is no longer active when
+    it leaves (§18.5, context/notifications.md 64c0fbdf). The rows themselves, not their
+    projects, so a removal after the scope was read and a later join with a new row both
+    count as ended. An item of a project they are no member of (an invitation) or of no
+    project is not tied to a membership."""
+    ids = set()
+    for item in chosen:
+        mine = where.membership(item.project_id) if item.project_id and item.member else None
+        if mine is not None:
+            ids.add(mine.id)
+    return " ".join(str(i) for i in sorted(ids))
 
 
 def compose(
@@ -415,30 +449,31 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        subject = f"[Maity] {name}: {only.title or ''}"
+        # A project's name and a title are text the hub did not write (§18.5), folded first
+        # (`_project_names` folds the name): `subject_line` cleans only Cc, Zl and Zp (§1.7.1).
+        line = subject_line(f"[Maity] {name}: {plain_line(only.title or '')}")
     else:
-        subject = "[Maity] " + words["updates"].format(n=len(chosen))
-    if len(subject) > SUBJECT_MAX:
-        subject = subject[: SUBJECT_MAX - 1] + "…"
+        line = "[Maity] " + words["updates"].format(n=len(chosen))
     lines: list[str] = []
     shown = chosen[:DIGEST_MAX]
     for project_id in dict.fromkeys(i.project_id for i in shown):
         lines.append(quoted(projects.get(project_id or "", "Maity")))
         for item in (i for i in shown if i.project_id == project_id):
             stamp = item.at.astimezone(zone).strftime("%Y-%m-%d %H:%M")
-            lines.append(f"- {quoted(item.title or '')}")
+            lines.append(f"- {quoted(plain_line(item.title or ''))}")
             lines.append(f"  {stamp} {item.url}")
             content = (prefs["kinds"].get(item.kind) or {}).get("content")
             text = _message_text(conn, item) if content else None
             if text:
                 # A display name is text the hub did not write either (§18.5).
-                writer = defang(" ".join(items.actor_name(conn, item.actor_membership).split()))
+                name_of = plain_line(items.actor_name(conn, item.actor_membership))
+                writer = defang(" ".join(name_of.split()))
                 lines.append(f"  {writer} {words['wrote']}: {quoted(text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:
         lines.append(words["more"].format(n=len(chosen) - DIGEST_MAX, url=f"{public_url}/"))
     kinds = list(dict.fromkeys(i.kind for i in chosen))
-    return subject, "\n".join(lines), kinds
+    return line, "\n".join(lines), kinds
 
 
 def _message_text(conn: Connection, item: Item) -> str | None:
@@ -460,7 +495,7 @@ def _project_names(conn: Connection, chosen: list[Item]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(select(t.project.c.id, t.project.c.name).where(t.project.c.id.in_(ids)))
-    return {row.id: row.name for row in rows}
+    return {row.id: plain_line(row.name) for row in rows}  # on one line (§1.7.1)
 
 
 def _sign_in_mail(
@@ -475,21 +510,19 @@ def _sign_in_mail(
     """Time, method, browser, system and address of the new session, and where to end
     it; never a session id, a code or a link that signs anyone in (§2.6.5)."""
     words = catalog.section("mail", prefs["language"])
-    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
-    data = record.data or {}
+    time, data = _record(conn, item, local)
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
     stop = f"{public_url}/mail/unsubscribe/{token}"
     body = words["sign_in_body"].format(
         url=public_url,
-        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        time=time,
         method=data.get("method"),
         browser=data.get("browser") or "?",
         os=data.get("os") or "?",
         ip=data.get("ip") or "?",
         sessions=f"{public_url}/account/sessions",
     )
-    body += "\n" + words["stop"].format(kind="security", url=stop)
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    body += _footer(words, public_url, {"security": stop}, settings=False)
     outbox.enqueue(
         conn,
         kind="security",
@@ -497,10 +530,7 @@ def _sign_in_mail(
         to=row.address,
         subject=f"[Maity] {words['sign_in']}",
         body=body,
-        extra_headers={
-            "List-Unsubscribe": f"<{stop}>",
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
+        extra_headers=_unsubscribe_headers(stop),
     )
 
 
@@ -509,27 +539,73 @@ def _two_factor_mail(
     row: Any,
     item: Item,
     prefs: dict[str, Any],
+    signing_key: bytes | None,
     public_url: str,
     local: datetime,
 ) -> None:
     """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
-    and when, and where to look; never a code, a secret or a link that changes anything. No
-    mode turns it off, so it carries no unsubscribe link (§18.4)."""
+    and when, and where to look; never a code or a secret. The one link that changes anything
+    is the daily cap's (§2.8.6): it lifts the cap for the rest of that day, once. No mode turns
+    it off, so it carries no unsubscribe link (§18.4)."""
     words = catalog.section("mail", prefs["language"])
-    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    time, data = _record(conn, item, local)
     body = words["two_factor_body"].format(
-        title=item.title,
-        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
-        security=f"{public_url}/account/security",
+        title=item.title, time=time, security=f"{public_url}/account/security"
     )
-    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    if (
+        item.record_type == "second_factor_failed"
+        and data.get("method") == second_factor.DAILY_LIMIT
+        and signing_key is not None
+        and isinstance(data.get("day"), str)
+        and isinstance(data.get("unlocks"), int)
+        and isinstance(data.get("password_generation"), int)
+    ):
+        token = second_factor.unlock_token(
+            signing_key, row.human_id, data["day"], data["unlocks"], data["password_generation"]
+        )
+        body += "\n" + words["two_factor_unlock"].format(
+            link=f"{public_url}/mail/second-factor-unlock/{token}"
+        )
+    body += _footer(words, public_url)
     outbox.enqueue(
         conn,
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=f"[Maity] {item.title}",
+        subject=subject_line(f"[Maity] {plain_line(item.title or '')}"),
+        body=body,
+    )
+
+
+def _password_mail(
+    conn: Connection,
+    row: Any,
+    item: Item,
+    prefs: dict[str, Any],
+    public_url: str,
+    local: datetime,
+) -> None:
+    """A completed reset (§2.10) or a changed password (§2.1): when and from where, which
+    sessions have ended, and what to do if it was not the human. At once whatever the mode, so
+    no unsubscribe link."""
+    words = catalog.section("mail", prefs["language"])
+    time, data = _record(conn, item, local)
+    unknown = catalog.section("notify", prefs["language"])
+    kind = str(item.record_type)  # `password_reset` or `password_changed`
+    body = words[f"{kind}_body"].format(
+        time=time,
+        browser=data.get("browser") or unknown["a_browser"],
+        os=data.get("os") or unknown["unknown_os"],
+        ip=data.get("ip") or "?",
+        agents=f"{public_url}/agents",
+    )
+    body += _footer(words, public_url)
+    outbox.enqueue(
+        conn,
+        kind="security",
+        human_id=row.human_id,
+        to=row.address,
+        subject=f"[Maity] {words[f'{kind}_subject']}",
         body=body,
     )
 

@@ -5,10 +5,23 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: maity-postgres, namespace: maity}
 spec:
-  podSelector: {matchLabels: {app: maity-postgres}}
+  # The NotIn changes nothing for the PostgreSQL pods (they have no such label): it shows from the hub's own labels
+  # alone that this policy never selects a hub pod, which the closed phase after a restore checks (docs/install/README.md).
+  podSelector:
+    matchLabels: {app: maity-postgres}
+    matchExpressions: [{key: app.kubernetes.io/name, operator: NotIn, values: [maity-hub]}]
   policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector: {matchLabels: {app.kubernetes.io/name: maity-hub}}
         - podSelector: {matchLabels: {app: maity-pg-dump}}
       ports: [{port: 5432}]
+---
+# PostgreSQL opens no connection of its own: no egress at all. Replies to the
+# connections admitted above are not affected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: maity-postgres-egress, namespace: maity}
+spec:
+  podSelector: {matchLabels: {app: maity-postgres}}
+  policyTypes: [Egress]

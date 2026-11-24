@@ -17,7 +17,7 @@ from tests.test_account_deletion import admin_first, deleted_at, person, press, 
 from tests.test_two_factor import Clock
 from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
 
-PROJECT = "/projects/boss/team"
+PROJECT = "/projects/boss/crew"
 JOINS = f"{PROJECT}/joins"
 
 
@@ -25,7 +25,7 @@ def _team(make_client: ClientFactory, migrated: Engine, moment: Clock) -> tuple[
     """The project's owner `boss` and `pat`, a member with trust member who brings agents."""
     admin_first(migrated, moment)
     boss = person(make_client, migrated, moment, "boss")
-    flow.project(boss, "team")
+    flow.project(boss, "crew")
     pat = person(make_client, migrated, moment, "pat")
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()

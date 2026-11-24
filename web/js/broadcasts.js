@@ -14,10 +14,11 @@ window.Maity = window.Maity || {};
   ];
   const listed = (mode) => mode === "accept_only" || mode === "refuse_for";
 
-  // The part under the list of one's agents on /agents. `profiles`: one's own agents.
-  function part(ctx, profiles) {
+  // The /agents page's tab Maintenance notices (/agents/maintenance). `profiles`: one's own agents;
+  // `level`: the heading's element, `h2` as the tab's own title.
+  function part(ctx, profiles, level) {
     const box = h("section", { class: "broadcasts", "aria-labelledby": "broadcasts-heading" },
-      h("h3", { id: "broadcasts-heading" }, M.t("broadcasts.title")),
+      h(level || "h3", { id: "broadcasts-heading" }, M.t("broadcasts.title")),
       h("p", { class: "hint" }, M.t("broadcasts.hint")));
     const status = M.statusLine();
     const body = h("div");

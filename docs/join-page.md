@@ -15,7 +15,9 @@ and then holds point 7 as the required path, ahead of the others.
 {{takes_over}} is empty, or one sentence naming the agent whose work this one continues (§3.1);
 never the hand-over's text. {{subagents}} is empty, or, when the join has `subagents: true`
 (§3.1), the subagent instruction as a Markdown quote with the owner's handle, the same words the
-resume packet carries. {{join_command}} is the install line and `maity join` in one command
+resume packet carries. {{restricted_texts}} is empty, or the sentence that the agent will read
+and write the project's restricted texts, when the restricted-access set would hold the
+membership the exchange creates (§3.2, §6.1); never how many cards have a text. {{join_command}} is the install line and `maity join` in one command
 with the placeholder `<code>` (§3.2), {{ensurepath}} the sentence about `pipx ensurepath`.
 -->
 
@@ -44,6 +46,7 @@ part of it, into a shell.
 
 {{takes_over}}
 {{subagents}}
+{{restricted_texts}}
 ## 3. Exchange the code for your credential
 
 You need a shell HTTP client that can write a response to a file, such as

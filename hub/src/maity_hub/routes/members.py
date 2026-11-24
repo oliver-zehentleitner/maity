@@ -14,8 +14,10 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select, update
 
 from maity_hub import (
+    access,
     admin_agents,
     agent_owners,
+    attached,
     attachments,
     availability,
     bridges,
@@ -45,13 +47,13 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.auth.leaks import revoke
+from maity_hub.auth.revocation import revoke
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -66,6 +68,9 @@ CAPABILITIES = ("tag",)
 # A repository path; nothing that could leave a code span in the join page.
 AREA = re.compile(r"[A-Za-z0-9._/-]{1,255}")
 REVOKED_LISTED = timedelta(days=30)
+EXPERT_FOR_MAX = 120  # characters (§6.2)
+EXPERT_SOURCES_MAX = 20
+EXPERT_FIELDS = frozenset({"expert_for", "expert_sources"})
 
 
 class PausedIn(Strict):
@@ -90,6 +95,10 @@ class MemberPatch(Strict):
     # The owner's instruction to work in subagents and its language (§3.1, §6.2).
     subagents: bool | None = None
     subagents_language: str | None = Field(default=None, max_length=16)
+    # An expert's fields (§2.3 "The expert", §6.2): what it answers about and the path
+    # prefixes it learned; `null` clears one.
+    expert_for: str | None = Field(default=None, max_length=EXPERT_FOR_MAX)
+    expert_sources: list[str] | None = Field(default=None, max_length=EXPERT_SOURCES_MAX)
     availability_policy: AvailabilityPolicyIn | None = None
     trust: str | None = None
     role: str | None = None
@@ -122,6 +131,8 @@ class MemberPatch(Strict):
         "availability_policy",
         "briefing",
         "instance",
+        "expert_for",
+        "expert_sources",
         mode="before",
     )
     @classmethod
@@ -185,25 +196,202 @@ def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
     return member_view(conn, row, briefing=True)
 
 
-def load_member_for_team(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
-    """A replayed rulebook change: the briefing only for a reader with `members:admin`,
-    as on the first answer (§6.2, §6.18)."""
+def member_as_read(conn: Connection, mine: Membership, row: Any) -> dict[str, Any]:
+    """The member view `GET …/members/{id}` gives `mine` (§6.2): the briefing to the member
+    itself and to `members:admin`; `owner`, `credentials`, `shared_environment` and
+    `owner_preferences` to `members:admin` and to the agent's owner; a human's links where
+    their `links_visible` admits the reader; `manages` to everyone. A `PATCH` answers with
+    it too, for the same caller, so a client need not read the member again."""
+    own = row.id == mine.id
+    admin = mine.may("members:admin")
+    details = admin or row.agent_id in _owned_agents(conn, mine)
+    view = member_view(
+        conn,
+        row,
+        briefing=own or admin,
+        details=details,
+        links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+    )
+    view["manages"] = instance_counts.for_member(conn, row)
+    return view
+
+
+def _answer_as_read(
+    conn: Connection, caller: Caller, slug: str, membership_id: int
+) -> dict[str, Any]:
+    """`member_as_read` after a write: the caller's membership and the member's row read
+    again, as the `GET` that follows would read them (the write may have changed either)."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    return member_as_read(conn, membership(conn, caller, slug), row)
+
+
+def _patched(
+    conn: Connection, caller: Caller, slug: str, membership_id: int
+) -> idempotency.Outcome:
+    """The `200` of a member `PATCH` (§6.2): the member view as `GET` gives it to the caller."""
+    view = _answer_as_read(conn, caller, slug, membership_id)
+    return idempotency.Outcome(200, "member_read", str(membership_id), view)
+
+
+def load_member_as_read(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
+    """A replayed member `PATCH`: the view `GET` gives the caller now, read with the caller's
+    rights at the replay (§1.5, §6.2), never a briefing or detail their `GET` would withhold."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
     slug = namespace.name_of(conn, row.project_id)
-    reader = membership(conn, request.state.caller, slug)
-    return member_view(conn, row, briefing=reader.may("members:admin"))
+    return _answer_as_read(conn, request.state.caller, slug, row.id)
 
 
-idempotency.LOADERS["member_team"] = load_member_for_team
+def load_member_write(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
+    """A replayed member write stored as `member`. A member `PATCH` stored its keys so before
+    it answered `member_read`, and those keys live for a day (§1.5): they replay as
+    `member_read` does. The other writes that store `member` (`DELETE …/members/{id}`, the
+    isolation, `PATCH /me`, `POST /me/limit`) keep their answer, `load_member`."""
+    if getattr(request.scope.get("route"), "endpoint", None) is patch_member:
+        return load_member_as_read(conn, membership_id, request)
+    return load_member(conn, membership_id)
 
 
-def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
-    row = conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
+_IN_MEMBERS_PROJECT = idempotency.in_project(idempotency.column_of(t.membership, key=int))
+idempotency.register("member_read", load_member_as_read, _IN_MEMBERS_PROJECT)
+# Keys a member `PATCH` stored before it answered `member_read` replay as one (§1.5): those
+# of its rulebook, owner and dormant paths as `member_team`, the rest as `member` (below).
+idempotency.register("member_team", load_member_as_read, _IN_MEMBERS_PROJECT)
+
+
+def credential_key(credential_id: str, membership_id: int) -> str:
+    """A revocation's stored resource (§1.5): the credential in the membership of the route's
+    project, `<credential id>@<membership id>`, so that its replay reads that attachment."""
+    return f"{credential_id}@{membership_id}"
+
+
+def _attachment_named(conn: Connection, key: str) -> Any | None:
+    """The membership a stored revocation names, with the credential's id. A key from before
+    an instance could sit in several projects names the credential alone: its one attachment
+    that is not detached then, and none when it has several now, never one chosen."""
+    credential_id, _, membership_id = key.partition("@")
+    a = t.instance_attachment
+    query = (
+        select(t.membership, a.c.credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id)
+    )
+    if membership_id:
+        if not membership_id.isdigit():
+            return None
+        return conn.execute(query.where(a.c.membership_id == int(membership_id))).first()
+    rows = conn.execute(query.where(a.c.detached_at.is_(None))).all()
+    return rows[0] if len(rows) == 1 else None
+
+
+def load_credential(conn: Connection, key: str) -> dict[str, Any]:
+    """A credential's view in the membership `key` names (`credential_key`)."""
+    target = _attachment_named(conn, key)
+    if target is None:
+        raise not_found()
+    row = conn.execute(
+        instances.credential_rows().where(
+            t.credential.c.id == target.credential_id,
+            t.instance_attachment.c.membership_id == target.id,
+        )
+    ).one()
     return credential_view(conn, row)
 
 
-idempotency.LOADERS["member"] = idempotency.plain(load_member)
-idempotency.LOADERS["credential"] = idempotency.plain(load_credential)
+def _credential_project(conn: Connection, key: str) -> str | None:
+    target = _attachment_named(conn, key)
+    return None if target is None else str(target.project_id)
+
+
+def _sees_credential(conn: Connection, mine: Membership, key: str) -> bool:
+    """The read of the credentials list (§10), for a replayed revocation."""
+    target = _attachment_named(conn, key)
+    return target is not None and _manages_credentials(conn, mine, target)
+
+
+def _sees_member(conn: Connection, membership_id: str, caller: Caller) -> bool:
+    """A member write: one's own membership, also the one one's leave ended (its repeat
+    replays, §6.2), or a member of a project the caller reads now."""
+    row = conn.execute(
+        select(t.membership.c.human_id, t.membership.c.agent_id).where(
+            t.membership.c.id == int(membership_id)
+        )
+    ).first()
+    if row is None:
+        return False
+    if caller.kind in ("human", "agent") and caller.principal_id in (row.human_id, row.agent_id):
+        return True
+    return _IN_MEMBERS_PROJECT(conn, membership_id, caller)
+
+
+idempotency.register("member", load_member_write, _sees_member)
+
+
+def members_outcome(
+    conn: Connection, credential_id: str, membership_ids: list[int], single: bool
+) -> idempotency.Outcome:
+    """The `200` of an agent's own write outside a project (`PATCH /me`, `POST /me/limit`,
+    §5.3 "Per project"): the member view for one project, else `projects`, the member view of
+    each membership the write changed. The latter is stored by the credential: a replay
+    answers its attachments that are not isolated as they are then (`load_member_set`)."""
+    if single:
+        [only] = membership_ids
+        return idempotency.Outcome(200, "member_self", str(only), load_member(conn, str(only)))
+    views = [load_member(conn, str(i)) for i in membership_ids]
+    return idempotency.Outcome(200, "member_set", credential_id, {"projects": views})
+
+
+def _sees_own_attachment(conn: Connection, membership_id: str, caller: Caller) -> bool:
+    """A replayed `member_self`: the caller's own attachment in that membership, live and
+    not isolated, as the write itself needed. Another attachment that keeps the credential
+    authenticated does not let it read a project it is detached from or isolated in. A
+    credential revoked since it was authenticated refuses `unauthenticated`, as the write's own
+    `attached.recheck` would, not the `not_found` of a lost attachment. The membership's
+    project is locked before that check and held through the answer (`attached.held`), so a
+    revocation cannot land between the two."""
+    if caller.kind != "agent" or caller.credential_id is None or not membership_id.isdigit():
+        return False
+    project_id = conn.execute(
+        select(t.membership.c.project_id).where(t.membership.c.id == int(membership_id))
+    ).scalar_one_or_none()
+    if project_id is None:
+        return False
+    attached.held(conn, caller.credential_id, [project_id])
+    a, m = t.instance_attachment, t.membership
+    found = conn.execute(
+        select(a.c.id)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(
+            a.c.credential_id == caller.credential_id,
+            a.c.membership_id == int(membership_id),
+            a.c.detached_at.is_(None),
+            m.c.isolated_since.is_(None),
+        )
+    ).first()
+    return found is not None
+
+
+idempotency.register("member_self", idempotency.plain(load_member), _sees_own_attachment)
+
+
+def load_member_set(conn: Connection, credential_id: str) -> dict[str, Any]:
+    """The replay of a write in every project: the credential's attachments as they are now,
+    and with none live and free left the refusal the request itself would get (§1.5). Their
+    projects are locked before the liveness check and held through the answer
+    (`attached.free_held`), as the request holds them through its write."""
+    free = attached.free_held(conn, credential_id)
+    return {"projects": [load_member(conn, str(a.membership_id)) for a in free]}
+
+
+idempotency.register(
+    "member_set",
+    idempotency.plain(load_member_set),
+    lambda _conn, credential_id, caller: caller.credential_id == credential_id,
+)
+idempotency.register(
+    "credential",
+    idempotency.plain(load_credential),
+    idempotency.in_project(_credential_project, _sees_credential),
+)
 
 
 def validate_assignment(
@@ -227,7 +415,11 @@ def validate_assignment(
     errors: dict[str, str] = {}
     values: dict[str, Any] = {}
     if trust is not None:
-        if trust not in TRUSTS:
+        if OUTSIDE in (trust, current[0]):
+            # Only the outsider's join gives trust `outside`, and nothing changes it after
+            # (§2.3 "Outside"): naming it, or any trust on a member who holds it, is refused.
+            errors["trust"] = OUTSIDE
+        elif trust not in TRUSTS:
             errors["trust"] = "unknown"
         elif trust == "owner" and kind != "human":
             errors["trust"] = "humans_only"
@@ -338,30 +530,58 @@ def _owners(conn: Connection, project_id: str) -> int:
 
 
 @router.get("/projects/{owner}/{slug}/members")
+@access.outside_read
 def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        mine.require("project:read")
-        rows = conn.execute(
-            select(t.membership).where(
-                t.membership.c.project_id == mine.project.id, t.membership.c.active.is_(True)
-            )
-        ).all()
-        admin = mine.may("members:admin")
-        owned = _owned_agents(conn, mine)
-        views = member_views(
-            conn,
-            rows,
-            briefing=lambda r: admin or r.id == mine.id,
-            details=lambda r: admin or r.agent_id in owned,
-            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+        mine = access.reader(conn, caller, slug)
+        return JSONResponse(members_body(conn, caller, slug, mine))
+
+
+def members_body(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    given: Membership | access.OutsideReader | None = None,
+) -> dict[str, Any]:
+    """`GET /projects/{owner}/{slug}/members`' answer (§6.2), also the `members` part of
+    `GET /bootstrap` (§5.4), which passes no reader (`given`): the caller's membership is read
+    here, so an outsider reads no part of it (§2.3)."""
+    mine = given if given is not None else membership(conn, caller, slug)
+    mine.require("project:read")
+    rows = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == mine.project.id, t.membership.c.active.is_(True)
         )
-        by_id = {r.id: v for r, v in zip(rows, views, strict=True)}
-        counted = instance_counts.manages(rows, by_id, by_id)
-        for member_id, view in by_id.items():
-            view["manages"] = counted[member_id]
-        views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
-        return JSONResponse({"items": views, "next_cursor": None})
+    ).all()
+    admin = mine.may("members:admin")
+    outside = isinstance(mine, access.OutsideReader)
+    named: set[int] = set()
+    pictures: dict[int, str | None] = {}
+    if outside:  # the members the public page names, and only those (§2.3)
+        people = outside_shown(conn, mine.project.id)
+        named = set(people)
+        rows = [r for r in rows if r.id in named]
+        pictures = outside_pictures(conn, people)
+    # An outsider who owns an agent here reads it as any outsider does (§2.3): no details.
+    owned: set[str] = set() if outside else _owned_agents(conn, mine)
+    views = member_views(
+        conn,
+        rows,
+        briefing=lambda r: admin or r.id == mine.id,
+        details=lambda r: admin or r.agent_id in owned,
+        links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+    )
+    by_id = {r.id: v for r, v in zip(rows, views, strict=True)}
+    counted = instance_counts.manages(rows, by_id, by_id)
+    for member_id, view in by_id.items():
+        view["manages"] = counted[member_id]
+    if outside:
+        views = [
+            outside_member_view(v, r, named, picture=pictures.get(r.id))
+            for r, v in zip(rows, views, strict=True)
+        ]
+    views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
+    return {"items": views, "next_cursor": None}
 
 
 @router.get("/projects/{owner}/{slug}/members/{member_id}/briefings")
@@ -386,23 +606,95 @@ def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCalle
 
 
 @router.get("/projects/{owner}/{slug}/members/{member_id}")
+@access.outside_read
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
-        own = row.id == mine.id
-        admin = mine.may("members:admin")
-        details = admin or row.agent_id in _owned_agents(conn, mine)
-        view = member_view(
-            conn,
-            row,
-            briefing=own or admin,
-            details=details,
-            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
-        )
-        view["manages"] = instance_counts.for_member(conn, row)
-        return JSONResponse(view)
+        if isinstance(mine, access.OutsideReader):
+            people = outside_shown(conn, mine.project.id)
+            if row.id not in people:  # one the public page does not name, as a hidden card
+                raise not_found()
+            named = set(people)
+            view = member_view(conn, row, links=person_links.Reader(mine.principal_id))
+            view["manages"] = instance_counts.for_member(conn, row, among=named)
+            picture = outside_pictures(conn, {row.id: people[row.id]})[row.id]
+            return JSONResponse(outside_member_view(view, row, named, picture=picture))
+        return JSONResponse(member_as_read(conn, mine, row))
+
+
+# The keys of a member view an outsider reads (§2.3), an allow-list as the project's
+# (`projects.OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from outside
+# until it is named here. Who the member is and where it stands in the project, as the public
+# Team and Organisation pages show them (§16.9); never a sign of presence or isolation
+# (`presence`, `last_seen_at`, `availability`, `paused`, `session`, `instances`, `covered_by`,
+# `covering`), nor a field only an admin, the member itself or an agent's owner reads, nor
+# the agent's working set-up (`harness`, `model`, `team`, `placements`, `bridges`, …).
+OUTSIDE_MEMBER_KEYS = (
+    "id",  # the member's principal, as every card and history names it
+    "kind",  # human or agent
+    "handle",  # the name the public page shows
+    "name",  # an agent's global name, `owner/handle` (§6.3)
+    "display_name",  # as the public page shows it
+    "avatar_url",  # the picture the public page shows (`outside_pictures`), not `avatars.url_of`
+    "deleted",  # a deleted account's shape (§2.9)
+    "owner_id",  # an agent's owner, whom the agent's public page is under (§16.9)
+    "trust",  # the member's standing, as the Organisation page shows it
+    "role",  # as the Team page shows it
+    "role_base",  # the built-in role a custom one is based on (§2.3)
+    "reports_to",  # the organisation chart's edge (§16.9 Organisation)
+    "cross_owner",  # whether that edge crosses owners (§6.2 "The marker")
+    "areas",  # what the member looks after (§6.2)
+    "capabilities",  # what the member can do (§6.2)
+    "expert_for",  # an expert's subject (§2.3 "The expert")
+    "expert_sources",  # an expert's sources (§2.3 "The expert")
+    "org_owner",  # a human who owns the organisation that owns the project (§6.26)
+    "website",  # a human's links, as `links_visible` admits the reader (§16.9)
+    "social",
+    "joined_at",  # when the member joined
+    "manages",  # how many members and instances stand behind it (`OUTSIDE_COUNT_KEYS`)
+)
+OUTSIDE_COUNT_KEYS = ("members", "instances")  # of `manages.direct` and `manages.total`
+
+
+def outside_shown(conn: Connection, project_id: str) -> dict[int, Any]:
+    """The members an outsider reads, by membership id: those the public page names (§16.9,
+    `public_project_views.members`), so never an isolated member nor one under a hold of
+    moderation or whose account is not served."""
+    from maity_hub import public_project_views  # the public pages' modules, as `access` reads
+
+    people = public_project_views.members(conn, project_id)
+    return {membership_id: person for membership_id, person in people.items() if person.shown}
+
+
+def outside_pictures(conn: Connection, shown: dict[int, Any]) -> dict[int, str | None]:
+    """The picture of each member an outsider reads, by membership id: the one the public page
+    shows (`public_project_views.shown_pictures`), null while a person's `public_profile` is
+    off. One read for the page."""
+    from maity_hub import public_project_views
+
+    pictures = public_project_views.shown_pictures(conn, shown)
+    return {membership_id: pictures.get(p.principal) for membership_id, p in shown.items()}
+
+
+def outside_member_view(
+    view: dict[str, Any], row: Any, named: set[int], *, picture: str | None
+) -> dict[str, Any]:
+    """A member view as an outsider reads it (§2.3): `OUTSIDE_MEMBER_KEYS` alone, `avatar_url`
+    the picture the public page shows (`picture`), `manages` with `OUTSIDE_COUNT_KEYS` alone,
+    and no edge to a member the outsider does not read (`named`)."""
+    shown: dict[str, Any] = {key: view[key] for key in OUTSIDE_MEMBER_KEYS if key in view}
+    shown["avatar_url"] = picture
+    if isinstance(shown.get("manages"), dict):
+        shown["manages"] = {
+            part: {key: counts[key] for key in OUTSIDE_COUNT_KEYS if key in counts}
+            for part, counts in shown["manages"].items()
+            if part in ("direct", "total") and isinstance(counts, dict)
+        }
+    if row.reports_to is not None and row.reports_to not in named:
+        shown["reports_to"], shown["cross_owner"] = None, False
+    return shown
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:
@@ -450,7 +742,7 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
     open takeover (§6.19), has cards out with a substitute that a cover's end gives back to
     it, or is the substitute of a running cover, to which area routing hands new cards
     (§6.12, `cover.routed`)."""
-    from maity_hub import takeovers
+    from maity_hub import cover, takeovers
 
     if conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first():
         return True
@@ -477,13 +769,26 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
         .limit(1)
     ).first():
         return True
-    principal = str(target.agent_id or target.human_id)
-    covers = conn.execute(
-        select(t.card.c.cover).where(
-            t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None)
+    if target.cover_state != "covered" or target.cover_since is None:
+        return False
+    # Only what the running cover's end would give back (`cover.gives_back`): a card the
+    # substitute touched, one closed since, or one no longer with the substitute stays where
+    # it is (§2.3, §6.12).
+    principal, since = str(target.agent_id or target.human_id), clock.rfc3339(target.cover_since)
+    members_by_principal = {
+        str(m.agent_id or m.human_id): m.id
+        for m in conn.execute(
+            select(t.membership).where(t.membership.c.project_id == target.project_id)
         )
-    ).scalars()
-    return any((cover or {}).get("for") == principal for cover in covers)
+    }
+    for card in conn.execute(
+        select(t.card).where(t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None))
+    ):
+        if card.cover.get("for") != principal or card.cover.get("since") != since:
+            continue
+        if cover.gives_back(card, members_by_principal.get(card.cover["by"])):
+            return True
+    return False
 
 
 def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:
@@ -520,6 +825,15 @@ def apply_patch(
     """Write a membership change and announce it; `pause` is (given, reason), for one
     agent instance when `instance` names it. Returns the changed columns with their old
     values, for `member_changed_by_agent`."""
+    if "role" in values:
+        # The project lock the expert-field PATCH takes too (`_expert_fields`), and the row
+        # as it is now: a field written after this request read the member is cleared with
+        # the role, and a field PATCH waiting at the lock reads the new role (§6.2).
+        lock_project(conn, target.project_id)
+        target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    if values.get("role", "expert") != "expert":
+        # The fields belong to the role: any other role has none (§6.2).
+        values = {**values, "expert_for": None, "expert_sources": None}
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
@@ -531,6 +845,10 @@ def apply_patch(
     # A guest raised may enter the restricted-access set, it and its listed agents (§6.1).
     raised = "trust" in changed and target.trust == restricted.GUEST
     in_set_before = restricted.resolve(conn, change.project) if raised else None
+    if {"trust", "role"} & changed.keys():
+        # A signature that stopped counting before this change goes first, so that a
+        # raise never brings it back (§6.4); the one this change ends goes below.
+        cards.drop_signatures(conn, change.project.id, member_id, change.actor)
     if changed:
         columns = {k: v for k, v in changed.items() if k != "briefing"}
         if "reports_to" in changed:
@@ -594,6 +912,19 @@ def apply_patch(
             # A proxy carries and is carried by no bridge; a role the limits across owners
             # exclude ends those connections (§2.3, "Ending on its own").
             bridges.after_role_change(conn, change.project, row, change.actor)
+        if {"trust", "role"} & changed.keys():
+            # A signature counts while its signer may give it (§6.4): gone with the scope.
+            cards.drop_signatures(
+                conn, change.project.id, row.agent_id or row.human_id, change.actor
+            )
+            # A seat the new trust or role may not hold goes as at a removal (§2.3, §6.2).
+            seats.demoted(conn, change.project.id, row, change.actor)
+        if "trust" in changed and row.trust == restricted.GUEST:
+            # A guest holds and takes no cards (§2.3): its claims go back to the board and
+            # its open takeovers end, as on an isolation (§6.2, §6.19).
+            released = isolation.release_claims(conn, target.id)
+            takeovers.membership_removed(conn, target.id, change.actor)
+            isolation.tell_released(conn, released, change.actor, change.project)
     given, reason = pause
     if given:
         if target.agent_id is None:
@@ -630,12 +961,13 @@ def patch_member(
             if reader is None:
                 # An owner outside the project sees nothing of it (§1.3): no body.
                 return idempotency.Outcome(204, None, None, {})
-            view = member_view(conn, target, briefing=reader.may("members:admin"))
-            return idempotency.Outcome(200, "member_team", str(target.id), view)
+            return _patched(conn, caller, slug, target.id)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
         if given & {"subagents", "subagents_language"}:
             return _subagents(conn, caller, slug, member_id, body, given)
+        if given & EXPERT_FIELDS:
+            return _expert_fields(conn, caller, slug, member_id, body, given)
         if "dormant" in given:
             return _dormant(conn, caller, slug, member_id, body, given)
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
@@ -772,7 +1104,7 @@ def patch_member(
             )
         if asked:
             return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
-        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+        return _patched(conn, caller, slug, target.id)
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -794,8 +1126,7 @@ def _dormant(
         return idempotency.Outcome(202, "request", asked, _request(conn, asked))
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
-    view = member_view(conn, target, briefing=reader.may("members:admin"))
-    return idempotency.Outcome(200, "member_team", str(target.id), view)
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owner_lifts_line_pause(
@@ -839,10 +1170,7 @@ def _owner_lifts_line_pause(
     set_paused(conn, change, target, None, instance=body.instance)
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
-    view = member_view(
-        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-    )
-    return idempotency.Outcome(200, "member_team", str(target.id), view)
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owner_sets_role(
@@ -900,7 +1228,7 @@ def _owner_sets_role(
         raise joins.member_join_limit("role")
     agent_owners.check_assignment(conn, mine.project, target, values)
     apply_patch(conn, change_of(mine, caller), target, values, (False, None))
-    return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owner_sets_reports_to(
@@ -964,10 +1292,7 @@ def _owner_sets_reports_to(
     apply_patch(conn, change, target, values, (False, None))
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
-    view = member_view(
-        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-    )
-    return idempotency.Outcome(200, "member_team", str(target.id), view)
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owns_member(conn: Connection, caller: Caller, project_id: str, principal: str) -> bool:
@@ -1000,8 +1325,45 @@ def _owner_preferences(
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     if reader is None:
         return idempotency.Outcome(204, None, None, {})
-    view = member_view(conn, row, briefing=reader.may("members:admin"))
-    return idempotency.Outcome(200, "member_team", str(row.id), view)
+    return _patched(conn, caller, slug, row.id)
+
+
+def _expert_fields(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """An expert's `expert_for` and `expert_sources` (§2.3 "The expert", §6.2): set on their
+    own, by a human member who owns the agent profile or holds `members:admin`, or by an
+    admin agent within ᵃ, and only on a member whose role is `expert`. They name what the
+    expert answers about; no consent waits for them, as they give the member no right."""
+    if not given <= EXPERT_FIELDS:
+        raise invalid({key: "alone" for key in sorted(given & EXPERT_FIELDS)}, "set them alone")
+    mine = membership(conn, caller, slug)
+    target = member_row(conn, mine.project.id, member_id)
+    agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
+    if mine.kind == "agent" and not agent_admin:
+        raise forbidden("members:admin")
+    if mine.kind == "human" and not instances.owns_agent(conn, caller, target):
+        mine.require("members:admin")
+    # Under the project lock a role change takes too: the role read here is the one written.
+    lock_project(conn, mine.project.id)
+    target = member_row(conn, mine.project.id, member_id)
+    if agent_admin:
+        admin_agents.check_target(mine, target)  # an agent member, not itself (ᵃ)
+    if target.role != "expert":
+        raise invalid(
+            {key: "expert_only" for key in sorted(given)}, "only an expert has these fields"
+        )
+    values: dict[str, Any] = {}
+    if "expert_for" in given:
+        text = " ".join((body.expert_for or "").split())  # plain text, one line
+        values["expert_for"] = text or None
+    if "expert_sources" in given:
+        sources = body.expert_sources or []
+        if any(not AREA.fullmatch(p) or p.startswith("..") or "/../" in f"/{p}/" for p in sources):
+            raise invalid({"expert_sources": "invalid_path"}, "a source is a repository path")
+        values["expert_sources"] = list(dict.fromkeys(sources)) or None
+    apply_patch(conn, change_of(mine, caller), target, values, (False, None))
+    return _patched(conn, caller, slug, target.id)
 
 
 def _subagents(
@@ -1087,8 +1449,7 @@ def _subagents(
             actor=Actor(mine.id, via=caller.via),
             subject=("member", member_id),
         )
-    view = member_view(conn, row, briefing=mine.may("members:admin"))
-    return idempotency.Outcome(200, "member", str(row.id), view)
+    return _patched(conn, caller, slug, row.id)
 
 
 def _policy_humans_only(
@@ -1157,7 +1518,11 @@ def set_paused(
     else:
         held = instances.require_active(conn, target, instance, "instance")
         lifts_a_human_pause = reason is None and instances.human_paused(target, held)
-        conn.execute(update(t.credential).where(t.credential.c.id == held.id).values(**values))
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(held.id, target.id))
+            .values(**values)
+        )
     availability.reconcile_ids(conn, [target.id], change.actor)
     if reason is None and not lifts_a_human_pause:
         return
@@ -1182,9 +1547,28 @@ def set_paused(
     )
 
 
+def _leaving_tokens(conn: Connection, project_id: str) -> list[str]:
+    """`member:<id>` of every active human with trust `owner` or `admin` (§6.2).
+
+    A `member_updated` from the member leaving is addressed to them as well as
+    broadcast. A removal's own event is not: this is only the leaving."""
+    humans = conn.execute(
+        select(t.membership.c.human_id)
+        .where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.human_id.is_not(None),
+            t.membership.c.trust.in_(("owner", "admin")),
+            t.membership.c.active.is_(True),
+        )
+        .order_by(t.membership.c.joined_at, t.membership.c.id)
+    ).scalars()
+    return [f"member:{human_id}" for human_id in humans]
+
+
 def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     """Remove a membership (§6.2): its credentials revoked on the approver's authority,
-    its claims released, every `reports_to` that names it cleared."""
+    its claims released, every `reports_to` that names it cleared. A human leaving is
+    this same path; only the `member_updated` audience differs."""
     from maity_hub import onboarding
     from maity_hub.routes.requests import return_held_by, withdraw_owners_round
 
@@ -1199,9 +1583,9 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     now = clock.now()
     credentials = (
         conn.execute(
-            select(t.credential.c.id).where(
-                t.credential.c.membership_id == target.id, t.credential.c.revoked_at.is_(None)
-            )
+            select(t.credential.c.id)
+            .select_from(instances.credential_join())
+            .where(t.instance_attachment.c.membership_id == target.id, instances.attached_now())
         )
         .scalars()
         .all()
@@ -1224,17 +1608,25 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         .values(active=None, removed_at=now, changed_via=change.via)
     )
     removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    cards.drop_signatures(
+        conn, change.project.id, removed.agent_id or removed.human_id, change.actor
+    )
     view = member_view(conn, removed)  # to everyone: never the briefing
+    # Leaving: the actor is the member. A removal's actor is someone else, and that
+    # event stays broadcast-only apart from the tokens every `member_updated` gains.
+    audience = ["all"]
+    if removed.human_id is not None and change.actor.membership_id == removed.id:
+        audience += _leaving_tokens(conn, change.project.id)
     emit(
         conn,
         change.project.id,
         "member_updated",
-        ["all"],
+        audience,
         view,
         actor=change.actor,
         subject=("member", view["id"]),
     )
-    isolation.tell_released(conn, released, change.actor)
+    isolation.tell_released(conn, released, change.actor, change.project)
     # The chain never names a former member: nor does a join still to be used.
     reported = conn.execute(
         select(t.membership.c.id).where(
@@ -1285,15 +1677,31 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         agent_owners.human_left(conn, change.project, removed.human_id, change.actor, change.by)
 
 
+def _leaving(mine: Membership, target: Any) -> bool:
+    """A human naming their own member id ends that membership (§6.2, "Leaving a project").
+
+    Any trust, a guest included. An agent naming its own id is not this: it stays on
+    `members:admin`, and an admin agent on the consent path."""
+    return bool(
+        mine.kind == "human"
+        and target.human_id is not None
+        and target.human_id == mine.principal_id
+        and target.removed_at is None
+    )
+
+
 @router.delete("/projects/{owner}/{slug}/members/{member_id}")
 def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row_or_removed(conn, mine.project.id, member_id)
+        leaving = _leaving(mine, target)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never removes a human's membership")
-        if not agent_admin:
+        # Leaving needs no `members:admin` and is not `owner_only` (that is removing
+        # another owner). The last owner and the namespace owner still cannot.
+        if not leaving and not agent_admin:
             mine.require("members:admin")
         if agent_admin:  # before the idempotent answer: it carries the briefing
             admin_agents.check_target(mine, target)
@@ -1305,14 +1713,14 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             # An admin agent never removes on the call: the owner gives the go (§2.3 ᵃ).
             request_id = admin_agents.propose(conn, mine, caller, target, {"action": "remove"})
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
-        if target.trust == "owner" and mine.trust != "owner":
+        if not leaving and target.trust == "owner" and mine.trust != "owner":
             raise owner_only("only an owner removes an owner")
         if target.trust == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
         if target.human_id is not None:  # the namespace owner stays a member (§6.25)
             namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         apply_remove(conn, change_of(mine, caller), target)
-        # The answer goes to the admin who removed it, like a repeated DELETE's.
+        # The answer goes to the caller, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -1383,19 +1791,21 @@ def lift_isolation(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def _may_manage_credentials(
-    conn: Connection, mine: Membership, caller: Caller, target: Any
-) -> None:
+def _may_manage_credentials(conn: Connection, mine: Membership, target: Any) -> None:
+    if not _manages_credentials(conn, mine, target):
+        raise forbidden("credentials:admin")
+
+
+def _manages_credentials(conn: Connection, mine: Membership, target: Any) -> bool:
     """`credentials:admin`, or the human who owns the agent (§10)."""
     if mine.may("credentials:admin"):
-        return
-    if caller.kind == "human" and target.agent_id is not None:
+        return True
+    if mine.kind == "human" and target.agent_id is not None:
         owner = conn.execute(
             select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
         ).scalar()
-        if owner == caller.human_id:
-            return
-    raise forbidden("credentials:admin")
+        return bool(owner == mine.principal_id)
+    return False
 
 
 @router.get("/projects/{owner}/{slug}/members/{member_id}/credentials")
@@ -1405,15 +1815,22 @@ def list_credentials(
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         target = member_row_or_removed(conn, mine.project.id, member_id)
-        _may_manage_credentials(conn, mine, caller, target)
+        _may_manage_credentials(conn, mine, target)
         since = clock.now() - REVOKED_LISTED
+        a = t.instance_attachment
         rows = conn.execute(
-            select(t.credential).where(
-                t.credential.c.membership_id == target.id,
+            instances.credential_rows().where(
+                a.c.membership_id == target.id,
                 t.credential.c.revoked_at.is_(None) | (t.credential.c.revoked_at > since),
+                # A detached attachment on purpose, for 30 days like a revoked credential:
+                # §10 lists a credential detached from this project for that long (§6.17).
+                a.c.detached_at.is_(None) | (a.c.detached_at > since),
             )
         ).all()
-        rows = sorted(rows, key=lambda r: (r.revoked_at is not None, r.created_at), reverse=False)
+        rows = sorted(
+            rows,
+            key=lambda r: (r.revoked_at is not None or r.detached_at is not None, r.created_at),
+        )
         return JSONResponse(
             {"items": [credential_view(conn, r) for r in rows], "next_cursor": None}
         )
@@ -1426,16 +1843,22 @@ def revoke_credential(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         row = conn.execute(
-            select(t.credential, t.membership.c.project_id, t.membership.c.agent_id)
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-            .where(t.credential.c.id == credential_id)
+            instances.credential_rows()
+            .add_columns(t.membership.c.project_id)
+            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
+            .where(
+                t.credential.c.id == credential_id,
+                t.membership.c.project_id == mine.project.id,
+                # A project the instance was detached from revokes nothing (§6.17).
+                t.instance_attachment.c.detached_at.is_(None),
+            )
         ).first()
         if row is None or row.project_id != mine.project.id:
             raise not_found()
         target = conn.execute(
             select(t.membership).where(t.membership.c.id == row.membership_id)
         ).one()
-        _may_manage_credentials(conn, mine, caller, target)
+        _may_manage_credentials(conn, mine, target)
         if row.revoked_at is None:
             reason = body.reason or "revoked"
             revoke(conn, credential_id, reason, by=caller.principal_id)
@@ -1448,8 +1871,7 @@ def revoke_credential(
                 actor=caller.actor(mine.id),
                 subject=("credential", credential_id),
             )
-        return idempotency.Outcome(
-            200, "credential", credential_id, load_credential(conn, credential_id)
-        )
+        key = credential_key(credential_id, row.membership_id)
+        return idempotency.Outcome(200, "credential", key, load_credential(conn, key))
 
     return idempotency.run(engine_of(request), request, caller, action)

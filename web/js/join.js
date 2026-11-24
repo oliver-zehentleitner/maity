@@ -10,6 +10,13 @@
 // another one, or one in place of an instance (docs/api.md §3.1, §6.17).
 // A first join may name the agent member whose work the new one continues
 // and where the hand-over is written; neither moves anything (§3.1).
+// For a human with members:admin, and for a member bringing an agent of
+// their own that is not in the project yet (tsk-at3gnzqd8svy), the form's
+// last part starts the agent on one of their runners instead of a line
+// (§15.6, js/placements.js `runnerPart`, tsk-hdczmsq2r431): one form for
+// both ways, the profile first. An outsider of a public project whose admins opted in brings
+// an agent of their own the same way (hooks.outsider, from js/outsider-actions.js; §3.1 "An
+// outsider's agent"): trust `outside`, a role of the project's `outside_roles`, no runner.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -44,6 +51,30 @@ window.Maity = window.Maity || {};
     "handover:not_found": () => M.t("join.failed.handover_not_found"),
     "handover:not_readable": () => M.t("join.failed.handover_not_readable"),
   };
+
+  // The hub's refusals of a member's own agent beyond "Bringing your own agent" (§3.1), for a join
+  // and for a placement that admits the agent (§15.6), in words, the field named; else null.
+  function memberRefusal(err) {
+    const d = err.details || {};
+    return d.reason === "project_not_allowed" ? { message: M.t("join.failed.project_not_allowed") }
+      : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
+        field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
+      : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
+      // No members:admin and the member's way closed (§3.1): say which right is missing.
+      : err.code === "forbidden" && !d.reason && d.scope === "members:admin" ? { message: M.t("join.failed.no_admin") }
+      : null;
+  }
+
+  // The hub's refusals of an outsider's join (§3.1 "An outsider's agent"), in words; else null
+  // (the quota is memberRefusal's member_agents_max). `not_found` is the opt-in gone meanwhile; a
+  // role refused is one the policy took off its list since the form was drawn, so no list is named.
+  function outsiderRefusal(err) {
+    const d = err.details || {};
+    return err.code === "not_found" ? { message: M.t("outsider.join.closed") }
+      : d.reason === "blocked" ? { message: M.t("outsider.reason.blocked") }
+      : d.reason === "member_join_limit" && d.field === "role" ? { message: M.t("outsider.join.role") }
+      : null;
+  }
 
   // Where a hand-over is written (§3.1, §5.2: {kind, id}), as a link: the
   // card, or the project's messages for a message, which have no page each.
@@ -93,11 +124,14 @@ window.Maity = window.Maity || {};
     let joins = joinsRead;
     // The project's members as last read (ctx.members, which Agents keeps
     // current after each save): an agent among them joins as an instance.
-    // Agents the hub said are members count as such even when the list on
-    // screen does not show them yet.
+    // For a join line, agents the hub said are members (instance: required) count as such even
+    // when the list on screen does not show them yet: the next line is an instance's, which the
+    // hub refuses (not_a_member) should the membership be gone, so nothing is made on that word.
+    // A start on a runner never takes it: its id alone would be admitted with the hub's
+    // defaults, so it is a member's only once the members read show it (`recheckMember`).
     const saidMember = new Set();
     const memberOf = (id) => ctx.members.find((m) => m.id === id)
-      || (saidMember.has(id) ? { id, instances: null, team: null } : null);
+      || (saidMember.has(id) && !(viaRunner && viaRunner.on()) ? { id, instances: null, team: null } : null);
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
       return p ? p.display_name : id;
@@ -107,11 +141,15 @@ window.Maity = window.Maity || {};
     // this project shares the short one (§6.3), as members are named here.
     const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
+    // A member bringing their own agent (hooks.member) who starts it on a runner: the placement
+    // admits only a profile of their own that is not in the project yet (§15.6), so only those are
+    // offered then, and no new profile (showAgent sets it as the runner part is turned on).
+    let admitting = false;
     const profileOptions = () => append(clear(agentSelect),
-      profiles.offered.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
+      profiles.offered.filter((p) => !admitting || !memberOf(p.id)).map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
         ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
         : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
-      h("option", { value: "" }, M.t("join.agent.new")));
+      admitting ? null : h("option", { value: "" }, M.t("join.agent.new")));
     profileOptions();
     const HANDLE = M.dom.NAME_RULES.handle;
     const handle = h("input", { id: "join-handle", placeholder: M.t("join.handle.placeholder"), pattern: HANDLE.pattern,
@@ -130,6 +168,7 @@ window.Maity = window.Maity || {};
       const bad = !HANDLE.test.test(v);
       handleState.className = "hint handle-state" + (!v ? "" : bad || taken || refused.has(v) ? " field-error" : " ok");
       handleState.textContent = !v ? ""
+        : bad && /[A-Z]/.test(v) ? M.handles.problem(v)
         : bad ? M.t("join.handle.bad", { rule: HANDLE.text })
         : taken ? M.t("join.handle.taken", { name: taken.display_name, handle: v })
         : refused.has(v) ? M.t("join.handle.refused", { handle: v })
@@ -142,6 +181,23 @@ window.Maity = window.Maity || {};
       handleState,
       h("label", { for: "join-display" }, M.t("join.display.label")), display);
     if (!profiles.offered.length) newFields.hidden = false;
+    // An outsider's own agent (§3.1 "An outsider's agent", js/outsider-actions.js): a member's
+    // own join with trust `outside`, a role of `outside.roles` (the policy's `outside_roles`),
+    // reports_to sent as the caller, which the contract allows; the hub stores nobody, the owner
+    // being no member (§6.2). No trust or boss to choose, no runner, no restricted texts.
+    const outside = hooks.outsider || null;
+    const own = !!hooks.member || !!outside;
+    // Or on a runner instead of a join line (§15.6, js/placements.js `runnerPart`,
+    // tsk-hdczmsq2r431): the part at the form's end, for a human with members:admin, and for a
+    // member bringing their own agent one of theirs not in the project yet (tsk-at3gnzqd8svy).
+    const viaRunner = M.placements && !outside ? M.placements.runnerPart(ctx, { changed: () => showAgent(), member: own }) : null;
+    // The handle a start's clone defaults to: the chosen profile's, or the new one's typed.
+    const followRunner = () => {
+      if (!viaRunner) return;
+      const p = agentSelect.value ? profiles.offered.find((x) => x.id === agentSelect.value) : null;
+      viaRunner.follow(agentSelect.value, agentSelect.value ? memberOf(agentSelect.value) : null, p ? p.handle : handle.value.trim());
+    };
+    handle.addEventListener("input", followRunner);
 
     // An agent that is already a member: the new line starts another
     // instance of it or replaces one of its instances (docs/api.md §6.17).
@@ -175,19 +231,42 @@ window.Maity = window.Maity || {};
       profileLinks.hidden = !id;
       if (!id) return;
       append(profileLinks, h("a", { href: "/agents/" + encodeURIComponent(id) }, M.t("join.profile_link")),
-        member ? [" · ", h("a", { href: ctx.link("agents", id, "rulebook") }, M.t("join.rulebook_link"))] : null);
+        member && !outside ? [" · ", h("a", { href: ctx.link("agents", id, "rulebook") }, M.t("join.rulebook_link"))] : null);
     }
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
     let drawAhead = null; // set with the restricted-access line below
+    // The fields as the agent chosen asks, then what the runner part takes away: a placement
+    // knows no instance choice, take-over, hand-over, subagents or validity (§15.6), and never
+    // changes a membership, so nothing typed there is dropped unseen.
     function showAgent() {
+      const admits = own && !!viaRunner && viaRunner.on();
+      if (admits !== admitting) {
+        admitting = admits;
+        const kept = agentSelect.value;
+        profileOptions();
+        const values = Array.from(agentSelect.querySelectorAll("option")).map((o) => o.getAttribute("value"));
+        agentSelect.value = values.includes(kept) ? kept : values.length ? values[0] : "";
+      }
+      showJoinFields();
+      if (!viaRunner) return;
+      followRunner();
+      const on = viaRunner.on();
+      [instanceBox, memberReportsField, subagentsField, takeOverField, handoverField, ttlField].forEach((f) => { if (on) f.hidden = true; });
+      if (!on) ttlField.hidden = false;
+      create.textContent = on ? M.t("placements.new.submit") : M.t("join.create");
+    }
+    function showJoinFields() {
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
       const fresh = (m ? m.id : "") !== shownFor;
       shownFor = m ? m.id : "";
-      newFields.hidden = agentSelect.value !== "";
+      newFields.hidden = agentSelect.value !== "" || admitting;
+      // Hidden, the new profile's fields are off too: a handle typed for one and refused by its
+      // pattern no longer blocks the form once an agent is chosen (review of #1558, #1919).
+      handle.disabled = display.disabled = newFields.hidden;
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
-      memberReportsField.hidden = !m;
+      memberReportsField.hidden = !m || !!outside;
       reportsOptions();
       if (m && fresh) memberReportsOptions(m);
       takeOverOptions();
@@ -214,17 +293,27 @@ window.Maity = window.Maity || {};
       try { M.withMembers(ctx, (await M.api.getAll(ctx.base + "/members")).items); } catch (ignored) { /* the refusal shown says enough */ }
     }
 
-    const own = !!hooks.member;
     // An agent never holds trust owner; admin and the role proxy only from an
     // owner, proxy only with trust admin (§3.1, owner_only §2.3).
-    const trusts = own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
+    const trusts = outside ? ["outside"] : own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
     const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
-    trust.value = "member";
+    trust.value = trusts[0];
     const role = h("select", { id: "join-role" });
+    // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
+    // a base a member join may give (not ops), as the hub's member limits check it. A start on a
+    // runner takes this role too: with members:admin every base, as validate_assignment takes it
+    // for a placement, and a member's own profile admitted the member join's bases (§15.6).
+    const takeOwn = (list) => (own ? list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base)) : list);
+    // An outsider's roles are the policy's list as `…/contribution` gives it; the project's roles
+    // are a member's read (§2.3), so a project role there reads by its name.
+    let ownRoles = outside ? [] : takeOwn(M.trust.projectRoles(ctx, (list) => { ownRoles = takeOwn(list); if (ownRoles.length) fillRoles(); }));
+    const fallback = outside ? outside.roles[0] : "coder";
     const fillRoles = () => {
-      const wanted = role.value || "coder";
-      const offered = own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
-      M.trust.fillRoles(role, offered, wanted, "coder");
+      const wanted = role.value || fallback;
+      const offered = outside ? outside.roles.slice()
+        : (own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
+          .concat(ownRoles.map((x) => x.name));
+      M.trust.fillRoles(role, offered, wanted, fallback, ownRoles);
     };
     const roleHelp = M.trust.roleHint(role);
     // The owner's instruction to work in subagents (docs/api.md §3.1): on by default for
@@ -252,7 +341,7 @@ window.Maity = window.Maity || {};
         : h("div", { class: "join-offer" }, english, " ", h("label", { for: "join-subagents-english" }, M.t("join.subagents.english"))));
     // Before the join: whether the agent will read the project's restricted texts (§6.1
     // "Every way into the set"). It is the creator's agent, as every agent a join makes.
-    const ahead = M.restricted ? M.restricted.aheadLine() : null;
+    const ahead = M.restricted && !outside ? M.restricted.aheadLine() : null;
     drawAhead = () => {
       if (!ahead) return;
       const id = agentSelect.value;
@@ -348,6 +437,8 @@ window.Maity = window.Maity || {};
       [900, 1800, 3600].map((v) => h("option", { value: String(v) },
         v < 3600 ? M.t("join.ttl.minutes", { count: v / 60 }) : M.t("join.ttl.hours", { count: v / 3600 }))));
 
+    const ttlField = h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl);
+
     const status = M.statusLine();
     // The panel's body: the form, or once a join is made the line in its place.
     const body = h("div", { class: "join-body", "aria-live": "polite" });
@@ -431,6 +522,109 @@ window.Maity = window.Maity || {};
       copy.focus();
     }
 
+    // On a runner instead of a join line (§15.6): the agent and its place in the team from the
+    // form (an agent here by its id alone, a new profile or one's own not here yet with its join
+    // fields), the rest from the runner part; one POST, no line. Made, the panel closes and the
+    // line under it says so, with the way to where it runs; refused, the hub's message and the
+    // fields it names stay here.
+    async function place(agent, member, text) {
+      const no = viaRunner.blocked() || (!viaRunner.ready() ? M.t("placements.new.not_ready") : null);
+      if (no) { status.fail(M.t("placements.new.failed"), { message: no }); viaRunner.first().focus(); return; }
+      // A tool that starts only on a named model (opencode) is never sent without one.
+      const unnamed = viaRunner.unnamed();
+      if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return; }
+      // A profile of one's own not in the project yet: the placement admits it with the fields of
+      // a first join, as the join would carry them (§15.6, §3.1). A member's (`admitting`): trust,
+      // role, oneself or one's own manager as the boss, the briefing; no areas or capabilities.
+      // An admin's: an admin's join fields, as for a new profile (`first_join_fields`). An agent
+      // already here: its id alone, as a placement never changes a membership (not_with_agent_id).
+      const admits = !!agent.id && !member;
+      const req = admits && admitting ? { agent: { id: agent.id }, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id }
+        : agent.id && !admits ? { agent: { id: agent.id } } : {
+          agent,
+          trust: trust.value,
+          role: role.value,
+          reports_to: reportsTo.value || null,
+          areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
+          capabilities: [],
+        };
+      if ((admits || !agent.id) && text) req.briefing = text;
+      Object.assign(req, viaRunner.body());
+      const mine = ++submission;
+      status.busy(M.t("placements.new.busy"));
+      create.disabled = true;
+      let made;
+      try {
+        made = await M.api.post(ctx.base + "/placements", req);
+      } catch (err) {
+        // Closed meanwhile: close() freed the form, and a form opened since is not this
+        // submission's to touch (review of #1919).
+        if (mine !== submission) return;
+        const say = () => {
+          const limit = own ? memberRefusal(err) : null;
+          if (limit) status.fail(M.t("placements.new.failed"), limit);
+          else viaRunner.refuse(status, err);
+        };
+        say();
+        const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
+        if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
+        // Join fields for a profile the list on screen took for one not here yet: the members
+        // are read again, the button held until then.
+        if (admits && Object.values(fields).includes("not_with_agent_id")) { await recheckMember(mine, say); return; }
+        create.disabled = false;
+        return;
+      }
+      // Made even when the panel was closed meanwhile: the line says so all the same, and a form
+      // opened since keeps its draft, its button and the focus.
+      if (mine === submission) {
+        create.disabled = false;
+        status.done();
+        close(true);
+      }
+      // The agent placed now is placed: the part reads again before it is offered next; in a
+      // form opened meanwhile, at its next opening, not under the fields being typed.
+      if (panel.hidden) viaRunner.reread();
+      append(clear(listStatus.el), h("span", { class: "ok" }, M.t("placements.new.done",
+        { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })), " ",
+      h("a", { href: ctx.link("placements") }, M.t("placements.title")));
+      listStatus.el.className = "send-status";
+      if (hooks.started) await hooks.started(made);
+      // A new profile is one's own now: offered by name, its handle taken.
+      // The choice shown stays (a form opened meanwhile keeps its draft).
+      try {
+        profiles = await readProfiles(ctx);
+        const kept = agentSelect.value;
+        profileOptions();
+        agentSelect.value = kept;
+        showAgent();
+        checkHandle();
+      } catch (ignored) { /* the placement is made; the list catches up when read again */ }
+    }
+
+    // "Already a member" (not_with_agent_id) for a profile a start sent to be admitted: the
+    // members are read again, and only a list that shows it as a member makes the next start its
+    // id alone. A list without it keeps the admission draft as filled in, and the refusal; a read
+    // that fails keeps both too and offers to read again. On the hub's word alone, a membership
+    // gone before the next start would be admitted again with the hub's defaults, and the role,
+    // boss, areas and briefing shown here dropped unseen. The button is held until the read is
+    // done; a panel closed meanwhile (`submission` counted on) is not touched.
+    async function recheckMember(mine, say) {
+      let failed = null;
+      try { M.withMembers(ctx, (await M.api.getAll(ctx.base + "/members")).items); } catch (err) { failed = err; }
+      if (mine !== submission) return;
+      create.disabled = false;
+      showAgent();
+      say();
+      if (!failed) return;
+      const again = h("button", { type: "button", class: "join-members-again", onclick: () => {
+        if (again.disabled) return;
+        again.disabled = create.disabled = true;
+        recheckMember(submission, say);
+      } }, M.t("join.retry"));
+      append(status.el, " ", h("span", { class: "join-members-unread" },
+        M.t("placements.new.members_unread", { reason: failed.message || failed.code || M.t("join.an_error") })), " ", again);
+    }
+
     // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
     const create = h("button", { type: "submit", class: "primary" }, M.t("join.create"));
     // Where the second factor is asked for when the hub wants it for the join.
@@ -445,6 +639,12 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (create.disabled) return;
         let agent;
+        // Starting one's own agent on a runner with none of one's profiles left to admit: why.
+        if (admitting && !agentSelect.value) {
+          status.fail(M.t("placements.new.failed"), { message: viaRunner.blocked() });
+          agentSelect.focus();
+          return;
+        }
         if (agentSelect.value) {
           agent = { id: agentSelect.value };
         } else {
@@ -459,7 +659,10 @@ window.Maity = window.Maity || {};
         const member = agent.id ? memberOf(agent.id) : null;
         // At the member's limit (§3.1) only an instance of an agent already
         // in the project is made: that counts nothing.
-        if (!member && hooks.full && hooks.full()) {
+        // A start on a runner is left to the hub's member_agents_max: a profile that a placement
+        // admits already holds its slot there, which this count does not see (§3.1, §15.6).
+        // A profile already held (an open first join of one's own) takes no new slot either.
+        if (!member && !(viaRunner && viaRunner.on()) && hooks.full && hooks.full(agent.id)) {
           status.fail(M.t("join.failed"), { message: M.t("join.failed.full") });
           agentSelect.focus();
           return;
@@ -470,11 +673,13 @@ window.Maity = window.Maity || {};
           briefing.focus();
           return;
         }
+        if (viaRunner && viaRunner.on()) { await place(agent, member, text); return; }
         const req = member
           ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
             replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
           // One's own agent (§3.1): oneself (the default) or one of one's own managers here.
-          : own ? { agent, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id, ttl_seconds: Number(ttl.value) }
+          // An outsider's: the caller, never another boss (§3.1 "An outsider's agent"); stored as nobody.
+          : own ? { agent, trust: trust.value, role: role.value, reports_to: outside ? ctx.me.id : reportsTo.value || ctx.me.id, ttl_seconds: Number(ttl.value) }
           : {
             agent,
             trust: trust.value,
@@ -507,9 +712,10 @@ window.Maity = window.Maity || {};
           try {
             answer = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(member.id), { reports_to: to });
           } catch (err) {
+            // Closed meanwhile: close() freed the form, and a form opened since is not this
+            // submission's to touch (review of #1919).
+            if (mine !== submission) return;
             create.disabled = false;
-            // Closed meanwhile: nothing said, and no "Saving" left for the next opening.
-            if (mine !== submission) { status.done(); return; }
             status.fail(M.t("join.reports.failed"), err);
             memberReports.focus();
             return;
@@ -525,7 +731,7 @@ window.Maity = window.Maity || {};
             bossSaid = to ? M.t("join.reports.saved", { name, boss: ctx.nameOf(to) }) : M.t("join.reports.saved_nobody", { name });
           }
           // Taken, the boss stays (kept above for the next submission); closed meanwhile, no join.
-          if (mine !== submission) { create.disabled = false; status.done(); return; }
+          if (mine !== submission) return;
         }
         const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
@@ -537,6 +743,8 @@ window.Maity = window.Maity || {};
           j = await M.stepUp.run(() => (mine === submission ? M.api.post(ctx.base + "/joins", req)
             : Promise.reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled"))), stepSlot, M.t("join.step_up"));
         } catch (err) {
+          // Closed meanwhile: its refusal is not the newer form's to say.
+          if (mine !== submission) return;
           if (err.code === "cancelled") { status.done(); sayBoss(); return; }
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
@@ -544,18 +752,12 @@ window.Maity = window.Maity || {};
           const takeover = ["takes_over", "handover"].find((f) => Object.hasOwn(TAKEOVER_REFUSALS, f + ":" + fields[f]));
           status.fail(M.t("join.failed"), why === "taken" ? { message: M.t("join.failed.taken", { handle: agent.handle }) }
             : takeover ? { message: TAKEOVER_REFUSALS[takeover + ":" + fields[takeover]]() }
-            // §3.1's limits for a member, in words, the field named.
-            : d.reason === "project_not_allowed" ? { message: M.t("join.failed.project_not_allowed") }
-            : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
-              field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
-            : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
-            // No members:admin and the member's way closed (§3.1): say which right is missing.
-            : err.code === "forbidden" && !d.reason && d.scope === "members:admin" ? { message: M.t("join.failed.no_admin") }
-            : err);
+            : (outside && outsiderRefusal(err)) || memberRefusal(err) || err);
           sayBoss();
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (takeover || d.field === "takes_over") (takeover === "handover" ? handover : takesOver).focus();
-          if (err.code === "instance_quota" && agent.id) {
+          // An outsider has no Agents view: no link that would be not found.
+          if (err.code === "instance_quota" && agent.id && !outside) {
             append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("agents", agent.id, "rulebook") },
               M.t("join.quota.raise")));
           }
@@ -572,6 +774,9 @@ window.Maity = window.Maity || {};
             if (notMember) saidMember.delete(agent.id);
             await rereadMembers();
             if (notMember) M.withMembers(ctx, ctx.members.filter((m) => m.id !== agent.id));
+            // Closed while the members were read: the members are taken, the form opened since
+            // keeps its choice, its status and the focus (A1265 at #1919).
+            if (mine !== submission) return;
             showAgent();
             if (saysMember) { status.fail(M.t("join.failed"), { message: M.t("join.failed.is_member") }); sayBoss(); }
             (replaceOne.checked && !replaceOne.disabled ? replaced : another).focus();
@@ -580,6 +785,8 @@ window.Maity = window.Maity || {};
             // The hub knows better than the list on screen: read it again, and say so at the field.
             if (why === "taken") refused.add(agent.handle);
             try { profiles = await readProfiles(ctx); } catch (ignored) { /* the refusal above says enough */ }
+            // Closed while the profiles were read: the agent chosen since stays chosen (A1265 at #1919).
+            if (mine !== submission) return;
             profileOptions();
             agentSelect.value = "";
             checkHandle();
@@ -587,8 +794,12 @@ window.Maity = window.Maity || {};
           }
           return;
         } finally {
-          create.disabled = false;
+          // Only this submission's own button: a form opened since keeps its own state.
+          if (mine === submission) create.disabled = false;
         }
+        // Created after the panel was closed: the join is made, the lists catch up, and the form
+        // opened since stays as it is (review of #1919).
+        if (mine !== submission) { reread(); return; }
         status.done();
         showLine(j, member, bossSaid);
         // A new profile is named in the select, the new join is a seat.
@@ -596,6 +807,17 @@ window.Maity = window.Maity || {};
           [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
         } catch (err) {
           listStatus.fail(M.t("join.created_unread"), err);
+          return;
+        }
+        // Done while the lists were read: the new profile is offered and the new seat listed,
+        // as after a placement; the form opened since keeps its choice (A1265 at #1919).
+        if (mine !== submission) {
+          const kept = agentSelect.value;
+          profileOptions();
+          agentSelect.value = kept;
+          showAgent();
+          checkHandle();
+          changed();
           return;
         }
         profileOptions();
@@ -612,18 +834,22 @@ window.Maity = window.Maity || {};
         newFields,
         instanceBox,
         memberReportsField,
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
+        outside ? null : membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
         membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("join.field.role")), role, roleHelp)),
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
-        own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
+        outside ? null : membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
+        outside ? membershipField(h("p", { class: "hint field wide join-outside-hint" }, M.t("join.field.outsider_hint")))
+          : own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
           : membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas)),
         membershipField(subagentsField),
         membershipField(takeOverField),
-        handoverField,
-        h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),
+        // An outsider's join hands over a card it reads only, never a message (§3.1, H1 at
+        // 39497bfb): the field, which takes both, is left out for it.
+        outside ? null : handoverField,
+        ttlField),
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
         h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+    viaRunner ? viaRunner.el : null,
     ahead ? ahead.el : null,
     stepSlot,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
@@ -632,7 +858,7 @@ window.Maity = window.Maity || {};
     function showForm() { append(clear(body), form); drawAhead(); }
     showForm();
     showAgent();
-    append(clear(panel), panelHead(ctx, () => close(true), own), body);
+    append(clear(panel), panelHead(ctx, () => close(true), own, !!outside), body);
 
     let opener = null;
     // Opened, it reads the members again: an agent's instances and its team's
@@ -648,12 +874,17 @@ window.Maity = window.Maity || {};
         showAgent();
       }
       focusSoon(agentSelect);
+      // The runners and placements as they are now, when the part is on.
+      if (viaRunner) viaRunner.reread();
       rereadMembers().then(() => { if (!panel.hidden) showAgent(); });
     }
     function close(refocus) {
       // A code question still open belongs to the submission being closed: it ends
       // with it, and the next submission sends the fields then shown.
       submission++;
+      // A submission still waiting ends with it: the form opens again free (review of #1919).
+      create.disabled = false;
+      status.done();
       M.stepUp.cancel(stepSlot);
       panel.hidden = true;
       showForm();
@@ -771,18 +1002,19 @@ window.Maity = window.Maity || {};
 
   // The project the join is for, by name and full name: with several
   // projects open it must not be guessed from the tab.
-  function panelHead(ctx, onClose, own) {
+  function panelHead(ctx, onClose, own, outside) {
     const project = ctx.project || {};
     const full = project.full_name || ctx.slug || "";
     return [
       h("div", { class: "join-head" },
-        h("h3", { id: "join-title" }, own ? M.t("join.title.own") : M.t("join.title")),
+        h("h3", { id: "join-title" }, outside ? M.t("outsider.add_agent") : own ? M.t("join.title.own") : M.t("join.title")),
         h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
       h("p", { class: "join-project" }, M.t("join.project", { name: project.name || ctx.slug || full, full })),
       h("p", { class: "muted" }, M.t("join.intro")),
     ];
   }
 
+  // hooks.started(placement): after a start on a runner, for a page that lists placements.
   // hooks.changed(): the seats and the earlier joins changed (a join made,
   // revoked, expired, or read at last); the Agents view draws them again.
   // A failed read of the profiles or the joins stays in the panel and the
@@ -803,13 +1035,15 @@ window.Maity = window.Maity || {};
     async function load() {
       try {
         const [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
-        // A member sees their own joins only, the ones they may revoke (§3.1).
-        if (hooks.member) joins.items = joins.items.filter((j) => j.created_by === ctx.me.id);
+        // A member, or an outsider, sees their own joins only, the ones they may revoke (§3.1).
+        if (hooks.member || hooks.outsider) joins.items = joins.items.filter((j) => j.created_by === ctx.me.id);
         impl = build(ctx, hooks, panel, listStatus, profiles, joins);
         listStatus.done();
         return true;
-      } catch (err) {
+      } catch (failed) {
         impl = null;
+        // An outsider's joins read answers not_found once the opt-in closed: said in words.
+        const err = (hooks.outsider && outsiderRefusal(failed)) || failed;
         const retry = h("button", {
           type: "button",
           onclick: async () => {
@@ -820,7 +1054,7 @@ window.Maity = window.Maity || {};
             } else retry.disabled = false;
           },
         }, M.t("join.retry"));
-        append(clear(panel), panelHead(ctx, failedClose, !!hooks.member),
+        append(clear(panel), panelHead(ctx, failedClose, !!hooks.member || !!hooks.outsider, !!hooks.outsider),
           h("p", { class: "error", role: "alert" }, M.t("join.read_failed_text", { reason: err.message || err.code || M.t("join.an_error") })), retry);
         listStatus.fail(M.t("join.read_failed"), err);
         return false;

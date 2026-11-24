@@ -26,12 +26,19 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     return human
 
 
+def _sessions_of(agent: flow.Agent) -> Any:
+    """The ids of the agent's sessions, for the session's project rows."""
+    return select(t.agent_session.c.id).where(
+        t.agent_session.c.credential_id == agent.credential_id
+    )
+
+
 def _episode(engine: Engine, agent: flow.Agent, ago: timedelta | None) -> None:
     """Start (or with `None` end) the episode of the agent's session `ago` back."""
     with engine.begin() as conn:
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.credential_id == agent.credential_id)
+            update(t.agent_session_project)
+            .where(t.agent_session_project.c.session_id.in_(_sessions_of(agent)))
             .values(not_listening_since=None if ago is None else clock.now() - ago)
         )
 
@@ -394,8 +401,8 @@ def test_after_seen_only_a_later_episode_files_a_new_one(
     clock.set_source(lambda: later_start + timedelta(hours=2))
     with migrated.begin() as conn:  # an episode that started after the answer
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.credential_id == later.credential_id)
+            update(t.agent_session_project)
+            .where(t.agent_session_project.c.session_id.in_(_sessions_of(later)))
             .values(not_listening_since=later_start)
         )
     not_listening_digest.run(migrated)
@@ -490,14 +497,13 @@ def test_only_the_latest_session_is_read_however_long_the_history(
                     "live": None,
                     "started_at": latest.started_at - timedelta(days=1, minutes=n),
                     "ended_at": latest.started_at - timedelta(days=1),
-                    "not_listening_seq": None,
-                    "not_listening_since": None,
-                    "not_listening_request_id": None,
                 }
                 for n in range(200)
             ],
         )
-        rows = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+        rows, _ = not_listening_digest._latest_sessions_and_episodes(
+            conn, {agent.credential_id}, set()
+        )
     assert [r.id for r in rows] == [latest.id]
     not_listening_digest.run(migrated)
     [digest] = _digests(owner)
@@ -536,7 +542,9 @@ def test_on_an_equal_start_the_live_session_is_the_latest(
                 }
             )
         )
-        [row] = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+        [row], _ = not_listening_digest._latest_sessions_and_episodes(
+            conn, {agent.credential_id}, set()
+        )
         assert row.id == live.id
     not_listening_digest.run(migrated)
     assert _digests(owner) == []  # seen five minutes ago: not away
@@ -581,6 +589,22 @@ def test_a_stalled_holder_is_listed_with_its_cards_and_reason(
     assert f"({agent.instance}) in maintainer/maity holds {card}, last seen " in line
     assert line.endswith(" (UTC), silent")
     assert advice == not_listening_digest.HOLDER_ADVICE
+
+
+def test_a_holder_stalls_a_minute_after_the_threshold_of_its_stored_last_seen(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The stored `last_seen_at` may be up to a minute older than the latest call (§2.4): the
+    threshold (60 minutes by default) is counted from a minute after it, never early."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _holding(owner, agent)
+    _silent(migrated, agent, timedelta(minutes=60, seconds=59))
+    not_listening_digest.run(migrated)
+    assert _digests(owner) == []  # a call skipped within the minute may be 59 minutes old
+    _silent(migrated, agent, timedelta(minutes=61, seconds=1))
+    not_listening_digest.run(migrated)
+    assert len(_digests(owner)) == 1
 
 
 @pytest.mark.parametrize("status", ["done", "cancelled"])
@@ -653,8 +677,8 @@ def test_a_pause_by_someone_else_leaves_a_holder_out_its_own_does_not(
             )
         else:
             conn.execute(
-                update(t.credential)
-                .where(t.credential.c.id == agent.credential_id)
+                update(t.instance_attachment)
+                .where(t.instance_attachment.c.credential_id == agent.credential_id)
                 .values(**paused)
             )
     not_listening_digest.run(migrated)

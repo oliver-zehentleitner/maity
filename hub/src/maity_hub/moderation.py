@@ -16,16 +16,20 @@ from maity_hub import (
     account_deletion,
     attachment_store,
     clock,
+    events,
     public_pages,
     public_projects,
+    runner_revoke,
+    runners,
     write_guard,
 )
 from maity_hub import tables as t
-from maity_hub.auth import email_links, leaks, sessions
+from maity_hub.auth import email_links, revocation, sessions
 from maity_hub.errors import ApiError, invalid
-from maity_hub.events import Actor
+from maity_hub.events import Actor, lock_project
 from maity_hub.forge import Forge
 from maity_hub.notifications import records
+from maity_hub.runners import live_credential_id
 from maity_hub.views import principal_id, ts
 
 HOLDING = ("hide", "remove")
@@ -171,33 +175,88 @@ def suspensions(conn: Connection, rows: Any, owner_of: dict[str, str]) -> dict[i
     }
 
 
+def _projects_to_lock(conn: Connection, runner_ids: list[str], own: Any) -> list[str]:
+    """The projects a suspension locks, sorted: those of the account's live credentials,
+    which their revocation locks, and for each of its runners what the owner's stop locks
+    (`runner_revoke.projects_to_lock`, the rule `apply` itself follows below)."""
+    from maity_hub.instances import attached_now, credential_join  # not at the top
+
+    # Every project a live credential's revocation locks (`revocation.projects_of`): each one
+    # it is attached to now, none it was detached from (§6.17), and its placements'.
+    live = conn.execute(
+        select(t.credential.c.id)
+        .select_from(credential_join())
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
+        .where(attached_now(), own)
+        .distinct()
+    ).scalars()
+    found = revocation.projects_of(conn, list(live))
+    for runner_id in runner_ids:
+        found.update(runner_revoke.projects_to_lock(conn, runner_id))
+    return sorted(found)
+
+
 def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     """The account signs in no more, and every session and credential it holds ends at
-    once: its agents' credentials and its runners' credentials, so its placements stop.
-    The order is a deletion's (§2.9): the account lock first and exclusively, so no issue
-    that read the account before this commits hands out a credential after it; then the
-    credentials, which lock their projects; the human's own rows last, as project work
-    locks the project before the human."""
+    once: its agents' credentials (`suspended`) and its runners' credentials. Its runners
+    are then stopped as under the owner's `agents: "stop"` (§15.3), whatever the projects'
+    rule: their placements close, and the agent credentials they still name, which are
+    other humans' agents, are revoked at once (`runner_revoked`). Nobody but the hub acts
+    there, so no human is named as having done it.
+
+    The order: the account lock first and exclusively (§2.9), so no issue that read the
+    account before this commits hands out a credential after it; then the runners' live
+    credentials and their rows, in the order a runner's own call takes them (credential,
+    then runner); then, in one pass in the order of their ids, every project the
+    revocations below lock, so none is taken out of that order; the human's own rows
+    last, as project work locks the project before the human."""
+    from maity_hub.instances import credential_join  # imported here, not at the top
+    from maity_hub.routes import runners as runner_routes
+
     account_deletion.lock_account(conn, human_id)
+    owned = runners.lock(conn, t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None))
+    runner_ids = [row.id for row in owned]
     m, c = t.membership.c, t.credential.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
+    own = (m.human_id == human_id) | m.agent_id.in_(agents)
+    for project_id in _projects_to_lock(conn, runner_ids, own):
+        lock_project(conn, project_id)
+    a = t.instance_attachment.c
+    # One row per project a live credential was ever attached to (§6.17), its oldest first:
+    # each is revoked whatever its attachments, and told only where it is attached now.
     credentials = conn.execute(
-        select(c.id)
-        .join(t.membership, m.id == c.membership_id)
-        .where(c.revoked_at.is_(None), (m.human_id == human_id) | m.agent_id.in_(agents))
-        .order_by(c.id)
-    ).scalars()
-    for credential_id in list(credentials):
-        leaks.revoke(conn, credential_id, REVOKED_REASON, None)
-    r = t.runner_credential.c
-    runner_credentials = conn.execute(
-        select(r.id)
-        .join(t.runner, t.runner.c.id == r.runner_id)
-        .where(t.runner.c.owner_id == human_id, r.revoked_at.is_(None))
-        .order_by(r.id)
-    ).scalars()
-    for credential_id in list(runner_credentials):
-        leaks.revoke_runner_credential(conn, credential_id, REVOKED_REASON, None)
+        select(c.id, m.project_id, m.agent_id, a.detached_at)
+        .select_from(credential_join())
+        .join(t.membership, m.id == a.membership_id)
+        .where(c.revoked_at.is_(None), own)
+        .order_by(c.id, a.attached_at, a.id)
+    ).all()
+    won: dict[str, bool] = {}
+    for credential in credentials:
+        # Said as a revocation by hand says it (§6.17), so the agent's owner sees why its
+        # instances stopped; only the revocation that wins says it, in each project.
+        if credential.id not in won:
+            won[credential.id] = revocation.revoke(conn, credential.id, REVOKED_REASON, None)
+        if won[credential.id] and credential.agent_id and credential.detached_at is None:
+            events.emit(
+                conn,
+                credential.project_id,
+                "credential_revoked",
+                [f"member:{credential.agent_id}", "trust:owner"],
+                {"credential_id": credential.id, "reason": REVOKED_REASON},
+                actor=actor(report_id),
+                subject=("credential", credential.id),
+            )
+    for runner_id in runner_ids:
+        # `stop` whatever the projects' rule, so the instance rule passed is never read.
+        applied = runner_revoke.apply(
+            conn, runner_id, agents="stop", instance_rule="stop", removing=False, by=None
+        )
+        live = live_credential_id(conn, runner_id)
+        if live is not None:
+            revocation.revoke_runner_credential(conn, live, REVOKED_REASON, None, applied)
+        else:  # a key revoked already: what the stop applied joins its record (§15.3)
+            runner_routes.record_applied(conn, runner_id, applied)
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
     email_links.void_human(conn, human_id)  # a mailed sign-in link or code dies too
     conn.execute(
@@ -319,12 +378,20 @@ def _reason(report: Any, note: str | None) -> str:
 
 
 def _hide(conn: Connection, report: Any, note: str | None) -> None:
-    """A project's public surfaces go off; a profile, a message or a card is not served
-    publicly anywhere yet (§16.9), so its hold is all there is to it."""
+    """A project's public surfaces go off. A profile takes the owner's row lock before
+    its hold is written, the same row a reset locks and the writers that ask
+    `refuse_held` lock first; a message or a card has nothing else to switch off."""
     if report.target_type == "project":
         from maity_hub.routes.projects import hide_by_moderation
 
         hide_by_moderation(conn, report.project_id, _reason(report, note), actor(report.id))
+    elif report.target_type == "profile":
+        # The lock first: held until `apply` writes the hold, so a writer reads that hold.
+        # No project lock is held yet here (a project hide locks its project above and takes
+        # no profile row), so the order stays account, then project, then this row.
+        from maity_hub import avatars
+
+        avatars.lock_owner(conn, report.target_id)
 
 
 def _reset_profile(conn: Connection, report: Any) -> None:
@@ -332,10 +399,12 @@ def _reset_profile(conn: Connection, report: Any) -> None:
 
     owner = report.target_id
     table = t.agent_profile if owner.startswith("agt-") else t.human
+    # The lock first: the name and the handle are read under it, so a name committed
+    # after this reset started is reset too, and the hold is written after that.
+    avatars.lock_owner(conn, owner)
     row = conn.execute(select(table).where(table.c.id == owner)).first()
     if row is None:
         return
-    avatars.lock_owner(conn, owner)
     before = avatars.state(conn, owner)
     avatars.remove_upload(conn, owner)
     if owner.startswith("agt-"):  # its motif goes too: the generated picture shows (§16.8)

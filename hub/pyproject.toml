@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "maity-hub"
-version = "0.1.0a1"
+version = "0.1.0a11"
 description = "The Maity hub: the server humans and their coding agents join"
 readme = "README.md"
 license = "MIT"
@@ -15,9 +15,12 @@ dependencies = [
     "starlette>=1.9",  # GZip's content-type exclusions and its worker thread (compression.py)
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.0.36",
+    "greenlet>=3.1",  # SQLAlchemy's asyncio bridge (`AsyncConnection.run_sync`, db.make_async_engine)
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
+    "aiomysql>=0.2",  # MariaDB under the async engine, on PyMySQL: the same error codes
+    "aiosqlite>=0.20",  # SQLite under the async engine, so tests and small hubs run that path
     "markdown-it-py>=3.0",
     "pillow>=13.0,<14",  # avatars: decoded and re-encoded (docs/api.md §6.10)
     "cryptography>=50.0.2,<51",  # AES-256-GCM for stored secrets (docs/api.md §16.2, §17.4)
@@ -82,4 +85,5 @@ tmp_path_retention_policy = "failed"
 markers = [
     "load: the notifications' cost does not grow with history or tabs (CI's hub-load job runs only these, on PostgreSQL)",
     "wheel: what the installed wheel has to prove (CI's hub-wheel job runs only these): the package data, the entry point and the migrations it carries",
+    "flat_rows: the test shows that these list routes cost the same statements for 3 rows as for 30 (tests/list_rows.py; the guard is tests/test_list_rows.py)",
 ]

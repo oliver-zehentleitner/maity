@@ -28,11 +28,17 @@ def signed_in(make_client: ClientFactory, engine: Engine, handle: str = "maintai
 def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: Engine) -> None:
     owner = signed_in(make_client, migrated)
     got = owner.get(S).json()
-    assert got["kinds"] == ["inbox", "chat", "mention", "security"]
+    assert got["kinds"] == ["inbox", "chat", "mention", "security", "invitation"]
     assert got["mail_available"] is False
     assert got["browser"] == {
         "enabled": False,
-        "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
+        "kinds": {
+            "inbox": True,
+            "chat": True,
+            "mention": True,
+            "security": True,
+            "invitation": True,
+        },
     }
     email = got["email"]
     assert email["address"] is None and email["address_status"] == "none"
@@ -41,6 +47,8 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
     assert email["kinds"]["mention"] == {"mode": "daily", "content": False}
     assert email["kinds"]["inbox"] == {"mode": "immediate"}
     assert email["kinds"]["security"] == {"mode": "immediate"}
+    # An invitation by handle at once too, switchable to the platform only (§18.4).
+    assert email["kinds"]["invitation"] == {"mode": "immediate"}
     # No time zone until the human sets one: the dashboard shows the browser's (§18.4).
     assert (email["language"], email["timezone"], email["daily_at"]) == ("en", None, "08:00")
     assert email["weekly_on"] == "mon"
@@ -111,6 +119,7 @@ def test_preferences_change_key_by_key(make_client: ClientFactory, migrated: Eng
         "chat": False,
         "mention": True,
         "security": True,
+        "invitation": True,
     }
     assert got["browser"]["enabled"] is True
     assert got["email"]["kinds"]["chat"] == {"mode": "off", "content": False}

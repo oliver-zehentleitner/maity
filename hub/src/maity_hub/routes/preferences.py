@@ -72,7 +72,7 @@ def load_preferences(conn: Connection, human_id: str) -> dict[str, Any]:
     return _mine(conn, human_id)
 
 
-idempotency.LOADERS["preferences"] = idempotency.plain(load_preferences)
+idempotency.register("preferences", idempotency.plain(load_preferences), idempotency.is_caller)
 
 
 @router.get("/me/preferences")
@@ -158,8 +158,7 @@ def get_theirs(slug: str, member_id: str, request: Request, caller: AnyCaller) -
 def propose(
     slug: str, member_id: str, body: ProposalIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
-    if preferences.size(body.markdown) > preferences.MAX_BYTES:
-        raise invalid({"markdown": "too_long"}, "preferences are at most 8 KiB")
+    preferences.check(body.markdown)
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)

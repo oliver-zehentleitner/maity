@@ -45,22 +45,26 @@ def defaults() -> dict[str, Any]:
 def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
     """Per agent membership its active instances with a live session: whether it listens,
     when it last called, and how many cards it holds."""
-    from maity_hub import listening
+    from maity_hub import instances, listening
 
     if not membership_ids:
         return {}
+    a = t.instance_attachment
     rows = conn.execute(
         select(
-            t.credential.c.membership_id,
+            a.c.membership_id,
             t.credential.c.instance,
             t.agent_session.c.id.label("session_id"),
-            t.agent_session.c.last_seen_at,
+            # The instance's latest call: its credential's last use, written on every call,
+            # where the session's `last_seen_at` is written at most once a minute (§2.4).
+            t.credential.c.last_used_at.label("last_seen_at"),
         )
+        .select_from(instances.credential_join())
         .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
         .where(
-            t.credential.c.membership_id.in_(membership_ids),
-            t.credential.c.revoked_at.is_(None),
-            t.credential.c.dormant_since.is_(None),  # never chosen, as if not listening (§6.17)
+            a.c.membership_id.in_(membership_ids),
+            instances.attached_now(),
+            a.c.dormant_since.is_(None),  # never chosen, as if not listening (§6.17)
             t.agent_session.c.live.is_(True),
         )
     ).all()
@@ -196,12 +200,17 @@ def record_presence(conn: Connection, now: datetime) -> None:
     from maity_hub import instances, listening
 
     minute = now.replace(second=0, microsecond=0)
+    # Each instance's latest call is its credential's last use, written on every call, as
+    # `instances.presence` reads it elsewhere; the session's `last_seen_at` is written at most
+    # once a minute (§2.4).
+    # A session counts in each project it is in (`agent_session_project`, §6.17).
+    p = t.agent_session_project
     live = conn.execute(
-        select(
-            t.agent_session.c.membership_id,
-            t.agent_session.c.id,
-            t.agent_session.c.last_seen_at,
-        ).where(t.agent_session.c.live.is_(True))
+        select(p.c.membership_id, t.agent_session.c.id, t.credential.c.last_used_at)
+        .select_from(p)
+        .join(t.agent_session, t.agent_session.c.id == p.c.session_id)
+        .join(t.credential, t.credential.c.id == t.agent_session.c.credential_id)
+        .where(t.agent_session.c.live.is_(True))
     ).all()
     heard = listening.which((session for _, session, _ in live), conn)
     found = {
@@ -635,7 +644,9 @@ def next_at(series: Any, now: datetime) -> datetime | None:
     policy = series_mod.schedule_of(series)
     if not policy["enabled"] or policy.get("recurrence") is None:
         return None
-    return schedule.next_slot(policy, now, anchor_date(series))
+    # a changed schedule's rest after its last round lies ahead of now (§20.1)
+    after = max(now, series.last_slot) if series.last_slot is not None else now
+    return schedule.next_slot(policy, after, anchor_date(series))
 
 
 def due_slots(series: Any, now: datetime) -> list[datetime]:

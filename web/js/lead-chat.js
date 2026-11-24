@@ -66,14 +66,16 @@ window.Maity = window.Maity || {};
 
   // Every project's targets, for the header outside a project: each
   // project's view and members read once per page drawn (per ctx), so the
-  // counts' refresh asks nothing again.
+  // counts' refresh asks nothing again. The members come from M.membersOnce,
+  // which the all-projects inbox reads from too, so where both need a
+  // project's list it is read once (tsk-f78z1dvbs26a).
   const everywhereOf = new WeakMap();
   function targetsEverywhere(ctx) {
     if (!everywhereOf.has(ctx)) {
       everywhereOf.set(ctx, Promise.all(ctx.projects.map(async (p) => {
         const base = "/projects/" + M.api.projectPath(p.full_name);
         try {
-          const [project, page] = await Promise.all([M.api.get(base), M.api.getAll(base + "/members")]);
+          const [project, page] = await Promise.all([M.api.get(base), M.membersOnce(ctx, p.full_name)]);
           const memberById = Object.fromEntries(page.items.map((m) => [m.id, m]));
           const pctx = { ...ctx, slug: p.full_name, base, project, members: page.items, memberById,
             nameOf: (id) => (memberById[id] || {}).display_name || id,
@@ -165,7 +167,8 @@ window.Maity = window.Maity || {};
   // Whom the Lead button reaches from this page: the project's, or every
   // project's outside one (then each named with its project).
   async function found(ctx) {
-    if (!ctx.me || ctx.me.kind !== "human") return { list: [], multiProject: false };
+    // An outsider of a public project (§2.3) has no chat there: nobody to reach from its views.
+    if (!ctx.me || ctx.me.kind !== "human" || M.trust.outsider(ctx)) return { list: [], multiProject: false };
     if (ctx.scope === "project") return { list: targets(ctx).map((member) => ({ ctx, member, project: ctx.project })), multiProject: false };
     const list = await targetsEverywhere(ctx);
     return { list, multiProject: new Set(list.map((t) => t.project.full_name)).size > 1 };

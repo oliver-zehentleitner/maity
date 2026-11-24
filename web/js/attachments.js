@@ -70,15 +70,32 @@ window.Maity = window.Maity || {};
   // The type to declare: an image's from its bytes (the hub sniffs and
   // compares, §8.7), any other file's as the browser knows it.
   async function typeOf(file) {
+    return (await imageType(file)) || file.type || "application/octet-stream";
+  }
+  // The image type the hub would read from these bytes (§8.7: PNG, JPEG,
+  // WebP or GIF), or null.
+  async function imageType(file) {
     const sniffed = M.dom.sniffImage ? await M.dom.sniffImage(file) : null;
     if (sniffed) return sniffed;
+    // GIF87a or GIF89a whole, as the hub sniffs it: any other GIF8… is no image there.
     const b = new Uint8Array(await file.slice(0, 6).arrayBuffer());
-    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return "image/gif";
-    return file.type || "application/octet-stream";
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return "image/gif";
+    return null;
   }
 
-  // The composer's part: choose files, each uploaded at once and shown as
-  // pending with a Remove; ids() is what the message names. Not offered
+  // A pasted image's name: a clipboard calls nearly every one image.png.
+  // The time is the account's wall clock (M.fmt), as everywhere on the page.
+  const EXTENSION = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+  function pastedName(type, n) {
+    const w = M.fmt.wall(new Date());
+    const two = (x) => String(x).padStart(2, "0");
+    const stamp = w ? w.year + two(w.month) + two(w.day) + "-" + two(w.hour) + two(w.minute) + two(w.second) : "";
+    return "pasted-image" + (stamp ? "-" + stamp : "") + (n > 1 ? "-" + n : "") + "." + EXTENSION[type];
+  }
+
+  // The composer's part: choose files, or paste an image into its text
+  // field (pasteInto), each uploaded at once and shown as pending with a
+  // Remove; ids() is what the message names. Not offered
   // in a closed project (§8.7: it takes no new files). One's uploads that
   // no message names yet (a composer left, a send that failed) are read
   // from the hub and offered apart, to attach here or to remove: they
@@ -163,21 +180,23 @@ window.Maity = window.Maity || {};
           },
         }, M.t("attach.remove")) : null)));
     };
-    input.addEventListener("change", async () => {
-      const files = Array.from(input.files || []);
-      input.value = "";
-      for (const file of files) {
+    // Each file checked as the hub would (§8.7), then uploaded at once and
+    // pending by name and size: a chosen file and a pasted image alike.
+    // `name` and `type` are the paste's; a chosen file brings its own.
+    async function addFiles(files) {
+      for (const { file, name, type } of files) {
         if (pending.length >= PER_MESSAGE) { tooMany(); break; }
         if (file.size > FILE_MAX) {
-          status.fail(M.t("attach.not_attached"), { message: file.name ? M.t("attach.file_too_large", { name: file.name }) : M.t("attach.file_too_large.unnamed") });
+          const named = name || file.name;
+          status.fail(M.t("attach.not_attached"), { message: named ? M.t("attach.file_too_large", { name: named }) : M.t("attach.file_too_large.unnamed") });
           continue;
         }
-        const p = { name: file.name || "file", att: null };
+        const p = { name: name || file.name || "file", att: null };
         pending.push(p);
         draw();
         status.busy(M.t("attach.uploading", { name: p.name }));
         try {
-          p.att = await M.api.postRaw(ctx.base + "/attachments?name=" + encodeURIComponent(p.name), file, await typeOf(file));
+          p.att = await M.api.postRaw(ctx.base + "/attachments?name=" + encodeURIComponent(p.name), file, type || await typeOf(file));
           status.done();
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
@@ -189,7 +208,57 @@ window.Maity = window.Maity || {};
         }
         draw();
       }
+    }
+    input.addEventListener("change", async () => {
+      const files = Array.from(input.files || []);
+      input.value = "";
+      await addFiles(files.map((file) => ({ file })));
     });
+    // A pasted image (a screenshot) takes the chosen file's way: checked,
+    // uploaded at once, pending by name and size. Text in the same paste
+    // wins and is pasted as ever: an office program puts a picture of the
+    // copied cells beside their text, and that picture is not what was
+    // meant; any text, a space too, is text. Only PNG, JPEG, WebP or GIF by
+    // its bytes, as the hub keeps an image (§8.7); anything else pasted as
+    // an image, or one whose bytes cannot be read, is said, not sent, and the
+    // others of the paste still go.
+    //
+    // While its images are read and uploaded the paste counts as busy: a
+    // Send meanwhile would go without them, and they would land in the next
+    // draft.
+    let preparing = 0;
+    async function paste(e) {
+      const data = e.clipboardData;
+      if (!data || input.disabled) return;
+      const words = typeof data.getData === "function" ? data.getData("text/plain") : "";
+      if (words) return;
+      let files = Array.from(data.files || []);
+      if (!files.length) files = Array.from(data.items || []).filter((i) => i.kind === "file").map((i) => i.getAsFile()).filter(Boolean);
+      files = files.filter((f) => /^image\//i.test(f.type || ""));
+      if (!files.length) return;
+      e.preventDefault();
+      preparing += 1;
+      try {
+        const named = [];
+        const refused = [];
+        for (const file of files) {
+          let type = null;
+          try {
+            type = await imageType(file);
+          } catch (err) {
+            refused.push(M.t("attach.refused.undecodable"));
+            continue;
+          }
+          if (!type) { refused.push(M.t("attach.paste.not_image")); continue; }
+          named.push({ file, type, name: pastedName(type, named.length + 1) });
+        }
+        await addFiles(named);
+        // Said last, so an upload's own line does not replace it.
+        if (refused.length) status.fail(M.t("attach.not_attached"), { message: M.fmt.list(Array.from(new Set(refused))) });
+      } finally {
+        preparing -= 1;
+      }
+    }
     // Hidden, the whole part, while the hub has attachments off (§8.7): a
     // chooser whose every file would be refused is not offered, and no file
     // field is left in the page without its visible label. An upload's
@@ -212,8 +281,10 @@ window.Maity = window.Maity || {};
       // A composer may set the chooser in its action row (js/chat.js);
       // hidden with the rest while the hub takes no files.
       chooser,
+      // The composer's text field: an image pasted into it is attached.
+      pasteInto: (field) => field.addEventListener("paste", paste),
       ids: () => pending.filter((p) => p.att).map((p) => p.att.id),
-      busy: () => pending.some((p) => !p.att),
+      busy: () => preparing > 0 || pending.some((p) => !p.att),
       // After the message was sent: the ones it named belong to it now; a
       // file picked while it was sending stays.
       clear: (sent) => {

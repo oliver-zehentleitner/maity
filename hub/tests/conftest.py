@@ -1,12 +1,18 @@
 """Fixtures. `MAITY_TEST_DATABASE_URL` points the suite at PostgreSQL or
 MariaDB; without it every test gets its own SQLite file. Under pytest-xdist each
 worker gets a database of its own on that server (`<name>_gw0`, `<name>_gw1`, …),
-created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL)."""
+created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL).
+`MAITY_TEST_SHARD=<k>/<n>` runs only the test files of shard k of n
+(`pytest_collection_modifyitems`)."""
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import shutil
+import sys
+import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -20,6 +26,55 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
 from maity_hub.db import current_revision, downgrade, head_revision, make_engine, migrate
+from maity_hub.ratelimit import Limiter
+
+
+def _shard() -> tuple[int, int] | None:
+    """`MAITY_TEST_SHARD` as (k, n), 1 <= k <= n; unset or empty for the whole suite. Any other
+    value stops the run: a typo must not run a share of the suite and look green."""
+    raw = os.environ.get("MAITY_TEST_SHARD", "").strip()
+    if not raw:
+        return None
+    # ASCII digits only, four at most: str.isdigit also takes "²", which int() refuses, and
+    # int() refuses more than 4300 digits (review of #1625).
+    match = re.fullmatch(r"([0-9]{1,4})/([0-9]{1,4})", raw)
+    if not match or not 1 <= int(match[1]) <= int(match[2]):
+        raise pytest.UsageError(
+            f"MAITY_TEST_SHARD must be <k>/<n>, at most four ASCII digits a side,"
+            f" with 1 <= k <= n, not {raw!r}"
+        )
+    return int(match[1]), int(match[2])
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    _shard()  # a bad MAITY_TEST_SHARD stops the run before collection, with a usage error
+    # Which check refused a join (`routes.joins._gone`, at info, and the attempt slot's join
+    # state at debug) shows under a failing test's captured log, so a flaky exchange names its
+    # cause in CI (tsk-e9pc50wdk9b9). Only this logger: a propagated record is held back by the
+    # handlers' level, not the root's.
+    logging.getLogger("maity_hub.routes.joins").setLevel(logging.DEBUG)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """One shard of the suite, by test file: a file's tests stay in one shard, so its
+    module-scoped fixtures start in that shard only (in it, once per xdist worker that runs some
+    of the file's tests, as without shards; the session fixtures start once per worker in every
+    shard). The file
+    path's CRC-32 picks the shard, the same on every run and machine, so each file runs in
+    exactly one shard and the shards together run the whole suite (CI's `hub-postgresql`)."""
+    shard = _shard()
+    if shard is None:
+        return
+    k, n = shard
+    keep: list[pytest.Item] = []
+    drop: list[pytest.Item] = []
+    for item in items:
+        path = item.nodeid.split("::", 1)[0]
+        (keep if zlib.crc32(path.encode()) % n == k - 1 else drop).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    items[:] = keep
+
 
 TEST_TZ = "Europe/Vienna"  # the PostgreSQL test databases' default time zone, never UTC
 
@@ -275,6 +330,9 @@ def settings(database_url: str, web_dir: Path) -> Settings:
             "MAITY_DATABASE_URL": database_url,
             "MAITY_PUBLIC_URL": "https://hub.example",
             "MAITY_WEB_DIR": str(web_dir),
+            # The agent firewall's tests are written against the gate on; the default (off) is
+            # tested where it is set (`agent_firewall=False`, tests/test_firewall_switch.py).
+            "MAITY_AGENT_FIREWALL": "on",
         }
     )
 
@@ -330,6 +388,23 @@ def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ktw, "_refresh_later", lambda *args: None)
 
 
+def process_limiters() -> Iterator[Limiter]:
+    """Every limiter a module of the hub holds, as a module attribute or one attribute further
+    down (`routes.email_sign_in.LIMITS`, a `RequestLimits` of three): found rather than listed,
+    so a new limit is reset between tests without a line of its own (tsk-knmx8yw3s1xa, where
+    the sign-in link's pair limit leaked and a fourth link of the suite sent no mail)."""
+    for name, module in list(sys.modules.items()):
+        if module is None or not (name == "maity_hub" or name.startswith("maity_hub.")):
+            continue
+        for value in list(vars(module).values()):
+            if isinstance(value, Limiter):
+                yield value
+            elif not isinstance(value, type) and type(value).__module__.startswith("maity_hub."):
+                for inner in list(getattr(value, "__dict__", {}).values()):
+                    if isinstance(inner, Limiter):
+                        yield inner
+
+
 @pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
@@ -341,47 +416,38 @@ def _fresh_process_state() -> Iterator[None]:
         images,
         ktw,
         listening,
-        mentions,
         not_listening,
         public_pages,
         shared_budget,
         shared_counts,
     )
-    from maity_hub.auth import caller, password_limits
+    from maity_hub.auth import caller, verifiers
     from maity_hub.auth.credentials import NonceWindow
-    from maity_hub.board import notes
-    from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
+    from maity_hub.routes import badges, device_codes
 
     # The counts in the database belong to the previous test's app and engine; the tables
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
     shared_budget.configure(None)
+    from maity_hub import chat_gate
+
+    chat_gate.configure(True)  # as the `settings` above, for a test that builds no app
+    verifiers.configure(None)  # a credential written outside an app is stored plain
     listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
     listening.reset()
     # The limits are the module's, set by the last app built: back to the defaults, so a test
     # that built an app with its own limit leaves none behind.
     badges.BY_ADDRESS.configure(*Settings.badge_limit)
     public_pages.BY_ADDRESS.configure(*Settings.public_page_limit)
-    badges.BY_ADDRESS.reset()
-    public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
-    badges.NOT_SERVED.reset()
-    auth.LOGIN_BY_ADDRESS.reset()
-    joins.EXCHANGE_BY_ADDRESS.reset()
-    runners.PAIR_BY_ADDRESS.reset()
-    for limiter in password_limits.ALL:
+    # Every limiter counts in this process here (the shared counts are off, above): one source
+    # address and a few fixed addresses make all the visitors of the suite.
+    for limiter in process_limiters():
         limiter.reset()
-    mentions.PINGS.reset()
-    mail_settings.test_limiter.reset()
-    for limiter in (
-        device_codes.CODES_BY_HUMAN,
-        device_codes.REDEEM_BY_ADDRESS,
-        device_codes.WRONG_CODES,
-    ):
-        limiter.reset()
+    from maity_hub import read_limits
+
+    read_limits.reset()  # the reads per credential, and the instance's value kept for them
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
-    notes.POSTED.reset()
-    me.EXPORTS.reset()
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
     # slow test would write to its database unasked.
     availability.INTERVAL = 24 * 3600.0
@@ -391,8 +457,6 @@ def _fresh_process_state() -> Iterator[None]:
     jour_fixe_worker.INTERVAL = 24 * 3600.0
     from maity_hub.auth import second_factor
 
-    second_factor.WRONG_BY_HUMAN.reset()
-    second_factor.ENROLMENTS_BY_HUMAN.reset()
     second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
@@ -404,12 +468,19 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import ktw_reads
 
     ktw_reads.FOREIGN.clear()
+    ktw_reads.OUTSIDE_CACHE.clear()  # the peer link to `ktw.CACHE` stays
+    ktw_reads._outside_seen.clear()
+    ktw_reads._asked_now.set(frozenset())  # no answer of an earlier test counts as this one's
     ktw_reads._slots.clear()
     ktw_reads._flights.clear()
     ktw_reads._failed.clear()
+    from maity_hub import contract_text
+
+    contract_text.forget()  # a kept branch head must not answer the next test's reads
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests
+    maintenance.forget_frame()
     # The window cache's clock stands still: a counting test must not see the window read
     # again because its runner is slow (tsk-aaprca1rs4ny); a test that wants expiry moves it.
     maintenance.monotonic = lambda: 0.0

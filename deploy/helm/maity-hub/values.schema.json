@@ -18,6 +18,9 @@
           "type": "string",
           "pattern": "^(|sha256:[0-9a-f]{64})$"
         },
+        "allowTag": {
+          "type": "boolean"
+        },
         "pullPolicy": {
           "enum": [
             "Always",
@@ -86,13 +89,21 @@
         },
         "poolSize": {
           "type": ["integer", "null"],
-          "minimum": 1,
+          "minimum": 2,
           "maximum": 500
         },
         "maxOverflow": {
           "type": ["integer", "null"],
           "minimum": 0,
           "maximum": 500
+        },
+        "migrate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingSecret": {"type": "string"},
+            "key": {"type": "string", "minLength": 1}
+          }
         }
       }
     },
@@ -282,6 +293,25 @@
           "items": {
             "type": "object"
           }
+        },
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "dns": {"type": "array", "items": {"type": "object"}},
+            "database": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "to": {"type": "array", "items": {"type": "object"}},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+              }
+            },
+            "https": {"type": "boolean"},
+            "smtpPorts": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 65535}},
+            "extra": {"type": "array", "items": {"type": "object"}}
+          }
         }
       }
     },
@@ -412,6 +442,12 @@
         "key": {
           "type": "string",
           "minLength": 1
+        },
+        "sealVerifiers": {
+          "type": "boolean"
+        },
+        "sealedVerifiersOnly": {
+          "type": "boolean"
         }
       }
     },

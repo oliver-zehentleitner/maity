@@ -7,9 +7,9 @@ import re
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, product_line
+from maity_hub import clock, events, render
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -92,6 +92,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "used_at",
         "burned",
         "revoked_at",
+        "revoked_by",
         "via",
         "new_instance",
         "replaces",
@@ -224,6 +225,35 @@ def test_delete_revokes_an_unused_join_and_refuses_a_spent_one(
     assert response.json()["error"]["details"] == {"from": "used", "to": "revoked"}
 
 
+def test_a_revocation_names_who_revoked_and_tells_the_humans_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.1, §8.2: `revoked_by` on the join, and one `join_revoked` to its creator and the
+    human `members:admin` holders, never the URL or the code; agents read none of it."""
+    unused = flow.join(owner, "maity")
+    revoked = owner.delete(f"/projects/maintainer/maity/joins/{unused['id']}").json()
+    assert revoked["revoked_by"] == owner.id
+    owner.delete(f"/projects/maintainer/maity/joins/{unused['id']}")  # idempotent: no event
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.event).where(t.event.c.kind == "join_revoked")).all()
+    [event] = rows
+    assert event.payload == {
+        "id": unused["id"],
+        "agent_id": unused["agent_id"],
+        "trust": "member",
+        "role": "coder",
+        "revoked_by": owner.id,
+    }
+    assert event.audience == [f"member:{owner.id}"]
+    assert (event.subject_type, event.subject_id) == ("join", unused["id"])
+    assert "join_revoked" in events.HUMANS_ONLY_KINDS
+    listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
+    assert [j["revoked_by"] for j in listed if j["id"] == unused["id"]] == [owner.id]
+    fresh = flow.join(owner, "maity")
+    listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
+    assert [j["revoked_by"] for j in listed if j["id"] == fresh["id"]] == [None]
+
+
 # --- §3.2 the join page ---------------------------------------------------------------
 
 
@@ -279,9 +309,9 @@ def test_the_page_is_html_for_a_browser_with_no_form(
     created = flow.join(owner, "maity")
     response = make_client().get(f"/join/{_token(created)}", headers={"Accept": "text/html"})
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    # The hub's policy, and inline style only for the product line's block (§16.13).
-    assert response.headers["Content-Security-Policy"] == product_line.CSP
-    assert product_line.CSP.startswith("default-src 'self'; ")
+    # On the public host the page stands in the frame of §16.7.5, with its policy (§3.2).
+    assert response.headers["Content-Security-Policy"] == render.DOOR_CSP
+    assert response.headers["Referrer-Policy"] == "no-referrer"
     page = response.text.lower()
     assert "<form" not in page and "<script" not in page and "<input" not in page
     assert '<a href="/">' in page
@@ -417,6 +447,86 @@ def test_two_wrong_codes_do_not_burn(owner: flow.Human, make_client: ClientFacto
     assert flow.exchange(client, created).status_code == 201
 
 
+def test_a_refused_exchange_names_its_cause_in_the_log(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """tsk-e9pc50wdk9b9: every join that no longer works answers the same bare not_found, so
+    the hub's log names which check refused it, with the join's row id and never its token or
+    code. The attempt slot's join state is read only at debug, as the exchange's own
+    transaction sees it. No level is set here: the records come through conftest's setting,
+    the same way a failing test in CI shows them (review A2100)."""
+    from maity_hub.routes import joins
+
+    client = make_client()
+    created = flow.join(owner, "maity")
+    token = created["join_url"].rsplit("/", 1)[1]
+    client.post("/api/v1/join/nope", json={"code": "x", "client": "curl"})
+    assert flow.exchange(client, created).status_code == 201
+    assert flow.exchange(client, created).status_code == 404  # used
+    burned = flow.join(owner, "maity")
+    for _ in range(3):
+        flow.exchange(client, {**burned, "code": "ZZZZ-ZZZZ-ZZZZ"})
+    assert flow.exchange(client, burned).status_code == 404
+    said = [r.getMessage() for r in caplog.records if r.name == "maity_hub.routes.joins"]
+    assert "join answered not_found: no join with this token (join None)" in said
+    assert f"join answered not_found: used (join {created['id']})" in said
+    assert f"join answered not_found: burned (join {burned['id']})" in said
+    assert not any(token in line or created["code"] in line for line in said)
+    with migrated.begin() as conn:
+        cause = joins._no_slot(conn, created["id"], clock.now())
+    assert cause.startswith("no attempt slot: failed_attempts=")
+    assert "used=True" in cause and "burned=False" in cause and "expired=False" in cause
+    # The state is noted at debug only; at info no read is made and nothing is logged for it.
+    caplog.clear()
+    with migrated.begin() as conn:
+        joins._note_no_slot(conn, created["id"], clock.now())
+    noted = [r.getMessage() for r in caplog.records if r.name == "maity_hub.routes.joins"]
+    assert noted == [f"join {created['id']}: {cause}"]
+    caplog.clear()
+    caplog.set_level(logging.INFO, logger="maity_hub.routes.joins")
+    with migrated.begin() as conn:
+        joins._note_no_slot(conn, created["id"], clock.now())
+    assert not [r for r in caplog.records if r.name == "maity_hub.routes.joins"]
+
+
+def test_a_failing_slot_diagnostic_still_answers_not_found(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review of #2118 (A2100): the refusal never depends on the diagnostic. When the
+    attempt slot matches no row and reading the join's state for the debug line fails, the
+    exchange still answers the same 404 `not_found`, with the plain reason at info."""
+    from typing import Any
+
+    from sqlalchemy import false
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.routes import joins
+
+    def broken(conn: Any, join_id: Any, now: Any) -> str:
+        raise OperationalError("SELECT", {}, Exception("the read failed"))
+
+    monkeypatch.setattr(joins, "_no_slot", broken)
+    created = flow.join(owner, "maity")
+
+    def no_slot(table: Any) -> Any:  # the attempt slot's UPDATE then matches no row
+        statement = update(table)  # SQLAlchemy's own, imported above, not joins'
+        return statement.where(false()) if table is t.join_link else statement
+
+    monkeypatch.setattr(joins, "update", no_slot)
+    response = flow.exchange(make_client(), created)
+    assert response.status_code == 404 and response.headers["Maity-Error"] == "not_found"
+    said = [r.getMessage() for r in caplog.records if r.name == "maity_hub.routes.joins"]
+    assert f"join answered not_found: no attempt slot (join {created['id']})" in said
+    assert f"join {created['id']}: no attempt slot; its state could not be read" in said
+
+
 def test_the_exchange_is_limited_to_ten_per_minute(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -531,3 +641,85 @@ def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"reason": "owner_only"}
     assert _access_lines(caplog)[-1].endswith(" error=forbidden reason=owner_only")
+
+
+# --- §3.3 the creator at the exchange ---------------------------------------------------
+
+
+def _creator(make_client: ClientFactory, migrated: Engine, handle: str, role: str) -> flow.Human:
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    human = flow.human(make_client, migrated, handle)
+    factory.membership(migrated, project_id, role, human_id=human.id)
+    return human
+
+
+def _set_trust(migrated: Engine, human: flow.Human, trust: str, *, active: bool = True) -> None:
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == human.id)
+            .values(trust=trust, active=True if active else None)
+        )
+
+
+@pytest.mark.parametrize(
+    ("grant", "now"),
+    [
+        ({"trust": "admin", "role": "coder"}, "admin"),
+        ({"trust": "admin", "role": "proxy"}, "admin"),
+    ],
+    ids=["trust-admin", "role-proxy"],
+)
+def test_an_owner_grant_needs_the_creator_still_owner(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    grant: dict[str, str],
+    now: str,
+) -> None:
+    """Trust `admin` and the role `proxy` are an owner's to give (§2.3): a creator who is
+    no longer an owner at the exchange voids the join, answered as an unknown one."""
+    co_owner = _creator(make_client, migrated, "co-owner", "owner")
+    created = flow.join(co_owner, "maity", **grant)
+    _set_trust(migrated, co_owner, now)
+    refused = flow.exchange(make_client(), created)
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (404, "not_found")
+    with migrated.connect() as conn:
+        joined = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == created["agent_id"])
+        ).first()
+    assert joined is None
+
+
+def test_an_owner_grant_stands_while_the_creator_is_owner(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    co_owner = _creator(make_client, migrated, "co-owner", "owner")
+    created = flow.join(co_owner, "maity", trust="admin", role="proxy")
+    assert flow.exchange(make_client(), created).status_code == 201
+
+
+@pytest.mark.parametrize(
+    ("trust", "active"), [("member", True), ("admin", False)], ids=["demoted", "left"]
+)
+def test_areas_and_capabilities_need_the_creator_still_admin(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, trust: str, active: bool
+) -> None:
+    """A join with areas and capabilities, made with `members:admin`: a creator demoted
+    below it, or gone from the project, voids it at the exchange."""
+    admin = _creator(make_client, migrated, "an-admin", "admin")
+    created = flow.join(admin, "maity", areas=["hub/"], capabilities=["tag"])
+    _set_trust(migrated, admin, trust, active=active)
+    refused = flow.exchange(make_client(), created)
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (404, "not_found")
+
+
+def test_a_join_stands_while_the_creator_holds_members_admin(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = _creator(make_client, migrated, "an-admin", "admin")
+    created = flow.join(admin, "maity", areas=["hub/"], capabilities=["tag"])
+    assert flow.exchange(make_client(), created).status_code == 201

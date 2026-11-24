@@ -136,6 +136,28 @@ removal; only the render, which shows the state after the change, moves after th
 - Deleting without the per-target lock and accepting the window: on PostgreSQL a render already running when
   a removal commits wrote the removed content back until the removal's own render ended.
 
+## A test that deletes stored pages keeps the pages worker from running
+
+**Id:** 783a0bd6-0bcc-439c-8fcc-1ff3737ec4fa
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of pull request #2069, 2026-11-21 (a flaky `assert 201 == 404` in `hub/tests/test_reports_public.py`), reproduced with a late first worker pass; `public_pages.startup`, `Worker._run`, `_unrendered`
+**See:** public-pages.md#a-touched-page-is-taken-off-in-the-writers-transaction-and-rendered-after-its-commit-one-render-has-a-time-limit-and-a-start-takes-up-no-target-after-its-budget — deafb243-f385-4108-8de4-81fc8f9a7872 — as of 2026-11-21
+
+A test that deletes stored pages to model "not served" keeps the pages worker from running
+(`public_pages.Worker.start` patched to a no-op before the first app is built), and builds no
+pages app after the delete. Every app with pages on renders, at its start (`startup`), the
+pages of the targets it takes up within `public_pages_startup_seconds`, and starts
+`public_pages.Worker`, whose first pass renders every target without a stored page; either can
+bring the deleted page back, the worker's pass at a moment the test does not control.
+
+**Reason:** a first pass that runs late on a loaded runner turned a filing the test expected to
+be refused into an accepted one.
+
+**Rejected alternative:** deleting the pages again before each assertion: the worker can still
+render them between the delete and the read.
+
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
@@ -183,7 +205,7 @@ It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profi
 existing account on; an instance that upgrades later has its accounts of that moment switched the same
 way, so its operator tells their users first (the changelog says so). `public_people.served` no longer reads it: every active account that is not suspended
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
-pages of its open projects, by handle, on the Overview, Board, Team (at /members), Organisation, a card's page and the
+pages of its open projects, by handle, on the Overview, Board, Team (at /team), Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
 counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
 this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
@@ -457,9 +479,12 @@ moment.
 **Revisit when:** the Board's card events become a cost the busiest projects notice, or a view shows a count
 
 2026-11-09: the Members view is named Team (req-77az2zs017fe); its path stays /members.
+2026-11-10: the path follows the name: the view is at /team (the maintainer's decision, so that the name
+and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word of the project views, the
+maintainer's wish, so no slug or later view takes it; /members serves no page and redirects nowhere.
 
 `public_project_views` registers the kind `project_views`, one target per public project and three pages
-(`/board`, `/members`, `/organisation`). The kind `project` lists it as a dependent, so everything that
+(`/board`, `/team`, `/organisation`). The kind `project` lists it as a dependent, so everything that
 renders a project page (a switch, a hold, an archive, a rename, an owner's suspension, a member change) renders
 the views with it, and a person's page lists both kinds. The Board is the one part that follows the cards:
 `events.emit` touches `project_views` alone for a card event (`task_created` as an addition, the others as
@@ -601,6 +626,174 @@ renderer puts it there.
 HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
 `data` in the digest, which would move that date.
 
+**Superseded by, for signed-in outsiders only:** 3f9c2d71-8a4e-4b6f-9d15-7e2a0c8b4f63 (2026-11-19, the entry
+below). This entry, its "member routes stay closed" and the first rejection above hold for a visitor without a
+session, who still reads only `GET /public/pages/{path}`.
+
+## A signed-in outsider reads a public project through a closed list of member routes
+
+**Id:** 3f9c2d71-8a4e-4b6f-9d15-7e2a0c8b4f63
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q, "public is public", `docs/api.md` §2.3); the lead's rulings of 2026-11-19 and 2026-11-20 (tsk-kqn8zhptf06k, #2001); split out of eb7fd1c7 on the card tsk-jk2psmarajjb; the owner's answer on req-adh287znbx64 (2026-11-21, o1: the stricter condition with the shared max_age window); the lead's decision, seq 186180, 2026-11-21 (the Why only where the instance's token serves the project)
+**See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-21
+**Revisit when:** an outsider needs a project read outside `access.OUTSIDE_READS`, or the public page shows a member or project field the allow-lists do not name
+
+A signed-in human without an active membership reads a public project through the member routes (`docs/api.md`
+§2.3). The risk eb7fd1c7 names for a visitor caller in those routes (a field added later becomes public) is met
+for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
+
+- A closed allow-list of routes: `access.OUTSIDE_READS`, GETs only: the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner, what the project allows an outsider
+  (`GET …/contribution`, §6.1, so the outsider's tab can say why a button is missing; added with the outsider's
+  join, tsk-enfbkj0xqq5m, hub/context/joins.md 0bd49a9b), and the three reads of the Why view below. The list
+  in `access.py` is the reference; this entry names what is in it rather than how many, so that it does not go
+  stale when a read is added on purpose. Only those endpoints call
+  `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
+  member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
+  together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
+  is closed until someone opens it on purpose.
+- A gate in `ProjectRoute`: an outsider's call to any other project route answers `not_found` before FastAPI
+  reads its body or query, so no `400` names a route's fields to them. Members, strangers to a private or unknown
+  project, agents and callers without a session pass it unchanged. A human who owns an agent or a runner in the
+  project passes it on `access.OWNER_CALLS` alone, the calls §1.3 lists for such an owner (the chats they read
+  along, a jour-fixe round, their agent's briefings and its briefing view, membership and bridge, the placements
+  on their runner); on any other route they are an outsider like any other (the lead's ruling, 2026-11-19).
+  Strangers to a private or unknown project need no gate: the body is validated before the route reads the
+  membership, for both alike (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body
+  tells them apart no more than `not_found` does (checked, not changed, and tested). The gate names a route by
+  the template the app serves, `access.API` before the route's own path: FastAPI keeps an included router behind
+  its own object (hub/context/namespace.md), so a route's `path` is the router's, without the prefix. The tests
+  walk the app with `iter_route_contexts` and take each endpoint from the routers of `maity_hub.routes`.
+- The gate reads the caller as `caller.authenticate` does (2026-11-20, review A1788/A1789): a call is another
+  credential's, not the cookie's, only with a non-empty `Authorization` header, which authenticates and makes the
+  cookie alongside ignored; an empty one authenticates nothing. `Maity-For` authenticates nothing on its own (a
+  bridge calls with its own `Authorization`, §2.3), so a cookie call with it is still the cookie's human and is
+  gated as any outsider. Rejected: passing a call on a header's mere presence, a reading other than the one
+  that decides the caller.
+- The gate runs in `ProjectRoute`'s handler (`namespace.py`), so before FastAPI's dependencies, among them the
+  pending-account and second-factor gates (`auth/second_factor.py`). The stated reason is the one above: before
+  FastAPI reads the body or the query (`namespace.py`, #2001). That it also runs before the pending-account and
+  second-factor gates is stated nowhere as a choice; it follows from where the gate sits. Searched (2026-11-21,
+  tsk-jk2psmarajjb): the code and this file, `git log -S'access.gate'` (only #2001), the commit messages on
+  `namespace.py`, `access.py`, `auth/second_factor.py` and `auth/caller.py` for the second factor and the
+  pending account, and the #2001 round notes. Evidence: unknown.
+- The Why view's three reads, `GET …/keep-the-why` (§11.3), `…/keep-the-why/export` and `…/keep-the-why/bodies`
+  (§11.5), are open to an outsider. Source: the owner's option A in req-vsfjgx3fch8k, its §2.3 sentence as the
+  owner wrote it; tsk-jk2psmarajjb; round 2 after review A1829 (F1, F2), round 3 after review A1830; the owner's
+  answer on req-adh287znbx64 (o1); the lead's decision, seq 186180, 2026-11-21 (only where the instance's token
+  serves the project); round 4 after review A1863, the lead's rulings, seq 186723 and seq 186740.
+  - The source, shared with the public page's **Why** (`public_project_views.why_data`, `WHY_CACHE`): only what
+    the forge serves publicly, read with the instance's token and without a grant, its visibility asked of the
+    forge itself, and only for a project in the operator's own namespaces, which that token serves, where the
+    page shows it too (`render_views`' `by_instance`). These checks, in order. `access.gate`
+    (`PUBLIC_REPOSITORY_READS`, before the query is read; `instance_serves_project`, from the app's settings) and
+    `_require_why` with `_outside_token` answer `not_found` unless the stored `repository_public` is true and the
+    instance's token serves the namespace, the cheap first checks. Then the gate, still before the query is read,
+    takes the forge's answer whether the repository is public (`ktw_reads.outside_visible`, one function with the
+    endpoint's `outside_reader`, which reuses the answer the gate just kept): asked live (`_visibility`,
+    uncached, in a worker thread outside any database connection) when the kept answer is older than
+    `_refresh(max_age)`, at the latest every `VISIBILITY_SECONDS`, with `max_age=0` every `FORCE_INTERVAL`, the
+    query's `max_age` read with the routes' own type (`ktw.max_age_of`); not public, or no answer, is `not_found` before
+    validation (A1863 point 2), a spent budget passes to the endpoint, which answers `probe_unavailable` as for a
+    member. A kept positive answer only lets `OUTSIDE_CACHE` serve what it holds: every content fetch for an
+    outsider is preceded by a live visibility answer in the same request (the lead's rule, seq 186723, A1863
+    point 1). `OUTSIDE_CACHE`'s `before_read` (`_before_outside_read`) asks the forge live before each family
+    read unless the gate or the endpoint asked in this request (a context variable), and drops the forge's own
+    kept verdict (`Forge.forget_visibility`, PUBLIC_SECONDS) so the file reads that follow ask again; not public raises
+    before anything is fetched or stored. The read itself goes through a reader bound to no project and holding no
+    grant into `OUTSIDE_CACHE`, a `ktw.Cache` of its own that never asks `Forge.for_project` (`bind=False`). The
+    outsider path picks its token by the operator's namespaces, as the public page does
+    (`routes/keep_the_why._outside_token`: the instance token where `forge_access.serves` the project's namespace
+    owner), and never asks the project's source, so it writes nothing: choosing a source may write the project's
+    `probe_via` and the grants' state (A1830). Rejected: an anonymous read for the other projects (round 2), since
+    it spends the hub-wide anonymous forge budget, which a loop over many projects with `max_age=0` could drain
+    for every project (A1830, note 3; the lead, seq 186180). Why the rest: the stored flag lags the forge, since
+    the probe updates it on its own round (F1); and the members' `ktw.CACHE` may be filled through the namespace
+    owner's grant, which reads a private repository, so serving it to an outsider until the probe looked again would hand out private content (F1).
+    The gate runs for these routes too, so an outsider they are closed to gets no `400` for a bad query (F2).
+  - The scope of the answers: the full export and its bodies, more than the page's summary, under the same
+    rules as for a member. They come from what the repository publishes, never the database, so they carry no
+    restricted text; a card id in an entry's text is served as published and opens nothing (`GET …/tasks/{id}`
+    stays `not_found` for a hidden card).
+  - The rate: one refresh decision per project across both caches, the data separate. `OUTSIDE_CACHE` and
+    `ktw.CACHE` share one `ktw.Refresh` (`ktw.Cache.link`): one lock per project and the project's last family
+    read. Under that lock a forced read (`max_age` below `FORCE_INTERVAL`, i.e. `0`) is made only when neither
+    cache read the project's repository in the last `FORCE_INTERVAL`, else the cache serves its own entry, never
+    the other's; a cold first read (no entry of its own) and an ordinary refresh (an entry older than its
+    `max_age`) are always made, and an overlapping request waits and serves what was just read (the lead's
+    ruling, seq 186740; earlier seq 185669). So the owner's "the same one forge read per 30 seconds per project
+    as for a member" holds for the forced reads it governs. The shared window holds back only a forced read on
+    an own entry still younger than `DEFAULT_MAX_AGE`, which then gets that entry as it is; a read whose own entry
+    is older than the `max_age` asked for (default `DEFAULT_MAX_AGE`) always refreshes, and so does a forced read
+    on an entry past `DEFAULT_MAX_AGE`, whatever the other cache did, so neither cache starves the other (the
+    lead's ruling, seq 187034, on zxjn A1830; `wakeups` forgets both caches on a repository change). A caller
+    with its own entry does not wait while another request holds the project's lock for its read: it gets its
+    own entry at once (`fresh: false`); only a cold caller waits, at most `LOCK_WAIT`, and then serves what was
+    read. File fetches are content fetches too: the export and bodies fetch a published file themselves on a miss
+    or an expired file while the family is still kept, and for an outsider that fetch follows the same answer
+    in the same request (`ktw_reads.outside_before_fetch`), on the repository the file belongs to: the
+    project's own, or the named repository of a `?canonical=` read; a named repository's family read
+    (`ForeignCache._read`) asks about that repository live before its walk, and that answer is this request's
+    (`_record`), so each repository is asked at most once per request (the lead, seq 187245, on zxjn A1830). A
+    file served from the store needs none. A project's lock is reclaimed when its last request leaves and the
+    cache holds no entry for it. The gate
+    reads `max_age` with the routes' own pydantic type (`ktw.max_age_of`), so `00` or `0.0` give it the same
+    window as the route (the lead, seq 187206, on ukxh A1875). Apart from it, the live visibility
+    check of an outsider's own repository (at most once per `FORCE_INTERVAL` with `max_age=0`) is one small forge
+    request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS
+    without any token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a
+    visibility check) stay shared: nothing in them was read with a grant.
+- A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
+  (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
+  notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
+  `moderation.hold` the Board and the card page read), and no hidden card's id is in another card's view
+  (`public_cards.outside_views`, called once by `views.task_views` for an `OutsideReader`: `depends_on`,
+  `ships_with`, `related`, `parent`, the `children` counts and a release's pull requests, groups and blockers,
+  with one statement for a page; the lead's rulings 6 and 7, 2026-11-19). A known residual, not cleaned (§2.3 as
+  adopted in req-mfnmm9m8fgsd): an older entry of a visible card's history can still name a hidden card's id in a
+  past `depends_on`, `related` or `parent` change, and a body or a note can name its id as text.
+- The rule is decided on the rows a read returns, in the statement that reads them, never only in a statement
+  before (the lead's point, 2026-11-20): on PostgreSQL each statement of a transaction reads its own snapshot (READ
+  COMMITTED), so a card that became `security` or held between the statement that listed it and the one that
+  shaped it would otherwise reach the outsider, the gap #2005 closed for a request list by deciding its full rows
+  again. So the list's keys statement and the statement that reads the page's full rows after them (`_views`,
+  keys first since tsk-ybc2ma72dzvq) both carry `outside_clause`, the keys statement also for the card a `parent`
+  filter names (an `EXISTS`); the card's own statement carries it too, and the history's and the notes' statement
+  `outside_card`. `outside_views` reads last: one statement that drops a view whose card is hidden by then, counts
+  `children` again from the children it reads (not by subtracting from the earlier count, which a hidden child
+  added meanwhile would turn negative) and strips the ids hidden by then; no hold is read for an outsider after
+  it. A card hidden after a history's or notes' card read gives an empty page, not `not_found`: nothing of it is
+  read. `test_outside_reads.py` forces the interleaving by writing between the statements, on the route's own
+  transaction (every engine) and committed from another connection (seen on PostgreSQL; SQLite reads one snapshot
+  per read transaction).
+- An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
+  outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
+  `setup`, and the links as the public page shows them.
+- An allow-list of the member view's keys too (`members.OUTSIDE_MEMBER_KEYS`, `manages` with
+  `OUTSIDE_COUNT_KEYS`; 2026-11-20, review A1789, the lead's order): who the member is and where it stands, as the
+  public Team and Organisation pages show it, and nothing else, so no sign of presence or isolation reaches the
+  outsider through a derived field either (`availability`, `paused`, `session`, `instances`, the `online` and
+  `dormant` counts of `manages`, `covered_by`, `covering`, `moderation`), and a key the view gains later stays
+  hidden. The members are those the public page names (`outside_shown`, `public_project_views.members`): an
+  isolated member, one under a moderation hold on its profile, and one whose account (or whose owner's) is not
+  served are in no outsider's list, `not_found` on `GET …/members/{id}` as a hidden card is, and neither named
+  in `reports_to` nor counted in `manages`. Their `avatar_url` is the picture the public page shows
+  (`outside_pictures`, the rule of `public_projects.member_pictures`, one read for the page), `null` while a
+  person's `public_profile` is off; never `avatars.url_of`, whose address `GET /avatars/{id}` refuses an outsider
+  and which names a picture the public page may not show (tsk-k7bt2393gz3d (a)). Rejected: a deny-list with
+  neutral values for the derived fields (a value the member does not have, and a field added later would still
+  pass). The public page names no isolated
+  agent and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
+  redaction's tombstone without its reason; no read of a card carries a restricted text; the outsider has no
+  hidden window of its own. Reading a public project never makes the outsider a colleague for `links_visible`.
+  `GET /bootstrap` stays with members.
+
+Rejected: filtering the member routes by a denylist for the outsider (the risk above, route by route); reusing the
+public page's stored `data` for the outsider (a visitor's projection of a few views, partly rendered on a timer,
+without the card history and the member and card fields the contract opens to an outsider).
+
 ## A visitor on the way to a public page never ends at the login
 
 **Id:** 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7
@@ -638,10 +831,69 @@ placed in it, so a crawler and a reader without scripts still read the page and 
 The row, its removal and the sitemap stay as they were; a page is still a row, and the decision between page and
 shell still falls in the shell's route. A failed read of `data` leaves the page's text standing instead of the login.
 The marker on the shell counts for the first drawing only; a later visit to the login inside the same load is the
-login, not this page.
+login, not this page. Superseded for `?as=public` by c0868c32 (2026-11-12): it answers the page in the frame of the
+pages without a session, no longer bare. The answer inside the shell is unchanged.
 
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
+
+## Inside the shell the stored page waits invisible for the dashboard's page, at most 3 s
+
+**Id:** 6fae1f6f-c1c2-46b2-9d72-03efbfea5417
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-777vkhtzmq6f (the maintainer saw the old layout for about a second on prod after the redesign of tsk-9482zxza3gs3, 2026-11-15); the lead's choice of 2026-11-15 between the options the card's coder put
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-15
+**Revisit when:** the organisation pages are rendered in the dashboard's design too, or the dashboard's first view of a public page takes longer than about 3 s
+
+The redesign drew a signed-out public page in the dashboard only (`web/js/visitor.js`), while the stored row,
+which the shell carries for crawlers and readers without scripts, kept the plain layout. A visitor saw that
+layout first and the page in its frame after the reads of the first view. `page_in_shell` now puts the row's
+text in a `.hub-page` that `web/css/app.css` keeps invisible; the first view replaces it. Where nothing replaces
+it (no script, or a failed read keeps the hub's page), it shows after 3 s, by a CSS delay that needs no script.
+3 s lies above the first view's usual time (about a second on prod) and below a wait a reader would take for
+a broken page. The text stays in the HTML, so a crawler reads what it read before. The price is an empty area
+for that moment instead of the flash.
+
+**Rejected:** the hub rendering the new design itself, so the first paint is the final page (the design twice,
+in Python and in the dashboard, kept in step), for now: the maintainer chose it on 2026-11-15 as its own card,
+tsk-zhyqdtt5v59c, and this delay is the fix until it lands; the stored
+page shown in the landing's stylesheets at once (a project's page would still change from the stored layout to
+the hero, and the dashboard's frame adds and removes those stylesheets itself); hiding it with no time limit (a
+page whose script fails would stay empty).
+
+Since PR 3 of tsk-zhyqdtt5v59c (2026-11-15) this holds only for a page not yet in the dashboard's design;
+one in it stands in the shell at once (2388f990). Since PR 4 of that card (2026-11-16) the person and agent
+pages are in that design too, so the wait is left for the organisation pages alone; this entry's first
+trigger fired for the person and agent pages and was narrowed to the organisation pages.
+
+## A page in the dashboard's design stands in the shell at once
+
+**Id:** 2388f990-a551-4e46-ba59-a24540facba7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 3 of 4, 2026-11-15); contract `docs/api.md` §16.9 ("the frame's stylesheets (§16.7.5) linked there too") and §16.7.5; `shell.page_in_shell`, `render.frame_sheets`, `render.designed`, `web/js/site-chrome.js` (`sheets`); `hub/tests/test_public_pages.py`, `web/tools/e2e.py` (`public_first_paint_round`), `web/tools/smoke.js` (the skeleton comparison)
+**See:** public-pages.md#the-hub-renders-the-public-project-pages-in-the-dashboards-design-as-a-pure-function-of-their-data-one-stylesheet-home-a-format-guard — 5262b6b7-c4bf-472e-9a05-06f1a139a177 — as of 2026-11-15
+**See:** public-pages.md#inside-the-shell-the-stored-page-waits-invisible-for-the-dashboards-page-at-most-3-s — 6fae1f6f-c1c2-46b2-9d72-03efbfea5417 — as of 2026-11-16
+
+Once the hub stores a page in the dashboard's design (5262b6b7), the shell carries it as the first paint instead
+of hiding it: `page_in_shell` leaves out the `.hub-page` wrapper for such a page, links the frame's three
+stylesheets by their versioned addresses at the head's end, after the dashboard's own sheets where
+`site-chrome.js` appends them too, and marks the root `public-frame`, as `site-chrome.js` does when it enters
+the frame. The dashboard then takes those links over instead of adding its own (it adds one only where the head
+has none for that file), so each sheet loads once; leaving the frame, even before it ever entered it, turns the
+shell's links off with its own, since landing.css styles the whole document. It draws the same structure over
+the page; smoke compares that structure with the hub's skeletons, element by element. A page not in that design
+keeps the 3 s wait of 6fae1f6f: since PR 4 of the card (2026-11-16), when the person and agent pages joined the
+design (`public_design.profile`), only the organisation pages. `render.designed` knows a page of that design by
+its opening, the project views' `view-visitor public-view` or the profiles' `view-visitor public-view profile-view`.
+
+**Rejected:** dropping the wait for every page at once (the person, agent and organisation pages were then
+still in the old layout, so they would have flashed again; the organisation pages still are); the dashboard asking for the sheets
+without `?v` as before, beside the shell's versioned links (each sheet loaded twice, and the rules of two
+copies applied in turn).
 
 ## The public Why is a stored row, an exception to "the export stays in memory"
 
@@ -663,6 +915,30 @@ export any more empties it.
 
 **Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
 would need a rule for the one kind without a row, and search engines would lose the page.
+
+## The stored public Why names its repository and is kept only for the current one
+
+**Id:** 3d16a8b6-8125-446d-8d4a-2ae31e826e78
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 "Why"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); review A2470 (the guard for a project with no repository); `public_project_views.why_data`
+**See:** public-pages.md#the-public-why-is-a-stored-row-an-exception-to-the-export-stays-in-memory — aed779e9-be9c-40d2-a7ea-217cee06e470 — as of 2026-11-24
+**Revisit when:** `public_page` gets columns per view, or a migration touches the stored Why rows anyway
+
+The view's data carries `repository_url`, the repository its export was read from, and `why_data` keeps a stored view
+only while the project names a repository and it is that one. A process with no read of the current repository (a
+restart, a switch to another public repository) shows nothing until it reads it. A view stored before the field names
+none and is kept by no process.
+
+**Reason:** aed779e9 lets a process without its own read keep the stored view, which after a repository change would
+show the old repository's counts and titles under the new one. Comparing on read covers every way the repository
+changes and every restart, and needs no migration.
+
+**Rejected alternatives:**
+- A column for the repository on `public_page`: it needs a migration for one view's data.
+- Clearing the stored view in the project PATCH that changes the URL: it misses a process that restarts with no read,
+  and any other path that changes the repository.
 
 ## An organisation's page reads none of its members
 
@@ -756,8 +1032,9 @@ text names what the card rule does not cover. `public_snapshot.Worker` renders e
 that may take a ticker item off renders the project page at once, so a removal never waits for the timer; a new
 item waits for it. Who is online is counted as the names are shown: a member the page does not name (a profile
 under a hold, a person who keeps their online status off) is not counted either, since a count beside the names
-would point at them; the contract always said so, and the hub counted them until the online switch's change. Known and left so: a decision's text keeps
-the card's title from the moment it was decided, since a ticker item is stored text; a later rename does not change it.
+would point at them; the contract always said so, and the hub counted them until the online switch's change. Until 2026-11-24 a decision's text kept
+the card's title from the moment it was decided, since a ticker item is stored text, and a later rename did not change it;
+since then the page builds the text from the card as it is now (the entry on a decision's current title, below).
 
 The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
 reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.
@@ -810,8 +1087,70 @@ fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the 
 the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
 change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
 `changed` fields still renders the project page with its dependents, since a member's name stands on the card
-pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+pages they hold; narrowed since to the card pages that name the member (fe966f9c-3557-4473-a0d6-14aa4d714a43).
+Rejected: naming the fields a page shows instead (an allowlist), because a field added later
 would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
+## A public decision entry shows its card's current title, and a title edit renders the page
+
+**Id:** 36da28f1-a262-4e25-a93d-b087baa386d3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 "Recently"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); `ticker.decision_text`, `public_snapshot._text`, `events._hides_ticker_entries`
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-24
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-24
+
+The public snapshot builds a decision entry's text again from its card as it is now (`ticker.decision_text`, the one
+function the ticker item's stored text also comes from); a merge keeps its stored text, the forge's own title. A
+`task_updated` with `title` among its fields renders the project's own page at once, like a label change, so an old
+title is not served until the next snapshot. The members' ticker keeps its stored text. This replaces what 65c0167c
+had left so, where a rename did not reach the page.
+
+**Reason:** a title is edited to fix it, sometimes because it said too much; the public page should not keep what the
+card no longer says.
+
+**Rejected alternative:** dropping the decision entry from the page when the card's title changes: the decision itself
+would vanish from Recently for a change of wording.
+
+## A member change takes off and renders only the card pages that name that member
+
+**Id:** fe966f9c-3557-4473-a0d6-14aa4d714a43
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m65g76c979jk: on maity.team on 2026-11-12, `DELETE /agents/{id}?cascade=true` took 56.86 s in the maintainer's browser, its `Server-Timing` 31,871 statements and 44.7 s in the database (relayed by the lead in seq 118556); measured locally with public pages on, every card of the project added 17 statements to the delete (5 cards 412, 20 cards 667), and none with this change (330 for both); the lead's go for a set-based fix with the same result (seq 118556); `public_cards.render_card` names only the claim holder, the notes' authors and their latest editors
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-12
+**See:** public-pages.md#a-page-that-shows-people-is-rendered-again-with-them-through-dependents-and-the-member-events — dd4a04fc-9382-4966-b77e-0d9aba7c9fcb — as of 2026-11-12
+**Revisit when:** a card page shows a member in another way than as holder, note author or note editor (an assignee, a mention, a reviewer)
+
+A `member_joined` or shown `member_updated` of a public project still touches the project's page with its
+dependents, but the dependents are `public_projects.member_dependents`: the views, the organisation, the
+agent and person pages as before, and of the card pages only those that name the member under any membership
+the principal held in the project (`public_cards.naming`: claim holder, note author, latest note editor; the
+editor is in JSON, so the project's few edited notes are matched in Python, as for a person's cards).
+`events.emit` hands that list to `public_pages.touch` as `others`, read only when pages are rendered at all.
+A removal and an isolation give the member's cards back (`isolation.release_claims`) before their event, so
+the holder is no longer there to be found: a card that left `in_progress` is rendered by its own status event,
+and one that kept its status (`review`, `blocked`, `open`) is touched by `isolation.tell_released` after the
+member's event, under the project lock that event took (a review found the gap on #1700; a test holds both).
+Every page that named the member is still taken off in the writer's transaction and rendered after its commit;
+every other card page is left as it is, since it shows nothing of the member. A test holds the statement
+count of a profile's deletion independent of the project's cards.
+
+**Reason:** a project's dependents include every card page, so each member change in a public project locked,
+deleted and re-rendered every card page of the project in the request: with about 1,850 card pages the
+deletion of one agent profile sent 31,871 statements, and the same held for every removal, join and shown
+change of a member. 721bcdfa had already taken card events off this path; its last paragraph kept the member
+events on it because a member's name stands on the card pages they hold, which is true only of those pages.
+
+**Rejected alternatives:**
+- Removing all dependents in one statement and rendering them in the background: a removal would no longer
+  be back when the answer arrives (deafb243), and most of those pages never changed.
+- Leaving the card pages to the snapshot worker for member changes: a removed name would stay on a card page
+  until the run, which §16.9 does not allow for a removal.
+- Narrowing by the `changed` fields of the event: 721bcdfa rejected an allowlist of shown fields, and the cost
+  is in the number of pages, not in which field changed.
 
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
@@ -848,3 +1187,297 @@ page's number still counts you, without your name (card tsk-en9mm6x2v3s0).
 - Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
   anyone, and the landing page would need a filter of its own.
 - A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.
+
+## The hub's own signed-out pages take their frame from one function, and `/explore` is in the frame's language
+
+**Id:** cb025c0e-ce40-4638-bd81-e8034e3e66e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (step 2 of tsk-zp0vqj9wm37x), the lead's build order of 2026-11-12 ("one shared signed-out frame … from the shared parts in render.py, not copied per page") and the lead's go on the plan for its first pull request; the started branch agent-d/kg22-explore-layout, taken over; contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-12
+
+`render.public_frame(model, lang)` builds the header, the footer, the stylesheet links and the inline fallback of
+a page the hub renders itself, from the model of `chrome`. The legal pages, the mail link pages and `/explore` use
+it; `render.framed_document` puts a page's content in it. The following pull requests put the stored public pages
+on the same frame. `/explore` takes its words from the catalogue's `explore` section in the model's language,
+and English where the catalogue has no words in that language; the frame then says its own `lang`.
+
+**Reason:** the frame's rules already live once in `chrome` (scope.md, 41837936). The parts each page added
+around it (the header's links, the button, the two stylesheets and their fallback, and on the mail link pages the
+mark without its `style` attributes) were copied into each page, and a page the next card adds would have copied
+them again. The legal pages now drop the mark's `style` attributes as well; `public-pages.css` colours it, so they
+look the same. A page whose
+words come from the catalogue can follow the reader's language like the frame around it, so the two say the same
+language.
+
+**Rejected alternatives:**
+- One copy of the header and footer code per page (the state before for the legal and mail link pages): the copies
+  drift. A change to the mark or to the stylesheets would have to be made in every page.
+- `/explore` in English, with the frame forced to English to match (the first cut on the started branch): a
+  German reader then left a German landing page for an English frame. With the words in the catalogue there was
+  no reason left to keep it.
+
+## A stored public page gets its frame when it is served, not when it is rendered
+
+**Id:** c0868c32-a98a-46d9-ab65-f6ad9583848a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (PR 2 of 4), the lead's go of 2026-11-12 on the serve-time frame and its three
+conditions (the stored page stays untrusted data inside the frame, the cache tag covers the frame, the contract says
+the frame is applied when the page is served); contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — cb025c0e-ce40-4638-bd81-e8034e3e66e7 — as of 2026-11-12
+
+`public_pages.answer` puts `render.public_frame` around a stored page when it answers `?as=public`
+(`render.stored_in_frame`). The row of `public_page` keeps the page as `page_document` wrote it. The frame takes
+the title, the description, the canonical link and the content out of it by the pattern the app shell already uses
+(`render.STORED_PAGE`), and inserts the content unparsed. The answer's `ETag` is the digest of the bytes served,
+not the stored row's tag. The policy adds `'self'` for the frame's stylesheets and fonts. A row of another shape
+is served bare, as before.
+
+**Reason:** the frame changes with the landing page, the legal pages, the counters, the reader's language and a
+deploy of the stylesheets. None of these is an input of a stored page. Applied when served, the frame has one
+source, and no page is rendered again for it.
+
+**Rejected alternatives:**
+- The frame in the stored page, at render time: every change to the landing page, the legal pages or the counters
+  would have to render every stored page again. The frame's language would also be fixed when the page is rendered,
+  not chosen by the reader.
+- The stored row's tag (with the banner) as the `ETag`: a changed frame would answer `304` to a cache holding
+  the old one.
+
+## A stored page carries no inline style: the per-day bars are an SVG sized by attributes, the placeholder a class
+
+**Id:** a08a0c0d-ded2-483c-b509-19bfe49c3705
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8fk897a9tan8; the lead's instructions of 2026-11-13: an SVG or classes, a hub test against
+`style=`, the end-to-end run listening on every stored page, the policy not loosened; found by the Report run of
+tsk-w0g9d128wgma; contract `docs/api.md` §16.9 ("The picture"), §16.11
+**See:** public-pages.md — c0868c32-a98a-46d9-ab65-f6ad9583848a — as of 2026-11-13
+
+A stored page's body is served three ways: bare, in the frame (`?as=public`), and for a visitor without the query
+inside the app shell (`shell.page_in_shell`), until the dashboard draws the page. The first two answer under the
+pages' own policy, which allows inline style. The shell answers under the dashboard's `default-src 'self'`, which
+refuses it. So the "Cards done per day" bars (`public_projects._per_day_html`, a `<span style>` per day) and the
+placeholder of a person without a picture (`public_people.picture_html`) were not drawn there. The bars are now
+one `<svg>` whose `<rect>`s take their height, place and colour from attributes, each day's text in its `<title>`.
+The placeholder is `pic none size-<side>`, with the sizes in `render.STYLE` and `public-pages.css`
+(`public_people.PICTURE_SIDES`). `test_no_stored_page_carries_an_inline_style` reads every row of `public_page`.
+The end-to-end round `stored_pages_policy_round` opens every page the sitemap lists, plus a person's agents
+pages, at both addresses, and fails on any refusal.
+Since 2026-11-15 (5262b6b7) a project's stored page is in the dashboard's design, which draws no per-day bars:
+the SVG has left it, and the rule (no inline style, the guard and the run) holds for that design as before.
+Since PR 4 of tsk-zhyqdtt5v59c (2026-11-16) the person and agent pages are in that design too: a missing
+picture is the dashboard's letter (`public_design.face`), and `picture_html` with its `pic none` class is gone.
+
+**Reason:** the shell's policy is the dashboard's and protects it. A page that renders the same everywhere without
+an exception in that policy is the fix that cannot come back by a new inline style; the test guards the store, the
+run guards what a browser refuses.
+
+**Rejected alternatives:**
+- `'unsafe-inline'` or the styles' hashes in the shell's policy: it would loosen the dashboard's own policy for
+  markup it does not need, and a hash breaks with every bar height (the lead: do not loosen the policy).
+- A class per bar height (`h-1` to `h-41`): 41 rules in two stylesheets for what an SVG attribute says directly.
+- Leaving the shell's copy unstyled because the dashboard redraws the page: the copy is what a reader without
+  script, or before the script, and a crawler sees.
+
+## A stored page's frame has the landing page's theme switch and language row
+
+**Id:** 3ebf3861-2939-45c2-a459-1949ddcf1cef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8mkezms3h9xh; the maintainer's decision req-q34v0gr2rbw2 (2026-11-13): the stored pages' frame
+and the landing page's are to be identical, the language row and the theme switch both; contract `docs/api.md`
+§16.9
+**See:** public-pages.md — c0868c32-a98a-46d9-ab65-f6ad9583848a — as of 2026-11-13
+
+`render.stored_in_frame` builds the frame with `public_frame(..., theme=True, query="as=public")`: the header's
+`[data-lp-theme]` button, the landing page's one script (`landing.js`, which does nothing else without the landing
+page's elements), and the footer's language row, whose links are `?as=public&lang=<tag>`. A language there changes
+the frame only; the stored page keeps the language it was rendered in. `FRAMED_CSP` gains `script-src 'self'`, no
+inline script. `test_the_frame_has_the_landing_pages_theme_switch_and_language_row` compares the controls with the
+landing page's; the end-to-end `stored_page_layout` clicks the switch and reads the row.
+
+**Reason:** a reader moving from the start page to a project's or a person's page should find the same header and
+footer, not a frame with two controls missing. The script is the landing page's own file, served by this hub, so
+the policy admits only `'self'`.
+
+**Rejected alternatives:**
+- The frame without a language row and without script, as built first (c0868c32): one language on the page, the
+  content's, and the pages' policy without script. It lost to the decision that the two frames be identical.
+- The language row leading to `?lang=` alone: the link would drop `as=public` and a signed-in reader would land in
+  the app instead of the page they were reading.
+
+## A project's page data names its members with picture, role and harness; a new picture renders it at once
+
+**Id:** 0e401fc9-0080-4289-8488-cb4a6fb5ad8f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-h822960mytm9 and the lead's go on its shape (2026-11-14) (the data part of the approved mockups' design, its gap list against main
+8b7db15f); the mockups' README, point 3 ("add picture and harness to the project data, from the same source") and
+point 5; contract `docs/api.md` §16.9
+**See:** public-pages.md — 3ebf3861-2939-45c2-a459-1949ddcf1cef — as of 2026-11-14
+
+`public_projects.team_details` adds to each entry of `people` and `agents` the picture, the membership's role and,
+for an agent, the harness. The picture follows the member's own page: a person's only while `public_profile` is on,
+an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
+agent's page's projects, the value its own page shows. `online.named` and the agent page's `owner` take the
+picture by the same rule. `members` is the length of the Team tab's list, both the members it names and those it only
+counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
+areas}` read from the event's own facts, or `null`. `avatars._touch_page` renders, besides the owner's page, every
+public project page with the member (`public_projects.pages_with_picture`) and, for a person, their agents'
+pages, through `others`, so no card page is rendered for it. The Team and Organisation tabs' `data` take the
+picture by the same rule (`public_projects.member_pictures`, one call per render of the views,
+`public_project_views.shown_pictures`; tsk-9482zxza3gs3), and `pages_with_picture` names the views with the page.
+`test_public_page_data.py` holds the shapes and the renders.
+
+**Reason:** the design draws a team of avatar cards, a "Right now" stack and an "Agent of [picture] name" line.
+Without these fields it would need a second request per member, or would parse `text`. A picture follows the rule
+of the page that already publishes it, so the data makes nothing public that was not public before. Its address
+answers `not_found` from a change on, so every stored `data` that names it is rendered again at once. A session
+start (`routes/me_session.py`) renders the agent's public project pages again only when it changes the harness
+their data shows (`removal=False`, `dependents=False`): agents resume often, and a render of every such page per
+resume costs the public routes their load. Since the harness comes from all of the agent's public projects, a
+project's dependents also hold the other public project pages of its agents (`_shared_agent_pages`): one leaving
+the public set renders them at once, so none keeps a harness from a session it no longer counts (review P2,
+2026-11-14).
+
+**Rejected alternatives:**
+- `members` inside `statistics`: that object is §6.22's, reduced, and the count is not one of its counters.
+- Rendering the project pages again at every session start, for the harness: a render per resume, most of them
+  for no change (the lead's condition, 2026-11-14).
+- Leaving the harness to the snapshot worker alone: the page would show the old harness for up to
+  `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, while the agent's own page shows the new one at once.
+- Touching the person's page with its dependents for a new picture: those include every card page that names them,
+  and no card page shows a picture.
+
+## The hub renders the public project pages in the dashboard's design, as a pure function of their data; one stylesheet home; a format guard
+
+**Id:** 5262b6b7-c4bf-472e-9a05-06f1a139a177
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's choice on req-nsstqtq7za1t (2026-11-15) and the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 2 of 4, and PR 4 for the person and agent pages); contract `docs/api.md` §16.9 and §16.7.5 as changed by PR 1 of that card; `public_design.page`, `public_design.profile`, `public_pages.FORMAT`, `public_pages.refresh`, `render.stored_in_frame`, `landing_assets/public-sections.css`; `hub/tests/test_public_skeletons.py`, `hub/tests/test_public_page_format.py`
+**See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-15
+**See:** public-pages.md#a-stored-page-carries-no-inline-style-the-per-day-bars-are-an-svg-sized-by-attributes-the-placeholder-a-class — a08a0c0d-ded2-483c-b509-19bfe49c3705 — as of 2026-11-15
+**Revisit when:** the dashboard gets a build step that could run one template on both sides, or the organisation pages are redesigned and join `public_design`
+
+The stored pages of a project (Overview, Board, Team, Organisation, Why) and of a card are HTML in the
+structure `web/js/visitor.js` draws for a visitor without a session: the same elements, classes, order,
+`data-kind` and static `aria` attributes, English words from `web/i18n/en.json` under the same keys
+(`public_design.WORDS`). Each renderer builds the page's `data` first, then the HTML with
+`public_design.page(kind, data, path)`, which reads nothing else; `inputs` stays the digest of the rendered
+content. These pages carry no `<style>` (`page_document(styled=False)`): their look is the frame's stylesheets
+only. `public-sections.css` moved from the dashboard to `landing_assets/` and is the frame's third stylesheet
+under `/assets/landing/`, linked by `render.public_frame` and by `web/js/site-chrome.js`. In the frame
+(`?as=public`) such a page stands in `<main>` as it is, where the dashboard puts its view, not in the stored
+pages' column. What the old pages showed beyond the design (the per-day bars, the medians, the per-agent table)
+stays in `data` only. Each row's `inputs` is written `f<FORMAT>:<digest>` (`FORMAT = 3` since PR 4 of the
+card, 2 before it; a row without the prefix is format 1), the digest cut from the end so the whole stays within the column's 64 characters: widening the column
+would have cost a migration for a value that only tells a change from none, and 61 hex digits of a sha256 still do. `refresh` takes every page of a target off when one of them is of a later format and renders none,
+so the later version renders it first as a target without a page (deafb243); a row of an earlier format has
+other `inputs` and is rendered again. Since PR 4 of the card (2026-11-16) a person's and an agent's page
+are rendered the same way, by `public_design.profile` from their `data` (visitor.js's `profileHero`,
+`profileBand`, `projectCards`, `agentCards`), and the format went to 3 so a hub of PR 2 never puts their old
+HTML back; the organisation pages keep their old HTML and `STYLE`. `test_public_skeletons.py` records the elements and classes of each kind for
+`web/tools/public-pages-fixture.json` in `web/tools/public-skeletons.json` (`make -C web skeletons`), the file
+the dashboard's side is compared with.
+
+**Reason:** a crawler, a reader without script and the first paint before the dashboard draws should see the
+page in its final design, and the dashboard then draws the same structure over it. With the HTML a pure function
+of `data`, the two cannot show different things; with one stylesheet, served by the hub, the two sides cannot
+style it differently. During an upgrade several versions render the same rows: without the guard an old process
+would put the old design back over the new one until the next pass.
+
+**Rejected alternatives:**
+- A shared template that both the hub and the dashboard interpret: the dashboard has no build step, so it would
+  need an interpreter of its own, and the drift would move into the two interpreters.
+- The dashboard parsing the hub's stored HTML: rejected earlier (eb7fd1c7), a page's markup would become an
+  interface.
+- Keeping the old design in the stored page and letting the dashboard replace it after a wait of up to 3 s (the short-term fix 6fae1f6f, which PR 3 of the card narrows to the pages not yet in this design): every reader saw the page change its design, and a
+  crawler and a reader without script never saw the design at all.
+- Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
+  removal, that the running version did not make; taking the target off is what a missing page already means.
+
+## Whether a project has a page is one rule over rows; `served` judges the row it is given
+
+**Id:** 1def6e81-4be2-4e03-8bd7-4426d59407e5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e37ckp87r9cp (audit round 4: the rule written twice since #1986, five public lists asking it per project); the plan for it and the lead's approval, 2026-11-21; reviews A1831 (the cost of one project) and A1832 (an IN list over every public project), and the fix the review lead agreed and the lead approved, 2026-11-21; `public_projects.served_of`, `served`, `served_among`, `chunks.CHUNK` (was `BATCH`); `routes.projects._refuse_outside_roles`, `agent_owners.effective`
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-21
+**See:** persistence.md#an-in-list-over-many-ids-is-cut-into-chunks-by-one-leaf-module-chunks — 63ffb6dc-48cb-400d-8692-5466fb7de939 — as of 2026-11-22
+**Revisit when:** no caller asks `served` of a project as it will be after a write, or the rule needs a column a list's rows do not carry
+
+Whether a project has a page now (its page on, not archived, under no moderation hold, its namespace owner an
+organisation that is not deleted and under no hold, or a human who is active, not deleted and not suspended) is
+written once, in `public_projects.served_of(conn, rows)`, which judges the rows it is given in at most four
+statements for every `chunks.CHUNK` (500) rows. `served(conn, project)` passes it that one row as it is;
+`served_among(conn, ids)` (the stars) reads the stored rows first (page on, not archived, in SQL) and passes those.
+The public lists (`/explore`, an organisation's page, a person's and an agent's projects, the landing page's count
+of public projects) read their candidates with the columns the rule needs and pass those rows to `served_of`, and
+read the full names once (`namespace.full_names`), so they cost the same for 3 projects as for 30
+(`hub/tests/test_public_lists_cost.py`). One project costs what it did before: no statement with the page off or
+archived, one under a project hold, two for a human owner, three for an organisation. Every IN list these ask
+carries at most `chunks.CHUNK` ids. Until 2026-11-22 that bound was `BATCH` here, mirrored from `export.CHUNK`
+because `export` imports this module through `reports` and `moderation`; the leaf module `chunks` replaced the
+copies (persistence.md 63ffb6dc).
+
+**Reason:** a `PATCH` of a project asks `served` of the project as it will be: `_refuse_outside_roles` passes
+`agent_owners.effective` a row whose `public_page` is the one in the request, not yet written. A `PATCH` that
+turns the page on and narrows `outside_roles` in the same call must be judged under `anyone`, so the narrower
+list is refused while an outsider's agent at work holds a role it leaves out.
+
+**Rejected alternatives:**
+- `served(conn, project)` as `project.id in served_among(conn, [project.id])`, the card's first proposal: it
+  reads the stored page, so that `PATCH` would be judged by the page as it was and the narrower list would pass.
+  `test_a_patch_that_turns_the_page_on_checks_outside_roles_by_the_new_page` fails with it.
+- Keeping the rule written twice, once per row and once for a set: the two could drift apart without a test
+  noticing, which is what the card was opened for.
+- Each list passing ids to `served_among`, which reads their rows again (the first version of this change): one
+  statement more per list, so every list with exactly one public project cost one more than before (review
+  A1831; measured 2026-11-21, e.g. an organisation's page 7 -> 8, `/explore` 8 -> 9), and `/explore` and the count put the id of every public project
+  on the instance into one IN list.
+- One IN list over all the ids, unbounded: `/explore` and the landing page's count judge every project with a
+  page on the instance, which no per-namespace quota bounds, and past the driver's limit on bound parameters
+  (SQLite usually 32766, PostgreSQL 65535) the statement fails ("too many SQL variables" with 250,001 ids,
+  review A1832); the per-project calls before could not fail that way. Batches of 500 keep a normal list at one
+  statement per question.
+- The holds and owners joined in SQL instead of batches, which the agreed fix allowed as well: a join judges the
+  stored rows, so `served`, which judges a row not yet written, would need the rule a second time.
+
+**Consequence:** no list costs more than before for one project (measured 2026-11-21 against `main`, org-owned and
+human-owned: `/explore` 8 and 7 statements, an organisation's page 7, a person's projects 6 and 5, an agent's 4
+and 3, the landing page's counters 11 and 10), and from two projects on they cost less. Past 500 candidates a list
+costs one statement more for each further batch of each question, which
+`test_the_public_lists_ask_in_batches_of_a_bounded_size` counts with the batch patched to 2 under a lowered SQLite
+limit.
+
+## The badge asks the standing a page needs, through `standing_of`
+
+**Id:** ffa4a3e0-2422-4457-838d-b03926e6a955
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.20 "When nothing is served"; the plan the lead agreed on the card tsk-7zwnra89t5a3 (seq 206930); `public_projects.standing_of`, `routes.badges._served`
+**See:** public-pages.md#whether-a-project-has-a-page-is-one-rule-over-rows-served-judges-the-row-it-is-given — 1def6e81-4be2-4e03-8bd7-4426d59407e5 — as of 2026-11-24
+
+The part of `served_of` that is not the page's own columns (no hold on the project; an owner organisation not deleted
+and under no hold, or a human owner active, not deleted and not suspended) is `public_projects.standing_of`, and
+`served_of` filters the page's columns and calls it. The badge, which needs no public page, asks `standing_of` after
+its own switch and the project's state, so a held project or an owner out of standing gives `not_found`.
+
+**Reason:** the badge shows nothing a page would not, and one function keeps the two from drifting apart, the reason
+1def6e81 wrote the page rule once.
+
+**Rejected alternative:** a copy of the hold and owner checks inside the badge route: two copies of one serving rule
+drift apart, as the badge had already drifted from the page, which is the bug this card fixes.
+
+The extraction and its reason are confirmed (the agreed plan); the rejected alternative is inferred, since the plan
+names none for this point, and it sets the entry's Evidence.

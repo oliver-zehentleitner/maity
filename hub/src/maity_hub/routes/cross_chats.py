@@ -10,7 +10,7 @@ from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import select
 
-from maity_hub import cross_chats, idempotency, paging
+from maity_hub import attached, cross_chats, idempotency, paging
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import humans_only, invalid, not_found
@@ -38,6 +38,8 @@ class MessageIn(Written):
     body: str = markdown(min_length=1)
     attachments: Any = None
     to_instance: Any = None
+    # The project an agent instance in several projects posts from (§9.5, "Wake").
+    project: str | None = Field(default=None, max_length=attached.PROJECT_MAX)
 
     @field_validator("attachments", mode="before")
     @classmethod
@@ -166,10 +168,10 @@ def remove_participant(
 
     def action(conn: Any) -> idempotency.Outcome:
         chat = _chat(conn, chat_id)
-        if caller.kind == "agent" and member_id != reader:
-            raise humans_only("an agent leaves only itself")
         if cross_chats.view(conn, chat, reader) is None:
             raise not_found()
+        if caller.kind == "agent" and member_id != reader:
+            raise humans_only("an agent leaves only itself")
         current = cross_chats.stay(conn, chat.id, member_id)
         if current is not None:
             cross_chats.refuse_closed(chat)
@@ -201,8 +203,39 @@ def _load_participation(conn: Any, stay_id: str, _request: Request) -> dict[str,
     return cross_chats.participation(row)
 
 
-idempotency.LOADERS["cross_chat"] = _load_chat
-idempotency.LOADERS["cross_participation"] = _load_participation
+def _sees_chat(conn: Any, chat_id: str, caller: Caller) -> bool:
+    """As the chat's GET (§9.5): a chat the caller reads now."""
+    if caller.kind not in ("human", "agent"):
+        return False
+    chat = cross_chats.find(conn, chat_id)
+    return chat is not None and cross_chats.view(conn, chat, _reader_id(caller)) is not None
+
+
+def _sees_stay(conn: Any, stay_id: str, caller: Caller) -> bool:
+    """One's own stay, the one a leave ended included, or a stay in a chat the caller reads."""
+    from maity_hub import tables as t
+
+    row = conn.execute(
+        select(t.cross_chat_participant).where(t.cross_chat_participant.c.id == int(stay_id))
+    ).first()
+    if row is None or caller.kind not in ("human", "agent"):
+        return False
+    return row.member_id == _reader_id(caller) or _sees_chat(conn, row.conversation_id, caller)
+
+
+def _sees_message(conn: Any, message_id: str, caller: Caller) -> bool:
+    from maity_hub import tables as t
+
+    chat_id = conn.execute(
+        select(t.cross_chat_message.c.conversation_id).where(
+            t.cross_chat_message.c.id == message_id
+        )
+    ).scalar()
+    return chat_id is not None and _sees_chat(conn, chat_id, caller)
+
+
+idempotency.register("cross_chat", _load_chat, _sees_chat)
+idempotency.register("cross_participation", _load_participation, _sees_stay)
 
 
 @router.get("/me/cross-chats/{chat_id}/messages")
@@ -231,7 +264,7 @@ def post_message(
 ) -> JSONResponse:
     def action(conn: Any) -> idempotency.Outcome:
         chat = _chat(conn, chat_id)
-        shown = cross_chats.post(conn, caller, chat, body.body)
+        shown = cross_chats.post(conn, caller, chat, body.body, body.project)
         return idempotency.Outcome(201, "cross_message", shown["id"], shown)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -251,7 +284,7 @@ def _load_message(conn: Any, message_id: str, request: Request) -> dict[str, Any
     return cross_chats.message_view(row, show_reason=reader == chat.owner_id)
 
 
-idempotency.LOADERS["cross_message"] = _load_message
+idempotency.register("cross_message", _load_message, _sees_message)
 
 
 @router.post("/me/cross-chats/{chat_id}/messages/{message_id}/redact")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -13,10 +13,11 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, and_, false, insert, or_, select, update
+from sqlalchemy import Connection, and_, case, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    access,
     availability,
     card_search,
     card_watches,
@@ -24,6 +25,7 @@ from maity_hub import (
     clock,
     contract_text,
     cover,
+    events,
     idempotency,
     instances,
     line,
@@ -31,6 +33,8 @@ from maity_hub import (
     merged,
     moderation,
     namespace,
+    outsiders,
+    own_approvals,
     paging,
     project_roles,
     ranks,
@@ -44,6 +48,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.board import history
 from maity_hub.board import links as card_links
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -201,7 +206,7 @@ def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any
     return task_view(conn, card, reader_of(request), viewer)
 
 
-idempotency.LOADERS["task"] = load_task
+idempotency.register("task", load_task, idempotency.in_project(idempotency.column_of(t.card)))
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
@@ -263,13 +268,30 @@ def _card(conn: Connection, card_id: str) -> Any:
     return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
 
 
-def _project_card(conn: Connection, mine: Membership, card_id: str) -> Any:
-    row = conn.execute(
-        select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-    ).first()
+def _project_card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
+    query = select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
+    if isinstance(mine, access.OutsideReader):
+        from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+        # A not-done `security` card or one under a hold, as on the Board (§2.3), decided in
+        # the statement that reads the row (`public_cards.outside_clause`).
+        query = query.where(public_cards.outside_clause())
+    row = conn.execute(query).first()
     if row is None:
         raise not_found()
     return row
+
+
+def of_read_card(query: Any, mine: Membership | access.OutsideReader, card_id: Any) -> Any:
+    """`query`, of what belongs to the card the column `card_id` names (its history, its
+    notes), for `mine`: for an outsider it reads nothing once the card is one the outsider
+    does not read, decided in that statement (`public_cards.outside_card`), not only when
+    `_project_card` read the card before it (READ COMMITTED)."""
+    if not isinstance(mine, access.OutsideReader):
+        return query
+    from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+    return query.where(public_cards.outside_card(card_id))
 
 
 def _member(row: Any) -> list[str]:
@@ -308,8 +330,8 @@ def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> 
     mine.require("releases:write")
     if body is None:
         raise invalid({"release.version": "required"})
-    if not releases.SEMVER.fullmatch(body.version):
-        raise invalid({"release.version": "not_semver"})
+    if not releases.valid_version(body.version):
+        raise invalid({"release.version": "not_a_version"})
     taken = conn.execute(
         select(t.card.c.id).where(
             t.card.c.project_id == mine.project.id, t.card.c.release_version == body.version
@@ -433,8 +455,9 @@ def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = 
     if instance is None:
         return
     held = conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == membership_id, t.credential.c.instance == instance
+        instances.credential_rows().where(
+            t.instance_attachment.c.membership_id == membership_id,
+            t.credential.c.instance == instance,
         )
     ).first()
     if held is not None and instances.human_paused(row, held):
@@ -535,13 +558,15 @@ def _revision(card: Any) -> int | None:
     return revision
 
 
-def _signatures(mine: Membership, card: Any, body: TaskPatch) -> dict[str, Any] | None:
+def _signatures(
+    conn: Connection, mine: Membership, card: Any, body: TaskPatch
+) -> dict[str, Any] | None:
     """The signatures after a `review→done` under `reviewer_and_tester`, else None."""
     if not (card.status == "review" and body.status == "done"):
         return None
     if not cards.two_signatures(mine.project):
         return None
-    return cards.sign(mine, card, body.approve, _revision(card))
+    return cards.sign(conn, mine, card, body.approve, _revision(card))
 
 
 def _check_label(label: str | None) -> None:
@@ -644,6 +669,7 @@ def _subtasks_proposed() -> ApiError:
 
 
 @router.get("/projects/{owner}/{slug}/tasks")
+@access.outside_read
 def list_tasks(
     slug: str,
     request: Request,
@@ -663,10 +689,28 @@ def list_tasks(
     cursor: str | None = None,
 ) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+    with read_transaction(engine_of(request)) as conn:
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
-        query = select(t.card).where(t.card.c.project_id == mine.project.id)
+        # Keys first: the order's columns of every card the filters let through, the full
+        # rows only for the page (tsk-ybc2ma72dzvq, hub/context/persistence.md).
+        query = select(*KEYS).where(t.card.c.project_id == mine.project.id)
+        if isinstance(mine, access.OutsideReader):
+            from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+            # A not-done `security` card or one under a hold is in no list an outsider reads,
+            # as on the Board (§2.3), nor are the children filtered by such a card's id: here
+            # for the keys, and again in the statement that reads the page's full rows
+            # (`_views`) and in the one that shapes their views (`outside_views`).
+            query = query.where(public_cards.outside_clause())
+            if parent is not None:
+                above = t.card.alias("above")
+                query = query.where(
+                    select(above.c.id)
+                    .where(above.c.id == parent, public_cards.outside_clause(above))
+                    .exists()
+                )
+        wanted: list[str] = []
         if status != "all":
             wanted = [s for s in status.split(",") if s]
             if any(s not in cards.STATUSES for s in wanted):
@@ -702,49 +746,97 @@ def list_tasks(
             order=order,
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
-        matched: dict[str, list[str]] = {}
-
-        def matching(rows: Sequence[Any]) -> list[Any]:
-            if q is None:
-                return list(rows)
-            result = []
-            notes = card_search.note_bodies(conn, (row.id for row in rows))
-            for row in rows:
-                hit = card_search.matches(row, q, notes[row.id])
-                if hit:
-                    matched[row.id] = hit
-                    result.append(row)
-            return result
-
-        def views(rows: Sequence[Any]) -> list[dict[str, Any]]:
-            shown = task_views(conn, rows, fg, mine)
-            if q is not None:
-                for item in shown:
-                    item["match"] = matched[item["id"]]
-            return shown
-
+        # Notes written in the reader's hidden windows are not searched (§6.2, §6.4).
+        search = (
+            card_search.Search(
+                conn,
+                q,
+                events.outside_window_times(
+                    conn, mine.project.id, mine.row, t.card_note.c.created_at
+                ),
+            )
+            if q is not None
+            else None
+        )
+        tag = paging.tag_of(cursor) if cursor is not None else None
+        closed_only = bool(wanted) and set(wanted) <= set(cards.CLOSED)
+        if order == "board" and q is None and closed_only and tag != "key":
+            # Closed columns only (the board's done group, tsk-d4anfsk1e94j): their order,
+            # `closed_at` newest first and then the id (ranks.board_key), is one the
+            # database keeps, so it sorts and pages here instead of every card of the
+            # columns being read for each page. A `key` cursor given out before this path
+            # existed still goes on below.
+            positions = {s: cards.STATUSES.index(s) for s in wanted}
+            position = case(positions, value=t.card.c.status)
+            # The id breaks ties bytewise, as Python compares it: PostgreSQL compares text
+            # by its locale unless told otherwise (MySQL's tables are binary already,
+            # SQLite compares bytes).
+            card_id = t.card.c.id.collate("C") if conn.dialect.name == "postgresql" else t.card.c.id
+            if cursor is not None:
+                at_position, at_closed, at_id = paging.unclosed(cursor, bound)
+                if at_closed is None:
+                    within = and_(t.card.c.closed_at.is_(None), card_id > at_id)
+                else:
+                    within = or_(
+                        t.card.c.closed_at.is_(None),
+                        t.card.c.closed_at < at_closed,
+                        and_(t.card.c.closed_at == at_closed, card_id > at_id),
+                    )
+                query = query.where(
+                    or_(position > at_position, and_(position == at_position, within))
+                )
+            # A card without `closed_at` sorts last in its column, as in board_key, on every
+            # database: PostgreSQL would put NULL first in a descending order.
+            query = query.order_by(
+                position, t.card.c.closed_at.is_(None), t.card.c.closed_at.desc(), card_id
+            ).limit(limit + 1)
+            # The page's keys; its full rows are read after them (_views).
+            rows = conn.execute(query).all()
+            page = rows[:limit]
+            following = None
+            if len(rows) > limit:
+                last = page[-1]
+                following = paging.closed_cursor(
+                    positions[last.status], last.closed_at, last.id, bound
+                )
+            return JSONResponse(
+                {"items": _views(conn, page, None, fg, mine), "next_cursor": following}
+            )
         if order == "board":
-            # The board's order (§6.4) is not one the database keeps: sorted here, a
-            # project's cards at a time, and paged after the last item shown.
+            # The board's order (§6.4) is not one the database keeps: the keys are sorted
+            # here, a project's cards at a time, and paged after the last item shown.
             def key(row: Any) -> tuple[Any, ...]:
                 return ranks.board_key(cards.STATUSES, row)
 
-            ordered = sorted(matching(conn.execute(query).all()), key=key)
-            if cursor is not None:
+            ordered = sorted(conn.execute(query).all(), key=key)
+            if tag == "closed":
+                ordered = _after_closed(ordered, paging.unclosed(cursor or "", bound), key)
+            elif cursor is not None:
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
-            shown = ordered[:limit]
+            taken = _take(_batches(ordered, limit), limit + 1, search)
+            shown = taken[:limit]
             following = None
-            if len(ordered) > limit:
-                last, column = shown[-1], key(shown[-1])[0]
-                in_column = [r.id for r in shown if key(r)[0] == column]
-                first_not_shown = ordered[limit]
-                following = paging.key_cursor(
-                    (last.id, key(last)),
-                    (first_not_shown.id, key(first_not_shown)),
-                    in_column,
-                    bound,
-                )
-            return JSONResponse({"items": views(shown), "next_cursor": following})
+            if len(taken) > limit:
+                last, column_at = shown[-1], key(shown[-1])[0]
+                if last.status in cards.CLOSED:
+                    # A closed card keeps its place: no list of what was shown is needed.
+                    following = paging.closed_cursor(column_at, last.closed_at, last.id, bound)
+                else:
+                    in_column = [r.id for r in shown if key(r)[0] == column_at]
+                    # The card after the last one shown, a hit or not: should that one
+                    # leave its column, a card between it and the next hit that begins to
+                    # match is then not skipped. Without a search it is the next hit.
+                    at = [r.id for r in ordered].index(last.id)
+                    first_not_shown = ordered[at + 1]
+                    following = paging.key_cursor(
+                        (last.id, key(last)),
+                        (first_not_shown.id, key(first_not_shown)),
+                        in_column,
+                        bound,
+                    )
+            return JSONResponse(
+                {"items": _views(conn, shown, search, fg, mine), "next_cursor": following}
+            )
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
@@ -754,14 +846,130 @@ def list_tasks(
                 )
             )
         query = query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc())
-        if q is None:
-            query = query.limit(limit + 1)
-        rows = matching(conn.execute(query).all())
-        page = rows[:limit]
+        if search is None:
+            taken = list(conn.execute(query.limit(limit + 1)).all())
+        else:
+            taken = _take(_updated_batches(conn, query, limit), limit + 1, search)
+        page = taken[:limit]
         next_cursor = (
-            paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
+            paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(taken) > limit else None
         )
-        return JSONResponse({"items": views(page), "next_cursor": next_cursor})
+        return JSONResponse(
+            {"items": _views(conn, page, search, fg, mine), "next_cursor": next_cursor}
+        )
+
+
+# The columns the card list orders and pages by (§6.4): read for every card the filters let
+# through, while the full rows are read only for the page.
+KEYS = (
+    t.card.c.id,
+    t.card.c.status,
+    t.card.c.rank,
+    t.card.c.created_at,
+    t.card.c.closed_at,
+    t.card.c.updated_at,
+)
+# A search reads its cards' text this many at most per batch; the first batch is the page.
+SEARCH_BATCH_MAX = 1000
+
+
+def _batch_sizes(limit: int) -> Iterator[int]:
+    """The page first, so a search that matches often reads no more than it shows; then
+    doubling, so one that matches rarely reads the list in few statements."""
+    size = limit + 1
+    while True:
+        yield size
+        size = min(size * 2, SEARCH_BATCH_MAX)
+
+
+def _batches(ordered: Sequence[Any], limit: int) -> Iterator[Sequence[Any]]:
+    start = 0
+    for size in _batch_sizes(limit):
+        if start >= len(ordered):
+            return
+        yield ordered[start : start + size]
+        start += size
+
+
+def _updated_batches(conn: Connection, query: Any, limit: int) -> Iterator[Sequence[Any]]:
+    """`order=updated` a batch of keys at a time, each after the last one read."""
+    last = None
+    for size in _batch_sizes(limit):
+        batch = query
+        if last is not None:
+            batch = batch.where(
+                or_(
+                    t.card.c.updated_at < last.updated_at,
+                    and_(t.card.c.updated_at == last.updated_at, t.card.c.id < last.id),
+                )
+            )
+        rows = conn.execute(batch.limit(size)).all()
+        if rows:
+            yield rows
+        if len(rows) < size:
+            return
+        last = rows[-1]
+
+
+def _take(
+    batches: Iterable[Sequence[Any]], wanted: int, search: card_search.Search | None
+) -> list[Any]:
+    """The first `wanted` keys, in order, of the cards that match the search."""
+    taken: list[Any] = []
+    for batch in batches:
+        kept = None if search is None else search.keep([row.id for row in batch])
+        for row in batch:
+            if kept is None or row.id in kept:
+                taken.append(row)
+                if len(taken) == wanted:
+                    return taken
+    return taken
+
+
+def _views(
+    conn: Connection,
+    keys: Sequence[Any],
+    search: card_search.Search | None,
+    fg: Forge,
+    mine: Membership | access.OutsideReader,
+) -> list[dict[str, Any]]:
+    """The page's cards in full, in the order of their keys. A card gone since its key was
+    read is left out, and for an outsider a card it no longer reads (§2.3): decided on the
+    full rows, in the statement that reads them, not only on the keys read before (READ
+    COMMITTED; `task_views` decides it once more in its last statement)."""
+    if not keys:
+        return []
+    ids = [row.id for row in keys]
+    full = select(t.card).where(t.card.c.id.in_(ids))
+    if isinstance(mine, access.OutsideReader):
+        from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+        full = full.where(public_cards.outside_clause())
+    found = {row.id: row for row in conn.execute(full)}
+    rows = [found[card_id] for card_id in ids if card_id in found]
+    shown = task_views(conn, rows, fg, mine)
+    if search is not None:
+        places = search.places([row.id for row in rows])
+        for item in shown:
+            item["match"] = places[item["id"]]
+    return shown
+
+
+def _after_closed(
+    ordered: list[Any],
+    anchor: tuple[int, datetime | None, str],
+    key: Callable[[Any], tuple[Any, ...]],
+) -> list[Any]:
+    """The cards after a closed card in the board's order. Its key is rebuilt from the
+    cursor as ranks.board_key builds it, so the page goes on there even when that card was
+    reopened meanwhile; a card closed again since sorts ahead of it, and the board's read
+    of the cards changed meanwhile brings it (web/js/board.js)."""
+    position, closed_at, card_id = anchor
+    was = (position, -closed_at.timestamp() if closed_at is not None else 0.0, card_id)
+    try:
+        return [r for r in ordered if key(r) > was]
+    except TypeError:  # a key of another shape: not a cursor this list gave
+        raise invalid({"cursor": "invalid"}) from None
 
 
 def _after(
@@ -776,14 +984,18 @@ def _after(
     out, which changes their keys but never the order of the cards that did not move. So
     the page goes on after the last card shown where it still sits in its column; else
     from the first card not shown, if it has not moved at all (same key); else from the
-    top of the last card's column again, without the cards this page showed."""
+    top of the last card's column again, without the cards this page showed. `ordered`
+    holds every card of the filters, a search's hits and the rest: a search keeps its
+    place through a card that stopped matching, and finds one that began to."""
     places = {row.id: i for i, row in enumerate(ordered)}
     anchor_id, was = anchor
-    if anchor_id in places and key(ordered[places[anchor_id]])[0] == was[0]:
-        return ordered[places[anchor_id] + 1 :]
+    at = places.get(anchor_id)
+    if at is not None and key(ordered[at])[0] == was[0]:
+        return ordered[at + 1 :]
     following_id, next_was = following
-    if following_id in places and key(ordered[places[following_id]]) == next_was:
-        return ordered[places[following_id] :]
+    at = places.get(following_id)
+    if at is not None and key(ordered[at]) == next_was:
+        return ordered[at:]
     try:
         return [r for r in ordered if key(r)[0] >= was[0] and r.id not in shown]
     except TypeError:  # a key of another shape: not a cursor this list gave
@@ -791,12 +1003,16 @@ def _after(
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
+@access.outside_read
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+    with read_transaction(engine_of(request)) as conn:
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
+        views = task_views(conn, [_project_card(conn, mine, card_id)], fg, mine)
+        if not views:  # an outsider's card hidden since it was read (`outside_views`)
+            raise not_found()
+        return JSONResponse(views[0])
 
 
 # A card's fields as its creation records them (§6.15).
@@ -884,7 +1100,11 @@ def create_card(
         # that owner is covered to its substitute (§6.12): the hub's routing, not an
         # agent's assignment, so the coordinator gate does not apply.
         assigned = cards.area_owner(conn, mine.project.id, body.area)
-        assigned, routed_cover = cover.routed(conn, assigned)
+        # The card does not exist yet. Its status is what `may_take_card` needs; a new
+        # card is not under a takeover.
+        assigned, routed_cover = cover.routed(
+            conn, assigned, SimpleNamespace(id="", status=body.status)
+        )
         if routed_cover is not None:
             extra = {**extra, "cover": routed_cover}
     assigned_instance = _assigned_instance(conn, assigned)
@@ -1060,7 +1280,7 @@ def patch_task(
             and not line_assign
             and not arbiter_move
             and not release_edit
-            and not (review_move and cards.has_done_authority(mine, card))
+            and not (review_move and cards.has_done_authority(conn, mine, card))
         ):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
         if "approve" in given and not (
@@ -1116,7 +1336,7 @@ def patch_task(
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             availability.refuse_coordinator_out(conn, mine, "new assignments")
             if assigns_away and not cards.holds(mine, card):
-                takeovers.guard_move(conn, mine, card)
+                takeovers.guard_move(conn, mine, card, to=new_assignee)
             values["assigned_to"] = new_assignee
             if values["assigned_to"] != card.assigned_to:
                 # The new team's distribution decides, as on every assignment (§6.18).
@@ -1148,16 +1368,31 @@ def patch_task(
                 raise invalid({"status": "unknown"})
             if card.status == "cancelled":  # a card moderation cancelled stays so (§16.8)
                 moderation.refuse_held(conn, "card", card.id, "remove")
-            cards.check_transition(mine, card, body.status)
+            cards.check_transition(conn, mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
-            signed = _signatures(mine, card, body)
+            signed = _signatures(conn, mine, card, body)
             if signed is not None:
                 values["approvals"] = signed
             if card.status == "review" and body.status == "in_progress":
                 values["approvals"] = None  # a signature covers the work it was given on (§6.4)
             if signed is None or cards.signed_by_two(signed, _revision(card)):
+                if body.status == "done":
+                    # §2.3 "Own approvals": every move of outsiders' work to done, the
+                    # signature that completes `approvals` included, after the done
+                    # authority's check; a human's own move counts as one approval first.
+                    own_approvals.gate(
+                        conn,
+                        SimpleNamespace(
+                            **{
+                                **card._mapping,
+                                **({"approvals": signed} if signed is not None else {}),
+                            }
+                        ),
+                        mine.project,
+                        mine.principal_id if mine.kind == "human" else None,
+                    )
                 values["status"] = body.status
                 if body.status in cards.CLOSED:
                     values.update(_closing(card))
@@ -1380,6 +1615,7 @@ def claim(
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
+        holder_row = mine.row
         instance = mine.instance
         session_id = caller.session_id
         if body.holder is not None and body.holder not in (
@@ -1393,9 +1629,15 @@ def claim(
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
+            # Before the holder's instance, as §6.5's interim orders it ("Until the claim
+            # request is built"): only a human with tasks:admin gives an outsider's agent a card.
+            outsiders.refuse_taking(holder_row, mine)
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
+        # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
+        # after the scope, the project's state and the card's existence, before its state.
+        outsiders.refuse_taking(holder_row, mine)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -1524,7 +1766,7 @@ def _lease_active(card: Any) -> ApiError:
         409,
         "lease_active",
         "the holder's lease has not expired",
-        {"lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None},
+        {"lease_until": clock.rfc3339_or_none(card.lease_until)},
     )
 
 
@@ -1741,7 +1983,7 @@ def assign(
         before = card
         if takes:
             # An agent takes a card only through a takeover while the lease runs (§6.19).
-            takeovers.guard_move(conn, mine, card)
+            takeovers.guard_move(conn, mine, card, to=assignee)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -1752,6 +1994,8 @@ def assign(
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
+            # Before the holder's instance is chosen (§6.5, "Until the claim request is built").
+            outsiders.refuse_taking(assignee_row, mine)
             instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
             _refuse_paused(conn, assignee, instance)
             values.update(
@@ -1805,7 +2049,7 @@ def assign(
                 "assigned_instance": card.assigned_instance,
                 "holder": principal_id(conn, card.claim_holder),
                 "instance": card.claim_instance,
-                "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(card.lease_until),
                 "project_state": mine.project.state,
                 "reason": None,
             },
@@ -1962,6 +2206,7 @@ def report(
         _check_why(body, mine.project)
         card = _project_card(conn, mine, card_id)
         already_done = card.status == "done"
+        reopening = False
         if already_done:
             previous = card.report or {}
             pr = previous.get("pr") or {}
@@ -1975,6 +2220,12 @@ def report(
                 raise cards.invalid_transition(card.status, "review")
             if body.pr is None or body.pr.number != pr.get("number"):
                 raise invalid({"pr": "different_pull_request"})
+            # §2.3, §6.6: a new head on outsiders' work has none of its own approvals, so the
+            # card leaves `done` (below); judged as the card and its members stand now (the
+            # reporter is the one whose report it replaces).
+            reopening = body.head != previous.get("head") and own_approvals.outsiders_work(
+                conn, card, mine.project
+            )
         elif card.status == "cancelled":
             raise cards.invalid_transition(card.status, "review")
         else:
@@ -1988,7 +2239,7 @@ def report(
         revision = (previous_report.get("revision") or 1) + 1 if card.report else 1
         if closing:
             # Refused as a whole, nothing stored: the agent reports again without done.
-            if not cards.has_done_authority(mine, card):
+            if not cards.has_done_authority(conn, mine, card):
                 raise forbidden(
                     cards.authority_scope(mine), "done needs done authority; report without done"
                 )
@@ -2004,7 +2255,7 @@ def report(
             closing = False
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
-                signatures = cards.sign(mine, empty, None, revision)
+                signatures = cards.sign(conn, mine, empty, None, revision)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {
@@ -2030,6 +2281,21 @@ def report(
             "mismatch": None if body.code else False,
             "revision": revision,
         }
+        if closing:
+            # §2.3, §6.6: on outsiders' work short of its own approvals, a `done` from the
+            # done authority is stored and moves the card to review, not done. Judged on the
+            # card as this report leaves it, stored first, so a review result that names the
+            # card only by its pull request (`#<n>`) finds it; a human's own move counts as
+            # one approval.
+            conn.execute(
+                update(t.card)
+                .where(t.card.c.id == card.id)
+                .values(report=stored, approvals=signatures)
+            )
+            reported = _card(conn, card.id)
+            mover = mine.principal_id if mine.kind == "human" else None
+            if own_approvals.missing(conn, reported, mine.project, mover)[0]:
+                closing = False
         values: dict[str, Any] = {
             "report": stored,
             "approvals": signatures,
@@ -2039,7 +2305,12 @@ def report(
         }
         if isinstance(body.why, dict) and "ref" in body.why and not card.ktw_ref:
             values["ktw_ref"] = body.why["ref"]  # §6.23: the card learns where its why lives
-        if not already_done:  # §6.6: a done card keeps its closure and claim.
+        if reopening:
+            # §6.6: the closure gone; back to review with its claim untouched, or, with no
+            # holder (released after the close), to open, where the normal claim applies.
+            back = "review" if card.claim_holder is not None else "open"
+            values.update({"status": back, "closed_at": None})
+        elif not already_done:  # §6.6: a done card keeps its closure and claim.
             if closing:
                 values.update({**_closing(card), "status": "done", "closed_at": now})
             elif card.status == "blocked":
@@ -2245,7 +2516,13 @@ def tick_checklist(
             mine.project.id,
             "task_updated",
             audience(conn, card),
-            {"id": card.id, "release": view["release"], "project_state": mine.project.state},
+            {
+                "id": card.id,
+                "fields": ["release"],
+                "release": view["release"],
+                "history": [],  # a tick writes no history entry (§6.15)
+                "project_state": mine.project.state,
+            },
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )

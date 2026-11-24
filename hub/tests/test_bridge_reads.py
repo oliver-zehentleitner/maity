@@ -84,8 +84,8 @@ def test_for_reads_what_the_served_agent_reads_and_moves_no_cursor(
     assert read.status_code == 200, read.text
     with migrated.connect() as conn:
         acknowledged = conn.execute(
-            select(t.agent_session.c.acknowledged_seq).where(
-                t.agent_session.c.id == bridge.session_id
+            select(t.agent_session_project.c.acknowledged_seq).where(
+                t.agent_session_project.c.session_id == bridge.session_id
             )
         ).scalar()
         delivered = conn.execute(select(t.message_delivery)).first()
@@ -288,14 +288,20 @@ def test_unread_through_the_bridge_is_the_served_agents_not_the_bridges_cursor(
     with migrated.begin() as conn:
         # The served agent read the first in a session that has ended since; the bridge's
         # own session has read far past both.
+        position = t.agent_session_project
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.id == served.session_id)
-            .values(acknowledged_seq=old.json()["seq"], live=None)
+            update(position)
+            .where(position.c.session_id == served.session_id)
+            .values(acknowledged_seq=old.json()["seq"])
         )
         conn.execute(
             update(t.agent_session)
-            .where(t.agent_session.c.id == bridge.session_id)
+            .where(t.agent_session.c.id == served.session_id)
+            .values(live=None)
+        )
+        conn.execute(
+            update(position)
+            .where(position.c.session_id == bridge.session_id)
             .values(acknowledged_seq=said.json()["seq"] + 100)
         )
     client = make_client()
@@ -324,12 +330,16 @@ def test_a_paused_bridge_leaves_the_served_agent_offline(
 ) -> None:
     served, bridge = _pair(migrated, owner, served_session=False)
     assert _get(make_client(), bridge, "/me").status_code == 200
-    table = t.membership if paused == "membership" else t.credential
-    key = bridge.membership_id if paused == "membership" else bridge.credential_id
+    if paused == "membership":
+        where = t.membership.c.id == bridge.membership_id
+        table = t.membership
+    else:  # the instance's pause is on its attachment (§6.17)
+        where = t.instance_attachment.c.credential_id == bridge.credential_id
+        table = t.instance_attachment
     with migrated.begin() as conn:
         conn.execute(
             update(table)
-            .where(table.c.id == key)
+            .where(where)
             .values(paused_since=clock.now(), paused_by=owner.id, paused_reason="break")
         )
     view = owner.get(f"{PROJECT}/members/{served.agent_id}").json()
@@ -356,3 +366,42 @@ def test_a_request_asked_through_the_bridge_is_the_served_agents_without_an_inst
         answered = conn.execute(select(t.event).where(t.event.c.kind == "request_answered")).one()
     assert f"member:{served.agent_id}" in answered.audience
     assert not any(a.startswith(f"instance:{served.agent_id}#") for a in answered.audience)
+
+
+def test_a_bridge_neither_reads_nor_wakes_on_the_agents_chat_rules_changed(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§9.6: a change of the rules an owner set is read by the agent it names and never by a
+    bridge (v5vp on #1733): not in the list, the long-poll, `after=latest` or by its seq."""
+    from maity_hub import events
+
+    served, bridge = _pair(migrated, owner)
+    before = _tell(owner, served.agent_id)
+    project = _project(migrated)
+    with events.transaction(migrated) as conn:
+        seq = events.emit(
+            conn,
+            project,
+            "chat_rules_changed",
+            [f"member:{served.agent_id}"],
+            {"entry_id": "cha-0001"},
+            subject=("member", served.agent_id),
+        )
+    client = make_client()
+    carried = f"{PROJECT}/events?for={served.agent_id}"
+    assert seq not in _seqs(_get(client, bridge, f"{carried}&after=0"))
+    assert before in _seqs(_get(client, bridge, f"{carried}&after=0"))  # the rest it reads
+    assert seq not in _seqs(_get(client, bridge, f"{carried}&after={before}&wait=1"))
+    latest = _get(client, bridge, f"{carried}&after=latest")
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["cursor"] < seq
+    head = _get(client, bridge, f"{PROJECT}/events?after=latest", served=served.agent_id)
+    assert head.status_code == 200, head.text
+    assert head.json()["cursor"] < seq
+    by_seq = _get(client, bridge, f"{PROJECT}/events/{seq}", served=served.agent_id)
+    assert by_seq.status_code == 404, by_seq.text
+    # The agent itself reads it and is woken by it.
+    assert seq in _seqs(_get(client, served, f"{PROJECT}/events?after=0"))
+    assert seq in _seqs(_get(client, served, f"{PROJECT}/events?after={before}&wait=1"))
+    own = _get(client, served, f"{PROJECT}/events/{seq}")
+    assert own.status_code == 200, own.text

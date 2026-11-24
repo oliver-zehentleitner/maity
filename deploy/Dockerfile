@@ -9,7 +9,8 @@
 # move it: docker buildx imagetools inspect python:3.12-slim, then both lines.
 FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS build
 WORKDIR /src
-# Dockerfile.dockerignore limits the context to hub/ and web/, without dotfiles.
+# Dockerfile.dockerignore limits the context to hub/, web/ and docs/join-page.md, without
+# dotfiles; hub/tests/test_image_context.py fails when a file the wheel build reads is left out.
 COPY . .
 # The wheel is built with the pinned backend (hub/requirements/build.txt), not
 # whatever hatchling is newest; every download is checked against its hash.

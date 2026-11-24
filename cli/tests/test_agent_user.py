@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -101,7 +103,10 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
                         "/usr/bin:/bin", home / "logs", run=run,
                         as_user=AsUser("maity-agent"))  # fmt: skip
     backend.start("maity_maity_agent-3", tmp_path, ["stub"], {}, "plc-0003", 1)
-    assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
+    # The sessions' shell is probed as the agents' user first (A2352), then the server starts.
+    assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "sh", "-c"]
+    new = next(call for call in calls if "new-session" in call)
+    assert new[:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
     assert all(call[:5] == ["sudo", "-n", "-u", "maity-agent", "--"] for call in calls)
     assert (home / "tmux.conf").read_text().startswith("set -g update-environment")
     assert "maity-agent -- sh -c mkdir -p" in fake_sudo.read_text()
@@ -254,14 +259,83 @@ def test_logs_are_read_as_the_agents_user(
         == 0
     )
     assert capsysbinary.readouterr().out == b"hello\n"
-    assert "tail -c +1 --" in fake_sudo.read_text()
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()  # never `tail`
 
 
 def test_a_log_is_read_from_where_the_last_read_stopped(tmp_path: Path, fake_sudo: Path) -> None:
+    from maity.runner import limitread
+
+    skip_unless_maity_is_installed()  # through sudo, `python -I -m maity.runner.limitread`
     log = tmp_path / "plc.log"
     log.write_bytes(b"one\ntwo\n")
     for as_user in (AsUser(), AsUser("maity-agent")):
-        assert as_user.read(log, 4) == b"two\n" and as_user.read(log, 8) == b""
+        assert as_user.read(log, 4, limit=100, under=tmp_path) == b"two\n"
+        assert as_user.read(log, 8, limit=100, under=tmp_path) == b""
+        assert as_user.read(log, 0, limit=3, under=tmp_path) == b"one"  # at most the limit
+        with pytest.raises(limitread.Behind):  # the log was cut since: the reader starts over
+            as_user.read(log, 9, limit=100, under=tmp_path)
+
+
+@pytest.mark.parametrize("kind", ["fifo", "endless", "sparse"])
+def test_a_clone_file_is_read_safely_through_sudo(
+    tmp_path: Path, fake_sudo: Path, kind: str
+) -> None:
+    """On the agents' side, by the runner's own module: no link followed, no wait on a FIFO,
+    a regular file only, never more than the limit."""
+    from test_supervisor import plant, within
+
+    from maity.runner import workspace
+
+    skip_unless_maity_is_installed()
+    (tmp_path / ".git").mkdir()
+    plant(tmp_path / ".git" / "config", kind)
+    as_user = AsUser("maity-agent")
+    assert within(30, workspace.origin, tmp_path, as_user) is None
+    with pytest.raises(OSError):
+        within(30, lambda: as_user.read_whole(tmp_path / ".git" / "config", 1024, under=tmp_path))
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()
+
+
+def test_a_directory_swapped_for_a_link_is_never_read_through(
+    tmp_path: Path, fake_sudo: Path
+) -> None:
+    """Both readers, here and through sudo, walk down from the clone without following a
+    link: a `.git` swapped for a link to a directory outside it is refused, not read."""
+    from maity.runner import workspace
+
+    skip_unless_maity_is_installed()
+    clone, outside = tmp_path / "clone", tmp_path / "outside"
+    (clone / ".git").mkdir(parents=True)
+    (clone / ".git" / "config").write_text(
+        '[remote "origin"]\n\turl = https://example.invalid/in\n'
+    )
+    outside.mkdir()
+    (outside / "config").write_text('[remote "origin"]\n\turl = https://example.invalid/out\n')
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert workspace.origin(clone, as_user) == "https://example.invalid/in"
+    (clone / ".git").rename(tmp_path / "moved")
+    (clone / ".git").symlink_to(outside)
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert workspace.origin(clone, as_user) is None
+        with pytest.raises(OSError):
+            as_user.read_whole(clone / ".git" / "config", 1024, under=clone)
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()
+
+
+def test_a_read_through_sudo_that_does_not_end_is_cut_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """Whatever holds the read on the agents' side, it ends within READ_TIMEOUT as an
+    OSError, which every caller handles, never as an exception that escapes them."""
+    from maity.runner import asuser, workspace
+
+    (fake_sudo.parent / "sbin" / "sudo").write_text("#!/bin/sh\nexec sleep 30\n")
+    monkeypatch.setattr(asuser, "READ_TIMEOUT", 0.5)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text('[remote "origin"]\n\turl = x\n')
+    with pytest.raises(OSError, match="did not end in time"):
+        AsUser("maity-agent").read(tmp_path / ".git" / "config", limit=100, under=tmp_path)
+    assert workspace.origin(tmp_path, AsUser("maity-agent")) is None
 
 
 def test_the_agents_commands_never_read_the_runners_terminal(
@@ -300,8 +374,9 @@ def test_the_clone_as_the_agents_user_never_prompts_for_a_login(
     cfg = load(tmp_path, monkeypatch)
     assert cfg.local is not None
     place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
-    workspace.prepare(cfg, place, "https://github.com/oliver-zehentleitner/maity", "agt-3",
-                      "plc-0003", None, Recorder("maity-agent"))  # fmt: skip
+    with pytest.raises(workspace.Refused):  # the recorder clones nothing: no plain clone
+        workspace.prepare(cfg, place, "https://github.com/oliver-zehentleitner/maity", "agt-3",
+                          "plc-0003", None, Recorder("maity-agent"))  # fmt: skip
     clone = next(env for argv, env in calls if "clone" in argv)
     assert clone is not None and all(clone.get(k) == v for k, v in proc.NO_PROMPT.items())
 
@@ -310,9 +385,18 @@ def test_the_attach_hint_goes_through_sudo() -> None:
     socket = Path("/home/maity-agent/.maity-runner/tmux.sock")
     assert tmux.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
         "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux.sock attach -t "
-        "maity_maity_agent-3"
+        "'=maity_maity_agent-3'"
     )
     assert tmux.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
+
+
+def test_the_attach_hint_quotes_the_exact_target_for_zsh() -> None:
+    # zsh expands a bare word that starts with `=` (`=maity_x_y` to the path of a command
+    # `maity_x_y`), which `shlex.quote` leaves bare.
+    socket = Path("/srv/runner/tmux.sock")
+    hint = tmux.attach_hint(socket, "maity_x_y", AsUser())
+    assert hint.endswith(" -t '=maity_x_y'")
+    assert shlex.split(hint) == tmux.attach_words(socket, "maity_x_y", AsUser())
 
 
 def test_harnesses_are_probed_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
@@ -344,7 +428,7 @@ def test_the_deny_lists_come_from_the_agents_side(
     assert agent_home / ".claude" in ctx.private and agent_home / ".ssh" in ctx.private
     assert cfg.local.agent_files.resolve() in ctx.private
     assert sibling.resolve() in ctx.private
-    assert "-path */.git/maity" in fake_sudo.read_text()  # listed as maity-agent
+    assert "-mindepth 2 -maxdepth 2 -print0" in fake_sudo.read_text()  # listed as maity-agent
 
 
 def test_a_partial_clone_listing_refuses_the_start(
@@ -371,8 +455,8 @@ def test_a_partial_clone_listing_refuses_the_start(
 def test_the_sandbox_tools_are_found_as_the_agents_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
 ) -> None:
-    """Claude Code's sandbox only on Linux (bubblewrap and socat); elsewhere, macOS among
-    them, it is off whatever the agents' PATH holds."""
+    """Claude Code's sandbox needs bubblewrap and socat on Linux, Seatbelt's sandbox-exec on
+    macOS, each on the agents' PATH; elsewhere it is off whatever that PATH holds."""
     import sys
 
     agent_bin = tmp_path / "agent-home" / ".local" / "bin"
@@ -389,7 +473,12 @@ def test_the_sandbox_tools_are_found_as_the_agents_user(
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     assert capabilities.sandbox_available(codex, path, as_user)  # `codex sandbox -- true`
     assert "command -v" in fake_sudo.read_text()
-    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: off, bwrap and socat or not
+    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: Seatbelt, not bwrap and socat
+    assert not capabilities.sandbox_available(claude, path, as_user)
+    (agent_bin / "sandbox-exec").write_text("#!/bin/sh\nexit 0\n")
+    (agent_bin / "sandbox-exec").chmod(0o755)
+    assert capabilities.sandbox_available(claude, path, as_user)
+    monkeypatch.setattr(sys, "platform", "win32")  # no OS sandbox for Claude Code
     assert not capabilities.sandbox_available(claude, path, as_user)
 
 
@@ -458,3 +547,17 @@ def test_the_agents_user_records_it_through_sudo(
         str(ctx.clone.resolve()): {KEY: True}
     }
     assert not (Path.home() / ".claude.json").exists()  # never the runner's own
+
+
+def test_the_inode_of_a_path_reads_the_same_through_sudo(tmp_path: Path, fake_sudo: Path) -> None:
+    """The runner records `.git`'s inode at a start (adapters.launch); the agents' side may be
+    closed to the runner, so it is read there with `ls -di`, a link not followed."""
+    real = tmp_path / "dot-git"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    for path in (real, link):
+        assert AsUser("maity-agent").inode(path) == AsUser().inode(path) == os.lstat(path).st_ino
+    assert "ls -di --" in fake_sudo.read_text()
+    with pytest.raises(OSError, match="inode"):
+        AsUser("maity-agent").inode(tmp_path / "missing")

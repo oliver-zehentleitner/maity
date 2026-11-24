@@ -110,11 +110,13 @@ merge — the status quo that caused the problem.
 
 **Id:** 3ac98e12-f84b-423d-98de-3d3f7f610b8f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 **Evidence:** confirmed
-**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator
+**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator; retired by the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead
 **Revisit when:** the maintainer withdraws the standing instruction, or a deploy without a go breaks maity.team
 **See:** https://github.com/oliver-zehentleitner/maity — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 
 For the night of 2026-10-22 the maintainer gave a standing instruction:
 the coordinator deploys a new image to maity.team before the maintainer
@@ -131,6 +133,14 @@ reasons in the hub's Kubernetes entry.
 night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
+
+**Superseded:** from deploy 6 (2026-11-10) every deploy of maity.team
+is a release built by the maintainer's `v*` tag, the hub context's
+entry 1555765c. The two descriptions disagreed until the maintainer
+settled it on 2026-11-14 (req-5x293t6ntn8q): that entry stays, and this
+one, which deployed the image from the publish workflow on `main`, is
+retired. The documented `cosign verify` no longer accepts an image
+signed on `main` (the hub context's entry 9c3f6a1e).
 
 ## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
 
@@ -196,7 +206,7 @@ review.
 
 **Id:** 06b11a79-65dc-4364-b6ca-bd36927ae829
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's card of 2026-10-23 (the Actions queue held 30–100 runs with about seven running, and every merge waited hours); `.github/workflows/ci.yml`
 **Revisit when:** a suite starts depending on files outside the paths that gate it, or a regression reaches main that a skipped suite would have caught
@@ -206,7 +216,9 @@ base it merges into (`git diff HEAD^1 HEAD`) and gates each suite on the
 paths it reads: the hub's suites on `hub/` and `docs/join-page.md` (the
 join page ships in the wheel), the image also on `deploy/Dockerfile*`,
 the join smoke and the browser test also on `cli/`, the dashboard on
-`web/`, the CLI on `cli/`, the Helm chart on `deploy/`. The changelog
+`web/`, the CLI on `cli/`, the Helm chart on `deploy/`, the vendored
+Keep the Why views (`web-vendor`) on `web/vendor/` and
+`web/tools/vendor_ktw.py`. The changelog
 check always runs; a change to the workflow runs everything; a push to
 main runs everything. A new push to a pull request cancels its older run.
 `ci-ok` is the one check to require: green when every suite passed or
@@ -225,6 +237,14 @@ run names.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
 
+(2026-11-11, needs-review: the revisit condition above has fired. `make -C web check` reads `docs/api.md` and
+`hub/src/maity_hub/landing_assets/landing.js`, and neither started the web job; #1593, which changed `docs/api.md` and no
+file under `web/`, merged green and left main's web check red (tsk-fffx19yteh4x). The entry "The web part runs for every
+file `make -C web check` reads, and a test holds the filter to the reads" closes that gap for the web part; whether this
+entry stands as it is, with the hub tests' known gap of 5b0f7a42 still open, is the re-check. For that re-check: the web
+job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which no `web:` pattern matches;
+`tools/test_run_slot.py` runs in the changelog job, which always runs.)
+
 ## A change to the contract alone runs a light `hub-contract` part, not the database jobs
 
 **Id:** 5b0f7a42-3c1e-4d68-9a15-e2c7d4f1b903
@@ -236,15 +256,21 @@ run names.
 
 Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
 did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
-part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+part `contract` (`docs/api.md` and `hub/*`; since 2026-11-16 also `cli/src/maity/runner/capabilities.py`, below) starts the job `hub-contract`: `make install` and every test file that builds
 the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
 `test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
-jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*` (the third pattern came with the review of #1872, below); a push to main and a change
 to the workflow start it like every other part.
 
 **Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
 `web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
 one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**One file of the gap now starts the job (2026-11-16, tsk-ag8rgjnzt0kg):** `hub/tests/test_runner_confinement.py` checks the
+hub's confinements against the CLI's `cli/src/maity/runner/capabilities.py` and builds the path `"docs" / "api.md"`, so
+`hub-contract` runs it. The `contract` part also lists `cli/src/maity/runner/capabilities.py`: a pull request that
+changes only that file would otherwise leave a confinement the hub refuses unseen until main (the finding H1 of review A783
+of #1872). Only this file, because the job runs it already; the other files of the gap stay open.
 
 **Rejected alternatives:**
 - `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
@@ -253,6 +279,39 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
   selects them by the path they build.
 - Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
   CI only chooses when to run them.
+
+## The web part runs for every file `make -C web check` reads, and a test holds the filter to the reads
+
+**Id:** 66aced31-14ac-4f51-90d2-4232e22f2e8e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fffx19yteh4x (#1593, merged as f75de2db, added two error codes to `docs/api.md` §1.3 with a green CI, and every later pull request touching `web/` failed the web check until #1628); `.github/workflows/ci.yml`; `web/tools/test_ci_paths.py`
+**Revisit when:** `web/tools/check.py` reads a file outside `web/` without starting from `os.path.dirname(ROOT)` (the test does not see it), or the web job grows slow enough that a contract-only pull request should not run it
+
+`web/tools/check.py` reads four places outside `web/`: the hub's words, `hub/words-meta/`, the error codes of `docs/api.md`
+§1.3 (each needs words in `web/js/errors.js`) and the landing page's script
+`hub/src/maity_hub/landing_assets/landing.js` (size and request rules). The `web` part of the `changes` job listed only the
+first two, so a pull request that changed only the contract or only the landing script ran no web check, and main went red
+after the merge. The `web` part now also matches `docs/api.md` and `hub/src/maity_hub/landing_assets/*`.
+`web/tools/test_ci_paths.py`, run by `make check`, reads `check.py`'s syntax tree, collects every
+`os.path.join(os.path.dirname(ROOT), "a", "b")` whatever its quotes or commas, and fails unless a `web:` pattern of the
+`changes` job matches the path; any other use of `os.path.dirname(ROOT)` (a variable part, the parent kept in a name) fails
+with its line instead of being skipped. A new outside read changes `web/tools/`, which runs the web job, so the test names
+the missing pattern in the same pull request. The first version matched the join with a regular expression and missed
+single quotes and a trailing comma (review of #1630).
+
+**Reason:** the web job is `make check` and `make smoke`, standard library and node, about five minutes (306 to 310 s on
+#1630's two heads and on main 30d84d15); running all of it for a contract change costs a few minutes of a runner, less
+than keeping a second place that knows which part of the check reads which file.
+
+**Rejected alternatives:**
+- The error-code check as its own job on `docs/api.md` (the card's second option): one more checkout and one more `ci-ok`
+  need, and a second list of what reads the contract, to save a few minutes per contract-only pull request; the landing
+  script would still need the web part.
+- Only the two patterns, with no test: the gap came from a read nobody added to the filter, and the next one would too.
+- A regular expression over `check.py`'s text: it matched only double-quoted parts without a trailing comma, and single
+  quotes, mixed quotes or a trailing comma passed unseen.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
@@ -380,11 +439,12 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (from the reviews of #2022 and #2025: the reader, then the table of introducing commits, the lead's decision of 2026-11-20 after three review rounds); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
 **See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
 `publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
@@ -396,7 +456,26 @@ read-only token and lets the tag through only when:
 - for the hub and its image also: the newest hub-mariadb run that
   actually ran the suite on a commit of main with the same files the
   suite reads as the tag (the list `decide` compares; `git diff`) is
-  green. A run that skipped the suite counts for nothing. Only runs of
+  green: the 11.4 suite and, since 2026-11-20, the 11.8 subset beside it.
+  Whether a run had the 11.8 job is git's answer, not the workflow
+  file's: `tools/release_gate.py` keeps a table of each job beside the
+  11.4 suite and the commit of main that added it (`hub-mariadb-11-8`,
+  `4fafdf1f`, #2022), and a run whose workflow commit has that commit in
+  its history (`git merge-base --is-ancestor`) needs the job green;
+  missing, skipped or red stops the gate. Only a run from before that
+  commit counts on 11.4 alone. A history git cannot answer from (a
+  shallow checkout, a commit it cannot get, a git error) stops the gate,
+  never passes it, so both gate jobs check out with `fetch-depth: 0`. A
+  run that lists a `hub-mariadb*` job the table does not know stops it
+  too, until the first pull request after the one that adds the job
+  adds its line: the squash merge makes the commit the line names, so
+  the adding pull request cannot know it, and every hub release and
+  image tag stops in between. The jobs
+  API lists a job by its name, the same as its key only while no job of
+  `hub-mariadb.yml` sets `name:` (`test_release_gate.py` holds it so); a
+  renamed job reads as missing, which stops the gate. A run
+  that skipped the suite counts for nothing, unless a job beside it went
+  red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's
@@ -442,6 +521,19 @@ the tag lacks.
 - Skipping a run whose commit cannot be compared, or one still running
   (the first version): an older green run then decides although a newer
   one may be red; found in review.
+- Reading the jobs from `hub-mariadb.yml` at the run's commit with a
+  reader of its own (#2022, and three rounds of #2025): a file that
+  defines the job needs it, one that does not predates it. Every round
+  of review found another layout the reader got wrong, a comment after
+  `jobs:`, quoted keys, values wrapped to column 0, open quotes and flow
+  values, anchors, tags, sequence items, and a wrong read let 11.4 count
+  alone; the table asks git a question with one answer instead.
+- Reading it with PyYAML: the gate runs on the release job's bare
+  interpreter, standard library only, and the file's layout would still
+  decide what the gate requires.
+- The run's job list alone: it is blind to a job the run does not list
+  (a partial re-run, a job that never started), so the commit decides
+  and the list only adds the jobs the table does not know.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
@@ -749,6 +841,57 @@ only from a copy that belongs to the runner, so no system Python is changed.
 - `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
 - Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
   job may have left there.
+
+## Install and CI downloads that run code are checked against a pinned checksum or digest
+
+**Id:** 7d1e4c96-2b8a-4f53-a6e0-95c3f8b2d147
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 5 (release chain hardening, 2026-11-13; the kind-smoke pin settled by the team lead, 2026-11-13); `deploy/runner/install-python.sh`, `deploy/runner/README.md`, `docs/install/README.md`, `deploy/helm/kind-smoke.sh`
+**Revisit when:** uv, k3s or cert-manager publish a signature this setup can check offline, or one of the pinned versions changes
+**See:** process.md#the-runner-gets-its-python-through-uv-into-the-tool-cache-and-starts-through-runsvcsh — 2bede3db-2d8e-4716-851b-0ecc07cb140d — as of 2026-11-13
+
+Where a download runs code, the version is pinned and the bytes are
+checked before they run:
+- `install-python.sh` no longer pipes uv's installer script into a
+  shell. It downloads the uv release tarball of `UV_VERSION` as the
+  runner user, checks it against `UV_SHA256` with `sha256sum -c`, and
+  only then unpacks `uv` and `uvx` into `~/.local/bin`. A checksum that
+  is not 64 lowercase hex digits stops the script before the download.
+  A machine that already has uv is not touched.
+- The k3s install guide downloads `install.sh` from the release tag it
+  installs, not from `get.k3s.io`, and checks its sha256 before running
+  it; the installer itself checks the k3s binary against the release's
+  checksums.
+- cert-manager's chart is pulled as an archive of the pinned version and
+  checked with `sha256sum -c` before `helm install` takes the file. Its
+  five images (controller, webhook, cainjector, startupapicheck,
+  acmesolver) are pinned by digest too, through the chart's
+  `*.image.digest` values, each the digest of the multi-arch index.
+- Known limit: the images k3s pulls itself (Traefik, CoreDNS, klipper,
+  metrics server, local-path provisioner) still run by tag. k3s bundles
+  them with its release, so they are outside this install's control.
+- `kind-smoke.sh` runs PostgreSQL by digest too: the pin
+  `postgres:17.10@sha256:7958605b…` came with #1751, and this change
+  keeps it.
+
+**Reason:** a tag, a moving URL or an installer piped into a shell runs
+whatever the server sends that day. A checksum or digest pinned in the
+repository makes the code that runs the reviewed code. The uv tarball
+is used instead of the installer because the installer is a second
+download whose own downloads are not pinned here.
+
+**Rejected alternatives:**
+- Checking the uv installer script by checksum and still running it:
+  it fetches the binary itself, so the binary would stay unpinned.
+- `helm install --verify` with jetstack's signing key: it needs the key
+  fetched and trusted as well; a checksum of the archive needs nothing
+  more.
+- kind-smoke's PostgreSQL on `ci.yml`'s `postgres:17@sha256:31ba9c94…`,
+  the image the CI service tests against: #1751's `17.10` digest is what
+  that tag resolves to today and what production runs, so the smoke test
+  of the chart stays on it. `ci.yml`'s service pin is unchanged.
 
 ## One runner service per database job type, a label each, three workers per job
 
@@ -1138,7 +1281,7 @@ history is one human and one project with one kind of item (requests).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review findings on #755 by agt-2dkh5tfqppxd and agt-mbf0gthrsash (2026-10-30); task tsk-hzjqn875bcmt
+**Source:** review findings on #755 by two reviewers (2026-10-30); task tsk-hzjqn875bcmt
 **See:** https://github.com/oliver-zehentleitner/maity — 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880 — as of 2026-10-30
 **Revisit when:** CLI documentation is generated directly from `cli.py` argparse definitions
 
@@ -1197,9 +1340,10 @@ second review alone.
 
 **Id:** c73e26c4-60b2-49e7-9df8-278fca4fcb2e
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 96581882-bac8-4611-9124-cd4a2700c57a
 **Evidence:** confirmed
-**Source:** the maintainer's decision at the jour fixe of 2026-11-03, relayed by the lead on 2026-11-04; it follows the rule of the same morning, two of three vendors, set when every Antigravity instance ran out of quota at once
+**Source:** the maintainer's decision at the jour fixe of 2026-11-03, relayed by the lead on 2026-11-04; it follows the rule of the same morning, two of three vendors, set when every Antigravity instance ran out of quota at once; superseded by two approvals from two vendors (the entry named above): the two-vendor rule from 2026-11-09, the review lead's choice of legs from 2026-11-10
 **Revisit when:** a reviewer vendor is unavailable for long, or a fourth vendor joins
 **See:** process.md#every-pull-request-needs-two-approvals-one-from-a-grok-reviewer-and-one-from-an-antigravity-reviewer-and-a-green-ci-ok-on-the-exact-head — 297a0ea7-ebd0-4007-8b12-f839d005d205 — as of 2026-11-04
 
@@ -1298,9 +1442,10 @@ that changed was not recorded.
 
 **Id:** d9edf24e-9c27-4a2e-8c14-f4076a864c6d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 96581882-bac8-4611-9124-cd4a2700c57a
 **Evidence:** confirmed
-**Source:** the maintainer's answer of 2026-11-03 (req-g5z43w1n2fkj) to the question whether a reviewer of another vendor may stand in while one is out
+**Source:** the maintainer's answer of 2026-11-03 (req-g5z43w1n2fkj) to the question whether a reviewer of another vendor may stand in while one is out; superseded on 2026-11-10, when the maintainer left to the review lead which legs count, stand-ins included; the two-vendor rule itself dates from 2026-11-09 (the entry named above)
 **Revisit when:** the maintainer allows a substitute for a vendor that is out, or a vendor is out for longer than a release can wait
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
@@ -1315,6 +1460,63 @@ building well and solidly matters more to him than building very fast.
 **Rejected alternative:** a substitute reviewer of another vendor while
 one is out: faster, but it lowers the three-vendor gate the entry above
 sets.
+
+## Every pull request needs two approvals on the exact head from agents of two vendors that did not write the code, the review lead deciding which legs count, and a green `ci-ok`
+
+**Id:** 96581882-bac8-4611-9124-cd4a2700c57a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on); that this is the project's own practice, not one the platform imposes, is the lead's paraphrase of the same answer (seq 118099), not a quote; the lead's relay to the review lead of 2026-11-12 (seq 118096): "No retro legs for #1692, #1675 and #1680." and "The open question of what the two Grok coders do from now on is with [the maintainer] (req-68g15m2vs02m); until he answers, their PRs keep Antigravity + ChatGPT."; the maintainer's decision of req-68g15m2vs02m (2026-11-12, option 1), relayed by the lead in seq 118290: "the two Grok coders ([…], […]) keep coding; their PRs are reviewed by Antigravity + ChatGPT. This settles the interim from 118096 as the rule."; card tsk-tc191z1765fy
+**Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, the maintainer changes the number of at least two reviews, or he changes which vendors code
+**See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
+
+A pull request is merged with two approvals of exactly the head that is
+merged, from agents of two vendors that did not write the code (for
+example, Claude codes, and Grok, Antigravity and ChatGPT review), each in a
+fresh context of its own, and a green `ci-ok` on that head. Under the
+review lead's rule of 2026-11-10 (seq 104764), one leg is a ChatGPT
+reviewer's and the other an Antigravity or Grok reviewer's, whichever
+delivers a fully checked result first. A leg from the vendor that wrote
+the code does not count, so a pull request a Grok agent wrote needs two
+legs from other vendors (the lead's decision of 2026-11-12, seq 117419).
+It follows that for a pull request a ChatGPT agent wrote, the ChatGPT leg
+of the rule above is replaced by one from another vendor (a reading). Since
+the maintainer's answer to req-8se88wy72g6s (2026-11-12) the rule holds for
+every pull request, one that changes only docs included: for now Claude
+codes, and Grok, Antigravity and ChatGPT review, at least two of them.
+A missing leg goes to the lead, and any change of course, a stand-in for
+an absent vendor included, is agreed between the maintainer and the lead
+(req-8se88wy72g6s). Until that answer a stand-in was the review lead's
+call (seq 104757, each named in the MERGE-READY, seq 113755). A leg counts only after the review lead has compared it with the
+head; a false sentence any reviewer finds blocks the merge, and so does a
+P1 or P2 from the second round on. The review lead's MERGE-READY names the
+two legs it counted and their vendors. Which of the reviews in hand
+count is the review lead's decision (seq 104757, its stand-in part
+replaced by req-8se88wy72g6s). The number, at least two reviews, is the
+maintainer's (req-8se88wy72g6s). The pull requests merged under the
+docs-only interim (#1692, #1675 and #1680) get no later legs (the lead,
+seq 118096). The maintainer decided req-68g15m2vs02m (2026-11-12): the two
+Grok coders keep coding, and their pull requests get Antigravity and
+ChatGPT legs (the lead, seq 118290); that made the lead's interim of
+seq 118096 the rule.
+
+**Reason:** one waiting leg less than three of three, so a pull request
+no longer waits for the slowest or an absent vendor, while every merge
+still has the view of two model families. The rule began on 2026-11-09 as
+the maintainer's interim while Grok was out, and stayed after Grok was
+back: the maintainer's answer to req-8se88wy72g6s names Grok, Antigravity
+and ChatGPT as the reviewers.
+
+**Rejected alternatives:**
+- All three vendors on every head (c73e26c4): each pull request waited
+  for the slowest of three, and for a vendor that was out (d9edf24e)
+  until the maintainer acted.
+- No substitute for an absent vendor, the review waiting (d9edf24e): the
+  maintainer gave that choice to the review lead on 2026-11-10, and since
+  2026-11-12 it is agreed between the maintainer and the lead.
+- One review on a single other vendor's model (0b12c29d): a single pass
+  missed a real finding on 2026-10-29.
 
 ## The ci runs on main share one group: one runs, the newest waits, none is cancelled
 
@@ -1343,26 +1545,34 @@ for the newest run to finish.
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
 
-## Every CI job has a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
+## Every job ci-ok waits for and the MariaDB run have a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
 
-`hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`; every other job
-`ci-ok` waits for carries 30 (`web-e2e` keeps its 15). Without it a job runs to GitHub's limit of six hours; while main's one
-running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
-MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
-(MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
-slow runner and still fail a hang the same evening.
+(2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs before the change (ids
+42825184191 to 42853402637, 13:30 to 16:19 UTC; the jobs that had finished by 16:35 UTC), its 44 green jobs took 835 s
+median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its end-to-end
+step had passed, in `pseudo_run.py --strict`. Card tsk-w81egrhwz7a7. The same day `hub-postgresql` went to 120; see the
+paragraph after the rejected alternatives.)
+
+`hub-sqlite` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`, `hub-postgresql` 120 since
+2026-11-10 (90 before); every other job `ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15
+until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one running ci run hangs, every newer
+push only replaces the waiting run (the entry above), so nothing on main finishes and the MariaDB start from `ci` never
+comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29 (MariaDB, on the rented runners);
+the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a slow runner and still fail a hang
+the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
-`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job; before, a
-hung MariaDB run ended without a word.
+`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job: a
+`cancelled` there is the job's timeout or a cancel by hand, and neither ends silently. Before, a hung MariaDB run ended
+without a word.
 
 **Rejected alternatives:**
 - A per-test timeout (`pytest-timeout`): names the hanging test, which the job timeout does not, but is a new dependency in the
@@ -1370,6 +1580,25 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to 42872347637,
+12:52 to 18:09 UTC; the jobs that had finished by 18:19 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and
+up to 88, 9 of them 70 or more; in main's last 60 `ci` runs (from 2026-11-09 11:51 UTC), its green jobs took about 68
+minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about 6,600 tests on a hosted runner with 4 cpus and 4
+workers (read from their logs), so the growth did not come from the number of tests; that it came from the runners is an
+inference, since no run compares one commit on two runners. `hub-postgresql` now carries 120 so that a slow runner does not
+cancel a green run; the title's "90 minutes for the database jobs" holds for `hub-sqlite` and `hub-mariadb` only. Whether 90
+stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
+keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
+
+(2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
+19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
+
+(2026-11-21: the revisit condition above fired for `hub-sqlite`. On #2073 at 8c9e34f9 (ci 44893089313, hosted) it took
+81.8 minutes of its 90, from 10:17:07 to 11:38:57 UTC, while the three `hub-postgresql` shards of the same run took 32.9,
+41.1 and 34.2; the card names green runs of 54 to 65 minutes and one of 82. Card tsk-v76hkc0fcse7. `hub-sqlite` keeps 90
+and now runs in three shards like `hub-postgresql`, each shard with the 90 on its own; see the note of the same day on
+f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
 
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
@@ -1384,8 +1613,8 @@ The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit f
 cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
 open. The job timeouts above (97f338fd) stay.
 
-**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
-depends on a human; the approval has to come from Oliver).
+**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss [der Maintainer] geben" (today every cancel
+depends on a human; the approval has to come from [the maintainer]).
 
 **Alternatives:** none recorded.
 
@@ -1397,11 +1626,13 @@ depends on a human; the approval has to come from Oliver).
 **Evidence:** inferred
 **Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
-`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
+with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
-once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's limit (90 minutes,
+120 since 2026-11-10, 97f338fd). The log then
 already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
 when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
 fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
@@ -1411,8 +1642,9 @@ about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
 (`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
-300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
-an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s was
+an eighteenth of the then 90 minutes (a twenty-fourth of the 120 since 2026-11-10), so a hang shows where it waits early
+in the run.
 
 **Rejected alternatives:**
 - `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
@@ -1441,6 +1673,64 @@ passes is confirmed (proof run on #1316, and a local counter-check without the s
 hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
 without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
 value is the author's weighing, not measured against a real hang beyond #1255.
+
+## hub-postgresql runs in three shards by test file, each with its own PostgreSQL
+
+**Id:** f150febd-ce19-4493-9a97-cfc3bc1c01fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, or the maintainer's runner gets more than one `pg` or `sqlite` runner
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-21
+
+`hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
+keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
+deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
+service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
+over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
+check. Locally the three shards together collect the whole suite (2125, 2288 and 2227 of 6640 tests, counted at the head that adds `hub/tests/test_test_shard.py`).
+
+**Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
+only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
+over the suite. Three legs side by side cut the wall time as far as the shards take about the same
+time and three runners are free at once: the first sharded run, ci 42909006763 on hosted runners
+(2026-11-10), took 25.0, 29.1 and 19.4 minutes per leg, so about 29 minutes against 59 to 85 for
+the whole suite; one run, not yet a median. By file, a test file stays in one leg, so a fixture set
+up once per file (today only the S3 server of `test_attachments_s3.py`, scope `module`) starts in
+one leg only. The session fixtures start once per xdist worker in every leg whichever way the
+suite is split, and within a leg a module fixture starts once per worker that runs some of its
+file's tests.
+
+**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set and `pg` among `HUB_RUNNER_TYPES`
+(unset means all three) the job asks for the maintainer's
+one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
+5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
+or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,
+and it needs no commit.
+
+**Rejected alternatives:**
+- Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
+  time.
+- Sharding by test node id, as the card's plan said first: a file's tests would spread over the
+  legs, and each leg would set up that file's module fixtures again. Today that is one fixture, so
+  the gain is small; the split by file keeps it from growing with new ones.
+- A random host port for the service, so that two legs could share a runner: not needed for hosted
+  runners, and the self-hosted machine runs one job per type by design (the entry on one runner
+  service per database job type).
+- A sharding plugin: a new dependency in the hashed locks for what one hook does.
+
+(2026-11-21: `hub-sqlite` runs in the same three shards, `MAITY_TEST_SHARD=k/3` from a matrix, each shard with the
+90-minute limit on its own; ci-ok's `needs` is unchanged. The check runs are now named `hub-sqlite (1)` to `(3)`; nothing
+in the repository requires the old name, ci-ok being the one required check. Lint and types run in shard 1 only, since
+they do not depend on the shard; `PYTEST_ADDOPTS: --durations=50` as in `hub-postgresql`. Card tsk-v76hkc0fcse7. Reason:
+the whole suite in one job took 81.8 of the 90 minutes on #2073 (ci 44893089313), while that run's three PostgreSQL
+shards took 32.9 to 41.1; the job already ran `-n auto` (4 workers on 4 hosted cpus), so xdist was not missing; the
+per-test SQLite setup copies a schema migrated once per worker, so no fixture stands out; what is left is the suite's
+length spread over its tests, the same finding as above. The SQLite job's logs were not read for this note: no
+`--durations` data of it exists yet. On the maintainer's one `sqlite` runner, a push's three shards run one after
+another, as the PostgreSQL shards do; pull requests stay hosted. Not chosen: a larger hosted runner class (costs money,
+the owner's call) and a higher timeout (the card keeps 90).)
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
@@ -1554,6 +1844,8 @@ each command is checked only once.
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 
+(2026-11-10: the fixture-only rule below, and its rejected "screenshots of a real hub", are reversed by the maintainer for his own screenshots: see e148b060-628a-43ae-a5bf-35270d1c1b75. Where the images live, how the site points at them, and the 1600 px and 256-colour reduction still hold.)
+
 The images of the docs pages are files in `docs/img/`, linked from the
 Markdown with a relative path, so they show on GitHub as on the site.
 `tools/site_docs.py` rewrites a relative image the way it rewrites a link:
@@ -1602,13 +1894,49 @@ state that holds nothing private.
 - Screenshots of a real hub: real names and data in the repository; the
   fixtures exist for this.
 
+## Docs screenshots may show the real hub with the maintainer's own data; they are still reduced to 1600 px and 256 colours
+
+**Id:** e148b060-628a-43ae-a5bf-35270d1c1b75
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to request req-wj3x9gr5nazr on card tsk-8cjckxxbvhm1 (pull request #1601), 2026-11-10T15:03:20Z, option o1; his go for the board picture's visible card text and tabs the same day ("passt schon nimm die")
+**Revisit when:** a screenshot would show someone else's account, a secret (a token, a join code, an address) or a private project; or the screenshots are made by a script
+**See:** process.md#docs-images-and-diagrams-live-in-docsimg-screenshots-are-of-fixture-mode-and-the-site-points-a-relative-image-at-the-deployed-file — 7f3f6220-0bf0-4d81-8521-5761b877a1dd — as of 2026-11-10
+
+The screenshots of the board, the inbox and Create a project in `docs/img/` are the
+maintainer's own, taken on the real hub. They show his name, his projects' tabs, agent
+handles, a session id and a card's checkpoint text, and no mail address, token or join
+code. They are scaled to 1600 px wide and reduced to 256 colours (libimagequant, then
+oxipng level 4), as 7f3f6220 says, which keeps their text readable.
+
+The request asked whether to lift the fixture-only rule of 7f3f6220. Its options, verbatim:
+
+- o1: "(a) So veröffentlichen, alte Regel aufheben"
+- o2: "(b) Session-ID und OVH-Zeile schwärzen"
+- o3: "(c) Neu im Fixture-Modus aufnehmen"
+- o4: "Erst besprechen"
+
+The answer was o1, given without a text.
+
+**Reason:** the maintainer had already released what the pictures show, and the request
+recommended (a), since real pictures look better than fixture data. The reduction stays
+because every version of an image stays in the history.
+
+**Rejected alternatives:**
+
+- o2, blacking out the session id and the checkpoint's hosting line: not chosen.
+- o3, new screenshots in fixture mode, which keeps the old rule but looks less real.
+- Publishing at full size (2554 px, truecolour, about 787 KB for three): against the
+  reduction of 7f3f6220, which this answer keeps.
+
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 
 **Id:** c9165811-5049-4d24-9564-49669ad385a1
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17; running without a slot when the slot directory cannot be written, the lead's go, 2026-11-20)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1618,6 +1946,26 @@ on SQLite only. On a machine several contributors share under one Unix account, 
 named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
 (`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
 are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
+
+Since 2026-11-17 every run that gets a slot appends a start line (time, slot, pid, seconds waited,
+who, the program and its first argument), and once its process is gone an end line (time, seconds
+held), to `log` in the run-slot directory; the format is in the script's header. The log is
+append-only, one `printf` per short line, created 0640. The end line comes from a watcher the
+script starts before its `exec`, not from a wrapper around the command; the watcher runs in a
+session of its own (`setsid`) and ignores INT, HUP and TERM, so cancelling the command's process
+group leaves it running. A KILL to the watcher or a reboot still ends it, so the log does not
+promise an end line for every run: once a run is over, a start line without a matching end line
+(same slot and pid) means it was aborted. A log that is not a regular file is skipped, one that
+cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
+`handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
+tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
+
+Since 2026-11-20 a run that cannot write the slot directory or a slot file in it does not fail:
+the script warns once on stderr and runs the command without a slot and without a log line, as
+it does without `flock`. `MAITY_RUN_SLOTS_DIR` points it to a directory the run may write.
+`make smoke SLOT=` is only for a machine where nothing else runs tests. The slot file is opened
+with `command exec`, so a failed open never ends the script, even in bash's POSIX mode; a holder
+whose `.who` is empty or missing shows as `unknown` in the waiting message.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1641,6 +1989,34 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 - The slots and the server are files of one account (the data directory is the owner's only), so
   they bind the runs of that account. That is how the machine is shared; several accounts would
   each get two slots and a server of their own.
+- The slot log: a short line written in one `printf` onto a file opened for appending is one
+  write, so runs that log at the same moment do not interleave. A watcher keeps the `exec`, so
+  fd 7, the pid and the signals reach the command as before; a wrapper that waited for the command
+  would have to pass on every signal and its exit status. The watcher holds neither fd 7 nor the
+  run's output, and is no child of the command. Its cost: the end is when the command's process
+  ended, to the second; a process the command left running can hold the slot longer. Logging
+  never stops a run: a measurement must not become a new way for a run to fail.
+- The watcher's own session (review A1081): created before the `exec`, it was in the command's
+  process group, and a supervisor that sent TERM to that group (an ordinary cancellation) took the
+  watcher along, so exactly the interrupted runs lost their end line. `setsid` comes from
+  util-linux, like `flock`; without it the watcher only ignores the signals. They are ignored
+  before the watcher is forked (review A1093), so a group signal right after the `exec` cannot
+  reach it ahead of the trap. Only a regular file
+  (or none yet) is opened as the log: an append open of a FIFO without a reader blocks, and it
+  came after the slot was taken and before the command started, so the run held its slot without
+  running.
+- The program and its first argument, not the whole command line (review A1081): the log is kept,
+  and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
+  slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
+  writes the log is the account's own, so only reading it needs the group.
+- Running without a slot when the directory cannot be written (card tsk-deaaanqsq5e2, the lead's
+  go, 2026-11-20): a Claude Code or Codex session the runner places may write only its clone, its
+  temporary directory and its scratch, not `~/.local/state/maity`. Under `set -e` the `mkdir` or
+  the slot file's open ended the script before the command ran, so such agents skipped the slot
+  with `make smoke SLOT=` or a set `MAITY_RUN_SLOT`, and their runs were not logged either. A
+  run without a slot is no worse than that, and the warning says what was lost and how to get it
+  back. A writable shared slot directory for placements is the runner's to give, on a card of
+  its own.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1654,6 +2030,14 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+- For the slot log, the command as a child of the script, logged when it exits: an exact end,
+  but the `exec` goes, and with it the pid and the signals the command gets today.
+- For the slot log, the whole command line cut at 200 characters (the first version): more than
+  the measurement needs, kept in a file that is not cleaned up.
+- For a slot directory the run cannot write, failing as before: it does not get the run a slot,
+  it only teaches agents to skip the slot by hand, without a warning and without a log line.
+- For the same case, running without a slot silently: the run would not show in the log, and no
+  one would learn why or that `MAITY_RUN_SLOTS_DIR` fixes it.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 
@@ -1930,7 +2314,8 @@ server, count as minor (the coordinator's scope for #1475).
   passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
   github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
   github.com. A URL without a host (a local path,
-  `file://` with or without `localhost`) names no server to ask and stops the check.
+  `file://` with or without `localhost`, the scheme in any case) names no server to ask and stops the
+  check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -2244,7 +2629,7 @@ the reviewers corrected them.
 
 Before the first review order, a card for a tool or a security-relevant change carries a `Boundary:` paragraph
 in its body: what the change guarantees, what it does not, and what counts as P3. The review lead quotes it to
-all three reviewers in round one.
+every reviewer of round one.
 
 **Reason:** #1475 and #1478 each went two extra review rounds on edge cases before that boundary was written
 down.
@@ -2266,8 +2651,10 @@ down.
 The adopted rules were written nowhere shared: only in the lead's announcements and in the agents' own notes.
 `CONTRIBUTING.md` ("Rules from the jour fixe") now holds them as one sentence each with its card, grouped by who
 acts. Not all of them are in force: seven lines are marked *not yet in force* (the six of
-card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), three *exception to an older entry, open*,
-and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
+card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), one *exception to an older entry, open*
+(tsk-z3j36sy534ww), one *superseded* (the outage rules of tsk-x8ctwgw2cmwc, tsk-g3entm5r2rez and
+tsk-rkp7pvkshta2, once two exceptions of their own, superseded by the two-vendor rule
+96581882-bac8-4611-9124-cd4a2700c57a), and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
 
 - Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
 - Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
@@ -2335,12 +2722,16 @@ below and the lead's announcement of the VERDICT rule (2026-11-04)
 - tsk-z3j36sy534ww lets the lead forward review requests while the review lead is away;
   eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0 gives every request and its distribution to the review lead's team alone.
   tsk-rkp7pvkshta2's second request is a review request like any other; the card does not say who orders it
-  from the two vendors there.
+  from the two vendors there (tsk-rkp7pvkshta2 is superseded since; see the next item).
 - tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
-  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e requires all three approvals before any merge.
+  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e required all three approvals before any merge (superseded on 2026-11-09 by
+  96581882-bac8-4611-9124-cd4a2700c57a, two approvals from two vendors). Settled: under the two-vendor rule the
+  review lead decides which of the reviews in hand count; a missing leg goes to the lead, and the maintainer and
+  the lead agree how to go on, stand-ins included (req-8se88wy72g6s, 2026-11-12); `CONTRIBUTING.md` marks both
+  outage rules superseded.
 
-These three outage rules were announced as in force and are written in `CONTRIBUTING.md`, marked as exceptions
-to an older entry; the older entries are not changed. Which version holds, here and in the first two, is open.
+tsk-z3j36sy534ww was announced as in force and is written in `CONTRIBUTING.md`, marked as an exception to an
+older entry; that entry is not changed. Which version holds, there and in the first two items, is open.
 
 ## Cloud sessions open and edit their own pull requests over REST with tools/pr.sh, kept to their own branch by its head
 
@@ -2398,3 +2789,165 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
+
+## The README's translations are held to README.md's headings by a check, and each names the commit it was translated from
+
+**Id:** ceef8737-c419-47ef-806d-55fd060c2238
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-1e2qmy78kams, 2026-11-13
+**Revisit when:** the web client gains or drops a language, or a translation falls behind more often than the check catches
+
+`README.md` is translated into every language of the web client but English (`web/js/i18n/languages.js`),
+one `README.<lang>.md` next to it, and every version carries the same language line. `tools/readme_sync.py`,
+run in CI's changelog job, fails when a translation is missing, when it lacks the line or its first-line
+comment `<!-- translated-from: README.md@<commit> -->` (whose hash is checked for its form only), when it
+has another number of headings or other levels in sequence, or when its link and image targets differ.
+Heading text is not compared: two sections of the same level swapped, or one replaced by another, pass
+unless their links differ.
+
+**Reason:** a translated README goes stale silently: a section added in English is invisible in the
+others until a reader notices. A section added or dropped now fails CI in the pull request that makes it, and
+the comment names the commit to diff against (`git diff <commit> -- README.md`) when the translations
+follow. The language names are each language's own, as in the web client's language menu.
+
+**Rejected alternatives:**
+- Failing whenever `README.md` changed since the named commit: every typo fix would then need nine
+  translations in the same pull request. The check holds the structure; a reworded sentence is caught up
+  at the next translation pass.
+- Translating in CI: the translations are reviewed text in the glossary's terms and forms of address
+  (`web/i18n/glossary.md`), not generated output.
+
+## Every hub release ships an upgrade page, and the release is refused without it
+
+**Id:** eb6ffcd4-28b0-4413-bc51-db3ead6cefb5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-15 in the team chat, relayed on card tsk-ptpqwezfnkk0; `tools/upgrade_page.py`, `tools/release_gate.py` (`--upgrade-page`), `docs/upgrade/README.md`, `hub/README.md` § Releases
+**Revisit when:** the hub leaves its pre-releases and gets an upgrade guide of another form, or operators other than maity.team's own run hubs and ask for a different shape
+**See:** process.md#a-release-tag-trusts-cis-result-on-its-commit-instead-of-running-the-suites-again — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-15
+**See:** process.md#changelog-entries-are-one-file-per-pull-request-in-changelogd-folded-into-changelogmd-at-release — b1258d90-a82b-48a1-9c5f-7ee4eb1295f9 — as of 2026-11-15
+
+Every hub release has a page, `docs/upgrade/<version>.md`, with five
+sections in a fixed order: what changes for users, what the operator must
+do, what happens by itself on upgrade, what cannot be undone, and the way
+back. The release pull request adds it together with a docs pass over the
+quickstart, getting started and the install guide. ci refuses the fold of a
+version into `CHANGELOG.md` without a complete page
+(`tools/upgrade_page.py check`), and the release tag's gate refuses it again
+on the tagged commit (`tools/release_gate.py --upgrade-page`, in
+`release-hub.yml` and `publish-image.yml`). The release author lists every
+migration and every new or changed default since the last tag; the lead and
+ops confirm that list before the tag.
+
+**Reason:** deploy 10 on 2026-11-15 nearly shipped 0.1.0a6 as it was: the
+upgrade would have sealed the stored credential verifiers and started the
+agent firewall's gate, which holds agents back from mixed group chats, with
+no warning to the operator. The changelog listed both among about 145
+entries; an operator without inside knowledge could not have told that the upgrade changes stored data and who reaches a
+chat. 0.1.0a7 put both behind settings that start off. The page asks the
+questions an operator needs answered, and the gate makes sure someone
+answered them for every release.
+
+**Alternatives:** unknown beyond the state before, the changelog alone: it
+records every change, but nothing in the release asked for the operator's
+view of them.
+
+The check counts the five headings and that each has text; it cannot tell
+whether the text is right. That is what the confirmation by the lead and ops
+before the tag is for.
+
+**Fences, comments and the list of pages (2026-11-18):** (Source: the P3
+follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
+page as CommonMark does for what it counts, since GitHub and the docs site
+render it that way and a page that renders right must not be refused, nor a
+heading the reader cannot see accepted. A byte order mark is dropped. A fence
+is three or more backticks or tildes at the start of the line (a backtick
+fence's info string has no backtick); it closes only with a run of the same
+character at least as long, and an unclosed one runs to the end. A line
+indented by four columns or more (a tab counts to the next four) is an
+indented code block unless it continues paragraph text: it is no fence and no
+heading, and it counts as text, comments in it too, as a code block with
+content does; list items are not followed, so such a line in one is code. A
+second-level heading may be indented by up to three spaces. An HTML comment
+alone is no text, so `<!-- TODO -->` cannot stand in for `Nothing.`; a comment
+that starts a line runs as a block to its `-->` (or the end), and a heading
+inside it is no section. Comments are cut from prose only, never from code,
+where they show. Not followed either, on purpose: HTML blocks other than
+comments (a heading inside a `<div>` counts, as does a section holding only a
+link reference definition), closing `#`s, `##` plus a tab, and setext
+headings (refused, so the author writes a plain `## ` heading). Each needs
+markup no page uses. The alternative, a Markdown library, was left out: the
+check runs in ci's changelog job and the release gate on the standard library
+alone. `docs/upgrade/README.md` lists every version page, oldest first: the
+docs site renders only that README (`docs/nav.yml`), so its links are how a
+site reader finds a page. `check` refuses, on every pull request and before
+the fold too, a version page the README does not link. A page counts as
+linked only by a list line `- [version](version.md)` (or `* `, at column 0
+with no space in front; `./`, a `#fragment` and angle brackets allowed; no
+`[`, `]`, `<`, backtick or backslash in the text, so no code span, raw HTML
+tag, comment or autolink opens there and spans the destination) that is no
+code and in no comment block opened at the start of a line. Reference links,
+links inside a paragraph and images do not count; the error names the line
+to add. Why so narrow: each round of a fuller recognizer (inline and
+reference links on the rendered text) found the next edge: a reference
+resolved to the wrong label, an image, a link glued across a code span or a
+comment, an escaped bracket, an unclosed `<!--` that hid
+every later link; a list line is all the README needs, and the check stays
+standard library only. A full CommonMark inline parser was left out for the
+same reason as a Markdown library. The release gate does not ask again,
+since the release pull request has passed ci. Listing each version in
+`docs/nav.yml` as a page of its own was left out: it would grow the site's
+navigation by one entry per release. Review round 4 (A1420) showed a list
+item's own fence or comment (an item `- ~~~` with an indented list line under
+it) faking a list line that CommonMark shows as code, so the list line now
+starts at column 0. A fence line with one to three leading spaces makes the
+README or version page refused as a whole ("write code fences at the start of
+the line", with the line's number), wherever it stands: in a list item, inside
+a fence or inside a comment too. The check is a plain scan of the lines, with
+no fence or comment state. Reason (lead, round 5): CommonMark's closing rules
+for indented fences cannot be followed by a few patterns without failing
+open: round 4's rule (an indented fence closes only on one indented at least
+as far) let a re-opened fence, an empty code block and a hidden duplicate
+heading pass (A1435); the scan is fail-closed by construction, the repository
+has no such fence, and a refusal costs one edit. Rejected: following
+CommonMark's fence-indent closing (round 4, failed open per A1435), and
+refusing only a less-indented closer (still needs fence state). One edge
+fails closed, on purpose: a list line right after a list item that opened a
+comment on an indented line is refused, though CommonMark ends the comment
+with the item and shows the link. The error names the line to add, or the
+section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
+but odd README costs one edit; a parser costs a review round each time; fail
+closed beats fail open. Rejected: following list items (their indent and
+where they end), built and dropped as round 4's option A.
+
+## The runner lab's state is a page in docs/, kept up to date by every runner change
+
+**Id:** 37546df5-acb8-4acd-a595-781e15e44079
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's order on the runner lab card, 2026-11-18 (tsk-sfs7kkrz7tk8, tsk-gw1e87ev707f)
+**Revisit when:** the lab's matrix moves into the runner itself (`maity runner check` reports what this page lists), or CI runs the harnesses on each OS
+
+`docs/runners-lab.md` holds where the runner and its harnesses are tested,
+how the test machines are set up, what `maity runner check`'s warnings
+mean, and the open gaps with their cards. A pull request that changes the
+runner updates that page in the same pull request. Environments are named
+by OS and version only, because the repository is public.
+
+**Reason:** the lab's findings lived in card notes and in the lab agents'
+heads. Someone setting up a runner, or a coder changing it, could not see
+which OS and harness combinations work today, or which host change a
+fix depends on.
+
+**Rejected alternatives:**
+- The card notes alone: they do not reach readers of the repository and
+  go stale without anyone noticing.
+- The matrix inside `maity runner check`: it can only report the host it
+  runs on, not what was seen on another OS or harness; it is the long-term
+  aim (see Revisit when), not a replacement for a cross-host record today.
+- CI per OS and harness: it needs signed-in harnesses and real hosts that
+  CI does not have yet.

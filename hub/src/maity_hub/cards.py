@@ -7,14 +7,15 @@ inside one transaction.
 from __future__ import annotations
 
 from collections.abc import Collection
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select
+from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, forbidden, invalid
-from maity_hub.scopes import ROLES
+from maity_hub.scopes import ROLES, has_scope
 
 if TYPE_CHECKING:  # access imports the caller, which reads the claims below: cards stays a leaf
     from maity_hub.access import Membership
@@ -107,12 +108,15 @@ def sibling_holds(mine: Membership, card: Any) -> bool:
     return card.claim_holder == mine.id and not holds(mine, card)
 
 
-def has_done_authority(mine: Membership, card: Any) -> bool:
+def has_done_authority(conn: Connection, mine: Membership, card: Any) -> bool:
     """Who moves a card to done, by `policy.done_authority` (§6.1); under
-    `reviewer_and_tester` who may sign it (`sign`)."""
+    `reviewer_and_tester` who may sign it (`sign`). A role that reviews or tests gives an
+    outside agent none (`outside_caller`); the holder's is the holder's (§2.3)."""
     authority = mine.project.done_authority
     if authority == "holder":
         return holds(mine, card)
+    if authority in ("reviewer", "tester", "reviewer_and_tester") and outside_caller(conn, mine):
+        return False
     if authority == "reviewer":
         return mine.may("tasks:review")
     if authority == "tester":
@@ -122,18 +126,33 @@ def has_done_authority(mine: Membership, card: Any) -> bool:
     return mine.may("tasks:admin")
 
 
+def outside_caller(conn: Connection, mine: Membership) -> bool:
+    """The caller is an agent `own_approvals.outside_agent` counts as outside (§2.3; that
+    function is the one definition). Whatever its role, it
+    holds no done authority through `tasks:review` or `tasks:test` and signs no approval
+    (§2.3 "Own approvals", §6.2)."""
+    if mine.kind != "agent":
+        return False
+    from maity_hub import own_approvals  # own_approvals reads cards
+
+    return own_approvals.outside_agent(conn, mine.project, mine.principal_id)
+
+
 def two_signatures(project: Any) -> bool:
     return bool(project.done_authority == "reviewer_and_tester")
 
 
-def sign(mine: Membership, card: Any, approve: str | None, revision: int | None) -> dict[str, Any]:
+def sign(
+    conn: Connection, mine: Membership, card: Any, approve: str | None, revision: int | None
+) -> dict[str, Any]:
     """The card's `approvals` with the caller's signature on `revision` (§6.4): the one its
     scope gives, or under both the one it names. One member never fills both; a place
-    already filled keeps its signature."""
+    already filled keeps its signature while its signer still stands (`standing`)."""
     slot = approve or _only_slot(mine)
-    if not mine.may(SIGNATURES[slot]):
+    # An outside agent signs nothing, as for a missing scope (§2.3 "Own approvals").
+    if not mine.may(SIGNATURES[slot]) or outside_caller(conn, mine):
         raise forbidden(SIGNATURES[slot], "this signature needs another scope")
-    current = card.approvals or {"review": None, "test": None}
+    current = standing(conn, mine.project.id, card.approvals)
     other = current["test" if slot == "review" else "review"]
     if other is not None and other["by"] == mine.principal_id:
         raise invalid({"approve": "same_member"})
@@ -141,6 +160,93 @@ def sign(mine: Membership, card: Any, approve: str | None, revision: int | None)
         return dict(current)
     mark = {"by": mine.principal_id, "at": clock.rfc3339(clock.now()), "revision": revision}
     return {**current, slot: mark}
+
+
+def _stands(conn: Connection, project_id: str, signer: str, scope: str) -> bool:
+    """Whether `signer` is still an active member of the project, not isolated, whose
+    trust and role give `scope` (§6.4), and, for an agent, not one `own_approvals.outside_agent`
+    counts as outside now: the same eligibility as a new signature (`sign`), checked again
+    wherever a stored signature is read (§2.3 "Own approvals")."""
+    m = t.membership.c
+    row = conn.execute(
+        select(m.trust, m.role_base, m.human_id, m.isolated_since).where(
+            m.project_id == project_id,
+            (m.human_id == signer) | (m.agent_id == signer),
+            m.active.is_(True),
+        )
+    ).first()
+    if row is None or row.isolated_since is not None:
+        return False
+    kind = "human" if row.human_id is not None else "agent"
+    if not has_scope(row.trust, row.role_base, kind, scope):
+        return False
+    if kind == "agent":
+        from maity_hub import own_approvals  # own_approvals reads cards
+
+        # `outside_agent` reads only the project's id.
+        return not own_approvals.outside_agent(conn, SimpleNamespace(id=project_id), signer)
+    return True
+
+
+def standing(conn: Connection, project_id: str, approvals: Any) -> dict[str, Any]:
+    """`approvals` with only the signatures whose signer still stands (`_stands`): a
+    signature counts while the member who gave it may give it, not after a demotion, a
+    removal or an isolation (§6.4)."""
+    current = dict(approvals or {"review": None, "test": None})
+    for slot, scope in SIGNATURES.items():
+        mark = current.get(slot)
+        if mark is not None and not _stands(conn, project_id, mark["by"], scope):
+            current[slot] = None
+    return current
+
+
+def drop_signatures(conn: Connection, project_id: str, signer: str | None, actor: Any) -> None:
+    """Clears the signatures `signer` gave on the project's cards in review that it no
+    longer stands for (§6.4), after its trust, role or role base went down, its removal or
+    its isolation, so a later return does not bring them back; with `signer` None, every
+    signer's (a role's base changed for all its members). Every path that lowers a
+    member's standing calls it. Each card emits `task_updated` with
+    `fields: ["approvals"]`."""
+    from maity_hub.events import emit
+    from maity_hub.routes.tasks import audience
+
+    rows = conn.execute(
+        select(t.card).where(
+            t.card.c.project_id == project_id,
+            t.card.c.status == "review",
+            t.card.c.approvals.is_not(None),
+        )
+    ).all()
+    state = None
+    for card in rows:
+        approvals = card.approvals or {}
+        if signer is not None and not any(
+            (approvals.get(s) or {}).get("by") == signer for s in SIGNATURES
+        ):
+            continue
+        kept = standing(conn, project_id, approvals)
+        if kept == approvals:
+            continue
+        conn.execute(update(t.card).where(t.card.c.id == card.id).values(approvals=kept))
+        if state is None:
+            state = conn.execute(
+                select(t.project.c.state).where(t.project.c.id == project_id)
+            ).scalar_one()
+        emit(
+            conn,
+            project_id,
+            "task_updated",
+            audience(conn, card),
+            {
+                "id": card.id,
+                "fields": ["approvals"],
+                "approvals": kept,
+                "history": [],
+                "project_state": state,
+            },
+            actor=actor,
+            subject=("task", card.id),
+        )
 
 
 def new_signature(before: dict[str, Any] | None, after: dict[str, Any]) -> dict[str, Any] | None:
@@ -167,7 +273,7 @@ def signed_by_two(approvals: dict[str, Any], revision: int | None) -> bool:
     return all(m is not None and m["revision"] == revision for m in marks)
 
 
-def check_transition(mine: Membership, card: Any, wanted: str) -> None:
+def check_transition(conn: Connection, mine: Membership, card: Any, wanted: str) -> None:
     """A `PATCH {status}`: the transition table of §6.4."""
     current = card.status
     if wanted == current:
@@ -185,7 +291,7 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
         # A merged report waits behind a request: the merge is what review asked for (§6.6).
         current = "review"
     if (current, wanted) in {("review", "done"), ("review", "in_progress")}:
-        if has_done_authority(mine, card):
+        if has_done_authority(conn, mine, card):
             refuse_same_team_review(mine, card)
             return
         raise ApiError(
@@ -208,6 +314,24 @@ def merged_in_review(project: Any, card: Any) -> bool:
         and merged.merged(card.report)
         and not two_signatures(project)
     )
+
+
+def pr_number(card: Any) -> Any:
+    """The number of the pull request the card's current report names (§6.6), None without
+    one."""
+    return ((card.report or {}).get("pr") or {}).get("number")
+
+
+def naming_pr(conn: Connection, project_id: str, number: int) -> list[Any]:
+    """The cards of the project whose current report names the pull request `number`, any
+    status. The report is JSON on the card and is compared in Python: `pr.number` is only
+    bounded below (`PullRequestIn`), so a cast to an integer column in SQL could fail on
+    PostgreSQL for one stored number and refuse every lookup of the project, and a text
+    comparison differs on SQLite, whose `json_extract` answers a number."""
+    rows = conn.execute(
+        select(t.card).where(t.card.c.project_id == project_id, t.card.c.report.is_not(None))
+    )
+    return [row for row in rows if pr_number(row) == number]
 
 
 def refuse_same_team_review(mine: Membership, card: Any) -> None:

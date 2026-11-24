@@ -63,6 +63,42 @@ def test_it_stops_the_server_it_started(run: dict[str, str]) -> None:
     assert not Path(run["FAKE_UP"]).exists()
 
 
+SYSTEM_PATH = "/usr/bin:/bin"
+
+
+@pytest.mark.skipif(
+    shutil.which("pg_ctl", path=SYSTEM_PATH) is not None, reason="a pg_ctl on the system path"
+)
+def test_without_pg_bin_the_newest_debian_server_directory_is_taken(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """tsk-2k0jcaxfd0ja, point 14: with no pg_ctl on PATH and MAITY_PG_BIN unset, the script
+    takes Debian's newest /usr/lib/postgresql/<version>/bin that has a pg_ctl, by number (16
+    after 9.6), skipping one without it (17), one whose pg_ctl is a directory (18, review
+    A2159 of #2125) and a name that is no version."""
+    lib = tmp_path / "postgresql"
+    newest = lib / "16" / "bin"
+    newest.mkdir(parents=True)
+    for tool in ("pg_ctl", "initdb", "psql"):
+        (Path(run["MAITY_PG_BIN"]) / tool).rename(newest / tool)
+    wrong = '#!/bin/sh\necho "wrong $0" >> "$FAKE_LOG"\nexit 1\n'
+    for other in ("9.6", "abc"):
+        (lib / other / "bin").mkdir(parents=True)
+        (lib / other / "bin" / "pg_ctl").write_text(wrong)
+        (lib / other / "bin" / "pg_ctl").chmod(0o755)
+    (lib / "17").mkdir()
+    (lib / "18" / "bin" / "pg_ctl").mkdir(parents=True)  # a directory, searchable (x) too
+    env = {k: v for k, v in run.items() if k != "MAITY_PG_BIN"}
+    env.update(MAITY_PG_LIB=str(lib), PATH=SYSTEM_PATH)
+    subprocess.run([SCRIPT, "true"], env=env, check=True)
+    assert len(calls(env, "start")) == 1 and len(calls(env, "stop")) == 1
+    assert "wrong" not in Path(env["FAKE_LOG"]).read_text()
+    # Nothing there: the script names MAITY_PG_BIN, as before.
+    env["MAITY_PG_LIB"] = str(tmp_path / "none")
+    done = subprocess.run([SCRIPT, "true"], env=env, capture_output=True, text=True)
+    assert done.returncode == 2 and "set MAITY_PG_BIN" in done.stderr
+
+
 def test_a_server_that_was_up_keeps_running(run: dict[str, str]) -> None:
     Path(run["FAKE_UP"]).touch()
     subprocess.run([SCRIPT, "true"], env=run, check=True)
@@ -110,6 +146,31 @@ def test_a_signal_reaches_the_command_and_the_cleanup_waits_for_it(
     script.send_signal(sent)
     assert script.wait(timeout=30) == 7
     assert ended.exists() and len(calls(run, "stop")) == 1
+
+
+@pytest.mark.parametrize("sent", [signal.SIGTERM, signal.SIGINT, signal.SIGHUP])
+def test_a_signal_the_moment_the_command_starts_is_passed_on_too(
+    run: dict[str, str], tmp_path: Path, sent: signal.Signals
+) -> None:
+    ended = tmp_path / "ended"
+    name = sent.name[3:]
+    command = f"trap 'sleep 0.3; touch {ended}; exit 7' {name}; kill -{name} $PPID; "
+    command += "while :; do sleep 0.05; done"
+    script = subprocess.Popen([SCRIPT, "sh", "-c", command], env=run)
+    assert script.wait(timeout=30) == 7
+    assert ended.exists() and len(calls(run, "stop")) == 1
+
+
+def test_the_traps_are_set_before_the_command_starts() -> None:
+    """A signal between the command's start and its traps ended the script under the running
+    command (-15 instead of 7 in the test above, once in 2438 on CI). The window is too short
+    to hit on purpose, so the order is pinned here."""
+    lines = SCRIPT.read_text().splitlines()
+    started = lines.index('"$@" 8>&- &')
+    first_trap = next(
+        n for n, line in enumerate(lines) if line.strip().startswith("trap 'pending=")
+    )
+    assert first_trap < started
 
 
 def at_a_terminal(env: dict[str, str], command: str, typed: bytes) -> tuple[int, bytes]:
@@ -239,6 +300,178 @@ def test_the_database_is_named_after_who_runs_it(run: dict[str, str]) -> None:
         text=True,
     ).stdout
     assert out.startswith("postgresql://postgres@/maity_test_coder_7_ab12_")
+
+
+PASSWORD = "ab" * 32
+
+
+def test_with_a_password_the_cluster_takes_scram_and_never_sees_it_on_a_command_line(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): a placed session's cluster is made with
+    scram-sha-256 and the runner's password, never with trust; initdb reads the password from a
+    pipe, so it is in no argv, and the URL does not carry it."""
+    got = tmp_path / "pwfile-content"
+    initdb = Path(run["MAITY_PG_BIN"]) / "initdb"
+    initdb.write_text(
+        '#!/bin/sh\necho "initdb $*" >> "$FAKE_LOG"\n'
+        'for a; do case "$a" in --pwfile=*) cat "${a#--pwfile=}" > "$FAKE_PW" ;; esac; done\n'
+        'touch "$2/PG_VERSION"\n'
+    )
+    run = {**run, "MAITY_PG_PASSWORD": PASSWORD, "MAITY_RUN_NAME": "c#x", "FAKE_PW": str(got)}
+    out = subprocess.run(
+        [SCRIPT, "sh", "-c", 'echo "$MAITY_TEST_DATABASE_URL|$PGPASSWORD"'],
+        env=run, check=True, capture_output=True, text=True,
+    ).stdout  # fmt: skip
+    url, password = out.strip().split("|")
+    assert url.startswith("postgresql://postgres@/maity_test_c_x_")  # never in the URL
+    assert password == PASSWORD  # libpq reads it from PGPASSWORD
+    assert got.read_text() == PASSWORD + "\n"  # what initdb read through --pwfile
+    log = Path(run["FAKE_LOG"]).read_text()
+    assert PASSWORD not in log  # no tool got it as an argument
+    (line,) = [entry for entry in log.splitlines() if entry.startswith("initdb")]
+    assert "-A scram-sha-256" in line and "--pwfile=/dev/fd/" in line and "trust" not in line
+
+
+def test_the_server_reads_only_the_checked_access_files(run: dict[str, str]) -> None:
+    """hba_file and ident_file on the command line: a postgresql.conf, postgresql.auto.conf or
+    include in the data directory cannot point the server at another pg_hba.conf than the one
+    the script checked (the review of #2032)."""
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD}, check=True)
+    data = run["MAITY_PG_DIR"]
+    (start,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
+                if line.startswith("pg_ctl") and line.endswith("start")]  # fmt: skip
+    assert f"-c hba_file='{data}/pg_hba.conf'" in start
+    assert f"-c ident_file='{data}/pg_ident.conf'" in start
+
+
+@pytest.mark.parametrize("opts", [None, 'postgres "-D" "/x"\n', "checked"])
+def test_a_running_server_is_used_with_a_password_only_if_started_on_the_checked_files(
+    run: dict[str, str], opts: str | None
+) -> None:
+    """A server already up runs on the rules it loaded: with a password, only one whose
+    postmaster.opts shows the forced hba_file and ident_file is used (the review of #2032)."""
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    (data / "pg_hba.conf").write_text("local all all scram-sha-256\n")
+    Path(run["FAKE_UP"]).touch()  # up already
+    if opts == "checked":
+        opts = (f'postgres "-D" "{data}" "-c" "hba_file={data}/pg_hba.conf" '
+                f'"-c" "ident_file={data}/pg_ident.conf"\n')  # fmt: skip
+    if opts is not None:
+        (data / "postmaster.opts").write_text(opts)
+    done = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    if opts is not None and "hba_file" in opts:
+        assert done.returncode == 0 and calls(run, "start") == []
+    else:
+        assert done.returncode == 2 and "not started with its checked" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "name", ["pg'x", 'pg"x', "pg$(id)", "pg`id`", "pg\\x", "pg\nx", "pg\tx", "pg\rx"]
+)
+def test_a_data_dir_that_would_break_the_server_command_line_is_refused(
+    run: dict[str, str], tmp_path: Path, name: str
+) -> None:
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_DIR": str(tmp_path / name)},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "MAITY_PG_DIR must not hold" in refused.stderr
+    log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
+    assert "pg_ctl" not in log and "initdb" not in log
+
+
+def test_without_a_password_nothing_changes(run: dict[str, str]) -> None:
+    subprocess.run([SCRIPT, "true"], env=run, check=True)
+    (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
+                 if line.startswith("initdb")]  # fmt: skip
+    assert "-A trust" in initdb
+
+
+@pytest.mark.parametrize("password", ["", "a'b", "a b", "x;rm", "a\nb", "$(id)"])
+def test_a_password_that_is_not_the_runners_shape_starts_nothing(
+    run: dict[str, str], password: str
+) -> None:
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": password},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "MAITY_PG_PASSWORD" in refused.stderr
+    log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
+    assert "initdb" not in log and "pg_ctl" not in log
+
+
+@pytest.mark.parametrize(
+    "hba",
+    [
+        "local   all   all   trust\n",
+        "local all all trust#no space before the comment\n",
+        "local all all peer\n",
+        "local all all scram-sha-256\nhost all all 127.0.0.1/32 md5\n",
+        "host all all 127.0.0.1 255.255.255.255 ident\n",
+        "local all all scram-sha-256\ninclude other.conf\n",
+        "local scram-sha-256 all trust\n",  # the method is the 4th field, not any field
+        "local all postgres, scram-sha-256 trust\n",  # a comma list PostgreSQL reads as one
+        'local "a b" scram-sha-256 trust\n',  # a quoted field with a space
+        'local all "u scram-sha-256#x" trust\n',  # `#` inside quotes is no comment
+        "local all all scram\\-sha-256\n",  # a backslash
+        "localx all all scram-sha-256\n",  # no connection type PostgreSQL knows
+        "include_dir conf.d\n",
+        "local @dbs all scram-sha-256\n",  # an @file list PostgreSQL reads from another file
+        "local all @users scram-sha-256\n",
+        "local all\rall trust\0 scram-sha-256\n",  # PostgreSQL: `local all all trust`
+        "host all\vall 127.0.0.1/32 trust\0 scram-sha-256\n",
+        "local all\fall trust scram-sha-256\n",
+        "local all \0all scram-sha-256\nlocal trust\0 all scram-sha-256\n",
+        None,  # no pg_hba.conf at all
+    ],
+)
+def test_a_cluster_not_on_scram_alone_is_not_used_with_a_password(
+    run: dict[str, str], hba: str | None
+) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    if hba is not None:
+        (data / "pg_hba.conf").write_text("# a comment with trust in it\n" + hba)
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "scram-sha-256 on every line" in refused.stderr
+    assert not Path(run["FAKE_LOG"]).exists()  # refused before any tool ran
+
+
+def test_a_pg_hba_conf_that_is_a_link_is_not_used_with_a_password(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    real = tmp_path / "elsewhere.conf"
+    real.write_text("local all all scram-sha-256\n")
+    (data / "pg_hba.conf").symlink_to(real)
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "scram-sha-256 on every line" in refused.stderr
+
+
+def test_a_cluster_on_scram_alone_is_used_with_a_password(run: dict[str, str]) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    (data / "pg_hba.conf").write_text(
+        '# trust: not here, "quoted", a, comma\n   # indented comment\n\n'
+        "local all all scram-sha-256\r\n"  # a CRLF line is read as its rule
+        "host all all 127.0.0.1/32 scram-sha-256\nhost all all ::1/128 scram-sha-256\n"
+        "host all all 127.0.0.1 255.255.255.255 scram-sha-256\nlocal replication all reject\n"
+        "hostssl all all 10.0.0.0/8 scram-sha-256 # trailing comment\n"
+    )
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD}, check=True)
+    assert len(calls(run, "start")) == 1
 
 
 @pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc")

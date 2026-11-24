@@ -160,30 +160,38 @@ window.Maity = window.Maity || {};
     let notesRead = 0;
     const notesList = h("div", { class: "card-note-items" });
     append(notesBox, notesList);
+    // Report this card to the instance's admins (§16.8, tsk-7ze5w6ymf7bw): its id with the project.
+    const reporting = M.report && ctx.me && ctx.me.kind === "human" && ctx.slug ? M.report.control({ type: "card", id: c.id, project: ctx.slug }, "card") : null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("span", { class: "card-panel-actions" }, watchButton,
+        // An outsider (§2.3) watches nothing (…/watch is a member's); the report stays theirs.
+        h("span", { class: "card-panel-actions" }, M.trust.writes(ctx) ? watchButton : null, reporting ? reporting.button : null,
           h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close")))),
       watchStatus.el,
+      reporting ? reporting.slot : null,
       heading,
       cardSlot,
       h("h3", null, M.t("cardpanel.description")),
-      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("members", id), ctx }))
+      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("team", id), ctx }))
         : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
       (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       // The restricted text (§6.4): a box for a member in the set alone, read when the card opens.
-      M.restricted ? M.restricted.cardBox(ctx, c) : null,
+      M.restricted && M.trust.writes(ctx) ? M.restricted.cardBox(ctx, c) : null,
       h("h3", null, M.t("cardpanel.notes")), notesBox,
       updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
+    // A card's public page's Report comes back here with `?report` for a member (§16.9): open it.
+    if (reporting && M.report.asked()) reporting.open();
 
     // Who may do what to a note (§6.16): its author edits it, a human holding
     // events:admin (owner, admin) edits any note and removes it. A removed note
     // is the end of it; a closed project takes no edit, a removal still.
     const closed = () => !!(ctx.project && ctx.project.state === "archived");
     const mine = (n) => !!(ctx.me && n.author && n.author.member_id === ctx.me.id);
-    const mayEdit = (n) => !removedNote(n) && !closed() && (mine(n) || !!ctx.canAdmin);
+    // An outsider (§2.3) edits no note, not even one of their own from a membership before, and
+    // removes none (no trust, so no canAdmin).
+    const mayEdit = (n) => M.trust.writes(ctx) && !removedNote(n) && !closed() && (mine(n) || !!ctx.canAdmin);
     const mayRemove = (n) => !removedNote(n) && !!ctx.canAdmin;
     const reading = () => notesList.getAttribute("aria-busy") === "true";
     const noteItem = (id) => Array.from(notesBox.querySelectorAll("li.card-note")).find((li) => li.getAttribute("data-note") === id);
@@ -200,7 +208,7 @@ window.Maity = window.Maity || {};
 
     function noteBody(n) {
       return removedNote(n) ? noteTombstone(ctx, n.body)
-        : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx }));
+        : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("team", id), ctx }));
     }
 
     // A note's author as the byline says it (@handle), as plain text for a button's label,
@@ -392,7 +400,8 @@ window.Maity = window.Maity || {};
       append(clear(notesList), list.length
         ? h("ul", { class: "card-note-list" }, rows)
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
-      if (closed()) {
+      // An outsider (docs/api.md §2.3) reads the notes and adds none.
+      if (closed() || !M.trust.writes(ctx)) {
         if (noteFormEl) noteFormEl.remove();
         noteFormEl = null;
       } else if (!noteFormEl) {
@@ -479,7 +488,7 @@ window.Maity = window.Maity || {};
     async function updates() {
       const run = ++updatesRun; // a read still on its way when the watch changes draws nothing
       clear(updatesBox);
-      if (!watching) return;
+      if (!watching || !M.trust.writes(ctx)) return;
       try {
         const page = await M.api.get(ctx.base + "/messages?type=update&limit=" + UPDATES_PAGE);
         if (run !== updatesRun) return;
@@ -487,7 +496,7 @@ window.Maity = window.Maity || {};
         append(updatesBox, h("h3", null, M.t("cardpanel.updates")), items.length
           ? h("ul", { class: "card-update-list" }, items.map((m) => h("li", null,
             h("p", { class: "muted" }, byline(ctx, { member_id: m.from, instance: m.from_instance }), " · " + formatTime(m.sent_at)),
-            h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
+            h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("team", id), ctx })))))
           : h("p", { class: "muted" }, page.next_cursor === null ? M.t("cardpanel.updates.none") : M.t("cardpanel.updates.none_latest")));
       } catch (err) {
         if (run !== updatesRun) return;

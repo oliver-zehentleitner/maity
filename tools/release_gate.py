@@ -10,9 +10,23 @@ writes:
 - with --mariadb (the hub): a hub-mariadb run whose `hub-mariadb` job ran on
   a commit of main with the same files the suite reads as the tagged commit
   (the list `decide` in hub-mariadb.yml compares, MARIADB_PATHS below). The
-  newest such run must have passed. A run that skipped the suite counts for
-  nothing, and only main's own workflow file counts: the run's ref is main
-  and the commit it ran is on main.
+  newest such run must have passed: its `hub-mariadb` job (MariaDB 11.4) and
+  its `hub-mariadb-11-8` job (the subset on 11.8), when the run's commit
+  comes after the one that added it (missing, skipped or red, it stops the gate);
+  a run whose commit predates that job (git ancestry against the commit
+  that added it, MARIADB_EXTRA_JOBS) counts on 11.4 alone. A history git
+  cannot answer from (a shallow checkout, a missing commit) stops the
+  gate, and so does a run that lists a `hub-mariadb*` job the table does
+  not know. A run that
+  skipped the suite counts for nothing unless a job beside it went red, and
+  only main's own workflow file counts: the run's ref is main and the commit
+  it ran is on main.
+
+- with --upgrade-page (the hub): the tagged checkout's docs/upgrade/<version>.md
+  for the version in hub/pyproject.toml, complete (tools/upgrade_page.py). Run
+  for a tag (GITHUB_REF_TYPE=tag), the tag must also be `v<that version>`, so a
+  tag cannot pass on another version's page. It is looked at first and never
+  waited for.
 
 While the ci run, or a hub-mariadb run, is still queued or running, it waits
 (up to --wait-minutes), so a tag pushed right after a merge works; a newer
@@ -35,6 +49,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
+
+import upgrade_page
 
 # The files the MariaDB suite reads: the same list as the `decide` job of
 # .github/workflows/hub-mariadb.yml (test_release_gate.py holds them equal).
@@ -49,6 +66,17 @@ MARIADB_PATHS = (
 DONE = "completed"
 # A job that ran the suite and ended; skipped (nothing to test) is not one.
 RAN = {"success", "failure", "cancelled", "timed_out"}
+# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite, each with
+# the commit of main that added it. A run whose workflow commit (head_sha) has that commit in
+# its history had the job: missing from the run, skipped or red, it stops the gate. A run from
+# before it is judged without it. Whether a commit is in the history is git's answer
+# (`merge-base --is-ancestor` in a full checkout), never a reading of the workflow file.
+# A new hub-mariadb* job gets its line here in the first pull request after the one that adds
+# it: a squash merge makes the commit, so the adding pull request cannot name it. Until then a
+# run that lists the job stops the gate (below), and so does every --mariadb release.
+MARIADB_EXTRA_JOBS = {
+    "hub-mariadb-11-8": "4fafdf1f80dedf7c50016d133984b013d8719588",  # #2022
+}
 HAND = re.compile(r"hub-mariadb hand (head|[0-9a-f]{40})")
 
 
@@ -167,6 +195,26 @@ class Git:
             return False
         return None
 
+    def contains(self, ancestor: str, sha: str) -> bool | None:
+        """Whether ancestor is in sha's history; None when that cannot be told.
+
+        A shallow checkout cannot tell: a cut history reads "not an ancestor", which would let
+        a run count without a job it had. So it is None there, as for a commit the checkout
+        cannot get and any other git error."""
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"], capture_output=True, check=False
+        )
+        if shallow.returncode != 0 or shallow.stdout.strip() != b"false":
+            return None
+        if not (self._have(ancestor) and self._have(sha)):
+            return None
+        code = self._run("merge-base", "--is-ancestor", ancestor, sha)
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
+
     def same(self, a: str, b: str) -> bool | None:
         """Whether a and b hold the same MARIADB_PATHS; None when that cannot be told."""
         if not (self._have(a) and self._have(b)):
@@ -223,18 +271,68 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
                 f"hub-mariadb on {commit}, same hub files as {sha}, is {run['status']}:"
                 f" {run['html_url']}",
             )
-        suite = job(api, run, "hub-mariadb")
-        result = suite["conclusion"] if suite else None
+        jobs = {
+            j["name"]: j["conclusion"]
+            for j in api.get(f"actions/runs/{run['id']}/jobs", filter="latest", per_page=100)[
+                "jobs"
+            ]
+        }
+        unknown = sorted(
+            n
+            for n in jobs
+            if n.startswith("hub-mariadb") and n != "hub-mariadb" and n not in MARIADB_EXTRA_JOBS
+        )
+        if unknown:
+            # A job the table does not know: whether it had to pass cannot be told.
+            return State(
+                "fail",
+                f"the run lists {', '.join(unknown)}, which tools/release_gate.py does not know"
+                f" ({run['html_url']}): add it to MARIADB_EXTRA_JOBS with the commit that added"
+                " it, and re-run this job",
+            )
+        had: dict[str, bool | None] = {}
+        for name, added in MARIADB_EXTRA_JOBS.items():
+            had[name] = git.contains(added, run["head_sha"])
+            if had[name] is None:
+                return State(
+                    "fail",
+                    f"cannot tell whether {run['head_sha']} ({run['html_url']}) has {added},"
+                    f" the commit that added {name} (a shallow checkout, a commit the"
+                    " checkout cannot get): check out with full history and re-run this job",
+                )
+        # A job the run's commit had must have passed: missing or skipped is red. One it lists
+        # counts too, had or not. Only a job from after the run's commit is left out.
+        required = [name for name in MARIADB_EXTRA_JOBS if had[name] or name in jobs]
+        extra_red = [
+            f"{name} is {jobs.get(name) or 'missing'}"
+            for name in required
+            if jobs.get(name) != "success"
+        ]
+        result = jobs.get("hub-mariadb")
         if result not in RAN:
+            # The suite did not run (decide skipped the run); a red extra job beside it still
+            # stops the gate instead of letting an older green run answer.
+            if any(jobs.get(name) in RAN for name in required) and extra_red:
+                return State(
+                    "fail",
+                    f"hub-mariadb is {result or 'missing'}, {', '.join(extra_red)} on {commit},"
+                    f" same hub files as {sha} ({run['html_url']}): start hub-mariadb by hand"
+                    f" from main (Actions, hub-mariadb, Run workflow, sha {sha})"
+                    " and re-run this job when it is green",
+                )
             continue
-        if result == "success":
+        red = ([f"hub-mariadb is {result}"] if result != "success" else []) + extra_red
+        if not red:
+            alone = [name for name in MARIADB_EXTRA_JOBS if name not in required]
+            note = f" (its commit predates {', '.join(alone)})" if alone else ""
             return State(
                 "ok",
-                f"hub-mariadb passed on {commit}, same hub files as {sha}: {run['html_url']}",
+                f"hub-mariadb passed on {commit}, same hub files as {sha}{note}:"
+                f" {run['html_url']}",
             )
         return State(
             "fail",
-            f"hub-mariadb is {result} on {commit}, same hub files as {sha}"
+            f"{', '.join(red)} on {commit}, same hub files as {sha}"
             f" ({run['html_url']}): fix main and tag again, or if it was a flake start"
             f" hub-mariadb by hand from main (Actions, hub-mariadb, Run workflow, sha {sha})"
             " and re-run this job when it is green",
@@ -292,6 +390,23 @@ def gate(
         sleep(interval)
 
 
+def page_state(root: Path = upgrade_page.ROOT, tag: str | None = None) -> State:
+    """The hub version's upgrade page in the checkout (tools/upgrade_page.py); for a
+    tag, also that the tag names that version."""
+    version = upgrade_page.hub_version(root)
+    found = upgrade_page.problems(root, version)
+    if tag is not None and tag != f"v{version}":
+        found = [f"the tag {tag} is not v{version}, the version in hub/pyproject.toml", *found]
+    if found:
+        for text in found:
+            print(f"fail: {text}", flush=True)
+            print(f"::error::{text}", flush=True)
+        return State("fail", "; ".join(found))
+    text = f"docs/upgrade/{version}.md is complete"
+    print(f"ok: {text}", flush=True)
+    return State("ok", text)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA"), help="the tagged commit")
@@ -300,9 +415,17 @@ def main(argv: list[str] | None = None) -> int:
         "--wait-minutes", type=float, default=0, help="how long to wait for running checks"
     )
     parser.add_argument("--interval", type=float, default=60, help="seconds between looks")
+    parser.add_argument(
+        "--upgrade-page",
+        action="store_true",
+        help="also require the hub version's docs/upgrade/<version>.md in the checkout",
+    )
     args = parser.parse_args(argv)
     if not args.sha or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
         parser.error("--sha needs the full commit id")
+    tag = os.environ.get("GITHUB_REF_NAME") if os.environ.get("GITHUB_REF_TYPE") == "tag" else None
+    if args.upgrade_page and page_state(tag=tag).kind == "fail":
+        return 1
     api = Api(os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"])
     return gate(api, args.sha, args.mariadb, args.wait_minutes * 60, args.interval)
 

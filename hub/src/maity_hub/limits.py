@@ -1,7 +1,10 @@
 """The caps of the admin section Limits (docs/api.md §16.5): agent profiles and organisations
 owned by a human, projects in one namespace (a human's or an organisation's), the aliases of
-one id (`max_aliases`, 1–8, never `unlimited`), and the attachment storage of each project
-and of the whole instance, each from the environment, else from the instance admin, else its
+one id (`max_aliases`, 1–8, never `unlimited`), the starred projects of one human
+(`max_starred_per_human`, 1–1000, never `unlimited`), the attachment storage of each project
+and of the whole instance, and the reads one credential may make per minute
+(`max_reads_per_minute`, 60–100000, read through `read_limits`' cache), each from the
+environment, else from the instance admin, else its
 default, by `instance_settings.effective`. A cap on an account is a whole number from 1 to
 10000, a project's storage a number of bytes from 1 MiB to 1 PiB, the instance's from 1 GiB
 to 1 PiB, either one or `unlimited`; the creations, moves and uploads the caps gate read the
@@ -24,14 +27,25 @@ UNLIMITED = "unlimited"
 STORAGE = "max_attachment_storage"
 PROJECT_STORAGE = "max_attachment_storage_per_project"
 ALIASES = "max_aliases"
+STARRED = "max_starred_per_human"
+READS = "max_reads_per_minute"
+# The default of `max_reads_per_minute` (§1.7, §16.5): about 3.6 times the highest sum of all
+# clients' reads per minute measured on the hosted instance, 279 (hub/context/serving.md
+# aaf47866).
+READS_PER_MINUTE_DEFAULT = 1000
 DEFAULTS: dict[str, object] = {
     "max_agents_per_human": 100,
     "max_orgs_per_human": 5,
     "max_projects_per_owner": 10,
     ALIASES: 3,
+    STARRED: 100,
     PROJECT_STORAGE: 1024**3,
+    READS: READS_PER_MINUTE_DEFAULT,
     STORAGE: UNLIMITED,
 }
+# The caps that have no `unlimited` (`out_of_range`): the aliases, whose 8 other bounds rest on
+# (§6.25), and the stars, at most 1000 by the lead's decision of 2026-11-14 (§16.5).
+BOUNDED = (ALIASES, STARRED)
 NAMES = tuple(DEFAULTS)
 READ_ONLY = (
     "humans_at_limit",
@@ -44,6 +58,8 @@ RANGES = {name: (1, 10000) for name in NAMES} | {
     PROJECT_STORAGE: (1024**2, 1024**5),
     STORAGE: (1024**3, 1024**5),
     ALIASES: (1, 8),
+    STARRED: (1, 1000),
+    READS: (60, 100000),
 }
 
 
@@ -53,7 +69,7 @@ def _checker(name: str) -> Any:
     def check(value: object) -> object | None:
         """The value to store, or None when it is no cap."""
         if value == UNLIMITED:
-            return None if name == ALIASES else value
+            return None if name in BOUNDED else value
         if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high:
             return value
         return None
@@ -83,30 +99,67 @@ def aliases(conn: Connection, hub: Settings | None) -> int:
     return int(store.effective(f"limits.{ALIASES}", env, store.stored(conn, "limits"))[0])
 
 
-def agent_limit(limit: int, count: int) -> ApiError:
+def starred(conn: Connection, hub: Settings) -> int:
+    """`max_starred_per_human` in force (§16.5, §5.1 "Stars"): never `unlimited`. No account
+    override yet (§16.5.1)."""
+    env = hub.max_starred_per_human
+    return int(store.effective(f"limits.{STARRED}", env, store.stored(conn, "limits"))[0])
+
+
+def for_account(
+    conn: Connection, name: str, owner_id: str, instance_value: int | None
+) -> tuple[int | None, str]:
+    """(cap, source) of an account value for one human (§16.5.1): the instance admin's
+    override on their account first, whatever the instance's value's source, else
+    `instance_value`; None is no cap. An organisation has no account override."""
+    from maity_hub import ceilings
+
+    row = None
+    if owner_id.startswith("hum-"):
+        row = ceilings.stored_override(conn, name, human_id=owner_id)
+    if row is None:
+        return instance_value, "instance"
+    return (None if row.value == UNLIMITED else int(row.value)), "account_override"
+
+
+def project_storage(conn: Connection, hub: Settings, project_id: str) -> int | None:
+    """`max_attachment_storage_per_project` for one project (§16.5.1): the instance admin's
+    override on the project before the instance's value from any source, the environment
+    included; None is no cap."""
+    from maity_hub import ceilings
+
+    row = ceilings.stored_override(conn, PROJECT_STORAGE, project_id=project_id)
+    if row is None:
+        return of(conn, hub, PROJECT_STORAGE)
+    return None if row.value == UNLIMITED else int(row.value)
+
+
+def agent_limit(limit: int, count: int, source: str = "instance") -> ApiError:
     return ApiError(
         409,
         "agent_limit",
         "the human holds as many agent profiles as allowed",
-        {"limit": limit, "count": count},
+        {"limit": limit, "count": count, "source": source},
     )
 
 
-def project_limit(limit: int, count: int) -> ApiError:
+def project_limit(limit: int, count: int, source: str = "instance") -> ApiError:
     return ApiError(
         409,
         "project_limit",
         "the namespace holds as many projects as allowed",
-        {"limit": limit, "count": count},
+        {"limit": limit, "count": count, "source": source},
     )
 
 
 def refuse_project_over(conn: Connection, owner_id: str, limit: int | None) -> None:
     """`project_limit` when the namespace owner `owner_id` (a human or an organisation) holds
-    `limit` projects or more, archived ones included; nothing under `unlimited`. The owner's
-    row (the human's or the organisation's) is locked for the count, so that two creations or
-    moves at `limit - 1` give one project and one `project_limit`; a caller that locks an
-    organisation before a project has locked it already (§6.26)."""
+    `limit` projects or more, archived ones included; nothing under `unlimited`. `limit` is
+    the instance's value; an override on a human owner's account comes first (§16.5.1). The
+    owner's row (the human's or the organisation's) is locked for the count, so that two
+    creations or moves at `limit - 1` give one project and one `project_limit`; a caller that
+    locks an organisation before a project has locked it already (§6.26)."""
+    limit, source = for_account(conn, "max_projects_per_owner", owner_id, limit)
     if limit is None:
         return
     table = t.human if owner_id.startswith("hum-") else t.org
@@ -117,7 +170,7 @@ def refuse_project_over(conn: Connection, owner_id: str, limit: int | None) -> N
         ).scalar_one()
     )
     if count >= limit:
-        raise project_limit(limit, count)
+        raise project_limit(limit, count, source)
 
 
 def _humans_at(conn: Connection, per_human: Any, limit: int | None) -> int:
@@ -156,7 +209,10 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         ),
         ALIASES: _answer(values[ALIASES]),
         "names_at_alias_limit": _names_at(conn, aliases(conn, hub)),
+        # No count beside it: the stars are private, nobody counts them (§5.1, §16.5).
+        STARRED: _answer(values[STARRED]),
         PROJECT_STORAGE: _answer(values[PROJECT_STORAGE]),
+        READS: _answer(values[READS]),
         STORAGE: _answer(values[STORAGE]),
         "attachment_storage_used": attachments.used_total(conn),
     }
@@ -178,7 +234,8 @@ def _answer(resolved: tuple[Any, str]) -> dict[str, Any]:
 
 def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> None:
     """All of the body or nothing; `invalid` names each refused field. `null` restores the
-    default (§16.2)."""
+    default (§16.2). A value outside its range is `out_of_range`, as on the limits of one
+    project or account (§16.5.1)."""
     errors: dict[str, str] = {}
     changes: dict[str, object] = {}
     for name, value in body.items():
@@ -191,7 +248,7 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
         elif value is None:
             changes[name] = None
         elif CHECKS[name](value) is None:
-            errors[name] = "invalid"
+            errors[name] = "out_of_range"
         else:
             changes[name] = value
     if errors:

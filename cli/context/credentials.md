@@ -113,7 +113,7 @@ those bytes (`docs/api.md` §2.3).
 Three smaller Windows choices belong with it. The home's `env-secret` lies under
 `%LOCALAPPDATA%\maity`. `core.hooksPath` is `os.devnull`, because `/dev/null`
 there names a path under the drive root that any user can create, with hooks in
-it. An existing `./maity-files/` goes through `check_private` on Windows only:
+it. An existing attachments folder (`files/` in the state directory) goes through `check_private` on Windows only:
 a clone there may inherit write access for everyone, so someone else may have
 made the folder, while POSIX keeps a folder as its owner set it.
 
@@ -466,7 +466,7 @@ unreachable URL through `safe_url` like the other hub errors.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
+**Source:** the Windows test of a coder (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
 **Revisit when:** a platform maity supports gains a directory removal bound to an open handle, or a leftover directory turns out to break a retry
 
 A `maity join` that fails before anything is kept (an expired or wrong code, a refused hub)
@@ -489,4 +489,119 @@ empty leftover directory is harmless; removing someone else's is not.
   and the removal stays open, and the identity can only be read after `mkdir`, so a swap in either
   window still removes another process's directory (#1478 delta, 399x).
 - Removing only the leaf, never the parents: smaller exposure, the same open window.
+
+## A clone's hub is fixed once its state names one; it changes only by a new join
+
+**Id:** 8b6d4164-646f-484f-bb22-02ff7218e908
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** lead's card tsk-h1kcv3bd82gg, 2026-11-20; review of PR #2065, 2026-11-20; review of PR #2065 (round 2), 2026-11-20
+
+On a clone whose `state.json` already names a hub, `--hub` (on `maity resume` and on
+`maity help`) passes only for that hub's origin, and the stored URL stays as it is. Origin
+means scheme, host and port, compared after the normalisation `hub_base` and the host
+comparison of the exchange already use (lowercase, IDNA, one trailing dot dropped) with the
+scheme's default port filled in, so `https://Hub.example:443/` and `https://hub.example` are
+one origin; the path is not compared, as `hub_base` drops it. An IP literal is compared in
+its canonical spelling (`[2001:0DB8:0:0:0:0:0:1]` is `[2001:db8::1]`), checked before the
+trailing dot is dropped, so `127.0.0.1.` stays a name and not that address; only the
+comparison uses that spelling, the stored URL is never rewritten. `help --hub` treats only
+"not inside a Git clone" as before a join: when the state directory cannot be named for any
+other reason (a runner's clone it cannot place, git missing, git failing in a clone) it fails
+closed with exit 4 and fetches nothing, since that clone may hold a state that names a hub.
+Not inside a Git clone is decided by looking for a `.git` (a directory, a worktree's file or
+a link) in the working directory and above it, as git looks: not up into a
+`GIT_CEILING_DIRECTORIES` entry, up to the root at most. Only when git fails and none is
+found is the directory outside a clone; with one found, or with `GIT_DIR` or `GIT_COMMON_DIR`
+set, a failing git is a clone it cannot read (a damaged config, a directory it does not
+trust), which is refused. git's exit code alone does not tell the two apart, and its message
+is in the user's language, so neither decides. Another origin is
+refused with exit 4 before anything is written or sent, and the message names the stored
+hub's origin and the given one, each printed the same way (an IPv6 host in brackets, the port
+only when it is not the default), and says that a new join is the way to change it. A first
+`resume --hub` after the page-driven join, where the credential exists but no state names a
+hub yet, stores the hub as before; under a placement, --hub names only the clone's hub, so
+with no stored hub `help --hub` and `resume --hub` are refused with exit 4 and nothing is
+sent, as the runner's join stores the hub with the credential.
+`maity join` refuses while the clone holds a credential, and a new join writes a new state
+with the hub its exchange accepted. A placed session never joins: the runner's pickup and
+exchange join a placement, so `maity join` with `MAITY_PLACEMENT` (even empty) or
+`MAITY_GIT_PRIVATE` set is refused with exit 4 before any call. Outside a placement it takes
+"not inside a Git clone" and git missing as the cases for a directory of the agent's own, as
+before; a runner's clone it cannot place, or a clone git cannot read, is refused with exit 4
+before the join page is fetched. Under a placement, a clone that holds a credential but no hub is told that the
+runner joins the placement again, not to use `resume --hub`.
+
+**Reason:** a clone is paired with one hub: its credential was issued by that hub, and the
+state, the event cursor and the environment ids are that hub's (8c5f8d73). Keeping the hub
+fixed per clone keeps that pairing consistent; a hub that changes beside the credential leaves
+a state whose parts belong to different hubs. The join is where a hub and its credential are
+set together, so it is the one place the hub changes.
+
+What this rule does not cover: the guard is in maity, not in the state file, so whoever can
+write that file directly can still change the stored hub. And the request signature does not
+name the hub, so the rule does not bind a signed request to it; that is a separate card,
+tsk-t03pp2ftd1f3.
+
+**Rejected alternatives:**
+- Accepting `--hub` on a joined clone and rewriting the stored hub, the behaviour until now:
+  the hub then changed without the credential and the rest of the state changing with it.
+- Warning and proceeding: the state is still rewritten, and a warning in a session's output
+  is easily missed.
+- Binding the hub's origin into the request signature: a change to the signing contract
+  between hub and CLI, a separate decision and not this one.
+
+## A GET answered with `nonce_reused` is signed again and sent once more; a write is not
+
+**Id:** c3f73129-6ee0-469c-87bf-d79fbd1953fc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-d9b3t5wprwgc (jour fixe of 2026-11-06: three instances got `nonce_reused` on `GET …/events` in the same minute, a restart helped each time) and the lead's go for the plan, 2026-11-09; its re-cut on main, card tsk-tsqzj6snvgpa, 2026-11-23; `hub/tests/test_two_processes.py` (the identical signed GET at a second hub process is refused), `cli/tests/test_nonce_reused.py`
+**Revisit when:** the hub can tell a re-delivered request from a replay, a write gets a safe way to be sent again after `nonce_reused`, or a `nonce_reused` turns up that a re-delivery cannot explain
+**See:** https://github.com/oliver-zehentleitner/maity — 1c65bb74-d5a1-41ff-8741-dafd80ce449f — as of 2026-11-23
+**See:** https://github.com/oliver-zehentleitner/maity — fbc8c3e0-d945-4237-89dc-0a4cc8e1282d — as of 2026-11-23
+
+`hub._send` makes a new nonce for every attempt (`sign.new_nonce`, 16 random bytes), so a
+401 `nonce_reused` answer to it usually means the request reached the hub twice: something
+between the client and the hub delivered a copy, and the hub refused the second delivery. (A
+real replay by someone else gets the same answer; the client's one more read then only reads
+again.) A `GET` answered that way is signed again with a new nonce and sent once more, within
+what is left of the call's timeout; a second `nonce_reused` ends the call as before. Only
+status 401 with that code triggers this retry: no other response does (that code on another
+status, another 401); the separate `timestamp_skew` retry, a 401 with the hub's time, is
+unchanged. `POST`, `PATCH`, `PUT` and `DELETE` are never sent again on it.
+
+**Reason:** the hub has no path that spends one request's nonce twice. On PostgreSQL the nonce is
+spent by an insert that skips a conflict, inside the short auth transaction; the transaction's
+retry rolls the nonce row back with the rest, and the claim again after a refusal only keeps a
+refused request's own nonce spent while that request is answered with its refusal. On the other
+databases the process window keys a nonce by the request, so a re-run of the same request still
+counts as its first use. The client shares no counter between instances, and a clock jump is
+answered with `timestamp_skew`, not `nonce_reused`. What remains is a re-delivery. The likely one
+is a proxy re-sending a long-poll `GET` to a restarted or another pod after its upstream broke,
+which would hit every open wait in the same minute. That trigger on the production hub is
+inferred, not reproduced, and what fronted it then is still unanswered; the mechanism is shown by
+the tests named above. `maity wait` ended on that 401, so the agent stopped waiting until someone
+restarted it. A `GET` is not free of writes, but sending it once more repeats no write: the hub
+refuses `nonce_reused` while it authenticates (`deps.authenticated`, `auth/caller._signed`),
+before the route runs, and rolls that transaction back, so the refused attempt did nothing. The
+new one is one more read, as `maity wait` already makes with the same cursor after a 5xx, and
+what the events read writes comes out the same when it is read again: the acknowledged cursor
+only moves forward, and a chat message's delivery is recorded only the first time
+(`routes/events._acknowledge`, `events.mark_delivered`). A write gets no such repeat, since the
+delivery the hub accepted may have done it already.
+
+**Rejected alternatives:**
+- The hub accepting a re-delivered request: a copy a proxy re-sent and a replay by someone who
+  captured the request carry the same credential, nonce and signature, so the hub cannot tell
+  one from the other; accepting it is accepting replays, which is what the nonce window exists
+  to refuse.
+- Retrying writes too: the first delivery may have done the write; idempotency keys cover only
+  some writes, and a repeat could act twice.
+- Only telling operators to switch off their proxy's retries: it helps one deployment, not every
+  hub a client talks to; the Helm README says it as a note instead.
+- Retrying without limit: a hub that refuses every attempt would keep the call busy until its
+  timeout for nothing; one more attempt covers a single re-delivery.
 

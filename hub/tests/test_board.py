@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -11,9 +12,12 @@ from sqlalchemy import Engine, insert, select
 from maity_hub import clock, forge, probe
 from maity_hub import tables as t
 from maity_hub.board import links, notes
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_isolation import isolate
+from tests.test_isolation_windows import lift as lift_hiding
 from tests.test_tasks import task
+from tests.test_team_rules import _pair
 
 REPOSITORY = "https://github.com/oliver-zehentleitner/maity"
 ISSUE = f"{REPOSITORY}/issues/41"
@@ -326,6 +330,132 @@ def test_a_human_redacts_a_history_entry_and_the_events_values(
     assert len(events(migrated, "event_redacted")) == 1
 
 
+def test_a_history_tombstones_reason_reaches_only_owners_admins_and_the_redactor(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.15, §8.5: the reason in the history and in the write's event, per reader."""
+    agent = flow.agent(make_client, owner, role="admin")  # reads every event, as an agent
+    member = flow.human(make_client, migrated, "a-member")  # creates the card: in the audience
+    guest = flow.human(make_client, migrated, "a-guest")  # project:read only
+    admin = flow.human(make_client, migrated, "an-admin")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    for who, role in ((member, "member"), (guest, "guest"), (admin, "admin")):
+        factory.membership(migrated, project_id, role, human_id=who.id)
+    card = task(member, title="hunter2 in the title")
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"title": "clean"})
+    for entry in history(owner, card):  # the created entry and the title change
+        path = f"/projects/maintainer/maity/tasks/{card['id']}/history/{entry['id']}/redact"
+        assert owner.post(path, {"reason": "a password"}).status_code == 200
+
+    def in_history(who: Any) -> list[Any]:
+        return [e[side] for e in history(who, card) for side in ("before", "after", "diff")]
+
+    def in_events(who: Any) -> list[Any]:
+        listed = who.get("/projects/maintainer/maity/events?after=0&limit=200")
+        assert listed.status_code == 200, listed.text
+        kinds = ("task_created", "task_updated")
+        found = [e["payload"] for e in listed.json()["items"] if e["kind"] in kinds]
+        return [v for p in found for v in p.values() if isinstance(v, dict) and v.get("redacted")]
+
+    stored = len(in_events(owner))  # the created event's field values and the update's title
+    assert stored > 1
+    readers: list[tuple[Any, str | None, int]] = [
+        (owner, "a password", stored),
+        (admin, "a password", stored),
+        (agent, None, stored),
+        (member, None, stored),
+        (guest, None, 0),
+    ]
+    for who, seen, carried in readers:
+        marks = in_history(who) + in_events(who)
+        assert len(marks) == 6 + carried, who  # two entries, each before, after and diff
+        assert {m["reason"] for m in marks} == {seen}, who
+        assert all(m["redacted"] is True and m["by"] == owner.id and m["at"] for m in marks)
+    for plain in (agent, member, guest):
+        assert "a password" not in json.dumps(history(plain, card))
+        assert "a password" not in plain.get("/projects/maintainer/maity/events?after=0").text
+    # The stored tombstones keep the reason; only the reading leaves it out.
+    stored_reasons = {e.payload["title"]["reason"] for e in events(migrated, "task_updated")}
+    assert stored_reasons == {"a password"}
+
+
+def test_only_a_tombstone_with_who_and_when_is_shaped_per_reader() -> None:
+    """§8.5: a task event's field value or task copy counts as a tombstone only with
+    `redacted: true`, `by` and `at`; another dict value keeps its keys as they are."""
+    from types import SimpleNamespace
+
+    from maity_hub.views import _without_reason
+
+    mark = {"redacted": True, "reason": "a password", "by": "hum-x", "at": "2026-11-14T00:00:00Z"}
+    lookalike = {"redacted": True, "reason": "kept"}  # a dict-valued field, not a tombstone
+    for kind, payload in (
+        ("task_updated", {"title": mark, "extra": lookalike}),
+        ("note_added", {"note": {"body": "n"}, "task": {"title": mark, "extra": lookalike}}),
+    ):
+        row = SimpleNamespace(kind=kind, payload=payload, redacted=False, conversation_id=None)
+        shown = _without_reason(row, None)
+        values = shown if kind == "task_updated" else shown["task"]
+        assert values["title"] == {**mark, "reason": None}, kind
+        assert values["extra"] == lookalike, kind
+
+
+def test_a_replayed_link_removal_shows_its_tombstone_without_the_reason(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(agent)
+    added = link(agent, card, kind="url", url="https://example.com/secret").json()
+    path = f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/links/{added['id']}"
+    keyed = agent.auth | {"Idempotency-Key": "link-removal-reason-0001"}
+    assert agent.client.delete(path, headers=keyed).status_code == 200
+    removal = next(e for e in history(owner, card) if e["field"] == "links" and e["after"] is None)
+    owner.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/history/{removal['id']}/redact",
+        {"reason": "a password"},
+    )
+    for headers in (keyed, agent.auth):  # the replay, and a new removal answered from the entry
+        again = agent.client.delete(path, headers=headers)
+        assert again.status_code == 200, again.text
+        assert again.json()["redacted"] is True and again.json()["reason"] is None
+    assert owner.delete(path.removeprefix("/api/v1")).json()["reason"] == "a password"
+
+
+def test_a_replayed_history_redaction_shows_the_reason_as_a_fresh_read_does(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§1.5, §8.5: a replay of `…/redact` shows the tombstone's reason as the caller's own
+    `GET …/history` does now, not as it did when the key was stored."""
+    bea = flow.human(make_client, migrated, "bea")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=bea.id)
+    card = task(owner, title="hunter2 in the title")
+    entry = history(owner, card)[0]
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/history/{entry['id']}/redact"
+    assert owner.post(path, {"reason": "a password"}).status_code == 200
+    keyed = {"X-CSRF-Token": bea.csrf, "Idempotency-Key": "history-redaction-reason-0001"}
+
+    def bea_redacts() -> Any:  # she loses to the owner's redaction: the answer is his tombstone
+        answer = bea.client.post(f"/api/v1{path}", json={"reason": "bea's"}, headers=keyed)
+        assert answer.status_code == 200, answer.text
+        return answer
+
+    first = bea_redacts()
+    assert first.json()["after"]["reason"] == "a password"  # an admin reads it (§8.5)
+    again = bea_redacts()
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json()["after"]["reason"] == "a password"
+    demoted = owner.patch(f"/projects/maintainer/maity/members/{bea.id}", {"trust": "member"})
+    assert demoted.status_code == 200, demoted.text
+    fresh = next(e for e in history(bea, card) if e["id"] == entry["id"])
+    assert fresh["after"]["reason"] is None
+    replayed = bea_redacts()
+    assert replayed.headers["Idempotent-Replayed"] == "true"
+    assert {replayed.json()[side]["reason"] for side in ("before", "after", "diff")} == {None}
+    assert "a password" not in replayed.text
+
+
 # --- notes ------------------------------------------------------------------------------------
 
 
@@ -469,6 +599,17 @@ def test_a_note_is_at_most_4_kib_and_mentions_are_the_hubs(owner: flow.Human) ->
         f"/projects/maintainer/maity/tasks/{card['id']}/notes", {"body": "x", "mentions": []}
     )
     assert fields_of(posted) == {"mentions": "read_only"}
+
+
+def test_a_lone_surrogate_in_a_note_is_refused_and_an_emoji_is_not(owner: flow.Human) -> None:
+    """The model's own refusal, before the byte cap encodes the body: never a 500."""
+    card = task(owner)
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
+    refused = owner.raw("POST", path, b'{"body": "half \\ud800 a pair"}')
+    assert fields_of(refused) == {"body": "string_unicode"}
+    paired = owner.raw("POST", path, b'{"body": "a pair \\ud83d\\ude42 and \xf0\x9f\x99\x82"}')
+    assert paired.status_code == 201, paired.text
+    assert paired.json()["body"] == "a pair 🙂 and 🙂"
 
 
 # --- observation (the probe's worker) ----------------------------------------------------------
@@ -656,6 +797,107 @@ def test_a_link_the_card_was_created_with_is_removed_twice_like_any_other(
     assert (removed.status_code, removed.json()) == (200, initial)
     again = owner.delete(path.removeprefix("/api/v1"))
     assert (again.status_code, again.json()) == (200, initial)
+
+
+def _link_path(card: dict[str, Any], link_id: str) -> str:
+    return f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/links/{link_id}"
+
+
+def test_the_holding_instance_removes_a_link_and_a_sibling_instance_does_not(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    holding, sibling = _pair(make_client, owner)
+    card = task(owner)
+    claimed = holding.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    first = link(owner, card, kind="url", url="https://example.com/a").json()
+    second = link(owner, card, kind="url", url="https://example.com/b").json()
+    refused = sibling.client.delete(_link_path(card, first["id"]), headers=sibling.auth)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["scope"] == "tasks:admin"
+    removed = holding.client.delete(_link_path(card, second["id"]), headers=holding.auth)
+    assert (removed.status_code, removed.json()) == (200, second)
+
+
+def test_a_member_with_tasks_write_removes_its_link_and_a_guest_does_not(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    member = flow.agent(make_client, owner)
+    card = task(owner)
+    added = link(member, card, kind="url", url="https://example.com/a").json()
+    removed = member.client.delete(_link_path(card, added["id"]), headers=member.auth)
+    assert (removed.status_code, removed.json()) == (200, added)
+    # Lowered to guest, it removes neither the link it added nor one on a card it created.
+    own_card = task(member)
+    own = link(member, card, kind="url", url="https://example.com/b").json()
+    on_own_card = link(owner, own_card, kind="url", url="https://example.com/c").json()
+    lowered = owner.patch(f"/projects/maintainer/maity/members/{member.id}", {"trust": "guest"})
+    assert lowered.status_code == 200, lowered.text
+    for target, link_id in ((card, own["id"]), (own_card, on_own_card["id"])):
+        refused = member.client.delete(_link_path(target, link_id), headers=member.auth)
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["details"]["scope"] == "tasks:write"
+    assert len(owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"]) == 1
+
+
+def test_an_admin_expert_without_tasks_write_removes_a_link_it_did_not_add(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    expert = flow.agent(make_client, owner, trust="admin", role="expert", areas=["docs/"])
+    card = task(owner)
+    added = link(owner, card, kind="url", url="https://example.com/a").json()
+    removed = expert.client.delete(_link_path(card, added["id"]), headers=expert.auth)
+    assert (removed.status_code, removed.json()) == (200, added)
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"] == []
+
+
+def test_the_cards_creator_a_writer_without_tasks_admin_removes_a_link_it_did_not_add(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    creator = flow.agent(make_client, owner, trust="member", role="coder")  # no tasks:admin
+    card = task(creator)  # unclaimed: the creator is neither the adder nor the holder
+    added = link(owner, card, kind="url", url="https://example.com/a").json()
+    path = _link_path(card, added["id"])
+    removed = creator.client.delete(path, headers=creator.auth)
+    assert (removed.status_code, removed.json()) == (200, added)
+    again = creator.client.delete(path, headers=creator.auth)
+    assert (again.status_code, again.json()) == (200, added)
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"] == []
+
+
+def test_a_removed_link_answers_whom_the_rule_lets_remove_it_and_no_one_else(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    adder = flow.agent(make_client, owner)
+    other = flow.agent(make_client, owner)
+    card = task(owner)
+    added = link(adder, card, kind="url", url="https://example.com/a").json()
+    path = _link_path(card, added["id"])
+    assert owner.delete(path.removeprefix("/api/v1")).status_code == 200
+    again = adder.client.delete(path, headers=adder.auth)
+    assert (again.status_code, again.json()) == (200, added)
+    unknown = other.client.delete(_link_path(card, "lnk-000000000000"), headers=other.auth)
+    outside = other.client.delete(path, headers=other.auth)
+    assert outside.status_code == unknown.status_code == 404
+    assert outside.json() == unknown.json()
+
+
+def test_a_link_removed_in_a_hidden_window_answers_as_an_unknown_one(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")  # tasks:admin, any link
+    card = task(owner)
+    added = link(admin, card, kind="url", url="https://example.com/a").json()
+    path = _link_path(card, added["id"])
+    isolate(owner, admin.id)
+    assert owner.delete(path.removeprefix("/api/v1")).status_code == 200
+    assert lift_hiding(owner, admin, hide=True).status_code == 200
+    again = owner.delete(path.removeprefix("/api/v1"))
+    assert (again.status_code, again.json()) == (200, added)
+    unknown = admin.client.delete(_link_path(card, "lnk-000000000000"), headers=admin.auth)
+    hidden = admin.client.delete(path, headers=admin.auth)
+    assert hidden.status_code == unknown.status_code == 404
+    assert hidden.json() == unknown.json()
 
 
 # --- commit links (§6.13) -------------------------------------------------------------------

@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 import fakehub
 import pytest
-from conftest import fake_gh, git
+from conftest import GITHUB_URL, fake_gh, git
 
-from maity import cli
+from maity import cli, gitfacts, proc, state
 
 TASK = "/api/v1/projects/oliver/maity/tasks/tsk-0004"
 REPO = "https://github.com/acme/widget"
@@ -293,6 +294,88 @@ def test_a_failing_gh_falls_back_to_the_probe_for_a_linked_pull_request(
     assert _report_body(fake)["pr"]["number"] == 12
 
 
+def _lookup_fails(tmp_path: Path) -> None:
+    """`git ls-remote` fails, as behind a proxy git cannot reach: GitHub's URL is sent to a
+    repository that does not exist instead of the clone's bare remote (conftest `clone`)."""
+    work = tmp_path / "work"
+    git(work, "config", "--remove-section", f"url.{tmp_path / 'remote.git'}")
+    git(work, "config", f"url.{tmp_path / 'missing.git'}.insteadOf", GITHUB_URL)
+
+
+def test_a_failed_remote_lookup_falls_back_to_the_probe_for_the_pushed_head(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    head = _head(joined)
+    _lookup_fails(tmp_path)
+    _probe(fake, {12: head})
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_OK
+    assert _sent(fake)
+    assert _report_body(fake)["pr"]["number"] == 12
+
+
+def test_a_failed_remote_lookup_with_another_head_on_the_probe_is_refused(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _lookup_fails(tmp_path)
+    _probe(fake, {12: "f" * 40})
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    assert "could not read" in capsys.readouterr().err
+    assert not _sent(fake)
+
+
+def test_a_failed_remote_lookup_does_not_take_a_closed_pull_request(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A closed, unmerged pull request with this head says nothing about the remote branch."""
+    head = _head(joined)
+    _lookup_fails(tmp_path)
+    _probe(fake, {12: head}, state="closed")
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "could not read" in err and "PR #12 (closed)" in err
+    assert not _sent(fake)
+
+
+def test_a_failed_remote_lookup_without_a_linked_pull_request_stays_an_error(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Never "does not exist; push it": the branch may well be there."""
+    _lookup_fails(tmp_path)
+    _card(fake)
+    assert _report() == cli.EXIT_ERROR
+    assert "git ls-remote failed" in capsys.readouterr().err
+    assert not _sent(fake)
+
+
+def test_a_failed_remote_lookup_under_a_credentialed_proxy_prints_none_of_it(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """git's output repeats the proxy's credential garbled; the report's error names only the
+    exit code and the class."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://agent:TOKR1 TOKR2@proxy.invalid:3128")
+    real = proc.run
+
+    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "ls-remote" in cmd:
+            stderr = "fatal: Could not resolve proxy: agent:TOKR1\nTOKR2@proxy.invalid\n"
+            return subprocess.CompletedProcess(cmd, 128, "", stderr)
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", fake_run)
+    _card(fake)
+    assert _report() == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "git ls-remote failed (exit 128, proxy): output withheld" in err
+    assert "TOKR1" not in err and "TOKR2" not in err
+    assert not _sent(fake)
+
+
 def test_without_a_probe_the_unknown_pull_request_is_still_refused(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -506,3 +589,288 @@ def test_a_link_past_the_cap_is_not_probed_even_where_it_would_match(
     assert probed == [str(n) for n in numbers[: cli.PROBED_LINKS_MAX]]
     assert str(numbers[-1]) not in probed and not _sent(fake)
     assert "this checkout has an unknown pull request" in capsys.readouterr().err
+
+
+# --- a branch cut from main tracks main (tsk-8qwmbw5xydpw) -----------------------------------
+
+
+def _track_main(work: Path, pushed: bool) -> None:
+    git(work, "push", "--quiet", "origin", "work:main")
+    git(work, "fetch", "--quiet", "origin")
+    git(work, "remote", "set-head", "origin", "main")
+    (work / "a.txt").write_text("two\n")
+    git(work, "commit", "--quiet", "-am", "two")
+    if pushed:
+        git(work, "push", "--quiet", "origin", "work")
+    else:
+        git(work, "push", "--quiet", "origin", "--delete", "work")
+    git(work, "config", "branch.work.merge", "refs/heads/main")
+
+
+def test_report_sets_a_branch_tracking_main_to_its_own_and_reports(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = joined.parent.parent
+    _track_main(work, pushed=True)
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert "maity: branch work tracked origin/main, the default branch; set" in err
+    assert git(work, "config", "branch.work.merge") == "refs/heads/work"
+    body = next(r.json() for r in fake.signed() if r.path == f"{TASK}/report")
+    assert body["upstream"] == "origin/work" and body["remote_head"] == _head(joined)
+
+
+def test_report_refuses_a_branch_tracking_main_before_it_is_pushed(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = joined.parent.parent
+    _track_main(work, pushed=False)
+    _card(fake)
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "push it with `git push -u origin work`" in err
+    assert git(work, "config", "branch.work.merge") == "refs/heads/main"
+    assert not fake.signed()
+
+
+# --- two stacked pull requests on one card (tsk-2xk7cg5n8a1b, §6.6) --------------------------
+
+
+def test_the_help_says_up_front_when_a_stacked_second_pull_request_reports(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["report", "--help"])
+    text = " ".join(capsys.readouterr().out.split())
+    assert (
+        "On a card with two stacked pull requests, once the card's last report names the "
+        "first, the second is reported only after the first has merged (or closed)" in text
+    )
+    assert (
+        "while the card's last report names the first and the hub last saw it open, a report "
+        "from the second's branch is refused, unless gh finds it merged or closed now" in text
+    )
+    assert "a card that links the first (`maity link`) needs the second linked too" in text
+
+
+@pytest.mark.parametrize(
+    ("first", "links", "sent", "observed"),
+    [
+        ("OPEN", [], False, "open"),  # the first is still open: refused
+        ("MERGED", [], True, "open"),  # after its merge the second reports
+        ("CLOSED", [], True, "open"),  # or after it was closed
+        ("MERGED", [_link(780)], False, "open"),  # linked: the second needs a link of its own
+        ("MERGED", [_link(780), _link(799)], True, "open"),
+        ("OPEN", [_link(780), _link(799)], False, "open"),  # a link alone does not let it through
+        # the hub last saw the first closed: gh is not asked, the second reports even
+        # though the forge has the first open again (reopened)
+        ("OPEN", [], True, "closed"),
+        (None, [], False, "open"),  # gh can't check: the hub's open stands, refused
+    ],
+)
+def test_the_second_of_two_stacked_pull_requests_reports_after_the_first_merges(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    bin_dir: Path,
+    first: str | None,
+    links: list[dict[str, Any]],
+    sent: bool,
+    observed: str,
+) -> None:
+    """What the help and §6.6 say: the first (#780) was reported and the hub last saw it
+    `observed`, the second (#799) is checked out; `pr view` answers the first's state on
+    the forge (None: gh fails)."""
+    _gh_view(bin_dir, _head(joined), first)
+    _card(fake, links=links, report=_before(780, "open", observed=observed))
+    assert _report() == (cli.EXIT_OK if sent else cli.EXIT_REFUSED)
+    assert _sent(fake) is sent
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        None,  # no report on the card (the first was never reported here)
+        {"pr": None, "observed": None},  # the last report was --no-code
+    ],
+)
+def test_the_stacked_rule_starts_only_once_the_last_report_names_the_first(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    bin_dir: Path,
+    report: dict[str, Any] | None,
+) -> None:
+    """The rule holds once the card's last report names the first: without such a report
+    the second (#799) reports while the first is open on the forge."""
+    _gh_view(bin_dir, _head(joined), "OPEN")
+    _card(fake, report=report)
+    assert _report() == cli.EXIT_OK and _sent(fake)
+
+
+# --- a fork's clone (tsk-k0x4jn4y4ykg) -------------------------------------------------------
+
+FORK = "https://github.com/someone/widget"
+
+
+def _gh_in(bin_dir: Path, repository: str, rows: str) -> None:
+    """A gh that answers `rows` only when it is asked about `repository` (`--repo`), and an
+    empty list otherwise, as gh does for a repository without that pull request."""
+    if sys.platform == "win32":
+        pytest.skip("Windows starts only an .exe by a bare name, and this gh is a shell script")
+    assert "'" not in rows
+    script = bin_dir / "gh"
+    answer = f"printf '%s\\n' '{rows}'"
+    script.write_text(
+        "#!/bin/sh\n"
+        "prev=\n"
+        "for a do\n"
+        f'  if [ "$prev" = --repo ] && [ "$a" = "{repository}" ]; then {answer}; exit 0; fi\n'
+        '  prev="$a"\n'
+        "done\n"
+        "printf '%s\\n' '[]'\n"
+    )
+    script.chmod(0o755)
+
+
+def _forked(joined: Path, repository: str | None) -> None:
+    """The clone's origin is the fork; the state names the project's repository, as a resume
+    stores it."""
+    clone = joined.parent.parent
+    git(clone, "remote", "set-url", "origin", FORK)
+    git(clone, "config", f"url.{clone.parent / 'remote.git'}.insteadOf", FORK)
+    data = state.load_state(joined)
+    if repository is None:
+        data.pop("repository", None)
+    else:
+        data["repository"] = repository
+    state.save_state(joined, data)
+
+
+def test_a_fork_s_clone_reports_the_pull_request_in_the_project_s_repository(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    """The clone's origin is the fork, so gh would look there; `--repo` sends it to the
+    project's repository, where the pull request from the fork is."""
+    head = _head(joined)
+    row = {"number": 12, "headRefOid": head, "state": "OPEN", "url": f"{REPO}/pull/12",
+           "title": "Leases (tsk-0004)"}  # fmt: skip
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps([row]))
+    _forked(joined, REPO)
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    body = _report_body(fake)
+    assert body["pr_status"] == "found"
+    assert body["pr"] == {"number": 12, "url": f"{REPO}/pull/12", "head": head, "state": "open"}
+    assert body["upstream"] == "origin/work" and body["remote_head"] == head
+
+
+def test_without_the_project_s_repository_gh_picks_as_before(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    """A state from before the resume stored it, or a project without a repository: no
+    `--repo`, so gh answers for the repository it picks (here: none with the pull request)."""
+    row = {"number": 12, "headRefOid": _head(joined), "state": "OPEN", "url": f"{REPO}/pull/12"}
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps([row]))
+    _forked(joined, None)
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    assert _report_body(fake)["pr_status"] == "none"
+
+
+def test_gh_is_asked_in_the_repository_named(tmp_path: Path, bin_dir: Path) -> None:
+    """Without a clone: `--repo` reaches gh, and without it gh answers for its own pick."""
+    row = {"number": 12, "headRefOid": "f" * 40, "state": "OPEN", "url": f"{REPO}/pull/12"}
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps([row]))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget")
+    assert found is not None and (found.number, found.url) == (12, f"{REPO}/pull/12")
+    assert gitfacts._pull_request(tmp_path, "work") is None
+
+
+def test_of_two_forks_branches_of_one_name_the_head_s_pull_request_is_taken(
+    tmp_path: Path, bin_dir: Path
+) -> None:
+    """In the project's repository gh's `--head work` lists every fork's `work`: the one whose
+    head is the local HEAD is taken, wherever gh lists it; without a match, the first, as
+    before (tsk-6yq56cm6k01j)."""
+    mine, other = "a" * 40, "b" * 40
+    rows = [
+        {"number": 5, "headRefOid": other, "state": "OPEN", "url": f"{REPO}/pull/5"},
+        {"number": 9, "headRefOid": mine, "state": "OPEN", "url": f"{REPO}/pull/9"},
+    ]
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps(rows))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", mine)
+    assert found is not None and (found.number, found.head) == (9, mine)
+    first = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "c" * 40)
+    assert first is not None and first.number == 5
+    unknown = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget")
+    assert unknown is not None and unknown.number == 5
+
+
+def test_a_row_that_is_no_object_is_gh_s_odd_answer_not_a_crash(
+    tmp_path: Path, bin_dir: Path
+) -> None:
+    """A list row that is no JSON object, ahead of the head's: the head match passes over it,
+    and the answer stays a FactsError instead of an AttributeError (A2271)."""
+    rows = ["oops", {"number": 9, "headRefOid": "a" * 40, "state": "OPEN", "url": f"{REPO}/pull/9"}]
+    _gh_in(bin_dir, "github.com/acme/widget", json.dumps(rows))
+    found = gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "a" * 40)
+    assert found is not None and found.number == 9
+    with pytest.raises(gitfacts.FactsError):
+        gitfacts._pull_request(tmp_path, "work", "github.com/acme/widget", "c" * 40)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://github.com/acme/widget", "github.com/acme/widget"),
+        ("https://github.com/acme/widget.git", "github.com/acme/widget"),
+        ("git@github.com:acme/widget.git", "github.com/acme/widget"),
+        ("https://gitlab.com/acme/widget", None),  # gh is never sent to another host
+        ("https://github.com/acme", None),  # no repository
+        ("https://github.com/acme/widget/extra", None),
+        ("https://github.com/-acme/widget", None),  # never an option
+        ("git@github.com:acme/widget\n.git", None),  # `$` would match before the newline
+        ("git@github.com:acme/widget\n/", None),
+        ("https://github.com/../..", None),  # path segments, never owner or repository
+        ("https://github.com/acme/..git", None),
+        ("https://github.com/./widget", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_the_project_s_repository_as_gh_s_repo(
+    url: str | None, expected: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GH_HOST", raising=False)
+    assert gitfacts.gh_repository(url) == expected
+
+
+@pytest.mark.parametrize(
+    ("gh_host", "url", "expected"),
+    [
+        ("ghe.example.com", "https://ghe.example.com/acme/widget", "ghe.example.com/acme/widget"),
+        ("GHE.Example.com", "git@ghe.example.COM:acme/widget.git", "ghe.example.com/acme/widget"),
+        ("ghe.example.com", "https://github.com/acme/widget", "github.com/acme/widget"),
+        ("ghe.example.com", "https://other.example.com/acme/widget", None),
+        ("", "https://ghe.example.com/acme/widget", None),  # an empty GH_HOST is unset
+    ],
+)
+def test_gh_s_repo_on_the_gh_host(
+    gh_host: str, url: str, expected: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GH_HOST is the other host gh is asked about, its case aside."""
+    monkeypatch.setenv("GH_HOST", gh_host)
+    assert gitfacts.gh_repository(url) == expected
+
+
+@pytest.mark.parametrize("project", [{"repository": {"url": REPO}}, {}])
+def test_resume_remembers_the_project_s_repository(
+    project: dict[str, Any], joined: Path, fake: fakehub.FakeHub
+) -> None:
+    data = state.load_state(joined)
+    data["repository"] = "https://github.com/acme/old"
+    state.save_state(joined, data)
+    resume = {"session": {"id": "ses-b-0005"}, "events": {"cursor": 1}, "project": project}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda s: (200, resume)
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    assert state.load_state(joined).get("repository") == (REPO if project else None)

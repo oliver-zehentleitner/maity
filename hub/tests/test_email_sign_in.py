@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import re
 from datetime import timedelta
@@ -16,9 +17,9 @@ from maity_hub import tables as t
 from maity_hub.auth import email_links
 from maity_hub.config import Settings
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified
 from maity_hub.routes import email_sign_in
-from tests import factory
+from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 
 KEY = base64.b64encode(b"s" * 32).decode()
@@ -42,7 +43,7 @@ def setup(make_client: ClientFactory, engine: Engine, **env: str) -> tuple[Any, 
     human = factory.human(engine, "ada")
     addresses.prepare(engine, None)  # the claim below takes the lock without a route
     with engine.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     return make_client(mail=hub.mail, secret_key=b"k" * 32), human
 
 
@@ -63,9 +64,9 @@ def mail(engine: Engine) -> tuple[str, str]:
         ).first()
     assert row is not None
     token = re.search(r"/mail/sign-in/(\S+)", row.body)
-    code = re.search(r"(\d{3}) (\d{3})", row.body)
+    code = re.search(r"(?<![\w-])(\d{6})(?![\w-])", row.body)
     assert token and code
-    return "/mail/sign-in/" + token[1], code[1] + code[2]
+    return "/mail/sign-in/" + token[1], code[1]
 
 
 def test_unknown_and_known_requests_have_same_response_and_fresh_cookie(
@@ -188,8 +189,6 @@ def test_eligibility_is_rechecked_at_redemption(
 def test_response_sent_before_lookup(
     make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from fastapi.testclient import TestClient
-
     client, _ = setup(make_client, migrated)
     seen: list[str] = []
     real = email_sign_in.deliver
@@ -199,19 +198,34 @@ def test_response_sent_before_lookup(
         seen.append("lookup")
         real(*args)
 
-    async def wrapped(scope: Any, receive: Any, send: Any) -> None:
-        async def sent(message: Any) -> None:
-            if message["type"] == "http.response.body" and not message.get("more_body", False):
-                seen.append("response_sent")
-            await send(message)
+    body = json.dumps({"address": "ada@example.com"}).encode()
+    status: list[int] = []
 
-        await client.app(scope, receive, sent)
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": body, "more_body": False}
 
+    async def sent(message: Any) -> None:
+        if message["type"] == "http.response.start":
+            status.append(message["status"])
+        if message["type"] == "http.response.body" and not message.get("more_body", False):
+            seen.append("response_sent")
+
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": "/api/v1/auth/email-link", "raw_path": b"/api/v1/auth/email-link",
+        "root_path": "", "query_string": b"", "server": ("hub.example", 443),
+        "client": ("203.0.113.7", 50000),
+        "headers": [
+            (b"host", b"hub.example"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+    }  # fmt: skip
     monkeypatch.setattr(email_sign_in, "deliver", deliver)
-    response = TestClient(wrapped, base_url="https://hub.example").post(
-        "/api/v1/auth/email-link", json={"address": "ada@example.com"}
-    )
-    assert response.status_code == 202
+    # On the client's own loop, as its other requests (tests/flow.drive): the response is
+    # watched in `sent`, and the background lookup runs before the call returns.
+    flow.drive(client, scope, receive, sent)
+    assert status == [202]
     assert seen == ["response_sent", "lookup"]
     mail(migrated)
 
@@ -303,6 +317,36 @@ def test_opt_out_then_back_in_does_not_revive_link(
     assert client.get(url).status_code == 404
 
 
+def test_many_sources_get_an_address_few_sign_in_mails_and_every_answer_alike(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+    answers = []
+    for n in range(12):
+        source = make_client(peer=f"198.51.100.{n + 1}", mail=hub.mail, secret_key=hub.secret_key)
+        answered = ask(source)
+        answers.append((answered.status_code, answered.json()))
+    assert answers == [(202, {"expires_in": 900})] * 12
+    with migrated.connect() as conn:
+        sent = conn.execute(
+            select(t.mail_outbox.c.id).where(t.mail_outbox.c.kind == "sign_in")
+        ).all()
+    assert len(sent) == email_links.RECIPIENT_PER_HOUR
+
+
+def test_the_link_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    limits = email_sign_in.LIMITS
+    counted = (limits.pair_quarter, limits.pair_day, *limits.recipient())
+    for limiter in counted:
+        limiter.reset()
+    assert ask(client, "  ADA@example.com  ").status_code == 202
+    stored_keys.assert_keyed(migrated, counted, "ada@example.com")
+
+
 def test_mail_factor_does_not_bypass_totp(make_client: ClientFactory, migrated: Engine) -> None:
     from datetime import UTC, datetime
 
@@ -370,6 +414,25 @@ def test_existing_session_requires_csrf_but_expired_cookie_can_sign_in(
     assert ask(client).status_code == 202
     _, code = mail(migrated)
     assert client.post("/api/v1/auth/email-code", json={"code": code}).status_code == 200
+
+
+@pytest.mark.parametrize("session", [b"s\xc3\xa9", b"s\xe9"])  # read as latin-1: both non-ASCII
+def test_a_non_ascii_session_cookie_names_no_session_and_can_sign_in(
+    make_client: ClientFactory, migrated: Engine, session: bytes
+) -> None:
+    client, _ = setup(make_client, migrated)
+    # Raw bytes, since the client encodes a str header as ASCII; a Cookie header given here
+    # replaces the client's cookies, so the pending one is sent in it too.
+    asked: Any = {"Cookie": b"maity_session=" + session}
+    response = client.post(
+        "/api/v1/auth/email-link", json={"address": "ada@example.com"}, headers=asked
+    )
+    assert response.status_code == 202, response.text
+    _, code = mail(migrated)
+    pending = client.cookies["maity_pending"].encode()
+    redeemed: Any = {"Cookie": b"maity_pending=" + pending + b"; maity_session=" + session}
+    answer = client.post("/api/v1/auth/email-code", json={"code": code}, headers=redeemed)
+    assert answer.status_code == 200, answer.text
 
 
 def test_request_expiry_is_not_extended_by_delayed_background_job(

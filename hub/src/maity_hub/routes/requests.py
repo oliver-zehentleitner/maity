@@ -6,19 +6,22 @@ import base64
 import hashlib
 import json
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
-from sqlalchemy import Connection, and_, insert, or_, select, update
+from sqlalchemy import Connection, and_, case, func, insert, not_, or_, select, update
 
 from maity_hub import (
     avatars,
     bridges,
+    chat_gate,
+    chat_request,
     clock,
     cover,
     cross_owner,
@@ -27,11 +30,14 @@ from maity_hub import (
     idempotency,
     inbox,
     instances,
+    jcs,
     mentions,
     namespace,
     orgs,
+    paging,
     placements,
     proposals,
+    request_sql,
     seats,
     ticker,
 )
@@ -40,6 +46,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -110,6 +117,18 @@ class ForwardIn(Strict):
     reason: str | None = markdown(default=None)
 
 
+class ChatAccessIn(Strict):
+    """What the owner sets beside an allow reply to the request to chat with their agents
+    (§9.6): the ticked agents (never `"all"`), the reach on the other side, its human, and
+    the rules for the entries the answer writes."""
+
+    agents: list[str] | None = Field(default=None, max_length=1000)
+    their_agents: Literal["all", "none"] | list[str] | None = None
+    their_human: bool | None = None
+    allowed: str | None = None
+    denied: str | None = None
+
+
 class AnswerIn(Written):
     on_behalf_of: str | None = None  # the owner whose answer a proxy records (§2.3)
     reply_id: str | None = Field(default=None, max_length=64)
@@ -118,6 +137,18 @@ class AnswerIn(Written):
     # A human's edit of a preference proposal, with the version it was made on (§19.4).
     markdown: str | None = Field(default=None, max_length=16384)
     base_version: int | None = Field(default=None, ge=0)
+    chat_access: ChatAccessIn | None = None
+
+    def chat_access_body(self) -> dict[str, Any] | None:
+        """`chat_access` as the settlement reads it: what was sent, a `null` reach left out."""
+        if self.chat_access is None:
+            return None
+        sent = self.chat_access.model_dump(exclude_unset=True)
+        return {
+            k: v
+            for k, v in sent.items()
+            if v is not None or k not in ("agents", "their_agents", "their_human")
+        }
 
 
 class WithdrawIn(Strict):
@@ -205,19 +236,7 @@ def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -
     needs = dict(zip([r.id for r in stored], shaped, strict=True))
     pictured = agent_ids | human_ids
     pictured |= {n["member_id"] for n in needs.values() if not n.get("deleted")}
-    sessions = {r.asked_session_id for r in rows if r.asked_session_id is not None}
-    instances: dict[tuple[str, int], str | None] = (
-        {
-            (found.id, found.membership_id): found.instance
-            for found in conn.execute(
-                select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
-                .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
-                .where(t.agent_session.c.id.in_(sessions))
-            ).all()
-        }
-        if sessions
-        else {}
-    )
+    instances = _instances(conn, {r.asked_session_id for r in rows})
     task_ids = {r.task_id for r in rows if r.task_id is not None}
     cards = (
         {
@@ -254,6 +273,31 @@ def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -
         reports=reports,
         needs=needs,
     )
+
+
+def _instances(
+    conn: Connection, sessions: Iterable[str | None]
+) -> dict[tuple[str, int], str | None]:
+    """The instance of the credential behind each session, keyed by the session and the
+    credential's membership: a request's asking instance is the entry of its
+    `(asked_session_id, asked_by)`, and a session of another membership (a bridge's, §2.3)
+    has none for it."""
+    wanted = {s for s in sessions if s is not None}
+    if not wanted:
+        return {}
+    return {
+        (found.id, found.membership_id): found.instance
+        for found in conn.execute(
+            select(
+                t.agent_session.c.id,
+                t.instance_attachment.c.membership_id,
+                t.credential.c.instance,
+            )
+            .select_from(instances.credential_join())
+            .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
+            .where(t.agent_session.c.id.in_(wanted))
+        ).all()
+    }
 
 
 def _person(known: _Known, membership_id: int | None, session_id: str | None) -> Any:
@@ -416,6 +460,7 @@ def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "held": list(row.held or []),  # the agents `to` reached without their owner's yes
         "action": _action_view(row),
         "report": _report_view(known, row),  # set by the hub only (§16.8)
     }
@@ -428,7 +473,9 @@ def _to(known: _Known, row: Any) -> str:
 
 
 def _holder_of(known: _Known, row: Any) -> str:
-    """`_holder` with the member id from the page's memberships."""
+    """Who holds the request now (§7): `to` until its first forward, then a member id, or
+    `trust:admin` while it is open to the admins and nobody has claimed it; the member id
+    from the page's memberships."""
     if row.holder_member is not None:
         return known.principal(row.holder_member)
     if row.holder_pool:
@@ -458,15 +505,8 @@ def _refuse_a_report_request(row: Any) -> None:
 
 
 def _holder(conn: Connection, row: Any) -> str:
-    """Who holds the request now (§7): `to` until its first forward, then a member id, or
-    `trust:admin` while it is open to the admins and nobody has claimed it."""
-    if row.holder_member is not None:
-        found = principal_id(conn, row.holder_member)
-        assert found is not None
-        return found
-    if row.holder_pool:
-        return "trust:admin"
-    return inbox.addressee_of(row).text(conn)
+    """`_holder_of` for one row: a page of one, as `request_view` is."""
+    return _holder_of(_known(conn, [row]), row)
 
 
 def _is_agent(conn: Connection, membership_id: int | None) -> bool:
@@ -498,8 +538,48 @@ def load_member_patch(conn: Connection, request_id: str) -> dict[str, Any]:
     return view
 
 
-idempotency.LOADERS["request"] = idempotency.plain(load_request)
-idempotency.LOADERS["member_patch"] = idempotency.plain(load_member_patch)
+def may_see(conn: Connection, request_id: str, caller: Caller) -> bool:
+    """Whether the caller reads the request now: as `GET /requests/{id}` lets the human it
+    is personal to, or as `GET …/requests/{request_id}` lets a member (§7). A replayed write
+    of a request answers only them (§1.5)."""
+    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).first()
+    if row is None:
+        return False
+    if row.personal and caller.kind == "human":
+        try:
+            _personal(conn, caller, request_id, asker=True)
+            return True
+        except ApiError:
+            pass
+    if row.project_id is None:
+        return False
+    try:
+        mine = membership(conn, caller, namespace.name_of(conn, row.project_id))
+    except ApiError:
+        return False
+    if _withdrew_the_pair(conn, row, mine):
+        return True
+    if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
+        return False
+    return inbox.may_read(conn, row, mine)
+
+
+def _withdrew_the_pair(conn: Connection, row: Any, mine: Membership) -> bool:
+    """A withdrawn pair's request (a cross-owner `reports_to`, a bridge's consent) to whom
+    `withdraw` lets withdraw it: an owner of either side or an admin need not read it to
+    withdraw it, and its retry finds it as the withdrawal left it, which nothing changes."""
+    if row.status != "withdrawn":
+        return False
+    kind = (row.proposal or {}).get("kind")
+    if kind in bridges.KINDS:
+        return bridges.may_withdraw(conn, row, mine) is True
+    if row.personal and kind == cross_owner.KIND:
+        return cross_owner.may_withdraw(conn, row, mine) is True
+    return False
+
+
+idempotency.register("request", idempotency.plain(load_request), may_see)
+idempotency.register("member_patch", idempotency.plain(load_member_patch), may_see)
 
 
 def _row(conn: Connection, request_id: str) -> Any:
@@ -588,8 +668,12 @@ def _needs_in_session(
         )
     ).one()
     person = _person(_known(conn, [], [member.id]), member.id, None)
-    sessions = select(t.agent_session.c.id, t.agent_session.c.harness).where(
-        t.agent_session.c.membership_id == member.id
+    # The member's sessions: those with a row in its project (`agent_session_project`).
+    p = t.agent_session_project
+    sessions = (
+        select(t.agent_session.c.id, t.agent_session.c.harness)
+        .join(p, p.c.session_id == t.agent_session.c.id)
+        .where(p.c.membership_id == member.id)
     )
     if needs.session_id is not None:
         session = conn.execute(sessions.where(t.agent_session.c.id == needs.session_id)).first()
@@ -655,7 +739,11 @@ def _action_errors(body: RequestCreate, mine: Membership) -> dict[str, str]:
     if not action.path.startswith("/") or "?" in action.path or "#" in action.path:
         errors["action.path"] = "not_a_path"
     if action.body is not None:
-        if len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
+        # The unconstrained `str` lets a JSON-escaped lone surrogate through, which UTF-8,
+        # and so the size and `body_sha256`, cannot encode: refused before either (§7).
+        if jcs.has_lone_surrogate(action.body):
+            errors["action.body"] = "lone_surrogate"
+        elif len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
             errors["action.body"] = "too_large"
         else:
             try:
@@ -717,6 +805,11 @@ def create_request(
             ).first()
             if card is None:
                 raise invalid({"task_id": "unknown_task"})
+        # An agent of another owner that `to` reaches without its owner's yes is held (§9.6):
+        # decided now, for good; a later yes admits the next request, not this one.
+        audience, held = chat_gate.gate(
+            conn, mine.project.id, mine, _audience_of(conn, mine.project.id, to)
+        )
         # Links only: a mention in a request pings nobody (§8.6).
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
             mentions.resolve(conn, mine.project.id, body.tried, "tried")
@@ -748,6 +841,7 @@ def create_request(
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
                     "action": _action_stored(body.action),
+                    "held": held or None,
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -777,15 +871,17 @@ def create_request(
             )
             blocked = card.id
         view = request_view(conn, _row(conn, request_id))
-        emit(
+        seq = emit(
             conn,
             mine.project.id,
             "request_created",
-            _addressee_audience(conn, mine, to),
+            audience,
             view,
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "request", held)
         _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
@@ -804,7 +900,8 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 def _locked(conn: Connection, mine: Membership) -> Membership:
     """The caller's membership with the project row and its own row as read under the
     project lock, as `tasks._locked`: a role change takes the same lock, so a scope checked
-    on what this returns holds until the write commits (§2.3 "The expert")."""
+    on what this returns holds until the write commits (§2.3 "The expert"), and a demotion
+    or a removal that commits first is never overtaken (as #271 and #283)."""
     project = lock_project(conn, mine.project.id)
     row = conn.execute(
         select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
@@ -814,19 +911,8 @@ def _locked(conn: Connection, mine: Membership) -> Membership:
     return replace(mine, project=project, row=row)
 
 
-def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
-    """The caller's membership read again after the project lock: a demotion or a removal
-    that commits first is never overtaken (as #271 and #283)."""
-    lock_project(conn, membership(conn, caller, slug).project.id)
-    return membership(conn, caller, slug)
-
-
-def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
-    """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
-    return _audience_of(conn, mine.project.id, to)
-
-
 def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list[str]:
+    """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
     if to.kind == "role":
         return [str(to.role)]
     if to.kind == "owner":
@@ -845,15 +931,7 @@ def _asking_instance(conn: Connection, row: Any) -> str | None:
     filed for the asker, whose session is the bridge's own membership's (§2.3)."""
     if row.asked_session_id is None:
         return None
-    instance: str | None = conn.execute(
-        select(t.credential.c.instance)
-        .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
-        .where(
-            t.agent_session.c.id == row.asked_session_id,
-            t.credential.c.membership_id == row.asked_by,
-        )
-    ).scalar()
-    return instance
+    return _instances(conn, [row.asked_session_id]).get((row.asked_session_id, row.asked_by))
 
 
 def _asker_audience(conn: Connection, row: Any) -> list[str]:
@@ -922,11 +1000,9 @@ def _filtered(
     query = select(t.request).where(
         t.request.c.project_id == mine.project.id, t.request.c.personal.is_(False)
     )
+    _check_status(status)
     if status != "all":
-        wanted = [s for s in status.split(",") if s]
-        if any(s not in inbox.STATUSES for s in wanted):
-            raise invalid({"status": "unknown"})
-        query = query.where(t.request.c.status.in_(wanted))
+        query = query.where(t.request.c.status.in_([s for s in status.split(",") if s]))
     if class_ is not None:
         query = query.where(t.request.c["class"] == class_)
     if asked_by is not None:
@@ -939,28 +1015,63 @@ def _filtered(
                 )
             except ApiError:
                 return []
-    rows = conn.execute(query).all()
-    if mine.role_base == "proxy":
-        # The project's consent to a bridge across owners is a human's own answer: a proxy
-        # neither lists nor relays it (§2.3, §7).
-        rows = [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
+    rows = relayed(conn.execute(query).all(), mine)
+    target = None if to in ("me", "all") else _parse_to(conn, mine, to)
+    return _decided(conn, mine, rows, to, target)
+
+
+def _decided(
+    conn: Connection, mine: Membership, rows: list[Any], to: str, target: inbox.Addressee | None
+) -> list[Any]:
+    """The `rows` (`relayed` already) that `to` lists: `to=me`, `to=all` (`listed_to_all`),
+    or `target`, `to` parsed. `request_sql` restates this for the plain requests (`plain`):
+    `to=me` as `addressed`, `to=all` as `listed_to_all`, a target as `addressed_as` with
+    `may_read`. A change here is a change there."""
     if to == "me":
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
     if to == "all":
-        if mine.may("requests:answer"):
-            alone = inbox.owners_alone(conn, rows)
-            return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
-        return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
-    target = _parse_to(conn, mine, to)
+        return listed_to_all(conn, mine, rows)
+    assert target is not None
     # A member id alone also names the instance addresses of its team: the team reads them.
     whole_team = target.kind == "member" and target.instance is None
-    return [
+    addressed = [
         r
         for r in rows
         if (replace(inbox.addressee_of(r), instance=None) if whole_team else inbox.addressee_of(r))
         == target
-        and inbox.may_read(conn, r, mine)
     ]
+    # One read of the owner's rounds for all of them, as `listed_to_all` does.
+    alone = inbox.owners_alone(conn, addressed) if mine.may("requests:answer") else set()
+    return [r for r in addressed if inbox.may_read(conn, r, mine, alone)]
+
+
+def relayed(rows: Sequence[Any], mine: Membership) -> list[Any]:
+    """The project's consent to a bridge across owners is a human's own answer: a proxy
+    neither lists nor relays it (§2.3, §7). `request_sql.plain` leaves a proxy's requests
+    with a `proposal` to this function."""
+    if mine.role_base != "proxy":
+        return list(rows)
+    return [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
+
+
+def listed_to_all(conn: Connection, mine: Membership, rows: list[Any]) -> list[Any]:
+    """`to=all` (§7): a holder of `requests:answer` sees every request but one from an
+    owner's round it may not read and one held for it (§9.6: no scope opens that); anyone
+    else what it asked and what is addressed to it.
+
+    `request_sql.listed_to_all` restates this in SQL for the requests without `held`,
+    `cover`, `jour_fixe` (and, for a proxy, `proposal`: `request_sql.plain`); the overview's
+    counts and the project's listing hand the others to this function: a change here is a
+    change there."""
+    if mine.may("requests:answer"):
+        alone = inbox.owners_alone(conn, rows)
+        return [
+            r
+            for r in rows
+            if (r.id not in alone and not inbox.held_back(r, mine.principal_id))
+            or inbox.may_read(conn, r, mine)
+        ]
+    return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
 
 
 def _sorted(views: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
@@ -999,22 +1110,13 @@ def _page(
     light (`_entries`) and only the page is turned into full views: a listing costs the
     page, not every request it filters."""
     if cursor is not None:
-        try:
-            raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-            after_sort, after_key = raw["s"], raw["k"]
-        except (ValueError, KeyError, TypeError):
-            raise invalid({"cursor": "invalid"}) from None
-        if after_sort != sort:
-            raise invalid({"cursor": "other_sort"}, "this cursor belongs to another sort")
+        after_key = _cursor_key(cursor, sort)
         if sort == "date":  # newest first
             views = [v for v in views if _key(v, sort) < after_key]
         else:
             views = [v for v in views if _key(v, sort) > after_key]
     page = views[:limit]
-    next_cursor = None
-    if len(views) > limit:
-        token = json.dumps({"s": sort, "k": _key(page[-1], sort)})
-        next_cursor = base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
+    next_cursor = _next_cursor(sort, _key(page[-1], sort)) if len(views) > limit else None
     if render is not None:
         page = render(page)
     for view in page:
@@ -1023,10 +1125,296 @@ def _page(
     return {"items": page, "next_cursor": next_cursor}
 
 
+def _next_cursor(sort: str, key: list[Any]) -> str:
+    token = json.dumps({"s": sort, "k": key})
+    return base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
+
+
+def _cursor_key(cursor: str, sort: str) -> list[Any]:
+    """The `k` of a cursor for `sort`, as `_key` built it. Another sort's cursor is
+    `other_sort`; one that does not decode is `invalid`, as is one whose `k` is not the
+    shape `_key` gives: a key of another length, a rank that is not 0 to 3, a time that does
+    not parse or has no zone, a handle or an id that cannot be bound. Before, a wrongly typed
+    `k` reached a comparison in `_page` and failed as a 500 (tsk-ybc2ma72dzvq item 4)."""
+    try:
+        raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        after_sort, after_key = raw["s"], raw["k"]
+    except (ValueError, KeyError, TypeError):
+        raise invalid({"cursor": "invalid"}) from None
+    if after_sort != sort:
+        raise invalid({"cursor": "other_sort"}, "this cursor belongs to another sort")
+    if not _key_shaped(after_key, sort):
+        raise invalid({"cursor": "invalid"})
+    return cast(list[Any], after_key)
+
+
+def _key_shaped(key: Any, sort: str) -> bool:
+    if not isinstance(key, list) or len(key) != (2 if sort == "date" else 3):
+        return False
+    *head, iso, row_id = key
+    if not paging.bindable(iso) or not paging.id_shaped(row_id):
+        return False
+    if sort == "priority":
+        rank = head[0]
+        if not isinstance(rank, int) or isinstance(rank, bool):
+            return False
+        if not 0 <= rank < len(inbox.PRIORITY_RANK):
+            return False
+    if sort == "agent" and not paging.bindable(head[0]):
+        return False
+    try:
+        at = datetime.fromisoformat(iso)
+        # In UTC, as the column stores it: a zone that moves the time out of range is refused.
+        return at.tzinfo is not None and at.astimezone(UTC) is not None
+    except (ValueError, OverflowError):
+        return False
+
+
+# --- the project's list, paged in SQL (tsk-ybc2ma72dzvq item 4) --------------------------
+#
+# `_filtered`, `_sorted` and `_page` are the readable rule; `test_request_paging.py` holds this
+# path to them page by page. The plain requests (`request_sql.plain`) are decided and ordered
+# by the database, the few others read with only the columns `_decided` needs, in order and a
+# batch at a time, and decided by it unchanged (hub/context/persistence.md, 3c9e5a71).
+
+# The leftover's batches: the page plus one first, then doubling up to this.
+LEFTOVER_BATCH_MAX = 1000
+# What `_decided` reads of a leftover request beyond `request_sql.DECIDED_BY`: the address.
+_ADDRESS = ("to_profile", "to_human", "to_instance")
+# The rounds a page reads on past keys whose rows all fail when read in full (`_project_page`).
+READ_ON_ROUNDS = 3
+# `_start_key`'s place before every request: times outside any request's, within every
+# database's range, and an id no request needs.
+_START_LATEST = "9999-12-31T23:59:59+00:00"
+_START_EARLIEST = "1000-01-01T00:00:00+00:00"
+_START_ID = "req-"
+
+
+@dataclass(frozen=True)
+class _Order:
+    """A sort of the listing in SQL: the key's columns in `_key`'s order, the joins they
+    need, and whether it runs newest first. `_sorted` and `_key` are its Python twins."""
+
+    sort: str
+    columns: tuple[Any, ...]
+    source: Any
+    descending: bool
+
+    def key(self, row: Any) -> tuple[Any, ...]:
+        """A row's place, comparable as the database compares `columns`."""
+        if self.sort == "date":
+            return (row.created_at, row.id)
+        head = inbox.PRIORITY_RANK[row.priority] if self.sort == "priority" else row.asker_handle
+        return (head, row.created_at, row.id)
+
+    def after(self, key: Sequence[Any]) -> Any:
+        """The rows after `key` in this order, in the expanded form: one branch per column,
+        equal on those before it."""
+        branches = []
+        for at, column in enumerate(self.columns):
+            equal = [c == key[n] for n, c in enumerate(self.columns[:at])]
+            beyond = column < key[at] if self.descending else column > key[at]
+            branches.append(and_(*equal, beyond))
+        return or_(*branches)
+
+    def ordered(self) -> list[Any]:
+        return [c.desc() for c in self.columns] if self.descending else list(self.columns)
+
+
+def _order(conn: Connection, sort: str) -> _Order:
+    r = t.request.c
+    # Text compares bytewise, as Python compares it: PostgreSQL compares text by its locale
+    # unless told otherwise (MySQL's tables are binary already, SQLite compares bytes). A
+    # handle holds `-`, which a locale may skip.
+    postgresql = conn.dialect.name == "postgresql"
+
+    def bytewise(column: Any) -> Any:
+        return column.collate("C") if postgresql else column
+
+    request_id = bytewise(r.id)
+    if sort == "date":
+        return _Order(sort, (r.created_at, request_id), t.request, True)
+    if sort == "priority":
+        rank = case(inbox.PRIORITY_RANK, value=r.priority)
+        return _Order(sort, (rank, r.created_at, request_id), t.request, False)
+    # `_asker_handles` in one expression: the asking membership's human, else its agent,
+    # else '' (a membership gone); with no asking membership the inviting human, else ''.
+    asker = t.membership.alias("asker")
+    profile = t.agent_profile.alias("asker_profile")
+    human = t.human.alias("asker_human")
+    inviter = t.human.alias("inviter")
+    source = (
+        t.request.outerjoin(asker, asker.c.id == r.asked_by)
+        .outerjoin(profile, profile.c.id == asker.c.agent_id)
+        .outerjoin(human, human.c.id == asker.c.human_id)
+        .outerjoin(inviter, inviter.c.id == r.asked_by_human)
+    )
+    of_member = case(
+        (human.c.id.is_not(None), func.coalesce(human.c.handle, "")),
+        (profile.c.id.is_not(None), func.coalesce(profile.c.handle, "")),
+        else_="",
+    )
+    handle = case((r.asked_by.is_not(None), of_member), else_=func.coalesce(inviter.c.handle, ""))
+    return _Order(sort, (bytewise(handle), r.created_at, request_id), source, False)
+
+
+def _sql_key(sort: str, key: Sequence[Any]) -> tuple[Any, ...]:
+    """A cursor's `k` (`_cursor_key`) as the values `_Order.after` compares."""
+    *head, iso, row_id = key
+    return (*head, datetime.fromisoformat(iso).astimezone(UTC), row_id)
+
+
+def _leftover_batches(limit: int) -> Iterator[int]:
+    size = limit + 1
+    while True:
+        yield size
+        size = min(size * 2, LEFTOVER_BATCH_MAX)
+
+
+def _read_in_full(conn: Connection, ids: list[str], listed: Sequence[Any]) -> list[Any]:
+    """The page's rows in full, those the listing's own filters (`listed`) still let through."""
+    return list(conn.execute(select(t.request).where(t.request.c.id.in_(ids), *listed)))
+
+
+def _project_page(
+    conn: Connection,
+    mine: Membership,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+    sort: str,
+    limit: int,
+    cursor: str | None,
+) -> dict[str, Any]:
+    """`_page(_sorted(_entries(_filtered(…))))` with the database ordering and limiting.
+
+    Statement A reads the keys of the plain requests the caller sees after the cursor, the
+    page plus one. Statement B reads the other requests after the cursor, up to A's last key
+    when A filled its page, a batch at a time with the columns `_decided` needs, and decides
+    them with it, until it holds the page plus one. Both merged in order are the page's keys;
+    only those rows are read in full, and decided again by the same filters and `_decided`:
+    a request gone since its key was read, or one the listing no longer holds, is left out.
+    The cursor is built from the last row the page keeps. A page that keeps none reads on
+    past its keys, up to `READ_ON_ROUNDS` times, and then answers an empty page with the
+    cursor it was called with (`_start_key` on the first page)."""
+    r = t.request.c
+    _check_status(status)
+    where = [r.project_id == mine.project.id, r.personal.is_(False)]
+    if status != "all":
+        where.append(r.status.in_([s for s in status.split(",") if s]))
+    if class_ is not None:
+        where.append(r["class"] == class_)
+    asker_known = True
+    if asked_by is not None:
+        if asked_by == "me":
+            where.append(r.asked_by == mine.id)
+        else:
+            try:
+                where.append(r.asked_by == member_row(conn, mine.project.id, asked_by).id)
+            except ApiError:
+                asker_known = False  # nothing is listed: `to` is not read, as in `_filtered`
+    target = None if not asker_known or to in ("me", "all") else _parse_to(conn, mine, to)
+    after_key = _cursor_key(cursor, sort) if cursor is not None else None
+    if not asker_known:
+        return {"items": [], "next_cursor": None}
+    order = _order(conn, sort)
+    if to == "me":
+        visible = [request_sql.addressed(mine)]
+    elif to == "all":
+        visible = request_sql.listed_to_all(mine)
+    else:
+        assert target is not None
+        whole_team = target.kind == "member" and target.instance is None
+        visible = [request_sql.addressed_as(target, whole_team), request_sql.may_read(mine)]
+    plain = request_sql.plain(mine)
+    keys: list[Any] = [r.id, r.priority, r.created_at]
+    if sort == "agent":
+        keys.append(order.columns[0].label("asker_handle"))
+    listed = list(where)  # the listing's own filters
+    decided_by = [r[name] for name in (*request_sql.DECIDED_BY, *_ADDRESS)] + keys[3:]
+
+    def keys_after(position: tuple[Any, ...] | None) -> list[Any]:
+        """The keys of the page plus one after `position` (statements A and B), merged."""
+        after = [order.after(position)] if position is not None else []
+        taken = list(
+            conn.execute(
+                select(*keys)
+                .select_from(order.source)
+                .where(*listed, *plain, *visible, *after)
+                .order_by(*order.ordered())
+                .limit(limit + 1)
+            ).all()
+        )
+        bound = []
+        if len(taken) > limit:  # nothing after A's last key can be on this page
+            bound.append(not_(order.after(order.key(taken[-1]))))
+        leftover = select(*decided_by).select_from(order.source)
+        leftover = leftover.where(*listed, *bound, not_(and_(*plain)))
+        # By id: under READ COMMITTED a request can change between the statements. One that got
+        # a `cover` after A read it as plain is read again by B; the later read wins, as its key
+        # is the request's newer place and the rule that now decides it is B's (3c9e5a71).
+        kept: dict[str, Any] = {}
+        for size in _leftover_batches(limit):
+            batch = list(
+                conn.execute(leftover.where(*after).order_by(*order.ordered()).limit(size)).all()
+            )
+            decided = _decided(conn, mine, relayed(batch, mine), to, target)
+            kept.update((row.id, row) for row in decided)
+            if len(kept) > limit or len(batch) < size:
+                break
+            after = [order.after(order.key(batch[-1]))]
+        rows = {row.id: row for row in taken} | kept
+        return sorted(rows.values(), key=order.key, reverse=order.descending)[: limit + 1]
+
+    position = _sql_key(sort, after_key) if after_key is not None else None
+    for _ in range(READ_ON_ROUNDS):
+        merged = keys_after(position)
+        page = merged[:limit]
+        if not page:
+            return {"items": [], "next_cursor": None}
+        # The rows read in full are decided again, with the same filters and the same rule:
+        # on PostgreSQL each statement reads its own snapshot (READ COMMITTED), and a row may
+        # have changed since its key was read. One that fails now is left out, and the cursor
+        # is built from the last row the page keeps (3c9e5a71).
+        full = _read_in_full(conn, [row.id for row in page], listed)
+        found = {row.id: row for row in _decided(conn, mine, relayed(full, mine), to, target)}
+        shown = [row for row in page if row.id in found]
+        if shown:
+            # More may follow the last row kept: keys past the page, or rows left out after it,
+            # which the next page reads afresh.
+            more = len(merged) > limit or shown[-1] is not page[-1]
+            return {
+                "items": request_views(conn, [found[row.id] for row in shown]),
+                "next_cursor": _cursor_at(sort, order.key(shown[-1])) if more else None,
+            }
+        if len(merged) <= limit:  # no key after the rows left out: nothing more is listed
+            return {"items": [], "next_cursor": None}
+        position = order.key(page[-1])  # every row left out: read on past them
+    # No row kept in `READ_ON_ROUNDS` rounds: the position this call started from, which the
+    # next call reads afresh.
+    start = cursor if cursor is not None else _next_cursor(sort, _start_key(sort))
+    return {"items": [], "next_cursor": start}
+
+
+def _cursor_at(sort: str, key: tuple[Any, ...]) -> str:
+    """A cursor at `_Order.key`'s `key`, in `_key`'s shape: the time as text."""
+    *head, at, row_id = key
+    return _next_cursor(sort, [*head, at.isoformat(), row_id])
+
+
+def _start_key(sort: str) -> list[Any]:
+    """A cursor's `k` before every request in `sort`'s order: it names no request."""
+    if sort == "date":  # newest first
+        return [_START_LATEST, _START_ID]
+    return [0 if sort == "priority" else "", _START_EARLIEST, _START_ID]
+
+
 def _asker_handles(conn: Connection, rows: list[Any]) -> dict[str, str]:
     """The asker's handle for every row (by the request's id), in a few queries: what the
     `agent` sort orders by. An organisation's invitation has no asking membership, its asker
-    is the human who invites (`asked_by_human`)."""
+    is the human who invites (`asked_by_human`). `_order`'s handle is its SQL twin."""
     ids = {r.asked_by for r in rows if r.asked_by is not None}
     humans = {r.asked_by_human for r in rows if r.asked_by is None and r.asked_by_human}
     if not ids and not humans:
@@ -1105,8 +1493,9 @@ def _render(conn: Connection) -> Callable[[list[dict[str, Any]]], list[dict[str,
 
 
 def _check_status(status: str) -> None:
-    """Checked before any project is read: a caller without memberships gets the same
-    answer for a bad filter as a member does."""
+    """The `status` filter (`_filtered`); `GET /requests` checks it before any project is
+    read, so a caller without memberships gets the same answer for a bad filter as a member
+    does."""
     if status != "all" and any(s not in inbox.STATUSES for s in status.split(",") if s):
         raise invalid({"status": "unknown"})
 
@@ -1130,12 +1519,22 @@ def list_requests(
     cursor: str | None = None,
 ) -> JSONResponse:
     _check_sort(sort)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
-        entries = _sorted(_entries(conn, rows), sort)
-        return JSONResponse(_page(entries, sort, limit, cursor, _render(conn)))
+        return JSONResponse(
+            _project_page(
+                conn,
+                mine,
+                status=status,
+                class_=class_,
+                asked_by=asked_by,
+                to=to,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
 
 
 @router.get("/requests")
@@ -1154,7 +1553,7 @@ def list_all_requests(
     """The cross-project inbox (§7): every membership of the human, `project` inline."""
     _check_sort(sort)
     _check_status(status)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         projects = conn.execute(
             select(t.project)
             .join(t.membership, t.membership.c.project_id == t.project.c.id)
@@ -1188,7 +1587,7 @@ def list_all_requests(
 
 @router.get("/projects/{owner}/{slug}/requests/{request_id}")
 def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         row = _project_request(conn, mine, request_id)
         if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
@@ -1289,6 +1688,7 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
         raise invalid({"markdown": "not_a_preference_proposal"})
     if edits and (body.reply_id != "go" or body.markdown is None or body.base_version is None):
         raise invalid({"markdown": "go_with_markdown_and_base_version"})
+    chat_request.check_answer(row, body.reply_id, body.chat_access_body())
 
 
 def _relayed_owner(conn: Connection, mine: Membership, body: AnswerIn) -> str | None:
@@ -1355,8 +1755,7 @@ def answer(
         if row.filed_by == "hub":
             raise not_found()  # no asker reads a hub notice through the project (§7)
         if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
-            # TODO(§6.17): the asking instance, once instances exist; same-team instances
-            # share the member id until then.
+            # `self_answer` is the membership's: every instance of the asking agent asked it.
             if inbox.is_asker(row, mine):
                 raise _self_answer()
             raise not_found()
@@ -1373,6 +1772,13 @@ def answer(
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
+        if inbox.not_the_runner_owner(conn, row, mine):
+            raise ApiError(
+                403,
+                "forbidden",
+                "only the runner's owner answers a placement's consent request",
+                {"reason": "runner_owner_only"},
+            )
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
         _refuse_by_kind(conn, row, mine)
@@ -1503,7 +1909,22 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
             )
         ).scalars()
         return [f"member:{h}" for h in humans]
-    return _addressee_audience(conn, mine, inbox.addressee_of(row))
+    return _filed_audience(conn, mine, row)
+
+
+def _filed_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
+    """`to` as filed, as an audience, with each agent it was held for (§9.6) named
+    `held:<id>` in place of its own tokens, as the request's first event named it."""
+    audience = _audience_of(conn, mine.project.id, inbox.addressee_of(row))
+    held = list(row.held or [])
+    if not held:
+        return audience
+    kept = [
+        x
+        for x in audience
+        if not any(x == f"member:{a}" or x.startswith(f"instance:{a}#") for a in held)
+    ]
+    return [*kept, *(f"held:{a}" for a in held)]
 
 
 def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after: Any) -> list[str]:
@@ -1514,7 +1935,7 @@ def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after:
                 *_asker_audience(conn, before),
                 *_holder_audience(conn, mine, before),
                 *_holder_audience(conn, mine, after),
-                *_addressee_audience(conn, mine, inbox.addressee_of(before)),
+                *_filed_audience(conn, mine, before),
             ]
         )
     )
@@ -1575,12 +1996,51 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
+def _refuse_held(
+    conn: Connection, mine: Membership, row: Any, target: Any, then: str = "forward"
+) -> None:
+    """`forbidden` (`held_by_gate`) for a forward to an agent the request is held for, or
+    that the gate of §9.6 would hold it for were the asker to file it to that agent now: the
+    text is the asker's, so the asker's side is judged, whoever forwards it. The forward would
+    otherwise hand the request to a holder that may not read it. A claim from the pool is
+    judged the same way, with the claiming agent as the target (`then`: `claim`)."""
+    if target.agent_id is None:
+        return
+    if target.agent_id in (row.held or []):
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 held this request for that agent when it was filed, and a later yes"
+            " does not release it. Its owner can allow the asker's side, and the asker then asks"
+            " again",
+            {"reason": "held_by_gate"},
+        )
+    if row.asked_by is None:
+        return
+    asker = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
+    kind = "agent" if asker.agent_id is not None else "human"
+    _, held_now = chat_gate.gate(
+        conn,
+        mine.project.id,
+        Membership(mine.project, asker, kind),
+        [f"member:{target.agent_id}"],
+    )
+    if target.agent_id in held_now:
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+            f" to the asker's side. The owner can allow the asker's side and then {then}",
+            {"reason": "held_by_gate"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/forward")
 def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked_member(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         row = _open_decision(conn, mine, request_id)
         if not _holds(conn, row, mine):
             raise _not_holder()
@@ -1619,6 +2079,8 @@ def forward(
                 raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
+            # Nor to an agent the gate holds the request for (§9.6): refused, never dropped.
+            _refuse_held(conn, mine, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"
@@ -1652,7 +2114,7 @@ def forward(
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/claim")
 def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked_member(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         row = _open_decision(conn, mine, request_id)
         if "trust:admin" not in tokens_of(mine.trust, mine.role, mine.role_base):
             raise ApiError(
@@ -1663,6 +2125,8 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
         _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
+        # Nor an agent the gate holds the request for (§9.6), as for a forward to it.
+        _refuse_held(conn, mine, row, mine.row, then="claim")
         won = conn.execute(
             update(t.request)
             .where(t.request.c.id == row.id, _pool_open())
@@ -1755,21 +2219,27 @@ def withdraw(
         _refuse_unless_open(row)
         proposals.require_known(row)
         now = clock.now()
-        conn.execute(
+        done = conn.execute(
             update(t.request)
-            .where(t.request.c.id == row.id)
+            .where(t.request.c.id == row.id, t.request.c.status == "open")
             .values(
                 status="withdrawn",
                 withdrawn_at=now,
                 withdraw_reason=body.reason,
                 changed_by_credential=caller.credential_id,
                 changed_via=caller.via,
+                **_snapshot(conn, row),
             )
-        )
+        ).rowcount
+        if done != 1:
+            _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
-        view = request_view(conn, _row(conn, row.id))
+        closed = _row(conn, row.id)
+        # One record per state change of a personal request, on this route too (§18.1).
+        records.personal_request(conn, closed)
+        view = request_view(conn, closed)
         emit(
             conn,
             mine.project.id,
@@ -2009,7 +2479,7 @@ def file_consent(
         conn,
         mine.project.id,
         "request_created",
-        _addressee_audience(conn, mine, to),
+        _audience_of(conn, mine.project.id, to),
         request_view(conn, _row(conn, request_id)),
         actor=caller.actor(mine.id),
         subject=("request", request_id),
@@ -2148,6 +2618,33 @@ def file_to_human(
     )
 
 
+def file_to_runner_owner(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    human_id: str,
+    title_text: str,
+    summary: str,
+    *,
+    placement_id: str,
+) -> str:
+    """The consent request of an agent's placement proposal, to the runner's owner in
+    person (`to: human:<id>`, §15.6): only that human gives the go, member of the project
+    or not. Answered or withdrawn, it settles the placement as the project's request did."""
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        "consent",
+        title_text,
+        summary,
+        to_kind="human",
+        to_profile=None,
+        to_human=human_id,
+        placement_id=placement_id,
+    )
+
+
 def file_to_human_outside(
     conn: Connection,
     project_id: str,
@@ -2168,7 +2665,7 @@ def file_to_human_outside(
                 "id": request_id,
                 "project_id": project_id,
                 "class": "consent",
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": [],
                 "priority": "normal",
@@ -2244,6 +2741,7 @@ def _file_personal(
     task_id: str | None = None,
     proposal: dict[str, Any] | None = None,
     org_id: str | None = None,
+    placement_id: str | None = None,
 ) -> str:
     request_id = new_id("request")
     conn.execute(
@@ -2252,8 +2750,9 @@ def _file_personal(
                 "id": request_id,
                 "project_id": mine.project.id,
                 "org_id": org_id,
+                "placement_id": placement_id,
                 "class": class_,
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": options or [],
                 "priority": "normal",
@@ -2476,6 +2975,8 @@ def answer_personal(
             not_listening_digest.record_seen(conn, row, caller.human_id)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
+        # A placement's consent (§15.6): `go` approves, any other answer refuses.
+        placements.settle(conn, row, outcome, actor, caller.human_id)
         proposals.settle(
             conn,
             _row(conn, row.id),
@@ -2485,6 +2986,7 @@ def answer_personal(
             reply_id=body.reply_id,
             hub=settings_of(request),
             answerer=caller,
+            chat_access=body.chat_access_body(),
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
@@ -2545,6 +3047,8 @@ def withdraw_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
+        actor = caller.actor(member.id) if member is not None else None
+        placements.settle(conn, row, "withdrawn", actor, caller.human_id)
         # A proposal is settled wherever its request closes (`proposals`): the invited
         # human's own withdrawal of an organisation's invitation counts as their no.
         if row.proposal is not None:
@@ -2555,6 +3059,7 @@ def withdraw_personal(
                 "withdrawn",
                 None,
                 caller.actor(member.id) if member is not None else None,
+                answerer=caller,
             )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)

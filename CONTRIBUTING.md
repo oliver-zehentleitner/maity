@@ -15,6 +15,9 @@ agents; this file is the short form for a human contributor.
    rejected alternative or workaround. A `context/` entry is committed
    right after it is written, in its own commit, so its Git timestamp is
    the moment the reasoning was recorded.
+   A change to `README.md` that adds, drops or moves a heading, or changes a
+   link or image, updates the nine `README.<lang>.md` in the same pull request
+   (`tools/readme_sync.py` fails otherwise).
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 
@@ -30,15 +33,15 @@ family). Turn it on once per clone:
 
 ```sh
 git config core.hooksPath tools/hooks
-python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python
+make -C hub dev
 pipx install --force "keep-the-why-lint==$(sed -n 's/.* # lint-v//p' .github/workflows/ktw-lint.yml)"
 ```
 
-The second line is the hub's environment from the hashed lock, the same
-one CI installs; the hook uses it for both packages (or the Python that
-`MAITY_HOOK_PYTHON` names). It stops before checking when black, ruff or
-mypy there differ from the pins in `hub/requirements/dev.txt`: after a
-lock change, run `make -C hub install PYTHON=.venv/bin/python` again.
+The second line makes the hub's environment, `hub/.venv`, from the hashed
+lock, the same set CI installs; the hook uses it for both packages (or the
+Python that `MAITY_HOOK_PYTHON` names). It stops before checking when black,
+ruff or mypy there differ from the pins in `hub/requirements/dev.txt`: after
+a lock change, run `make -C hub dev` again.
 Likewise it stops when the `ktw-lint` on PATH (or the one
 `MAITY_HOOK_KTW_LINT` names) is not the version CI pins (`# lint-vX` in
 `.github/workflows/ktw-lint.yml`), naming both versions and the install
@@ -70,7 +73,8 @@ the other author or the lead before you push. Exit 2 means the check could
 not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetches
 `origin main` and the head of every pull request open in origin's repository. It lists
 them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
-blocked, as in Claude Code's cloud sessions.
+blocked, as in Claude Code's cloud sessions. In a checkout of a fork, origin is the
+fork: the pull requests open in the repository it was forked from are not checked.
 
 ## The coverage check before a MERGE-READY
 
@@ -182,7 +186,7 @@ verified.
 - A card for a tool or a security-relevant change carries a `Boundary:`
   paragraph in its body before the first review order: what the change
   guarantees, what it does not, and what counts as P3. The review lead
-  quotes it to all three reviewers in round one.
+  quotes it to every reviewer of round one.
 - A web pull request that adds a hub route or a non-admin caller path adds,
   in its first push, the route to the fixtures and one smoke case per
   caller path. Its review request names the caller paths the smoke covers.
@@ -191,9 +195,10 @@ verified.
 
 Everything runs on the machine you work on; there is no shared test system.
 
-- **Hub:** in `hub/`, `make install` into a venv of its own, then `make check`, which
-  runs the whole suite with one worker per core; on the machine the project's agents
-  share, `make lint typecheck` and the affected test files instead (below). The tests
+- **Hub:** in `hub/`, `make dev` (the venv `hub/.venv`, which the other targets then
+  use; `make install` installs the same set into the Python that `PYTHON=` names), then
+  `make check`, which runs the whole suite with one worker per core; on the machine the
+  project's agents share, `make lint typecheck` and the affected test files instead (below). The tests
   run on SQLite by default, one file per test (`hub/README.md`, "Develop").
 - **Hub on PostgreSQL:** `scripts/with_postgres.sh pytest -n 2 <test files>` from
   `hub/`; it starts a local server and gives the run a database of its own. Without a
@@ -235,7 +240,20 @@ directory and the slot files are that account's own; another account gets its ow
   `with_postgres.sh` each hold one of the account's run slots while they run;
   there are two (`MAITY_RUN_SLOTS`). A third run waits, says who holds the
   slots, and starts once one is free. Anything else heavy runs in a slot as
-  `tools/run_slot.sh <command>`.
+  `tools/run_slot.sh <command>`. Each run that gets a slot appends a start line, and once its
+  process is gone an end line, to `log` in the slot directory
+  (`~/.local/state/maity/run-slots/log`; the format is in the script's header), with
+  `MAITY_RUN_NAME` as who ran it: set it to `handle#instance`. Of the command it logs the program
+  and its first argument. The end line is when the command's process ended; a process it left
+  running can hold the slot longer. Not every run gets an end line: once a run is over, a start
+  line without a matching end line (same slot and pid) means the run was aborted (killed together
+  with the watcher that writes the end line, or the machine rebooted).
+- **A slot directory the run may not write:** a sandboxed agent session may write only its
+  clone and a few other places, not `~/.local/state/maity`. There `tools/run_slot.sh` warns
+  and runs the command without a slot, and so without a log line. Point
+  `MAITY_RUN_SLOTS_DIR` at a shared directory the session may write to keep the slot.
+  `make smoke SLOT=` skips the slot on purpose; use it only on a machine where nothing else
+  runs tests.
 - **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
   starts two.
 - **No full hub suite on the agents' machine** (since 2026-10-29, after the
@@ -347,23 +365,16 @@ does not name the exception; which wording holds is open there.
   (tsk-ecqtqj7dyg35).
 - *Exception to an older entry, open:* when the review lead is away for
   over an hour, the lead may forward a finished review request unchanged,
-  in the review lead's template, to the same three vendor instances:
+  in the review lead's template, to the same reviewer instances:
   routing only, with the MERGE-READY check, P3s included, done by the lead
   meanwhile (tsk-z3j36sy534ww).
-- *Exception to an older entry, open:* when a whole vendor team is out
-  for over two hours, the lead sends the maintainer one inbox entry
-  listing the pull requests that wait only on it; he decides per pull request or for all, to wait or to merge with two
-  and catch up the third review, and without his answer everything waits
-  (tsk-x8ctwgw2cmwc).
-- His decision stands per pull request on the status card
-  tsk-4fqv2sncz8sk, with when the third review is caught up
-  (tsk-g3entm5r2rez).
-- *Exception to an older entry, open:* during such an outage an author
-  may send a second review request, to be ordered from the two vendors
-  that are there, with the same template, Ran line and VERDICT line; when the team is back, the third review is ordered at once on the
-  same head (on a moved head, the third reviews the current one and the
-  other two a delta), and nothing merges without three of three or the
-  maintainer's answer for that pull request (tsk-rkp7pvkshta2).
+- *Superseded since 2026-11-09:* the outage rules of tsk-x8ctwgw2cmwc,
+  tsk-g3entm5r2rez and tsk-rkp7pvkshta2 (the maintainer's answer per pull
+  request to merge with two of three, the third review caught up later)
+  assumed three of three. A pull request now needs two approvals on the
+  exact head from agents of two vendors that did not write the code; a
+  missing leg goes to the lead, and the maintainer and the lead agree how
+  to go on (req-8se88wy72g6s; context/process.md, 96581882).
 - A stack is merged from the bottom within minutes: the review lead
   reports MERGE-READY for it in one message, bottom to top, and a conflict
   is resolved three-way with the merged step's last head as the base, and

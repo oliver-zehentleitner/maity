@@ -10,9 +10,9 @@ the hub tells them apart by the id, a client by `kind`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import Field, StrictBool, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
@@ -20,7 +20,10 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import (
     attachments,
+    chat_gate,
     chat_meat_proxy,
+    chat_rules,
+    chat_verdicts,
     conversation_list,
     events,
     group_chats,
@@ -33,7 +36,7 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of, settings_of
+from maity_hub.deps import AnyCaller, ConversationsCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -177,6 +180,8 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
     senders = principal_ids(conn, [r.actor_membership for r in rows])
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
+    # Each human's current verdict, none on a redacted message (§9.7).
+    verdicts = chat_verdicts.of_messages(conn, rows)
     # A deleted account among the mentions is shown as one (§2.9).
     payloads = attachments.with_tombstones(
         conn, shape_deleted(conn, [r.payload or {} for r in rows])
@@ -209,6 +214,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "redaction": _redaction(
                 row, reader, readers.get(row.conversation_id) if group else None
             ),
+            "verdicts": verdicts.get(row.seq, []),
         }
         views.append(view)
     return views
@@ -238,6 +244,20 @@ def _group(conn: Connection, mine: Membership, conversation_id: str) -> tuple[An
     if found is None:
         raise not_found()
     return group, found
+
+
+def reads_messages(conn: Connection, mine: Membership, conversation_id: str) -> bool:
+    """Whether `…/conversations/{id}/messages` answers this member now (§9.1, §9.2), by the
+    checks that route makes: one of a direct chat's two parties, a group chat's participant
+    or a human reading it along. What `conversation_id` of one event shows (§8.9)."""
+    try:
+        if group_chats.is_group(conversation_id):
+            _group(conn, mine, conversation_id)
+        else:
+            _party(conn, mine, conversation_id, hidden=True)
+    except ApiError:
+        return False
+    return True
 
 
 def _messages(project_id: str, conversation_id: str, reader: Any = None) -> Any:
@@ -383,12 +403,16 @@ def _owned_agents(conn: Connection, mine: Membership, caller: Caller) -> list[st
 def list_conversations(
     slug: str,
     request: Request,
-    caller: AnyCaller,
+    caller: ConversationsCaller,
     observed: bool = False,
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    """Every conversation the caller is in, both kinds, newest activity first (§9.3)."""
+    """Every conversation the caller is in, both kinds, newest activity first (§9.3).
+    `renew=false` made the read renew no lease (`conversations_caller`); the answer is
+    the same either way."""
+    if request.query_params.get("renew", "true") not in ("true", "false"):
+        raise invalid({"renew": "not_a_boolean"})
     with engine_of(request).begin() as conn:
         mine = _reader(conn, caller, slug)
         items = []
@@ -401,7 +425,7 @@ def list_conversations(
         _mark_pinned(conn, caller, items)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         items.sort(key=_band)
-        bound = paging.scope(observed=observed, bands=True)
+        bound = paging.scope(observed=observed, bands=_BAND_ORDER)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             band, after_id = _after_band(after)
@@ -456,7 +480,7 @@ def list_my_conversations(
             "unread": sum(i["unread"] for i in counted),
             "mentions_unread": sum(i["mentions_unread"] for i in counted),
         }
-        bound = paging.scope(me=True, observed=observed, bands=True)
+        bound = paging.scope(me=True, observed=observed, bands=_BAND_ORDER)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             band, rest = _after_band(after)
@@ -505,12 +529,17 @@ def _mark_pinned(conn: Connection, caller: Caller, items: list[dict[str, Any]]) 
         item["pinned"] = (item["_project"], item["id"]) in held
 
 
+# Names this band order in the cursor's scope (§1.4). A cursor minted for the earlier
+# order, where a quiet pin sat below every chat with something new, is refused.
+_BAND_ORDER = "pinned-top"
+
+
 def _band(item: dict[str, Any]) -> int:
-    """The item's band in a list (§9.3 "Pinned"): pinned with something new, the others
-    with something new, pinned without, the rest. An observer's `null` counts as none."""
-    if item["unread"]:
-        return 0 if item["pinned"] else 1
-    return 2 if item["pinned"] else 3
+    """The item's band (§9.3 "Pinned"): pinned with unread, quietly pinned, unpinned with
+    unread, the rest. An observer's `null` counts as no unread."""
+    if item["pinned"]:
+        return 0 if item["unread"] else 1
+    return 2 if item["unread"] else 3
 
 
 def _after_band(after: str) -> tuple[int, str]:
@@ -586,7 +615,10 @@ def unpin_conversation(
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         # No chat to read along in yet: an owner outside gets not_found here (§9.2).
-        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        project_id = membership(conn, caller, slug).project.id
+        if caller.human_id is not None:  # the creator's own agents: the add is the yes (§9.6)
+            chat_gate.lock_for_yes(conn, caller.human_id, project_id, body.participants)
+        events.lock_project(conn, project_id)
         mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
@@ -629,7 +661,17 @@ def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str,
     return {
         **group_chats.view(conn, group, found, _viewer(mine)),
         "pinned": _is_pinned(conn, mine, conversation_id),
+        **_rules(conn, mine, found, conversation_id),
     }
+
+
+def _rules(conn: Connection, mine: Any, found: str, conversation_id: str) -> dict[str, Any]:
+    """`chat_rules` for the agent participant reading its own chat (§9.6, "Rules per side"):
+    every other reader gets no such field, a bridge serving it included."""
+    agent_id = getattr(getattr(mine, "row", None), "agent_id", None)  # an owner outside: none
+    if agent_id is None or found != "participant" or getattr(mine, "bridged", False):
+        return {}
+    return {"chat_rules": chat_rules.for_chat(conn, agent_id, conversation_id)}
 
 
 def _viewer(mine: Any) -> str | None:
@@ -648,10 +690,13 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     return {
         **group_chats.view(conn, row, found, _viewer(mine)),
         "pinned": _is_pinned(conn, mine, conversation_id),
+        **_rules(conn, mine, found, conversation_id),
     }
 
 
-idempotency.LOADERS["conversation"] = _load_for_caller
+idempotency.register(
+    "conversation", _load_for_caller, idempotency.in_project(idempotency.column_of(t.conversation))
+)
 
 
 @router.get("/projects/{owner}/{slug}/conversations/{conversation_id}")
@@ -704,6 +749,9 @@ def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
+        if caller.human_id is not None:  # its owner's add is the yes (§9.6)
+            project_id = writer(conn, caller, slug, conversation_id=conversation_id).project.id
+            chat_gate.lock_for_yes(conn, caller.human_id, project_id, [body.member_id])
         mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.add(conn, group, body.member_id, mine.principal_id, caller.actor(mine.id))
@@ -765,7 +813,23 @@ def _load_participation(conn: Connection, stay_id: str) -> dict[str, Any]:
     return group_chats.participation(conn, row)
 
 
-idempotency.LOADERS["participation"] = idempotency.plain(_load_participation)
+def _stay_project(conn: Connection, stay_id: str) -> str | None:
+    found: str | None = conn.execute(
+        select(t.conversation.c.project_id)
+        .join(
+            t.conversation_participant,
+            t.conversation_participant.c.conversation_id == t.conversation.c.id,
+        )
+        .where(t.conversation_participant.c.id == int(stay_id))
+    ).scalar()
+    return found
+
+
+# A stay ended by the call itself (leaving) is still the caller's to see: the project, not the
+# chat, is what a replay of it re-checks.
+idempotency.register(
+    "participation", idempotency.plain(_load_participation), idempotency.in_project(_stay_project)
+)
 
 
 # --- messages (§9.1, §9.2) ---------------------------------------------------------------
@@ -877,7 +941,36 @@ def load_message(conn: Connection, seq: str) -> dict[str, Any]:
     return message_view(conn, row)
 
 
-idempotency.LOADERS["message"] = idempotency.plain(load_message)
+def _reads_message(conn: Connection, mine: Membership, seq: str) -> bool:
+    """As the conversation's messages read (§9.1, §9.2)."""
+    conversation_id = conn.execute(
+        select(t.event.c.conversation_id).where(t.event.c.seq == int(seq))
+    ).scalar()
+    return conversation_id is None or reads_messages(conn, mine, conversation_id)
+
+
+_MESSAGE_IN_PROJECT = idempotency.in_project(
+    idempotency.column_of(t.event, by="seq", key=int), _reads_message
+)
+
+
+def _sees_message(conn: Connection, seq: str, caller: Any) -> bool:
+    """A member who reads the conversation, or an owner outside the project who reads its
+    group chat along: a verdict's retry by them finds the message, as its first call did
+    (§9.2, §9.7)."""
+    if _MESSAGE_IN_PROJECT(conn, seq, caller):
+        return True
+    row = conn.execute(
+        select(t.event.c.project_id, t.event.c.conversation_id).where(t.event.c.seq == int(seq))
+    ).first()
+    if row is None or row.conversation_id is None or not group_chats.is_group(row.conversation_id):
+        return False  # an outsider reads group chats only
+    # An outsider passes where a member does, as `_reader` hands one to the read routes.
+    mine: Any = outsider(conn, caller, namespace.name_of(conn, row.project_id))
+    return mine is not None and reads_messages(conn, mine, row.conversation_id)
+
+
+idempotency.register("message", idempotency.plain(load_message), _sees_message)
 
 
 @router.post("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")
@@ -887,6 +980,8 @@ def send_message(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, caller, slug, conversation_id)
         if group_chats.is_group(conversation_id):
+            if chat_gate.waiting(conn, conversation_id, mine.id):
+                raise chat_gate.refuse_waiting()  # it does not post before its owner's yes
             _group(conn, mine, conversation_id)  # not_found for anyone without access
         else:
             _party(conn, mine, conversation_id, hidden=False)
@@ -909,3 +1004,129 @@ def send_message(
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- verdicts (§9.7) -------------------------------------------------------------------------
+
+
+class VerdictIn(Strict):
+    """👍 or 👎 on a message; a sentence only with `disagree`, plain text that resolves no
+    mention (§8.6), trimmed, an empty one read as none."""
+
+    value: Literal["agree", "disagree"]
+    sentence: str | None = None
+
+    @field_validator("sentence")
+    @classmethod
+    def _sentence(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None or not value.strip():
+            return None
+        if info.data.get("value") == "agree":
+            raise PydanticCustomError("agree_has_none", "a sentence goes with disagree only")
+        value = value.strip()
+        if len(value) > t.VERDICT_SENTENCE:  # code points
+            raise PydanticCustomError(
+                "string_too_long",
+                "String should have at most {max_length} characters",
+                {"max_length": t.VERDICT_SENTENCE},
+            )
+        return value
+
+
+def _verdict(
+    slug: str,
+    conversation_id: str,
+    seq: int,
+    request: Request,
+    caller: Caller,
+    body: VerdictIn | None,
+) -> JSONResponse:
+    """`PUT` (`body`) or `DELETE` (None) of the caller's verdict on one message (§9.7)."""
+    if caller.kind != "human" or caller.human_id is None or caller.bridge is not None:
+        raise humans_only("only a human gives a verdict; an agent answers in text")
+    human_id = caller.human_id
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        # Everything as of the project's lock: a leave, a close or a redaction that commits
+        # first is seen, and the audience is the chat's participants at the write (§9.2).
+        events.lock_project(conn, _reader(conn, caller, slug).project.id)
+        mine = _reader(conn, caller, slug)
+        if group_chats.is_group(conversation_id):
+            group, _ = _group(conn, mine, conversation_id)  # a participant or an observer
+            group_chats.refuse_closed(group)
+            current = group_chats.stays(conn, group.id)
+            audience = group_chats.audience(current)  # a waiting agent reads none (§9.6)
+            conversation = {"id": group.id, "kind": "group", "title": group.title}
+            sides = chat_gate.sides_of(conn, current)
+        elif isinstance(mine, Outsider):  # an outsider reads group chats only
+            raise not_found()
+        else:  # a cross-project chat's id is none of this project's: not_found (§9.5)
+            _party(conn, mine, conversation_id, hidden=True)
+            _, owner = chat_parties(conn, mine, conversation_id)
+            audience = [f"member:{conversation_id}", f"member:{owner.human_id}"]
+            conversation = {"id": conversation_id, "kind": "direct", "title": None}
+            sides = [owner.human_id]
+        row = conn.execute(
+            _messages(mine.project.id, conversation_id, getattr(mine, "row", None)).where(
+                t.event.c.seq == seq
+            )
+        ).first()
+        if row is None:
+            raise not_found()
+        if row.redacted:
+            raise invalid({"seq": "redacted"}, "a redacted message takes no verdict")
+        author = principal_id(conn, row.actor_membership)
+        if author == human_id:
+            raise invalid({"seq": "own_message"}, "a verdict is on someone else's message")
+        value = body.value if body is not None else None
+        sentence = body.sentence if body is not None else None
+        if sentence is not None:  # a text of its author in that chat (§9.6)
+            chat_gate.boundary(conn, mine.project.id, human_id, sentence, sides)
+        actor = (
+            events.Actor(
+                None,
+                session_id=caller.session_id,
+                credential_id=caller.credential_id,
+                via=caller.via,
+                human_id=human_id,
+            )
+            if isinstance(mine, Outsider)
+            else caller.actor(mine.id)
+        )
+        chat_verdicts.change(
+            conn,
+            row,
+            human_id,
+            value,
+            sentence,
+            conversation=conversation,
+            author=author,
+            audience=audience,
+            actor=actor,
+        )
+        return idempotency.Outcome(200, "message", str(seq), message_view(conn, row, mine))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.put("/projects/{owner}/{slug}/conversations/{conversation_id}/messages/{seq}/verdict")
+def put_verdict(
+    slug: str,
+    conversation_id: str,
+    seq: Annotated[int, Path(ge=1, le=SEQ_MAX)],
+    body: VerdictIn,
+    request: Request,
+    caller: AnyCaller,
+) -> JSONResponse:
+    return _verdict(slug, conversation_id, seq, request, caller, body)
+
+
+@router.delete("/projects/{owner}/{slug}/conversations/{conversation_id}/messages/{seq}/verdict")
+def delete_verdict(
+    slug: str,
+    conversation_id: str,
+    seq: Annotated[int, Path(ge=1, le=SEQ_MAX)],
+    request: Request,
+    caller: AnyCaller,
+) -> JSONResponse:
+    return _verdict(slug, conversation_id, seq, request, caller, None)

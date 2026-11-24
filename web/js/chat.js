@@ -34,6 +34,9 @@ window.Maity = window.Maity || {};
   const targets = new Map();
   // Signing out ends them; the next human in this tab starts empty.
   M.clearChatDrafts = () => { drafts.clear(); targets.clear(); };
+  // A reload loses them (js/new-version.js): one that is not blank asks first, in whichever chat
+  // of this tab it was typed. The group chats keep theirs here too (M.chatParts.drafts).
+  if (M.newVersion) M.newVersion.holds("chat-drafts", () => Array.from(drafts.values()).some((d) => typeof d === "string" && d.trim() !== ""));
 
   // A chat as the list shows it: one per owned agent (§9.1), and the group
   // chats the hub lists (§9.3); a chat's kind comes from the hub, never from
@@ -54,8 +57,8 @@ window.Maity = window.Maity || {};
     }));
   }
 
-  // In the hub's order (§9.3: four bands, pinned with unread, unpinned with
-  // unread, quiet pinned, the rest; `rank` its position in the list read),
+  // In the hub's order (§9.3: four bands, pinned with unread, quietly pinned,
+  // unpinned with unread, the rest; `rank` its position in the list read),
   // which the dashboard never re-sorts; one's own agents without a
   // conversation yet after them, by title.
   function ordered(chats) {
@@ -188,10 +191,12 @@ window.Maity = window.Maity || {};
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
-      clear(ul);
+      const fresh = h("div");
       // A human pins (§9.3): the list is read again for the hub's order.
       const onPin = ctx.me.kind === "human" && pinColumn.isShown() ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
-      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId, onPin)));
+      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(fresh, listItem(ctx, chat, currentId, onPin)));
+      M.dom.keepImages(ul, fresh);
+      append(clear(ul), Array.from(fresh.childNodes));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);
@@ -334,6 +339,134 @@ window.Maity = window.Maity || {};
         M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
   }
 
+  // §9.7: each human's current verdict under a message, and, for a human who reads the chat, on
+  // someone else's message, Agree, Disagree (one sentence optional) and Take back.
+  // opts.verdictPath: the conversation's messages path, where the reader may give one;
+  // opts.verdictDraws: seq -> draw again, for a change that comes as an event;
+  // opts.verdictForms: seq -> the message's verdict state (the sentence field open, what is typed
+  // in it, a send under way, its status line), shared by every drawing of the message, so that it
+  // outlives a redraw of the whole list (a group chat) and a send's answer reaches the drawing on screen.
+  function verdicts(ctx, msg, o, own) {
+    const box = h("div", { class: "msg-verdicts" });
+    const forms = o.verdictForms || null;
+    let st = forms && forms.get(msg.seq);
+    if (!st) {
+      st = { asking: false, draft: null, sending: false, status: M.statusLine() };
+      if (forms) forms.set(msg.seq, st);
+    }
+    const status = st.status;
+    // The message of the newest drawing: a re-read from outside the project draws fresh objects,
+    // and the answer to a send belongs on the one shown.
+    st.msg = msg;
+    const mayGive = !!o.verdictPath && !own && ctx.me.kind === "human";
+    const url = () => o.verdictPath + "/" + encodeURIComponent(msg.seq) + "/verdict";
+    // The drawing on screen: a redraw of the list may have replaced this one meanwhile.
+    const current = () => (o.verdictDraws && o.verdictDraws.get(msg.seq)) || draw;
+    async function send(value, sentence) {
+      // One send at a time per message, whichever drawing it came from.
+      if (st.sending) return;
+      st.sending = true;
+      status.busy(M.t("chat.verdict.busy"));
+      try {
+        const fresh = value === null ? await M.api.del(url()) : await M.api.put(url(), sentence ? { value, sentence } : { value });
+        msg.verdicts = fresh.verdicts || [];
+        if (st.msg) st.msg.verdicts = msg.verdicts;
+        st.asking = false;
+        st.draft = null;
+        status.done();
+        st.sending = false;
+        current()();
+      } catch (err) {
+        st.sending = false;
+        status.fail(M.t("chat.verdict.failed"), err);
+        // A failure leaves the form as it is, its focus too; only a drawing that replaced this one is drawn.
+        if (current() !== draw) current()();
+      }
+    }
+    // Whole sentences, one per verdict; the sentence of a Disagree is plain text (§9.7).
+    function line(v) {
+      const who = giver(ctx, v.by);
+      if (v.value === "agree") return h("li", { class: "verdict agree" }, M.tn("chat.verdict.agrees", { who }));
+      return h("li", { class: "verdict disagree" }, v.sentence
+        ? M.tn("chat.verdict.disagrees_because", { who, sentence: v.sentence }) : M.tn("chat.verdict.disagrees", { who }));
+    }
+    function form(mine) {
+      const id = "verdict-sentence-" + msg.seq;
+      const given = mine && mine.value === "disagree" && mine.sentence ? mine.sentence : "";
+      const input = h("input", { type: "text", id, maxlength: "500", oninput: (e) => { st.draft = e.target.value; } });
+      input.value = st.draft !== null ? st.draft : given;
+      return h("form", { class: "verdict-form", onsubmit: (e) => { e.preventDefault(); send("disagree", input.value.trim() || null); } },
+        h("label", { for: id }, M.t("chat.verdict.sentence")), input,
+        h("button", { type: "submit", class: "small" }, M.t("chat.verdict.send")),
+        h("button", { type: "button", class: "small", onclick: () => { st.asking = false; st.draft = null; status.done(); draw(); } }, M.t("chat.verdict.cancel")));
+    }
+    function draw() {
+      // The sentence field keeps its focus when another's verdict redraws the box.
+      const focused = st.asking && document.activeElement && box.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+      clear(box);
+      const list = isRemoved(msg) ? [] : (msg.verdicts || []);
+      if (list.length) append(box, h("ul", { class: "verdict-list", "aria-label": M.t("chat.verdict.list") }, list.map(line)));
+      if (!mayGive || isRemoved(msg)) return;
+      const mine = list.find((v) => v.by === ctx.me.id);
+      if (st.asking) {
+        append(box, form(mine), status.el);
+        if (focused) box.querySelector("input").focus();
+        return;
+      }
+      const is = (value) => !!mine && mine.value === value;
+      append(box, h("div", { class: "verdict-actions" },
+        h("button", { type: "button", class: "small", "aria-pressed": String(is("agree")), disabled: is("agree"), onclick: () => send("agree") }, M.t("chat.verdict.agree")),
+        // Pressed again, Disagree opens its sentence to change it.
+        h("button", { type: "button", class: "small", "aria-pressed": String(is("disagree")),
+          onclick: () => { st.asking = true; draw(); const field = box.querySelector("input"); if (field) field.focus(); } }, M.t("chat.verdict.disagree")),
+        mine ? h("button", { type: "button", class: "small", onclick: () => send(null) }, M.t("chat.verdict.take_back")) : null), status.el);
+    }
+    draw();
+    if (o.verdictDraws) o.verdictDraws.set(msg.seq, draw);
+    return box;
+  }
+
+  // Who gave a verdict: a member as everywhere; the reader, read along from outside the project,
+  // by their own name (they are in no member list there); for a member, an owner reading along
+  // from outside the project, as the chat's line of observers says it (js/group-chat.js).
+  function giver(ctx, id) {
+    const known = ctx.memberById && ctx.memberById[id];
+    if (!known && id === ctx.me.id) return M.dom.memberRef(ctx, ctx.me);
+    if (!known && !ctx.outsider) return M.t("group.observer.outside");
+    return M.dom.memberRef(ctx, id);
+  }
+
+  // A `chat_verdict` (§9.7) of a message on screen: that human's verdict replaced, or gone
+  // when taken back; the latest per human counts. True when one was on screen.
+  function applyVerdict(shownMessages, draws, e) {
+    const p = e.payload;
+    // A member's actor names member_id; a human outside the project, reading along, id (§8.2).
+    const by = e.actor && (e.actor.member_id || e.actor.id);
+    const msg = p && by ? shownMessages.find((m) => m.seq === p.message_seq) : null;
+    if (!msg) return false;
+    const rest = (msg.verdicts || []).filter((v) => v.by !== by);
+    msg.verdicts = p.value ? rest.concat({ by, value: p.value, sentence: p.sentence || null, at: e.at || null, seq: e.seq }) : rest;
+    const draw = draws.get(msg.seq);
+    if (draw) draw();
+    return true;
+  }
+  // A `chat_verdict` redacted (§8.5): the verdict it set stays, without its sentence.
+  function verdictRedacted(shownMessages, draws, seq) {
+    shownMessages.forEach((m) => (m.verdicts || []).forEach((v) => {
+      if (v.seq !== seq || v.sentence === null) return;
+      v.sentence = null;
+      const draw = draws.get(m.seq);
+      if (draw) draw();
+    }));
+  }
+  // The verdicts as a page read again has them, taken over where they changed.
+  function takeVerdicts(kept, fresh, draws) {
+    if (!kept || JSON.stringify(kept.verdicts || []) === JSON.stringify(fresh.verdicts || [])) return;
+    kept.verdicts = fresh.verdicts || [];
+    const draw = draws.get(kept.seq);
+    if (draw) draw();
+  }
+
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
   function message(ctx, msg, pending, grouped, onQuote, opts) {
@@ -359,13 +492,20 @@ window.Maity = window.Maity || {};
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
     const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
-      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("members", id) : null), ctx }));
-    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
+      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("team", id) : null), ctx }));
+    // The message an event's link opened the chat at stays marked (o.target, reveal() below).
+    const target = o.target && String(msg.seq) === o.target ? " seq-target" : "";
+    // Report someone else's message to the instance's admins (§16.8, tsk-7ze5w6ymf7bw): its seq with
+    // the project; members only, a message is on no public page.
+    const reporting = M.report && !own && !removed && ctx.slug && ctx.me.kind === "human"
+      ? M.report.control({ type: "message", id: String(msg.seq), project: ctx.slug }, "message") : null;
+    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + target, "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
-        M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
+        M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta, verdicts(ctx, msg, o, own),
         onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.quote.label"), onclick: () => onQuote(msg) }, M.t("chat.quote")) : null,
-        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null));
+        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null,
+        reporting ? [reporting.button, reporting.slot] : null));
   }
 
   // The newest page of a conversation, and nothing before it (the
@@ -462,11 +602,17 @@ window.Maity = window.Maity || {};
   // (main's padding, the product line of §16.13). Measuring from the
   // header's bottom left out what stands between (a banner, the toolbar's
   // margin) and everything below, so the page scrolled past the composer
-  // (tsk-j10w2hsm1h90). Measured again on a resize and when the page around
-  // it changes; the visual viewport shrinks with a phone's on-screen
-  // keyboard, 100dvh does not everywhere.
-  // The lines of history an open chat keeps in view however small the screen.
+  // (tsk-j10w2hsm1h90). When the fixed chrome plus a history floor would run
+  // past the window but the chrome plus HISTORY_MIN fits, the height stops at
+  // the window edge so the input stays on screen (tsk-df4tcq83pnf6); the
+  // product line may then sit just below the fold. Measured again on a
+  // resize and when the page around it changes; the visual viewport
+  // shrinks with a phone's on-screen keyboard, 100dvh does not everywhere.
+  // Preferred lines of history above the product line when the window has room.
   const HISTORY_LEAST = 60;
+  // The least history worth stopping at the window edge for: below it the
+  // input in view shows no message, so the page scrolls instead (tsk-df4tcq83pnf6).
+  const HISTORY_MIN = 24;
   // Full screen (the owner's request, tsk-fnch2yxp2kk1): the open chat covers the window, the
   // page around it hidden, to read on a phone. A button in the chat's heading row, as the list's
   // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
@@ -599,8 +745,36 @@ window.Maity = window.Maity || {};
         watched = parts;
       }
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
-      const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
-      const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
+      // Floor is the pane's non-history chrome only. A +HISTORY_LEAST floor that
+      // is taller than the window put the composer past the bottom edge on a
+      // short phone (tsk-df4tcq83pnf6); the page scrolled and the input was off
+      // screen. Keep the composer in the window when that chrome plus
+      // HISTORY_MIN fits.
+      const floor = Number.isFinite(fixed) ? fixed : 0;
+      const toFooter = Math.floor(height - (box.top + scrolled) - below);
+      const toWindow = Math.floor(height - (box.top + scrolled));
+      let px;
+      if (toFooter >= floor + HISTORY_LEAST) {
+        // History has room above the product line; the page need not scroll.
+        px = toFooter;
+      } else if (toWindow >= floor + HISTORY_LEAST) {
+        // Preferred history still fits in the window. Keep that floor and let
+        // the product line sit just below the fold rather than shrinking the
+        // message list (composer 3x / tall chrome with a banner).
+        px = Math.max(toFooter, floor + HISTORY_LEAST);
+      } else if (toWindow >= floor + HISTORY_MIN) {
+        // Fixed chrome fits, but not with HISTORY_LEAST: stop at the window
+        // edge so the input stays on screen; history may shrink below the
+        // preferred floor, not below HISTORY_MIN (short phone, tsk-df4tcq83pnf6).
+        px = toWindow;
+      } else {
+        // Fixed chrome with HISTORY_MIN taller than the window below the layout
+        // (a tall banner on a short phone, or a group's Manage chrome): keep a
+        // history floor so the composer is not clipped under the product line;
+        // the page may scroll.
+        px = Math.max(240, floor + HISTORY_LEAST, toFooter);
+      }
+      const value = Math.max(0, px) + "px";
       if (layout.style.getPropertyValue && layout.style.getPropertyValue("--chat-h") === value) return;
       layout.style.setProperty("--chat-h", value);
     };
@@ -663,10 +837,33 @@ window.Maity = window.Maity || {};
     };
   }
 
+  // The chat opened for one message (`#seq-<n>`, js/event.js, docs/api.md §8.9): older pages
+  // are read as Show earlier reads them, one at a time, until the message is drawn, then it is
+  // scrolled to; the timeline marks it (opts.target). At most REVEAL_PAGES pages, so a link to
+  // a message far back costs a known number of requests, as opening a chat does
+  // (tsk-r1adgwp0a5dr); past them, or for a seq above the chat's newest, the chat says it did
+  // not reach the message, and Show earlier goes on from where it stopped.
+  // more: { can() — an older page is there and the message would be in it, read() }.
+  const REVEAL_PAGES = 10;
+  async function reveal(messages, seq, more, follow) {
+    const find = () => Array.from(messages.querySelectorAll("li.msg")).find((li) => li.getAttribute("data-seq") === seq);
+    let li = find();
+    for (let n = 0; !li && n < REVEAL_PAGES && more.can(); n += 1) {
+      await more.read();
+      li = find();
+    }
+    if (!li) {
+      if (messages.parentNode) messages.parentNode.insertBefore(h("p", { class: "muted seq-missed", role: "status" }, M.t("event.not_reached", { seq })), messages);
+      return null;
+    }
+    follow.open(li);
+    return li;
+  }
+
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC };
+  M.chatParts = { applyVerdict, verdictRedacted, takeVerdicts, actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -737,7 +934,9 @@ window.Maity = window.Maity || {};
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
     // The human party deletes a file of the chat (§8.7), whoever sent it.
-    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true };
+    // The human party gives a verdict on the agent's messages (§9.7).
+    const verdictDraws = new Map();
+    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true, target: M.route.seqTarget(), verdictPath: path, verdictDraws };
     let draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // Everything loaded drawn again as one timeline (days, groups): after
@@ -846,7 +1045,9 @@ window.Maity = window.Maity || {};
       if (events.some((e) => e.kind === RESYNC)) await resync();
       // A message of this chat removed (§8.5): its text goes at once.
       events.filter((e) => e.kind === "event_redacted" && e.payload)
-        .forEach((e) => markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason));
+        .forEach((e) => { markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason); verdictRedacted(loaded, verdictDraws, e.payload.seq); });
+      events.filter((e) => e.kind === "chat_verdict" && e.payload && e.payload.conversation && e.payload.conversation.id === agent.id)
+        .forEach((e) => applyVerdict(loaded, verdictDraws, e));
       events.filter((e) => e.kind === "attachment_deleted" && e.payload)
         .forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
       if (events.some((e) => e.actor && e.actor.member_id === agent.id)) await checkDelivery();
@@ -875,6 +1076,7 @@ window.Maity = window.Maity || {};
         resyncBefore = lowest !== null && page.items.length === HISTORY_PAGE && lowest > oldestShown ? lowest : null;
         page.items.filter((m) => shown.has(m.seq)).forEach((m) => {
           if (isRemoved(m)) markRemoved(m.seq, m.redaction && m.redaction.by, m.redaction && m.redaction.reason);
+          takeVerdicts(loaded.find((x) => x.seq === m.seq), m, verdictDraws);
           (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
         });
       } catch (err) {
@@ -887,9 +1089,12 @@ window.Maity = window.Maity || {};
       const md = li && li.querySelector(".md");
       if (!md) return;
       const kept = loaded.find((m) => m.seq === seq);
-      if (kept) Object.assign(kept, { body: null, redacted: true, redaction: { by, reason } });
+      if (kept) Object.assign(kept, { body: null, redacted: true, redaction: { by, reason }, verdicts: [] });
       md.parentNode.insertBefore(tombstone(ctx, { by, reason }), md);
       md.remove();
+      // A removed message reads no verdicts and takes none (§9.7).
+      const box = li.querySelector(".msg-verdicts");
+      if (box) clear(box);
       Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
     }
     async function redactDirect(msg) {
@@ -959,8 +1164,9 @@ window.Maity = window.Maity || {};
       target.addEventListener("change", () => { if (target.value) targets.set(key, target.value); else targets.delete(key); });
     }
 
-    // Files go with the message (§8.7): uploaded when chosen, named when sent.
+    // Files go with the message (§8.7): uploaded when chosen or pasted, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
+    if (files0) files0.pasteInto(text);
     // The meat-proxy mode for this chat (§9.3), from one's own entry in the list's participants.
     const ownEntry = listed && (listed.participants || []).find((p) => p.member_id === ctx.me.id);
     const meat = M.meatProxy ? M.meatProxy.toggle(ctx, ctx.base + "/conversations/" + encodeURIComponent(agent.id), ownEntry || null) : null;
@@ -1019,6 +1225,12 @@ window.Maity = window.Maity || {};
       follow.open(messages.querySelector(".new-line"));
       // On a phone the chat replaced the list: take the focus to its heading.
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+      if (drawOpts.target) {
+        reveal(messages, drawOpts.target, {
+          can: () => earlier !== null && (!loaded.length || Number(drawOpts.target) < loaded[0].seq),
+          read: older,
+        }, follow);
+      }
     }, 0);
   };
 })(window.Maity);

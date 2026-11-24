@@ -125,6 +125,78 @@ def test_the_body_is_checked(team: dict[str, Any], migrated: Engine) -> None:
         assert field in refused.json()["error"]["details"]["fields"]
 
 
+def test_a_lone_surrogate_in_the_text_is_not_text_and_an_emoji_is(team: dict[str, Any]) -> None:
+    def sent(text: bytes) -> Any:
+        target = b'{"type": "project", "id": "%s"}' % PROJECT.encode()
+        body = b'{"target": %s, "reason": "spam", "text": "%s"}' % (target, text)
+        return team["pat"].raw("POST", "/reports", body)
+
+    refused = sent(b"a \\ud800 b")
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"text": "not_text"}
+    assert sent(b"\\ud83d\\ude42").status_code == 201
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        b'{"type": "card", "id": "tsk-\\ud800", "project": "%s"}' % PROJECT.encode(),
+        b'{"type": "profile", "id": "hum-\\ud800"}',
+    ],
+    ids=["card", "profile"],
+)
+def test_a_lone_surrogate_in_a_target_id_is_not_found(team: dict[str, Any], target: bytes) -> None:
+    body = b'{"target": %s, "reason": "spam"}' % target
+    refused = team["pat"].raw("POST", "/reports", body)
+    assert refused.status_code == 404, refused.text
+    assert refused.json()["error"]["code"] == "not_found"
+
+
+def test_a_lone_surrogate_in_a_target_type_is_an_unknown_type(team: dict[str, Any]) -> None:
+    def sent(kind: bytes) -> Any:
+        body = b'{"target": {"type": "%s", "id": "x"}, "reason": "spam"}' % kind
+        return team["pat"].raw("POST", "/reports", body)
+
+    ordinary, refused = sent(b"team"), sent(b"card\\ud800")
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "invalid"
+    fields = refused.json()["error"]["details"]["fields"]
+    assert fields == ordinary.json()["error"]["details"]["fields"] == {"target.type": "unknown"}
+
+
+def test_a_target_id_over_255_characters_is_required_with_a_lone_surrogate_too(
+    team: dict[str, Any],
+) -> None:
+    long = b"tsk-" + b"a" * 300
+    for target_id in (long, long + b"\\ud800"):
+        target = b'{"type": "card", "id": "%s", "project": "%s"}' % (target_id, PROJECT.encode())
+        refused = team["pat"].raw("POST", "/reports", b'{"target": %s, "reason": "spam"}' % target)
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"target.id": "required"}
+
+
+def test_a_lone_surrogate_in_an_ignored_target_member_files_the_report(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    card = a_card(team, migrated).encode()
+    target = b'{"type": "card", "id": "%s", "project": "%s", "note": "\\ud800"}' % (
+        card,
+        PROJECT.encode(),
+    )
+    made = team["pat"].raw("POST", "/reports", b'{"target": %s, "reason": "spam"}' % target)
+    assert made.status_code == 201, made.text
+
+
+def test_a_lone_surrogate_in_a_target_project_is_not_found(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    card = a_card(team, migrated).encode()
+    target = b'{"type": "card", "id": "%s", "project": "maintainer/m\\ud800"}' % card
+    refused = team["pat"].raw("POST", "/reports", b'{"target": %s, "reason": "spam"}' % target)
+    assert refused.status_code == 404, refused.text
+    assert refused.json()["error"]["code"] == "not_found"
+
+
 def test_three_per_target_and_twenty_a_day(team: dict[str, Any], migrated: Engine) -> None:
     pat = team["pat"]
     card = {"type": "card", "id": a_card(team, migrated), "project": PROJECT}
@@ -216,6 +288,12 @@ def test_an_agent_reports_in_its_own_project_and_counts_for_its_owner(
     team: dict[str, Any], make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, team["owner"])
+    # Its owner lets pat's side reach it: a notice from another side is held otherwise (§9.6).
+    allowed = team["owner"].post(
+        "/me/chat-access/allow",
+        {"agents": [agent.id], "owner_id": team["pat"].id, "their_human": True},
+    )
+    assert allowed.status_code == 201, allowed.text
     seq = message(team["pat"], body="spam from pat")
     made = agent.post(
         "/reports",

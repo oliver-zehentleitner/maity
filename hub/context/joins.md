@@ -235,7 +235,7 @@ invited one accept. A `disabled` address is still that account's
 verified address: §18.7 only stops mail to it after hard failures, the
 address keeps its place in the one-account-per-address constraint, and
 setting and verifying it again enables it. The rest of the hub treats
-`disabled` as verified too (`notifications/preferences.py`). A `pending`
+`disabled` as verified too (`notifications/address.py`). A `pending`
 address was never confirmed by its mailbox, so accepting with it would
 let anyone bind an invitation to an address they only typed.
 Both sides normalize with `strip().lower()` (`registration.normalized`
@@ -374,8 +374,8 @@ turn: the issue commits first and the scan voids it, or waits and reads the acco
 - Scanning the invitations again after the deletion has removed the person: an issue that commits
   between the scan and the deletion's commit would still be missed; only a shared lock orders them.
 
-**Known limit:** the request reaches the person under the notification kind `inbox`, like every
-personal request. The kind `invitation` of §18.4 is the card's next PR.
+The request reaches the person under the notification kind `invitation` (§18.1, §18.4), with its
+own browser switch and mail mode (notifications.md 11617fa3).
 
 ## An invitation by handle tells an active person from every other name, as adding a contact does
 
@@ -407,3 +407,222 @@ added them as a contact so that they may.
 - `not_a_person` for every agent handle across all owners and for a deleted organisation: an
   oracle for names `GET /people` and the contact route answer `not_found` for.
 - Counting only issued invitations against the rate: refused probes would be free.
+
+## The join page stands in the frame in a browser on the public host only; its Markdown is untouched
+
+**Id:** 3b0bf382-8361-4166-9ab9-bed14d2a15e3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z, PR 4: the lead's answers 121818 (frame only the browser's HTML, Markdown byte-identical with a test) and 121899 (public host only, the join host keeps its page; no `/join/<token>` route on the join host); `routes/joins.py` `_framed`, `render.join_document`
+**Revisit when:** the join host serves the landing stylesheets, or the join page gets languages
+
+`GET /join/{token}` on the public host with `Accept: text/html` answers the page's text in the
+frame of §16.7.5, in the legal pages' column (`legal-page join-page`), in English, with
+`render.DOOR_CSP` and no referrer; so does the dead-link page there. The join host (`/{token}`)
+keeps `_html`, its own small page with the product line. The Markdown answer is built as before and
+never passes the frame; a test compares its bytes with `render_page` on both hosts.
+
+**Reason:** a person who opens the page in a browser on the public host should see the same frame
+as the other pages without a session. The agents read the Markdown, and a change to it is a change
+to their onboarding. The join host serves none of the frame's stylesheets and none of the
+header's targets (§1.1), so the frame there would show only its fallback style.
+
+**Rejected alternatives:**
+- The frame on both hosts: only the fallback style on the join host, and header links that lead
+  to its start-page redirect.
+- The door layout of the mail link pages: the join page is a long text with code blocks, too wide
+  for the door's form column.
+- Answering `/join/<token>` on the join host as an alias (4c): a contract change and a new
+  feature; it goes to the owner first if it is wanted.
+
+
+## A join's revoker is a column without a foreign key, and its revocation is a humans-only event like the invitation events
+
+**Id:** 0f0250d0-dc1e-46da-b2ad-f53b858ddaa5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 ("revoking a join link records `revoked_by` and writes an event, as `invitation_revoked` does"); review of #1756 by a reviewer, 2026-11-13 (the cascades revoked joins without it); `join_revocation.py`; `routes/joins.py` `revoke_join`; docs/api.md §3.1, §8.2
+**Revisit when:** the instance audit log exists, or agents get to revoke joins
+
+`DELETE …/joins/{id}` stores the caller's id in `join_link.revoked_by` and writes `join_revoked`
+`{id, agent_id, trust, role, revoked_by}` to the join's creator and the project's human
+`members:admin` holders (`invitations.audience`), in `HUMANS_ONLY_KINDS`. The column has no
+foreign key, as `credential.revoked_by`.
+
+Every revocation a person starts goes through `join_revocation.revoke`, which sets `revoked_by`
+and writes the event: the `DELETE`, the deletion of the agent profile a join names by its owner
+(`DELETE /agents/{id}`), and the end of the creator's membership (`agent_owners.human_left`,
+`revoked_by` whoever ended it). The hub's own revocations leave it null and write nothing:
+`placements.revoke_unused_joins` and the pickup's reissue (a runner's joins, no person behind
+them), an account's deletion with its profiles and memberships (the membership end it carries
+out has the `HUB` actor), the release of an organisation owner's seat the hub kept
+(`org_projects.release_owner`, also with the `HUB` actor), and the joins revoked before the
+column existed.
+
+**Reason:** a join mints an agent's credential, so who stopped one belongs on the record, readable
+by those who may revoke it. The invitation events already reach exactly them and wake no agent;
+the agent a join names is not yet a member and has no business with it. A null for the hub's own
+revocation says what happened without naming the deleted human as the actor.
+
+**Rejected alternatives:**
+- A foreign key to `human`: the downgrade on MariaDB would have to drop its index after the key
+  (error 1553), and the record is kept as written anyway, the account row stays (§2.9).
+- Writing the event to `trust:owner` or `all`: wider than who may act on a join, and an `all`
+  token would reach agents.
+- Setting `revoked_by` to the deleted account at its deletion: the human did not revoke anything;
+  the hub did.
+- Recording `revoked_by` on the cascades without the event: the creator and the admins would see a
+  join stop working with nobody told, unlike the `DELETE` that does the same thing directly.
+- Attributing the release of an organisation owner's kept seat to whoever changed the
+  organisation (review of #1756 by a reviewer): the seat is the hub's, the
+  release follows from a change to the organisation in four places (a role, a removal, its
+  deletion, a project's move) and the deletion has no remover to pass; naming one would change
+  `Change.by`, which pauses and placement closures read as well. The seat's `member_updated`
+  names the hub too.
+- One revoking `UPDATE … WHERE` per cascade as before: the ids it hit are not known, so no event
+  can name them; `revoke` selects the rows and revokes each with its own conditional update, so a
+  join revoked meanwhile is neither attributed nor announced twice.
+
+
+## The join page's restricted-texts sentence follows `resolve()`: an owner's isolation does not stop it
+
+**Id:** 0795a336-f4b2-42b7-a7a8-a74cc8e73741
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §3.2 item 2 and §6.1 "Who is in the set"; `restricted.py` `resolve` and `would_admit_agent`; card tsk-nkwg0gztpmqg, PR #2006, accepted as the decision in its review, 2026-11-19
+**Revisit when:** §6.1 "Who is in the set" gates on the owner's isolation, or `resolve()` changes its owner gate
+
+Under `nobody_except` the join page says "You will read and write this project's restricted
+texts." when the agent is listed, the join's trust is above `guest`, and the owner is an active
+member above `guest`. Whether the owner is isolated is not checked, because `resolve()` does not
+check it for a listed agent's owner either. The isolation the set gates on is the agent's own (§6.1),
+and a membership that does not exist yet cannot be isolated when the page is served. Under
+`all_except` the owner must be in the set, so `resolve()`'s own isolation check applies to the
+owner there.
+
+**Reason:** the page promises what the exchange will write. `restricted.would_admit_agent` asks the
+same predicates as `resolve()`, so the sentence and the `restricted_changed` the exchange writes
+(`cause: joined`) agree.
+
+**Rejected alternative:** also leaving the sentence out when the owner is isolated. The page would
+then disagree with the set the exchange actually writes: the new agent enters the set, and its page
+said nothing.
+
+## An outsider's join sits behind one switch and one predicate, and its card behind one refusal
+
+**Id:** 0bd49a9b-ee36-4f41-9c5b-d050bb136341
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (seq 201204: the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; seq 201227 and 201300: the refusal of an outsider's agent's own claim in one place; seq 202962: the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"
+**Revisit when:** the own-approvals gate of tsk-3ggnhdmgmkf3 is on main (`outsiders.JOINS_ON` goes on, by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
+**See:** https://github.com/oliver-zehentleitner/maity — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
+**See:** https://github.com/oliver-zehentleitner/maity — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
+
+`outsiders.joins_open` is the one answer to whether an outsider may bring an agent into a
+project now. It reads the switch `outsiders.JOINS_ON`, the admins' stored
+`policy.agent_owners: anyone` and whether the project is public for outsiders. The gate
+(`access.gate`, for `access.OUTSIDE_JOINS`), the joins routes (`routes/joins.joiner`) and the
+exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` ships `False`: the
+three joins routes then answer an outsider `not_found` before the body is read, as before, and no
+exchange makes a membership with trust `outside`. `outsiders.refuse_taking` is the one check of
+a card coming to be held by such an agent: `claim`, the `assign` that moves an expired claim
+and the takeover receiver call it, each where the contract's order puts it (§6.5). Cover, which
+is not a takeover and moves cards without a call, asks the same test
+(`outsiders.handed_only_by_a_human`) in its cover order and skips such an agent there, so no
+path hands it a card that the one test does not see (the reviews A2215 and A2216 of the
+contract pull request).
+
+**Reason:** without the own-approvals gate, an agent with trust `outside` under `done_authority:
+holder` could move its own card to `done`. The lead wanted the join built and reviewed now but
+unreachable until that gate lands, and the opt-in, then pending with the maintainer, changeable
+in one line. Either answer was then one edit, and turning the join on is one reviewable line.
+One refusal for the card keeps the interim of §6.5 in one place, to be replaced as a whole when
+the claim request is built.
+
+**Rejected alternatives:**
+- A hub setting or an environment variable for the switch: an operator could turn the join on
+  before the gate is in the code. A constant moves only with a reviewed change.
+- Keeping the join on an unmerged branch until the gate lands: the security review of the join
+  would wait for it, and the two would land together as one larger change.
+- Each route checking the opt-in and the public test itself: one route that drifted would open
+  the join where the others refuse it.
+- Refusing in each of `claim`, `assign` and the takeover with its own wording: the three would
+  drift apart, and the interim would have to be found in three places when it goes.
+
+`GET …/contribution` (§6.1) answers from the same predicate: `members_only` while
+`joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
+the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
+
+**Whose agent is outside (the lead's ruling, seq 202962, 2026-11-23):** every check reads the
+trust of the membership it is about: the active row, and for own approvals the active row, else
+the most recent one, for a reporter who has left. An agent with trust `outside` stays outside
+when its owner becomes a member, so `check_policy` and `refuse_lift` (through
+`agent_owners.bound_by_outside_roles`), `check_assignment` (its own trust-`outside` branch, first)
+and `own_approvals.outside_agent` (which merged.py's `outsiders_work` calls) count it whoever its
+owner is now; a rejoin as an outsider's agent makes a new row with trust `outside` again. That
+predicate has three terms on that current row, as the lead ruled (seq 202949): trust `outside`,
+the row's `joined_outside` mark (#2135: it joined while its owner held no membership), or its
+owner holding no membership now; plus a fourth, an owner whose account is suspended or deleted
+(seq 203828; hub/context/trust.md, 3ebd6d4a); one test per term, each failing without it. A removal and
+a new join as a member's agent is §2.3's one way out, and leaves a row with trust `member`.
+Rejected: any row of the agent in the project that ever held `outside` counting, because it
+would close the one exit §2.3 names (the lead took that reading back the same day).
+
+**What an outsider learns and what its agent reads (round 2 of the review of #2142):** an
+outsider's join names a card it reads as its `handover`, and a card it does not read answers
+exactly as one that does not exist; it hands over no message at all (`card_only`), so the
+answer tells it nothing about what it cannot read. The restricted set names the trusts it holds
+(`restricted.SEATED_TRUSTS`: `owner`, `admin`, `member`) instead of leaving out `guest`, so
+trust `outside`, or any trust added later, is out of it until the contract says otherwise. An
+instance join onto an outsider's agent re-checks its role against `outside_roles` now, as a
+first join would, at creation and at the exchange.
+
+What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
+project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
+the contribution fields of settings not built (`looking_for_coders`, `outside_claims`,
+`sponsor_url`, the reason `blocked`); and the claim request of §6.5. Each is a later card.
+
+## Accepting an invitation, by token or by a `go`, asks for good standing before the invitation is looked at
+
+**Id:** f4b665b4-06fd-4cd2-9ed0-477a6f9ef560
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-j9sq38x3zvym, 2026-11-23, and the maintainer's ruling relayed by the lead in round 2 of #2161 (both ways to accept); the review A2362 of #2161; docs/api.md §3.4 "Accepting", "By handle" and "Limits and secrecy", §2.6.5, §1.3; `invitations.py` `standing_refusal` and `settle`; `routes/invitations.py` `accept_invitation`; `auth/sessions.py` `good_standing`
+**Revisit when:** §3.4 names an order for these refusals
+
+Both ways to accept an invitation ask the same question, `invitations.standing_refusal`, which
+reads the calling session and refuses one that is not in good standing (`forbidden`,
+`details.reason: not_in_good_standing`) by `auth.sessions.good_standing`, the test every other
+call of §1.3's `not_in_good_standing` list asks:
+
+- `POST /invitations/{token}/accept` asks right after the pending account (`account_pending`)
+  and before the token is looked up.
+- A `go` on the request of an invitation by handle (`POST /requests/{id}/answer`) asks first in
+  `invitations.settle`, after the answer route's own checks on the request and the answerer
+  and before the invitation is read. The refusal is an `ApiError`, not a `proposals.Stale`: the
+  answer's transaction rolls back, so the request stays open and nothing is written. A `no`
+  asks nothing, as declining grants nothing. An answer without a session (none reaches an
+  invitation today) is refused too.
+
+**Reason:** §3.4 says accepting needs a session in good standing and that a `go` accepts with
+the same checks, but names no order. Checked first, the token's refusal is the same for every
+token, so such a session learns nothing about the token, as a pending account learns nothing
+(§2.7.5); and none of the later refusals that change the invitation or its request (an
+address-bound one used up by a member, one voided for its issuer, a stale `go` withdrawing the
+request) runs for it. §3.4 keeps its named refusals for "a valid token by a signed-in person";
+this one is about the session, not the token.
+
+**Rejected alternatives:**
+- Checking in `_accept`, beside the other named refusals: a session not in good standing would
+  then learn whether a token is open, and an accept from it could still use up or void the
+  invitation before it is refused.
+- Checking the `go` after the stale, closed, member and issuer checks of `settle`: a `go` from
+  such a session could then withdraw the request or use up or void the invitation.
+- Raising `proposals.Stale` for it: that withdraws the request, and the person could not say
+  `go` again once the session is confirmed.
+- A test of its own in each path: two tests of the same rule could drift apart.

@@ -7,27 +7,32 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 
 from maity_hub import (
     allowed_projects,
     avatars,
+    chat_access,
     clock,
     events,
     handles,
     idempotency,
+    join_revocation,
     limits,
     moderation,
     namespace,
+    placements,
     public_people,
     public_projects,
 )
 from maity_hub import tables as t
+from maity_hub.access import owns_agent
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, title
+from maity_hub.plain_text import plain_name
 from maity_hub.views import agent_view
 
 router = APIRouter()
@@ -35,13 +40,13 @@ router = APIRouter()
 
 class AgentCreate(Strict):
     handle: str = title(pattern=HANDLE_PATTERN)
-    display_name: str = title()
+    display_name: Name = title()
     git_identity: GitIdentity | None = None
 
 
 class AgentPatch(Strict):
     handle: str | None = None  # checked by handles.rename: format, taken, aliases (§6.24)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
     git_identity: GitIdentity | None = None
     # null: any project; a list of full names limits where the agent may go (§6.3)
     allowed_projects: Any = None
@@ -52,7 +57,12 @@ def load_agent(conn: Connection, agent_id: str) -> dict[str, Any]:
     return agent_view(conn, _row(conn, agent_id))
 
 
-idempotency.LOADERS["agent"] = idempotency.plain(load_agent)
+idempotency.register(
+    "agent",
+    idempotency.plain(load_agent),
+    # the owner's profile (§6.3)
+    lambda conn, agent_id, caller: owns_agent(conn, caller, agent_id),
+)
 
 
 def _row(conn: Connection, agent_id: str) -> Any:
@@ -85,23 +95,18 @@ def create_profile(
     """A new profile of `owner_id`; `agent_limit` at `limit` profiles that are not deleted
     (§16.5, None for no limit). The owner's row is locked for the count, so two creations
     at `limit − 1` give one profile and one `agent_limit`, whichever endpoint they came by.
+    `placement` is the exchange of a placement's pickup code, a link already issued: §16.5
+    gates only `POST /agents` and a join that names a new handle, so it skips the whole
+    gate, an override on the owner's account included, and is never counted.
     `invalid` when the handle is the handle or an alias of another of their profiles (a
     deleted profile's are free, §6.3), or an active placement will create one with it
-    (§6.24) unless `placement`: this is that placement's pickup."""
-    if limit is not None:
-        conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update())
-        count = int(
-            conn.execute(
-                select(func.count())
-                .select_from(t.agent_profile)
-                .where(
-                    t.agent_profile.c.owner_id == owner_id,
-                    t.agent_profile.c.deleted_at.is_(None),
-                )
-            ).scalar_one()
-        )
-        if count >= limit:
-            raise limits.agent_limit(limit, count)
+    (§6.24) unless `placement`: this is that placement's pickup. A display name with a
+    character the plain-text rule refuses is `control_character` here too, whichever body
+    carried it (§1.7.1)."""
+    if not plain_name(display_name):
+        raise invalid({"display_name": "control_character"})
+    if not placement:
+        _refuse_over_agents(conn, owner_id, limit)
     handles.ensure_free(conn, owner_id, handle, exclude="placement" if placement else None)
     agent_id = new_id("agent")
     conn.execute(
@@ -119,11 +124,31 @@ def create_profile(
     return agent_id
 
 
+def _refuse_over_agents(conn: Connection, owner_id: str, limit: int | None) -> None:
+    """`agent_limit` when `owner_id` holds `limit` profiles or more (§16.5)."""
+    # `limit` is the instance's value; an override on the owner's account comes first.
+    limit, source = limits.for_account(conn, "max_agents_per_human", owner_id, limit)
+    if limit is not None:
+        conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update())
+        count = int(
+            conn.execute(
+                select(func.count())
+                .select_from(t.agent_profile)
+                .where(
+                    t.agent_profile.c.owner_id == owner_id,
+                    t.agent_profile.c.deleted_at.is_(None),
+                )
+            ).scalar_one()
+        )
+        if count >= limit:
+            raise limits.agent_limit(limit, count, source)
+
+
 @router.get("/agents")
 def list_agents(
     request: Request, caller: HumanCaller, allowed_in: str | None = None
 ) -> JSONResponse:
-    if allowed_in is not None and namespace.FULL_NAME.match(allowed_in) is None:
+    if allowed_in is not None and namespace.FULL_NAME.fullmatch(allowed_in) is None:
         raise invalid({"allowed_in": "format"}, "allowed_in is a project's <owner>/<slug>")
     with engine_of(request).begin() as conn:
         rows = conn.execute(
@@ -172,7 +197,9 @@ def patch_agent(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
-        owned(conn, agent_id, caller.principal_id)
+        # The lock first: a reset holds this row until its hold is written, so a display
+        # name reads that hold. `handles.rename` locks the same row, then the handle lock.
+        owned(conn, agent_id, caller.principal_id, lock=True)
         if "handle" in given:
             if body.handle is None:  # as in `PATCH /me`: null renames nothing
                 raise invalid({"handle": "required"})
@@ -217,7 +244,8 @@ class ProfileInUse(ApiError):
 
 
 def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
-    """The profile's active memberships and the active placements that run them."""
+    """The profile's active memberships, and the active placements that run them or that
+    admit the profile where it is no member yet (§6.3, §15.6): either makes it in use."""
     members = conn.execute(
         namespace.join_owner(
             select(
@@ -227,20 +255,10 @@ def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
         .where(t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()
-    running = (
-        conn.execute(
-            select(t.placement.c.id)
-            .where(
-                t.placement.c.membership_id.in_([m.id for m in members]),
-                t.placement.c.active.is_(True),
-            )
-            .order_by(t.placement.c.id)
-        )
-        .scalars()
-        .all()
-        if members
-        else []
-    )
+    p = t.placement.c
+    admitting = and_(p.agent_id == agent_id, p.membership_id.is_(None))
+    runs = or_(p.membership_id.in_([m.id for m in members]), admitting) if members else admitting
+    running = conn.execute(select(p.id).where(runs, p.active.is_(True)).order_by(p.id)).scalars()
     return list(members), list(running)
 
 
@@ -272,7 +290,7 @@ def delete_agent(
         if row.deleted_at is not None:  # a second DELETE answers as it is
             return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
         members, running = _in_use(conn, agent_id)
-        if members and not cascade:
+        if (members or running) and not cascade:
             raise ProfileInUse(
                 [
                     {
@@ -292,6 +310,7 @@ def delete_agent(
             by=caller.principal_id,
             credential_id=caller.credential_id,
             via=caller.via,
+            revoked_by=caller.principal_id,
         )
         handles.retire(conn, agent_id)  # its aliases leave the owner's scope with its handle
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
@@ -307,27 +326,28 @@ def delete_profile(
     by: str,
     credential_id: str | None,
     via: str | None,
+    revoked_by: str | None = None,
 ) -> None:
     """Delete a profile as §6.3 does with `cascade`: live joins revoked first, every
     active membership removed (`apply_remove`), the avatar dropped, a tombstone kept.
     `actor_in(project_id)` is the event actor in each project, `by` the human on whose
     authority it happens. The caller has locked the profile row and checked the owner;
-    shared by `DELETE /agents/{id}` and the deletion of the owner's account (§2.9)."""
+    shared by `DELETE /agents/{id}` and the deletion of the owner's account (§2.9).
+    `revoked_by` is who the joins' revocation names (§3.1): the owner on `DELETE`, None
+    for the account's deletion, which is the hub's own."""
     from maity_hub.routes.members import Change, apply_remove
 
     now = clock.now()
     members, _ = _in_use(conn, agent_id)
     # No membership is ever created for a deleted profile: its joins go first.
-    conn.execute(
-        update(t.join_link)
-        .where(
-            t.join_link.c.agent_id == agent_id,
-            t.join_link.c.used_at.is_(None),
-            t.join_link.c.burned_at.is_(None),
-            t.join_link.c.revoked_at.is_(None),
-            t.join_link.c.expires_at > now,
-        )
-        .values(revoked_at=now)
+    join_revocation.revoke(
+        conn,
+        t.join_link.c.agent_id == agent_id,
+        t.join_link.c.used_at.is_(None),
+        t.join_link.c.burned_at.is_(None),
+        t.join_link.c.expires_at > now,
+        by=revoked_by,
+        actor_in=actor_in,
     )
     for member in members:
         events.lock_project(conn, member.project_id)
@@ -335,6 +355,8 @@ def delete_profile(
         change = Change(project, actor_in(project.id), by, by, credential_id, via)
         target = conn.execute(select(t.membership).where(t.membership.c.id == member.id)).one()
         apply_remove(conn, change, target)
+    # Placements that would admit it where it is no member yet: no pickup makes one (§6.3).
+    placements.profile_deleted(conn, agent_id, actor_in, by)
     avatars.remove_upload(conn, agent_id)  # the generated one applies (§6.10)
     conn.execute(
         update(t.agent_profile)
@@ -344,3 +366,10 @@ def delete_profile(
     from maity_hub import cross_chats
 
     cross_chats.profile_left(conn, agent_id, by, "membership_removed")
+    chat_access.forget_agent(conn, agent_id)  # out of every allow and deny entry (§9.6)
+    from maity_hub import chat_request
+
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar_one()
+    chat_request.sync(conn, owner)  # out of its owner's open requests, withdrawn when empty

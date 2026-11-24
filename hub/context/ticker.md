@@ -94,9 +94,11 @@ sections are unknown and every implementer applies. A project that had
 the ticker on before this part arrived got the upgrade's moment from the
 migration (0020); a project that is switched on afterwards gets its moment
 from the PATCH that switches it on, and there is no other way to be on.
-§17.4 also discards a merge the probe did not see while it happened,
-when `merged_at` is more than one hour before delivery (the next
-entry). This scan does not apply that bound.
+§17.4 also discards a merge the probe did not see while it happened
+when `merged_at` is more than one hour before delivery. Exactly one
+hour old is still delivered. This scan applies that bound, before the
+forge is read and again when the item would be written (the entry on
+the two checks).
 
 **Reason:** §17.4 announces nothing older than the switch, so the moment
 has to be stored; the dedupe key alone would announce the whole history
@@ -120,7 +122,8 @@ contract file: it would wake every implementer for a one-line change.
 
 **Id:** 9be48060-e975-4c7f-b8e5-529162d15ce6
 **Type:** constraint
-**Status:** active
+**Status:** superseded
+**Superseded by:** 111bf1fe-97b6-4a1b-9453-c89e1921108f
 **Evidence:** inferred
 **Source:** docs/api.md §17.4 (the one-hour catch-up); the parent decision, 2026-11-05; `announce_merges` as it stands
 **Revisit when:** the merge scan applies the one-hour bound
@@ -143,6 +146,44 @@ from being read as what this scan already does.
 **Rejected alternative:** treat the switch-on cursor as enough, and
 announce every missed merge whenever the forge can be read again: that
 is the scan as it stands, and it is what the one-hour bound rules out.
+
+## A missed merge is checked against the hour before the forge is read and again at delivery
+
+**Id:** 111bf1fe-97b6-4a1b-9453-c89e1921108f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §17.4 (at most one hour before delivery; discarding still advances the scan); card tsk-sw419rrp4vb8; the plan agreed for the hub part of that card
+**Revisit when:** the one-hour bound changes, or a discarded merge should still be read from the forge
+**See:** ticker.md#a-missed-merge-older-than-one-hour-is-not-an-item-the-scan-cursor-still-moves — 9be48060-e975-4c7f-b8e5-529162d15ce6 — as of 2026-11-11
+**See:** https://github.com/oliver-zehentleitner/maity — 4568f24f-ff82-42da-9891-99ba2ff7794e — as of 2026-11-11
+
+`announce_merges` discards a pull request whose `merged_at` is more than
+one hour before `clock.now()`. Exactly one hour old is still delivered.
+The check runs before the pull request's files are read, so a discarded
+merge costs no forge read, and again inside the write transaction, at
+the moment the item would be written: those reads can take long enough
+for a merge that was inside the hour to fall outside it, and that one
+is not written either. Either way the round still ends in `scan_done`,
+so `scanned_until` and the round's progress move and the gap is not
+read again. The first run after the ticker is switched on is unchanged:
+it still starts at that moment and announces nothing older. A round the
+webhook triggers is the same function, so the bound applies there too.
+
+**Reason:** the parent decision discards a catch-up older than one hour
+and still moves the cursor. Checking before the forge reads keeps a
+discarded merge from spending a read. Checking again at delivery covers
+the time those reads take. The bound is inclusive because the contract
+delivers a merge that is at most one hour old.
+
+**Rejected alternatives:**
+- Check only at delivery: a discarded merge would still be read from
+  the forge.
+- Check only before the forge reads: a merge inside the hour at the
+  read can be older than the hour by the time it is written, and would
+  be announced late.
+- Treat exactly one hour as too old: the contract delivers a merge
+  that is at most one hour old.
 
 ## The forge webhook is answered in the middleware, limited and checked before its body is read, and only ever triggers the probe
 

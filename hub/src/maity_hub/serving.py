@@ -5,7 +5,8 @@ With `MAITY_WORKERS` above 1, uvicorn's supervisor starts that many processes on
 each builds its app here from the environment: a spawned process inherits none of the parent's
 objects. They share what they must through PostgreSQL, as replicas do, so more than one worker is
 refused on any other database (`refusal`). The connection pool of the settings is the hub's
-whole budget; each process holds its share (`per_worker`).
+whole budget; each process holds its share (`per_worker`), and splits it between its sync and
+its async engine (`pool_shares`).
 """
 
 from __future__ import annotations
@@ -20,6 +21,10 @@ from maity_hub import attachment_store
 from maity_hub.config import Settings
 from maity_hub.db import SHARED_POOL_SIZE
 
+# The async engine's pooled connections when MAITY_DB_ASYNC_POOL_SIZE is unset, at most half the
+# process's share (`pool_shares`; the numbers in hub/context/persistence.md, 66f0bcf9).
+DEFAULT_ASYNC_POOL = 8
+
 
 def configure_logging() -> None:
     """What `maity-hub` sets up before any command; a spawned worker sets it up again, or the
@@ -29,8 +34,51 @@ def configure_logging() -> None:
     logging.getLogger("alembic").setLevel(logging.WARNING)
 
 
+def pool_shares(settings: Settings) -> tuple[int, int]:
+    """The pooled connections of one process's sync and async engine, from its settings (after
+    `per_worker`). The async engine holds `db_async_pool_size` when it is set, at least one and
+    never all; unset, `DEFAULT_ASYNC_POOL` (every call authenticates there), but at most half the
+    share, so a small pool keeps half of it for the route bodies, which still run on the sync
+    engine. The sync engine holds the rest of the pool share and the whole overflow, so the two
+    never ask for more than the pool share did alone (hub/context/replicas.md). That holds on a
+    server database; on SQLite the engines take no pool sizes and keep SQLAlchemy's default for a
+    file database each (5 + 10), with no server connection budget to keep."""
+    pool = settings.db_pool_size
+    wanted = settings.db_async_pool_size
+    if wanted is None:
+        wanted = min(DEFAULT_ASYNC_POOL, pool // 2)
+    async_share = min(max(wanted, 1), pool - 1)
+    return pool - async_share, async_share
+
+
+def pool_refusal(settings: Settings) -> str | None:
+    """Why a process's pool share cannot be split (`pool_shares`), or None: each engine needs
+    one pooled connection, since SQLAlchemy reads `pool_size=0` as no limit."""
+    if make_url(settings.database_url).get_backend_name() == "sqlite":
+        return None
+    share = per_worker(settings)
+    if share.db_pool_size >= MIN_POOL_PER_WORKER:
+        return None
+    if settings.workers == 1:
+        return (
+            f"MAITY_DB_POOL_SIZE must be at least {MIN_POOL_PER_WORKER} (it is "
+            f"{settings.db_pool_size}): the pool is split between the sync and the async engine, "
+            "and each needs one connection"
+        )
+    return (
+        f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
+        f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
+        "process holds its share of the pool, split between its sync and its async engine, "
+        "and a share of 0 would be no limit at all"
+    )
+
+
 def refusal(settings: Settings) -> str | None:
-    """Why the settings may not run several processes or pods, or None."""
+    """Why the settings may not run as they are, or None: the pool split (`pool_refusal`), and
+    what several processes or pods need."""
+    split = pool_refusal(settings)
+    if split is not None:
+        return split
     if settings.workers == 1 and settings.replicas == 1:
         return None
     backend = make_url(settings.database_url).get_backend_name()
@@ -50,21 +98,15 @@ def refusal(settings: Settings) -> str | None:
             f"MAITY_REPLICAS={settings.replicas} with a local attachment directory: each pod "
             "would see only its own files; store attachments on S3, or run one replica"
         )
-    if settings.workers > 1 and settings.db_pool_size // settings.workers < MIN_POOL_PER_WORKER:
-        return (
-            f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
-            f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
-            f"process holds its share of the pool, and a share of 0 would be no limit at all"
-        )
     return None
 
 
-# The minimum share of the pool per process: one connection. In the request handlers of the
-# measured test files no request held two of the serving pool at once (PostgreSQL,
-# tsk-zm2z04ep2cma), so one is enough to be correct; more is throughput, the operator's choice.
-# Background passes take from the same pool and compete for the share. It cannot be 0:
-# SQLAlchemy reads `pool_size=0` as no limit (hub/context/replicas.md, entry 4e24abd8).
-MIN_POOL_PER_WORKER = 1
+# The minimum share of the pool per process: one connection for each of its two engines. In the
+# request handlers of the measured test files no request held two of the serving pool at once
+# (PostgreSQL, tsk-zm2z04ep2cma), so one is enough to be correct; more is throughput, the
+# operator's choice. Background passes take from the sync pool and compete for its share. Neither
+# can be 0: SQLAlchemy reads `pool_size=0` as no limit (hub/context/replicas.md, entry 4e24abd8).
+MIN_POOL_PER_WORKER = 2
 
 
 def pods_at_most(settings: Settings) -> int:
@@ -98,6 +140,7 @@ def budget_warning(settings: Settings, max_connections: int, reserved: int) -> s
     if asked <= room:
         return None
     share = per_worker(settings)
+    sync_share, async_share = pool_shares(share)
     shared = (
         f" + {SHARED_POOL_SIZE} shared"
         if make_url(settings.database_url).get_backend_name() == "postgresql"
@@ -105,7 +148,8 @@ def budget_warning(settings: Settings, max_connections: int, reserved: int) -> s
     )
     return (
         f"the hub may ask {asked} database connections ({pods_at_most(settings)} pod(s) at once "
-        f"× ({settings.workers} process(es) × (pool {share.db_pool_size} + overflow "
+        f"× ({settings.workers} process(es) × (pool {share.db_pool_size} "
+        f"({sync_share} sync + {async_share} async) + overflow "
         f"{share.db_max_overflow}{shared} + 1 listener) + 1 health)), the database takes {room}; "
         "lower MAITY_DB_POOL_SIZE / MAITY_DB_MAX_OVERFLOW or the replicas"
     )
@@ -122,6 +166,11 @@ def per_worker(settings: Settings) -> Settings:
         settings,
         db_pool_size=settings.db_pool_size // n,
         db_max_overflow=settings.db_max_overflow // n,
+        db_async_pool_size=(
+            None
+            if settings.db_async_pool_size is None
+            else max(settings.db_async_pool_size // n, 1)
+        ),
     )
 
 

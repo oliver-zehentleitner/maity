@@ -17,9 +17,12 @@ from maity_hub import (
     export,
     handles,
     images,
+    inbox,
+    instances,
     maintenance,
     moderation,
     namespace,
+    stars,
     start_tabs,
 )
 from maity_hub import tables as t
@@ -31,7 +34,14 @@ from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticat
 from maity_hub.models import Strict
 from maity_hub.notifications import preferences
 from maity_hub.ratelimit import Limiter
-from maity_hub.views import agent_member, human_member, isolated, meat_proxy_member, owner_handles
+from maity_hub.views import (
+    agent_member,
+    human_member,
+    isolated,
+    meat_proxy_member,
+    owner_handles,
+    paused,
+)
 
 router = APIRouter()
 
@@ -43,31 +53,44 @@ EXPORTS = Limiter(1, 600, name="routes.me.EXPORTS")
 @router.get("/me")
 def me(request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        if caller.kind == "human":
-            assert caller.human_id is not None
-            body = human_body(conn, caller.human_id)
-        else:
-            agent = conn.execute(
-                select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
-            ).one()
-            body = {
-                "member": {
-                    **agent_member(
-                        agent,
-                        avatar_url=None,
-                        owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
-                    ),
-                    "aliases": handles.aliases(conn, [agent.id])[agent.id],
-                    **avatars.state(conn, agent.id),
-                    "avatar_motif": agent.avatar_motif,
-                },
-                "projects": _agent_project(conn, caller),
-                "membership": {"isolated": _isolated(conn, caller)},
-            }
-        # The hub's maintenance window, for every caller whatever its owner chose (§16.12).
-        body["maintenance"] = maintenance.view(maintenance.current(conn))
+        body = me_body(conn, caller)
     body["server_time"] = clock.rfc3339(clock.now())
     return JSONResponse(body)
+
+
+def me_body(conn: Connection, caller: Caller) -> dict[str, Any]:
+    """`GET /me`'s answer without `server_time` (§5.1), also the `me` part of
+    `GET /bootstrap` (§5.4), which adds it as this route does."""
+    if caller.kind == "human":
+        assert caller.human_id is not None
+        body = human_body(conn, caller.human_id)
+    else:
+        agent = conn.execute(
+            select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
+        ).one()
+        projects, members = _agent_projects(conn, caller)
+        body = {
+            "member": {
+                **agent_member(
+                    agent,
+                    avatar_url=None,
+                    owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
+                ),
+                # The calling instance's own id (§5.1, §6.17): one credential, one instance.
+                "instance": caller.instance,
+                "aliases": handles.aliases(conn, [agent.id])[agent.id],
+                **avatars.state(conn, agent.id),
+                "avatar_motif": agent.avatar_motif,
+            },
+            "projects": projects,
+            # An isolated agent's way to learn why its calls are refused (§6.2): the one
+            # membership's, for an instance in one project as before; with several, no
+            # membership is the instance's, and each entry of `projects` carries its own.
+            "membership": {"isolated": isolated(members[0])} if len(members) == 1 else None,
+        }
+    # The hub's maintenance window, for every caller whatever its owner chose (§16.12).
+    body["maintenance"] = maintenance.view(maintenance.current(conn))
+    return body
 
 
 def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
@@ -96,6 +119,8 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             # The account's time zone, the one value of §18.4; `null` until set (§5.1).
             "timezone": preferences.preferences(conn, human.id)["email"]["timezone"],
             "start_tabs": start_tabs.visible(human.start_tabs, (p["id"] for p in projects)),
+            # §5.1 "Stars": the public projects kept without a membership, hidden ones left out.
+            "starred": stars.visible(conn, human.starred, [p["id"] for p in projects]),
             "terms": (
                 {
                     "version": human.terms_version,
@@ -103,6 +128,10 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
                 }
                 if human.terms_version is not None
                 else None
+            ),
+            # §5.1, "Experiment notice": null until the person confirmed it.
+            "experiment_notice_understood_at": clock.rfc3339_or_none(
+                human.experiment_notice_understood_at
             ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),
@@ -188,6 +217,7 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
             t.project.c.slug,
             t.project.c.name,
             t.project.c.state,
+            t.project.c.public_page,
         )
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
@@ -205,46 +235,58 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
                 shown[row.project_id],
                 names[row.project_id],
             ),
-            "open_requests": open_requests(conn, row.id),
+            "open_requests": inbox.open_requests(conn, row.id),
+            # The project's own setting (§16.9), so the tabs mark a private project without a read
+            # per project (§5.1); whether a page is served is the public read's business.
+            "public_page": row.public_page,
         }
         for row in rows
     ]
 
 
-def _isolated(conn: Connection, caller: Caller) -> dict[str, Any] | None:
-    """An isolated agent's way to learn why its calls are refused (§6.2)."""
-    row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
-    return isolated(row)
-
-
-def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
-    row = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role, t.project)
-        .join(t.project, t.project.c.id == t.membership.c.project_id)
-        .where(t.membership.c.id == caller.membership_id)
-    ).one()
-    shown = images.views(conn, [row.id])[row.id]
-    return [_project_row(row, row.id, row.trust, row.role, shown, namespace.name_of(conn, row.id))]
-
-
-def open_requests(conn: Connection, membership_id: int) -> int:
-    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
-    through the listing's own rule so that the two cannot drift."""
-    from maity_hub import inbox
-    from maity_hub.access import Membership
-
-    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
-    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    mine = Membership(project, row, "agent" if row.agent_id else "human")
-    open_rows = conn.execute(
-        select(t.request).where(
-            t.request.c.project_id == row.project_id,
-            t.request.c.status == "open",
-            # A personal request is never addressed to a membership (§7): not read here.
-            t.request.c.personal.is_(False),
+def _agent_projects(conn: Connection, caller: Caller) -> tuple[list[dict[str, Any]], list[Any]]:
+    """An agent's `projects` (§5.1, §6.17): one entry per live attachment of its instance, in
+    the order the instance was attached, each with that membership's `trust`, `role`,
+    `isolated` (§6.2) and the instance's `paused` (the membership's or its own, §5.3) and
+    `dormant` there (§6.17); and the membership rows, in the same order."""
+    a, m = t.instance_attachment, t.membership
+    rows = conn.execute(
+        select(
+            m.c.id,
+            a.c.paused_reason,
+            a.c.paused_since,
+            a.c.paused_by,
+            a.c.dormant_since,
+            a.c.dormant_by,
         )
+        .select_from(a)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(a.c.credential_id == (caller.credential_id or ""), a.c.detached_at.is_(None))
+        .order_by(a.c.attached_at, a.c.id)
     ).all()
-    return sum(1 for r in open_rows if inbox.addressed_to(conn, r, mine))
+    ids = [row.id for row in rows]
+    members = {r.id: r for r in conn.execute(select(m).where(m.c.id.in_(ids)))}
+    project_ids = [members[i].project_id for i in ids]
+    projects = {
+        p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))
+    }
+    shown = images.views(conn, project_ids)
+    names = namespace.full_names(conn, project_ids)
+    entries = []
+    for row in rows:
+        member = members[row.id]
+        pid = member.project_id
+        entries.append(
+            {
+                **_project_row(
+                    projects[pid], pid, member.trust, member.role, shown[pid], names[pid]
+                ),
+                "isolated": isolated(member),
+                "paused": paused(member) or instances.paused_view(row),
+                "dormant": instances.dormant_view(row),
+            }
+        )
+    return entries, [members[i] for i in ids]
 
 
 @router.get("/me/export")

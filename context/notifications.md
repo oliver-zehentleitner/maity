@@ -439,7 +439,9 @@ place the hourly digest began with (messages.md,
 reach no open page, and pages opened before and after it would show different sets,
 so the request is refiled on every change instead: the answered request is always
 what its page showed, and an answer from a stale page is `request_not_open`. The cost
-is at most one withdrawal and one filing per human and hour. The records belong to
+is at most one withdrawal and one filing per human and hour; each filing is a new inbox
+item, mailed at once under the default `inbox` `immediate` and listed in the bell
+(`docs/api.md` §5.3, §18.1, §18.4). The records belong to
 the human who answered, since a new owner of the profile has seen nothing. A running
 episode also stays silenced by its own start, since a busy instance keeps calling and
 the owner already saw that episode. Eight review rounds each found a transition the
@@ -475,7 +477,7 @@ change; refiling on every change removes the gap between shown and recorded
 altogether. Refiling only when a listed last call changes, and rewriting a change of
 kind or `since` in place: fewer inbox items, but two kinds of change again, and a
 page opened before such a rewrite would differ from the one answered; the cost of
-refiling is at most one item per human and hour.
+refiling is at most one item per human and hour, with its mail and its bell entry.
 
 
 ## A sign-in is no notification: the Notifications page shows the current sessions instead
@@ -492,8 +494,8 @@ refiling is at most one item per human and hour.
 
 A new sign-in (`session_created`) is no bell item: it is not listed, not counted, not pinned,
 gives no browser notification and has nothing to mark read. The account record stays, for
-Profile → Sessions, `sessions_rev` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
-sessions" box: the active sessions, compact, linking to Profile → Sessions, with no buttons and
+Security → Sessions, `sessions_rev` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
+sessions" box: the active sessions, compact, linking to Security → Sessions, with no buttons and
 no unread state. Kept as they were: the sign-in mail by the `security` mode, the banner of a mail
 sign-in in every other session with "End this session" and "This was me", "This was me" in the
 session list, and the rule that only an older session in good standing confirms. The long-poll
@@ -507,7 +509,7 @@ use, the maintainer found three alerts he could not clear three days later, beca
 session he had then was newer, and over time that is the normal case. A notification nobody may
 clear does not say "react to this" (1ebd4cc1-6f1b-445f-8c88-98103a4bc3ef); the list of
 sessions shows what the alert showed, though only to a human who opens the page; for a human
-without mail that is all that is left (§2.6.5), and Profile → Sessions is where the human acts on it. What
+without mail that is all that is left (§2.6.5), and Security → Sessions is where the human acts on it. What
 guards against a session obtained through the mailbox never was the unread count: it is the
 banner, which that session cannot remove, the confirm only from an older session, and the
 rules on ending sessions (7865693c, d01ba62b). They all stay. The banner used to be rebuilt when

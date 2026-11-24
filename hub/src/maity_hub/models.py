@@ -2,18 +2,42 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 from pydantic_core import PydanticCustomError
+
+from maity_hub.plain_text import plain_name
 
 HANDLE_PATTERN = r"^[a-z0-9][a-z0-9-]{1,30}$"
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
+
+Effort = Annotated[str, StringConstraints(pattern=r"^[a-z]{1,16}$")]
+"""A reasoning effort's shape (§15.3, §15.5), as a runner offers it and a placement names it;
+16 is `placement.effort`'s length. Which efforts a harness takes is the runner's list."""
 
 
 def title(**kwargs: Any) -> Any:
     """A title field: 1 to 200 characters (§1.7)."""
     return Field(min_length=1, max_length=200, **kwargs)
+
+
+def _plain(value: str) -> str:
+    if not plain_name(value):
+        raise PydanticCustomError("control_character", "a name is one line of plain text")
+    return value
+
+
+Name = Annotated[str, AfterValidator(_plain)]
+"""A name field (a project's `name`, an agent's `display_name`): `control_character`
+for a character `plain_name` refuses (§1.7.1)."""
 
 
 def markdown(**kwargs: Any) -> Any:

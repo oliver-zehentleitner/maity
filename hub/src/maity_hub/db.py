@@ -1,14 +1,21 @@
-"""Database access: one engine, SQLAlchemy Core tables, Alembic migrations."""
+"""Database access: the engines, SQLAlchemy Core tables, Alembic migrations.
+
+A serving hub has a sync engine (the routes in the thread pool, the background workers,
+migrations) and, beside it on the same database, an async engine (`make_async_engine`) whose
+connections drive the same sync `Connection` code through `AsyncConnection.run_sync`
+(tsk-v874y63b4z8p, hub/context/persistence.md)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import random
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
@@ -30,7 +37,9 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy.util import await_only
 
 from maity_hub.errors import connection_cause
 
@@ -79,17 +88,30 @@ LISTENER_KEEPALIVES = {
 HEALTH_STATEMENT_SECONDS = 5
 
 
-def connect_once_more_on_dns[T](connect: Callable[..., T], args: Any, kwargs: Any) -> T:
+def connect_once_more_on_dns[T](
+    connect: Callable[..., T],
+    args: Any,
+    kwargs: Any,
+    pause: Callable[[float], None] | None = None,
+) -> T:
     """`connect(*args, **kwargs)`; if the host name does not resolve, once more after a short
-    pause. Any other failure, and a second failure, go on to the caller as they are."""
+    pause. Any other failure, and a second failure, go on to the caller as they are. `pause`
+    sleeps, `time.sleep` when not given: the async engine's connect runs on the event loop, so
+    it awaits there (`_pause_on_the_loop`) instead of stopping the loop."""
     try:
         return connect(*args, **kwargs)
     except Exception as error:
         if connection_cause(error) != "dns":
             raise
     log.warning("database host did not resolve; trying once more")
-    time.sleep(RESOLVE_PAUSE_SECONDS * (1 + random.random()))
+    (pause or time.sleep)(RESOLVE_PAUSE_SECONDS * (1 + random.random()))
     return connect(*args, **kwargs)
+
+
+def _pause_on_the_loop(seconds: float) -> None:
+    """`asyncio.sleep` from inside the async engine's connect: that code runs in SQLAlchemy's
+    greenlet on the event loop, where `time.sleep` would stop every other request."""
+    await_only(asyncio.sleep(seconds))
 
 
 def postgres_options(*, statement: float = 0, idle_in_transaction: float = 0) -> str:
@@ -117,15 +139,17 @@ def with_url_options(url: str | URL, options: str) -> str:
     return " ".join([*parts, options])
 
 
-def make_engine(
+def _engine_options(
     url: str,
-    pool_size: int = 16,
-    max_overflow: int = 16,
-    pool_recycle: int = POOL_RECYCLE_SECONDS,
-    statement_timeout: float = 0,
-    idle_in_transaction_timeout: float = 0,
-    application_name: str = APPLICATION_COMMAND,
-) -> Engine:
+    pool_size: int,
+    max_overflow: int,
+    pool_recycle: int,
+    statement_timeout: float,
+    idle_in_transaction_timeout: float,
+    application_name: str,
+) -> dict[str, Any]:
+    """The options of a serving engine, sync or async: one place, so the two engines of a hub
+    cannot drift apart in isolation, timeouts, pool or names."""
     # hide_parameters: a failing statement's error never carries the values.
     kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
     if url.startswith("sqlite"):
@@ -152,16 +176,101 @@ def make_engine(
         # and a handshake (hub/context/persistence.md).
         kwargs["pool_use_lifo"] = True
         kwargs["pool_recycle"] = pool_recycle if pool_recycle > 0 else -1
-    engine = create_engine(url, **kwargs)
-    if not url.startswith("sqlite"):
+    return kwargs
+
+
+def _hook(engine: Engine, pause: Callable[[float], None] | None) -> None:
+    """The connect and transaction events of a serving engine (for the async engine, its
+    `sync_engine`): the DNS retry off SQLite, the pragmas and `BEGIN IMMEDIATE` on it."""
+    if engine.dialect.name != "sqlite":
 
         @event.listens_for(engine, "do_connect")
         def _connect(dialect: Any, _record: Any, cargs: Any, cparams: Any) -> Any:
-            return connect_once_more_on_dns(dialect.loaded_dbapi.connect, cargs, cparams)
+            return connect_once_more_on_dns(dialect.loaded_dbapi.connect, cargs, cparams, pause)
 
-    if engine.dialect.name == "sqlite":
-        event.listen(engine, "connect", _sqlite_pragmas)
-        event.listen(engine, "begin", _sqlite_begin_immediate)
+        return
+    event.listen(engine, "connect", _sqlite_pragmas)
+    event.listen(engine, "begin", _sqlite_begin_immediate)
+
+
+def make_engine(
+    url: str,
+    pool_size: int = 16,
+    max_overflow: int = 16,
+    pool_recycle: int = POOL_RECYCLE_SECONDS,
+    statement_timeout: float = 0,
+    idle_in_transaction_timeout: float = 0,
+    application_name: str = APPLICATION_COMMAND,
+) -> Engine:
+    engine = create_engine(
+        url,
+        **_engine_options(
+            url,
+            pool_size,
+            max_overflow,
+            pool_recycle,
+            statement_timeout,
+            idle_in_transaction_timeout,
+            application_name,
+        ),
+    )
+    _hook(engine, None)
+    return engine
+
+
+# The async driver of each sync one the hub ships with (`config._DRIVERS`): psycopg 3 drives
+# both; aiomysql is built on PyMySQL, so the error numbers the hub reads (1213, 1305) stay the
+# same; aiosqlite runs the standard library's sqlite3 in a thread of its own.
+ASYNC_DRIVERS = {
+    "postgresql+psycopg": "postgresql+psycopg_async",
+    "mysql+pymysql": "mysql+aiomysql",
+    "mariadb+pymysql": "mariadb+aiomysql",
+    "sqlite": "sqlite+aiosqlite",
+    "sqlite+pysqlite": "sqlite+aiosqlite",
+}
+
+
+def async_url(url: str | URL) -> URL:
+    """The URL of the async engine on the same database: the same everything, the async
+    driver. A driver the hub does not ship with is refused rather than guessed."""
+    parsed = make_url(url)
+    driver = ASYNC_DRIVERS.get(parsed.drivername)
+    if driver is None:
+        raise ValueError(f"no async driver for {parsed.drivername}")
+    return parsed.set(drivername=driver)
+
+
+def make_async_engine(
+    url: str | URL,
+    pool_size: int = 2,
+    pool_recycle: int = POOL_RECYCLE_SECONDS,
+    statement_timeout: float = 0,
+    idle_in_transaction_timeout: float = 0,
+    application_name: str = APPLICATION_SERVING,
+) -> AsyncEngine:
+    """The async engine beside a serving engine (`make_engine`): the same options, the async
+    driver (`async_url`). On a server database it has a pool of its own carved out of the hub's
+    (`serving.pool_shares`) and no overflow, which stays with the sync engine; on SQLite, as the
+    sync engine there, it takes no pool sizes and keeps SQLAlchemy's default for a file database
+    (5 + 10). Its events hang on `sync_engine`, where
+    SQLAlchemy runs them; `write_guard` and `timing` install there too."""
+    target = async_url(url)
+    rendered = target.render_as_string(hide_password=False)
+    kwargs = _engine_options(
+        rendered,
+        pool_size,
+        0,
+        pool_recycle,
+        statement_timeout,
+        idle_in_transaction_timeout,
+        application_name,
+    )
+    if target.get_backend_name() == "sqlite":
+        # aiosqlite runs each connection in a thread of its own: SQLite's same-thread check
+        # does not apply, and the driver does not take the option.
+        kwargs.pop("connect_args", None)
+    engine = create_async_engine(target, **kwargs)
+    _hook(engine.sync_engine, _pause_on_the_loop)
     return engine
 
 
@@ -272,16 +381,44 @@ def xact_lock(conn: Connection, name: str) -> None:
         conn.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(name, 0))))
 
 
+# The execution option that marks a transaction as one that only reads (`read_transaction`).
+READ_ONLY = "maity_read_only"
+# `info` of the pooled connection: whether SQLite's `query_only` is on for it now.
+_QUERY_ONLY = "maity_query_only"
+
+
+@contextmanager
+def read_transaction(engine: Engine) -> Iterator[Connection]:
+    """`engine.begin()` for a transaction that only reads (hub/context/persistence.md).
+
+    On SQLite it starts with a plain `BEGIN` under `PRAGMA query_only`: it reads a WAL
+    snapshot without the write lock, so it neither waits for a writer nor holds one up, and
+    a write inside it fails at once instead of trying to upgrade the transaction. On the
+    server engines it is `engine.begin()`: they never lock for a read."""
+    with engine.connect() as conn:
+        conn.execution_options(**{READ_ONLY: True})
+        with conn.begin():
+            yield conn
+
+
 def _sqlite_begin_immediate(conn: Any) -> None:
-    """Every SQLite transaction takes the write lock at its start.
+    """Every SQLite transaction takes the write lock at its start, except one
+    `read_transaction` opened.
 
     pysqlite would send BEGIN only at the first write, so the reads before it
     ran unlocked, and `events.lock_project` serialised nothing; a transaction
     that read first could not even upgrade to a write once another had
     committed. SQLite has one writer anyway; this makes the hub wait for it
-    where the other engines wait for the project row.
+    where the other engines wait for the project row. A transaction that only
+    reads needs none of that: it runs `query_only`, so it cannot write at all.
     """
-    conn.exec_driver_sql("BEGIN IMMEDIATE")
+    reading = bool(conn.get_execution_options().get(READ_ONLY))
+    if bool(conn.info.get(_QUERY_ONLY)) != reading:
+        # Connection-wide: set for each transaction that needs the other value, since the
+        # pooled connection serves reads and writes alike.
+        conn.exec_driver_sql(f"PRAGMA query_only={'ON' if reading else 'OFF'}")
+        conn.info[_QUERY_ONLY] = reading
+    conn.exec_driver_sql("BEGIN" if reading else "BEGIN IMMEDIATE")
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
@@ -324,11 +461,15 @@ def migrate(
     lock_timeout: float = MIGRATE_LOCK_TIMEOUT,
     attempts: int = MIGRATE_ATTEMPTS,
     pause: float = MIGRATE_PAUSE,
+    secret_key: bytes | None = None,
 ) -> None:
+    """`secret_key` is the instance key a migration may need; no upgrade seals anything
+    (`20261114020000_sealed_verifiers` only widens), its downgrade opens sealed values."""
     from maity_hub.errors import driver_code, driver_fields
 
     config = alembic_config(engine)
     config.attributes["lock_timeout"] = lock_timeout
+    config.attributes["secret_key"] = secret_key
     for attempt in range(attempts):
         try:
             command.upgrade(config, revision)
@@ -343,8 +484,10 @@ def migrate(
             time.sleep(pause * 2**attempt)
 
 
-def downgrade(engine: Engine, revision: str = "base") -> None:
-    command.downgrade(alembic_config(engine), revision)
+def downgrade(engine: Engine, revision: str = "base", secret_key: bytes | None = None) -> None:
+    config = alembic_config(engine)
+    config.attributes["secret_key"] = secret_key
+    command.downgrade(config, revision)
 
 
 def head_revision(engine: Engine) -> str | None:
@@ -409,22 +552,39 @@ def is_transient(error: BaseException) -> bool:
     )
 
 
+def _again_after(error: DBAPIError, attempt: int) -> float:
+    """The pause before the next attempt of `retrying` or `retrying_async`, logged; or the error
+    raised again when it is not transient or the attempts are used up."""
+    from maity_hub.errors import driver_fields
+
+    if not is_transient(error) or attempt == RETRIES - 1:
+        raise error
+    log.warning(
+        "database retry: attempt=%d of=%d %s",
+        attempt + 1,
+        RETRIES,
+        driver_fields(error),
+    )
+    return float(0.01 * (2**attempt) * (1 + random.random()))
+
+
 def retrying[T](work: Callable[[], T]) -> T:
     """Run `work` (one whole transaction) again after a transient conflict. Each repeat logs a
     line with the driver's codes and nothing of the statement, so a load test can count them."""
-    from maity_hub.errors import driver_fields
-
     for attempt in range(RETRIES):
         try:
             return work()
         except DBAPIError as error:
-            if not is_transient(error) or attempt == RETRIES - 1:
-                raise
-            log.warning(
-                "database retry: attempt=%d of=%d %s",
-                attempt + 1,
-                RETRIES,
-                driver_fields(error),
-            )
-            time.sleep(0.01 * (2**attempt) * (1 + random.random()))
+            time.sleep(_again_after(error, attempt))
+    raise RuntimeError("unreachable")
+
+
+async def retrying_async[T](work: Callable[[], Awaitable[T]]) -> T:
+    """`retrying` for a transaction on the async engine: the same attempts, codes and log
+    lines; the pause awaits, so the event loop serves other requests meanwhile."""
+    for attempt in range(RETRIES):
+        try:
+            return await work()
+        except DBAPIError as error:
+            await asyncio.sleep(_again_after(error, attempt))
     raise RuntimeError("unreachable")

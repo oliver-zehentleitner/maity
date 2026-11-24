@@ -162,7 +162,9 @@ group chat: leaving ends the row, being added again starts a new one, and
 an at-most-one marker (`here`) keeps a single open stay per member. Each
 row stores `window_after`, the project's highest event seq at that join;
 the participant's window, `unread` and the default page of `…/messages`
-count only messages after it.
+count only messages after it. An agent's row also stores
+`unread_nudged_through`, the open read cycle of the unread nudge
+(hub/context/events.md 56357b6b).
 
 **Reason:** the window is "the chat from the latest join on" (§9.2), and
 messages are events ordered by seq, so a seq bound needs no clock and
@@ -433,7 +435,8 @@ bounded:
 
 **Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1820f379-0c1f-47c1-9352-672d62cdaf62
 **Evidence:** confirmed
 **Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
 **See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
@@ -457,6 +460,48 @@ exactly that and keep the activity order inside each.
 - The dashboard sorting the pins into the list the hub returns: the list
   is paged (§1.4), so a pinned chat on a later page would stay hidden;
   the hub orders, and the cursor follows the bands.
+
+## Pinned chats stay above every unpinned one
+
+**Id:** 1820f379-0c1f-47c1-9352-672d62cdaf62
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0km9ys53dynd, request req-cch3p5aszxpy (the maintainer chose option o1 on 2026-11-05; the four bands match it exactly); contract `docs/api.md` §9.3
+**Revisit when:** a human participant's unread count or the header's chat badge no longer shows a new message that participant has not read
+**See:** chat.md#a-human-pins-chats-a-pin-keeps-a-chat-on-top-only-while-nothing-newer-waits-elsewhere — d39e2f76-8cfd-4d23-9408-5c03bf39c014 — as of 2026-11-10
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-11-10
+
+A human pins conversations. Both lists are ordered in four bands, and
+each band keeps its activity order: pinned with unread messages, quietly
+pinned (pinned, no unread), unpinned with unread, then the rest. The
+cursor follows that order. The pin stays the human's own, stored by the
+hub so it holds across devices, emits no event, and is limited to 20.
+
+**Reason:** a pinned chat stays on top of the list, including when it is
+quiet. A new message a human participant has not read does not have to
+rise above those quiet pins to be noticed: it stays visible through that
+conversation's unread count and the header's chat badge. An observer's
+unread is null and adds nothing to the badge. The pin is stored by the
+hub, not only in the browser: it holds across the human's devices, and
+the list is paged, so the hub has to know the order. The dashboard does
+not sort on its own. The list is paged (§1.4), so a pinned chat on a
+later page would stay hidden; the hub orders the list, and the cursor
+follows that order.
+
+**Rejected alternatives:**
+- The previous order (pinned with unread, then unpinned with unread,
+  then quiet pins, then the rest): a quiet pin sat below every chat with
+  something new, so a pin did not keep its chat on top. For a human
+  participant, the unread count and the header's chat badge already show
+  a new message, so the list no longer lifts that chat above a quiet pin.
+  An observer's unread is null and adds nothing to either.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows that order.
 
 ## A human switches the meat-proxy mode per chat; the profile gives the default
 
@@ -623,3 +668,251 @@ leaves its old owner's cross-project group chats with
   the profile still has a membership that can take the mention, and
   dropping it would hide a mention the author made. The mention is
   written there as a mention of the profile.
+
+## An agent's owner decides who chats with it, once per side
+
+**Id:** 57bb158d-e8a4-4ef5-961a-53d1e4e648b1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his answer of 2026-11-12 to `req-55469pjca13n` in chat, "mal alles o2" (seq 116129), which picks the request's option o2 ("o2: auch hinter die Firewall", the request's wording): free work messages from another side pass the same gate, and his answer of 2026-11-12 to `req-a89crp06kjf3`, the option the request labelled "gesperrt bis Owner zustimmt": a waiting jour fixe moderator does not write the statement, all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Revisit when:** the maintainer revisits the gate on free work messages (his answer "mal alles o2" reads as "for now" in the reading of the lead, seq 116131; `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+
+Only an agent's owner and the owner's other agents chat with it without
+asking. A human and the agents they own are one side, and the owner says
+yes once per owner boundary, not per chat. An agent in a group chat
+with someone its owner has not admitted waits: it
+reads nothing and is not woken until its owner answers a personal
+`consent` request (allow for an hour, a day or a week; allow always;
+no; block). One request per owner pair lists every agent of that owner
+waiting for the same side, each with a checkbox, all ticked by default;
+an unticked or later agent asks again, and each allow is kept per
+agent. Agents of another owner already in group chats when this
+ships wait for that answer too, and so does an agent in a jour fixe
+round's thread; a bridge serving another owner's agent counts as its
+own owner's side. An allow pairs two sets the owner
+picks: one, selected or all of the owner's agents, with all, selected
+or none of the other owner's agents; the other owner's human is a field
+of its own, never set automatically, which the owner ticks separately. A project entry means "trust everyone in
+this project". A deny names a side, a person, an agent or a
+project, and wins. Only the human owner answers and keeps the lists: a
+meat proxy is that human, never an agent. Each allow carries two texts
+by the owner, what the agent may talk about and work on with that side
+and what it must not reveal; the agent receives them as binding rules
+in its resume packet, in the chat's view and with each chat message.
+The hub cannot enforce what an agent says, so it delivers the rules
+every time, and the owner reads those chats along. The contract names
+the one point where a chat text can cross the owner boundary (the
+creation of every chat message, on every path, before it is stored), so
+that the
+firewall's later second method, a content check (card tsk-5xqzz2scmebr),
+has a defined hook. Free work messages (`notice`, `blocker`,
+`handover`, `interface_change`, `go_request`) from another side pass
+the same gate: an agent not admitted for the author is held for that
+message, reads nothing of it and is not woken, and its owner gets the
+same request. Only assigning a card, a review request, a mention on a
+card and a lead's message stay open.
+
+Design of the contract, not the maintainer's words: a deny wins over
+every allow; how waiting works (no audience, no wake, no post, the
+window starting at admission); the owner's own add as a lasting yes;
+the request's default reach and its re-filing; for free work
+messages, which types count as free, who counts as a lead (a manager
+whose line the agent is in, or the project's owners and admins), the
+`held:` token and `held` field, that a held message is out of the
+see-all of owners and admins as a chat is, that a later yes does not
+release a message already held, and that the request ticks a held
+agent and covers the authors of its held messages, staying open while
+a message is held; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
+only, and their delivery and change event; the hidden lists and
+`chat_denied` without a name.
+
+**Reason:** before this, any human member could put any member's agent
+into a group chat, and its owner could only read along afterwards
+(3e1031d9). A stranger could instruct the agent and spend its owner's
+model runs before the owner saw it, through a chat. The maintainer
+wants this closed before inviting new users and large communities.
+Consent per owner boundary keeps the requests to one per pair of
+owners.
+The answer is a personal request, so it reaches the owner through the
+inbox whether or not they are a member of the project.
+
+**Rejected alternatives:**
+- A `proxy` agent relaying the owner's answer: the maintainer named the
+  meat proxy as the human owner, and personal requests take the owner's
+  answer only.
+- A yes per chat or per person (the first draft of the plan note):
+  the maintainer chose one yes per owner boundary.
+- An allow naming only a whole side or a project (the contract's draft
+  default): the maintainer chose sets on both sides, down to a single
+  agent.
+- Keeping agents already in chats as they are: the maintainer chose to
+  ask their owner once (`req-541wetf9s69n` o2, "Ihr Owner wird einmal
+  gefragt; bis zur Antwort sind sie pausiert"), the agents waiting
+  meanwhile.
+- One request per agent and side (the first contract draft): the
+  maintainer chose one per owner pair with a checkbox per agent
+  (`req-7dbe1thw7mf1`).
+- The other owner's human always included in an allow (the first
+  contract draft), or included by default in an inbox answer (the
+  second): the maintainer chose to have the owner tick the human
+  separately (`req-ssgyxfs5wdjw`).
+- Free durations for "allow for a time": the maintainer chose fixed
+  steps, which also fit the inbox's buttons.
+- Leaving free work messages from another side open (the first
+  contract draft, `req-55469pjca13n` o1), or having the owner check
+  each one by hand (his own third option): the maintainer answered
+  "mal alles o2" (seq 116129), the option whose text in the request
+  reads "Von einem anderen Owner gehen diese freien Nachrichten durch
+  dieselbe Firewall wie Chat"; the lead read his answer as
+  "for now" (seq 116131).
+- Letting a waiting jour fixe moderator write the statement while it
+  waits (the build until the answer, `req-a89crp06kjf3` o1): the
+  maintainer chose the option the request labelled "gesperrt bis Owner
+  zustimmt"; without a statement the round goes to its report.
+- Counting contacts (§6.29) as allowed: a contact is a human's consent
+  to be contacted, not a decision about their agent.
+
+## The agent firewall's gate is switched on by a setting, off by default
+
+**Id:** a8103af1-c0f1-459a-97c1-5c8e7e92957c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-15, `req-5tngzfgp3nne` o2: the gate stays built and is switched on separately, by a setting whose default is off; card tsk-8bwmmkmzc3km; the shape (the name `MAITY_AGENT_FIREWALL`, marks kept and read as no one waiting, the start's pass) is the implementer's reading
+**Revisit when:** the gate is to be on for every instance by default, or an instance admin is to switch it in the dashboard instead of the environment
+
+The gate of §9.6 (waiting, held messages, the request to the owner)
+runs only while `MAITY_AGENT_FIREWALL` is `on`. Off, chats and work
+messages reach as before the gate, no request is filed, a deny entry
+stops no one, and the allow and deny entries stay editable, so owners
+can prepare them. Revision `20261113010000_firewall_waiting` is schema
+only: its data step, which marked every agent of another owner in an
+open group chat as waiting whatever the entries, was taken out in place,
+keeping the revision id, the `down_revision`, the columns and the index.
+An instance that ran it with the data step (0.1.0a6) keeps those marks,
+and while the switch is off every read sees them as no one waiting. A
+start with the switch on settles every open group chat once
+(`chat_gate.switch_on`), each under its project's lock: what is stored
+before, marked or not, is judged again with the entries as they are, so
+an allow entry admits, and each owner whose agent waits gets one
+request. Fresh installs and instances with marks end in the same state,
+and a restart or several pods starting at once write nothing more.
+
+**Reason:** as 0.1.0a6 shipped it, the upgrade switched the gate on by
+itself: the data step made every cross-owner agent wait, even where an
+allow entry covered the pair, and filed no request, so agents would go
+quiet until an owner found the Chat access page. A PyPI installation of
+0.1.0a6 may have run it; the instance this project runs on had not. The maintainer wants the gate built
+but turned on when the instance is ready for it, after owners had the
+chance to set their entries.
+
+**Rejected alternatives:**
+- Switching the gate on by upgrade (the 0.1.0a6 data step): it marked
+  agents an allow entry covers and asked no owner; the maintainer chose
+  a separate switch, off by default (`req-5tngzfgp3nne` o2).
+- A new revision that undoes the marks: the schema stays the same and
+  the marks are inert while the switch is off, so the revision would
+  have nothing to do; the switch-on pass judges them again anyway. The
+  review lead's objection to the in-place edit was settled for it
+  (seq 136352).
+- Clearing the stored marks at a start with the switch off: the
+  coordinator chose to keep them as they are; reading them as no one
+  waiting has the same effect and loses nothing.
+- Leaving the start's marking to the minute sweep
+  (`chat_request.sweep_owners`): it only syncs owners who already have
+  an open request, so a fresh switch-on would file none.
+
+## An owner's firewall history is their own, kept as long as the account, from the deploy on
+
+**Id:** 756da7d0-c973-4ea0-82a0-5fe28a238f59
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish of 2026-11-15 as the lead wrote it on card tsk-v34cv43wvec3 (a history of his own firewall decisions on Chat access, to audit them; no instance-wide admin view; retention to be decided in the contract; no backfill unless the existing rows carry it); the retention and the cap proposed by the contract author and accepted by the lead on 2026-11-18 (seq 163771); a deleted account and agent profile shown as `handle: null`, `deleted: true` without exception, and an account's deletion as one write, decided by the lead on 2026-11-18 (seq 163796, relayed by the review lead in 163800) after reviews A1340 and A1341 of #1970; the start is the contract author's reading
+**Revisit when:** the maintainer or an operator asks for a time limit on the history, for an admin's view of it, or the 10,000-item cap is reached in practice
+**See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-18
+
+`GET /me/chat-access/history` (§9.6, "History") lists every change of
+a human's allow and deny entries and every answer they gave to the
+request to chat with their agents, read by that human alone. It is kept
+as long as the account exists, capped at the newest 10,000 items per
+human, deleted with the account and in the export. It starts with the
+hub version that brings it. An item keeps the ids it names when that
+agent or person is deleted, and shows a deleted account or agent
+profile as `handle: null`, `deleted: true`, applied when it is read.
+
+**Reason:** the history exists to audit decisions, and the decisions
+that matter most last longest: an "allow always" given months ago is
+exactly the one an owner later wants to trace, so a time limit would
+drop what the audit is for. The cap only bounds a scripted write loop;
+the lists themselves hold at most 1,000 entries and most changes come
+from a human's click. No backfill, as the card allows only where rows
+carry the data: an entry stores `by` and `since` but not whether a
+click, an answer or an add made it, nor its state at creation, and an
+answered request keeps its button but not the ticked agents, the ticked
+person or the entries it wrote, so a backfilled item would look complete
+and be wrong. An item records the owner's own past decision, so taking
+a deleted agent or person out of it would falsify it; the ids are
+enough for that. The handle is a different matter: §2.9 shows a deleted
+person with `handle: null` everywhere, and a deleted agent's handle may
+be given to a new agent of its owner, so the history follows §2.9
+rather than keep a handle no other route shows.
+
+**Rejected alternatives:**
+- A fixed number of days (for instance 90, as the account records,
+  `records.KEPT`): it would forget the long-lived allows first, the
+  ones worth auditing.
+- No cap: one client looping create and delete would grow one human's
+  rows without bound.
+- An instance-wide view for admins: the maintainer did not want one.
+- Keeping a deleted person's or agent's handle in the items as it was,
+  since the handle stays reserved (the first draft of the contract):
+  reserving a handle stops its reuse but does not justify showing it,
+  §2.9 hides a deleted person's handle on every other route, and the
+  reviews of #1970 (A1340, A1341) found that the history would be the
+  one place to show it; the lead decided for §2.9 without exception.
+- Backfilling items from the entries' `since` and the requests'
+  `answer`: half of each item would be guessed (above).
+- Deriving the history from events: a write to the lists emits only
+  `chat_rules_changed`, an entry id for the agent alone, and an answer
+  to this request, which has no project, writes no `request_answered`
+  event; neither carries the ticks or the entries.
+
+## 👍 and 👎 on a chat message are a decision, kept as events
+
+**Id:** 331822d8-0cfc-471a-a4a7-8dbae7d0aa41
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the maintainer's "paßt" of 2026-10-29 to the coordinator's proposal, as written in the body of card tsk-55x4f398dttv (a decision on the content, not a "like"; one per person and message, changeable, every change an event, the latest counts, the history visible; the author woken as by a reply; only humans; an optional sentence on 👎; no replacement for a go); his answers of 2026-11-13: a verdict may be taken back (`req-q94m13rzjfhx`), and cross-project group chats come later (`req-sw7xqv32egrt`); and an owner reading along gives one too, "wenn er einen grund hat einzugreifen, warum sollten wir uns dagegen stellen?" (his answer in chat to `req-58v00knm1qv6`); the endpoint, the audience and the redaction in `docs/api.md` §9.7 are the contract author's reading, open until the maintainer approves the contract
+**Revisit when:** agents are to give a verdict, or a verdict is to count as a go on a request (§7)
+
+A human gives a chat message 👍 ("yes, I agree") or 👎 ("no, not like
+this"), one per human and message, changed by giving another and taken
+back by `DELETE`. It is a decision on the content, which an agent reads
+as an approval or a rejection in conversation, never as a go on a
+request. Every change writes a `chat_verdict` event, and the history is
+these events. The message itself carries only each human's current
+verdict. The event wakes the message's author, as a reply would, and
+nobody else. Only humans give one, an agent answers in text so its
+reasons stay visible; every human who may read the chat gives one, an
+owner reading along included, since whoever has reason to step in
+should be able to, without becoming a participant.
+
+**Reason:** the maintainer wants a quick answer in conversation that an
+agent can act on, with the history visible. One event per change gives
+that history through the event log every client already reads, and the
+current verdict on the message spares a client from replaying it.
+
+**Alternatives:**
+- A free set of emoji reactions, rejected: a reaction says nothing an
+  agent can act on, and the maintainer named exactly two meanings.
+- The verdict as a field of the message, overwritten, rejected: the
+  history would be lost, and a change would wake nobody.
+- Only participants, the owner reading along excluded, rejected by the
+  maintainer: giving a verdict already shows the reader is not merely
+  reading along.
+- A `chat` message with 👍 as its text, rejected: one message per vote
+  floods a chat, and neither the author nor a client can tell a
+  decision from a remark.

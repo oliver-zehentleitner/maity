@@ -37,7 +37,7 @@ window.Maity = window.Maity || {};
     if (loading) return loading;
     loading = new Promise((resolve, reject) => {
       if (!styled) {
-        for (const name of STYLES) append(document.head, h("link", { rel: "stylesheet", href: DIR + name }));
+        for (const name of STYLES) append(document.head, h("link", { rel: "stylesheet", href: DIR + name + M.assetQuery(DIR + name) }));
         styled = true;
       }
       // In order, one after the other: each file uses the ones before it.
@@ -55,7 +55,7 @@ window.Maity = window.Maity || {};
           }
           return;
         }
-        const s = h("script", { src: DIR + SCRIPTS[i],
+        const s = h("script", { src: DIR + SCRIPTS[i] + M.assetQuery(DIR + SCRIPTS[i]),
           onload: () => { done.add(SCRIPTS[i]); next(i + 1); },
           onerror: () => { s.remove(); loading = null; reject(new Error(M.t("why.lib.not_loaded"))); } });
         append(document.head, s);
@@ -460,6 +460,13 @@ window.Maity = window.Maity || {};
       const made = await makeHost(ctx);
       if (made.code === "ktw_not_configured") {
         append(clear(root), M.why.emptyState(ctx));
+        return;
+      }
+      // An outsider's `not_found` (§2.3): the Why reads are closed to them for this project, for
+      // whichever of the hub's reasons (its repository not public, no repository, or not in the
+      // operator's own namespaces); said as such, with nothing to set up and nothing to read again.
+      if (made.code === "not_found" && M.trust.outsider(ctx)) {
+        append(clear(root), M.why.outsideState());
         return;
       }
       if (made.error) {

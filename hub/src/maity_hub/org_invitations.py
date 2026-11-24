@@ -30,6 +30,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_line
 from maity_hub.views import ts
 
 log = logging.getLogger(__name__)
@@ -75,16 +76,21 @@ def open_items(conn: Connection, org: Any) -> list[dict[str, Any]]:
 
 def _invitee(conn: Connection, handle: str) -> str | None:
     """The approved, active human whose current handle or alias this is (§6.24), or None:
-    nobody, an organisation, a pending or a deleted account."""
+    nobody, an organisation, a pending, a suspended or a deleted account."""
     human_id = handles.human_id_of(conn, handle)
     if human_id is None:
         return None
     found = conn.execute(
-        select(t.human.c.id, t.human.c.account_status, t.human.c.deleted_at).where(
-            t.human.c.id == human_id
-        )
+        select(
+            t.human.c.id, t.human.c.account_status, t.human.c.deleted_at, t.human.c.suspended_at
+        ).where(t.human.c.id == human_id)
     ).first()
-    if found is None or found.deleted_at is not None or found.account_status != "active":
+    if (
+        found is None
+        or found.deleted_at is not None
+        or found.suspended_at is not None
+        or found.account_status != "active"
+    ):
         return None
     return str(found.id)
 
@@ -99,6 +105,21 @@ def _allowed(actor_role: str, role: str) -> None:
     if actor_role == "admin" and role in ("member", "admin"):
         return
     raise orgs.org_role()
+
+
+def inviter_holds(conn: Connection, invitation: Any) -> bool:
+    """Whether the sender may still invite to the invitation's role (`_allowed`) with an
+    account not suspended (§6.26, §16.8): checked when the invited human says `go`."""
+    from maity_hub import moderation
+
+    role = orgs.role_of(conn, invitation.org_id, invitation.invited_by)
+    if role is None or moderation.suspended(conn, invitation.invited_by):
+        return False
+    try:
+        _allowed(role, invitation.role)
+    except ApiError:
+        return False
+    return True
 
 
 def create(
@@ -124,6 +145,14 @@ def create(
     now = clock.now()
     invitation_id = new_id("org_invitation")
     invitee = _invitee(conn, handle)
+    if invitee is not None:
+        from maity_hub import invitations
+
+        # One count with the projects' invitations by handle (§3.4). Over it the inviter
+        # gets the same answer and no request is filed: a 429 here would tell an active
+        # person from every other name, which the answer never does (§6.26).
+        if invitations.invitee_wait(conn, invitee) is not None:
+            invitee = None
     request_id = None
     if invitee is not None:
         request_id = _file_request(conn, org, invitation_id, actor_id, invitee, role)
@@ -170,6 +199,8 @@ def _file_request(
 
     request_id = new_id("request")
     inviter = conn.execute(select(t.human.c.handle).where(t.human.c.id == actor_id)).scalar_one()
+    # On one line, whatever was stored before the rule (§1.7.1).
+    title = f"Join {plain_line(org.display_name)} ({org.handle}) as {role}"[: t.TITLE]
     conn.execute(
         insert(t.request).values(
             {
@@ -177,7 +208,7 @@ def _file_request(
                 "project_id": None,
                 "org_id": org.id,
                 "class": "consent",
-                "title": f"Join {org.display_name} ({org.handle}) as {role}"[: t.TITLE],
+                "title": title,
                 "summary": (
                     f"{inviter} invites you to join the organisation {org.handle} as {role}. "
                     "You become a member only if you say go."
@@ -327,7 +358,15 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         raise _stale(s.request.id, "the organisation was deleted")
     if expired:  # the withdrawal that follows a stale `go` closes the row as `expired`
         raise _stale(s.request.id, "the invitation has expired")
+    if not inviter_holds(conn, invitation):
+        raise _stale(s.request.id, "the invitation's sender may no longer invite to this role")
     human_id = proposal["to"]
+    from maity_hub import moderation
+
+    if moderation.suspended(conn, human_id):
+        # Refused, and the request stays open: the answer's transaction rolls back, and a
+        # lifted suspension lets the same `go` through while the invitation lasts (§6.26).
+        raise moderation.account_suspended()
     closed = conn.execute(
         update(t.org_invitation)
         .where(t.org_invitation.c.id == invitation.id, t.org_invitation.c.live.is_(True))

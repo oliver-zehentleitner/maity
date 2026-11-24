@@ -82,26 +82,55 @@ def forwarded(request: Any) -> bool:
 def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to=me`: whoever holds the request now (§7). Before a forward that is `to`;
     after one, the holding member, or every admin while the admins hold it as a pool;
-    an earlier holder no longer."""
-    if request.personal:
+    an earlier holder no longer. Never an agent it is held for (§9.6).
+
+    `request_sql.addressed` restates this in plain columns for a request without `held` and
+    `cover` (with `_in_own_right` below): a change here is a change there."""
+    if request.personal or held_back(request, mine.principal_id):
         return False
     if request.holder_member is not None:
         return bool(request.holder_member == mine.id)
     if request.holder_pool:
         return "trust:admin" in tokens_of(mine.trust, mine.role, mine.role_base)
-    return originally_addressed(conn, request, mine)
+    return originally_addressed(conn, request, mine) or relays_for_owner(request, mine)
+
+
+def open_requests(conn: Connection, membership_id: int) -> int:
+    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
+    through the listing's own rule so that the two cannot drift."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    mine = Membership(project, row, "agent" if row.agent_id else "human")
+    open_rows = conn.execute(
+        select(t.request).where(
+            t.request.c.project_id == row.project_id,
+            t.request.c.status == "open",
+            # A personal request is never addressed to a membership (§7): not read here.
+            t.request.c.personal.is_(False),
+        )
+    ).all()
+    return sum(1 for r in open_rows if addressed_to(conn, r, mine))
+
+
+def held_back(request: Any, principal: str | None) -> bool:
+    """`to` reached this agent of another owner without its owner's yes when the request was
+    filed (§7, §9.6): the request is not its to read, find or answer, whatever that owner
+    says later."""
+    return principal is not None and principal in (getattr(request, "held", None) or ())
 
 
 def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to` as filed: the caller's member id, `owner` for the owner, a role the caller
     holds, or the substitute covering the addressee (§6.12). A personal request is
-    addressed to a human, never through a project (§7)."""
-    if request.personal:
+    addressed to a human, never through a project (§7); one held for the caller is not
+    addressed to it (§9.6)."""
+    if request.personal or held_back(request, mine.principal_id):
         return False
     return covers(request, mine) or _in_own_right(request, mine)
 
 
 def _in_own_right(request: Any, mine: Membership) -> bool:
+    # Restated in SQL by `request_sql.in_own_right`.
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
@@ -109,9 +138,26 @@ def _in_own_right(request: Any, mine: Membership) -> bool:
     return request.to_role in tokens_of(mine.trust, mine.role, mine.role_base)
 
 
+def relays_for_owner(request: Any, mine: Membership) -> bool:
+    """`to=me` for a proxy: an open request still addressed to `owner` or `trust:owner`,
+    which it relays (§2.3, §7), but never a project's consent to a bridge across owners,
+    which a human answers directly. A listing rule only: the proxy does not hold the
+    request, so it neither answers nor forwards it in its own right.
+
+    `request_sql.relays_for_owner` restates this: a change here is a change there."""
+    from maity_hub.bridges import PROJECT_KIND  # bridges reads this module's neighbours
+
+    if mine.role_base != "proxy" or mine.trust != "admin" or request.status != "open":
+        return False
+    to_owner = request.to_kind == "owner" or (
+        request.to_kind == "role" and request.to_role == "trust:owner"
+    )
+    return to_owner and (request.proposal or {}).get("kind") != PROJECT_KIND
+
+
 def is_asker(request: Any, mine: Membership) -> bool:
     """A notice the hub files on an agent's behalf has no asker who reads it: not the
-    agent it names, nor any of its instances (§7)."""
+    agent it names, nor any of its instances (§7). Restated in SQL by `request_sql.asked`."""
     if getattr(request, "filed_by", None) == "hub":
         return False
     return mine.id in (request.asked_by, request.on_behalf_of)
@@ -139,29 +185,49 @@ def owners_alone(conn: Connection, requests: Iterable[Any]) -> set[str]:
     return found
 
 
-def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
-    if (
-        is_asker(request, mine)
-        or addressed_to(conn, request, mine)
-        or originally_addressed(conn, request, mine)  # it follows what it passed on
-    ):
+def may_read(
+    conn: Connection, request: Any, mine: Membership, alone: set[str] | None = None
+) -> bool:
+    """`alone`: `owners_alone` read already for a batch holding `request`, else read here."""
+    # Restated in SQL for a request `request_sql.plain` lets through by `request_sql.may_read`.
+    if is_asker(request, mine):
         return True
-    return mine.may("requests:answer") and not owners_alone(conn, [request])
+    if held_back(request, mine.principal_id):  # no scope opens it to the agent held (§9.6)
+        return False
+    # `originally_addressed`: it follows what it passed on.
+    if addressed_to(conn, request, mine) or originally_addressed(conn, request, mine):
+        return True
+    if not mine.may("requests:answer"):
+        return False
+    return request.id not in (owners_alone(conn, [request]) if alone is None else alone)
 
 
 def needs_a_human(request: Any, mine: Membership) -> str | None:
     """Why no agent answers this, or None: a request marked `humans_only` (§7), a
-    placement's consent request under `spawn_consent_by: human` (§6.1, §15.6) — starting
-    an agent spends compute and model budget, so no agent gives the go — and a proposal
-    whose kind only a human answers (`proposals.Answerer`)."""
+    placement's consent request — only the runner's owner gives that go, never an agent,
+    whatever `spawn_consent_by` says (§15.6) — and a proposal whose kind only a human
+    answers (`proposals.Answerer`)."""
     if mine.kind != "agent":
         return None
     if request.humans_only:
         return "only a human answers or holds this request"
-    if request.placement_id is not None and mine.project.spawn_consent_by == "human":
-        return "under spawn_consent_by: human only a human answers this"
+    if request.placement_id is not None:
+        return "only the runner's owner answers a placement's consent request"
     rule = proposals.answerer(request)
     return rule.refusal if rule is not None and rule.humans_only else None
+
+
+def not_the_runner_owner(conn: Connection, request: Any, mine: Membership) -> bool:
+    """A placement's consent request answered by anyone but its runner's owner (§15.6).
+    One filed before the rule is a project request; it is held to the same rule."""
+    if request.placement_id is None:
+        return False
+    owner = conn.execute(
+        select(t.runner.c.owner_id)
+        .select_from(t.placement.join(t.runner, t.runner.c.id == t.placement.c.runner_id))
+        .where(t.placement.c.id == request.placement_id)
+    ).scalar()
+    return owner != mine.principal_id
 
 
 def needs_the_owner(request: Any, mine: Membership) -> bool:
@@ -184,9 +250,13 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     `POST /requests/{id}/answer` (§7)."""
     if request.personal or not proposals.known(request):
         return False
+    if held_back(request, mine.principal_id):  # held for it when filed (§9.6)
+        return False
     if mine.trust == "guest":  # answers none, whatever reaches it (§2.3 "Guest")
         return False
     if needs_the_owner(request, mine) or needs_a_human(request, mine) is not None:
+        return False
+    if not_the_runner_owner(conn, request, mine):
         return False
     if proposals.refusal(conn, request, mine) is not None:  # the kind's own rule
         return False
@@ -203,9 +273,14 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
 
 def covers(request: Any, mine: Membership) -> bool:
     """The caller is the substitute answering for the addressee (§6.12): it reads the
-    request, finds it under `to=me` and answers as the addressee would."""
+    request, finds it under `to=me` and answers as the addressee would. Never for a request
+    held for that addressee (§9.6): what the gate keeps from it the substitute does not get."""
     cover: dict[str, Any] | None = getattr(request, "cover", None)
-    return cover is not None and cover.get("by") == mine.principal_id
+    return (
+        cover is not None
+        and cover.get("by") == mine.principal_id
+        and not held_back(request, cover.get("for"))
+    )
 
 
 def answered_in_own_right(conn: Connection, request: Any, mine: Membership) -> bool:

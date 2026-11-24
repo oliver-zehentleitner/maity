@@ -34,13 +34,19 @@ KEPT = {"Afaraf", "العربية", "Deutsch", "English", "français", "日本�
 
 # Names in the fixtures that are also a word of the catalog: as data they would be taken
 # out with the catalog's texts, and then count as a text of the interface.
-FIXTURE_NAMES = {"Reviewer", "OZ Team"}
+# "Tool" is the outsider's public project `stranger/tool` (js/api.js OUTSIDE_TOOL) and the
+# catalog's placements.new.tool.
+FIXTURE_NAMES = {"Reviewer", "OZ Team", "Tool"}
 
 COLLECT = """() => {
   const SKIP = new Set(["SCRIPT", "STYLE", "CODE", "PRE", "KBD", "SAMP", "TIME", "TEMPLATE", "NOSCRIPT"]);
   // translate="no" marks what stays as it is on purpose (an example, a tag, a technical
-  // reason); aria-hidden is decoration such as a monogram, no text anyone reads.
-  const kept = (e) => e.closest('[translate="no"], [aria-hidden="true"]');
+  // reason); aria-hidden is decoration such as a monogram, no text anyone reads. A part with a
+  // lang of its own other than the page's is in another language on purpose: the hub's frame
+  // around a page without a session, written by the instance in its language (§16.7.5).
+  const page = document.documentElement.lang;
+  const other = (e) => { const l = e.closest("[lang]"); return l && l !== document.documentElement && l.getAttribute("lang") !== page ? l : null; };
+  const kept = (e) => e.closest('[translate="no"], [aria-hidden="true"]') || other(e);
   const found = [];
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {

@@ -273,6 +273,11 @@ no dotfile, so `index.html`, `fixtures/`, `tools/`, `context/` and the README ar
 `/join/…`, `/r/…`, `/mail/…`, `/badge/…`, the crawler files and the legal pages) and answers `index.html` to `GET`
 and `HEAD` with `Cache-Control: no-cache` and `X-Robots-Tag: noindex`; any other method is `not_found`. A hub path
 that names nothing is therefore the router's `not_found`, a wrong method on one its `405`, and never the shell.
+An address that can never be a page (`paths.never_a_page`, §16.11 since 2026-11-16) gets the same document with
+`404`, decided from the path's words before the public page is looked up, so no lookup can colour the status;
+`paths.NO_ROUTE_FIRST` and `paths.DEEPEST` are its words and its depth. It reads the path as sent
+(`raw_path`), split at its slashes before a segment is decoded, as the dashboard does; a segment with any `%` that
+starts no escape, or bytes that are no UTF-8, stays whole as sent, as `decodeURIComponent` leaves it.
 `paths.RESERVED_FIRST` is the list of first segments no handle may take, `paths.PROJECT_VIEWS` the views no slug
 may be; `tests/test_paths.py` compares both with §16.11, and registration, `maity-hub owner create` and the
 `next` of a login (`paths.safe_next`) use them. `maity-hub migrate` stops, before it changes anything, when a
@@ -295,7 +300,7 @@ create humans with handles such as `admin` without going through the CLI.
   envelope and from the tests that read routes, and would have to know the hub's paths as well.
 - Refusing to start on a held reserved word, as the contract words it: right for a release, but it would stop
   every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
-  owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
+  owner decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
   contract text with it.
 
 ## The request log carries `ms=` and the route's pattern, and one `stats` line a minute says how loaded the hub is
@@ -318,7 +323,11 @@ declared pattern is read, not the parameters, and a test holds it for an answere
 405. Once a minute
 `maity_hub.stats` logs `stats window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n>
 pool_checked_out=<n> pool_max=<n>` (`request_stats.Reporter`); the pool part is `pool=none` where
-the pool cannot be counted.
+the pool cannot be counted. The async engine's pool follows as `async_pool_open`,
+`async_pool_checked_out` and `async_pool_max`; on a file SQLite both pools are counted too
+(SQLAlchemy's default for a file, 5 + 10 each), and only a pool without the counts (an in-memory
+database's) logs `pool=none` or `async_pool=none`. Every call
+authenticates on it (`deps._resolve`, tsk-v874y63b4z8p PR 2), so a burst waits there first.
 
 **Reason:** in the incident the pool was used up at a low request rate and nothing in the log said
 how long requests took or how many connections were out; the diagnosis worked from Traefik's log.
@@ -485,8 +494,9 @@ still be on its way.
 **Source:** the maintainer's decision on card tsk-h238y7cpk23m and the plan the team lead approved, 2026-11-04 (confirmed: no general budget in the hub, an emergency limit per route by configuration, no runtime setting yet, the public read limits kept and configurable); reading the routes from the router rather than from the OpenAPI document came from the review of the first version, where a path converter matched one segment only (reproduced by a test, red before and green after); that `iter_route_contexts` yields the routes in the router's order is inferred from FastAPI matching with the same walk, and is checked by one test on a literal route ahead of a template
 **Revisit when:** a runtime setting for route limits is built, `fastapi.routing.iter_route_contexts` changes or goes away, or the deployments' ingress limit has been tested and the public read limits are reassessed
 
-The hub has no general request budget; the ingress holds the limit per
-client. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API for an
+The hub has no general request budget per client address; the ingress
+holds that limit. Since 2026-11-14 a signed-in credential's reads have a
+limit of their own (aaf47866 below). `MAITY_ROUTE_LIMITS` sets limits on single routes of the API for an
 emergency, `<METHOD> <route> = <count>/<seconds>` with the route as
 `/api/v1/openapi.json` lists it. When the app is built, each entry is checked
 against that document, and one the document does not list with that method
@@ -593,7 +603,8 @@ same size for more CPU.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the owner's decision req-s246xb6k1mpp (option A, 2026-11-08), the card tsk-pcw785rhymyg and its plan note nte-smnd4dr3gw6y; docs/api.md §1, §16.11
-**Revisit when:** a file under `/assets/` carries anything per user or private, or the shell names its files by digest (versioned names, below)
+**Revisit when:** a file under `/assets/` carries anything per user or private
+**See:** serving.md#the-shell-names-the-dashboards-files-by-version-and-that-request-is-cached-for-good — d427747e-e7f1-4226-a624-5284f8d61103 — as of 2026-11-09
 
 `shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
 `js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
@@ -612,11 +623,15 @@ it with `Content-Encoding: gzip`. Such a file's answers, the `304`s
 included, say `Vary: Accept-Encoding`. The compression middleware leaves
 these four directories alone (`compression.OWN_ENCODING`); it still
 compresses the rest of `/assets/` and `/api/v1/` as 5cfd29b6 says. A
-`Range` on the stored form is honoured with an `If-Range` that names its
-ETag; a date or another tag gets the whole file. The gzip form is sent
-whole. The file is read, hashed and gzipped in `lookup_path`, which
-Starlette runs in a worker thread, and kept per process for its path
-while its change time and size stay the same.
+`Range` of one span on the stored form is honoured with an `If-Range` that
+names its ETag; a date or another tag, several spans or a span past the
+end get the whole file. The gzip form is sent whole. The file is read,
+hashed and gzipped in `lookup_path`, which Starlette runs in a worker
+thread, and kept per process for its path while its change time and size
+stay the same. Every answer, a range included, is sent from those bytes,
+never from the file read again, so its ETag always names the body that
+goes with it (review of #1543: a file replaced between the check and the
+send went out under the old tag).
 
 **Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
 dashboard's static files may be cached"): the files hold no private
@@ -626,8 +641,10 @@ so a deploy reaches it at once: a changed file has a new ETag and comes
 back `200`; two pods with different files during a rolling update give
 different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
 alone never answers `304`, and a date `If-Range` never selects a range:
-Starlette compares it with `Last-Modified`, which these answers do not
-have, so `AssetFileResponse` compares the ETag alone.
+these answers have no `Last-Modified`, so `shell.byte_range` compares an
+`If-Range` with the ETag alone. A matching `If-None-Match` is a `304`
+before any `Range` is read (RFC 9110 §13.2.2), and only a GET gets a
+range; a HEAD says the whole length and sends no body.
 
 **Rejected alternatives:**
 - Starlette's own ETag (an MD5 of the change time and size): an image
@@ -644,7 +661,9 @@ have, so `AssetFileResponse` compares the ETag alone.
   the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite
   in `shell_document`, the `url()` references inside the CSS would stay
   `no-cache` anyway, and it is a contract change of its own. A
-  follow-up once this card's numbers are measured.
+  follow-up once this card's numbers are measured; built since as
+  d427747e, which keeps this answer for every request that does not name
+  the current version.
 
 ## On the hub's own pages too, the product line at phone width is its first part, by a rule inside the hashed block
 
@@ -652,13 +671,14 @@ have, so `AssetFileResponse` compares the ETag alone.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
+**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); the lead (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
 **Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
 **See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
+**Verification:** corroborated — re-checked on 2026-11-15, when "Chat with us on Discord" became the fifth part (card tsk-01tt7j11yx3w): the rule hides every part after the first, so the decision holds; only the count changed
 
 The hub draws the product line on the join page, the `503` maintenance
 page and the registration link page (`product_line.html`). Each of its
-four parts is a `span.product-part` and each separator a
+five parts is a `span.product-part` and each separator a
 `span.product-sep`, the classes the dashboard uses. At
 `max-width: 600px` a rule hides the separators and every part after the
 first, so the line is the mark, `Maity` and the year, as on the
@@ -678,3 +698,193 @@ markup for every width, as the dashboard does.
   it would take a user-agent guess.
 - A second `<style>` block for the media rule: one more hash in each
   strict page's policy, for no gain.
+
+## The shell names the dashboard's files by version, and that request is cached for good
+
+**Id:** d427747e-e7f1-4226-a624-5284f8d61103
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by the lead, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
+**Revisit when:** a dashboard file is loaded by a name the shell neither writes nor lists, a file under `/assets/` carries anything per user, or the dashboard gets a build step that names its files itself
+**See:** serving.md#the-dashboards-files-are-revalidated-by-an-etag-of-their-content-not-no-store — c6768529-3654-45c7-bd5e-aab3067ce04f — as of 2026-11-09
+
+c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (ops' measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
+
+- `shell.versioned` adds `?v=<version>` to every `src`/`href` of the shell that names a file under `brand/`, `css/`, `js/` or `vendor/`. The version is the first 16 hex digits of the SHA-256 of the body sent, the same form `/assets/landing/` uses.
+- A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. Like every file here, it is sent from the bytes kept in memory, and a range is cut from them.
+- The files a script loads later by a name it builds (i18n catalogs, Keep the Why's files, brand pictures) are listed in `<script type="application/json" id="maity-assets">`. `web/js/assets.js` (`M.assetQuery`) reads that block.
+- `shell.web_version` digests `index.html` and these versions into the dashboard's version, `Maity-Web-Version` (§1.1, since 2026-11-16): the shell carries it as `<meta name="maity-web-version">` beside that block, and the middleware sends it on every `/api/v1/` answer, the files looked at again at most every 10 seconds (`WEB_VERSION_TTL`), off the event loop; the shell itself is always versioned from a fresh reading, so a page loaded just after a deploy names the new dashboard. On the join host only the exchange `POST /{token}` carries it, as its `/api/v1/join/{token}` does. Why the page compares the two: web/context/refresh.md 9d7aee6c.
+- `AssetFiles` answers `public, max-age=31536000, immutable` only when the request's one `v` equals the version of the body this hub would send. Any other request gets c6768529's answer.
+- The middleware lets those four directories choose it (`DASHBOARD_FILES`), as it lets `/assets/landing/`.
+
+**Reason:**
+- A deploy changes the shell, which is `no-cache`, and with it the name of every file that changed. So a browser can keep the others without asking.
+- The version is compared with the body itself, never taken on trust from the request. So during a rolling update (helm `maxSurge 1`, `maxUnavailable 0`), a shell from one pod asking another pod for a version it does not have gets that pod's file `no-cache`, and is never pinned under the wrong name. The same holds for a stale link, or a file changed on a running hub: an answer is always the bytes its version was taken from, read once per process (c6768529), never the file opened again after the check (review of #1543).
+- A load that crosses the two pods may run old and new files together once, as it could before; the next use revalidates.
+- A query instead of a new file name leaves every relative URL as it is: `i18n.js` builds `i18n/<tag>.js` from its own address. Fixture mode (`file://`) keeps the plain names, and no build step is needed.
+- The data block is not run, so the shell's CSP (`default-src 'self'`) stays as it is.
+
+**Rejected alternatives:**
+- File names with the digest (`app.<hash>.js`): every relative name a script builds, and fixture mode, would need a mapping, and the files on disk would have to be copied or renamed.
+- `404` for a version this hub does not have: a page from the other pod would lose that script outright instead of running the file this pod has.
+- Session affinity during a deploy, to keep a browser on one pod: an ingress setting for a once-per-deploy case that `no-cache` already covers.
+- Taking the version from the request without comparing it with the body: a stale or foreign version would be cached for good with the wrong file.
+
+## A signed-in credential's reads have a limit per minute, and a project may cap open claims per member; both settings
+
+**Id:** aaf47866-499a-46f5-be4c-51319a781dd9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by the lead (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5. The instance-level build (slice 6a): the plan the team lead approved with three conditions (seq 160482), the default of 1000 from the lead's final decision (seq 160489) on the operations team's measurement after the deploy; the per-request counting of the long-poll and the order in `_cookie` are tested in hub/tests/test_read_limits.py
+**Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet the limit in normal work, the refusal log lines give a per-credential peak to lower the default against, or plans set limits per account
+**See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-14
+
+The 2026-11-04 decision left the hub without a general request budget:
+the ingress limits per client address, and the hub only single routes.
+That changes for signed-in callers. `max_reads_per_minute` (instance
+setting, §16.5, default 1000, see below) limits the `GET` and `HEAD` calls of the API
+per credential; a project may set a lower value for its agents'
+credentials (`policy.max_reads_per_minute`, §6.1), never a higher one.
+Past it a read is `rate_limited` with `Retry-After`, checked once the
+credential is known and before the side effects of §2.4. The count is per
+process, as `MAITY_ROUTE_LIMITS`'s. `policy.max_open_claims` (§6.1,
+default `null`, no cap) caps the claims one member holds in a project,
+refused as `claim_limit` (409, `details.limit`, `details.count`), counted
+with the claim in one atomic step.
+
+**Reason:** the ingress counts per address, and every agent on one machine
+shares that address, so its limit has to be high and does nothing against
+one credential that reads without pause; that credential's reads cost the
+hub database work every time. A limit per credential names the caller the
+ingress cannot see. The defaults are generous so that normal work never
+meets them; a project tightens rather than loosens, because the instance's
+value protects the server all projects share. The claim cap is a project's
+policy, like `max_placements`, and is off by default because nothing has
+needed it so far. Counting per process keeps the limit from adding a write
+to every read, the cost the emergency route limits avoid for the same
+reason.
+
+**Rejected alternatives:**
+- **Only the ingress's limit per address:** see above; a credential is
+  invisible to it.
+- **Counting reads in the shared counts:** a database write per read, on
+  exactly the load the limit sheds.
+- **A project value above the instance's:** the project's admin would lift
+  the operator's protection of the whole server.
+- **A fixed limit in code:** the owner chose a setting with a generous
+  default.
+
+**How the instance's part is built** (slice 6a; the project's own value,
+`policy.max_reads_per_minute`, needs a migration and follows):
+
+- **The default, 1000.** The operations team measured, after the deploy,
+  only the sum of all clients' reads per minute: median 180, at most 279,
+  about 60 of it a health probe, the events long-poll at most 54. That sum
+  is the one bound measurable now, and it caps what any one credential
+  read. The lead's rule is at least three times the peak; 600 is about
+  2.2 times 279, 1000 about 3.6 times. A lower value is planned with the
+  owner once the refusal log lines (below) show what credentials meet.
+  The number lives in one constant, `limits.READS_PER_MINUTE_DEFAULT`.
+- **Where the check runs.** `auth/caller.py` `_count_read`, once per
+  authentication path: in `_agent` after the signing and isolation
+  refusals and before the last use, presence, the session and the leases;
+  in `_runner` before its last use and presence; in `_cookie` after the
+  session is known live (and after the CSRF check) and before presence.
+  A refused read so writes nothing that stays: a signed call's nonce,
+  spent before the count, is rolled back with the refusal; no other write
+  is even sent. A bridge authenticates with its own credential before
+  `bridges.carry` makes it the served agent, so its reads count as its own.
+- **What is a read is decided on the routed path.** `read_limits.counts`
+  takes `RequestFacts.path`, the decoded `scope["path"]` the router
+  matches, not the raw path: the server decodes every escape before
+  routing, so only the decoded path says which route a call reaches, and
+  §1.7 defines a read by the route. Counting every authenticated `GET` and
+  `HEAD` instead was not chosen: §1.7 limits reads of the API, and the
+  decoded path keeps that boundary. The isolation gate stays on the raw
+  path, compared byte for byte: there another spelling only refuses.
+- **`_cookie` checks the session before presence.** Before, the presence
+  updates came first and a dead session matched no row; now the session
+  and its human are read first, and an ended, expired or deleted
+  account's session sends no update. The presence update is sent only when
+  that read says it is due (once a minute), which also drops the update
+  that matched nothing on every other call. Within `SEEN_EVERY` of the last
+  presence the call sends no update and takes no lock: the session read it
+  starts with says the session is alive, and the second-factor gate and
+  the pending check decide on that read. When presence is due, the call
+  updates the session, which locks its row, and reads the session again
+  under that lock, so the gate and the pending check decide on the session
+  as it stands under READ COMMITTED (#1540 review; `test_auth_statements`
+  makes presence due before it checks this); that second read costs one
+  statement once a minute per session. It is made when the update matches
+  no row too: then either another call of the session wrote its presence
+  first, and the read finds the session alive, or the session ended or its
+  account was deleted since the first read, and the read refuses it before
+  any lease is renewed.
+- **The count: in the process, two fixed windows.** One minute; the
+  estimate is the current minute's count plus the previous one's weighted
+  by what the sliding window still covers, the estimate the shared limits
+  use (`ratelimit.estimate_wait`, factored out of `Limiter._wait` for it).
+  Two numbers per credential instead of a timestamp per read, so 1000 a
+  minute cost no more memory than 60. Keys live in an ordered dict, least
+  recently read first; each call forgets at most eight that no longer
+  reach the estimate, because authentication runs on the event loop
+  (`NonceWindow` does the same). `RequestFacts.reads_paid`, one per
+  request, holds the credentials its read was counted for, so a
+  transaction run again (`retrying_async`) does not count its request
+  twice, also when other reads of the same credential run meanwhile.
+  A float's last digit may round
+  `Retry-After` up a second, never down.
+- **The instance's value is kept 30 seconds per process.** No statement
+  per read: a read finds the value in memory, read again from the settings
+  at most every 30 seconds. The environment's value needs no read at all.
+  `PATCH /admin/settings/limits` drops it after its transaction commits,
+  so the process that takes the change applies it at once, others within
+  30 seconds.
+- **The long-poll counts once per call.** Authentication runs once when
+  the request arrives; the passes of a held wait look at liveness
+  (`gone`) and never authenticate again. `maity wait` asks once per
+  answer, so a quiet loop makes about one read a minute and a busy one at
+  most one per answer, and it keeps a 429's `Retry-After`. `GET
+  /bootstrap` authenticates once for its parts, so it counts once, and its
+  refusal answers the whole request so that the header is kept.
+- **One log line per refusal, with a tag, not an id.** INFO on
+  `maity_hub.read_limits`: method, route pattern, a tag, the limit and the
+  wait; nothing for allowed reads, which would add a line to every read.
+  The tag is the first 12 hex digits of an HMAC-SHA256 of the counted key,
+  under a key derived from `MAITY_SECRET_KEY` (stable across processes and
+  restarts) or else a random key of the process. Someone who reads the log
+  can tell refusals of one credential apart from another's, which is what
+  lowering the default needs, but cannot get the credential id, the
+  member or the session back from it, and a plain hash of an id could be
+  matched against known ids. The ordinary request log carries no tag; that
+  is the owner's privacy decision.
+
+**Rejected alternatives (6a):**
+- **`ratelimit.Limiter(local=True)`:** a deque with a timestamp per read
+  per credential, up to 1000 entries each, and a pass over all keys when
+  it prunes.
+- **Reading the setting on every read:** a statement per read, the cost
+  the limit exists to shed.
+- **Counting each pass of a long-poll:** a quiet `maity wait` would count
+  every few seconds for doing nothing.
+- **Counting in `deps` after authentication:** the presence, last use and
+  leases would already be written for a refused read.
+- **Keeping presence first in `_cookie`:** the count would come after the
+  writes, and a dead session would still send its update.
+- **Counting a session's reads by the cookie, or logging the id:** the
+  key is the session's hash, and the log names neither.
+
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** an agent's read is no longer counted in `_agent`.
+An instance may be attached to several projects (§6.17), and whether a call is isolated, which
+refuses it without a count, depends on the route's project, known only after authentication.
+`auth.caller.count_agent_read` counts it in the same transaction, in `deps._resolve`'s
+`confine`: on a project route, before the `not_found` of a project the instance is not
+attached to (so probing other projects stays limited, as before), and in `settle_in_project`
+after the isolation refusal; outside a project, in `settle_project_less` after the refusal of
+an instance isolated everywhere. Either way the count still comes before the last use,
+presence, the session and the leases, which moved to those helpers with it, so the rejected
+"counting in `deps` after authentication" stays rejected for its reason: a refused read still
+writes nothing that stays. The runner's and the cookie's counts are where the bullet above
+puts them; a bridge's read still counts against its own credential, before `bridges.carry`.

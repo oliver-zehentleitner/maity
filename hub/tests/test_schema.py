@@ -13,9 +13,10 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, Engine, insert, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError, StatementError
 
-from maity_hub import namespace
+from maity_hub import namespace, write_guard
 from maity_hub import tables as t
 from maity_hub.db import metadata, migrate
+from maity_hub.events import newest_seq
 from maity_hub.ids import new_id
 
 # MariaDB reports a failed CHECK as an OperationalError (4025), the others as
@@ -44,6 +45,7 @@ def _human(conn: Connection) -> str:
             created_at=NOW,
         )
     )
+    write_guard.make_row(conn, human_id)
     return human_id
 
 
@@ -92,6 +94,7 @@ def _membership(conn: Connection, project_id: str, **principal: Any) -> int:
             areas=["/"],
             capabilities=[],
             joined_at=NOW,
+            joined_seq=newest_seq(conn, project_id),
             **principal,
         )
     )
@@ -196,29 +199,31 @@ def test_a_release_version_is_unique_per_project(conn: Connection) -> None:
         _card(conn, project_id, owner, kind="release", release_version="0.1.0")
 
 
-def test_one_live_session_per_credential(conn: Connection) -> None:
-    project_id = _project(conn)
-    member = _membership(conn, project_id, human_id=_human(conn))
+def _credential(conn: Connection, agent_id: str, **values: Any) -> str:
     credential_id = new_id("credential")
     conn.execute(
         insert(t.credential).values(
             id=credential_id,
-            membership_id=member,
+            agent_id=agent_id,
             instance="wle2",
             verifier="0" * 64,
             created_at=NOW,
+            **values,
         )
     )
+    return credential_id
+
+
+def test_one_live_session_per_credential(conn: Connection) -> None:
+    credential_id = _credential(conn, _agent(conn))
 
     def session(live: bool | None) -> None:
         conn.execute(
             insert(t.agent_session).values(
                 id=new_id("session"),
                 credential_id=credential_id,
-                membership_id=member,
                 started_at=NOW,
                 last_seen_at=NOW,
-                acknowledged_seq=0,
                 live=live,
             )
         )
@@ -288,19 +293,8 @@ def test_an_absent_json_value_is_sql_null(conn: Connection) -> None:
 
 
 def test_a_revocation_reason_may_be_long(conn: Connection) -> None:
-    project_id = _project(conn)
-    member = _membership(conn, project_id, human_id=_human(conn))
     reason = "r" * 2000
-    conn.execute(
-        insert(t.credential).values(
-            id=new_id("credential"),
-            membership_id=member,
-            instance="wle2",
-            verifier="0" * 64,
-            created_at=NOW,
-            revoked_reason=reason,
-        )
-    )
+    _credential(conn, _agent(conn), revoked_reason=reason)
     assert conn.execute(select(t.credential.c.revoked_reason)).scalar() == reason
 
 
@@ -314,28 +308,47 @@ def test_a_marker_is_true_or_null_never_false(conn: Connection, table: str) -> N
             owner = _membership(conn, project_id, human_id=_human(conn))
             _card(conn, project_id, owner, kind="release", release_in_flight=False)
         else:
-            member = _membership(conn, project_id, human_id=_human(conn))
-            credential_id = new_id("credential")
-            conn.execute(
-                insert(t.credential).values(
-                    id=credential_id,
-                    membership_id=member,
-                    instance="wle2",
-                    verifier="0" * 64,
-                    created_at=NOW,
-                )
-            )
+            credential_id = _credential(conn, _agent(conn))
             conn.execute(
                 insert(t.agent_session).values(
                     id=new_id("session"),
                     credential_id=credential_id,
-                    membership_id=member,
                     started_at=NOW,
                     last_seen_at=NOW,
-                    acknowledged_seq=0,
                     live=False,
                 )
             )
+
+
+@pytest.mark.parametrize("twice", ["instance", "credential"])
+def test_an_instance_id_and_a_credential_are_attached_once_per_membership(
+    conn: Connection, twice: str
+) -> None:
+    """`instance_attachment` (§6.17): an instance id is taken once per membership, and one
+    credential sits in a membership once; the same id in another membership is fine."""
+    agent_id = _agent(conn)
+    project_id = _project(conn)
+    member = _membership(conn, project_id, agent_id=agent_id)
+    elsewhere = _membership(conn, _project(conn), agent_id=agent_id)
+    first = _credential(conn, agent_id)
+
+    def attach(credential_id: str, membership_id: int, instance: str = "wle2") -> None:
+        conn.execute(
+            insert(t.instance_attachment).values(
+                credential_id=credential_id,
+                membership_id=membership_id,
+                instance=instance,
+                attached_at=NOW,
+            )
+        )
+
+    attach(first, member)
+    attach(_credential(conn, agent_id), elsewhere)  # the same id in another membership
+    with pytest.raises(IntegrityError):
+        if twice == "instance":
+            attach(_credential(conn, agent_id), member)
+        else:
+            attach(first, member, "x7k2")
 
 
 def test_an_active_member_cannot_join_twice(conn: Connection) -> None:

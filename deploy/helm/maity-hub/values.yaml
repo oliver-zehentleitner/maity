@@ -4,7 +4,7 @@
 # connects to one that exists. Secrets are never values here: the chart only
 # names Secrets that already exist in the release namespace.
 #
-# What every install sets: image.repository, database.existingSecret, and
+# What every install sets: image.repository, image.digest, database.existingSecret, and
 # either the Ingress (ingress.enabled, ingress.host, ingress.className,
 # config.trustedProxies) or config.publicUrl. README.md walks through a
 # complete install.
@@ -23,11 +23,15 @@ image:
   # Required. ghcr.io/oliver-zehentleitner/maity-hub once releases are published
   # (workflow publish-image), or your own build of deploy/Dockerfile.
   repository: ""
-  # Empty: the chart's appVersion. Use an immutable tag (a release or a full
-  # commit SHA), never `latest`: the pod would not change on an upgrade.
-  tag: ""
-  # `sha256:…`; when set it wins over the tag.
+  # Required: `sha256:…`, the digest the workflow's run summary prints. The
+  # chart pulls by digest; a tag names whatever the registry points it at
+  # when the pod starts, and can be moved.
   digest: ""
+  # Pulling by tag is an explicit opt-in: allowTag: true, a tag and no digest.
+  # A digest always wins; a tag next to it only names the version label.
+  # Even with the opt-in never `latest`: the pod would not change on an upgrade.
+  allowTag: false
+  tag: ""
   pullPolicy: IfNotPresent
 
 # Existing docker-registry Secrets for a private registry, as
@@ -63,9 +67,9 @@ config:
   # API only.
   dashboard: true
   # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
-  # single-process hub. More than 1 only with PostgreSQL and at least one pool
-  # connection per process (the hub refuses to start otherwise); the pool
-  # (MAITY_DB_POOL_SIZE) is split among them. resources must grow with them:
+  # single-process hub. More than 1 only with PostgreSQL and at least two pool
+  # connections per process, one for each engine (the hub refuses to start
+  # otherwise); the pool (MAITY_DB_POOL_SIZE) is split among them. resources must grow with them:
   # about 150Mi of memory and a share of CPU per process.
   workers: 1
 
@@ -78,8 +82,18 @@ database:
   # database's CA for sslmode=verify-full.
   existingSecret: ""
   key: database-url
+  # The migrate Job's own MAITY_DATABASE_URL, from this Secret's `key`: the role that owns
+  # the schema, while the hub's Secret above names a role that only reads and writes rows
+  # (docs/install/README.md, "Database roles"). Empty: the Job uses the hub's Secret.
+  migrate:
+    existingSecret: ""
+    key: database-url
   # MAITY_DB_POOL_SIZE and MAITY_DB_MAX_OVERFLOW: each pod's connections to the database,
-  # shared by its workers. Unset: the hub's 16 and 16.
+  # shared by its workers. Unset: the hub's 16 and 16. poolSize is at least 2,
+  # and at least 2 × config.workers (each process's sync and async engine).
+  # Each process's share is split between its two engines: the async engine
+  # takes 8 of it, but at most half (a pool of 8 gives 4 + 4), the sync engine
+  # the rest and the whole overflow.
   poolSize: null
   maxOverflow: null
 
@@ -136,6 +150,14 @@ secretKey:
   # A Secret created with the first README holds the key as `MAITY_SECRET_KEY`: set `secretKey.key: MAITY_SECRET_KEY` then.
   existingSecret: ""
   key: secret-key
+  # MAITY_SEAL_VERIFIERS: seal the verifiers of agent and runner credentials with this key (docs/api.md §2.2). Opt-in,
+  # default off; needs `existingSecret`. Sealed verifiers are read either way. After switching it on, run
+  # `maity-hub seal-verifiers` once to seal the verifiers stored before.
+  sealVerifiers: false
+  # MAITY_SEALED_VERIFIERS_ONLY: refuse a plain verifier (docs/api.md §2.2). Default off; needs `sealVerifiers`. A hub pod
+  # does not start while a live plain verifier is left: run `maity-hub seal-verifiers` until it prints `plain left 0`
+  # first, in a rollout of its own after the one that switched `sealVerifiers` on.
+  sealedVerifiersOnly: false
 
 mail:
   # The instance's outgoing mail (docs/api.md §16.2). Nothing is rendered until a value is set: without
@@ -228,8 +250,9 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-body-size: "11m"
   # One limit per client address for every request, at the ingress (README.md,
-  # "Ingress controllers"). The hub has no general request budget of its own,
-  # only limits per route (sign-ins, codes, uploads among them). Off by default: a
+  # "Ingress controllers"). The hub has no general request budget per address of
+  # its own, only limits per route (sign-ins, codes, uploads among them) and a
+  # signed-in credential's reads per minute (MAITY_MAX_READS_PER_MINUTE). Off by default: a
   # `maity wait` older than the CLI release that retries a 429 ends on one.
   # With it on, the Ingress gets ingress-nginx's annotations: `limit-rps`
   # (perSecond), `limit-burst-multiplier` (burst / perSecond, rounded up) and
@@ -265,6 +288,32 @@ networkPolicy:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: ingress-nginx
+  # A second policy for the hub's outbound connections: DNS, the database, HTTPS (the
+  # forge, Keep the Why reads, an S3 store, images) and SMTP, nothing else. Off by
+  # default, since the right peers depend on the cluster: turn it on with them set.
+  egress:
+    enabled: false
+    # Where DNS is answered (UDP and TCP 53). The default is CoreDNS / kube-dns.
+    dns:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+    database:
+      # NetworkPolicy peers of the database (a podSelector in the cluster, an ipBlock
+      # outside it). Empty: any address, on `port` only.
+      to: []
+      port: 5432
+    # Outbound TCP 443 to any address.
+    https: true
+    # Outbound SMTP. Empty: mail.port when mail.host is set, else 587 and 465 (the
+    # server may then be set in the admin settings).
+    smtpPorts: []
+    # More egress rules, as NetworkPolicy `egress` entries (a plain-http S3 store in the
+    # cluster, a proxy).
+    extra: []
 
 resources:
   requests:

@@ -26,6 +26,7 @@ from maity_hub import (
     paging,
     project_roles,
     registration,
+    restricted,
     write_guard,
 )
 from maity_hub import tables as t
@@ -39,8 +40,10 @@ from maity_hub.ids import new_id
 from maity_hub.mail import address
 from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
+from maity_hub.plain_text import plain
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
+from maity_hub.scopes import OUTSIDE
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -48,7 +51,8 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
 class InvitationIn(Strict):
-    trust: Literal["owner", "admin", "member", "guest"] = "member"
+    # `outside` is read only to be refused by name (§2.3 "Outside", `_check`).
+    trust: Literal["owner", "admin", "member", "guest", "outside"] = "member"
     role: str = "coder"  # a built-in role or one of the project's (§2.3)
     address: str | None = None
     handle: str | None = None  # a person's handle or live alias, instead of `address` (§3.4)
@@ -59,16 +63,18 @@ class InvitationIn(Strict):
 
 def _check(body: InvitationIn) -> None:
     errors: dict[str, str] = {}
+    if body.trust == OUTSIDE:  # only an outsider's join gives it (§2.3 "Outside")
+        errors["trust"] = OUTSIDE
     if body.handle is not None and body.address is not None:
         errors["handle"] = "with_address"
     if body.address is not None and not address.valid(body.address.strip()):
         errors["address"] = "invalid"
     if not invitations.TTL_MIN <= body.ttl_seconds <= invitations.TTL_MAX:
         errors["ttl_seconds"] = "out_of_range"
-    if body.note is not None and (
-        len(body.note.encode()) > invitations.NOTE_MAX
-        or any(ord(c) < 32 and c not in "\n\t" or ord(c) == 127 for c in body.note)
-    ):
+    # The character check first: a lone surrogate (Cs) cannot be encoded for the size.
+    if body.note is not None and not plain(body.note, keep="\n\t"):
+        errors["note"] = "control_character"  # several lines, plain text (§1.7.1)
+    elif body.note is not None and len(body.note.encode()) > invitations.NOTE_MAX:
         errors["note"] = "invalid"
     if errors:
         raise invalid(errors)
@@ -110,7 +116,14 @@ def _invitee_view(conn: Connection, human_id: str) -> dict[str, Any]:
     return {"handle": person.handle, "display_name": person.display_name}
 
 
-idempotency.LOADERS["invitation"] = idempotency.plain(_load)
+idempotency.register(
+    "invitation",
+    idempotency.plain(_load),
+    # the invitations list is the member admins' (§3.2)
+    idempotency.in_project(
+        idempotency.column_of(t.invitation), lambda _conn, mine, _id: mine.may("members:admin")
+    ),
+)
 
 
 @router.post("/projects/{owner}/{slug}/invitations", status_code=201)
@@ -302,7 +315,7 @@ def _logo_url(conn: Connection, request: Request, project: Any) -> str | None:
 @router.get("/invitations/{token}")
 async def invitation_page(token: str, request: Request) -> JSONResponse:
     """What the dashboard's `/invite/<token>` shows (§3.4), the same for every reader."""
-    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
+    wait = await run_in_threadpool(EXCHANGE_BY_ADDRESS.hit, origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)
@@ -313,8 +326,10 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
             row = _open(conn, token)
             project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
             inviter = conn.execute(
-                select(t.human.c.display_name).where(t.human.c.id == row.created_by)
-            ).scalar()
+                select(t.human.c.display_name, t.human.c.handle).where(
+                    t.human.c.id == row.created_by
+                )
+            ).first()
             env = hub.registration or registration.RegistrationEnvironment()
             resolved = registration.resolve(
                 conn, env, registration.mail_ready(conn, hub), hub.public_url
@@ -328,11 +343,17 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                 },
                 "trust": row.trust,
                 "role": row.role,
-                "invited_by": {"display_name": inviter},
+                # The handle beside the display name: a name alone can imitate someone (§3.4).
+                "invited_by": {
+                    "display_name": inviter.display_name if inviter is not None else None,
+                    "handle": inviter.handle if inviter is not None else None,
+                },
                 "note": row.note,
                 "expires_at": clock.rfc3339(row.expires_at),
                 "address_bound": row.address is not None,
                 "registration": _registration(conn, row, project, resolved),
+                # From the project and the invitation alone, as `registration` (§3.4).
+                "restricted_texts": restricted.invitation_enters(project, row.trust),
             }
 
     return JSONResponse(await run_in_threadpool(run))
@@ -353,7 +374,7 @@ def _registration(conn: Connection, row: Any, project: Any, resolved: Any) -> st
 async def accept_invitation(token: str, request: Request, caller: HumanCaller) -> JSONResponse:
     """§3.4: one transaction, under the project's lock. A refusal that changes the
     invitation (used up, voided) is committed before it is answered."""
-    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
+    wait = await run_in_threadpool(EXCHANGE_BY_ADDRESS.hit, origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)
@@ -366,6 +387,12 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
             ).scalar_one()
             if status != "active":
                 return _refused("account_pending", "the account waits for approval")
+            # §2.6.5: only a session in good standing accepts. Checked before the token is
+            # looked up, as the pending account above: such a session learns nothing of the
+            # token, and no refusal below (used up, voided) changes the invitation for it.
+            unstanding = invitations.standing_refusal(conn, caller)
+            if unstanding is not None:
+                return unstanding, None
             row = _open(conn, token)
             project = events.lock_project(conn, row.project_id)
             row = _open(conn, token)  # as it is under the lock: a second accept loses
@@ -380,8 +407,6 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
 def _accept(
     conn: Connection, row: Any, project: Any, caller: Any
 ) -> tuple[ApiError | None, dict[str, Any] | None]:
-    # TODO(§2.6.5): accept only from a session in good standing — a session fresh from a
-    # mailbox link accepts nothing — once such sessions exist; every session is one now.
     if project.state in CLOSED_STATES:
         return ApiError(409, "project_closed", f"the project is {project.state}"), None
     if row.address_normalized is not None and (

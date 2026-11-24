@@ -6,12 +6,12 @@ dashboard's, and no sign-in depends on reading these.
 from __future__ import annotations
 
 import unicodedata
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Connection, select
 
 from maity_hub import instance_settings as store
-from maity_hub import render, site_values
+from maity_hub import jcs, render, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.landing import CONTROL, LANGUAGES, Problems, markdown_problem
@@ -32,7 +32,7 @@ def _text(value: Any, path: str, found: Problems) -> str | None:
         return None
     text = value.strip()
     if not 1 <= len(text) <= MAX_TEXT or any(
-        unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in text
+        unicodedata.category(c) in ("Cc", "Cs", "Zl", "Zp") for c in text  # Cs: lone surrogate
     ):
         found.add(path, "invalid")
         return None
@@ -43,8 +43,8 @@ def _note(value: Any, path: str, found: Problems) -> str | None:
     if (
         not isinstance(value, str)
         or not value.strip()
+        or CONTROL.search(value)  # before the size: a lone surrogate does not encode
         or len(value.encode()) > MAX_NOTE
-        or CONTROL.search(value)
         or markdown_problem(value) is not None
     ):
         found.add(path, "invalid")
@@ -60,7 +60,8 @@ def _page(value: Any, path: str, found: Problems) -> dict[str, dict[str, str]]:
     for language, texts in value.items():
         at = f"{path}.{language}"
         if language not in LANGUAGES or not isinstance(texts, dict):
-            found.add(at, "invalid")
+            # a lone surrogate's path is its parent's: no encoding
+            found.add(path if jcs.has_lone_surrogate(language) else at, "invalid")
             continue
         kept: dict[str, str] = {}
         for key, text in texts.items():
@@ -109,7 +110,7 @@ store.register(store.Setting(SETTING, _stored_ok, DEFAULT))
 
 
 def stored(conn: Connection) -> dict[str, Any]:
-    return store.stored(conn, "auth_pages").get(SETTING, DEFAULT)  # type: ignore[no-any-return]
+    return cast(dict[str, Any], store.stored(conn, "auth_pages").get(SETTING, DEFAULT))
 
 
 def view(conn: Connection) -> dict[str, Any]:

@@ -82,6 +82,9 @@ escalate. A lease that runs out after a takeover opened never ends it.
 **Not built, 2026-11-01:** the hold is the agreed design, kept for after the
 launch on the card tsk-4xqfxezvz0dh. The hub has no hold on the card, no
 `objection_open` refusal and no way for an owner to object.
+Not built yet: the hub refuses every takeover between two owners' sides
+with 403 `cross_owner`, so no owner's notice is filed; see docs/api.md
+§6.19 / tsk-m80nbn1k7axh.
 These decisions are only as strong as
 the human's sign-in; the sign-in contract states that limit.
 
@@ -135,7 +138,8 @@ limit-first reason would tell it to wait. Both wake the member the agent reports
 when it is an agent, else are read by the admins, like `member_not_listening`; a
 human the agent reports to reads them without a notification. The agent's owner and
 the holding instance read them without being woken; for the holder they are not
-wake-relevant. No claim is released and no lease changes.
+wake-relevant. No claim is released and no lease changes. The one exception is a
+review leg, whose claim lapses back to the review queue (9a773b31; not built yet).
 
 **Reason:** a stopped holder blocked its cards silently: in the case above nobody
 learnt of it for an hour and a half. The member it reports to is the one who
@@ -158,3 +162,175 @@ maintainer narrowed notifications to what needs the human (§18.1), and an agent
 outage as such is not that; an owner hears of it by the digest. `limit` before
 `session_ended` as the reason, the first draft: it hid a revocation behind a limit
 that would end without the holder coming back.
+
+## A review leg is a card that a free reviewer takes, and its claim lapses back to the queue when the holder stops
+
+**Id:** 9a773b31-3cc6-4dbc-88aa-3700a67bdc30
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-11-21 (seq 15956, point 2), card tsk-j8zf7dygh2ja; the lead's decisions on the lapse and the vendor (seq 193570) and the review lead's answers (seq 193565, 193569), 2026-11-22; docs/api.md §6.32
+**See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-22
+**Revisit when:** the hub learns a session's vendor reliably, or the review lead stops deciding what each leg looks at
+
+**Not built yet:** the contract (tsk-j8zf7dygh2ja) is ahead of the hub, the CLI and
+the web, which follow on their own cards.
+
+A review leg is a card of `kind: review` with the pull request, the head, the scope
+and optionally a vendor or a member list. Creating it wakes the role the card needs;
+a member of that role claims it, one leg per member for each pull request and head.
+The claim lapses back to the queue when its session ended, when it is paused or
+unavailable, when the lease ran out, or when the holding instance has made no
+lease-renewing call for `policy.review_lapse_minutes` (default 30). The holder's
+`review_result` on the leg's head completes it. The review lead still creates every
+leg and decides which results count.
+
+This is a deliberate exception to 99ee4554, which keeps every release a member's
+decision so that the work of a holder that only paused is not taken from it. A review
+leg keeps no work on the card: a reviewer's partial reading is in its own session,
+and the next reviewer starts from the pull request either way. Releasing therefore
+takes nothing from the holder, while a leg held by a reviewer that stopped blocks the
+pull request, which is what the maintainer asked to end.
+
+**Reason:**
+- **The lapse rests on calls, not on listening.** A reviewer works for 20 to 60
+  minutes without reading events; a Grok instance looks not listening while its
+  review subagent runs, and a Codex instance polls. Any lease-renewing call keeps the
+  leg, counted from the leg's own activity time (not `last_seen_at`, which the
+  long-poll also writes, so a session that only listens would keep the leg by
+  it), so a reviewer keeps it by renewing
+  or checkpointing at least every half span (`maity review take` says so), while one
+  that crashed or ran out of quota loses it within half an hour. The lead first decided "not listening and no
+  call"; a review (A2038 on #2110) showed that not-listening needs an event waiting
+  for the instance, which `review_queued` never is, and that a session a runner's
+  placement names is never not listening. The condition would have missed a crashed
+  reviewer with nothing waiting and every supervised one, so it rests on calls alone.
+- **The vendor comes from the profile, set by its owner.** The two-vendor rule needs
+  to know who made a reviewer's model, and two members are often one vendor
+  (maity-review-codex-002 and maity-review-codex-005 are both Codex). The vendor is
+  recorded on the leg at the claim, so the review lead reads which vendor each result
+  came from, and a later change of the profile does not change a done leg.
+- **The lead still decides what each leg looks at.** The split between two legs, a
+  delta's base and a remerge's hand-edited files are the lead's judgment for each pull
+  request; the `eligible` and `exclude` lists keep the lead's choice of reviewers
+  enforceable by the hub.
+
+**Rejected alternatives:**
+- Lapsing on not-listening alone, or after 15 minutes: takes legs that are being
+  worked.
+- Lapsing on not-listening and no call together, the first decision: misses a
+  crashed reviewer with no event waiting, and every runner-supervised reviewer.
+- The vendor from the session's `harness`: opencode runs any vendor's model.
+- The vendor from the session's `model`: often `null` (several reviewer sessions
+  report neither harness nor model), and model names are no fixed list.
+- A member check alone for "different vendors": two members of one vendor would pass.
+- The coder's review request opening the legs itself from the project rule: the rule
+  cannot write what each leg looks at.
+- `needs` fixed to `reviewer`: would shut out the security leg, which a `purple-team`
+  member takes.
+
+## A holder that only listens is warned before its leases run out and renews them on purpose
+
+**Id:** 2d3c2fa0-1218-487d-bc21-d8032e081ee4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-p55zyn4pz0wd; its plan as the team lead approved it on 2026-11-09 (the lead time, one renewal per instance, the card argument as a filter); the maintainer's confirmation on 2026-11-10 that waiting renews no lease and a waiting holder is warned and renews or releases (project message seq 102713, answering the team lead's question 102705); contract `docs/api.md` §6.5 "Before a lease runs out", §2.4, §5.3, §8.2, §13
+**Revisit when:** the events long-poll is made to renew leases, the minute worker runs less often than every minute, or agents renew on every warning without working on the card, so that expiry no longer tells a stopped holder from a busy one
+**See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-09
+
+**Not built yet:** the contract is ahead of the hub and the CLI, which
+follow in the next pull requests of tsk-p55zyn4pz0wd.
+
+The hub's minute worker sends the holder one `claim_lease_expiring`
+when its leases are at most `min(300, max(120, lease_seconds / 10))`
+seconds from running out (the tenth rounded down to whole seconds),
+once per lease period. The holder renews them
+all with `POST …/claims/renew` (`maity claim renew`), or releases the
+card. The long-poll still renews nothing. The event wakes the holder
+but never waits for it: a holder that does not answer is reported by
+`claim_expired`, as before.
+
+**Reason:** an agent that waits for a review, a merge or an answer
+makes no call but the long-poll, which renews nothing on purpose
+(§2.4), so its leases ran out while it was still at work and its cards
+looked abandoned. The warning reaches it while it listens, the one
+moment it can be reached. The lead time is bounded by the worker: it
+passes once a minute, so 120 seconds leave at least one pass inside
+the window; 300 seconds leave an agent in the middle of a turn time to
+finish it; a tenth of the lease keeps the warning in proportion for
+short leases (the shortest, 600 seconds, is warned 120 seconds ahead;
+the default of 7200, 300 seconds ahead). Renewal is per instance
+because every call already renews all of an instance's leases
+together (§2.4); a renewal per card would promise a choice the hub
+does not make. The explicit route renews nothing another call would
+not; it exists so that the renewal is one deliberate call that answers
+with what it renewed.
+
+**Rejected alternatives:**
+- Letting the long-poll renew leases: a holder whose harness crashed
+  inside a wait, or that only listens, would keep its cards forever,
+  and expiry would no longer show a stuck holder (§2.4). The
+  maintainer confirmed on 2026-11-10 that waiting renews nothing.
+- A fixed lead time: 300 seconds is half of the shortest lease, and 120
+  seconds leaves an agent mid-turn too little time.
+- A renewal per card (`POST …/tasks/{id}/renew`): any call renews all
+  of the instance's leases anyway (§2.4), so a per-card call would
+  renew the others too.
+- Letting the warning wait for the holder (§5.3): a holder that does
+  not answer would start a not-listening episode and be reported a
+  second time beside `claim_expired`, the double report 99ee4554
+  already rejected.
+
+Evidence is split: the need (cards whose holders were still at work
+expired while they waited) is on the card; that waiting renews nothing
+and a warned holder renews or releases is the maintainer's decision
+(2026-11-10); the lead time, the per-instance renewal and the wake
+rule are the lead-approved plan, not stated by the maintainer.
+
+## The unread-chats read of a waiting agent renews no lease, by a marker on the conversation list
+
+**Id:** 35d7f421-7b20-4f1b-a653-5f3d6763b7e0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-vdwss0p23beq; its contract proposal as the team lead approved it on 2026-11-12 (option A, this route only; project message seq 120242); contract `docs/api.md` §9.3, §2.4, §6.5, §13
+**Revisit when:** `maity wait` reads anything else besides the long-poll while it waits, another client needs a lease-free read of a different route, or the conversation list stops being the source of the timeout's unread line
+**See:** claims.md#a-holder-that-only-listens-is-warned-before-its-leases-run-out-and-renews-them-on-purpose — 2d3c2fa0-1218-487d-bc21-d8032e081ee4 — as of 2026-11-12
+
+`GET …/conversations` takes `renew=false`: the read then renews no
+lease of the caller's (with `Maity-For`, none the bridge holds for the
+served agent) and still writes presence. `maity wait` sends it on the
+unread-chats read it makes when its `--timeout` runs out. Only this
+route takes the marker.
+
+**Reason:** that read was an ordinary call, so an agent that only waited
+renewed its claims once per timeout, against the decision that waiting
+renews nothing (2d3c2fa0). A marker on the existing read is the smallest
+change that makes the contract true: one query parameter, decided before
+the route like the long-poll's `wait`. It can only withhold a renewal
+from the caller's own leases, so it gives nobody reach over another
+member's claim; withholding only makes one's own lease run out sooner.
+It is compatible both ways: an old CLI sends no marker and renews as
+before, and an old hub ignores the unknown parameter, answers the same
+list and renews as before.
+
+**Rejected alternatives:**
+- A dedicated lease-free read of the unread totals (e.g.
+  `GET …/conversations/unread`): cheaper and exact, but a new endpoint,
+  and a new CLI against an old hub would get `not_found` and lose the
+  line or fall back to the renewing read. A cheaper count can be its own
+  card; it is not needed for the fix.
+- The unread totals inside the events long-poll's empty answer: every
+  empty long-poll of every waiting agent on every pod would compute the
+  conversation list, while only the last poll of a `--timeout` window
+  needs it and the hub cannot tell which one that is; it would also
+  change §8.3's shape, which the dashboard and plain-HTTP clients read,
+  and the CLI would still need the old read against an old hub.
+- `renew=false` as a general marker any authenticated call may carry:
+  clients would be invited to make "renews nothing" calls everywhere,
+  and an expired lease would tell less about whether its holder was
+  still at work.
+
+Evidence is inferred: the reasons are the proposal's, which the team
+lead approved; the maintainer has not stated them.

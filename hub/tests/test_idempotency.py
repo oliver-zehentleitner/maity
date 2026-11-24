@@ -34,7 +34,7 @@ def client(make_client: ClientFactory) -> Iterator[TestClient]:
     def load(_conn: Connection, resource_id: str) -> dict[str, Any]:
         return {"id": resource_id, "loaded": True}
 
-    idempotency.LOADERS["probe"] = idempotency.plain(load)
+    idempotency.register("probe", idempotency.plain(load), idempotency.own)
 
     @app.post("/api/v1/probe")  # type: ignore[attr-defined, untyped-decorator]
     def probe(request: Request, caller: AnyCaller) -> JSONResponse:

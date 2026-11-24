@@ -9,8 +9,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, func, insert, select, update
 
-from maity_hub import clock, org_invitations, orgs
+from maity_hub import clock, org_invitations, orgs, proposals
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import delete_org, make_org, team
@@ -150,13 +151,15 @@ def test_a_handle_that_names_nobody_gets_the_same_answer_and_no_request(
     flow.human(make_client, migrated, "real")
     pending = factory.human(migrated, "pending-one")
     gone = factory.human(migrated, "gone-one")
+    held = factory.human(migrated, "held-one")
     with migrated.begin() as conn:
         conn.execute(
             update(t.human).where(t.human.c.id == pending).values(account_status="pending")
         )
         conn.execute(update(t.human).where(t.human.c.id == gone).values(deleted_at=clock.now()))
+        conn.execute(update(t.human).where(t.human.c.id == held).values(suspended_at=clock.now()))
     answers = {}
-    for handle in ("real", "nobody-here", "other-org", "pending-one", "gone-one"):
+    for handle in ("real", "nobody-here", "other-org", "pending-one", "gone-one", "held-one"):
         made = invite(owner, handle)
         assert made.status_code == 202, (handle, made.text)
         answers[handle] = made.json()
@@ -165,7 +168,7 @@ def test_a_handle_that_names_nobody_gets_the_same_answer_and_no_request(
     assert {h: a["handle"] for h, a in answers.items()} == {h: h for h in answers}
     filed = [r for r in request_rows(migrated) if r.org_id is not None]
     assert len(filed) == 1  # only the human who can be invited got a request
-    assert len(owner.get(URL).json()["items"]) == 5  # and the others stay open until they expire
+    assert len(owner.get(URL).json()["items"]) == 6  # and the others stay open until they expire
 
 
 def test_what_an_invitation_may_name_and_who_may_send_it(
@@ -328,6 +331,68 @@ def test_a_deleted_inviter_is_shown_as_a_deleted_account(
     assert "Deleted account" in after[0]["title"] and "aintainer" not in after[0]["title"]
     [pending] = requests_of(guest)
     assert pending["asked_by"]["display_name"] == "Deleted account"
+
+
+@pytest.mark.parametrize("change", ["suspended", "demoted"])
+def test_a_go_needs_the_inviter_still_able_to_send_it(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human, change: str
+) -> None:
+    # §6.26, §16.8: checked when the human says go, whatever path took the inviter's
+    # standing (a suspension leaves the organisation's rows as they are).
+    _, people = team(make_client, migrated, owner)
+    invited = flow.human(make_client, migrated, "g-owner")
+    second = people["owner2"]
+    assert invite(second, "g-owner", "owner").status_code == 202
+    with migrated.begin() as conn:
+        if change == "suspended":
+            conn.execute(
+                update(t.human).where(t.human.c.id == second.id).values(suspended_at=clock.now())
+            )
+        else:  # beside the route, which would withdraw the invitation itself
+            conn.execute(
+                update(t.org_member)
+                .where(t.org_member.c.human_id == second.id)
+                .values(role="admin")
+            )
+    [pending] = requests_of(invited)
+    stale = invited.post(f"/requests/{pending['id']}/answer", {"reply_id": "go"})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["details"] == {"reason": "invitation_stale"}
+    assert invited.get("/orgs").json() == {"items": []}
+
+
+def test_a_go_while_the_invitee_is_suspended_is_refused_and_the_request_stays_open(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    # §6.26: an invitation filed before the suspension. The session ends with the suspension
+    # (§16.8), so the answer is settled here as the answer route settles it, in one
+    # transaction that rolls back on the refusal.
+    make_org(owner)
+    guest = flow.human(make_client, migrated, "guest")
+    invite(owner, "guest")
+    [pending] = requests_of(guest)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human).where(t.human.c.id == guest.id).values(suspended_at=clock.now())
+        )
+    with pytest.raises(ApiError) as refused, migrated.begin() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == pending["id"])).one()
+        proposals.settle(conn, row, "go", guest.id, None)
+    assert (refused.value.status, refused.value.code) == (403, "account_suspended")
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.org_invitation.c.live)).scalar_one() is True
+        assert (
+            conn.execute(
+                select(t.request.c.status).where(t.request.c.id == pending["id"])
+            ).scalar_one()
+            == "open"
+        )
+        assert conn.execute(select(func.count()).select_from(t.org_member)).scalar_one() == 1
+    with migrated.begin() as conn:  # lifted: the same go goes through while it lasts
+        conn.execute(update(t.human).where(t.human.c.id == guest.id).values(suspended_at=None))
+    answered = guest.post(f"/requests/{pending['id']}/answer", {"reply_id": "go"})
+    assert answered.status_code == 200, answered.text
+    assert guest.get("/orgs/oz-team").json()["my_role"] == "member"
 
 
 def test_a_go_after_the_expiry_withdraws_the_invitation_as_expired(

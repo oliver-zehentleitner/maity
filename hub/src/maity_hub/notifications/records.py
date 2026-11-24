@@ -3,7 +3,8 @@ account, readable by that human alone, never events.
 
 A record's number comes from the table's own sequence, taken while the human's row is
 locked until commit, so one account never shows a number before every lower one, and
-`at` never decreases along one account's records. Kept 90 days.
+`at` never decreases along one account's records. Kept 90 days, then deleted by the hourly
+sweep (`retention`), except an inbox record whose matter is still open.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ SECURITY = (
     "second_factor_changed",
     "second_factor_failed",
     "forge_access_changed",
+    "password_reset",  # a forgotten password reset by mail (§2.10)
+    "password_changed",  # the password changed in the account (§2.1)
 )
 # The forge access changes that are a `security` item; the others are no notification.
 FORGE_ADDED = ("linked", "token_set")
@@ -35,11 +38,6 @@ FORGE_ADDED = ("linked", "token_set")
 INBOX = ("registration_pending", "mail_disabled", "agents_not_listening")
 # Records that are `inbox` items read by a read mark, as any notice (§18.1).
 NOTICES = ("moderation_applied", "restricted_changed")
-PERSONAL = (
-    "personal_request_created",
-    "personal_request_answered",
-    "personal_request_withdrawn",
-)
 
 
 def lock_human(conn: Connection, human_id: str) -> None:

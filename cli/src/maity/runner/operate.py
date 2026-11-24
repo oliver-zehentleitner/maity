@@ -16,12 +16,13 @@ from typing import Any
 
 from .. import clonecheck, hub, onboarding, state
 from ..redact import without_userinfo
-from . import config, serve, supervisor, targets, workspace
+from . import config, limitread, scratch, serve, skillop, skills, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
 from .tmux import Session, Tmux, TmuxError
 
 STOP_ALL_GRACE = 30
 FOLLOW_EVERY = 1.0
+LOG_CHUNK = 1024 * 1024
 # git run by the operator in an agent's clone: nothing the agent wrote may run (§7.5). The
 # overrides below are a second line; the first is `not_inspectable`.
 SAFE_GIT = [
@@ -48,7 +49,7 @@ def _placement_id(cfg: config.Config, which: str) -> str:
     known = [
         p for p in _status(cfg).get("placements") or []
         if isinstance(p, dict) and isinstance(p.get("id"), str)
-        and supervisor.PLACEMENT_ID.match(p["id"])
+        and supervisor.PLACEMENT_ID.fullmatch(p["id"])
     ]  # fmt: skip
     if any(p["id"] == which for p in known):
         return which
@@ -57,7 +58,7 @@ def _placement_id(cfg: config.Config, which: str) -> str:
         raise Refused(f"{onboarding.inline(which)} names more than one placement; use the id")
     if by_agent:
         return str(by_agent[0])
-    if supervisor.PLACEMENT_ID.match(which):
+    if supervisor.PLACEMENT_ID.fullmatch(which):
         return which
     raise Refused(f"no placement {onboarding.inline(which)} on this runner")
 
@@ -114,10 +115,18 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
 
     shown = 0
     while True:
-        data = as_user.read(path, shown)  # only what is new: the agent sets the log's size
+        try:  # only what is new, a chunk at a time: the agent sets the log's size
+            data = as_user.read(path, shown, limit=LOG_CHUNK, under=target.agent_files)
+        except limitread.Behind:  # the log was cut to its kept tail (logcap): from its start
+            shown = 0
+            continue
+        except OSError as exc:
+            raise Refused(f"the log for {pid} cannot be read: {exc}") from None
         if data:
             emit(data)
             shown += len(data)
+            if len(data) == LOG_CHUNK:
+                continue  # more may follow at once
         if not args.follow:
             return 0
         time.sleep(FOLLOW_EVERY)
@@ -259,9 +268,15 @@ def unsaved_work(path: Path, as_user: AsUser = RUNNER) -> list[str] | None:
     return lines
 
 
-def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str]]:
-    """(project, clone) pairs and agents of every active placement, asked of the hub: a
-    clone a new placement continues names an old placement in its record until it starts."""
+def _active_with_skills(
+    cfg: config.Config,
+) -> tuple[set[tuple[str, str]], set[str], set[str] | None, set[str] | None]:
+    """(project, clone) pairs, agents, ids and Keep the Why copies (skills.key) of every
+    active placement, asked of the hub: a clone a new placement continues names an old
+    placement in its record until it starts. The ids are None when an item of the hub's list
+    could not be read: a scratch goes only by its absence from a whole list (§15.5). The keys
+    are None then too, and when a placement's pin cannot be read, so no copy goes by a partial
+    list. A failed read refuses, never reads as empty."""
     runner_state = state.load_state(cfg.state_dir, name=serve.RUNNER_FILE)
     try:
         service = serve.open_service(cfg, runner_state)
@@ -270,18 +285,39 @@ def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str]]:
         raise Refused(f"cannot ask the hub which placements are active ({exc})") from None
     pairs: set[tuple[str, str]] = set()
     agents: set[str] = set()
-    for p in (answer.get("items") if isinstance(answer, dict) else None) or []:
+    ids: set[str] | None = set()
+    keys: set[str] | None = set()
+    items = answer.get("items") if isinstance(answer, dict) else None
+    if not isinstance(items, list):
+        raise Refused("the hub did not answer with a list of the active placements")
+    for p in items:
         if not supervisor.valid(p):
+            ids = keys = None
             continue
+        if ids is not None:
+            ids.add(p["id"])
+        if keys is not None:
+            try:
+                wanted = skills.named(p)
+            except skills.Unavailable:  # a pin that cannot be read keeps everything (#2093)
+                keys = None
+            else:
+                if wanted is not None:
+                    keys.add(skills.key(*wanted))
         pairs.add((p["project_id"], p["workspace"]["clone"]))
         agent = p.get("agent") or {}
         agents.update(v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str))
-    return pairs, agents
+    return pairs, agents, ids, keys
 
 
 def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
-    if not args.revoked:
-        raise Refused("gc removes only workspaces whose credential is revoked: pass --revoked")
+    with_skills = getattr(args, "skills", False)
+    if not (args.revoked or getattr(args, "scratch", False) or with_skills):
+        raise Refused(
+            "gc removes workspaces whose credential is revoked (--revoked), the scratch of "
+            "placements that are no longer active (--scratch) and Keep the Why copies nothing "
+            "names or runs with (--skills): pass one or more"
+        )
     if cfg.local is None:
         raise Refused("gc is for the local backend in this version")
     # Removing holds the service's lock: nothing starts in a clone while it goes.
@@ -293,26 +329,212 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
             "without --yes to list them"
         ) from None
     try:
-        pairs, agents = _active(cfg)
-        found = workspace.records(cfg.state_dir)
-        gone: list[str] = []
-        try:
-            for path_text, record in sorted(found.items()):
-                if _collect(cfg, path_text, record, pairs, agents, args.yes):
-                    gone.append(path_text)
-        finally:
-            if gone:
-                for path_text in gone:
-                    found.pop(path_text, None)
-                state.save_state(cfg.state_dir, found, name=workspace.RECORDS)
+        pairs, agents, ids, keys = _active_with_skills(cfg)
+        if args.revoked:
+            found = workspace.records(cfg.state_dir)
+            gone: list[str] = []
+            try:
+                for path_text, record in sorted(found.items()):
+                    if _collect(cfg, path_text, record, pairs, agents, args.yes):
+                        gone.append(path_text)
+            finally:
+                if gone:
+                    for path_text in gone:
+                        found.pop(path_text, None)
+                    state.save_state(cfg.state_dir, found, name=workspace.RECORDS)
+        if getattr(args, "scratch", False):
+            _collect_scratch(cfg, ids, args.yes)
+        if with_skills:
+            _collect_skills(cfg, keys, args.yes)
         if not args.yes:
-            print("nothing removed; pass --yes to remove the workspaces listed as removable")
+            print("nothing removed; pass --yes to remove what is listed as removable")
     except serve.Fatal as exc:
         raise Refused(str(exc)) from None
     finally:
         if lock is not None:
             lock.close()
     return 0
+
+
+def _running(cfg: config.Config, what: str = "scratch") -> set[str] | None:
+    """The placements with a session on the local target (§15.5), dead panes included: a
+    session gc cannot see ended keeps its scratch. None when the sessions cannot be read, said
+    for `what` gc is collecting (`scratch`, or `skills` for the copies)."""
+    try:
+        target = _targets(cfg)[0]
+        target.connect({})
+        assert target.backend is not None  # noqa: S101 - set by connect
+        sessions = target.backend.sessions()
+    except (OSError, TmuxError) as exc:
+        kept = "every scratch is kept" if what == "scratch" else "every copy is kept"
+        print(f"{what:<8} none listed: the agents' sessions could not be read "
+              f"({onboarding.inline(str(exc))[:200]}), so {kept}")  # fmt: skip
+        return None
+    return {s.placement for s in sessions.values() if s.placement}
+
+
+def _skills_running(cfg: config.Config) -> set[str] | None:
+    """The Keep the Why copies (skills.key) running sessions started with, from the
+    supervisor's records (`skill_key`) of the placements with a session on the local target:
+    kept even when the hub names another commit by now. None when the sessions cannot be read,
+    or when a running session's copy is not known: no record of it, or a record without the
+    field, as one from before this version or one not saved yet after its start (the review of
+    #2093). A record holds the field always, null for a session started without the skill."""
+    running = _running(cfg, "skills")
+    if running is None:
+        return None
+    records = state.load_state(cfg.state_dir, name=supervisor.ACTUAL_FILE)
+    keys: set[str] = set()
+    for pid in sorted(running):
+        record = records.get(pid)
+        key = record.get("skill_key", 0) if isinstance(record, dict) else 0
+        if key is None:
+            continue
+        if not isinstance(key, str) or not skills.KEY.fullmatch(key):
+            print(f"skills   none listed: the copy {pid}'s running session started with is not "
+                  "known, so every copy is kept")  # fmt: skip
+            return None
+        keys.add(key)
+    return keys
+
+
+def _collect_skills(cfg: config.Config, named: set[str] | None, remove: bool) -> None:
+    """Every Keep the Why copy that no active placement names (§15.5 `keep_the_why`) and no
+    running session started with: in the runner's skills directory, with its record in
+    `skills.json`, and below the agents' home in the agent_user layout (skillop). Listed, and
+    with `remove` removed. A copy removed too early is only fetched again at the next start.
+    Copies on ssh hosts are not collected: gc is for the local backend (tsk-7casfxb7cn49)."""
+    assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
+    if named is None:
+        print("skills   none listed: an active placement in the hub's answer could not be "
+              "read, so every copy is kept")  # fmt: skip
+        return
+    running = _skills_running(cfg)
+    if running is None:  # _skills_running said why
+        return
+    keep = named | running
+    found = [name for name, *_rest in skills.copies(cfg.skills_dir, cfg.state_dir)]
+    unused = [name for name in found if name not in keep]
+    as_user = _as_user(cfg)
+    if not remove:
+        for name in unused:
+            print(f"skills   {cfg.skills_dir / skills.NAME / name}: removable (no active "
+                  "placement names it and no session runs with it)")  # fmt: skip
+        if not as_user.direct:  # the agents' side is read only by the op that removes there
+            print("skills   the agents' copies of the same commits, and staging left there, "
+                  "are removed with --yes too")  # fmt: skip
+        return
+    failed: list[str] = []
+    removed: list[str] = []
+    try:
+        removed = skills.remove_unused(cfg.skills_dir, keep, failed)
+    except OSError as exc:  # a link, or no directory, where the copies are kept
+        failed.append(f"{cfg.skills_dir / skills.NAME} ({exc})")
+    finally:
+        skills.forget(cfg.state_dir, set(removed))  # exactly the ones that went
+    for name in removed:
+        if skills.KEY.fullmatch(name):
+            print(f"skills   {cfg.skills_dir / skills.NAME / name}: removed")
+    for what in failed:
+        print(f"skills   not removed: {onboarding.inline(what)[:200]}")
+    if as_user.direct:
+        return  # the single layout: the agents' copy is the runner's own
+    try:
+        gone = as_user.skill_remove(as_user.home(), keep)
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+        print(f"skills   the agents' copies: not removed ({onboarding.inline(str(exc))[:200]})")
+        return
+    for name in gone:
+        print(f"skills   {skillop.agent_copy(as_user.home(), name)}: removed")
+
+
+def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) -> None:
+    """Every scratch under the workspaces root, in the holder or the former per-project layout,
+    whose placement the hub does not list as active (§15.5): closed, or no placement of this
+    runner at all, and that has no session on this machine. Listed, and with `remove` removed
+    and written to `removed.jsonl`.
+    Nothing in a scratch is kept as unsaved work."""
+    assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
+    if active is None:
+        print("scratch  none listed: an active placement in the hub's answer could not be "
+              "read, so every scratch is kept")  # fmt: skip
+        return
+    running = _running(cfg)
+    if running is None:
+        return
+    as_user = _as_user(cfg)
+    root = cfg.local.workspaces
+    # Each scratch in the holder `<root>/.scratch/<project>/`, and in a project's former
+    # `.scratch` while any is left (tsk-c7zzd440x8pn), listed as the agents' user: in the
+    # agent_user layout the holder is that user's 0700 directory, closed to the runner (the
+    # review of #2112). The holder and the projects' directories in it stay, even empty; only
+    # scratches go. A link is listed, never gone into.
+    found: list[tuple[Path, str]] = []  # (the scratch's path, `d`/`l`/`f`/`?`)
+    try:
+        holders, skipped = _scratch_holders(root, as_user)
+        for holder in holders:
+            found += [(holder / name, kind) for name, kind in as_user.entries(holder, 1)]
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused(f"cannot list the scratches under {root} ({exc})") from None
+    for link in sorted(skipped):  # so the operator sees why nothing behind it was cleaned
+        print(f"scratch  {onboarding.inline(str(link))}: a link, skipped (not gone into)")
+    for entry, kind in sorted(found):
+        if entry.name in active:
+            continue
+        if entry.name in running:
+            print(f"scratch  {entry}: kept (a session of the placement is still there)")
+            continue
+        if not workspace.SCRATCH_ID.fullmatch(entry.name) or kind != "d":
+            print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
+            continue
+        if not remove:
+            print(f"scratch  {entry}: removable (the placement is not active)")
+            continue
+        try:
+            removed = scratch.remove(entry, as_user)
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
+            continue
+        if removed is None:
+            continue  # gone meanwhile
+        scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
+        print(f"scratch  {entry}: removed")
+
+
+def _scratch_holders(root: Path, as_user: AsUser) -> tuple[list[Path], list[Path]]:
+    """The directories gc reads scratches from, as the agents' user: each project's directory
+    in the holder `<root>/.scratch`, and each project's former `<root>/<project>/.scratch`;
+    and the links met on the way, each left out and never gone into (a holder, a project's
+    directory or its `.scratch`), for gc to name. A name that is no project id is no
+    project's, and an entry that is no directory is passed over. OSError when one cannot be
+    listed."""
+    holders: list[Path] = []
+    links: list[Path] = []
+    new_holder = root / workspace.SCRATCH
+    if as_user.exists(new_holder, "-L"):
+        links.append(new_holder)
+    elif as_user.exists(new_holder, "-d"):
+        for name, kind in as_user.entries(new_holder, 1):
+            if not workspace.TOKEN.fullmatch(name):
+                continue
+            if kind == "l":
+                links.append(new_holder / name)
+            elif kind == "d":
+                holders.append(new_holder / name)
+    for name, kind in as_user.entries(root, 1):
+        if not workspace.TOKEN.fullmatch(name):
+            continue
+        if kind == "l":
+            links.append(root / name)
+            continue
+        if kind != "d":
+            continue
+        former = root / name / workspace.SCRATCH
+        if as_user.exists(former, "-L"):
+            links.append(former)
+        elif as_user.exists(former, "-d"):
+            holders.append(former)
+    return holders, links
 
 
 def _collect(
@@ -325,14 +547,16 @@ def _collect(
 ) -> bool:
     """One workspace: listed when its credential is revoked; removed (True) only when its
     path is the one its record implies, no placement uses it, and git could say what is in
-    it."""
+    it. A workspace folder (§15.5) goes as a whole: its entries besides the clone are listed
+    with git's, as unsaved work, and the operator's `--yes` takes them too."""
     assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
     if not isinstance(record, dict):
         return False
     path = Path(path_text)
     as_user = _as_user(cfg)
     try:
-        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name)
+        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name,
+                                    folder=workspace.recorded_layout(record))  # fmt: skip
     except workspace.Refused:
         return False
     if str(expected.path) != path_text or as_user.exists(path, "-L"):
@@ -344,13 +568,20 @@ def _collect(
     if not credential_revoked(expected, as_user):
         return False
     print(f"{path}  agent {onboarding.inline(record.get('agent'))}  credential revoked")
-    reason = not_inspectable(path, as_user)
-    work = None if reason else unsaved_work(path, as_user)
+    extra = workspace.beside(expected, as_user)
+    if extra is None or workspace.REPO in extra:  # unreadable, or `repo` is not a directory
+        print(f"  not inspected (the workspace folder holds no plain clone {workspace.REPO}); "
+              "not removed")  # fmt: skip
+        return False
+    reason = not_inspectable(expected.repo, as_user)
+    work = None if reason else unsaved_work(expected.repo, as_user)
     if reason or work is None:
         print(f"  not inspected ({reason or 'git failed'}); not removed")
         return False
     for line in work:
         print(f"  {line}")
+    for name in extra:
+        print(f"  {onboarding.inline(name)} (beside the clone)")
     if not remove:
         return False
     try:
@@ -373,14 +604,21 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
     project, _, clone = args.where.partition("/")
     try:
         place = workspace.locate(cfg.local.workspaces, project, clone)
-    except workspace.Refused:
+    except workspace.Refused as refused_:
+        if refused_.why:  # a resolved-path refusal (e.g. a wildcard char) explains itself
+            raise Refused(refused_.why) from None
         raise Refused(f"not <project id>/<clone>: {onboarding.inline(args.where)}") from None
-    if not _as_user(cfg).exists(place.path / ".git", "-d"):
-        raise Refused(f"{place.path} is not a clone")
+    as_user = _as_user(cfg)
+    if not as_user.exists(place.path / ".git", "-d"):
+        # A workspace folder (§15.5) holds the clone as `repo`, and is recorded as one.
+        folder = workspace.locate(cfg.local.workspaces, project, clone, folder=True)
+        if as_user.exists(folder.path / ".git") or not as_user.exists(folder.repo / ".git", "-d"):
+            raise Refused(f"{place.path} is not a clone, nor a workspace folder with one")
+        place = folder
     if str(place.path) in workspace.records(cfg.state_dir) and not args.force:
         raise Refused(f"{place.path} is recorded already; --force to record it again")
     workspace.record(cfg.state_dir, place, args.agent, args.placement or "")
-    origin = workspace.origin(place.path, _as_user(cfg))
+    origin = workspace.origin(place.repo, as_user)
     shown = without_userinfo(origin) if origin else origin
     print(f"recorded {place.path} for {onboarding.inline(args.agent)} (origin {shown})")
     return 0

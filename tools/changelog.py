@@ -31,7 +31,9 @@ HEADINGS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 UNRELEASED = "## [Unreleased]"
 FRAGMENT_DIR = "changelog.d"
 FRAGMENT_SKIP = {"README.md"}
-VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
+# A release names the package version as the tag and PyPI do: PEP 440 with an
+# optional pre-release (0.1.0a2, 0.1.0b1, 0.1.0rc1), or SemVer (1.2.3-rc.1).
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+|[-+][0-9A-Za-z.+-]+)?$")
 
 
 class ChangelogError(Exception):
@@ -196,7 +198,9 @@ def cmd_check(root: Path) -> int:
 
 def cmd_release(root: Path, version: str, date: str | None, dry_run: bool) -> int:
     if not VERSION_RE.match(version):
-        raise ChangelogError(f"version {version!r} is not semantic (1.2.3, 1.2.3-rc.1)")
+        raise ChangelogError(
+            f"version {version!r} is neither PEP 440 nor SemVer (1.2.3, 0.1.0a2, 1.2.3-rc.1)"
+        )
     if date is None:
         date = datetime.date.today().isoformat()
     else:

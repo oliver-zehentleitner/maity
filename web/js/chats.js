@@ -2,8 +2,8 @@
 // laid out as a project's Chat tab (js/chat.js): the list beside the open
 // conversation, on a phone the list its own screen. The list merges each
 // project's direct and group chats (docs/api.md §9.3, GET /me/conversations),
-// in the hub's order (four bands: pinned with unread, unpinned with unread,
-// quiet pinned, the rest), each with its project; a human pins one here too. A conversation opens
+// in the hub's order (four bands: pinned with unread, quietly pinned,
+// unpinned with unread, the rest), each with its project; a human pins one here too. A conversation opens
 // in place (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
 // context. Going from one chat to another changes the pane alone: the page, the
 // list and every project's context stay, and the pane being left stands dimmed until
@@ -52,7 +52,7 @@ window.Maity = window.Maity || {};
       // A redraw keeps the keyboard on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
-      clear(ul);
+      const fresh = h("div");
       const all = [];
       Object.keys(read).forEach((slug) => read[slug].chats.forEach((chat) => all.push({ slug, chat, key: slug + "/" + chat.id })));
       ordered(all).forEach((x) => {
@@ -68,8 +68,10 @@ window.Maity = window.Maity || {};
         const who = a && a.querySelector(".conv-sub");
         if (who) append(who, h("span", { class: "conv-project", title: name }, M.projectMark(x.slug, name, (pctx.projectViews || {})[x.slug], "small")));
         if (a) append(a, h("span", { class: "visually-hidden" }, ", ", M.t("chats.in_project", { project: name })));
-        append(ul, li);
+        append(fresh, li);
       });
+      M.dom.keepImages(ul, fresh);
+      append(clear(ul), Array.from(fresh.childNodes));
       none.hidden = all.length > 0 || Object.keys(read).length === 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);

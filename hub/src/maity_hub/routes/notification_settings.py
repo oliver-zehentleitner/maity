@@ -1,4 +1,4 @@
-"""`/me/notification-settings` (docs/api.md §18.4).
+"""`/me/notification-settings` and `/me/presence` (docs/api.md §18.4).
 
 The settings are a human's own: an agent credential is `forbidden` with `humans_only`.
 """
@@ -7,20 +7,20 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, Request
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import events
+from maity_hub import clock, events
 from maity_hub import tables as t
 from maity_hub.auth import password_limits, second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.db import retrying
-from maity_hub.deps import AnyCaller, engine_of, settings_of
-from maity_hub.errors import forbidden, humans_only, invalid, not_found
+from maity_hub.deps import AnyCaller, engine_of, presence_caller, settings_of
+from maity_hub.errors import forbidden, humans_only, invalid, not_found, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
-from maity_hub.notifications import preferences
+from maity_hub.notifications import address, preferences, presence
 from maity_hub.ratelimit import Attempt
 from maity_hub.views import member_view
 
@@ -81,6 +81,9 @@ def patch_settings(
 ) -> JSONResponse:
     session_hash = _human(caller)
     hub = settings_of(request)
+    # The key of the verification mail's counts (`known_sources.address_key`), before the
+    # transaction that reads it.
+    addresses.prepare(engine_of(request), hub.secret_key)
 
     def run() -> tuple[dict[str, Any], int]:
         with events.transaction(engine_of(request)) as conn:
@@ -125,7 +128,7 @@ def verify_from_dashboard(
     addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
         # Another human's token is `not_found`, the same as an invalid one (§18.4).
-        done = preferences.verify(
+        done = address.verify(
             conn,
             token,
             hub.mail.signing_key,
@@ -159,9 +162,10 @@ def _decide(
     if set(body) != {"id", "address"}:
         raise invalid({"body": "id_and_address"})
     hub = settings_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # the key of the verification's counts
     with engine_of(request).begin() as conn:
         human, session = _context(conn, caller, session_hash)
-        preferences.decide_held(
+        address.decide_held(
             conn,
             human=human,
             session=session,
@@ -174,3 +178,17 @@ def _decide(
             keeps_factor=lambda: second_factor.refuse_losing_the_address(conn, hub, human.id),
         )
         return JSONResponse(preferences.view(conn, human.id, _mail_ready(conn, request)))
+
+
+@router.post("/me/presence", status_code=204)
+def post_presence(
+    request: Request, caller: Annotated[Caller, Depends(presence_caller)]
+) -> Response:
+    """A dashboard tab says the human is present (§18.4): the mail hold's input only."""
+    assert caller.human_session is not None  # presence_caller admits a cookie session only
+    wait = presence.CALLS.hit(caller.human_session)
+    if wait:
+        raise rate_limited(wait)
+    with engine_of(request).begin() as conn:
+        presence.mark(conn, caller.human_session, clock.now())
+    return Response(status_code=204)

@@ -237,7 +237,8 @@ where the hub answers the shell anyway.
 
 **Id:** 51873531-fa92-4281-b935-066b6e73944f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4062e001-9683-4a81-b1f1-c88dcb38374f
 **Evidence:** confirmed
 **Source:** the card tsk-h1e5zmq1wnhj (an unknown address showed the sign-in form) and the lead's approval of the plan, 2026-11-07; docs/api.md §16.11; web/js/not-found.js; web/js/app.js `showsVisitorNothing`; the not-found cases in web/tools/smoke.js
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-07
@@ -278,6 +279,154 @@ status.
 
 The page's link to `/explore` is a page load, as every link there is
 (`M.route.listen`, entry b8377791 below).
+
+## An address that can never be a page says "not found" with the hub's 404; one that shows nothing keeps the words that never tell whether a name exists
+
+**Id:** 4062e001-9683-4a81-b1f1-c88dcb38374f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-07 (req-0d6vhrr0xqh8) and its boundary in docs/api.md §16.11, "Addresses that can never be a page" (card tsk-85dc596aty5w, the maintainer's look at it: "paßt danke!"); the hub's `paths.never_a_page`; web/js/app.js `neverAPage`, `segmentOf`, `showsVisitorNothing`; the never-a-page cases in web/tools/smoke.js
+**See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-16
+**Revisit when:** a route deeper than 6 segments is added (the bound moves in §16.11, the hub and here together), or the dashboard learns, without asking the hub, whether a name exists
+
+`parseRoute` first asks `neverAPage`, the same rule as the hub's `404`
+(§16.11): a first segment that is no handle, a reserved first word
+without a route, more than 6 segments outside a project's Why, a
+project's view word that is none of `NAV`'s, and `/<handle>/agents`.
+Such an address is the scope `never`: a visitor gets `M.notFound.page`
+in the sign-in's frame, a signed-in reader `M.notFound.view`, and no
+public page is read. The path is split at its slashes before a segment
+is decoded (`segmentOf`); an escape that does not decode leaves the
+segment as sent, where it used to throw a URIError and draw the failed
+page.
+
+The rest of 51873531 stands: a handle without a stored public page and
+a project address whose view word is none of `NAV`'s say "This page
+does not exist, or it is not public.", with the sign-in, the start page
+and `/explore` linked. An address under one of the dashboard's own first
+words (`/inbox/x`, `/requests/<id>`, `/sign-in/code`) keeps the sign-in,
+which leads on there, as long as it is no deeper than 6 segments.
+
+**Reason:** the hub now answers these addresses `404` with the shell as
+the body, so the dashboard has to draw "not found" there, not the
+sign-in form. Taking the same rule from the path's words keeps the two
+answers alike without a read, and a read would be the one thing that
+could tell a stranger whether a name exists (e34ae588). Answering a
+broken escape like any other segment follows the contract's reading of
+a path, and a mistyped link gets "not found" in place of an error page.
+
+**Rejected alternatives:**
+- Reading the status of the page load: a script cannot read the status
+  of the document it runs in, and a navigation inside the dashboard
+  makes no request at all.
+- A marker the hub puts into the `404` shell: it would hold only for
+  the first load, and the dashboard needs the rule for its own links
+  anyway.
+
+## An event's page opens the event where it lives, the place's address with `#seq-<n>`; a 404 says "not visible"
+
+**Id:** 25f39a28-47e6-4562-94bd-414f1da5a14e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11; its review (a chat's tombstone without a conversation, an answer after the page was left), 2026-11-11; its second review (a removed project message belonged in Messages per §8.9 then: the listing told it from a chat's tombstone, fmzu 108227, vuur 108230; its audience stays and tells most but not all of them apart, spq4 108278, vuur 108281), 2026-11-11; its third review (the seq compared exactly only up to 2⁵³, a removed message about a card or request opening that, spq4 108392, vuur 108395), 2026-11-11; the owner's decision that a project message about a card opens in Messages at its seq, the card linked beside it (req-cxyyb2w01s8m, option o2, seq 109453, card tsk-hpzs907e3xvx), and the owner's confirmation that a removed message never opens in Messages (req-5zfznap3s3bj, option o1, seq 110013), with §8.9 as changed for both by PR #1644, 2026-11-11
+**See:** https://github.com/oliver-zehentleitner/maity — a96ea52b-30a4-4761-84ea-7423f3fca0b6 — as of 2026-11-11
+**Revisit when:** the hub serves a chat's messages around a given `seq` (then a chat can open at it in one read), the card panel lists the messages about a card (the owner's decision then may be put to the owner again), a project message can be about something other than a card, or readers report links that stop short of an old message
+
+`/<owner>/<slug>/events/<seq>` (`js/event.js`, no tab) reads
+`GET …/events/{seq}` once and replaces the address, with no history
+entry of its own, by where the event lives (§8.9), in that order: its chat
+(`chat/<conversation_id>`, direct or group) when the hub names a
+conversation for this reader, else Messages for a message that is not
+removed and whose `payload.type` names a type and not `chat`, one about a
+card included (Messages names the card beside it, a link), else its
+subject's card (`tasks/<id>`) or request (`inbox/<id>`), else the event's
+own page. A removed message never opens in Messages: a removed project
+message about a card opens its card (its `subject`, kept through the
+redaction, §8.5), one without a card is drawn on the event's page, as
+removed. A chat's tombstone that a former participant still reads but can
+no longer open in its chat comes, like a removed project message's, with
+`conversation_id: null` and a payload without a type; it is placed the
+same way, at its subject, else on the page. The page therefore never
+needs to tell the two tombstones apart, and every event is placed from
+its one read. `#seq-<n>` follows the place's address (a place on the
+page, `M.route.seqTarget()`). An event with none of these places is drawn
+on the page itself. An answer that arrives after the reader left the page
+(another link, back) changes nothing: the view checks after the read,
+before it redirects or draws, that it is still the page shown, as the
+app's own check of a render comes only after the view returns. The place
+marks the message (`.seq-target`) and scrolls to it. A direct or group
+chat reads older pages one at a time, as Show earlier does, only while
+the message could still be in them, and at most ten (`REVEAL_PAGES`,
+`js/chat.js` `reveal`). Messages does the same with its listing's cursor.
+Past the bound the place says it did not reach the message, and Show
+earlier goes on from there. A card or a request opens as its own link
+opens it. The card panel has no list of the messages about a card to mark
+one in.
+
+Until 2026-11-11 the order was different twice over. The subject came
+before Messages, so a link to a notice about a card opened the card,
+whose panel lists no messages: the reader never saw the text clicked,
+and the owner chose Messages with the card beside it (req-cxyyb2w01s8m,
+o2). And a removed project message belonged in Messages while a chat's
+tombstone did not, so for a message with no type, no conversation and no
+card or request it is about, the page read the Messages listing once
+(`…/messages?after=<seq − 1>&limit=1`, §8.8), which holds the project's
+tombstone and never a chat's: listed, it opened in Messages; not listed,
+or the read failed, it was drawn on the page. A tombstone with a
+conversation or a subject was placed there without that read. §8.9 now
+keeps every removed message out of Messages (req-5zfznap3s3bj, o1;
+context/messages.md, See above), so that read is gone.
+
+A `404` and a path that is no `seq` (`068216`, sent to the hub never)
+both show "not visible" in one sentence, the same for an event the
+reader may not see and one that does not exist, as the hub's answers are
+the same.
+
+**Reason:** the card asks for the message where it lives, and §8.9 says
+where that is. Opening it there gives its context (the chat around it,
+the card), which a copy on a page of its own would not. Replacing the
+address makes back leave the place, not land on a page that only
+forwards. Bounding the search keeps a link's cost known, as the rule for
+opening a chat does (no request whose cost grows with history). Ten pages
+of fifty are the last 500 messages of a chat, which is where a cited
+`seq` almost always is. A removed message has no text to show in
+Messages, and its tombstone there has no `task_id` (§8.8), so Messages
+would show neither the message nor its card; placing a tombstone by its
+subject, else on the page, spares the second read that a link to one
+with no conversation and no subject cost. One sentence for
+404 keeps the page as silent as the route about whether the event
+exists.
+
+**Rejected alternative:** reading the chat around the `seq` instead of
+from its newest page: the chat's reads mark what they return read, and
+`before=` from the target would draw a chat whose newest messages are
+missing, a second mode of the chat view for one link. Showing every
+event on its own page: it loses the context the card asks for. An
+unbounded search: a link to the first message of a long chat would read
+the whole history. The subject before Messages, as §8.9 had it until
+2026-11-11: a notice about a card opened the card, which shows no message,
+and the owner chose Messages with the card beside it (req-cxyyb2w01s8m,
+o2). A list of a card's messages in its panel, the cited one marked: a new
+part of the card view for one link, not what the owner chose. A removed
+project message in Messages, told from a chat's tombstone by one read of
+the Messages listing, as the page did until 2026-11-11 for a typeless
+message with no conversation and no card or request it is about: a
+second read on every link to such a message, for a place that showed no
+text and no card;
+§8.9 dropped that place (req-5zfznap3s3bj, o1). Reading a missing type as
+a project message (the Messages listing's own filter judges only
+unredacted events, which carry their type): a chat's tombstone without a
+conversation went to Messages, which lists no chat message, and the event
+the hub had just served ended as "not reached" (review of #1629).
+Routing a typeless tombstone by its audience (one token that is not
+`member:` or `instance:` sends it to Messages): a member-only project
+message cannot be told apart from a chat by audience (spq4 108278, vuur
+108281); with no tombstone in Messages the question no longer arises.
+Parsing the listing with a BigInt-aware JSON reader for the seq above
+2⁵³: the whole app reads seqs as numbers, and Messages could not mark
+such a message anyway (spq4 108392).
 
 ## `/explore` and `/for/<slug>` are the hub's pages: a click on a link to them is a page load, and they stay routes
 

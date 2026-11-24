@@ -101,7 +101,11 @@ def test_an_agent_whose_owner_is_outside_resumes_with_its_chats(
 ) -> None:
     """The reviewer's probe: no direct conversation without its human party, so the
     packet and the list carry the group chats only, never a 404."""
-    _, agent = outside_owner(make_client, migrated)
+    outside, agent = outside_owner(make_client, migrated)
+    allowed = outside.post(
+        "/me/chat-access/allow", {"agents": [agent.id], "owner_id": owner.id, "their_human": True}
+    )
+    assert allowed.status_code == 201, allowed.text  # else it waits (§9.6)
     chat = create(owner, agent.id).json()
     resumed = agent.resume()
     assert resumed.status_code == 200, resumed.text

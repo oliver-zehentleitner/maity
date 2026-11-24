@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import fake_gh, git, posix
 
-from maity import cli, gitfacts
+from maity import cli, gitfacts, proc
 
 # Absolute: the fixtures' PATH holds git alone.
 TOOLS = {"sh": shutil.which("sh") or "/bin/sh", "touch": shutil.which("touch") or "/usr/bin/touch"}
@@ -47,14 +51,144 @@ def test_untracked_file_is_not_a_mismatch(clone: Path) -> None:
     assert gitfacts.mismatches(gitfacts.collect(clone)) == []
 
 
-def test_branch_without_upstream_is_refused(clone: Path) -> None:
+def test_branch_without_upstream_is_refused_until_pushed(clone: Path) -> None:
     git(clone, "switch", "--quiet", "-c", "local-only")
-    assert any("no upstream" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+    assert any("does not exist" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+
+
+def test_a_branch_pushed_without_an_upstream_reads_as_its_own_branch_on_origin(
+    clone: Path,
+) -> None:
+    """Under the runner's sandbox `.git/config` cannot be written, so an agent pushes without
+    `-u` and its branch never gets an upstream (the first runner test of 0.1.0a8): the report
+    reads the branch of the same name on the remote a plain `git push` chooses."""
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    (clone / "a.txt").write_text("two\n")
+    git(clone, "commit", "--quiet", "-am", "two")
+    git(clone, "push", "--quiet", "origin", "local-only")
+    assert "branch.local-only." not in git(clone, "config", "--list")
+    lock = clone / ".git" / "config.lock"
+    lock.write_text("")  # what the sandbox leaves: nothing can write the configuration
+    try:
+        facts = gitfacts.collect(clone)
+    finally:
+        lock.unlink()
+    assert (facts.remote, facts.remote_branch) == ("origin", "local-only")
+    assert facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_branch_without_an_upstream_uses_the_push_remote(clone: Path) -> None:
+    origin = git(clone, "config", "--get", "remote.origin.url")
+    git(clone, "remote", "add", "fork", origin)
+    git(clone, "config", "remote.pushDefault", "fork")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    facts = gitfacts.collect(clone)
+    assert (facts.remote, facts.remote_branch) == ("fork", "local-only")
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("remote.origin.pushurl", "elsewhere"),
+        ("remote.origin.push", "refs/heads/local-only:refs/heads/published"),
+        ("url.elsewhere.pushInsteadOf", "https://"),
+    ],
+)
+def test_a_push_that_may_go_elsewhere_is_not_read_without_an_upstream(
+    clone: Path, key: str, value: str
+) -> None:
+    """The report reads the fetch URL and the branch's own name. A `pushurl`, a
+    `pushInsteadOf` or a `push` refspec can send the push to another repository or name, so
+    the pushed head would be checked against what was not pushed (review of #1663)."""
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "push", "--quiet", "origin", "local-only")  # what the report would read
+    git(clone, "config", key, value)
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+
+
+def test_a_branch_without_an_upstream_and_without_origin_has_no_upstream(clone: Path) -> None:
+    git(clone, "remote", "rename", "origin", "elsewhere")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
 
 
 def test_branch_deleted_on_remote_is_refused(clone: Path) -> None:
     git(clone, "push", "--quiet", "origin", "--delete", "work")
     assert any("does not exist" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+
+
+def test_a_remote_that_could_not_be_read_is_no_branch_to_push() -> None:
+    """A failed `git ls-remote` says nothing about the branch (tsk-mfac5zscnkxs)."""
+    facts = gitfacts.Facts(
+        head="a" * 40, branch="work", remote="origin", remote_branch="work", remote_head=None,
+        dirty=False, pr=None, remote_error="git ls-remote failed: proxy refused",
+    )  # fmt: skip
+    problems = gitfacts.mismatches(facts)
+    assert problems == ["maity could not read origin/work (git ls-remote failed: proxy refused)"]
+    assert not any("push it" in p for p in problems)
+
+
+def test_a_refusal_of_maitys_git_at_the_lookup_is_raised_not_kept(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a lookup that ran and failed falls back to the probe; a refusal stays one."""
+    real = proc.run
+
+    def refusing(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "ls-remote" in cmd:
+            raise proc.ToolRefused("maity runs no git here: x")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", refusing)
+    with pytest.raises(gitfacts.FactsError, match="maity runs no git here") as raised:
+        gitfacts.collect(clone)
+    assert not isinstance(raised.value, gitfacts.RemoteUnread)
+
+
+def test_a_timed_out_default_branch_read_leaves_the_branch_alone(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A branch that tracks origin/main, and no `refs/remotes/origin/HEAD` to say main is the
+    default: `ls-remote --symref` is asked, and its timeout says nothing, so nothing changes
+    and `collect` meets the unread remote with its fallback."""
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+    with contextlib.suppress(subprocess.CalledProcessError):
+        git(clone, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    real = proc.run
+
+    def timing_out(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "--symref" in cmd:
+            raise proc.ToolError("`git ls-remote --symref` did not answer within 30s")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", timing_out)
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "--get", "branch.work.merge") == "refs/heads/main"
+
+
+def test_a_refusal_at_the_default_branch_read_is_raised(
+    clone: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal of maity's git stays one at the default branch's read too."""
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+    with contextlib.suppress(subprocess.CalledProcessError):
+        git(clone, "update-ref", "-d", "refs/remotes/origin/HEAD")
+    real = proc.run
+
+    def refusing(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+        if "--symref" in cmd:
+            raise proc.ToolRefused("maity runs no git here: x")
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", refusing)
+    with pytest.raises(gitfacts.FactsError, match="maity runs no git here") as raised:
+        gitfacts.track_own_branch(clone)
+    assert not isinstance(raised.value, gitfacts.RemoteUnread)
 
 
 def test_a_branch_deleted_after_its_merge_reports_the_merged_head(
@@ -100,6 +234,38 @@ def test_pr_head_mismatch_is_refused(clone: Path, bin_dir: Path) -> None:
     head = git(clone, "rev-parse", "HEAD")
     problems = gitfacts.mismatches(gitfacts.collect(clone))
     assert problems == [f"pull request #12 has head {'0' * 12}, local HEAD is at {head[:12]}"]
+
+
+def test_another_fork_s_pull_request_of_the_same_branch_name_is_passed_over(
+    clone: Path, bin_dir: Path
+) -> None:
+    """gh's `--head` matches the branch name alone: in the project's repository another fork's
+    pull request from a `work` of its own comes back too, here first. The one whose head is
+    the local HEAD is the report's (tsk-6yq56cm6k01j)."""
+    head = git(clone, "rev-parse", "HEAD")
+    rows = [
+        {"number": 5, "headRefOid": "0" * 40, "state": "OPEN", "url": "https://x/pull/5"},
+        {"number": 9, "headRefOid": head, "state": "OPEN", "url": "https://x/pull/9"},
+    ]
+    fake_gh(bin_dir, json.dumps(rows))
+    facts = gitfacts.collect(clone)
+    assert facts.pr is not None and facts.pr.number == 9
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_no_pull_request_with_the_local_head_keeps_the_first_and_its_refusal(
+    clone: Path, bin_dir: Path
+) -> None:
+    """None of them has the local HEAD: the first stands as before, and the report is refused
+    over its other head rather than sent with a pull request that is not this work's."""
+    rows = [
+        {"number": 5, "headRefOid": "0" * 40, "state": "OPEN", "url": "https://x/pull/5"},
+        {"number": 9, "headRefOid": "1" * 40, "state": "OPEN", "url": "https://x/pull/9"},
+    ]
+    fake_gh(bin_dir, json.dumps(rows))
+    facts = gitfacts.collect(clone)
+    assert facts.pr is not None and facts.pr.number == 5
+    assert any("pull request #5 has head" in p for p in gitfacts.mismatches(facts))
 
 
 def test_no_pr_for_branch(clone: Path, bin_dir: Path) -> None:
@@ -172,8 +338,49 @@ def test_an_upstream_on_a_local_branch_is_no_upstream(clone: Path) -> None:
     git(clone, "branch", "--quiet", "base")
     git(clone, "switch", "--quiet", "-c", "feature", "--track", "base")
     facts = gitfacts.collect(clone)
-    assert facts.remote is None
-    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+    assert facts.remote is None and facts.upstream_set
+    # A stacked branch is not read as its own branch on origin, and the advice is not a plain
+    # push, which would leave it tracking the local branch (review of #1663).
+    (problem,) = gitfacts.mismatches(facts)
+    assert "not a branch on a remote" in problem and "git push" not in problem
+
+
+def test_one_upstream_key_alone_is_an_upstream_and_no_fallback(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "push", "--quiet", "origin", "local-only")
+    git(clone, "config", "branch.local-only.remote", "origin")  # no .merge
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch is None and facts.upstream_set
+    assert any("not a branch on a remote" in p for p in gitfacts.mismatches(facts))
+
+
+def test_the_branch_push_remote_wins_over_the_push_default(clone: Path) -> None:
+    origin = git(clone, "config", "--get", "remote.origin.url")
+    git(clone, "remote", "add", "fork", origin)
+    git(clone, "remote", "add", "other", origin)
+    git(clone, "config", "remote.pushDefault", "other")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "fork")
+    assert gitfacts.collect(clone).remote == "fork"
+
+
+def test_a_push_remote_without_a_url_is_no_upstream(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "nowhere")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None and not facts.upstream_set
+    (problem,) = gitfacts.mismatches(facts)
+    assert "push remote nowhere has no URL" in problem and "git push origin" not in problem
+
+
+def test_a_derived_push_remote_git_would_read_as_an_option_is_refused(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "-x")
+    assert gitfacts.collect(clone).remote is None  # a dash is never asked about
+    git(clone, "config", "branch.local-only.pushRemote", "origin")
+    git(clone, "config", "--add", "remote.origin.url", "ext::sh -c touch% /tmp/x")
+    with pytest.raises(gitfacts.FactsError, match="plain `git push` sends it"):
+        gitfacts.collect(clone)
 
 
 def test_detached_and_dirty_are_both_reported(clone: Path) -> None:
@@ -304,3 +511,142 @@ def test_a_remote_url_without_a_host_is_named_so(
     git(clone, "remote", "set-url", "origin", url)
     reason = gitfacts._forge_unknown(clone, "origin")
     assert reason is not None and named in reason
+
+
+# --- a branch cut from main tracks main (tsk-8qwmbw5xydpw) -----------------------------------
+
+
+def _track_main(clone: Path, set_head: bool) -> None:
+    """`work` as `git switch -c work origin/main` leaves it: its upstream is origin's main.
+    With `set_head` the clone knows origin's default branch (`origin/HEAD`, as a clone of a
+    repository with commits sets it); without, only the remote's HEAD says it."""
+    git(clone, "push", "--quiet", "origin", "work:main")
+    git(clone, "fetch", "--quiet", "origin")
+    if set_head:
+        git(clone, "remote", "set-head", "origin", "main")
+    elif git(clone, "for-each-ref", "refs/remotes/origin/HEAD"):
+        git(clone, "remote", "set-head", "origin", "--delete")  # a fetch of git 2.48+ sets it
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+
+
+@pytest.mark.parametrize("set_head", [True, False], ids=["origin-HEAD", "ls-remote"])
+def test_a_branch_tracking_main_is_set_to_track_its_own_branch(clone: Path, set_head: bool) -> None:
+    _track_main(clone, set_head)
+    (clone / "a.txt").write_text("two\n")
+    git(clone, "commit", "--quiet", "-am", "two")
+    git(clone, "push", "--quiet", "origin", "work")  # pushed without -u: still tracks main
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+    done = gitfacts.track_own_branch(clone)
+    assert done.problem is None
+    assert done.note == (
+        "branch work tracked origin/main, the default branch; set branch.work.merge to "
+        "refs/heads/work, its own branch on origin"
+    )
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/work"
+    assert git(clone, "config", "branch.work.remote") == "origin"
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch == "work" and facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_branch_tracking_main_that_is_not_pushed_is_left_and_named(clone: Path) -> None:
+    _track_main(clone, set_head=True)
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    done = gitfacts.track_own_branch(clone)
+    assert done.note is None
+    assert done.problem == (
+        "branch work tracks origin/main, the default branch, and origin has no branch work; "
+        "push it with `git push -u origin work`"
+    )
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+
+
+def test_an_upstream_other_than_the_default_branch_is_left_as_it_is(clone: Path) -> None:
+    """A stacked branch that tracks the branch below it, say: not main, not touched."""
+    _track_main(clone, set_head=True)
+    git(clone, "push", "--quiet", "origin", "work:base")
+    git(clone, "config", "branch.work.merge", "refs/heads/base")
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/base"
+
+
+def test_the_default_branch_itself_and_its_own_upstream_are_left(clone: Path) -> None:
+    _track_main(clone, set_head=True)
+    git(clone, "switch", "--quiet", "-c", "main", "--track", "origin/main")
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "branch.main.merge") == "refs/heads/main"
+    git(clone, "switch", "--quiet", "work")
+    git(clone, "config", "branch.work.merge", "refs/heads/work")
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+
+
+def test_a_tag_named_like_the_branch_does_not_change_whose_key_is_set(clone: Path) -> None:
+    """`symbolic-ref --short` gives `heads/work` next to a tag `work`; the key is still work's."""
+    _track_main(clone, set_head=True)
+    git(clone, "tag", "work")
+    git(clone, "update-ref", "refs/heads/heads/work", "HEAD")  # `git branch` refuses the name
+    git(clone, "config", "branch.heads/work.remote", "origin")
+    git(clone, "config", "branch.heads/work.merge", "refs/heads/main")
+    git(clone, "push", "--quiet", "origin", "refs/heads/heads/work:refs/heads/heads/work")
+    assert git(clone, "symbolic-ref", "--quiet", "--short", "HEAD") == "heads/work"
+    done = gitfacts.track_own_branch(clone)
+    assert done.problem is None and done.note is not None and "branch.work.merge" in done.note
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/work"
+    assert git(clone, "config", "branch.heads/work.merge") == "refs/heads/main"
+    assert gitfacts.collect(clone).branch == "work"
+
+
+def test_a_remote_branch_whose_name_only_ends_in_the_branch_is_not_the_branch(
+    clone: Path,
+) -> None:
+    """`ls-remote` takes `refs/heads/work` as a suffix and also lists
+    `refs/heads/x/refs/heads/work`; that branch is not work, for the retrack or the facts."""
+    _track_main(clone, set_head=True)
+    git(clone, "push", "--quiet", "origin", "work:refs/heads/x/refs/heads/work")
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    assert git(clone, "ls-remote", "--heads", "--", "origin", "refs/heads/work")  # the suffix
+    done = gitfacts.track_own_branch(clone)
+    assert done.note is None and done.problem is not None and "has no branch work" in done.problem
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+    git(clone, "config", "branch.work.merge", "refs/heads/work")
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch == "work" and facts.remote_head is None
+    assert any("does not exist" in p for p in gitfacts.mismatches(facts))
+
+
+def _recording(
+    calls: list[tuple[str, ...]], real: Callable[..., str | None]
+) -> Callable[..., str | None]:
+    """`real` (gitfacts' `_git` or `_git_required`), noting each call's arguments in `calls`."""
+
+    def record(cwd: Path, *args: str) -> str | None:
+        calls.append(args)
+        return real(cwd, *args)
+
+    return record
+
+
+@posix
+@pytest.mark.parametrize("set_head", [True, False], ids=["origin-HEAD", "ls-remote"])
+def test_the_upstream_is_checked_before_the_retrack_asks_the_remote(
+    clone: Path, monkeypatch: pytest.MonkeyPatch, set_head: bool
+) -> None:
+    """A second URL naming a helper: `ls-remote` would use the first, valid one and the retrack
+    would go through; the check refuses before any question to the remote, nothing is set.
+    Every git call is recorded: a refusal raised only after an `ls-remote` (the default branch's
+    without origin/HEAD, the own branch's with it) fails here, not only one that never comes."""
+    _track_main(clone, set_head=set_head)
+    marker = clone.parent / "ran"
+    helper = "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS)
+    git(clone, "config", "--add", "remote.origin.url", helper)
+    before = git(clone, "config", "--list", "--local")
+    calls: list[tuple[str, ...]] = []
+    for name in ("_git", "_git_required"):
+        monkeypatch.setattr(gitfacts, name, _recording(calls, getattr(gitfacts, name)))
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.track_own_branch(clone)
+    assert ("config", "--get-all", "remote.origin.url") in calls  # the recorder saw the check
+    assert not [c for c in calls if c[0] in ("ls-remote", "fetch", "remote")], calls
+    assert git(clone, "config", "--list", "--local") == before
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+    assert not marker.exists()

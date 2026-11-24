@@ -197,6 +197,27 @@ puts in it, kept at a length a phone user still types.
   favour of three groups because six are tedious to type on a phone,
   where the QR code is not always usable.
 
+## A mailed code is six digits without a space, so a double-click selects it
+
+**Id:** 353d4bce-e52b-4fde-9ab4-cbb486555296
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-10 (the code in the second-factor mail has a space, which breaks copying it with a double-click), card tsk-x518vbkcxwvj; contract in `docs/api.md` §2.6.3
+**Revisit when:** humans are seen mistyping mailed codes noticeably more often, or a mail shows a code longer than six digits
+
+The three mails that carry a code (the sign-in link's alternative code,
+mail as the second factor, and the mail that confirms mail as the second
+factor) write it as `482913`, not `482 913`.
+
+**Reason:** a double-click selects one word, and the space split the
+code into two, so copying it took a drag or two copies. Six digits read
+well enough without a group break.
+
+**Rejected alternatives:**
+- Keeping `482 913`: easier to read aloud, but not selectable with a
+  double-click. Why the space was chosen originally is not recorded.
+
 ## Registration verifies the address before an account exists
 
 **Id:** f592cf44-de6c-4eca-b83f-7c4125729373

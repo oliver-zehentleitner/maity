@@ -70,6 +70,7 @@ def test_a_human_without_a_claim_costs_no_extra_statement_per_project(
         facts = auth_caller.RequestFacts(
             method="GET",
             raw_path=b"/api/v1/me",
+            path="/api/v1/me",
             raw_query=b"",
             headers={},
             cookies={auth_caller.SESSION_COOKIE: owner.client.cookies[auth_caller.SESSION_COOKIE]},

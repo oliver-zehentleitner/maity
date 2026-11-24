@@ -75,8 +75,16 @@ window.Maity = window.Maity || {};
         h("ul", { class: "review-cites" }, rest.map(cite))) : null);
   }
 
+  // Opened for one message (`#seq-<n>`, js/event.js, docs/api.md §8.9): older pages are
+  // read until it is shown, at most this many, as in a chat (js/chat.js reveal).
+  const REVEAL_PAGES = 10;
+
   M.views.messages = async function (ctx, root) {
     const here = M.route.current().path;
+    // The message an event's link opened the listing at, marked where it is drawn.
+    const target = M.route.seqTarget();
+    // Its tombstone too: a removed message is still where the link points (§8.9 keeps a redacted event readable).
+    const marked = (x) => (target && String(x.seq) === target ? " seq-target" : "");
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     let filter = "";
@@ -159,19 +167,26 @@ window.Maity = window.Maity || {};
         x.task_id ? [" · ", h("a", { href: ctx.link("tasks", x.task_id) }, x.task_id)] : null,
         " · ", h("span", { class: "muted" }, formatTime(x.sent_at)));
       if (x.redacted) {
-        return h("li", { class: "pmsg removed", "data-seq": String(x.seq) }, head(null), h("p", { class: "muted msg-redacted" }, M.t("messages.removed")));
+        return h("li", { class: "pmsg removed" + marked(x), "data-seq": String(x.seq) }, head(null), h("p", { class: "muted msg-redacted" }, M.t("messages.removed")));
       }
       const review = x.type === "review_result" && x.review ? reviewBlock(ctx, x.review) : null;
       // The file's uploader is the message's sender; an admin deletes any (§8.7).
       const canDelete = () => from === ctx.me.id || ctx.canAdmin;
-      return h("li", { class: "pmsg type-" + x.type, "data-seq": String(x.seq) },
+      return h("li", { class: "pmsg type-" + x.type + marked(x), "data-seq": String(x.seq) },
         head(h("span", { class: "badge" }, typeWord(x.type))),
         review,
         // Its mentions are links where they stand (the one renderer, js/markdown.js).
-        x.body ? h("div", { class: "md" }, M.markdown(x.body, M.ids.where(ctx), { mentions: x.mentions, hrefOf: (id) => ctx.link("members", id), ctx })) : null,
+        x.body ? h("div", { class: "md" }, M.markdown(x.body, M.ids.where(ctx), { mentions: x.mentions, hrefOf: (id) => ctx.link("team", id), ctx })) : null,
         M.attachments ? M.attachments.render(ctx, { attachments: x.attachments, body: x.body || "" }, canDelete) : null,
-        ctx.canAdmin ? h("div", { class: "actions" },
-          h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(x) }, M.t("messages.remove"))) : null);
+        (() => {
+          // Report someone else's message (§16.8, tsk-7ze5w6ymf7bw): its seq with the project.
+          const reporting = M.report && from !== ctx.me.id && ctx.me.kind === "human"
+            ? M.report.control({ type: "message", id: String(x.seq), project: ctx.slug }, "message") : null;
+          if (!ctx.canAdmin && !reporting) return null;
+          return [h("div", { class: "actions" },
+            ctx.canAdmin ? h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(x) }, M.t("messages.remove")) : null,
+            reporting ? [" ", reporting.button] : null), reporting ? reporting.slot : null];
+        })());
     }
 
     // A page, newest first: the first one of a filter (reset), or the next
@@ -281,5 +296,15 @@ window.Maity = window.Maity || {};
         h("label", { for: "messages-type" }, M.t("messages.filter.type")), pick),
       status.el, list, more);
     await load(true, first);
+    if (!target) return;
+    // Older pages while the message is not shown and the listing goes below it; a filter
+    // chosen meanwhile ends the search.
+    const filterAt = filter;
+    for (let n = 0; !itemOf(target) && n < REVEAL_PAGES && cursor && filter === filterAt
+      && (!shown.size || Number(target) < Math.min(...shown.keys())); n += 1) await load(false);
+    const li = itemOf(target);
+    if (!li) { list.parentNode.insertBefore(h("p", { class: "muted seq-missed", role: "status" }, M.t("event.not_reached", { seq: target })), list); return; }
+    // Scrolled to once the view is in the page, which the router does after this returns.
+    window.setTimeout(() => { if (li.scrollIntoView) li.scrollIntoView({ block: "center" }); }, 0);
   };
 })(window.Maity);

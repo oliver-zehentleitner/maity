@@ -239,7 +239,7 @@ Each gets **Mark read** where this session may mark it, and Mark all read asks f
 sends `include_security: true`. A sign-in is in none of it: the pinned block has no
 **This was me**, and nothing in the bell links to a session. The Notifications page shows
 a small "Current sessions" box instead: the active sessions, newest first, five and a
-count of the rest, this session and the unconfirmed ones marked, a link to Profile →
+count of the rest, this session and the unconfirmed ones marked, a link to Security →
 Sessions, no buttons. It reads `GET /auth/sessions` when the page opens and again only
 when the `sessions_rev` the bell knows (from a counts answer or the long-poll) differs from
 the value it last read with; a failed read is tried again on the bell's next change. The
@@ -255,7 +255,7 @@ rarely changes.
 **Rejected alternatives:** reading the sessions on every counts round: it works without
 `sessions_rev`, at one more request per round per tab. Keeping **This was me** in the
 box: the maintainer asked for a small field that shows, not one that acts; confirming
-stays in Profile → Sessions and on the banner.
+stays in Security → Sessions and on the banner.
 
 ## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
 
@@ -398,3 +398,188 @@ Redrawing on any difference in /me or the members: the counts and
 presence move all the time, so nearly every switch would be drawn twice.
 Keeping until the next read without a time limit: a membership changed
 by someone else would stand until something else read /me.
+
+## A tab's presence for the mail hold: a timer a minute after its last call, only against a hub
+
+**Id:** 4c11cdf5-5f3f-4e9a-a6cd-cba0496e5aa9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 (`POST /me/presence`), §18.5; the hub's decision in hub/context/notifications.md (59e31f20-6e15-4827-866d-ec17444e7efb); web/js/presence.js, web/js/app.js
+**Revisit when:** the dashboard gets a live connection that every tab holds, or the hub's two minutes or ten calls a minute change, or `localStorage` is replaced by a shared store for such state
+
+`js/presence.js` sends `POST /me/presence` from a human's dashboard while the tab is visible and
+had pointer, key, wheel, scroll or focus input within ten minutes: at once when it starts or
+becomes present again, then a minute after its last call. It starts after `/me` for a human
+whose account does not wait for approval, and only in API mode (`start` decides); a sign-out and
+an ended session stop it. Its call is no write for the page-switch cache (f71932e2): `M.onWrite`
+is not told. A hidden or idle tab sends nothing: a hidden one drops its timer at once, an idle
+one at its next tick. The time of the last call is kept in `localStorage`
+(`maity-presence-sent`, removed on stop), so the session's tabs and page loads in this browser
+share the minute: a tab whose session called within it, from this tab, another or an earlier
+load, waits for that minute instead of calling again. That is best effort, not a lock: two tabs
+that read the time at the same moment both call, each still at most once a minute, and the hub
+writes once. A kept time later than now (the clock was set back since) counts as no call: kept,
+it would hold every tab of the session silent until the clock caught up with it.
+
+**Reason:** the hub counts a session present for two minutes after a write and writes at most
+once a minute, so a call a minute after the last lands while the last write's two minutes still
+run, unless the timer is held back by most of a minute (§18.5 counts 1 to 2 minutes after the
+last call); a fixed 60-second interval started at load would not, after a hidden spell, keep
+that distance to the last call. Waiting out the minute keeps tabs, reloads and a tab switched
+back and forth from spending the ten calls a minute the hub allows (§1.7): the first version
+counted per tab, and the browser e2e, which loads several pages a minute in one session, got
+`429` on the call (#1678, CI run of 2026-11-11). The hub would write nothing for those calls
+anyway. Fixture mode has no hub that holds mail.
+
+**Rejected alternative:** the dashboard's 60-second `/me` read as the signal: it runs while the
+tab is visible whether or not anyone uses it, and it writes `last_seen_at` (§2.4), which
+presence must not. `setInterval` like the other refresh rounds: see Reason. A last call kept per
+tab only: see Reason. Sending only while `hold_while_online` is on: the tab would read the
+settings first, and with the switch off the hub holds nothing anyway.
+
+## An open page learns of a new deploy from a header on every answer and offers a reload, never forcing one
+
+**Id:** d499ba75-c622-45da-842b-a897fae5fbd0
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 9d7aee6c-ba64-49e8-96e8-b5fe51521d55
+**Evidence:** confirmed
+**Source:** the card tsk-y19gcsk731aa (from tsk-7jhpzrvsnzm3: a fix already live did not reach a project owner whose tab still ran the old JavaScript); the design proposal on the card and the maintainer's approval of it, 2026-11-16 (req-t44nh4e278ee); docs/api.md §1.1 `Maity-Web-Version` and §16.11
+**See:** refresh.md#a-hidden-tab-reads-nothing-on-its-intervals-me-every-60-seconds-events-every-15 — 6cb02c3d-063d-473b-b86b-8f8324c11f14 — as of 2026-11-16
+**Revisit when:** the dashboard gets a reading that keeps a connection open (a stream), or a reload is reported to have lost a reader's input
+
+The hub sends the dashboard's version on every `/api/v1/` answer as
+`Maity-Web-Version`, and the shell carries the same value as a meta
+element. The value changes only when a file of the dashboard changes,
+so a hub release that leaves the dashboard as it was asks no one to
+reload. `js/api.js` compares the header of each answer with the page's
+own value, in the same place where it reads `Maity-Server-Time`. When
+they differ, the page shows a quiet band offering a reload and a "Later"
+that hides it for that version in this tab. The page never reloads by
+itself, and an input that nothing keeps over a reload asks before the
+page is left.
+
+**Reason:** a tab that stays open after a deploy keeps running the old
+JavaScript until it is reloaded, so a fix that is already live can miss
+the person it was for. The check costs no request: the page reads `/me`
+every 60 seconds while it is shown, and a tab shown again reads within 5
+seconds (6cb02c3d). Tying the value to the dashboard's files and not to
+the hub's version keeps the band away after a release that did not
+touch them. Offering instead of forcing keeps what a reader is typing.
+
+**Rejected alternatives:**
+- A `/version` route read on a timer of its own: requests that the
+  answers the page already reads make unnecessary, and one more interval
+  for a hidden tab to skip.
+- The hub's `version` from `GET /health`: it also changes with a
+  release that leaves the dashboard as it was, and the band would ask
+  for a reload that brings nothing.
+- A service worker that notices the new files: it would need a worker
+  script for the page, and it takes on caching that the hub's
+  `Cache-Control` and `?v=` already settle (§16.11).
+
+## A reload after a deploy asks first by a simple rule: a text field typed into that still holds text, or a chat draft
+
+**Id:** 9d7aee6c-ba64-49e8-96e8-b5fe51521d55
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y19gcsk731aa and its approved design (req-t44nh4e278ee, 2026-11-16); the review of #1900, in which each round of tracking unsent input completely found new gaps across the dashboard; the lead's call to keep the rule simple and its wording, 2026-11-16; docs/api.md §1.1 `Maity-Web-Version` and §16.11
+**See:** refresh.md#a-hidden-tab-reads-nothing-on-its-intervals-me-every-60-seconds-events-every-15 — 6cb02c3d-063d-473b-b86b-8f8324c11f14 — as of 2026-11-16
+**Revisit when:** the dashboard gets a reading that keeps a connection open (a stream), or a reload is reported to have lost input that mattered
+
+The hub sends the dashboard's version on every `/api/v1/` answer as
+`Maity-Web-Version`, and the shell carries the same value as a meta
+element. The value changes only when a file of the dashboard changes.
+`js/api.js` compares the header of each answer with the page's own
+value. When they differ, a quiet band offers a reload, and "Later"
+hides it for each version it was chosen for. The page never reloads by
+itself.
+
+Before the reload the person clicked, the page asks "You have unsent
+input. Reload anyway?" when any text field (an input, a textarea, a
+contenteditable), in a form or not, that the person typed into (a
+trusted `input` event) still holds text, or when a chat draft that is
+not blank is kept (`js/chat.js` names its drafts through `holds`).
+This is a simple rule, not a complete one. It asks in some cases where
+nothing would be lost (a form closed or cancelled with its text still in
+place, a setting saved that stays in its field): an extra question
+costs a click. It misses some cases (a field a redraw replaced with
+the text carried over, a field the page filled in that the person
+cleared, a choice in a select or a box): the reload is still one the
+person chose themselves.
+
+**Reason:** a tab that stays open after a deploy keeps running the old
+JavaScript until it is reloaded, so a fix that is already live can miss
+the person it was for. The check costs no request: the page reads `/me`
+every 60 seconds while it is shown, and a tab shown again reads within 5
+seconds (6cb02c3d). Tying the value to the dashboard's files and not to
+the hub's version keeps the band away after a release that did not
+touch them. Offering instead of forcing keeps what a person is typing,
+and the question before the reload catches the common case, typed text.
+
+**Rejected alternatives:**
+- A `/version` route read on a timer of its own: requests that the
+  answers the page already reads make unnecessary, and one more interval
+  for a hidden tab to skip.
+- The hub's `version` from `GET /health`: it also changes with a
+  release that leaves the dashboard as it was, and the band would ask
+  for a reload that brings nothing.
+- A service worker that notices the new files: it would need a worker
+  script for the page, and it takes on caching that the hub's
+  `Cache-Control` and `?v=` already settle (§16.11).
+- A field's value against its `defaultValue`, or against the one noted
+  at its first focus: values a form sets itself counted as typed, and
+  an asynchronous sending reset or kept the mark at the wrong moment
+  (#1900, review).
+- Complete per-view tracking, every page naming what it keeps
+  (drafts, edits by row, editors drawn anew): rejected, too wide for
+  the benefit; each round of review found more places, and the
+  reload is a click the person makes on purpose.
+
+## The banners' reads start before the page's view, and the sign-in banner reads the ended sessions only for an approval it cannot trace
+
+**Id:** 6c656522-4e27-4f29-9854-4edae2d3548f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the cards tsk-qw08c8ds214g (the board's serial chain) and tsk-g776fdyg6ekc (the ended sessions on every page), from the page-load measurement under tsk-a5pxwgkgr73e (nte-6t6wyf3dna2d, nte-jkgy6vtpvgst); the lead's go for every page, 2026-11-20; docs/api.md §2.6.5 (`GET /auth/sessions`, `?ended=true`, `approved_by`)
+**See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-20
+**Revisit when:** a banner needs something from the page's view before it can read, the hub says in the active list whether an approver's chain is still live, or ops' rerun on the maintainer's machine shows no gain
+
+The page's `render()` starts the two banners' reads (the sign-in banner's sessions,
+`js/sessions.js` `bannerSessions`, and the factor banner's `GET /auth/second-factor`,
+`js/factor-banner.js` `warm`) right after the boot and before the view runs. The banners
+are still drawn after the view, from those reads. The factor banner keeps its rules: no
+read while "Later" holds for this session, and none ahead of Security, which reads afresh
+anyway. A `sessions_rev` that moved while the view ran makes the sign-in banner read its
+sessions again rather than draw from the earlier read.
+
+The sign-in banner reads `GET /auth/sessions`, the active sessions. It reads the ended
+ones too (`?ended=true`) only when an active session's `approved_by` names a session that
+is not among them. That is the one case in which an ended session shows in the banner: an
+ended mail sign-in stays up while a session it approved, directly or through ended ones in
+between, is still active. Every other ended session leaves the banner as it is. The
+Security → Sessions list, the bell's pinned alerts and the Notifications page keep reading
+the ended ones where they show or judge them.
+
+The cost of the fallback: while an active session's approver has ended (at most 30
+days: the approved session itself lives no longer, `SESSION_ABSOLUTE` in
+`hub/src/maity_hub/auth/caller.py`), every build of the sign-in banner makes two calls
+instead of one, on every page and on each of its 60-second rebuilds. A render superseded
+while its view runs has already read the active sessions; the read is dropped unused.
+
+**Reason:** the board's reads took about 1.2 s cold, and both banners' reads waited
+for all of them, though they depend on nothing the page reads. They were half of the
+board's fourth wave. The ended sessions are 16–18 kB on every page for a banner that
+needs them only for that one chain. The fallback keeps the banner exactly as it was, the
+chain case included.
+
+**Rejected alternatives:**
+- Starting the reads only on the board: `render()` is shared, the reads and their count
+  stay the same, and every page gains (the lead chose every page).
+- Dropping `?ended=true` from the banner altogether: an ended mail sign-in whose approved
+  session is still active would lose its banner, which §2.6.5 keeps.
+- Making the banners' reads part of `/bootstrap`: a contract change, which is not in
+  these cards.

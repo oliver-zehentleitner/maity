@@ -24,13 +24,14 @@ window.Maity = window.Maity || {};
     "red-team": () => [M.t("role.red_team"), M.t("role.red_team.help")],
     "blue-team": () => [M.t("role.blue_team"), M.t("role.blue_team.help")],
     "purple-team": () => [M.t("role.purple_team"), M.t("role.purple_team.help")],
+    expert: () => [M.t("role.expert"), M.t("role.expert.help")],
   };
   const ROLES = Object.keys(ROLE_WORDS);
   // What an agent's own human may give it when bringing it (§3.1): not ops, not proxy.
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
-  // What a card's needs may name, beside a project role (§6.4).
-  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager");
+  // What a card's needs may name, beside a project role (§6.4): an expert takes no cards (§2.3).
+  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager" && r !== "expert");
   // A trust or a role as a word in a line ("member · coder"), where roleLabel is the choice's name.
   // Words outside the contract's sets stay as they come: a project may name its own roles.
   const TRUST_WORDS = {
@@ -49,25 +50,60 @@ window.Maity = window.Maity || {};
     "red-team": () => M.t("trust.role_word.red_team"),
     "blue-team": () => M.t("trust.role_word.blue_team"),
     "purple-team": () => M.t("trust.role_word.purple_team"),
+    "expert": () => M.t("trust.role_word.expert"),
   };
   const trustWord = (t) => (Object.hasOwn(TRUST_WORDS, t) ? TRUST_WORDS[t]() : t);
   const roleWord = (r) => (Object.hasOwn(ROLE_LINE_WORDS, r) ? ROLE_LINE_WORDS[r]() : r);
-  const roleLabel = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[0] : r);
-  const roleHelp = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[1] : "");
+  // `own`: the project's own roles as GET …/roles answers them ({name, base, description}), so
+  // that one of them reads with its base: "popelwerfer (permissions of Coder)", its description
+  // as the help. Without them a name outside §2.3 stays as it comes, with no help.
+  const ownRole = (r, own) => (Object.hasOwn(ROLE_WORDS, r) ? null : (own || []).find((x) => x.name === r) || null);
+  function roleLabel(r, own) {
+    if (Object.hasOwn(ROLE_WORDS, r)) return ROLE_WORDS[r]()[0];
+    const x = ownRole(r, own);
+    return x ? M.t("role.project", { role: x.name, base: roleLabel(x.base) }) : r;
+  }
+  function roleHelp(r, own) {
+    if (Object.hasOwn(ROLE_WORDS, r)) return ROLE_WORDS[r]()[1];
+    const x = ownRole(r, own);
+    return x ? x.description || M.t("role.project.help", { base: roleLabel(x.base) }) : "";
+  }
+
+  // The project's own roles (§2.3 "Project roles"), read once per view (its ctx) for every
+  // role picker drawn in it. Answers those known now: none before the read answers, and none
+  // where it fails (the pickers keep the built-in roles). `arrived(list)` is called once they
+  // arrive, for a picker drawn before; a choice made meanwhile stays (fillRoles' `wanted`).
+  const ownRead = new WeakMap();
+  function projectRoles(ctx, arrived) {
+    if (!ctx || !ctx.base) return [];
+    let read = ownRead.get(ctx);
+    if (!read) {
+      read = { list: null };
+      read.answer = M.api.get(ctx.base + "/roles").then((r) => ((r && r.custom) || []).filter((x) => x && x.name && x.base), () => [])
+        .then((list) => { read.list = list; return list; });
+      ownRead.set(ctx, read);
+    }
+    if (read.list) return read.list;
+    if (arrived) read.answer.then((list) => { if (list.length) arrived(list); });
+    return [];
+  }
 
   // A role picker's options: each role by its label, its help as the
-  // tooltip; `wanted` chosen where offered, else `fallback`.
+  // tooltip; `wanted` chosen where offered, else `fallback`. `own`: the
+  // project's own roles among `offered`, read by projectRoles.
   const hints = new WeakMap();
-  function fillRoles(select, offered, wanted, fallback) {
+  const owns = new WeakMap();
+  function fillRoles(select, offered, wanted, fallback, own) {
     const { h, append, clear } = M.dom;
-    append(clear(select), offered.map((r) => h("option", { value: r, title: roleHelp(r) }, roleLabel(r))));
+    owns.set(select, own || []);
+    append(clear(select), offered.map((r) => h("option", { value: r, title: roleHelp(r, own) }, roleLabel(r, own))));
     select.value = offered.includes(wanted) ? wanted : fallback;
     if (hints.has(select)) hints.get(select)();
   }
   // The help line under a role picker: what the chosen role does.
   function roleHint(select) {
     const el = M.dom.h("p", { class: "hint role-help", id: select.id + "-help" });
-    const set = () => { el.textContent = roleHelp(select.value); };
+    const set = () => { el.textContent = roleHelp(select.value, owns.get(select)); };
     hints.set(select, set);
     select.setAttribute("aria-describedby", el.id);
     select.addEventListener("change", set);
@@ -88,6 +124,18 @@ window.Maity = window.Maity || {};
   const reviews = (x) => !guest(x) && (governs(x) || roleIs(x, "reviewer") || roleIs(x, "purple-team"));
   const tests = (x) => !guest(x) && (governs(x) || roleIs(x, "tester") || roleIs(x, "red-team"));
   const releases = (x) => !guest(x) && (governs(x) || roleIs(x, "reviewer") || roleIs(x, "purple-team") || roleIs(x, "ops"));
+  // A reader of the project who holds no membership in it (§2.3): a signed-in outsider of a public
+  // project in its dashed tab (js/app.js outsiderContext), or an agent's owner reading a group
+  // chat along (js/observe.js). Such a context has no trust and no role, so every helper above
+  // already answers no for it; the helpers below are for what a membership gives at any trust:
+  // writing to a card, a note, a member, a chat, and the reads only a member makes.
+  const outsider = (ctx) => !!ctx && ctx.outsider === true;
+  // The project's writes are this reader's as their trust and role allow: a membership.
+  const writes = (ctx) => !!ctx && !outsider(ctx);
+  // The project's own views open for this reader, so a member's name links to their page
+  // (js/dom.js): every member, and an outsider in the dashed tab (`outsideViews`), not a
+  // read-along. Card and request ids in text stay unlinked for any outsider (js/ids.js `where`).
+  const opensViews = (ctx) => !!ctx && (!outsider(ctx) || ctx.outsideViews === true);
 
   // "admin · reviewer"; the trust alone where the role says nothing more.
   function words(x) {
@@ -115,6 +163,7 @@ window.Maity = window.Maity || {};
     "role:red-team": () => M.t("trust.every.role.red_team"),
     "role:blue-team": () => M.t("trust.every.role.blue_team"),
     "role:purple-team": () => M.t("trust.every.role.purple_team"),
+    "role:expert": () => M.t("trust.every.role.expert"),
   };
   function tokenWords(token) {
     if (Object.hasOwn(EVERY, token)) return EVERY[token]();
@@ -123,5 +172,5 @@ window.Maity = window.Maity || {};
     return token;
   }
 
-  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
+  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, projectRoles, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, outsider, writes, opensViews, words, tokenWords };
 })(window.Maity);

@@ -234,6 +234,69 @@ sees every series every minute.
   leaves a series running for an owner who left.
 
 
+## A changed schedule rests 20 hours after the last round it opened
+
+**Id:** 9ff74a1b-5680-41cb-82c0-4cf2a83533b5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-14 (card tsk-8nd5dpc8g8f0); contract `docs/api.md` §20.1
+**See:** jour-fixe.md#a-series-keeps-its-schedule-in-the-old-policys-shape-and-the-upgrade-writes-its-own-event — de0c97c0-a638-4c1a-9fb8-f14ab6d407a1 — as of 2026-11-14
+**Revisit when:** a schedule may name more than one time a day, or slots a change passes over need a record of their own
+
+A change of a series' schedule (or switching it back on) counts its slots
+from the change as before, and sets `last_slot` no earlier than 20 hours
+after the `scheduled_for` of the last round the schedule opened
+(`series.REST_AFTER_ROUND`); `rounds.next_at` reads from there, so the
+series shows the slot that will open. A slot passed over this way is not
+recorded, like a slot before the change.
+
+**Reason:** a schedule has one time a day, so its own slots are never less
+than 23 hours apart (a DST change shortens one day by an hour); a change is
+the only way to bring a slot closer, so the rest is set where the change is
+made and nothing else in the slot logic moves. 20 hours stays clear of the
+23 and still lets a team move tomorrow's round a few hours earlier.
+
+**Rejected alternatives:**
+- Counting scheduled rounds in the daily limit of rounds started by hand
+  (2 in 24 hours): schedule changes could still open rounds up to that
+  limit, and a scheduled round would use up a manual start.
+- One scheduled round per local calendar day: a change of `timezone` moves
+  the day's boundary, so the bound would not hold.
+- Recording a slot passed over as a skipped round with a reason of its own:
+  a new `skip_reason` in the contract and the dashboard for a case only a
+  change makes.
+
+## A round's moderator acts only while it holds the series' right; a deleted series' round keeps it
+
+**Id:** 5e63826a-68ba-4d48-8bf8-e50ca800c7c9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-14 (card tsk-8nd5dpc8g8f0); contract `docs/api.md` §20.2, §20.7
+**See:** jour-fixe.md#the-moderator-rights-two-consents-ride-on-consent-requests-and-the-sweep-ends-rights-and-files-what-the-upgrade-owes — 8dcb08a3-672d-48a2-816a-453bf27996c5 — as of 2026-11-14
+**Revisit when:** a series' deletion stops leaving its rounds behind, or a round can change its moderator
+
+The round stores its moderator at the start; every check of "the caller is
+the moderator" (`jourfixe/circle.moderates`) also asks whether that member
+still holds the series' right, read from `jour_fixe_moderator` at the call.
+Who reads an owner's round and its events' audience follow the same rule.
+A round whose series was deleted (`series_id` is `null`) keeps its stored
+moderator to its end.
+
+**Reason:** ending a right deletes only the grant, so a check against the
+stored moderator alone left the right in force for an open round. Deleting
+a series deletes every grant with it, while its running round runs to its
+end (§20.1): checking the grants there would leave that round without
+anyone to write its statement or report.
+
+**Rejected alternatives:**
+- Clearing the round's moderator where the right ends: the right ends in
+  several places (the route, the sweep for members who left), and one
+  missed path keeps it in force, as for the report list (10e772ac).
+- Treating a deleted series' round as having no moderator: the hub's report
+  would then be the only way such a round ends.
+
 ## The moderator right's two consents ride on consent requests, and the sweep ends rights and files what the upgrade owes
 
 **Id:** 8dcb08a3-672d-48a2-816a-453bf27996c5
@@ -348,3 +411,41 @@ price.
 
 **Rejected alternatives:** every holder of `requests:answer` reading it, as before: it opened a private round's
 proposals to the project's admins.
+
+## A hidden isolation window drops a round that opened in it whole, and only the parts of an earlier one
+
+**Id:** 3e19d110-4688-48bd-8b1e-67b130080fdd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.2 and §20.7; the card tsk-z0rwa30vgns5 (from the security rounds, tsk-v9kheekgq115), which names the rule; the implementation (`jourfixe.views.Hidden`, `routes/jour_fixe._reads`)
+**Revisit when:** answers get a time of arrival, or a round's content is served by a path that does not go through `routes/jour_fixe._views`
+**See:** isolation.md#a-hidden-window-is-an-inclusive-seq-range-on-the-membership-applied-where-events-are-read — 7b3e1f2a-4c55-4a0e-9d8b-2f6a91c0e1d4 — as of 2026-11-13
+
+A round keeps copies of its thread's messages (the statement, the posts, each with its `message_seq`) and a
+report that is no event, so `events.readable_by` does not reach them. `jourfixe.views.Hidden` applies the
+reader's windows to a round: the statement and the posts by `message_seq` (`events.seq_in_window`, the rule the
+events use), the report and the round's opening by time (`events.window_times`, as a card's history). A round
+whose `opened_at` lies in a window is gone for the agent as a whole: left out of the list before the page is cut,
+`null` in the overview, and `not_found` on `GET …/rounds/{id}` and every route that looks the round up
+(`_round`), its answers and writes included, even for what the round did after the lift. A round opened before
+the isolation stays, without the statement, the posts and the report made in the window; its status and times
+are the state it finds. The decision is taken in one place for the routes, `_views` and `_reads`, so a write's
+answer and a replay follow it as the reads do. The replays' read gates (`_reads_round`, which the answer's and the
+post's gates call too) ask `_reads` as well, so a replay of a round that opened in a window is `not_found`
+before anything is loaded, like the round's `GET`.
+
+**Reason:** a round opened while the agent was out is one it was never a member for, and its later parts only
+make sense with the hidden beginning. Answers carry no time of arrival on purpose (§20.4), so only the
+whole-round rule can keep the window's answers out.
+
+**Rejected alternatives:**
+- Hiding only the parts of every round: a round opened in the window would show its later posts and report
+  without the statement they answer, and its answers could not be hidden at all.
+- Filtering the rounds list after the page is cut: short pages, and a cursor that skips rounds (as for an
+  owner's series).
+
+**Not covered:** a post's own replay (`_replay_post`) answers the agent with a post it wrote itself, which an
+isolated agent cannot write inside a window; its gate still drops a round that opened in one. A report's replay
+(`report_view`) names the requests and cards its report filed even when `reported_at` lies in a window: only
+the report's own writer replays it, and an isolated agent writes no report.

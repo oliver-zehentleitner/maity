@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -34,13 +34,16 @@ from maity_hub import (
     public_pages,
     registration,
     worker_runs,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
 from maity_hub.ids import new_id
+from maity_hub.mail.text import quoted
 from maity_hub.models import HANDLE_PATTERN
 from maity_hub.notifications import records
+from maity_hub.plain_text import plain_name
 
 WRONG_PASSWORDS_BEFORE_VOID = 5  # §2.7.3
 PENDING_ACCOUNT_FOR = timedelta(days=30)  # undecided, then deleted (§2.7.5)
@@ -80,9 +83,9 @@ def claim_address(
 ) -> bool:
     """Write the address as the account's verified address (§18.4), unique across the
     accounts; False when another account holds it."""
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address
 
-    return preferences.claim_verified(conn, normalized, human_id, secret_key=secret_key)
+    return address.claim_verified(conn, normalized, human_id, secret_key=secret_key)
 
 
 def admitted(
@@ -121,9 +124,7 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
     elif handles.holder(conn, handles.HUMANS, handle) is not None:
         # a human's or an organisation's handle, or a human's alias (§6.24, §6.26)
         errors["handle"] = "taken"
-    if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or any(
-        ord(c) < 32 or ord(c) == 127 for c in display_name
-    ):
+    if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or not plain_name(display_name):
         errors["display_name"] = "invalid"
     return errors
 
@@ -230,6 +231,7 @@ def complete(
     except IntegrityError:  # the handle taken meanwhile, after the check above
         made.rollback()
         return Completion("invalid", fields={"handle": "taken"})
+    write_guard.make_row(conn, human_id)
     if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
         made.rollback()  # an organisation took it meanwhile
         return Completion("invalid", fields={"handle": "taken"})
@@ -309,8 +311,23 @@ def start_session(
 
 def item(conn: Connection, row: Any) -> dict[str, Any]:
     """A pending account as the instance admin decides on it."""
-    human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).first()
-    found = {
+    return items(conn, [row])[0]
+
+
+def items(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """`item` for several rows, the people read in one query: the list costs the same for
+    any number of rows."""
+    wanted = {row.human_id for row in rows}
+    people = (
+        {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(wanted)))}
+        if wanted
+        else {}
+    )
+    return [_item(row, people.get(row.human_id)) for row in rows]
+
+
+def _item(row: Any, human: Any) -> dict[str, Any]:
+    return {
         "id": row.human_id,
         "handle": human.handle if human is not None else None,
         "display_name": human.display_name if human is not None else None,
@@ -327,7 +344,6 @@ def item(conn: Connection, row: Any) -> dict[str, Any]:
             else None
         ),
     }
-    return found
 
 
 def locked(conn: Connection, human_id: str) -> Any:
@@ -407,8 +423,6 @@ def _ending(status: str, reason: str | None, public_url: str) -> tuple[str, str]
     """Subject and body of the mail that tells the person their pending account is gone
     (§2.7.5): the operator's `reason` on a rejection, as plain text (§18.5); "was not
     approved in time" on an expiry. Neither says more about the instance than its address."""
-    from maity_hub.notifications.mailer import quoted
-
     if status == "rejected":
         # The operator's words, defanged: the hub's own address is the only link (§18.5).
         why = f"The operator gave this reason: {quoted(reason)}\n\n" if reason else ""
@@ -461,6 +475,14 @@ def block(conn: Connection, normalized: str, until: Any) -> None:
         )
 
 
+def forget_expired_blocks(conn: Connection) -> int:
+    """Delete every block whose `until` has passed, with its address: every read of a block
+    asks for `until > now`, so an expired row only keeps an address (§16.4)."""
+    return conn.execute(
+        delete(t.registration_block).where(t.registration_block.c.until <= clock.now())
+    ).rowcount
+
+
 def expire(conn: Connection, hub: Any) -> int:
     """Delete every pending account nobody decided on within 30 days (§2.7.5)."""
     now = clock.now()
@@ -484,7 +506,8 @@ INTERVAL = 3600.0  # seconds between expiry sweeps
 
 class Worker:
     """Runs `expire` in the background: an undecided account goes after 30 days whether
-    or not an instance admin looks (§2.7.5)."""
+    or not an instance admin looks (§2.7.5). The same pass deletes the blocks that have run
+    out (`forget_expired_blocks`, §16.4)."""
 
     def __init__(self, engine: Engine, hub: Any, interval: float | None = None) -> None:
         self.engine = engine
@@ -512,6 +535,7 @@ class Worker:
                         continue
                     with self.engine.begin() as conn:
                         expire(conn, self.hub)
+                        forget_expired_blocks(conn)
                         campaigns.purge(conn)  # the origins after 30 days, the sums after 400
             except Exception:
                 log.exception("the registration expiry sweep failed")

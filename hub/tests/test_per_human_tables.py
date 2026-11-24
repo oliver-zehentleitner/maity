@@ -17,7 +17,16 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, contacts, cross_chats, export, org_invitations
+from maity_hub import (
+    account_deletion,
+    avatars,
+    chat_access,
+    chat_access_history,
+    contacts,
+    cross_chats,
+    export,
+    org_invitations,
+)
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -44,13 +53,11 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("avatar_size", "owner_id"): True,  # the sizes of the same picture
     ("bridge", "created_by"): True,  # the human who asked for the connection
     ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
+    ("chat_access", "their_human"): False,  # whether an allow covers the side's human
     ("conversation_participant", "added_by"): True,
     ("conversation_participant", "removed_by"): True,
     ("cross_chat_participant", "added_by"): True,  # a principal id, as on a project group chat
     ("cross_chat_participant", "removed_by"): True,
-    ("credential", "ktw_acknowledge_by"): False,  # a deadline
-    ("credential", "dormant_by"): True,
-    ("credential", "paused_by"): True,
     ("credential", "revoke_due_by"): True,
     ("credential", "revoked_by"): True,
     ("email_sign_in", "address_epoch"): False,  # a counter
@@ -60,9 +67,15 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("human_session", "confirmed_by"): False,  # the confirming session's public id
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
+    ("instance_attachment", "attached_by"): True,
+    ("instance_attachment", "detached_by"): True,
+    ("instance_attachment", "dormant_by"): True,
+    ("instance_attachment", "ktw_acknowledge_by"): False,  # a deadline
+    ("instance_attachment", "paused_by"): True,
     ("instance_landing", "updated_by"): True,
     ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
+    ("join_link", "revoked_by"): True,  # the human who revoked it (§3.1)
     ("invitation", "address_normalized"): True,
     ("jour_fixe_moderator", "granted_by"): True,  # the human who granted the right
     ("jour_fixe_series", "created_by"): True,
@@ -102,6 +115,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 # removal does", "as §6.3 deletes a profile", "as DELETE /runners/{id} removes it").
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
+    "chat_access": chat_access,  # forget_human: the lists, and every entry naming the account
     "contact": contacts,  # forget, both ways
     "cross_chat": cross_chats,  # remove_owned, which account_deletion calls
     "cross_chat_participant": cross_chats,
@@ -114,17 +128,23 @@ DELETION_THROUGH: dict[str, ModuleType] = {
 # stays, and every view shows it as `Deleted account` (§2.9).
 _RECORD = "the projects' or the instance's record, kept without the person (§2.9)"
 DELETION_KEEPS = {
+    # Taken first and exclusively through `write_guard.lock_row` (`lock_account`), never
+    # deleted: it holds only the id and goes with the account row, which stays.
+    "account_lock": "the deletion's own lock, which stays with the account row it belongs to",
     "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
+    "chat_verdict": f"a verdict on a chat message, as the message itself: {_RECORD}",
     "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
-    "credential": f"who paused or revoked an agent's credential: {_RECORD}",
+    "credential": f"who revoked an agent's credential: {_RECORD}",
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
     "handle_register": "the handle of a deleted account stays taken for good (§2.9, §6.24)",
     "idempotency_key": "a key expires after 24 hours (§1.5) and holds no personal data",
     "handle_alias": "a deleted account keeps its handle taken, and so its aliases (§2.9, §6.24); "
     "a deleted profile's go with it, in `delete_profile`",
+    "instance_attachment": "who attached, detached, paused or put an instance to rest in a "
+    f"project: {_RECORD}",
     "instance_landing": f"who edited the landing page: {_RECORD}",
     "instance_legal": f"who edited the legal pages: {_RECORD}",
     "instance_secret": f"who changed an instance secret: {_RECORD}",
@@ -151,6 +171,8 @@ KEPT_THOUGH_READ = {"project"}
 # Tables the export reads through another module rather than in `export.py` itself.
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
+    "chat_access": chat_access,  # exported: `chat_access`, `{allow, deny}`
+    "chat_access_history": chat_access_history,  # exported: `chat_access_history`
     "contact": contacts,  # exported: `contacts` and `contact_of`
     "cross_chat": cross_chats,  # export_of, which export.py calls
     "cross_chat_participant": cross_chats,
@@ -173,23 +195,29 @@ EXPORT_LEAVES_OUT = {
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
     "avatar_size": "smaller copies of the picture, which the export names by its URL only",
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
+    "chat_verdict": "the current verdict, read from the events: the export holds every "
+    "`chat_verdict` event the person gave, the whole history (§2.9, §9.7)",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,
     "email_sign_in": _SECRET,
     "email_sign_in_day": _BOOKKEEPING,
+    "password_reset": _SECRET,
+    "password_reset_wrong": _BOOKKEEPING,
     "forge_link_state": _SECRET,
     "handle_alias": _UNLISTED,
     "handle_register": f"the handle is in the account; {_UNLISTED}",
     "human_device": _SECRET,
     "known_source": "not part of the export, by the maintainer's decision (§2.1)",
     "idempotency_key": _BOOKKEEPING,
+    "instance_attachment": f"an agent instance's projects, not the caller's data; {_UNLISTED}",
     "not_listening_seen": f"what the digest's `seen` silences (§5.3): {_BOOKKEEPING}",
     "instance_landing": _INSTANCE,
     "instance_legal": _INSTANCE,
     "legal_version": _INSTANCE,
     "instance_secret": _INSTANCE,
     "instance_setting": _INSTANCE,
+    "limit_override": _INSTANCE,
     "invitation": _UNLISTED,
     "join_link": _UNLISTED,
     "jour_fixe_moderator": f"names a person only as who granted a right; {_UNLISTED}",
@@ -202,6 +230,7 @@ EXPORT_LEAVES_OUT = {
     "notification_mail_state": _BOOKKEEPING,
     "notification_position": _BOOKKEEPING,
     "notification_read": _BOOKKEEPING,
+    "notification_recipient": _BOOKKEEPING,
     "pending_registration": _SECRET,  # the password chosen with it
     "placement": _UNLISTED,
     "preferences_version": f"the current preferences are exported; {_UNLISTED}",
@@ -211,7 +240,22 @@ EXPORT_LEAVES_OUT = {
     "runner_credential": _SECRET,
     "runner_enrollment": _SECRET,
     "second_factor_reset": _SECRET,
+    "second_factor_day": _BOOKKEEPING,
     "soul_version": f"the current souls are exported; {_UNLISTED}",
+}
+
+
+# Columns with personal data that do not name a human (so no list above catches them), each
+# with how the deletion and the export treat it. The table's row goes with the account.
+PERSONAL_COLUMNS: dict[tuple[str, str], str] = {
+    # Where a pending address change was asked from, for the notice to the old address
+    # (§18.4); cleared at its verification, replacement, removal, voiding and expiry. Deleted
+    # with the row; left out of the export: a short-lived copy of the session's data, whose
+    # browser and system the export's session list holds (context/notifications.md
+    # 569a1661-3a51-45bb-b7e3-47a3f4368354).
+    ("notification_settings", "pending_browser"): "left out of the export",
+    ("notification_settings", "pending_os"): "left out of the export",
+    ("notification_settings", "pending_ip"): "left out of the export",
 }
 
 
@@ -305,3 +349,14 @@ def test_the_lists_name_only_what_they_must() -> None:
         assert table in HUMAN_TABLES and not _named_in(export, table), table
     for table, module in EXPORT_THROUGH.items():
         assert table in HUMAN_TABLES and _named_in(module, table), table
+
+
+def test_personal_columns_go_with_the_account_and_stay_out_of_the_export() -> None:
+    columns = {(tb.name, c.name) for tb in metadata.tables.values() for c in tb.columns}
+    for (table, column), export_decision in PERSONAL_COLUMNS.items():
+        assert (table, column) in columns, (table, column)
+        assert table in HUMAN_TABLES and _named_in(account_deletion, table), table
+        assert export_decision == "left out of the export"
+        assert not re.search(rf"\b{column}\b", _code_of(export)), column
+        # The export reads the settings through `view`; the column is never in it.
+        assert column not in inspect.getsource(notification_preferences.view), column

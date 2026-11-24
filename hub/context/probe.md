@@ -21,7 +21,14 @@ forge does not answer, and between two reads when the hub stops. A project
 no source covers (`NotCoveredError`) is no such read: only its own work is
 left out, it logs its id, and its reports don't count against the 15. Ending
 the round there stopped every round from reaching the re-reads, in production
-for as long as one project lacked a grant. Forge reads
+for as long as one project lacked a grant. A stored repository URL that names
+no valid repository (`InvalidRepositoryError`, a URL stored before the write
+checked it) is that project's own fault just the same and is left out the same
+way, on every path: the check runs before any branch reads the path and before
+the read counts against the source's budget, so a refusal ends no round and
+holds no budget. Every GraphQL read of the hub names its repository in its
+`owner` and `name` variables; one that does not is refused, so no read skips
+the check. Forge reads
 happen with no database connection held; each result is written in a short
 transaction of its own under the project lock. The thread starts only when
 `MAITY_FORGE_GITHUB_TOKEN` is set.
@@ -138,7 +145,7 @@ later. The row is the one place every reader passes through.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §6.6 "A merge closes the loop" and §6.1 `merged_closes` (contract #502, the coordinator's card tsk-hkb9qe4xn520, 2026-10-28)
+**Source:** docs/api.md §6.6 "A merge closes the loop" and §6.1 `merged_closes` (contract #502, the coordinator's card tsk-hkb9qe4xn520, 2026-10-28); the close only for the card whose pull request it is by card tsk-yfv9rnxpcwjd (2026-11-20, context/reports.md d068e91d-bf97-44e3-ba98-0f1c7e5b3674)
 **Revisit when:** the hub keeps more than one report per card, or the done authority gains values beyond those of §6.4
 
 The card remembers the report a merge was observed on (`merge_report`, a
@@ -149,7 +156,10 @@ tells it when the card is in `review`; the two ways back to `review`
 remembered one, only while that report is still the card's. Under
 `merged_closes: auto` and `done_authority` `holder` or `admin` the
 same step closes the card, unless a child, a dependency or an objection
-holds it. `task_merged` wakes by `done_authority`: the holding instance,
+holds it, or the pull request is not the card's own (`merged._not_its_own`:
+its head branch from the stored `pr` observation, the card ids its text
+names, its merge time against the report's, and the other cards' reports
+and closed `task_merged` events, read only before a close). `task_merged` wakes by `done_authority`: the holding instance,
 the reviewer or tester role, or owners and admins; nobody once closed.
 
 **Reason:** "once per report" and "caught up on the return to review"
@@ -161,6 +171,45 @@ ties the memory to exactly the report it was seen on.
 went out for this report: a search over events on every observation. A
 flag inside the report JSON: the report is shown as stored, so the flag
 would leak into the card view.
+
+## A merge closes outsiders' work on its own only with its own approvals
+
+**Id:** 35bf91b0-7944-448b-a876-0e549696d410
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-997vnv5efkw9 (2026-11-23), the lead's go on the plan (seq 201169) and the order to key it on the owner's membership until trust `outside` lands (seq 201228); docs/api.md §2.3 "Own approvals" and §6.6 "A merge closes the loop"
+**See:** probe.md#a-merge-closes-the-loop-remembered-on-the-card-per-report-told-by-whoever-sees-it-first — f89f3f4d-28b0-4bda-841a-ddafe87ad18f — as of 2026-11-23
+**Revisit when:** a merge can close a card by a path that does not pass `merged._blocked_by`
+
+Under `merged_closes: auto` a merge does not close outsiders' work
+without its own approvals: `merged._blocked_by` adds `own_approvals` when
+`own_approvals.missing` finds the card is outsiders' work (an outside
+agent holds it or filed its current report, judged as the members stand
+when the merge is seen) with fewer own approvals on the reported head
+than `policy.own_approvals`, and `task_merged` then says `closed: false`
+and wakes the done authority as under `notify`. With them, the merge
+closes it as any other card. The first version (tsk-997vnv5efkw9) came
+before the count existed and held every such card; the gate's count
+(tsk-3ggnhdmgmkf3, trust.md 3ebd6d4a) replaced that, as this entry
+planned.
+
+**Reason:** `auto` under `done_authority: holder` would otherwise let an
+outside holder's own merge close its own card, with no member of the
+project having approved what it delivered. Holding the close on this path
+until the count says so leaves the decision with the done authority,
+which `task_merged` already wakes.
+
+**Rejected alternatives:**
+- Leave the merge path until the whole gate is built: until then an
+  outside holder under `auto` closes its own work on a merge.
+- Count own approvals here: that counting is the core of the gate card
+  and would exist twice; this check is one call into it
+  (`own_approvals.missing`), which reads trust `outside`, the
+  `joined_outside` mark and the owner's membership.
+- A `blocked_by` value of its own (`outside_work`): the gate refuses a
+  move to `done` with the reason `own_approvals`, and one name for the
+  same missing approval reads the same in both places.
 
 ## A spent forge budget stops reads until its reset; the worker waits and starts each round elsewhere
 
@@ -220,7 +269,7 @@ gained keys for as long as the process ran, and nothing removed them.
 - **Visibility and publicness:** a write first drops the entries past
   their time (300 s and 600 s), then the oldest written beyond
   `CACHE_KEPT` (4096). A dropped entry costs one more read of
-  `/repos/{repository}`, nothing else. The writes and the `_forget` of
+  `/repos/{repository}`, nothing else. The writes and the `forget_visibility` of
   `_public` go under one lock, since the probe's worker and the requests
   write them from different threads.
 - **A contract text read's gate** (`contract_text._pending`) goes in a
@@ -404,9 +453,9 @@ Changed on 2026-11-02, the third time: the maintainer made an exception in §11.
 or an owner's token, as long as that read found the repository public; nothing else from such a
 read reaches a page without sign-in, no title, no name, no link. The count no longer asks
 `read_via`, and the ticker's scan sets `merge.public` from its own read's answer instead of from
-the token; §17.2 of `docs/api.md` defines the field that way. A public project read only through an App or an owner's token gets its line again, and
-link events read through a grant while public count again; those were written with the read's
-answer all along.
+the token; §17.2 of `docs/api.md` defines the field that way. A public project read only
+through an App or an owner's token gets its line again, and link events read through a grant
+while public count again; those were written with the read's answer all along.
 
 **Reason:** §11.4 says data read through an owner's grant never appears
 there, and the contract stands above this entry; privacy goes before the
@@ -469,3 +518,87 @@ Known and left for later: `unknown` counts as not conflicting, so a conflicting
 pull request whose state GitHub recomputes (`conflicting`, `unknown`,
 `conflicting`) wakes the release holder twice. Carrying the last known conflict
 through `unknown` needs a stored value the observation does not have today.
+
+## A forge answer is read within a size cap and one deadline for the whole body
+
+**Id:** e8417295-6766-4952-ac7b-a103d8d7d4a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qtr9myhtysbs (hardening from the security rounds, tsk-v9kheekgq115), which asks for a byte cap and a total deadline "as `outbound._body` does"; the lead's security check of #1753's first version, which measured the trickle; the numbers are the coder's choice, not stated on the card
+**Revisit when:** a real answer (a check-runs page, a large repository's metadata) comes near 16 MiB, or reads that time out at 10 seconds show up in the probe's log
+
+Every request the hub makes to the forge's API, the probe's (`forge.Forge._send`)
+and the GitHub App's (`github_app._open`), runs inside `forge.bounded`: a timer
+shuts the sockets the request opened (`_Registering`) `READ_SECONDS` (10 s)
+after it starts, so the connection, the headers and the body all end there.
+The connection attempts themselves (`_connect`, in place of
+`socket.create_connection`) each get at most the time left, so several
+addresses together end at the deadline too; only the name's resolution
+(`getaddrinfo`), which comes before any socket, is outside it. A
+socket is held from the moment its TCP connection stands, and the TLS
+handshake runs only after the TLS socket is held too, since wrapping takes the
+descriptor from the TCP socket; holding and the deadline take one lock, so a
+socket that comes after the deadline is shut as it is held. The timer shuts a
+TLS socket through the plain socket's shutdown, which leaves the TLS object a
+read in the other thread is using in place. The
+body is read one recv at a time (`read1`), and a JSON answer past `ANSWER_CAP`
+(16 MiB) is refused as `ForgeUnavailableError`, and so is a body that ends
+before its declared length: a read with a byte count returns nothing there
+rather than raising, and a cut JSON prefix can still parse. A raw file read
+keeps its own cap (`raw_cap + 1`) under the same deadline.
+
+**Reason:** before, `TIMEOUT` bounded each socket operation only, so an
+answer that trickled a byte every few seconds kept the read, and the probe's
+worker, open for as long as it liked, and `response.read()` took the whole
+body into memory whatever its size. 16 MiB leaves room for a page of 100 check
+runs with the forge's longest summaries; 10 s is what §11.1 sets for every
+read the hub makes, "connect to last byte".
+
+**Rejected alternatives:** a deadline checked between chunks, with each
+recv's socket timeout cut to the time left (the PR's first version):
+`HTTPResponse.read(n)` loops over recvs until it has `n` bytes, and each recv
+that gets a byte before its timeout keeps it going, so a measured trickle of one
+byte every 0.5 s held a 2-second deadline for 15 s; it did not cover the headers
+either. Reusing `outbound._body` itself: it belongs to outbound's own
+connection (pinned address, its `Refused` errors, gzip), while the forge reads
+go through urllib's opener with the redirect guard.
+
+## A fork's pull request is not compared with the project's branch of its name
+
+**Id:** 141edd24-0c3c-413e-8efe-7e7e2761231c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-k0x4jn4y4ykg (delivery from a fork), the fix the lead approved through the coordinator, 2026-11-23; docs/api.md §6.6; `probe.observe_report`, `hub/tests/test_merged_closes.py`
+**Revisit when:** a report says which repository its branch is in
+
+When the probe has read the report's pull request and its head is in another
+repository than the project's (`head_repo`, a fork), the branch of the
+reported name in the project's repository is not compared with the report's
+`remote_head`; `observed.branch_head_sha` still shows what that read found.
+Before, a fork report beside a project branch of the same name was a
+`mismatch`: the admins were woken, and the merge was never told to the done
+authority. A report without a pull request read yet is still compared as
+before, since nothing then says where its branch is. A renamed or
+transferred project repository does not make its own pull request look like
+a fork: `head_repo` is compared by name with the project's URL, reads at the
+old URL stop at the forge's redirect until an admin sets the new URL
+(`forge._SameHostOnly`), and setting it deletes the project's stored
+observations (`routes/projects.py`). At most a read already under way then
+is stored afterwards and, until it ages out, hides the branch comparison:
+a missing signal, never a close, since `merged._not_its_own` counts such a
+pull request as not the card's own.
+
+**Reason:** the head repository the forge names on the pull request is the
+one fact the hub already reads that says the branch is not the project's;
+the change stays inside the probe, and every observation stored before the
+hub kept `head_repo` is compared as before.
+
+**Rejected alternatives:** a field on the report naming the repository the
+branch was pushed to (the CLI reads it from the branch's remote): it would
+cover a fork report before its pull request exists too, but needs a CLI
+change, a contract field, a stored value and an answer for older CLIs that
+do not send it, for a gap the pull request read already closes once there
+is one (the rationale is the coder's reading; the lead approved the
+narrower fix).

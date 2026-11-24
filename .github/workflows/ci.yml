@@ -1,7 +1,7 @@
 name: ci
 
 # The changelog fragments; the dashboard's checks and smoke test; the hub's
-# checks: lint, types and tests on SQLite; the test suite against PostgreSQL
+# checks: lint, types and tests on SQLite (three shards); the test suite against PostgreSQL
 # and MariaDB; the built wheel on Python 3.13; the sdist and wheel as PyPI gets
 # them (hub-dist); the image; the Helm chart.
 # Every hub job installs the locked set from hub/requirements/, and hub-lock
@@ -88,11 +88,12 @@ jobs:
                 hub:hub/*|hub:docs/join-page.md) hit=true ;;
                 image:hub/*|image:docs/join-page.md|image:deploy/Dockerfile*) hit=true ;;
                 join:hub/*|join:cli/*|join:docs/join-page.md) hit=true ;;
-                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*) hit=true ;;
+                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*|web:hub/src/maity_hub/landing_assets/*|web:docs/api.md) hit=true ;;
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
-                cli:cli/*) hit=true ;;
+                cli:cli/*|cli:docs/runners.md) hit=true ;;
                 helm:deploy/*) hit=true ;;
-                contract:docs/api.md|contract:hub/*) hit=true ;;
+                # capabilities.py: hub/tests/test_runner_confinement.py checks the hub against it
+                contract:docs/api.md|contract:hub/*|contract:cli/src/maity/runner/capabilities.py) hit=true ;;
                 vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;
                 dist:hub/*|dist:web/*|dist:docs/join-page.md) hit=true ;;
               esac
@@ -118,6 +119,12 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/changelog.py check
+      # Every README.<lang>.md has every heading of README.md: a section added in English fails
+      # here instead of going stale in the translations (context/process.md, the README's translations).
+      - run: python tools/readme_sync.py
+      # Once a release pull request folds the hub's version into CHANGELOG.md, its upgrade page
+      # docs/upgrade/<version>.md must be there and complete (docs/upgrade/README.md).
+      - run: python tools/upgrade_page.py check
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check
@@ -134,10 +141,25 @@ jobs:
       # which come from that lock.
       - run: |
           pip install --quiet --require-hashes --no-deps --only-binary :all: -r tools/requirements/site.txt
+      # test_release_gate.py checks each commit of release_gate.py's MARIADB_EXTRA_JOBS against
+      # its parent and fails here without them. Two commits each, not fetch-depth: 0: the full
+      # history with every branch for one test on every pull request. A failing python, an empty
+      # table or an entry that is no SHA stops the step instead of git's default fetch.
+      - run: |
+          set -euo pipefail
+          shas=$(python -c 'import sys; sys.path.insert(0, "tools"); import release_gate; print(*release_gate.MARIADB_EXTRA_JOBS.values())')
+          read -r -a refs <<< "$shas"
+          if [ "${#refs[@]}" -eq 0 ]; then echo "MARIADB_EXTRA_JOBS is empty" >&2; exit 1; fi
+          for sha in "${refs[@]}"; do
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "not a 40-hex SHA: $sha" >&2; exit 1; }
+          done
+          git fetch --quiet --no-tags --depth=2 origin "${refs[@]}"
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
   # standard library, the behaviour smoke test on the runner's node binary.
+  # make check also reads the hub's words, the landing page's script and docs/api.md's
+  # error codes, so the web part gates on those paths too (web/tools/test_ci_paths.py).
   web:
     needs: changes
     if: needs.changes.outputs.web == 'true'
@@ -176,7 +198,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -251,7 +273,19 @@ jobs:
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' sqlite ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    # Each shard has the limit on its own.
     timeout-minutes: 90
+    # Three shards side by side by test file (MAITY_TEST_SHARD, hub/tests/conftest.py), as hub-postgresql: the whole
+    # suite in one job took 54 to 82 minutes of the 90 (tsk-v76hkc0fcse7). ci-ok's `needs` takes the result over all
+    # three. On the maintainer's runner (one per job type) the shards run one after another (context/process.md).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      MAITY_TEST_SHARD: ${{ matrix.shard }}/3
+      # --durations=50: the 50 slowest test phases at the end of the log, the data for the next slow run.
+      PYTEST_ADDOPTS: --durations=50
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -262,14 +296,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: make install
-      - run: make check
+      # Lint and types (`make check` without its tests) do not depend on the shard: once, in the first.
+      - if: matrix.shard == 1
+        run: make lint typecheck
+      - run: make test
       - if: always()
         run: du -sh /tmp/pytest-of-* || true
 
   # The contract tests: the test files that read docs/api.md (the endpoint index against the
   # routes, the reserved paths, the guide texts), on SQLite. A change of the contract alone does not start the
   # hub jobs (`hub` does not list docs/api.md: the database jobs take about an hour); this part
-  # does, and a change under hub/ starts it too. It is in ci-ok.
+  # does, and a change under hub/ or to cli/src/maity/runner/capabilities.py (test_runner_confinement) starts it too. It is in ci-ok.
   hub-contract:
     needs: changes
     if: needs.changes.outputs.contract == 'true'
@@ -296,7 +333,7 @@ jobs:
   # What ships: the wheel, installed non-editable, so a file missing from it
   # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer". Only the
   # tests marked `wheel` run: the package data, the entry point and the migrations
-  # the wheel carries. The whole suite runs in hub-sqlite on the checkout.
+  # the wheel carries. The whole suite runs in hub-sqlite's three shards on the checkout.
   hub-wheel:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
@@ -415,8 +452,18 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
-    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
-    timeout-minutes: 90
+    # A hang fails after 120 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts):
+    # green runs reached 88 of the former 90 (tsk-g6acq8cbajb4). Each shard has the limit on its own.
+    timeout-minutes: 120
+    # Three shards side by side, each the test files whose path hashes to it (MAITY_TEST_SHARD, hub/tests/conftest.py),
+    # each with its own PostgreSQL: the whole suite took 59-85 minutes, spread over its tests, not in a few
+    # (tsk-g6acq8cbajb4). ci-ok's `needs` takes the result over all three. On the maintainer's runner (one per job
+    # type, port 5432 fixed) the shards run one after another; `HUB_RUNNER_TYPES` without `pg` puts them on hosted
+    # runners, side by side (context/process.md).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
@@ -430,11 +477,14 @@ jobs:
           --health-timeout 5s --health-retries 30
     env:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
+      MAITY_TEST_SHARD: ${{ matrix.shard }}/3
       # A test (setup and teardown included) still running after 300 s prints every thread's stack into the log
       # and runs on: a hang shows the frame it waits on (the test's or a fixture's) within 5 minutes, not as a
-      # cancel after 90; the dump names the test only when its call hangs (context/process.md, the entry on the
+      # cancel after 120; the dump names the test only when its call hangs (context/process.md, the entry on the
       # stack after 300 s).
-      PYTEST_ADDOPTS: -o faulthandler_timeout=300
+      # --durations=50: the 50 slowest test phases (setup, call and teardown each count on their own) at the end of
+      # the log, the data for making the job faster (tsk-g6acq8cbajb4).
+      PYTEST_ADDOPTS: -o faulthandler_timeout=300 --durations=50
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -447,16 +497,18 @@ jobs:
       - run: make install
       - run: make test
 
-  # The agent-side command: lint, types and tests on the oldest and the newest
-  # Python it supports, and on 3.11 the release lock checked and the release built.
+  # The agent-side command: lint, types and tests on the oldest Python it supports and on
+  # every newer one runners use, and on 3.11 the release lock checked and the release built.
+  # 3.14 and 3.15 since pathlib's predicates stopped raising there (tsk-0tje3vzzedtx).
   cli:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.13", "3.14", "3.15"]
     defaults:
       run:
         working-directory: cli
@@ -480,7 +532,9 @@ jobs:
           make lock-check
           make release-build
 
-  # About 15 minutes, against about 7 on Linux; only when cli/ changes.
+  # About 15 minutes, against about 7 on Linux; only when cli/ changes. Not on 3.14 or 3.15 as
+  # the cli job is: what those Pythons changed is POSIX search permission, which Windows does not
+  # have, and each Windows leg costs every CLI pull request about 15 minutes (tsk-0tje3vzzedtx).
   cli-windows:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
