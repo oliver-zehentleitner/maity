@@ -7645,6 +7645,73 @@ session on it ended.
   would not win (not checked against a live tmux).
 - Changing the account's shell: see the constraint above.
 
+## A coder's dev venvs are built by the runner, and nothing from the clone runs outside the sandbox while it does
+
+**Id:** 87f5fc87-a51c-48b6-9f60-1d8f6953276a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kshmb8vc92rr (placed coders cannot build the venv their project's checks run in; docs/runners-lab.md lists the gap); the lead's go on the plan for a smaller rework of PR 1940 (2026-11-24, with its three design rulings); the pre-review of PR 1940 (its pre-push hook ran the work tree's code outside the sandbox, reproduced); `cli/src/maity/runner/venvs.py`, `supervisor._venvs`, `adapters.claude_settings`
+**Revisit when:** placed sessions reach PyPI themselves, the runner gets a build step that may run a project's own build code in a sandbox, or the agent_user layout or ssh hosts are to get the venvs too
+
+`[backend.local] clone_venvs` names subpackages of the clone (hub, cli). For a Claude Code
+placement where the agents run as the runner's own user on this host, the runner builds a dev
+venv for each at the start, because the session cannot reach PyPI. The runner runs outside the
+sandbox, so the build is held to running nothing the clone holds:
+
+- The lock is `<sub>/requirements/dev.txt` as the placement's branch has it in the project's
+  repository, fetched into a bare repository of the runner's own (`skills._git`: no hooks, no
+  user or system configuration), one per placement so two starts never share a FETCH_HEAD. The
+  runner runs no git in a clone (workspace.py), and the work tree's copy is the agent's to edit.
+- Only `name==version` lines with sha256 hashes pass, extras and markers allowed; an option
+  (any token starting with `-` but a sha256 `--hash`, also after a marker), a URL, a path or an
+  include refuses the lock.
+- pip installs hashed wheels only (`--only-binary=:all:` on its command line and
+  `PIP_ONLY_BINARY=:all:` in its environment, `--no-deps`, no pip configuration read: a second
+  hold, since a pip 24.0 was seen to drop the command line's setting for an option a lock line
+  carried) into a venv the runner's
+  python3 (the first on its PATH, which may be a pyenv or uv one) made just now, so no build
+  script of any package runs.
+- The clone's own package is not built (hatch_build.py and setup.py are clone code): a `.pth`
+  names `<sub>/src`. The hub, run from a checkout, reads `web/` and `docs/join-page.md` from the
+  repository (`config.checkout_web_dir`, `joins.py`), as tools/guards.sh already runs it with
+  `PYTHONPATH=hub/src`.
+- The venv sits in the runner's venvs directory beside its tools and skills, outside the state
+  directory and the scratch: the session reads and runs it and never writes it (a Read allow, an
+  Edit deny and the sandbox's denyWrite, as the delivered skill). The next build goes beside it and
+  replaces it by rename, so the runner never runs a venv's interpreter after a session could
+  reach it. It goes with the placement.
+- `<sub>/.venv` in the clone becomes a link to it only where nothing stands there, below a real
+  directory: a link the agent put on the way is never followed, and a venv of the agent's own
+  stays.
+
+A venv that cannot be had is logged and never fails a start. Elsewhere (the agent_user layout, an
+ssh host) the runner builds none and says so: the agents' user could not read the runner's
+directory, and a build there would need its own path, as the skill has (skills.deliver).
+
+**Not verified:** file-tool writes through the clone's link are not tested here; follow-up: a
+live probe on the pinned Claude Code, recorded here (the details are with the lead).
+
+The same card's other parts: tools/guards.sh takes `hub/.venv/bin/python` when it is there, else
+`python3` as before; the repository's `.gitignore` hides the sandbox's placeholders, which
+guards.sh's clean check would otherwise list, since it reads `.gitignore` files alone.
+
+**Rejected alternatives:**
+- The pre-push hook PR 1940 installed (`core.hooksPath` in `.git/config`): every git outside the
+  sandbox then ran the work tree's `tools/pre_push.py`, which the agent can edit (reproduced in
+  its pre-review). No hook at all: agents run the checks themselves, and CI stays the gate.
+- A hooks path for the session alone (its GIT_CONFIG_COUNT): the harness's own git calls run
+  outside the sandbox and read the session's environment too (adapters.launch), so the hook would
+  still run the work tree's code there.
+- Building the venv in the clone with the clone's own lock and `pip install -e .`: the lock is
+  the agent's to edit, and an editable install runs the package's build script, both outside the
+  sandbox.
+- A directory every placement can write, for shared run slots (PR 1940's
+  `sandbox_writable_dirs`): each placement has its own slots in its scratch since #2032, and a
+  shared writable directory is a channel between placements.
+- Ignoring the placeholders through `.git/info/exclude` alone: guards.sh reads `.gitignore` files
+  only, on purpose, so a personal exclude cannot hide a file a step wrote.
+
 ## An agent's clone of the other layout is set aside whole, and the agent joins anew
 
 **Id:** 66b73260-77a7-421a-bba0-ef5b140f161d
