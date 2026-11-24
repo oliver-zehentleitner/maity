@@ -40,7 +40,8 @@ class Target:
     max_agents: int
     agent_files: Path | None = None  # None until an ssh target has connected once
     # The agents' user's home, found once where the target is set up or first connected, so a
-    # start reads it without an account lookup or a remote call; None until then.
+    # start reads it without an account lookup or a remote call; None until then. It stays for
+    # the life of the runner process: a change to the account takes effect at the next start.
     agents_home: Path | None = None
     tmux_socket: Path | None = None
     probes: dict[str, capabilities.Probe] = field(default_factory=dict)

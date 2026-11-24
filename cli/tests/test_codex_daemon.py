@@ -218,14 +218,38 @@ def test_a_home_outside_its_root_is_not_probed_or_stopped(tmp_path: Path, home: 
                     "the start goes on"]  # fmt: skip
 
 
-@pytest.mark.parametrize("kind", ["dir", "link", "parent-link", "other", "parent-other", "absent"])
+def test_a_relative_root_is_not_probed_or_stopped(tmp_path: Path) -> None:
+    agents = AgentsSide()
+    logs: list[str] = []
+    codexd.stop_codex_daemon(cast(Any, agents), str(tmp_path / "codex"), Path("ws/h"),
+                             Path("ws"), tmp_path, "/usr/bin", logs.append)  # fmt: skip
+    assert agents.runs == []
+    assert logs == ["the codex-home is not below its root; no Codex app-server daemon stopped, "
+                    "the start goes on"]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["dir", "link", "parent-link", "other", "parent-other", "absent", "root-link",
+     "root-other", "root-absent"],
+)  # fmt: skip
 def test_the_home_check_tells_a_link_from_a_directory(tmp_path: Path, kind: str) -> None:
     """The real script, as the runner's own user, over `<root>/a/b/codex-home`: a link at the
-    home or at any directory on the way from the root is `link`, never followed to `dir`."""
+    root, at the home or at any directory between them is `link`, never followed to `dir`. A
+    root that is a file is `other`; a missing one `absent`."""
     root, elsewhere = tmp_path / "root", tmp_path / "elsewhere"
-    (elsewhere / "b" / "codex-home").mkdir(parents=True)
+    (elsewhere / "a" / "b" / "codex-home").mkdir(parents=True)
+    if kind.startswith("root-"):
+        if kind == "root-link":
+            root.symlink_to(elsewhere)  # a real tree behind it: only the root's check tells
+        elif kind == "root-other":
+            root.write_text("")
+        found = codexd.check_home(AsUser(), root, ("a", "b", "codex-home"), codexd.CHECK_TIMEOUT)
+        assert found == kind.removeprefix("root-")
+        return
     root.mkdir()
     a = root / "a"
+    elsewhere = elsewhere / "a"
     if kind == "parent-link":
         a.symlink_to(elsewhere)  # a real directory through it: only the walk tells
     elif kind == "parent-other":
@@ -301,6 +325,30 @@ def test_a_link_above_the_codex_home_is_not_stopped(
     assert not calls.exists() or "app-server daemon stop" not in calls.read_text()
 
 
+@pytest.mark.parametrize("layout", ["scratch", "no scratch"])
+def test_a_root_that_is_a_link_is_not_stopped(world: Any, tmp_path: Path, layout: str) -> None:
+    """The root itself a link, with a real codex-home behind it: the workspaces root for a
+    home in the scratch, the agents' files without one. Nothing is stopped."""
+    sup, _, _, _, logs = world
+    target = sup.targets["local"]
+    behind, link = tmp_path / "behind", tmp_path / "root-link"
+    if layout == "scratch":
+        (behind / ".scratch" / "maity" / "plc-0003" / "codex-home").mkdir(parents=True)
+        link.symlink_to(behind)
+        scratch: Path | None = link / ".scratch" / "maity" / "plc-0003"
+    else:
+        (behind / "agents" / "plc-0003" / "codex-home").mkdir(parents=True)
+        link.symlink_to(behind)
+        target.agent_files = link
+        scratch = None
+    sup._stop_codex_daemon(placement(harness="codex"), sup.cfg.harnesses["codex"], target,
+                           scratch, None)  # fmt: skip
+    assert logs[-1:] == ["plc-0003: the codex-home is a link (or not a directory); no Codex "
+                         "app-server daemon stopped, the start goes on"]  # fmt: skip
+    calls = tmp_path / "calls.log"
+    assert not calls.exists() or "app-server daemon stop" not in calls.read_text()
+
+
 def test_the_daemon_stop_makes_no_directories(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -346,6 +394,52 @@ def test_the_agents_home_is_not_looked_up_before_the_deadline(
     sup._stop_codex_daemon(p, codex, target, scratch, None)
     assert logs[-1:] == ["plc-0003: the agents' home is not known; no Codex app-server daemon "
                          "stopped, the start goes on"]  # fmt: skip
+
+
+def recorded_homes(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """The HOME each daemon stop is given, recorded around conftest's guarded `stop_argv`."""
+    homes: list[Path] = []
+    guarded = codexd.stop_argv
+
+    def recording(binary: str, home: Path, agents_home: Path, agent_path: str) -> list[str]:
+        homes.append(agents_home)
+        return guarded(binary, home, agents_home, agent_path)
+
+    monkeypatch.setattr(codexd, "stop_argv", recording)
+    return homes
+
+
+def test_a_changed_local_account_is_what_the_next_stop_uses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The local agents' home is read when the service builds its target and stays for the
+    life of the runner process: a changed account takes effect at the next start, whose new
+    target (targets.local) carries the new home, and its stop gives that home without looking
+    it up."""
+    for name in ("first", "second"):
+        (tmp_path / name).mkdir()
+    cfg = load(tmp_path)
+    probes = {"codex": capabilities.Probe(str(tmp_path / "codex"), "0.40.0", None)}
+    fake_codex(tmp_path / "codex", tmp_path / "calls.log")
+    monkeypatch.setenv("HOME", str(tmp_path / "first"))
+    before = supervisor.Supervisor(cfg, FakeTmux(), None, [].append, probes)  # type: ignore[arg-type]
+    assert before.targets["local"].agents_home == tmp_path / "first"
+    monkeypatch.setenv("HOME", str(tmp_path / "second"))  # the account changed; a restart
+    after = supervisor.Supervisor(cfg, FakeTmux(), None, [].append, probes)  # type: ignore[arg-type]
+    target = after.targets["local"]
+    assert target.agents_home == tmp_path / "second"
+
+    def looked_up(*args: Any) -> Any:
+        pytest.fail("the daemon stop looked the agents' home up")
+
+    monkeypatch.setattr(config, "home_of", looked_up)
+    monkeypatch.setattr(supervisor.Supervisor, "_agents_home", looked_up)
+    homes = recorded_homes(monkeypatch)
+    scratch = workspaces(after) / ".scratch" / "maity" / "plc-0003"
+    (scratch / "codex-home").mkdir(parents=True)
+    after._stop_codex_daemon(placement(harness="codex"), cfg.harnesses["codex"], target,
+                             scratch, None)  # fmt: skip
+    assert homes == [tmp_path / "second"]
 
 
 class AgentsSide:

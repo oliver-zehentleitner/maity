@@ -45,20 +45,22 @@ def stop_argv(binary: str, home: Path, agents_home: Path, agent_path: str) -> li
 
 
 # What the codex-home is, said by one token on stdout. $1 is the root, the rest the home's
-# components below it, walked from the root: each is told a link before it is entered.
+# components below it. The root first, then each component walked from it, each told a link
+# before it is entered. A missing root is `absent`: nothing below it, so no daemon's home.
 _WHAT = (
-    "p=$1; shift; "
-    "for c; do p=$p/$c; "
-    'if [ -L "$p" ]; then echo link; exit 0; fi; '
-    'if [ ! -d "$p" ]; then if [ -e "$p" ]; then echo other; else echo absent; fi; exit 0; fi; '
-    "done; echo dir"
+    'step() { if [ -L "$1" ]; then echo link; exit 0; fi; '
+    'if [ ! -d "$1" ]; then if [ -e "$1" ]; then echo other; else echo absent; fi; exit 0; fi; }; '
+    'p=$1; shift; step "$p"; '
+    'for c; do p=$p/$c; step "$p"; done; echo dir'
 )
 KINDS = ("dir", "absent", "link", "other")
 
 
 def below(root: Path, home: Path) -> tuple[str, ...] | None:
     """The components of `home` below `root`, or None when `home` is not plainly below it
-    (elsewhere, `root` itself, or a `.` or `..` on the way)."""
+    (a relative root, elsewhere, `root` itself, or a `.` or `..` on the way)."""
+    if not root.is_absolute():
+        return None
     try:
         parts = home.relative_to(root).parts
     except ValueError:
@@ -69,13 +71,13 @@ def below(root: Path, home: Path) -> tuple[str, ...] | None:
 
 
 def check_home(as_user: AsUser, root: Path, parts: Sequence[str], timeout: float) -> str:
-    """What the codex-home `root/parts…` is, as the agents' user: `dir`, `absent`, `link` (a
-    link at the home or at any directory between `root` and it) or `other` (something on the
-    way that is neither a link nor a directory). One `sh` within `timeout` on every layout, the
-    runner's own included. The answer is the token the script prints, never its exit code
-    alone, so a sudo or ssh that fails is never read as an absent home: a non-zero exit, no
-    token or another one is an OSError. subprocess.TimeoutExpired when it does not answer in
-    time."""
+    """What the codex-home `root/parts…` is, as the agents' user: `dir`, `absent` (the root or
+    something on the way missing), `link` (a link at the root, the home or any directory
+    between them) or `other` (something on the way that is neither a link nor a directory).
+    One `sh` within `timeout` on every layout, the runner's own included. The answer is the
+    token the script prints, never its exit code alone, so a sudo or ssh that fails is never
+    read as an absent home: a non-zero exit, no token or another one is an OSError.
+    subprocess.TimeoutExpired when it does not answer in time."""
     done = as_user.run(["sh", "-c", _WHAT, "sh", str(root), *parts], timeout=timeout)
     kind = done.stdout.strip()
     if done.returncode != 0 or kind not in KINDS:
@@ -95,8 +97,9 @@ def stop_codex_daemon(
 ) -> None:
     """Stop the Codex app-server daemon that holds `home`, before a start, within DEADLINE.
     `root` is the directory the runner makes and checks itself that the home lies below. A
-    home that is not there yet has no daemon to stop. A home not below `root`, or one that is
-    a link, has a link on the way from `root`, or is no directory, is not stopped; the launch
+    home that is not there yet has no daemon to stop. A home not below an absolute `root`, or
+    one that is a link, has a link on the way from `root` (`root` itself included), or is no
+    directory, is not stopped; the launch
     refuses such a home later. Nor is a home that cannot be checked, or whose check used the
     whole deadline. A stop that exits non-zero, does not answer in time or cannot run is
     logged. A stop that fails or is skipped leaves the old daemon running, and the new session

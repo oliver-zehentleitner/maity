@@ -710,7 +710,7 @@ writable surface and no write that leaves the scratch.
 **Evidence:** inferred
 **Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh; the review of #2175 (A2463) and the lead's ruling on it: no signal fallback in slice 1, one deadline over the whole stop
 **See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
-**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close, and a fallback for a daemon that does not stop) lands
+**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close, and a fallback for a daemon that does not stop) lands, or the follow-up card that reads the agents' home again on a reconnect or an account change lands
 
 At every Codex start, interactive or supervised, first or restart, the
 runner stops the app-server daemon that an earlier start left in the
@@ -720,13 +720,17 @@ after the skill and before `_context`, which removes the old TMPDIR leaf,
 and before the launch writes the new `config.toml`. The stop is
 `codex app-server daemon stop` with the probed binary, run as the agents'
 user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment, on
-every target. The agents' home for its `HOME` is the one the target found
-when it was set up or connected, so no account lookup runs at the start.
+every target. The agents' home for its `HOME` is the one the target found,
+so no account lookup runs at the start. The agents' home is read when the
+target is set up or connects and stays for the life of the runner process;
+a change to the account takes effect at the next runner start. Reading it
+again on a reconnect or an account change is deferred to a follow-up card.
 One deadline of 20 s covers the check and the stop: up to 5 s for one
 `sh` as the agents' user that walks from a root the runner makes and
 checks itself (the workspaces root for a home in the scratch, the agents'
 files without one) down to the home and says by a token whether it is a
-directory, a link (at the home or on the way), something else or absent;
+directory, a link (at the root, the home or on the way), something else or
+absent (a missing root included);
 the stop gets what is left, and none runs once the check has used it up.
 The check is a subprocess on every layout, so its wait is bounded; a child
 stuck in an uninterruptible wait on a dead mount can still hold the call
