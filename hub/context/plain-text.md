@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-zadkerpebgd5 (one plain-text rule for names, notes, URLs and subjects), 2026-11-14; `plain_text.py` `NOT_PLAIN`, `plain`, `plain_line`, which tsk-kpaye5hmyz39 started for a bridge's purpose
+**Source:** card tsk-zadkerpebgd5 (one plain-text rule for names, notes, URLs and subjects), 2026-11-14; `plain_text.py` `NOT_PLAIN`, `plain`, `plain_line`, which tsk-kpaye5hmyz39 started for a bridge's purpose; card tsk-381tbxvqydg3 (a checklist item takes the rule), 2026-11-24
 **Revisit when:** Python's `unicodedata` gains Extended_Pictographic, an emoji sequence people use is refused in a name (one whose joiner stands after a symbol outside the emoji blocks, or one newer than the Python's Unicode data, whose code points are Cn there), or a field needs a character of the set (a name that must keep U+200D, a note that must keep a carriage return), or a migration touches the tables that hold these values anyway; also when names that look alike become a problem: the rule does not compare names, so a name of letters and spaces that reads as blank in some font, or one of Cyrillic letters that look Latin, passes; and when a ZWJ emoji in a display name shows split in a folded title (a notification title, the join page, the rules heading), which a name-aware fold would keep whole
 **See:** mail.md#one-row-never-stops-the-outbox-a-mail-that-cannot-be-built-is-failed-before-it-is-admitted-and-rows-left-in-sending-need-no-migration — 34e5cd71-12cb-4484-b03c-2c4309665605 — as of 2026-11-14
 
@@ -16,17 +16,20 @@ field the rule covers calls it: a project's name and every display name (`models
 `orgs.display_name_ok`, `registration_accounts.check_names`, `create_profile`, the operator's
 `owner create`), an invitation's note, a card link's URL and label, a person's website and a
 project's links (`person_links.website_problem`), a review's subject, and a human's preferences
-(`preferences.check`); a bridge's purpose through `is_plain_line`, the same rule. The answer keeps each field's existing reason (`control_character`,
-`not_a_url`, `format`, and `invalid` for a display name at registration and an organisation's), so a client that knew a field's reasons meets no new one there, except
+(`preferences.check`); a bridge's purpose through `is_plain_line`, the same rule; a role
+rule's checklist item (`routes/projects.py` `_checklist_error`) since tsk-381tbxvqydg3. The answer keeps each field's existing reason (`control_character`,
+`not_a_url`, `format`, `multiline` for a checklist item, and `invalid` for a display name at registration and an organisation's), so a client that knew a field's reasons meets no new one there, except
 the invitation note, whose character refusal now says `control_character` rather than
 `invalid`.
 
-The set is the one `routes/projects.py` `NOT_PLAIN` already used for a checklist line and
-`routes/restricted.py` for a restricted text, Cs and Co included as there (a lone surrogate
-cannot be written as UTF-8 and would fail later, in the database driver or a mail; a private-use
-character has no meaning the reader can see). Cn (a code point this Python's Unicode data
-does not assign, the noncharacters such as U+FFFF among them) came in at the review of the
-card: it is what "a character nobody named" means taken one step further, and nothing showed
+The set takes up the categories `routes/restricted.py` refuses in a restricted text, Cs and
+Co included as there (a lone surrogate cannot be written as UTF-8 and would fail later, in the
+database driver or a mail; a private-use character has no meaning the reader can see). A
+checklist line had its own narrower set in `routes/projects.py` (Cc, Cf, Zl, Zp): it stored
+Co and Cn, and a lone surrogate failed with a 500. tsk-381tbxvqydg3 removed that set; the line
+calls `plain` and keeps its reason `multiline`, and a checklist stored before stays as it is. Cn (a code point this Python's Unicode data
+does not assign, the noncharacters such as U+FFFF among them) came in at the review of
+tsk-zadkerpebgd5: it is what "a character nobody named" means taken one step further, and nothing showed
 or tested a Cn character as plain. Its cost: a character Unicode assigns after the Python the
 hub runs on, a new emoji too, is refused until the hub runs on a newer one. It replaces the narrower check of
 tsk-dv8f620hjebf (`one_line`, Cc, Zl, Zp), which stays where it belongs: `mail/headers.py`
