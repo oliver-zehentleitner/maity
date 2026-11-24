@@ -380,6 +380,9 @@ nav.switcher, nav.views { display: flex; gap: 4px; overflow-x: auto; margin-top:
 nav.more-after { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
 nav.more-before { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
 nav.more-before.more-after { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+/* before and after are the row's start and end; in a right-to-left row (cue-rtl, set by app.js) the end is at the left. */
+nav.cue-rtl.more-after:not(.more-before) { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+nav.cue-rtl.more-before:not(.more-after) { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
 
 nav.switcher a, nav.views a {
   padding: 8px 10px;
@@ -392,13 +395,14 @@ nav.switcher a, nav.views a {
 nav.switcher a[aria-current="page"], nav.views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
 /* A count that appears must not make its row taller: the page below would jump. */
 nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); line-height: 1; }
+/* The row clips what stands outside it (it scrolls), so the focus ring goes inside the tab, as on the account's tabs. */
+nav.views a:focus-visible { outline-offset: -2px; }
 
-/* The project switcher: always visible, one chip per project. At its
-   right, behind a separator, the project's state and absence; on a narrow
-   screen that block goes under the chips. */
+/* The project switcher: always visible, one chip per project, and the tabs
+   menu after them. The project's state and absence are no longer here: they
+   stand at the right of the project's tabs (.views-row, below). */
 .switcher-row { --switcher-row-gap: 12px; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--switcher-row-gap); }
-/* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
-   a project's state keeps the far end of the row. */
+/* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2). */
 .switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
 /* On a wide screen many tabs scroll before the row wraps, so the tabs menu stays beside the last one
    instead of falling to a line of its own (tsk-qa2r972wjsws). The room kept is the menu's
@@ -429,7 +433,24 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher a.drop-before::before { inset-inline-start: -5px; }
 .switcher a.drop-after::after { inset-inline-end: -5px; }
 .switcher-row nav.switcher { padding-inline-end: 6px; }
-.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; margin-inline-start: auto; }
+/* A project's tabs and, at their right behind a separator, its links, state and absence share one line
+   (tsk-dradpje67ak1): the block keeps its full width, the tabs take what is left and scroll there, with the
+   fade on the side that has more and no scrollbar (the wheel turns them, js/app.js wheelSideways). The row
+   never wraps on a desktop: the tabs keep about two tabs' width (12rem), and where the block's full width
+   would leave less, the block gives way instead, its links scrolling in their row (never narrower than
+   about one link) and the state going under them, beside the tabs and behind the separator still. The tabs
+   stand at the header's bottom edge however tall the block grows, and the block keeps a little room below. */
+.views-row { display: flex; align-items: center; column-gap: 12px; }
+.views-row nav.views { flex: 1 1 0; min-width: min(12rem, 100%); align-self: flex-end; scrollbar-width: none; }
+.views-row nav.views::-webkit-scrollbar { display: none; }
+.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; margin-bottom: 4px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border);
+  flex: 0 1 auto; min-width: 0; max-width: 100%; margin-inline-start: auto; }
+/* What gives way is the links' row, which scrolls (with the fade, js/app.js scrollCue); the state, the
+   released mark and the absence keep their words whole. */
+.project-links { min-width: min(9rem, 100%); overflow-x: auto; scrollbar-width: none; }
+.project-links::-webkit-scrollbar { display: none; }
+.project-links .header-link { flex: none; white-space: nowrap; }
+.project-state > :not(.project-links):not(.outsider-actions) { flex: none; white-space: nowrap; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -440,6 +461,8 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .project-links.more-after { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
 .project-links.more-before { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
 .project-links.more-before.more-after { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+.project-links.cue-rtl.more-after:not(.more-before) { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+.project-links.cue-rtl.more-before:not(.more-after) { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
 /* The Lead on the Chats page: only where the header hides it, on a phone. */
 .chats-lead { display: none; }
 .state.away { color: var(--warn); }
@@ -478,12 +501,13 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
   color: var(--muted); font-size: 0.8rem; }
 /* The outsider's actions in the project's head (js/app.js, `#outsider-actions`): a slot that takes no
-   room while nothing is drawn into it. */
-.project-state .outsider-actions { display: inline-flex; align-items: center; gap: 6px; }
+   room while nothing is drawn into it. It shrinks and wraps, so a reason in words wraps inside the block
+   instead of widening the row past the window (tsk-dradpje67ak1); the button keeps its words whole. */
+.project-state .outsider-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .project-state .outsider-actions:empty { display: none; }
 /* What is drawn into it (js/outsider-actions.js): Add your agent, or why it is missing; the join
    panel under the head's row. */
-.outsider-actions .outsider-add-agent { min-height: 28px; padding: 2px 10px; font-size: 0.85rem; }
+.outsider-actions .outsider-add-agent { flex: none; white-space: nowrap; min-height: 28px; padding: 2px 10px; font-size: 0.85rem; }
 .outsider-actions .outsider-reason { color: var(--muted); font-size: 0.85rem; }
 .outsider-join { margin-top: 8px; }
 .outsider-join:empty { display: none; }
@@ -1425,12 +1449,14 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
      take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
   .switcher-row .switcher { flex: 1 1 0; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
+  /* Two lines (tsk-dradpje67ak1): the tabs scroll in theirs, and the block is a line of its own under them,
+     where the keyboard reaches it after them (no flex order: what is seen and Tab's order stay one). */
+  .views-row { flex-wrap: wrap; }
+  .views-row nav.views { flex-basis: 100%; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; margin-bottom: 8px; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
-  .project-links { flex: 1 1 0; min-width: min(9rem, 100%); overflow-x: auto; }
-  .project-links .header-link { flex: none; white-space: nowrap; }
-  .project-state > :not(.project-links) { flex: none; white-space: nowrap; }
+  .project-links { flex: 1 1 0; }
   /* No room for the Lead beside the logo: it stands on the Chats page, where Chat leads. */
   .me > .lead-button, .me > .lead-button-box { display: none; }
   .chats-lead { display: inline-flex; }

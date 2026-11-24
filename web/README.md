@@ -85,8 +85,14 @@ the outsider's joins as H1 (tsk-enfbkj0xqq5m) contracts them
 hub does not let them read "not a member"; the stored public page is
 never shown inside the tab. In a
 project, the project's state and the owner's absence ("Away until …")
-sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. To their left, where the project has them,
+sit at the right of the project's tabs, behind a separator, in the same
+row: where there is room they keep their full width, and the tabs take
+what is left and scroll sideways there (the mouse wheel turns them; a
+fade marks the side with more; the current tab and one reached with the
+keyboard are brought into sight). Where that would leave the tabs less
+than about two tabs' width (12rem), the block gives way instead: its
+links scroll in a row of their own and the state goes under them, still
+beside the tabs; on a phone the block is a line under the tabs. To their left, where the project has them,
 links in tabs of their own: its repository, with the forge's name and
 mark (GitHub and GitLab their own; Gitea and any other a branch mark),
 **Actions** on GitHub and Gitea, **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
