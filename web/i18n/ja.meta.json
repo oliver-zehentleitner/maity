@@ -14880,8 +14880,8 @@
     "text": "375b79b499dfc190"
   },
   "profile_delete.hint_member": {
-    "en": "4986e5792f01d0ab",
-    "text": "a41eaad57dc2df7f"
+    "en": "4b82acdfe279fc40",
+    "text": "fec4b1b0c31c9164"
   },
   "profile_delete.hint_none": {
     "en": "ac10c484e91c8a25",
@@ -14890,6 +14890,10 @@
   "profile_delete.in_use": {
     "en": "806feff9929cce86",
     "text": "db5fabf54341703e"
+  },
+  "profile_delete.in_use_placement": {
+    "en": "6442ee98a0607bdf",
+    "text": "c82a2c59e501b176"
   },
   "profile_delete.submit": {
     "en": "865cf95417916112",
@@ -15228,12 +15232,12 @@
     "text": "c745f4d955475552"
   },
   "public_page.hint": {
-    "en": "421738fe1c909392",
-    "text": "c9fa3d79ed70d6e8"
+    "en": "48961b9e70ebe423",
+    "text": "5bd846b1110f1f3a"
   },
   "public_page.never": {
-    "en": "a1a33c2eb82b3c58",
-    "text": "9f4e71be7b147d55"
+    "en": "c2c8def8e253bd52",
+    "text": "ff82cf009a34c6d5"
   },
   "public_page.not_saved": {
     "en": "a901447826454a5e",

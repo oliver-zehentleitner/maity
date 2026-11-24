@@ -21073,6 +21073,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(pdSent.length === 1, "profile: a second submit while one runs sends nothing");
   pdRelease(); for (let k = 0; k < 4; k++) await tick();
   expect(!pdIn().disabled && !pdGo().disabled && text(pdBox()).includes("Not deleted"), "profile: after a failure the field is free and the button follows the handle typed");
+  // In use with no membership but an active placement (A2571): the refusal names the placement, not the projects.
+  const pdSaid = [];
+  for (const details of [{ memberships: [], placements: ["plc-0009"] }, { memberships: [{ project: "maintainer/maity" }], placements: [] }]) {
+    win.Maity.api.del = (p) => Promise.reject(new win.Maity.api.ApiError("x", 409, p, "profile_in_use", details));
+    main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    pdSaid.push(text(pdBox()));
+  }
+  expect(pdSaid[0].includes("it still has an active placement on a runner") && !pdSaid[0].includes("still a member of")
+    && pdSaid[1].includes("it is still a member of maintainer/maity"),
+    "profile: in use by a placement alone says so; in use by a membership names the project " + JSON.stringify(pdSaid.map((s) => s.slice(-90))));
+  win.Maity.api.del = (p) => { pdSent.push(p); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", {})); };
   pdIn().value = "@wrong"; pdIn().dispatch("input");
   main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
   expect(pdGo().disabled && pdSent.length === 1, "profile: another handle typed after a failure deletes nothing");
