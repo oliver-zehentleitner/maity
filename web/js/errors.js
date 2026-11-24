@@ -121,6 +121,7 @@ window.Maity = window.Maity || {};
     unauthenticated: () => M.tOwn("error.unauthenticated"),
     upload_expired: () => M.tOwn("error.upload_expired"),
     version_exists: () => M.tOwn("error.version_exists"),
+    watch_limit: () => M.tOwn("error.watch_limit"),
     webhook_signature: () => M.tOwn("error.webhook_signature"),
   };
 

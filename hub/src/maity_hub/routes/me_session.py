@@ -14,6 +14,7 @@ from maity_hub import (
     API_VERSION,
     CLI_VERSION,
     __version__,
+    agent_owners,
     attached,
     availability,
     avatars,
@@ -301,6 +302,16 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         # Serialise with other writes to the project: two resumes of one
         # credential must not both open its live session.
         events.lock_project(conn, mine.project.id)
+        # An outside owner's agent on `blue-team`, a role closed to it since, falls back to
+        # `coder` or is isolated before the packet is built (§6.2), so the packet says which.
+        # Decided on the membership and the project as they are under the lock: a change
+        # committed between the read above and the lock is never written over.
+        mine = _own_membership(conn, caller)
+        if mine.row.isolated_since is None and mine.row.active is not None:
+            agent_owners.settle_closed_role(conn, mine.project, mine.row, agent_owners.HUB)
+            mine = _own_membership(conn, caller)
+        if mine.row.isolated_since is not None:
+            return _isolated_packet(conn, mine, caller)
         now = clock.now()
         # Rows in the order every authenticated call touches them (credential,
         # membership, session, cards), so that the two never wait on each other
