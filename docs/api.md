@@ -19689,12 +19689,21 @@ repository it includes.
   set it off, so no listing, source choice or other read causes a call.
   The new link replaces the existing one only
   when that check gave a definite answer that its human is no active
-  owner (the link is then `not_admin`); when it succeeded, the new link
-  is refused with `installation_linked`; when it gave no definite answer,
-  with `503 forge_unavailable`, and nothing changes.
-  The replaced link is deleted: it is gone from its human's `GET /me/forge`, who has had
-  the account record with `change: "not_admin"` since it went
-  `not_admin` and now gets one with `change: "unlinked"` (below). If
+  owner. The existing link then becomes `not_admin` as on any failed
+  check, and its human gets the account record with `change:
+  "not_admin"` (a `security` item, below) unless the link was
+  `not_admin` already and had it then; then the link is deleted, gone
+  from its human's `GET /me/forge`, and they get the record with
+  `change: "unlinked"` (below). So replacing a link that was `active` or
+  `suspended` writes both records, in that order, in the call that
+  replaces it. When the check succeeded, the new link is refused with
+  `installation_linked`, and the check counts as the existing link's
+  last check and last successful one. When it gave no definite answer,
+  the new link is refused with `503 forge_unavailable` and nothing
+  changes, the existing link's `checked_at` included: a replacement's
+  check without a definite answer is not counted as the link's last
+  check, so it neither starts the link's 10-minute wait nor stops a
+  recent success from serving. If
   the former owner becomes an owner again, the replacement stands: they
   link again under the same rule, and while the new owner's check still
   succeeds, that is refused with `installation_linked`.
@@ -19705,7 +19714,8 @@ repository it includes.
   "removed" | "not_admin", linked_at, checked_at}]` and the caller's own token (below)
   as `{configured, login, status: "active" | "rejected", checked_at}`;
   never a token. A link's `checked_at` is the time of its last check,
-  whatever came of it. `not_admin` (not built yet) is a link to an
+  whatever came of it, except a replacement's check without a definite
+  answer (above), which leaves it as it was. `not_admin` (not built yet) is a link to an
   installation on a forge organisation whose linking human the forge no
   longer reports as an owner of it (below); `account.type` is the
   forge's, `User` or `Organization`.
@@ -19756,7 +19766,8 @@ are not used (above).
 *When the hub checks.* A link, `active`, `not_admin` or `suspended`, is checked at
 most once every 10 minutes, counted from its last check whatever came
 of it, for every caller except another owner's attempt to replace it,
-which checks it at once (above). Nothing else brings a check forward,
+which checks it at once (above) and counts as its last check only when
+it gives a definite answer. Nothing else brings a check forward,
 neither a failed or unanswered check nor the source choice's own
 refresh after a refused read. A repository's confirmation
 (`…/repository/confirm`, above) is no caller either: it makes no owner
@@ -19770,9 +19781,10 @@ stands:
   serves, and no check is made;
 - its last check is 10 minutes old or older: it is checked first, and
   what comes of that check (below) decides;
-- its last check is less than 10 minutes old and did not succeed: no
-  check is made and no call goes to the forge; the link serves nothing
-  until the next check is due, 10 minutes after the last one.
+- its last check is less than 10 minutes old and did not succeed, and
+  its last successful check is 10 minutes old or older: no check is
+  made and no call goes to the forge; the link serves nothing until the
+  next check is due, 10 minutes after the last one.
 
 A `GET /me/forge` within 10 minutes of the link's last check makes no
 owner-check call and shows the last known `status` and its

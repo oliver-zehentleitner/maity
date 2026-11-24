@@ -20,7 +20,8 @@
   `GET /me/forge` serve on a success under 10 minutes old, check first when the last
   check is 10 minutes old or older, and otherwise wait without a call; a repository's
   confirmation makes no owner check and no forge call, and the next source choice takes
-  the link as it stands; a link's `checked_at` is its last check. Only a definite membership answer
+  the link as it stands; a link's `checked_at` is its last check (a replacement's check
+  without a definite answer excepted). Only a definite membership answer
   changes a link's status, a membership in another organisation than the installation's
   among them, as at linking: every other refusal
   and no answer change none, but leave the link serving nothing once its last success is
@@ -45,8 +46,10 @@
   cadence (a `removed` link is replaced without a check), since
   only a human who has passed the owner check for that organisation can set it off;
   only a definite answer that its human is
-  no active owner lets the replacement go ahead (the replaced human gets `unlinked`), a
-  success answers `installation_linked` and no definite answer `forge_unavailable`. No
+  no active owner lets the replacement go ahead (the replaced human gets the
+  `not_admin` security item, unless their link had it already, then `unlinked`), a
+  success answers `installation_linked` and no definite answer `forge_unavailable`,
+  which leaves the existing link's `checked_at` and its last success as they were. No
   App webhook.
 
 ### Changed
