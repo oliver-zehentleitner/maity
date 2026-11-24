@@ -8572,7 +8572,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The read failed: said as such, with the hub's reason, not guessed at (A2567b).
   const idNote = text(main.querySelector(".wanted-note"));
   expect(!main.querySelector("article.card.wanted") && idNote.startsWith("Card tsk-zzzzzzzzzzzz could not be opened: ")
-    && idNote.length > "Card tsk-zzzzzzzzzzzz could not be opened: ".length && !idNote.includes("days"),
+    && idNote.length > "Card tsk-zzzzzzzzzzzz could not be opened: ".length && !idNote.includes("days") && !idNote.includes("{reason}"),
     "ids: a card the board does not hold and cannot read is said to be not opened, with the reason " + idNote);
   const idShown = () => (byId("inbox-show").querySelectorAll("option").find((o) => "selected" in o.attrs || o.selected) || { attrs: {} }).attrs.value;
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();

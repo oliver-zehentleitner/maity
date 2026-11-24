@@ -5232,7 +5232,7 @@ window.MAITY_I18N["en"] = {
   },
   "stepup.cancel": "Cancel",
   "stepup.cancelled": "Cancelled",
-  "stepup.code.daily_limit": "Too many wrong codes today: every code is refused until the day ends in UTC. The mail about it has a link to try again today, once.",
+  "stepup.code.daily_limit": "Too many wrong codes today: every code is refused until the day ends in UTC. If this hub sends you mail, the alert has a one-time link that lifts today's block.",
   "stepup.code.hint": "{what} needs your second factor: enter the code from your authenticator app, or a recovery code (it counts for 10 minutes).",
   "stepup.code.label": "Code",
   "stepup.code.rate_limited": "Too many wrong codes; wait a few minutes.",

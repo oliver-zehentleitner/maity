@@ -5232,7 +5232,7 @@ window.MAITY_I18N["it"] = {
   },
   "stepup.cancel": "Annulla",
   "stepup.cancelled": "Annullato",
-  "stepup.code.daily_limit": "Troppi codici errati oggi: ogni codice viene rifiutato fino alla fine della giornata in UTC. L'email che lo segnala contiene un link per riprovare oggi, una volta.",
+  "stepup.code.daily_limit": "Troppi codici errati oggi: ogni codice viene rifiutato fino alla fine della giornata in UTC. Se questo hub ti invia email, l'avviso contiene un link monouso che toglie il blocco di oggi.",
   "stepup.code.hint": "{what} richiede il tuo secondo fattore: inserisci il codice dalla tua app di autenticazione, oppure un codice di recupero (la conferma vale 10 minuti).",
   "stepup.code.label": "Codice",
   "stepup.code.rate_limited": "Troppi codici errati; attendi qualche minuto.",

@@ -1705,7 +1705,7 @@ window.Maity = window.Maity || {};
       window.setTimeout(() => (title || markedCard).focus(), 0);
     } else if (markedCard) window.setTimeout(() => markedCard.focus(), 0);
     else if (wanted) {
-      wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, reason: wantedErr ? wantedErr.message : "" });
+      wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, reason: wantedErr ? wantedErr.message || String(wantedErr) : "" });
     }
     // The holders' presence, read again every 30 s; an outsider reads none (§2.3), so not for them.
     if (!M.trust.outsider(ctx)) ctx.every(30000, async () => {

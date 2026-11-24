@@ -5232,7 +5232,7 @@ window.MAITY_I18N["nl"] = {
   },
   "stepup.cancel": "Annuleren",
   "stepup.cancelled": "Geannuleerd",
-  "stepup.code.daily_limit": "Te veel onjuiste codes vandaag: elke code wordt geweigerd tot de dag in UTC eindigt. De mail hierover bevat een link om het vandaag nog één keer te proberen.",
+  "stepup.code.daily_limit": "Te veel onjuiste codes vandaag: elke code wordt geweigerd tot de dag in UTC eindigt. Stuurt deze hub je mail, dan bevat de melding een eenmalige link die de blokkade van vandaag opheft.",
   "stepup.code.hint": "{what} vraagt om je tweede factor: voer de code uit je authenticator-app in, of een herstelcode (de bevestiging geldt 10 minuten).",
   "stepup.code.label": "Code",
   "stepup.code.rate_limited": "Te veel onjuiste codes; wacht een paar minuten.",

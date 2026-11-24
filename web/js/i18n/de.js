@@ -5232,7 +5232,7 @@ window.MAITY_I18N["de"] = {
   },
   "stepup.cancel": "Abbrechen",
   "stepup.cancelled": "Abgebrochen",
-  "stepup.code.daily_limit": "Heute zu viele falsche Codes: Jeder Code wird abgelehnt, bis der Tag in UTC endet. Die Mail dazu enthält einen Link, mit dem du es heute noch einmal versuchen kannst, einmal.",
+  "stepup.code.daily_limit": "Heute zu viele falsche Codes: Jeder Code wird abgelehnt, bis der Tag in UTC endet. Schickt dir dieser Hub Mails, enthält die Warnung einen Link, der die heutige Sperre einmal aufhebt.",
   "stepup.code.hint": "{what} braucht deinen zweiten Faktor: Gib den Code aus deiner Authenticator-App oder einen Wiederherstellungscode ein (die Bestätigung gilt 10 Minuten).",
   "stepup.code.label": "Code",
   "stepup.code.rate_limited": "Zu viele falsche Codes; warte ein paar Minuten.",
