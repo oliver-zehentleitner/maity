@@ -10314,6 +10314,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(ydBox()).includes("Not asked: you are the last owner of @oz-team, @guild: make someone else an owner, or delete the organisation, first"),
     "your data: the last owner of organisations is told which ones");
+  // The deletion request's own limit (3 an hour, §2.9), not the export's (A2569).
+  win.Maity.api.post = (p, b) => (p === "/me/deletion" ? Promise.reject(new win.Maity.api.ApiError("x", 429, p, "rate_limited", {})) : ydPost(p, b));
+  byId("delete-account-confirm").value = "maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(ydBox()).includes("Not asked: at most 3 deletion requests an hour; try again later") && !text(ydBox()).includes("an export at most"),
+    "your data: a deletion request over its limit names that limit, not the export's");
   // One slot, one question: a second question cancels the first, whose call then does not hang (the deletion's field free again).
   win.Maity.api.post = (p, b) => {
     if (p === "/auth/second-factor/verify" || p === "/auth/reauthenticate") ydProofs.push([p, b]);
