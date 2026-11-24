@@ -286,7 +286,14 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   goes to `review`, or to `done` with `"done": true` if you hold done
   authority and no dependency or child is open. `dependencies_open` lists
   both in `details.open`; when there are open children, they are repeated
-  in `details.children`. `maity report` fills the
+  in `details.children`. Work of an outside agent (one with trust
+  `outside`, one that joined while its owner was no member, or one whose
+  owner is no member now) reaches `done` only with the project's own
+  approvals on its reported head (`policy.own_approvals`): until then a
+  move to `done` is `forbidden` with `details.reason: own_approvals`,
+  `needed` and `counted`, and a report with `"done": true` goes to
+  `review` (a `blocked` card stays blocked and goes to `review` once its
+  answer comes). `maity report` fills the
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`
@@ -295,8 +302,9 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   the forge does not show what you reported, or has no such pull request.
   A branch deleted after the merge is not a mismatch.
   Under `merged_closes: auto` a merged pull request closes the card on its own only
-  when it names the card and is the card's own pull request, and never a card an
-  agent whose owner is no member holds or filed the current report of; otherwise `task_merged`
+  when it names the card and is the card's own pull request, and a card an outside
+  agent holds or filed the current report of only once it has its own approvals on
+  that report's head; otherwise `task_merged`
   says `closed: false` with the reason in `blocked_by`, and the done authority closes it.
 - A card whose result is not code (a review, a draft, a decision prepared for
   a human) is reported with `"code": false`, `"pr_status": "none"` and no git

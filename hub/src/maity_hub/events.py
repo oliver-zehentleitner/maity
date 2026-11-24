@@ -327,12 +327,15 @@ def emit(
     conversation_id: str | None = None,
     restricted_list: Sequence[int] | None = None,
     card_watchers: Sequence[int] | None = None,
+    review_record: tuple[bool, int | None] | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`. A
     `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
     the event, never served, read again against the set at every read. `card_watchers` is the
     watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
-    card, so that what it decided from that list and the list stored here are one read."""
+    card, so that what it decided from that list and the list stored here are one read.
+    `review_record` is a `review_result`'s `(review_signer, review_pr)` (§2.3 "Own approvals"),
+    written with the row, so the event stays insert-only but for its tombstone."""
     project = lock_project(conn, project_id)
     if actor is not None and actor.bridge is not None:
         # The connection was read live before the route ran (`bridges.carry`); ended since, under
@@ -415,6 +418,8 @@ def emit(
             payload=payload,
             redacted=False,
             wakes=wakes,
+            review_signer=review_record[0] if review_record is not None else None,
+            review_pr=review_record[1] if review_record is not None else None,
         )
     )
     key = result.inserted_primary_key

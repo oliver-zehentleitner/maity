@@ -558,14 +558,16 @@ the claim request is built.
 the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
 
 **Whose agent is outside (the lead's ruling, seq 202962, 2026-11-23):** every check reads the
-trust of the membership it is about: the active row, and in merged.py the active row, else the
-most recent one, for a reporter who has left. An agent with trust `outside` stays outside when
-its owner becomes a member, so `check_policy` and `refuse_lift` (through
+trust of the membership it is about: the active row, and for own approvals the active row, else
+the most recent one, for a reporter who has left. An agent with trust `outside` stays outside
+when its owner becomes a member, so `check_policy` and `refuse_lift` (through
 `agent_owners.bound_by_outside_roles`), `check_assignment` (its own trust-`outside` branch, first)
-and merged.py's `_outside_agent` count it whoever its owner is now; a rejoin as an outsider's agent makes a new row with trust `outside` again. merged.py's
+and `own_approvals.outside_agent` (which merged.py's `outsiders_work` calls) count it whoever its
+owner is now; a rejoin as an outsider's agent makes a new row with trust `outside` again. That
 predicate has three terms on that current row, as the lead ruled (seq 202949): trust `outside`,
 the row's `joined_outside` mark (#2135: it joined while its owner held no membership), or its
-owner holding no membership now; one test per term, each failing without it. A removal and
+owner holding no membership now; plus a fourth, an owner whose account is suspended or deleted
+(seq 203828; hub/context/trust.md, 3ebd6d4a); one test per term, each failing without it. A removal and
 a new join as a member's agent is §2.3's one way out, and leaves a row with trust `member`.
 Rejected: any row of the agent in the project that ever held `outside` counting, because it
 would close the one exit §2.3 names (the lead took that reading back the same day).
