@@ -126,8 +126,11 @@ compared. `join.example.`, `join.example:80` and `join.example:0443` are the
 join host too, and a malformed port does not move a request to the public
 app. The log masks the first path segment of anything on the join host that
 was not rewritten to the join, since `HEAD /{token}` or `/{token}/` still
-carry the token. The page for a link that no longer works is answered only
-on the join host; the public host keeps the envelope's `not_found`.
+carry the token. The dead-link page (404, with the `Maity-Error` header
+naming `not_found`) answers a link that no longer works on the page path
+on both hosts, in the frame on the public host when HTML is asked for,
+and on the API path when HTML is asked for; otherwise the API path keeps
+the envelope's `not_found`.
 
 **Reason:** an exact `host[:port]` match let every variant fall through to
 the full public app, login cookie included, which the join host must
@@ -185,9 +188,13 @@ Three choices in the invitation code (`routes/invitations.py`,
 
 **Voided lazily.** Nothing watches an issuer's role. Whether the issuer
 still holds the authority an invitation needs is computed by one
-predicate (`invitations.admits`), which the page, accept and
-registration all read. Only an accept writes `voided_at`, under the
-project's lock, and commits it before it refuses. The contract says the
+predicate (`invitations.issuer_holds`), which accept, the settlement of
+an invitation by handle, the page (through `invitations.admits`) and
+registration (through `invitations.admits_address`) all read. An accept
+writes `voided_at` under the project's lock and commits it before it
+refuses; the only other writers are the settlement of an invitation by
+handle that is not accepted while its issuer has lost the authority, and
+an account's deletion (its issuer's or its invitee's). The contract says the
 invitation is voided "at that moment" of accepting. Rejected: voiding
 every open invitation of a member whose role changes, in the member
 PATCH and the removal. That means more write paths to keep complete,
@@ -195,8 +202,8 @@ and a promotion back would not restore what was voided. The reads give
 the same answer either way.
 
 **Listed by their own end.** The list shows open invitations, and ended
-ones (used, revoked, voided, expired) for 30 days after the timestamp of
-the way they ended. The contract row was widened to name voided and
+ones (used, revoked, voided, declined, expired) for 30 days after the
+timestamp of the way they ended. The contract row was widened to name voided and
 expired as well. Rejected: one window on `expires_at` for all of them.
 It kept a long-revoked invitation listed until its expiry ran out, and
 the timestamp of an ended one is the time an admin looks for.
@@ -557,7 +564,7 @@ the claim request is built.
 `joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
 the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
 
-**Whose agent is outside (the lead's ruling, seq 202962, 2026-11-23):** every check reads the
+**Whose agent is outside (the lead's ruling of 2026-11-23):** every check reads the
 trust of the membership it is about: the active row, and for own approvals the active row, else
 the most recent one, for a reporter who has left. An agent with trust `outside` stays outside
 when its owner becomes a member, so `check_policy` and `refuse_lift` (through
