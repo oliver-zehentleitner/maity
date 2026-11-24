@@ -94,9 +94,14 @@ DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
 
 # What an owner from outside may let an agent do (§6.1 `outside_roles`, §6.2): the built-in
 # roles that work, and project roles on them, and the expert, which only answers (§2.3) and
-# is no base. Whatever else a list names is `invalid`.
-OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team", "expert")
+# is no base. Whatever else a list names is `invalid`. Never `blue-team`: a security team's
+# defence stays with the project's own owners (B.1 of §6.30). The reviewing and testing roles
+# the contract also opens are not built yet: they wait for the rule that gives an outside
+# owner's agent no done authority by them (hub/context/isolation.md).
+OUTSIDE_BASES = ("coder", "designer", "writer", "expert")
 OUTSIDE_DEFAULT = ["coder"]
+# Closed after lists were stored with it (§6.1): read without it, an agent on it falls back.
+OUTSIDE_CLOSED = "blue-team"
 
 # Own approvals for outsiders' work (§6.1, §2.3 "Own approvals"): from one up to
 # OWN_APPROVALS_MAX; whose agents count as the project's own.
@@ -177,9 +182,13 @@ def of(project: Any) -> dict[str, Any]:
 
 
 def outside_roles(project: Any) -> list[str]:
-    """`policy.outside_roles` (§6.1): the stored list, `["coder"]` while nobody set one."""
+    """`policy.outside_roles` (§6.1): the stored list, `["coder"]` while nobody set one. A
+    list stored while `blue-team` was allowed reads without it, and the next write of the
+    policy, which starts from this read, stores it so (no migration)."""
     stored = project.outside_roles
-    return list(OUTSIDE_DEFAULT) if stored is None else list(stored)
+    if stored is None:
+        return list(OUTSIDE_DEFAULT)
+    return [role for role in stored if role != OUTSIDE_CLOSED]
 
 
 def own_approvals(project: Any) -> int:

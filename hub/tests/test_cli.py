@@ -10,6 +10,8 @@ from maity_hub.db import head_revision, make_engine
 
 PASSWORD = "s3cret-pw"
 ACCOUNT_PASSWORD = "correct-horse-battery-staple"
+# A driver's message that quotes the connection string, as one does for a malformed URL.
+QUOTED = f'invalid connection option "x" in "host=db user=maity password={PASSWORD}"'
 
 
 def head() -> str | None:
@@ -49,7 +51,9 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
     assert main(["migrate"]) == 1
     err = capsys.readouterr().err.splitlines()
     assert err[0] == f"maity-hub: schema stays at empty, head {head()} not reached"
-    assert err[1].endswith(": deadlock detected")
+    # The cause is named by its class and codes; the driver's own text is not printed.
+    assert err[1].endswith(": builtins.Exception unclassified code=- number=- behind=-")
+    assert "deadlock detected" not in err[1]
 
 
 def test_migrate_hands_the_instance_key_to_the_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -302,8 +306,11 @@ def test_a_non_numeric_port_is_refused_without_echo(
 @pytest.mark.parametrize(
     ("url", "reason"),
     [
-        ("foo://x/y", "Can't load plugin"),  # unknown dialect
-        ("postgresql+psycopg2://maity:s3cret@db/maity", "psycopg2"),  # driver not installed
+        ("foo://x/y", "sqlalchemy.exc.NoSuchModuleError unclassified code="),  # unknown dialect
+        (  # no driver: the line names the module to install
+            "postgresql+psycopg2://maity:s3cret@db/maity",
+            "builtins.ModuleNotFoundError unclassified module=psycopg2 code=",
+        ),
     ],
 )
 def test_an_unusable_dialect_or_driver_fails_in_one_line(
@@ -334,6 +341,79 @@ def test_an_unreachable_database_fails_in_one_line_without_the_password(
     assert "Traceback" not in err
 
 
+@pytest.mark.parametrize("command", ["migrate", "serve"])
+def test_the_drivers_text_never_reaches_the_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """A malformed URL can make the driver quote the whole connection string, the password
+    included, in its message; `migrate` runs as a job whose output stays in the logs. The
+    command says the classes, the driver's codes and a fixed cause, never the driver's text."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("connect", {}, psycopg.ProgrammingError(QUOTED))
+
+    monkeypatch.setattr(cli, "make_engine", refuse)  # migrate
+    monkeypatch.setattr(cli, "serving_engine", refuse)  # serve builds its engine there
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity:{PASSWORD}@db/maity")
+    assert main([command]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err == (
+        "maity-hub: database postgresql+psycopg://maity:***@db/maity: "
+        "psycopg.ProgrammingError unclassified code=- number=- behind=-\n"
+    )
+    assert PASSWORD not in err and "s3cr" not in err and "host=db" not in err
+
+
+@pytest.mark.parametrize("query", ["password", "PASSWORD", "pass%77ord", "sslpassword"])
+def test_a_password_in_the_query_string_is_not_printed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], query: str
+) -> None:
+    """A database error names the URL without its query string, where a password can stand."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("connect", {}, psycopg.OperationalError("connection refused"))
+
+    monkeypatch.setattr(cli, "make_engine", refuse)
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity@db/maity?{query}={PASSWORD}")
+    assert main(["migrate"]) == 1
+    err = capsys.readouterr().err
+    assert err == (
+        "maity-hub: database postgresql+psycopg://maity@db/maity?***: "
+        "psycopg.OperationalError refused code=- number=- behind=-\n"
+    )
+
+
+def test_the_bucket_clean_up_logs_no_drivers_text(caplog: pytest.LogCaptureFixture) -> None:
+    """The clean-up after `attachments copy-to-s3` logs a database error and goes on; the log line
+    names it as a command's output does, never with the driver's text."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+    from maity_hub import attachments
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("select", {}, psycopg.ProgrammingError(QUOTED))
+
+    with pytest.MonkeyPatch.context() as patch, caplog.at_level("ERROR"):
+        patch.setattr(attachments, "sweep", refuse)
+        done = cli._clean_bucket(None, None, apply=True)  # type: ignore[arg-type]
+    assert done == {"tombstoned": 0, "orphans": 0, "failed": 1}
+    assert [r.getMessage() for r in caplog.records] == [
+        "cleaning the bucket: psycopg.ProgrammingError unclassified code=- number=- behind=-"
+    ]
+    assert PASSWORD not in caplog.text and "host=db" not in caplog.text
+
+
 def test_an_unwritable_sqlite_path_fails_in_one_line(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -341,7 +421,7 @@ def test_an_unwritable_sqlite_path_fails_in_one_line(
     assert main(["migrate"]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
-    assert "unable to open database file" in err
+    assert "sqlite3.OperationalError unclassified" in err  # the class, not the driver's text
 
 
 def test_owner_create_reads_the_password_from_stdin(
