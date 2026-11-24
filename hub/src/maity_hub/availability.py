@@ -293,7 +293,14 @@ def _out_beyond_grace(row: Any, found: dict[str, Any], now: datetime) -> bool:
 def _any_available(
     conn: Connection, project: Any, membership_ids: list[int], now: datetime
 ) -> bool:
-    rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(membership_ids))).all()
+    """Whether one of these covering substitutes is `available`. A substitute whose
+    membership has ended (removed or left, §6.2) is not, at once, as `cover.routed` skips
+    it for a new card (§6.12)."""
+    rows = conn.execute(
+        select(t.membership).where(
+            t.membership.c.id.in_(membership_ids), t.membership.c.removed_at.is_(None)
+        )
+    ).all()
     presences = presences_of(conn, rows)
     humans = humans_of(conn, rows)
     dormant = dormants_of(conn, rows)

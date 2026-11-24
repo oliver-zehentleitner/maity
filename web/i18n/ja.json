@@ -3244,7 +3244,7 @@
   "observe.title": "{project} に閲覧のみで参加",
   "org.by_area": "(エリア別)",
   "org.empty": "メンバーはいません。",
-  "org.instance.label": "{address} のセッション",
+  "org.instance.label": "{address} のセッション: {state}",
   "org.intro": "ポリシー: {preset}。誰が誰に報告するか、誰がどのエリアを所有するかから算出されます。",
   "org.reread_failed": "メンバーを再取得できませんでした: {reason}",
   "org.face.label": "組織の表示方法",
@@ -3254,7 +3254,6 @@
     "other": "担当中 {count} 件"
   },
   "org.fleet.dormant": "休眠中",
-  "org.fleet.dot": "{address}: {state}",
   "org.fleet.empty": "このプロジェクトにあなたのエージェントはいません。",
   "org.fleet.lead": "リードのインスタンス",
   "org.fleet.no_instances": "アクティブなインスタンスなし",
