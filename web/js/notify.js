@@ -58,7 +58,8 @@ window.Maity = window.Maity || {};
   }
 
   // The page's address for an item, from its target. Account records lead
-  // to the account: a security alert to the sessions, the settings to the
+  // to the account: a security alert to the sessions, one about forge access
+  // (target settings/forge) to Forge access, the settings to the
   // notification settings; a personal request of a project one is no
   // member of, to everything waiting, until the page has the personal
   // inbox (§18.2 names /requests/<id>). A security item of another target

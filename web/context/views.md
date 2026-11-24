@@ -4884,10 +4884,11 @@ The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: th
   have the owner role restored on GitHub (the link is active again
   after its next check) or unlink it; meanwhile another owner of the
   organisation may link it, which replaces this link. An `active` one
-  that lists no repositories says why: it serves only while GitHub
-  still reports the human as an owner, which the hub checks at most
-  every 10 minutes, and its repositories show after a check that
-  confirms it. Both are said from the link's own fields;
+  that lists no repositories names both reasons the answer cannot tell
+  apart: it covers none on GitHub, or the hub has not confirmed
+  recently that GitHub still reports the human as an owner (checked at
+  most every 10 minutes; it serves only after a check that confirms
+  it). Both are said from the link's own fields;
 - **Link the GitHub App**, offered only where `app_configured`;
 - **Unlink**, which says it does not uninstall the App on GitHub and
   links to GitHub's page;

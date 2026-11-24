@@ -46,13 +46,17 @@ window.Maity = window.Maity || {};
     if (fields && fields.token === "rejected") return { message: M.t("forge.token.rejected") };
     if (err.code === "secret_key_missing") return { message: M.t("forge.token.no_key") };
     if (err.code === "forge_app_missing") return { message: M.t("forge.back.forge_app_missing") };
-    if (err.code === "forge_unavailable") return { message: M.t("forge.back.forge_unavailable") };
+    // A call of this page that GitHub did not answer (a token's check, the link's start): the plain
+    // words, without the setup's hint for an organisation's installation.
+    if (err.code === "forge_unavailable") return { message: M.t("forge.unavailable") };
     return err;
   }
 
   // An installation on a GitHub organisation serves only while GitHub reported the human who
-  // linked it as an owner at a check less than 10 minutes old (§11.4). The list says why one shows
-  // no repositories, from its own fields: no read of its own, and `checked_at` as the hub gave it.
+  // linked it as an owner at a check less than 10 minutes old (§11.4). An active one that lists no
+  // repositories either covers none or has no such check: the answer does not say which, so the
+  // hint names both (A2546). It is said from the link's own fields: no read of its own, and
+  // `checked_at` as the hub gave it.
   function orgHint(link) {
     if (!link.account || link.account.type !== "Organization") return null;
     if (link.status === "not_admin") return h("p", { class: "hint forge-org-hint" }, M.t("forge.org.not_admin"));

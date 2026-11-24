@@ -5132,8 +5132,8 @@
     "text": "39c96558132b1f36"
   },
   "forge.back.installation_linked": {
-    "en": "fcb590b25ba42b0c",
-    "text": "5d50da2d090575ae"
+    "en": "aaf788536039ebb9",
+    "text": "6c63fe82cb975a3c"
   },
   "forge.back.installation_not_yours": {
     "en": "a5da246e2f9daaa2",
@@ -5220,12 +5220,12 @@
     "text": "db9f4ed8c72c418f"
   },
   "forge.org.not_admin": {
-    "en": "d85993e246b42e06",
-    "text": "835de1cf3c9c7408"
+    "en": "b75da90ea59dbd43",
+    "text": "c5b73a802c694b8a"
   },
   "forge.org.unchecked": {
-    "en": "67bab3b59294d8c3",
-    "text": "9a50a0ab8414e080"
+    "en": "2f80f2cb1eab095c",
+    "text": "47f1633092eb7eb0"
   },
   "forge.public_offer": {
     "en": "daa899db80699347",
@@ -5338,6 +5338,10 @@
   "forge.token.what": {
     "en": "ef8df17608f21c22",
     "text": "d2ef9a5a0d7b9989"
+  },
+  "forge.unavailable": {
+    "en": "60d97bb5c48630a6",
+    "text": "f17584a79c8b3265"
   },
   "forge.unconfirmed": {
     "en": "0353a87c68bddfdd",
