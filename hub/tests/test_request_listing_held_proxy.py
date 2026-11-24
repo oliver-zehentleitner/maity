@@ -134,7 +134,8 @@ def test_a_bridge_consent_is_not_the_proxys_to_relay_anywhere(
 def test_the_counts_python_branch_reads_the_status_for_a_proxy(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """A request held for someone else is one the counts decide in Python (`_DECIDED_BY`)."""
+    """A request held for someone else is one the counts decide in Python
+    (`request_sql.DECIDED_BY`)."""
     proxy = flow.agent(make_client, owner, role="proxy")
     worker = flow.agent(make_client, owner)
     other = flow.agent(make_client, owner)
