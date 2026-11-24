@@ -444,16 +444,30 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
 - §11.3's export asks the source on every call only where it rests on
   such a link, and refuses by reader only while that link serves
   nothing and no other source covers; every other state is answered
-  from its cache as before. Three cases around such a link answer
-  `forge_unavailable` without `details.last` instead of the cache: the
-  operator's token after it cannot read the visibility, and the choice
-  itself has no answer while the owner's grants hold such a link (the
-  reader then carries `ORG_UNANSWERED`). Unlinking or replacing such a
-  link drops the Keep the Why reads of the human's projects on every
-  replica, since the choice then refuses with `no_grant`, which §11.3
-  does not ask about (review A2545 #5). The probe asks the operator's
-  token's visibility after such a link before a cached observation is
-  answered (A2545 #6).
+  from its cache as before. Two cases around such a link answer
+  `ktw_unavailable` with `forge_unavailable` and without `details.last`
+  instead of the cache (`probe_unavailable` with `details.retry_at`
+  while the budget is spent): the operator's token after it cannot read
+  the visibility, and the choice itself has no answer while the owner's
+  grants hold such a link (the reader then carries `ORG_UNANSWERED`).
+  Any refusal of that visibility, `repository_moved` included, is
+  answered by reader, never from the cache (A2574 P2-2). Unlinking or
+  replacing such a link, and its leaving `active` (`not_admin`,
+  `suspended`, `removed`), drops the Keep the Why reads of the human's
+  projects on every replica, since the choice may then refuse with
+  `no_grant`, which §11.3 does not ask about (review A2545 #5, A2574
+  P2-3).
+- An export read through such a link is kept with the time its grant
+  ends (`serves_until`, the success plus 10 minutes): past it the
+  cache answers it nowhere, the project view's `keep_the_why_export`
+  included, a failed read afterwards keeps none of it, and no member
+  falls back on a last good read made through it (A2574 P2-3).
+- The probe asks the operator's token's visibility on every call before
+  a cached observation is answered, as §11.5 does: after such a link
+  that serves nothing (A2545 #6) and after one that was unlinked,
+  replaced or removed on the forge, which leaves no reason behind (A2574
+  P2-1). A visibility without an answer is `probe_unavailable` without
+  `details.last`.
 - A forge answer whose ids are no numbers (a JSON `true` included) or
   whose names are empty is no answer, never a "no" or a match: the
   installation, the user, the membership, and the ids `is_owner`
