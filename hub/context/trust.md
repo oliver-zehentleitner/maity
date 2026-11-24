@@ -365,7 +365,7 @@ range looks none up. This runs only on a move to `done` of outsiders' work.
 **Evidence:** confirmed
 **Source:** card tsk-nvsxwd4tzzg9 (2026-11-24) and the lead's ruling on it (seq 209840): `review`, not `open`; the claim stays and the own approvals decide again; a trust-based rule. docs/api.md §2.3 "Own approvals", §6.4, §6.6. It replaces, for the way back from `done`, the claim's check and the release to `open` of the lead's decisions of 2026-11-18 recorded in the root context (members.md, dab6ae4a-3f6b-4431-8945-80e5956a38a8)
 **See:** trust.md#own-approvals-are-counted-at-each-move-to-done-in-one-module-from-the-review-results-and-signatures-on-the-card — 3ebd6d4a-8923-4899-becc-84476a1c6b7a — as of 2026-11-24
-**Revisit when:** a card can reach `done` of outsiders' work with no holder (a claimless `done` card under `done_authority: holder` then waits in `review` for a takeover); or a done authority is resolved for a role somewhere other than `cards.has_done_authority`
+**Revisit when:** a card can reach `done` of outsiders' work with no holder (a claimless `done` card under `done_authority: holder` then waits in `review` for a takeover); or a done authority is resolved for a role somewhere other than `cards.has_done_authority`, as `task_merged` still does: its role tokens reach an outside agent (docs/api.md §2.3 "not built yet", tsk-4bfgr4q6zz3x)
 
 A report with a new head on a `done` card of outsiders' work, while its
 pull request is open, sets `status: review` and clears `closed_at` in the
@@ -378,10 +378,14 @@ same head stay `done` as before.
 `cards.has_done_authority` returns no authority under `reviewer`,
 `tester` and `reviewer_and_tester` to a caller that
 `own_approvals.outside_agent` counts as outside, and `cards.sign`
-refuses such a caller as it refuses a missing scope. Both ask the same
-function the gate uses, so trust `outside`, the `joined_outside` mark and
-an owner who is no member all count; the holder's authority under
-`holder` is untouched (it passes the gate of 3ebd6d4a).
+refuses such a caller as it refuses a missing scope. A stored signature
+is held to the same eligibility wherever it is read (`cards._stands`,
+under `standing`): an agent's signature counts only while it is no
+outside agent, so one given before this rule, or by a signer that later
+became outside, counts nothing. All three ask the same function the gate
+uses, so trust `outside`, the `joined_outside` mark and an owner who is
+no member all count; the holder's authority under `holder` is untouched
+(it passes the gate of 3ebd6d4a).
 
 **Reason:** the lead's ruling: with the claim kept, the card is where it
 was before its last close, and the own approvals decide again on the new
@@ -407,6 +411,11 @@ the two from drifting.
 - Refusing the signature only through the done-authority check: `sign`
   would still give a signature to any other caller path; it refuses on
   its own too.
+- Checking a signer's eligibility only when it signs: a signature stored
+  earlier, or one whose signer's owner later left or whose row was
+  marked, would still complete `approvals`; eligibility is checked when
+  a signature is counted, as a demotion or removal already is (the
+  lead's scope for the second round of #2179, 2026-11-24).
 
 ## `PUT …/roles` refuses a guide and keeps the one a role already has
 
