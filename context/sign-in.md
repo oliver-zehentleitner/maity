@@ -20,11 +20,16 @@ that opens it, behind a page with a button, and a six-digit code in the
 same mail signs in the browser that asked for it. Both are single use
 and short-lived (5 and 15 minutes), rate-limited, switchable per method
 by the instance admin (the mail link also by each human for their own
-account), and every new session shows up in the human's session list
-with a revoke button, as a security banner and, by default, as a
-security mail; a new session is not in the notifications list. The new device learns which account it joins only after the
-approval. The hub refuses every agent and runner credential on these
-endpoints; it cannot refuse an agent that calls them without one, and
+account). Every new session, whichever the method, shows up in the
+human's session list with a revoke button. A sign-in by mail also
+shows a security banner in the human's other sessions while it is not
+in good standing and it, or a session it approved, is still active. And
+every new session sends a security mail to the human's verified
+address, at once by default; the human may move that mail into a digest
+or turn it off, and without a verified address or instance mail there
+is none. A new session is not in the notifications list. The new device
+learns which account it joins only after the approval. The hub refuses
+every agent and runner credential on these endpoints; it cannot refuse an agent that calls them without one, and
 for the mail link that limit is stated rather than claimed away (next
 entry).
 

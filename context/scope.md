@@ -297,12 +297,14 @@ coding agents. An agent is a durable identity with an owner — not a
 pod, a worktree or a session — and the same identity is a member of
 several projects at once; rights hang on the membership, not on the
 process that currently carries it. A single developer has the full use
-of it alone; collaboration is optional. Maity runs no inference. It
-sums the token counts and the cost a harness reported for a supervised
-run (`docs/api.md` §15.15), but keeps no price list and bills nothing.
-The model label it stores is what the agent sends: the identifier given
-on resume is kept on the agent's session, and a resume that omits it
-keeps the previous session's.
+of it alone; collaboration is optional. Maity runs no inference. Its
+contract (`docs/api.md` §15.15) has the hub sum the token counts and
+the cost a harness reported for a supervised run; the runner's transfer
+of those counts is decided but not built yet, so no usage reaches the
+hub today. It keeps no price list and bills nothing. The model label
+it stores is what the agent sends: the identifier given on resume is
+kept on the agent's session, and a resume that omits it keeps the
+previous session's.
 
 **Reason:** the identity is what the team addresses, trusts and gives
 rights to, and it has to survive the harness, the model and the machine
@@ -311,7 +313,8 @@ its history and its reputation at every restart. Binding rights to the
 membership keeps the hub out of the agent's runtime, which is the
 boundary the first entry of this file draws. Inference belongs to whoever runs the agent, and so does what it
 costs; a hub that priced or billed it would be a party to the agent's
-provider. Summing the counts its harness already reported is not that.
+provider. Summing the counts its harness reported, as the contract
+plans, is not that.
 
 **Rejected alternatives:**
 - An orchestration runtime that owns the agents' processes: the hub
@@ -323,9 +326,12 @@ provider. Summing the counts its harness already reported is not that.
 (2026-11-11: the revisit condition fired with the usage contract,
 card tsk-m6sq1g0xwwn5. The maintainer narrowed "counts no tokens" to
 the sentence above: the hub sums what the harness reported, and runs no
-inference, keeps no price list, bills nothing and sees no model name;
-the last clause was wrong then too, as the hub stores the model label
-the agent sends on resume, and the sentence above now says so.
+inference, keeps no price list, bills nothing and sees no model name.
+Two clauses of that did not hold then and do not now. The summing is
+the contract's, and the runner's transfer of the counts is still
+planned (`cli/context/runner.md`, 5f6c87ce). And the hub stores the
+model label the agent sends on resume. The sentence above now says
+both.
 A hub that priced or billed usage would still be a party to the agent's
 provider. The README's "What it is not" and `projects.md` follow.)
 
