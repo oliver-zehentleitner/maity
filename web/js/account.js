@@ -213,8 +213,13 @@ window.Maity = window.Maity || {};
           busy = false;
           typed.disabled = false;
           settle();
-          const inUse = err.code === "profile_in_use" && err.details && err.details.memberships;
-          status.fail(M.t("profile_delete.failed"), inUse ? { message: M.t("profile_delete.in_use", { projects: names(err.details.memberships.map((x) => x.project)) }) } : err);
+          // In use (§6.3): its memberships, or, with none, an active placement that would admit it (A2571).
+          const inUse = err.code === "profile_in_use" && err.details ? err.details : null;
+          const members = inUse && Array.isArray(inUse.memberships) ? inUse.memberships : [];
+          const placed = inUse && Array.isArray(inUse.placements) ? inUse.placements : [];
+          const words = members.length ? M.t("profile_delete.in_use", { projects: names(members.map((x) => x.project)) })
+            : placed.length ? M.t("profile_delete.in_use_placement") : null;
+          status.fail(M.t("profile_delete.failed"), words ? { message: words } : err);
         }
       },
     },
