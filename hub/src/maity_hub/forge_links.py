@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, Engine, delete, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, forge, github_app, wakeups, write_guard
 from maity_hub import tables as t
@@ -188,12 +189,16 @@ def link(
     human_id: str,
     found: dict[str, Any],
     replacing: tuple[Link, Check] | None = None,
+    app: GitHubApp | None = None,
 ) -> str:
     """Store the verified installation as this human's link; the link's id. One human at a
     time: an installation linked to another human is `LinkError("installation_linked")`,
     except on a forge organisation, where another owner's link replaces it after an owner
     check of the existing link (§11.4): `ReplaceCheck` asks for that check, and the call comes
-    again with `replacing`, the link as the check found it and what came of it."""
+    again with `replacing`, the link as the check found it and what came of it. A link that
+    changed meanwhile, or a concurrent first link of the same installation, is
+    `ForgeUnavailableError` with nothing written: the human links again. `app` drops the
+    installation's held tokens when a replacement removes the existing link."""
     now = clock.now()
     organisation = found["account"]["type"] == ORGANISATION
     # The owner check at linking is the link's first check and its first success, counted
@@ -201,9 +206,18 @@ def link(
     # from the claim: never from now, which may be a replacement's whole check later.
     checked: datetime = found["owner_checked_at"] if organisation else now
     existing = _existing(conn, found["id"])
-    if existing is not None and existing.human_id != human_id:
-        write_guard.share(conn, existing.human_id)  # the other human's record below
+    if existing is not None:
+        if existing.human_id != human_id:
+            write_guard.share(conn, existing.human_id)  # the other human's record below
+        # Locked whenever there is one, the caller's own included: a concurrent relink or
+        # replacement of it waits for this one, then reads what it wrote (review A2545 #10).
         existing = _existing(conn, found["id"], lock=True)
+    if replacing is not None and existing != replacing[0]:
+        # The link the replacement's check was made for changed while it ran: its status, its
+        # checks, its human, or it is gone (the lead's ruling Q2, seq 214797; review A2545 #1).
+        # Decided before anything else, so neither an unlink, a removal nor a link of the
+        # caller's own meanwhile lets the new link through on a check that did not decide it.
+        raise forge.ForgeUnavailableError("the link changed while it was checked")
     columns: dict[str, Any] = {
         "account_id": found["account"]["id"],
         "account_login": found["account"]["login"] or "",
@@ -217,25 +231,42 @@ def link(
     if existing is not None and existing.human_id != human_id:
         if not organisation:
             raise LinkError("installation_linked")
+        login = existing.account_login
         if existing.status != "removed":
             _replace_after_check(conn, existing, replacing)
-        _drop(conn, existing)
+            assert replacing is not None  # `_replace_after_check` asked for the check otherwise
+            login = replacing[1].login or login
+        _drop(conn, existing, login)
+        if app is not None:
+            # The existing link's tokens go with it, here and on every replica (§11.4: a failed
+            # check drops the installation's tokens; review A2545 #7).
+            wakeups.forget_token_everywhere(conn, app, existing.installation_id)
         existing = None
     if existing is not None:
-        conn.execute(update(t.forge_link).where(t.forge_link.c.id == existing.id).values(columns))
+        updated = conn.execute(
+            update(t.forge_link).where(t.forge_link.c.id == existing.id).values(columns)
+        )
+        if updated.rowcount != 1:  # held under its row lock: a link that went is no relink
+            raise forge.ForgeUnavailableError("the link changed while it was written")
         records.forge_access_changed(conn, human_id, "app", "linked", columns["account_login"])
         return existing.id
     link_id = new_id("forge_link")
-    conn.execute(
-        insert(t.forge_link).values(
-            id=link_id,
-            human_id=human_id,
-            forge=FORGE,
-            installation_id=found["id"],
-            linked_at=now,
-            **columns,
+    try:
+        conn.execute(
+            insert(t.forge_link).values(
+                id=link_id,
+                human_id=human_id,
+                forge=FORGE,
+                installation_id=found["id"],
+                linked_at=now,
+                **columns,
+            )
         )
-    )
+    except IntegrityError:
+        # Another first link of the installation committed since it was read: a link that
+        # changed meanwhile, answered as one that changes during a replacement's check, never
+        # as `installation_linked`, since it may be the caller's own (review A2545 #10).
+        raise forge.ForgeUnavailableError("the installation was linked meanwhile") from None
     records.forge_access_changed(conn, human_id, "app", "linked", columns["account_login"])
     return link_id
 
@@ -289,10 +320,12 @@ def _login(check: Check) -> dict[str, Any]:
     return {"account_login": check.login} if check.login else {}
 
 
-def _drop(conn: Connection, existing: Link) -> None:
-    """The existing link goes, and its human gets the `unlinked` record."""
+def _drop(conn: Connection, existing: Link, login: str) -> None:
+    """The existing link goes, and its human gets the `unlinked` record, naming the account by
+    `login`: the current one when the replacement's check read it, as its `not_admin` record
+    does."""
     conn.execute(delete(t.forge_link).where(t.forge_link.c.id == existing.id))
-    records.forge_access_changed(conn, existing.human_id, "app", "unlinked", existing.account_login)
+    records.forge_access_changed(conn, existing.human_id, "app", "unlinked", login)
     _forget_reads_of(conn, existing.human_id)
 
 
@@ -390,17 +423,18 @@ def claim(conn: Connection, link_id: str, now: datetime) -> bool:
     return claimed.rowcount == 1
 
 
-def owner_check(app: GitHubApp, link: Link) -> Check:
+def owner_check(app: GitHubApp, link: Link, replacing: bool = False) -> Check:
     """The owner check of a link on a forge organisation (§11.4, "How it checks"), forge reads
     only, no connection held: the installation with the App's key; the forge user by the id
     kept with the link; that user's membership in the organisation, the last two with an
     installation token of this installation. The token is kept only for a link that serves
-    already; for any other it is minted for these reads alone."""
+    already; for any other, and for a replacement's check (`replacing`), whose link may be
+    gone right after it, it is minted for these reads alone (review A2545 #7)."""
     started = clock.now()
-    return dataclasses.replace(_steps(app, link), at=started)
+    return dataclasses.replace(_steps(app, link, keep=serves(link) and not replacing), at=started)
 
 
-def _steps(app: GitHubApp, link: Link) -> Check:
+def _steps(app: GitHubApp, link: Link, keep: bool) -> Check:
     try:
         found = app.installation(link.installation_id)
     except forge.ForgeUnavailableError:
@@ -418,7 +452,7 @@ def _steps(app: GitHubApp, link: Link) -> Check:
         # status changes on it (and no membership read for an account the link is not on).
         return Check(None, login)
     try:
-        token = app.token(link.installation_id, keep=serves(link))
+        token = app.token(link.installation_id, keep=keep)
         username = app.user_login(token, link.forge_user_id)
         if username is None:
             return Check(NOT_ADMIN, login)  # the user by id is gone: a `404`, as at linking
@@ -431,13 +465,19 @@ def _steps(app: GitHubApp, link: Link) -> Check:
     return Check(OK if owner else NOT_ADMIN, login)
 
 
+STALE = "stale"  # `apply_check`: a newer check or link was written while this one ran
+
+
 def apply_check(conn: Connection, link_id: str, check: Check, at: datetime) -> str | None:
     """Write what a claimed check found (§11.4, "What comes of it"); the link's status after
-    it, None when the link is gone or `removed`. Only a definite answer changes the status: a
-    success sets `active` and `owner_ok_at` to `at` (when the check was claimed, so it is
-    never fresher than it was), a definite "no" `not_admin` with its record when the status
-    becomes it, step 1's suspension or removal as a refused mint does. No answer changes
-    nothing but the login step 1 read. The human's account lock first, as in `set_status`."""
+    it, None when the link is gone or `removed`, `STALE` when its `checked_at` is no longer the
+    claim's `at`: a replacement's check that kept it, or a relink of its own human, wrote a
+    newer check meanwhile, and this older one writes nothing over it (review A2545 #8). Only
+    a definite answer changes the status: a success sets `active` and `owner_ok_at` to `at`
+    (when the check was claimed, so it is never fresher than it was), a definite "no"
+    `not_admin` with its record when the status becomes it, step 1's suspension or removal as
+    a refused mint does. No answer changes nothing but the login step 1 read. The human's
+    account lock first, as in `set_status`."""
     owner = conn.execute(
         select(t.forge_link.c.human_id).where(t.forge_link.c.id == link_id)
     ).scalar()
@@ -449,6 +489,8 @@ def apply_check(conn: Connection, link_id: str, check: Check, at: datetime) -> s
     ).first()
     if found is None or found.status == "removed":
         return None
+    if found.checked_at != at:
+        return STALE
     values: dict[str, Any] = _login(check)
     status: str = found.status
     if check.outcome == OK:
@@ -469,7 +511,17 @@ def refresh(engine: Engine, app: GitHubApp, link: Any) -> Any | None:
     """The link's row as it stands after its owner check, when one is due and this process
     claimed it; as stored otherwise (`due` false, or another process claimed the check); None
     when it is gone. A definite answer that does not end in `active` drops the installation's
-    tokens this process and the others hold."""
+    tokens this process and the others hold; a check a newer one overtook (`STALE`) drops
+    nothing.
+
+    Both transactions are exempt from the calling request's write guard (review A2545 #2): what
+    they write is the link's human's, never the caller's, so a caller deleted, suspended or
+    whose bridge ended meanwhile must not drop a definite `not_admin` after the claim moved
+    `checked_at`. It also keeps §2.9's lock order: `apply_check` takes the link human's
+    `account_lock` (shared) first, then the link's row, as `account_deletion` takes the
+    `account_lock` (exclusively) before anything else; the guard's own check of a bridged call
+    would otherwise take the organisation's and the project's locks before that
+    `account_lock`, the order a deletion takes them the other way round."""
     if not due(link):
         return link
     at = clock.now()
@@ -480,8 +532,9 @@ def refresh(engine: Engine, app: GitHubApp, link: Any) -> Any | None:
             return conn.execute(select(t.forge_link).where(t.forge_link.c.id == link.id)).first()
     check = owner_check(app, Link.of(link))
     with engine.begin() as conn:
+        write_guard.exempt(conn)
         status = apply_check(conn, link.id, check, at)
-        if check.outcome is not None and status != "active":
+        if check.outcome is not None and status not in ("active", STALE):
             wakeups.forget_token_everywhere(conn, app, link.installation_id)
         return conn.execute(select(t.forge_link).where(t.forge_link.c.id == link.id)).first()
 

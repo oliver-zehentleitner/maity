@@ -288,12 +288,17 @@ class ForgeAccess:
             assert link.owner_ok_at is not None  # `serves` says so
             return token, None, link.owner_ok_at + forge_links.CHECK_EVERY
         reason = errors.ORG_REASONS_BY_STATUS.get(link.status, errors.ORG_UNANSWERED)
+        if link.status == "removed":
+            return None, reason, None  # never checked again: nothing to keep it until (A2545 #9)
         return None, reason, link.checked_at + forge_links.CHECK_EVERY
 
     def _gone(self, link: forge_links.Link, state: str) -> None:
-        """A mint the forge refused: the link's status, and no token of it held anywhere."""
+        """A mint the forge refused: the link's status, and no token of it held anywhere. Exempt
+        from the calling request's write guard, as `forge_links.refresh` is (review A2545 #2):
+        the write is the link human's, whose `account_lock` `set_status` takes first."""
         assert self.app is not None
         with self.engine.begin() as conn:
+            write_guard.exempt(conn)
             forge_links.set_status(conn, link.id, state)
             wakeups.forget_token_everywhere(conn, self.app, link.installation_id)
 

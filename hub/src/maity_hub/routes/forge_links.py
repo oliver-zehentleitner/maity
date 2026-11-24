@@ -106,13 +106,13 @@ def _link(engine: Engine, app: GitHubApp, human_id: str, found: dict[str, Any]) 
     `forge_unavailable` with nothing written."""
     try:
         with engine.begin() as conn:
-            return forge_links.link(conn, human_id, found)
+            return forge_links.link(conn, human_id, found, app=app)
     except forge_links.ReplaceCheck as asked:
         existing = asked.existing
-    check = forge_links.owner_check(app, existing)
+    check = forge_links.owner_check(app, existing, replacing=True)
     with engine.begin() as conn:
         try:
-            return forge_links.link(conn, human_id, found, (existing, check))
+            return forge_links.link(conn, human_id, found, (existing, check), app)
         except forge_links.Kept:
             pass  # committed: the check counts as the existing link's last check and success
     raise forge_links.LinkError("installation_linked")
