@@ -98,6 +98,30 @@ def test_a_new_head_takes_outsiders_work_back_to_review_with_its_claim(
     assert [e["status"] for e in moved] == ["review"]
 
 
+def test_a_new_head_takes_outsiders_work_without_a_holder_to_open(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The holder released its claim after the close (the card stays `done`): with no holder
+    the card goes to `open`, where a member's agent can claim it (§6.6)."""
+    _policy(owner, done_authority="holder")
+    outsider = _outside(make_client, migrated, owner)
+    card_id = _card(owner)
+    _reported(outsider, card_id)
+    _review(flow.agent(make_client, owner, role="reviewer"), card_id)
+    assert _done(outsider, card_id).status_code == 200
+    released = outsider.post(f"{PROJECT}/tasks/{card_id}/release", {})
+    assert released.status_code == 200, released.text
+    before = owner.get(f"{PROJECT}/tasks/{card_id}").json()
+    assert before["status"] == "done" and before["claim"] is None
+    after = _new_head(outsider, card_id)
+    assert after["status"] == "open"
+    assert after["closed_at"] is None and after["claim"] is None
+    assert after["report"]["head"] == OTHER
+    member = flow.agent(make_client, owner)
+    claimed = member.post(f"{PROJECT}/tasks/{card_id}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+
+
 def test_a_new_head_on_an_own_members_done_card_leaves_it_done(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -128,19 +152,18 @@ def test_the_same_head_reported_again_on_outsiders_work_leaves_it_done(
 
 
 def _outside_reviewer(
-    make_client: ClientFactory, engine: Engine, owner: flow.Human, how: str
+    make_client: ClientFactory, engine: Engine, owner: flow.Human, how: str, role: str = "reviewer"
 ) -> Any:
-    """An agent with role `reviewer` (trust `member`) that counts as outside: marked
-    `joined_outside` while its owner, the project's owner, is a member; or one whose owner is
-    no member."""
+    """An agent with `role` that counts as outside: marked `joined_outside` (trust `member`)
+    while its owner, the project's owner, is a member; with trust `outside` on its row, which
+    keeps the role's scopes (§2.3); or one whose owner is no member."""
     if how == "owner_no_member":
-        return _outside(make_client, engine, owner, role="reviewer")
-    agent = flow.agent(make_client, owner, role="reviewer")
+        return _outside(make_client, engine, owner, role=role)
+    agent = flow.agent(make_client, owner, role=role)
     row = _row(engine, agent.id)
+    values = {"joined_outside": True} if how == "joined_outside" else {"trust": "outside"}
     with engine.begin() as conn:
-        conn.execute(
-            update(t.membership).where(t.membership.c.id == row).values(joined_outside=True)
-        )
+        conn.execute(update(t.membership).where(t.membership.c.id == row).values(**values))
     return agent
 
 
@@ -160,13 +183,15 @@ def _refused_as(answer: Any, expected: Any) -> None:
     assert answer.json()["error"]["details"] == expected.json()["error"]["details"]
 
 
-@pytest.mark.parametrize("authority", ["reviewer", "reviewer_and_tester"])
-@pytest.mark.parametrize("how", ["joined_outside", "owner_no_member"])
+@pytest.mark.parametrize("authority", ["reviewer", "tester", "reviewer_and_tester"])
+@pytest.mark.parametrize("how", ["joined_outside", "owner_no_member", "trust_outside"])
 def test_an_outside_reviewer_holds_no_done_authority(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, how: str, authority: str
 ) -> None:
+    """A reviewer, under `tester` a tester, counted as outside (§2.3)."""
     _policy(owner, done_authority=authority)
-    judge = _outside_reviewer(make_client, migrated, owner, how)
+    role = "tester" if authority == "tester" else "reviewer"
+    judge = _outside_reviewer(make_client, migrated, owner, how, role=role)
     coder = flow.agent(make_client, owner)
     approve = {"approve": "review"} if authority == "reviewer_and_tester" else {}
     card_id = _own_work(owner, make_client)

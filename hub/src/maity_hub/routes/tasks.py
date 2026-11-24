@@ -2221,8 +2221,8 @@ def report(
             if body.pr is None or body.pr.number != pr.get("number"):
                 raise invalid({"pr": "different_pull_request"})
             # §2.3, §6.6: a new head on outsiders' work has none of its own approvals, so the
-            # card leaves `done` for `review`, its claim kept; judged as the card and its
-            # members stand now (the reporter is the one whose report it replaces).
+            # card leaves `done` (below); judged as the card and its members stand now (the
+            # reporter is the one whose report it replaces).
             reopening = body.head != previous.get("head") and own_approvals.outsiders_work(
                 conn, card, mine.project
             )
@@ -2305,8 +2305,11 @@ def report(
         }
         if isinstance(body.why, dict) and "ref" in body.why and not card.ktw_ref:
             values["ktw_ref"] = body.why["ref"]  # §6.23: the card learns where its why lives
-        if reopening:  # §6.6: back to review, the claim untouched, the closure gone.
-            values.update({"status": "review", "closed_at": None})
+        if reopening:
+            # §6.6: the closure gone; back to review with its claim untouched, or, with no
+            # holder (released after the close), to open, where the normal claim applies.
+            back = "review" if card.claim_holder is not None else "open"
+            values.update({"status": back, "closed_at": None})
         elif not already_done:  # §6.6: a done card keeps its closure and claim.
             if closing:
                 values.update({**_closing(card), "status": "done", "closed_at": now})

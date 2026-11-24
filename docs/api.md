@@ -1237,19 +1237,21 @@ the project's own reviewing agents and humans blocks every such card;
 the form says so, the hub does not refuse it.
 
 A `done` card of outsiders' work does not keep a head nobody approved:
-a report on it with another `head` while its pull request is not merged
-(§6.6, "A report on a `done` card") reopens it: the card goes back to
-`review`, `closed_at` is cleared, and its claim stays as it is, the
-new head kept as its report (§6.6). The hub makes that move on its own
-(§6.15): no history entry, and a `task_updated` with
-`fields: ["status"]`. The approvals given on
+a report on it with another `head` while its pull request is still open
+(§6.6, "A report on a `done` card") reopens it: `closed_at` is cleared,
+the new head is kept as its report (§6.6), and the card goes back to
+`review` with its claim as it is, or, when it has no holder (its holder
+released the claim after the close), to `open`, where the normal claim
+applies. The hub makes that move on its own (§6.15): no history entry,
+and a `task_updated` with `fields: ["status"]`. The approvals given on
 the old head stay with that head and count for nothing on the new one,
 so the card goes to `done` again only with the own approvals above.
 This is the one way back from `done`, and it is for outsiders' work
 only: every other card stays `done` (§6.4, §6.6). The lead's decision
-of 2026-11-15; `review` with the claim kept, never `open`, the lead's
-ruling of 2026-11-24 (tsk-nvsxwd4tzzg9), which replaces the claim's
-check and the release to `open` of 2026-11-18.
+of 2026-11-15; `review` with the claim kept, and `open` only for a
+card without a holder, the lead's rulings of 2026-11-24
+(tsk-nvsxwd4tzzg9), which replace the claim's check and the release to
+`open` of 2026-11-18.
 
 A role that reviews or tests gives an outside agent no done authority,
 as B.1 says (above, "Outside"): `tasks:review` and `tasks:test` reach
@@ -1262,8 +1264,8 @@ signature it gave before stops counting toward `approvals` once it is
 an outside agent, as a signature does when its signer no longer stands
 (§6.4). The hub resolves it as the done authority through those roles
 nowhere a card moves (§6.4, §6.6). **Not built yet** (tsk-4bfgr4q6zz3x):
-the role tokens a `task_merged` wakes still reach such an agent, so it
-is woken as one. Under `done_authority:
+a `task_merged` does not wake it as one; today the role tokens a
+`task_merged` wakes still reach such an agent. Under `done_authority:
 holder` the done authority is the card's holder, not a role: an outside
 agent that holds a card is its done authority like any holder, for
 `review→in_progress` and for `task_merged`, but each of its moves to
@@ -1271,9 +1273,11 @@ agent that holds a card is its done authority like any holder, for
 passes the gate above, so the card reaches `done` only with the
 project's own approval on exactly the reported head. No card is left
 without a done authority, under `preset: solo` either: a card that is
-back from `done` keeps its holder in `review` (the lead's decision of
-2026-11-18, seq 161052; the lead's ruling of 2026-11-24 for the claim
-kept). Its review result
+back from `done` keeps its holder in `review`, and one with no holder
+goes to `open`, where the normal claim applies and the next holder is
+its done authority (the lead's decision of 2026-11-18, seq 161052; the
+lead's rulings of 2026-11-24 for the claim kept and for `open` without
+a holder). Its review result
 (§8.4) is no longer only a comment: it is a review result like a
 member's, shown with its verdict and cites and delivered as §8.4 says,
 and it may count for a review requirement other than
@@ -8672,8 +8676,9 @@ every move to `done` above, the last signature under
 the done-authority check, which it never replaces.
 `done` does not go back: no `PATCH` leaves it, and the hub moves a card
 out of `done` in one case only, a report with a new head on outsiders'
-work whose pull request is not merged: the hub's own `done→review`,
-the claim kept (§6.6, "A report on a `done` card").
+work whose pull request is still open: the hub's own `done→review`,
+the claim kept, or `done→open` for a card without a holder (§6.6, "A
+report on a `done` card").
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);
@@ -9646,7 +9651,7 @@ the card's `approvals` stay. Every replacement clears `approvals`
   maintainer's decision of 2026-10-23 (`context/reports.md`).
   One exception, for outsiders' work only (§2.3, "Own approvals"): when
   the new report's `head` differs from the one it replaces, the card
-  leaves `done` for `review`, since its pull request is open and the new
+  leaves `done` for `review` (or `open`, below), since its pull request is open and the new
   head has none of its own approvals. Whether it is outsiders' work is
   judged at this report, as the card and its members stand now (§2.3).
   `closed_at` is cleared, and `"done"` in the body still has no effect.
@@ -9654,11 +9659,16 @@ the card's `approvals` stay. Every replacement clears `approvals`
   own approvals decide again on the new head. A claim
   that stays is not refused by `max_open_claims` or
   `outside_claims_max` and counts from then on (§6.1; §6.5,
-  `claim_limit`). It is a change the hub makes on its own (§6.15): no
-  history entry, and beside `task_reported` the `task_updated` that
-  every status change emits, with `fields: ["status"]`. The lead's
-  ruling of 2026-11-24 (tsk-nvsxwd4tzzg9): `review` with the claim
-  kept, never `open`; it replaces the claim's check and the release to
+  `claim_limit`). A card with no holder (its holder released the claim
+  after the close, `POST …/tasks/{id}/release`, which keeps a closed
+  card's status) goes to `open` instead of `review`, where the normal
+  claim applies: in `review` nobody could claim it, take it over or,
+  under `done_authority: holder`, move it. It is a change the hub makes
+  on its own (§6.15): no history entry, and beside `task_reported` the
+  `task_updated` that every status change emits, with
+  `fields: ["status"]`. The lead's rulings of 2026-11-24
+  (tsk-nvsxwd4tzzg9): `review` with the claim kept, `open` for a card
+  without a holder; they replace the claim's check and the release to
   `open` of the lead's decisions of 2026-11-18. The approvals given
   on the old
   head stay with that head and count for nothing on the new one; the
@@ -9873,7 +9883,7 @@ The `release` object on the card:
   `probe_not_configured`; a release in such a project can be `cancelled`
   but not `done`. Reasons and their detail keys: `probe_not_configured`
   (none), `task_open` (`task`; a shipped card of outsiders' work that a
-  new head sent back from `done` to `review` is one, §6.6),
+  new head sent back from `done` to `review` or `open` is one, §6.6),
   `pr_open`
   (`pr`), `pr_unverified` (`pr`;
   typed or reported, no observation yet), `pr_not_found` (`pr`; observed,
@@ -11372,7 +11382,8 @@ change a member makes to a card's fields is one entry per field:
   (`["title", "body"]`, `["links"]`, `["rank"]`), with `history` — the
   ids of the entries this write recorded, empty for `rank`, a checklist
   tick (§6.7), a merge's auto-close and the move of outsiders' work back
-  from `done` to `review` on a new head (§6.6) — and the new
+  from `done` to `review` or, without a holder, to `open` on a new head
+  (§6.6) — and the new
   values of every changed field except `body`, which the reader fetches
   from the card or the history. For `links` the value is the change,
   `{"added": <link>}` or `{"removed": <link>}`, not the whole list.
@@ -14187,11 +14198,12 @@ moves to `done`, `in_progress→done` included, first passes the
 Its review result is no longer only a comment, may count for a review
 requirement other than `own_approvals`, and never counts as an own
 approval (§2.3, "Own approvals"). A `done` card of outsiders' work on
-which a report brings a new head while its pull request is not merged
+which a report brings a new head while its pull request is still open
 goes back to `review` (the lead's decision of 2026-11-15, §6.6), its
-claim kept and the new head its report (the lead's ruling of
-2026-11-24, which replaces the claim's check and the release to `open`
-of 2026-11-18); every other card stays `done`.
+claim kept and the new head its report, or to `open` when it has no
+holder (the lead's rulings of 2026-11-24, which replace the claim's
+check and the release to `open` of 2026-11-18); every other card stays
+`done`.
 
 #### C. Reputation and external reviewers (proposed)
 

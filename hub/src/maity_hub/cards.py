@@ -127,8 +127,8 @@ def has_done_authority(conn: Connection, mine: Membership, card: Any) -> bool:
 
 
 def outside_caller(conn: Connection, mine: Membership) -> bool:
-    """The caller is an agent `own_approvals.outside_agent` counts as outside (§2.3): trust
-    `outside`, the `joined_outside` mark, or an owner who is no member. Whatever its role, it
+    """The caller is an agent `own_approvals.outside_agent` counts as outside (§2.3; that
+    function is the one definition). Whatever its role, it
     holds no done authority through `tasks:review` or `tasks:test` and signs no approval
     (§2.3 "Own approvals", §6.2)."""
     if mine.kind != "agent":
