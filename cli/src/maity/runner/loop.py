@@ -42,8 +42,8 @@ REAP_GRACE = 5.0
 REAP_POLL = 0.1
 # The hard bound on one reaped turn: a harness that keeps running while it reports idle or
 # waits on a background task never reaches cleanup on its own, so the loop stops and reaps it
-# after this long. A turn that runs past it is ended and counts as no progress (EXIT_TURN).
-# The spec may lower it with `turn_timeout`.
+# after this long. A turn that runs past it is ended and reaped (EXIT_TURN), not run again,
+# and the loop waits for the next event. The spec may lower it with `turn_timeout`.
 TURN_TIMEOUT = 3600.0
 EXIT_REVOKED = 20
 EXIT_HOT_LOOP = 21
@@ -51,8 +51,9 @@ EXIT_RATE_LIMITED = 22
 EXIT_RATE_LIMITED_AFTER_CLEAN = 23
 # The workspace folder refused before a run (workspace.check_folder), by its detail.
 EXIT_FOLDER = {"workspace_not_bare": 24, "workspace_in_repository": 25}
-# A reaped turn that ran past its bound and was ended (TURN_TIMEOUT): a non-zero exit, so the
-# turn counts as no progress and the loop backs off and retries like any failed run.
+# A reaped turn that ran past its bound and was ended (TURN_TIMEOUT). `Loop.turn` neither
+# runs it again nor counts it: a turn that long is past `quick_exit`, so a counted retry would
+# reset the crash count and never reach the cap. The loop waits for the next event instead.
 EXIT_TURN = 26
 
 
@@ -122,10 +123,11 @@ class Loop:
 
     def turn(self, argv: list[str]) -> int | None:
         """Headless runs until one ends cleanly, each after the folder check (`refused`). A
-        non-zero exit counts against the cap and is
-        run again after the backoff, without waiting for a new event: the work it was doing
-        is still there. A clean run does not count, however short: a quick answer to an
-        event is progress."""
+        non-zero exit counts against the cap and is run again after the backoff, without
+        waiting for a new event: the work it was doing is still there. A turn ended at its time
+        limit (EXIT_TURN) is the exception: it is not run again and not counted, and the loop
+        goes back to waiting for the next event. A clean run does not count, however short: a
+        quick answer to an event is progress."""
         while True:
             refused = self.refused()
             if refused is not None:
@@ -134,6 +136,12 @@ class Loop:
             code = self.run(argv, self.spec.get("env") or {})
             if code == 0:
                 self.clean = True
+                return None
+            if code == EXIT_TURN:
+                # Ended at its bound and reaped: no retry and no crash count, since a turn that
+                # long is past `quick_exit` and would reset the count, so the retries would have
+                # no cap. The loop waits for the next event instead.
+                self.log("the turn hit its time limit and was ended; waiting for the next event")
                 return None
             self.log(f"the run exited {code}")
             if self.limited(code):
@@ -198,7 +206,8 @@ def _run_reaped(argv: list[str], env: dict[str, str], *, timeout: float = TURN_T
     is the child's pid and the whole group is the turn's own descendants and nothing else. The
     loop waits at most `timeout` for the harness; a harness that keeps running while it reports
     idle or waits on a background task would otherwise never reach cleanup, so when the wait
-    runs out the turn is ended and reaped and counts as no progress (EXIT_TURN). When the turn
+    runs out the turn is ended and reaped and answers EXIT_TURN, which `Loop.turn` does not
+    run again: the loop waits for the next event. When the turn
     ends `_reap` signals exactly that group id: it is created fresh for this one run, so it can
     never name another session's or placement's processes (the hard safety requirement in
     cli/context/runner.md). The loop itself runs in the tmux pane's own, separate group and is

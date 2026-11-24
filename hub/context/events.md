@@ -233,6 +233,14 @@ project lock and file or withdraw requests on the long-poll's hot path;
 the worker keeps the read path cheap. A table of episodes of its own:
 more than one row per session is never needed.
 
+**Updated 2026-11-21 (tsk-yzj829xdmqyy):** the episode's three columns and
+`acknowledged_seq` moved from `agent_session` to `agent_session_project`, one
+row per session and project (migration `20261121120000_inst_attach`), as the
+lead ruled on the card: not listening and the event position are per project
+under the contract of one instance in several projects (§5.3). The reason
+above holds for that row: an episode belongs to one session in one project and
+ends with it.
+
 ## A supervised session is left out of not listening only while an active placement names its credential
 
 **Id:** cb4184b4-d420-4205-b0d9-d8338e92ec65
@@ -429,7 +437,7 @@ instead of one problem per attempt.
 **Verification:** corroborated
 **Revisit when:** a chat may carry more than the human's own on/off choice, or the participants lists are built in one place
 
-`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`; `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_lead`, `meat_proxy_hands`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
+`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`, which decides the lead part alone (the hands part stays the profile's, 5f1c4bef in the next entry); `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_lead`, `meat_proxy_hands`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
 
 **Reason:** a direct chat has no participant row (its id is the agent's), and the choice must work there as much as in a group chat, so a column on `conversation_participant` would cover only half. The same agent's direct chat exists once per project under one id, which is why the project is part of the key: a choice in one project must not switch the mode on in another. One function over the lists keeps the fields from drifting between the four places participants are built. The migration's primary key and foreign keys must be the same as in `tables.py` (human, project, conversation; foreign keys on human and project): the tests build the schema from the migrations, so a key only in `tables.py` is never checked. A first version had `(human_id, conversation_id)` in the migration, and a second project's direct chat then failed with a unique violation.
 

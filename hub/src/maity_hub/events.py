@@ -12,14 +12,21 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Callable,
+    Iterable,
+    Iterator,
+    MutableMapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
 
 import anyio
-from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
+from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -252,6 +259,16 @@ def lock_project(conn: Connection, project_id: str) -> Any:
     ).one()
 
 
+def lock_projects(conn: Connection, project_ids: Iterable[str]) -> None:
+    """Lock each of several projects once, in the order of their ids, before any write of
+    the caller's: a write that reaches several projects (a revocation of an instance in
+    each, §6.17) takes them all up front, so two such writes over overlapping projects never
+    wait on each other in a cycle. `emit`'s own lock of a project locked here is harmless:
+    the transaction holds it already."""
+    for project_id in sorted(set(project_ids)):
+        lock_project(conn, project_id)
+
+
 def newest_seq(conn: Connection, project_id: str) -> int:
     """The project's newest event seq, 0 for none: one step down the index (project_id, seq).
     A new membership stores it as `joined_seq`, read under the project's lock that its
@@ -310,13 +327,22 @@ def emit(
     conversation_id: str | None = None,
     restricted_list: Sequence[int] | None = None,
     card_watchers: Sequence[int] | None = None,
+    review_record: tuple[bool, int | None] | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`. A
     `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
     the event, never served, read again against the set at every read. `card_watchers` is the
     watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
-    card, so that what it decided from that list and the list stored here are one read."""
+    card, so that what it decided from that list and the list stored here are one read.
+    `review_record` is a `review_result`'s `(review_signer, review_pr)` (§2.3 "Own approvals"),
+    written with the row, so the event stays insert-only but for its tombstone."""
     project = lock_project(conn, project_id)
+    if actor is not None and actor.bridge is not None:
+        # The connection was read live before the route ran (`bridges.carry`); ended since, under
+        # this lock, nothing more is written through it (§2.3).
+        from maity_hub import bridges
+
+        bridges.still_live(conn, str(actor.bridge["bridge_id"]))
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
         from maity_hub.availability import coordinator_token  # availability writes events itself
@@ -392,6 +418,8 @@ def emit(
             payload=payload,
             redacted=False,
             wakes=wakes,
+            review_signer=review_record[0] if review_record is not None else None,
+            review_pr=review_record[1] if review_record is not None else None,
         )
     )
     key = result.inserted_primary_key
@@ -549,11 +577,12 @@ def _hides_ticker_entries(
     """Whether a card event may take a ticker entry off its project's page (§16.9): an entry
     names a card only while `public_cards.shown` holds, which reads the card's label and
     status. A new label, or a new status of a `security` card, may end that; a claim, a
-    release, an assignment or a merge (into `done`, which only adds) never does. A hold is
-    `moderation.apply`'s."""
+    release, an assignment or a merge (into `done`, which only adds) never does. A new title
+    changes the text of the card's decision entries, which the page builds from the card
+    (`public_snapshot._text`), so it renders at once too. A hold is `moderation.apply`'s."""
     if kind == "task_updated":
         fields = payload.get("fields") or []
-        if "label" in fields:
+        if "label" in fields or "title" in fields:
             return True
         if "status" not in fields:
             return False
@@ -601,6 +630,12 @@ HUMANS_ONLY_KINDS = frozenset(
         "invitation_declined",
     }
 )
+
+
+# Kinds a bridge's read for an agent (`carried`, §2.3) never reads nor wakes on: the rules the
+# agent's owner set for it (§9.6) and a mention from a chat across projects, whose payload
+# names that chat's title (§9.5).
+CARRIED_EXCLUDED = frozenset({"chat_rules_changed", "cross_chat_mention"})
 
 
 def hidden_redactions(
@@ -773,16 +808,52 @@ def _names_team(audience: list[str], principal: str) -> bool:
     )
 
 
+class CarriedRow:
+    """A served agent's membership row as its bridge reads it (`Maity-For`, `for`, §2.3):
+    every column as the row has it, and as the reader's hidden windows those of the agent and
+    of the bridge's own membership (§6.2), so that a bridge reads nothing of a window it was
+    hidden from by reading for an agent. Only `windows_of` reads `reader_windows`; the
+    row's own `isolation_windows`, as the member view shows it, stays the agent's."""
+
+    __slots__ = ("_row", "reader_windows")
+
+    def __init__(self, row: Any, bridge_windows: Sequence[dict[str, int]]) -> None:
+        own: list[dict[str, int]] = list(getattr(row, "isolation_windows", None) or [])
+        self._row = row
+        self.reader_windows = own + [w for w in bridge_windows if w not in own]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._row, name)
+
+
+def carried_row(row: Any, bridge_windows: Sequence[dict[str, int]]) -> Any:
+    """`row` as read through a bridge with these windows of its own; unchanged without any."""
+    if isinstance(row, CarriedRow):
+        row = row._row
+    return CarriedRow(row, bridge_windows) if bridge_windows else row
+
+
 def windows_of(membership: Any) -> list[dict[str, int]]:
-    """The reader's `isolation_windows` (§6.2): a reader that is no membership row has none."""
+    """The reader's effective hidden windows (§6.2): its own `isolation_windows`, and for a
+    bridge's read for an agent the bridge's too (`CarriedRow`). A reader that is no
+    membership row has none. Every read that hides a window asks this one function."""
+    if isinstance(membership, CarriedRow):
+        return membership.reader_windows
     found: list[dict[str, int]] = getattr(membership, "isolation_windows", None) or []
     return found
 
 
 def in_window(row: Any, membership: Any) -> bool:
-    """The event lies in one of the reader's hidden windows (§6.2)."""
+    """The event lies in one of the reader's hidden windows (§6.2). `row.seq` is read only
+    for a reader with windows: `readable_by` asks this of every event."""
+    return bool(windows_of(membership)) and seq_in_window(row.seq, membership)
+
+
+def seq_in_window(seq: int, membership: Any) -> bool:
+    """`seq` lies in one of the reader's hidden windows (§6.2): also what a copy of an event
+    kept elsewhere, such as a jour fixe round's statement and posts, is hidden by."""
     windows = windows_of(membership)
-    return bool(windows) and any(w["from_seq"] <= row.seq <= w["to_seq"] for w in windows)
+    return bool(windows) and any(w["from_seq"] <= seq <= w["to_seq"] for w in windows)
 
 
 def outside_windows(membership: Any) -> Any:
@@ -815,6 +886,16 @@ def window_times(conn: Connection, project_id: str, membership: Any) -> list[tup
     return found
 
 
+def outside_window_times(conn: Connection, project_id: str, membership: Any, column: Any) -> Any:
+    """SQL for the rows whose time `column` lies outside every hidden window of the reader
+    (`window_times`), or `None` without a window: what a listing of things that are no event
+    (a card's history and notes, a restricted text's entries) hides (§6.2)."""
+    times = window_times(conn, project_id, membership)
+    if not times:
+        return None
+    return and_(*(or_(column < start, column > end) for start, end in times))
+
+
 def is_isolated(membership: Any) -> bool:
     """An isolated agent member (§6.2)."""
     return _isolated(membership)
@@ -839,8 +920,8 @@ def readable_by(
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
     own; owners and admins read every event of the project. `carried` is a bridge's read for
-    the agent (`Maity-For`, §2.3), which reads as the agent but never what is the agent's
-    alone towards its owner (`chat_rules_changed`, §9.6)."""
+    the agent (`Maity-For`, §2.3), which reads as the agent but never `CARRIED_EXCLUDED`, and
+    hides the bridge's own windows too (`windows_of`, §6.2)."""
     if _isolated(membership):
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
@@ -864,10 +945,12 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
-    if row.kind == "chat_rules_changed" and carried:
+    if row.kind in CARRIED_EXCLUDED and carried:
         # The rules an owner sets are for its own agent: a bridge serving it across owners
-        # (§2.3) neither reads nor wakes on their change (§9.6). The other two kinds below make
-        # no such promise; a bridge reads them for the agent as the agent would.
+        # (§2.3) neither reads nor wakes on their change (§9.6). A mention from a chat across
+        # projects carries that chat's title, which is the agent's and its owner's (§9.5):
+        # the bridge neither reads nor wakes on it either. The unread nudge below makes no such
+        # promise; a bridge reads it for the agent as the agent would.
         return False
     if row.kind in ("cross_chat_mention", "chat_unread", "chat_rules_changed"):
         # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);
@@ -1083,7 +1166,9 @@ def wakes(
         return False
     if row.kind == "member_updated" and (row.payload or {}).get("changed") == ["language"]:
         return False  # read at the next wake-up, never a reason for one (§6.2)
-    if row.kind in ("holder_stalled", "claim_expired"):
+    from maity_hub import holder_stalled  # holder_stalled writes events itself
+
+    if row.kind in holder_stalled.KINDS:
         # A holder that stops (§6.5): the member the agent reports to re-routes; the admins,
         # the owner and the holding instance itself only read, so its `instance:` token never
         # makes such an event wait for it (§8.2).
@@ -1262,9 +1347,13 @@ def read_waking(
     carried: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
+    # Dormancy is per project, on the instance's attachment to this membership (§6.17).
+    a = t.instance_attachment
     dormant = credential_id is not None and (
         conn.execute(
-            select(t.credential.c.dormant_since).where(t.credential.c.id == credential_id)
+            select(a.c.dormant_since).where(
+                a.c.credential_id == credential_id, a.c.membership_id == membership.id
+            )
         ).scalar()
         is not None
     )

@@ -17,7 +17,7 @@ from maity_hub.auth import password_resets, second_factor
 from maity_hub.instance_settings import put
 from maity_hub.notifications import mailer
 from maity_hub.routes import password_reset
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import setup
@@ -225,6 +225,76 @@ def test_the_source_limit_answers_429_and_the_pair_limit_stays_silent(
     for n in range(6):
         assert ask(client, f"other{n}@example.com").status_code == 202
     assert ask(client, "more@example.com").status_code == 429
+
+
+def test_many_sources_get_an_address_few_mails_and_every_answer_alike(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+    answers = []
+    for n in range(12):
+        source = make_client(peer=f"198.51.100.{n + 1}", mail=hub.mail, secret_key=hub.secret_key)
+        answered = ask(source)
+        answers.append((answered.status_code, answered.json()))
+    assert answers == [(202, {"expires_in": 1800})] * 12
+    assert len(resets(migrated)) == 5  # the address's hour: five networks, whichever they are
+
+
+def test_the_reset_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    client, _ = setup(make_client, migrated)
+    limits = password_reset.LIMITS
+    counted = (
+        limits.pair_quarter,
+        limits.pair_day,
+        limits.recipient_hour,
+        limits.recipient_day,
+        limits.recipient_hour_networks,
+        limits.recipient_day_networks,
+        limits.recipient_mails_hour,
+        limits.recipient_mails_day,
+    )
+    for limiter in counted:
+        limiter.reset()
+    assert ask(client, "  ADA@example.com  ").status_code == 202
+    assert len(resets(migrated)) == 1
+    stored_keys.assert_keyed(migrated, counted, "ada@example.com")
+
+
+def test_two_networks_asking_again_and_again_leave_the_owner_a_link(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    # A1014 P1 for the reset: each network takes one place of the address, not one a mail.
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+
+    def from_(peer: str) -> Any:
+        return make_client(peer=peer, mail=hub.mail, secret_key=hub.secret_key)
+
+    for peer in ("2001:db8:a::1", "2001:db8:b::1"):
+        source = from_(peer)
+        for _ in range(4):  # one more than its pair limit lets through
+            assert ask(source).status_code == 202
+    assert len(resets(migrated)) == 6  # 3 + 3: more than the address's five, from two places
+    assert ask(from_("2001:db8:c::1")).status_code == 202
+    assert len(resets(migrated)) == 7  # the owner's, from a third network
+
+
+def test_one_ipv6_64_is_one_source(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+
+    def from_(peer: str, n: int) -> int:
+        source = make_client(peer=peer, mail=hub.mail, secret_key=hub.secret_key)
+        return int(ask(source, f"someone{n}@example.com").status_code)
+
+    assert [from_(f"2001:db8:1:2::{n + 1:x}", n) for n in range(10)] == [202] * 10
+    assert from_("2001:db8:1:2:ffff::1", 10) == 429  # the same /64: its hour is spent
+    assert from_("2001:db8:1:3::1", 11) == 202  # the next /64 is another source
 
 
 def test_the_rules_every_method_keeps(

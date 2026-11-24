@@ -37,6 +37,19 @@ class StateError(Exception):
     """The state directory or a file in it cannot be used as it is."""
 
 
+class NotInClone(StateError):
+    """`resolve_state_dir` found no clone: git failed, and no `.git` lies in the directory or
+    above it up to a ceiling (`_inside_a_clone`). Every other reason it cannot name the state
+    directory (git missing, a runner's clone it cannot place, git failing in a clone) stays a
+    plain `StateError`, so a caller that acts only outside a clone catches this one alone."""
+
+
+class NoGit(StateError):
+    """`resolve_state_dir` could not run git (missing, or no answer in time), so whether the
+    directory is in a clone is not known. Apart from `NotInClone` and from a runner's clone it
+    cannot place (a plain `StateError`), so a caller decides on each."""
+
+
 class Secret:
     """A value that refuses to be printed.
 
@@ -86,10 +99,17 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     base = cwd or Path.cwd()
     try:
         result = proc.run([*proc.GIT, "rev-parse", "--git-common-dir"], base)
-    except proc.ToolError as exc:
+    except proc.ToolRefused as exc:  # a clone the runner's checks refuse: not a missing git
         raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
+    except proc.ToolError as exc:
+        raise NoGit(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:
-        raise StateError(
+        if _inside_a_clone(base):  # git failed to read a clone: its state may name a hub
+            raise StateError(
+                f"git cannot read the clone {base} is in (git rev-parse exit "
+                f"{result.returncode}); set {STATE_DIR_ENV} to a directory"
+            )
+        raise NotInClone(
             f"{base} is not inside a Git clone, and maity keeps an agent's credential in its "
             "clone. Run maity from the clone the agent works in; without one, give this agent "
             f"a directory of its own and set it for every maity command, e.g. "
@@ -100,6 +120,39 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     if not common.is_absolute():
         common = base / common
     return common.resolve() / "maity"
+
+
+def _inside_a_clone(start: Path) -> bool:
+    """Whether `start` is in a clone, decided without git: after git failed there, its exit
+    code alone does not tell a directory outside every clone from a clone git cannot read,
+    and its message is in the user's language. `GIT_DIR` or `GIT_COMMON_DIR` set names a
+    repository wherever `start` is. Otherwise a `.git` entry of any kind (directory, a
+    worktree's file, a link, not followed) in `start` or a directory above it, looking as git
+    does: not up into a `GIT_CEILING_DIRECTORIES` entry that lies above `start`, and up to the
+    root at most. It looks across file systems, where git stops: a `.git` found there counts."""
+    if "GIT_DIR" in os.environ or "GIT_COMMON_DIR" in os.environ:
+        return True
+    current = os.path.realpath(start)
+    ceilings: set[str] = set()
+    resolve = True  # git: an empty entry means the entries after it are used unresolved
+    for entry in os.environ.get("GIT_CEILING_DIRECTORIES", "").split(os.pathsep):
+        if not entry:
+            resolve = False
+        elif os.path.isabs(entry):
+            path = os.path.realpath(entry) if resolve else os.path.normpath(entry)
+            ceilings.add(os.path.normcase(path))
+    while True:
+        try:
+            os.lstat(os.path.join(current, ".git"))
+            return True
+        except FileNotFoundError:
+            pass
+        except OSError:  # there but not readable, or a part of the path that is no directory
+            return True
+        parent = os.path.dirname(current)
+        if parent == current or os.path.normcase(parent) in ceilings:
+            return False
+        current = parent
 
 
 def state_dir_example(name: str) -> str:
@@ -372,6 +425,85 @@ def read_credential(state_dir: Path) -> Secret:
     if not value:
         raise StateError(f"{path} is empty; run `maity join` again")
     return Secret(value)
+
+
+PLACED_STATE_MAX = 1024 * 1024  # bytes of state.json read through a descriptor
+PLACED_CREDENTIAL_MAX = 4096
+
+
+def read_placed(top: int) -> tuple[dict[str, Any], Secret]:
+    """The state and the session credential of a runner's clone, read through `top`, the
+    clone's `.git` as `clonecheck.opened_clone` checked it (review A1738 of #2054): `maity/`
+    opened from that descriptor and each file from `maity/`'s, none through a link; each a
+    regular file of this user's with no other hard link, of a bounded size; the directory and
+    both files reachable by nobody else. No name is looked up twice, so nothing swapped in
+    after the check is read. POSIX only: StateError where descriptors cannot be walked."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if sys.platform == "win32" or not nofollow or os.open not in os.supports_dir_fd:
+        raise StateError("this system cannot read a placement's state through its descriptor")
+    try:
+        flags = os.O_RDONLY | os.O_DIRECTORY | nofollow | getattr(os, "O_CLOEXEC", 0)
+        folder = os.open("maity", flags, dir_fd=top)
+    except OSError as exc:
+        raise StateError(f"the placement's .git/maity cannot be opened ({exc})") from None
+    try:
+        _private_fd(folder, "the placement's .git/maity", directory=True)
+        state_bytes = _read_placed_file(folder, STATE_FILE, PLACED_STATE_MAX)
+        credential = _read_placed_file(folder, CREDENTIAL_FILE, PLACED_CREDENTIAL_MAX)
+    finally:
+        os.close(folder)
+    try:
+        data = json.loads(state_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise StateError(f"the placement's {STATE_FILE} is not valid JSON") from None
+    if not isinstance(data, dict):
+        raise StateError(f"the placement's {STATE_FILE} does not hold a JSON object")
+    value = credential.decode("utf-8", "replace").strip()
+    if not value:
+        raise StateError("the placement's credential is empty; run `maity join` again")
+    return data, Secret(value)
+
+
+def _read_placed_file(folder: int, name: str, limit: int) -> bytes:
+    """`name` in the directory `folder`, opened without following a link and without waiting
+    (a FIFO with no writer would block an open forever, review A1758 of #2054), read through
+    that descriptor alone after `_private_fd` passed it as a regular file."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(name, flags, dir_fd=folder)
+    except OSError as exc:
+        raise StateError(f"the placement's {name} cannot be opened ({exc})") from None
+    try:
+        size = _private_fd(fd, f"the placement's {name}", directory=False)
+        if size > limit:
+            raise StateError(f"the placement's {name} is over {limit} bytes")
+        chunks: list[bytes] = []
+        while chunk := os.read(fd, limit + 1 - sum(map(len, chunks))):
+            chunks.append(chunk)
+            if sum(map(len, chunks)) > limit:
+                raise StateError(f"the placement's {name} is over {limit} bytes")
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def _private_fd(fd: int, what: str, directory: bool) -> int:
+    """Refused unless the open `fd` is a directory (or a regular file with one link) of this
+    user's that group and others cannot reach, as check_private asks of a path; its size."""
+    if sys.platform == "win32":  # read_placed refuses there first; no POSIX owner to compare
+        raise StateError(f"{what} cannot be checked on this system")
+    st = os.fstat(fd)
+    kind = stat.S_ISDIR(st.st_mode) if directory else stat.S_ISREG(st.st_mode)
+    if not kind:
+        raise StateError(f"{what} is not a {'directory' if directory else 'regular file'}")
+    if st.st_uid != os.getuid():
+        raise StateError(f"{what} belongs to another user (uid {st.st_uid}); refusing to use it")
+    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise StateError(f"{what} is accessible by group or others")
+    if not directory and st.st_nlink != 1:
+        raise StateError(f"{what} has other hard links")
+    return st.st_size
 
 
 def load_state(state_dir: Path, name: str = STATE_FILE) -> dict[str, Any]:

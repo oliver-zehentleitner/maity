@@ -12,6 +12,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.statements import count_statements
 from tests.test_runners import call, paired
 
@@ -131,6 +132,7 @@ def test_the_address_is_in_no_other_read(
     assert other.get("/people/maintainer").json()["handle"] == "maintainer"
 
 
+@flat_rows("/admin/users")
 def test_the_list_costs_the_same_for_3_users_and_for_30(
     owner: flow.Human, migrated: Engine
 ) -> None:

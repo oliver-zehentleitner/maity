@@ -457,6 +457,36 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
+/* A public project the human is no member of (js/app.js outsiderTab, docs/api.md §5.1 "Stars"): the
+   pill drawn dashed, in both themes, current or not. A starred one is the link and its star's button
+   side by side; the button keeps a 24 px target (WCAG 2.5.8) and the star takes the accent colour. */
+/* Positioned, so its visually-hidden words stay inside it: a session tab is not draggable, and
+   only a[draggable="true"] is positioned above (390 px was 125 px wider without it). */
+.switcher a.outsider { border-style: dashed; position: relative; }
+.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.switcher .tab-star { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+  padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer; }
+.switcher .tab-star:hover { border-color: var(--border); background: var(--surface-2); }
+.switcher .tab-star:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.switcher .tab-star .icon-fill { fill: currentColor; }
+/* An unstarred tab's star is an outline in the muted colour, so it reads apart from a starred one's
+   filled accent star in both themes (the tokens follow the theme). */
+.switcher .tab-star.unstarred { color: var(--muted); }
+.switcher .tab-star.unstarred .icon-fill { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.switcher .tab-star.unstarred:hover { color: var(--accent); }
+/* The tabs menu marks the dashed tabs as such: the same dashed edge, small, after the name. */
+.tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
+  color: var(--muted); font-size: 0.8rem; }
+/* The outsider's actions in the project's head (js/app.js, `#outsider-actions`): a slot that takes no
+   room while nothing is drawn into it. */
+.project-state .outsider-actions { display: inline-flex; align-items: center; gap: 6px; }
+.project-state .outsider-actions:empty { display: none; }
+/* What is drawn into it (js/outsider-actions.js): Add your agent, or why it is missing; the join
+   panel under the head's row. */
+.outsider-actions .outsider-add-agent { min-height: 28px; padding: 2px 10px; font-size: 0.85rem; }
+.outsider-actions .outsider-reason { color: var(--muted); font-size: 0.85rem; }
+.outsider-join { margin-top: 8px; }
+.outsider-join:empty { display: none; }
 
 .dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }
@@ -795,9 +825,10 @@ a.icon-button:hover { border-color: var(--accent); }
 
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--muted); flex: none; }
 .dot.online { background: var(--ok); }
-.dot.away { background: var(--warn); opacity: 0.6; }
-.dot.paused { background: var(--warn); }
+.dot.away, .dot.paused { background: var(--warn); }
 .dot.human { background: var(--accent); }
+/* Forced colours drop the background: the dot keeps a border in the system's text colour (A2290). */
+@media (forced-colors: active) { .dot { box-sizing: border-box; border: 5px solid CanvasText; } }
 
 .presence.online { color: var(--ok); }
 .presence.away { color: var(--warn); }
@@ -872,6 +903,12 @@ a.icon-button:hover { border-color: var(--accent); }
 .outside-roles input[type=checkbox], .restricted-members input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
+.pair-steps ol[hidden] { display: none; }
+.pair-steps ol > li { min-width: 0; }
+.pair-steps pre.paste-line { overflow-wrap: anywhere; }
+.pair-way { border: 0; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.pair-way .check { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--text); }
+.placement-new-no-tool-why { margin: 4px 0 0; padding-left: 20px; }
 .runner-config { max-height: 16rem; overflow: auto; background: var(--surface); padding: 8px; border-radius: 4px; font-size: 0.8rem; white-space: pre; }
 pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
@@ -991,38 +1028,37 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .org-tree, .org-tree ul { list-style: none; margin: 0; padding-left: 0; }
 .org-tree ul { padding-left: 20px; border-left: 1px solid var(--border); margin-left: 4px; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
-.org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
 .role { color: var(--muted); }
-/* One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): an instance a dot in its presence's
-   colour inside a 24 px target, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
-.fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
-.fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
-.fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+/* An instance in the tree (Team and Agents, tsk-zsbe48ty4ces): `#abcd` after a dot in its presence's
+   colour, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
+.org-dot { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; }
+.org-dot::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
 /* Each state differs in shape or size as well as colour (WCAG 1.4.1, nte-s2dqhn1n4bez): online a filled
-   disc, away a ring half filled, offline a smaller disc, dormant hollow; the lead keeps its ring. */
-.fleet-dot.online::before { background: var(--ok); }
-.fleet-dot.away::before { background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); border: 2px solid var(--warn); }
-.fleet-dot.offline::before { width: 6px; height: 6px; }
-.fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
-.fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+   disc, away a ring half filled, offline a smaller disc, dormant hollow, paused two bars; the lead keeps its ring. */
+.org-dot.online::before { background: var(--ok); }
+.org-dot.away::before { background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); border: 2px solid var(--warn); }
+.org-dot.offline::before { width: 6px; height: 6px; margin: 0 2px; }
+.org-dot.dormant::before { background: none; border: 2px solid var(--muted); }
+.org-dot.paused::before { background: none; border: solid var(--warn); border-width: 0 3px; border-radius: 0; }
+.org-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); margin: 0 3px 0 4px; }
 /* In forced colours the browser drops a gradient, a background colour and a shadow, which made away
    and dormant the same ring and the filled dots vanish (#1598 review). There each state is drawn with
    borders, size and an outline alone, which forced colours keep in the user's own system colours:
    online a disc filled by its border, away a ring with a thick left side, offline the smaller disc,
-   dormant the thin ring, and the lead an outline instead of the shadow ring. */
+   dormant the thin ring, paused two bars, and the lead an outline instead of the shadow ring. */
 @media (forced-colors: active) {
-  .fleet-dot::before { background: none; border: 5px solid CanvasText; }
-  .fleet-dot.away::before { border-width: 2px 2px 2px 5px; }
-  .fleet-dot.offline::before { border-width: 3px; }
-  .fleet-dot.dormant::before { border-width: 2px; }
-  .fleet-dot.lead::before { box-shadow: none; outline: 2px solid Highlight; outline-offset: 2px; }
+  .org-dot::before { background: none; border: 5px solid CanvasText; }
+  .org-dot.away::before { border-width: 2px 2px 2px 5px; }
+  .org-dot.offline::before { border-width: 3px; }
+  .org-dot.dormant::before { border-width: 2px; }
+  .org-dot.paused::before { border-width: 0 3px; }
+  .org-dot.lead::before { box-shadow: none; outline: 2px solid Highlight; outline-offset: 2px; }
 }
 
-.fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
-.fleet-stub a { color: inherit; }
-.fleet-me { font-size: 1.02rem; }
+.org-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 600px) {
-  .fleet-tree ul { padding-left: 12px; }
+  .org-tree ul { padding-left: 12px; }
 }
 .org-faces, .paths-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .org-face[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -1170,8 +1206,12 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    height, and a grid's default (stretch) would share it out among few rows. */
 .messages { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; align-content: start; }
 
+/* A bubble is up to 60% of the message column, at least 36rem where the column allows, never
+   past 60rem or 90%: in a column up to 960px (the page's chat, a phone) that is the old
+   min(36rem, 90%); wider, as in full screen on a desktop, it grows to 60%, from 1600px on
+   60rem (tsk-e305sjdqes86, context/views.md). */
 .msg {
-  max-width: min(36rem, 90%);
+  max-width: min(max(36rem, 60%), 60rem, 90%);
   padding: 8px 12px;
   border-radius: var(--radius);
   background: var(--surface);
@@ -1623,16 +1663,18 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .agents-head-actions button { min-height: 40px; }
 /* The head of a page with tabs (js/page-head.js; the project's Agents and Team pages,
    tsk-vkyp71qp95n9): the heading, the buttons at the right end, the tab bar under them, all at the
-   page's full width. Join an agent opens its menu of two ways under its right edge. */
+   page's full width. Join an agent opens the join panel under the head (tsk-hdczmsq2r431). */
 .page-head { display: block; width: 100%; }
 .page-head-bar { margin-bottom: 8px; }
 .page-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; }
 .page-head-actions :is(button, a.button) { min-height: 40px; display: inline-flex; align-items: center; }
-.page-head-actions .menu-button.join-open { padding: 6px 14px; border-radius: var(--radius); }
-.page-head-actions .menu-button.join-open::after { content: "▾"; font-size: 0.8em; }
+/* A button the page hides stays hidden (the rule above would show it): Join an agent until its
+   panel is read, New agent profile while its form is open. As specific as that rule and after it:
+   :is() counts its most specific argument (a.button), so a bare [hidden] loses (#1919 web-e2e). */
+.page-head-actions :is(button, a.button)[hidden] { display: none; }
+.page-head-actions button.join-open { padding: 6px 14px; border-radius: var(--radius); }
 .page-head .view-tabs { width: 100%; margin-top: 0; }
-.join-menu-slot > .send-status:empty { min-height: 0; margin: 0; }
-.join-menu-slot .placement-new-box { margin: 8px 0 16px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); }
+.join-slot > .send-status:empty { min-height: 0; margin: 0; }
 /* The project's name in the hint may be one long word (63 characters): it wraps rather than widening
    the page (nte-fk0fzcsma0e7). */
 .agents-project-hint { overflow-wrap: anywhere; }
@@ -1679,8 +1721,18 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .seat-actions { display: flex; justify-content: flex-end; }
 .earlier-joins { margin-top: 16px; }
 .earlier-joins summary { cursor: pointer; }
+/* The join form's last part, a start on a runner instead of a line (tsk-hdczmsq2r431): its fields
+   in the grid the join's own fields have, so a label stands over its control. */
+.join-runner { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 12px 0 0; min-width: 0; min-inline-size: 0; }
+.join-runner legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.join-runner .hint { margin: 4px 0; }
+.join-runner-fields { border: 0; padding: 0; margin: 8px 0 0; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.join-runner-fields .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; align-content: start; }
+.join-runner-fields .field > :is(select, input, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
+.join-runner-fields .wide { grid-column: 1 / -1; }
+.join-runner-box[hidden], .join-runner-why[hidden], .join-runner-fields [hidden] { display: none; }
 @media (max-width: 700px) {
-  .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+  .join-fields, .join-fields .new-agent:not([hidden]), .join-runner-fields { grid-template-columns: minmax(0, 1fr); }
 }
 
 
@@ -1835,10 +1887,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 600; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
-   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
-.placement-new select, .placement-new input { max-width: 100%; }
-.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }

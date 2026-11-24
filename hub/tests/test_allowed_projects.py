@@ -72,6 +72,7 @@ def test_the_list_defaults_to_any_project_and_the_owner_sets_it(
         (["no-slash"], "format"),
         (["Upper/Case"], "format"),
         (["a/b/c"], "format"),
+        ([f"{FULL}\n"], "format"),  # the whole text is the name, a trailing newline too
         ([1], "format"),
         ("maintainer/maity", "format"),
         (["acme/one", "acme/one"], "duplicate"),
@@ -300,7 +301,7 @@ def test_allowed_in_is_a_full_name_and_a_tombstone_is_never_listed(
 ) -> None:
     gone = flow.agent(make_client, owner)
     assert owner.delete(f"/agents/{gone.id}?cascade=true").status_code == 200
-    for bad in ("nope", "A/B", "a/b/c", ""):
+    for bad in ("nope", "A/B", "a/b/c", "", f"{FULL}%0A"):  # %0A: a trailing newline
         refused = owner.get(f"/agents?allowed_in={bad}")
         assert refused.status_code == 400, (bad, refused.text)
         assert _fields(refused) == {"allowed_in": "format"}

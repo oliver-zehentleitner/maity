@@ -3,13 +3,18 @@ inside a JSON escape, and a real one is revoked."""
 
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, event, select
 
 from maity_hub import tables as t
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, leaks
+from maity_hub.errors import ApiError
+from maity_hub.routes import board
 from tests import factory
 from tests.conftest import ClientFactory
 
@@ -101,3 +106,93 @@ def test_a_dummy_after_a_newline_is_refused_and_revokes_nothing(
     assert response.headers["Maity-Error"] == "credential_in_payload"
     with migrated.connect() as conn:
         assert conn.execute(select(t.credential.c.id)).first() is None
+
+
+# --- an id the hub could not have made is never looked up (tsk-ehtws6xrxdtf) ------------------
+
+SHAPED = "mty1.crd-0123456789ab.abc_DEF-9"  # an id `new_id("credential")` could make, unknown
+
+
+@contextlib.contextmanager
+def _credential_reads() -> Iterator[list[str]]:
+    """The statements any engine sends that read an agent's or a runner's credential row."""
+    seen: list[str] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        lowered = statement.lower()
+        if "from credential" in lowered or "from runner_credential" in lowered:
+            seen.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(Engine, "before_cursor_execute", record)
+
+
+def _login_with(client: Any, *values: str) -> Any:
+    password = "cfg:" + " ".join(values)
+    return client.post(
+        "/api/v1/auth/login",
+        content=json.dumps({"email": "x", "password": password}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+
+
+def test_a_shapeless_id_is_refused_without_a_database_lookup(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`crd-dummy` is no id the hub makes (`ids.has_shape`): the request is refused as ever,
+    and no credential row is read. An unknown id of the right shape is still looked up."""
+    client = make_client()  # its start reads the live credentials, before the count begins
+    with _credential_reads() as seen:
+        response = _login_with(client, DUMMY)
+    assert (response.status_code, response.headers["Maity-Error"]) == (
+        400,
+        "credential_in_payload",
+    )
+    assert seen == []
+    with _credential_reads() as seen:
+        assert _login_with(client, SHAPED).status_code == 400
+    assert seen  # the shape check lets it through to the lookup
+
+
+def test_shapeless_ids_take_no_lookup_place_from_a_real_one(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Only `MAX_IDS` distinct ids are looked up; ids that cannot exist take none of those
+    places, so a real credential after them is still revoked."""
+    project_id = factory.project(migrated)
+    owner = factory.human(migrated)
+    factory.membership(migrated, project_id, human_id=owner)
+    agent = factory.agent(migrated, project_id, owner)
+    padding = [f"mty1.crd-fake{n:02d}.secret" for n in range(leaks.MAX_IDS)]
+    assert _login_with(make_client(), *padding, agent.value).status_code == 400
+    with migrated.connect() as conn:
+        credential = conn.execute(
+            select(t.credential).where(t.credential.c.id == agent.credential_id)
+        ).one()
+    assert credential.revoked_reason == "leaked_in_payload"
+
+
+def test_the_forge_check_opens_no_transaction_for_a_shapeless_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An issue the forge passes on (`board._refuse_credentials`) is refused all the same, and
+    only an id the hub could have made opens a transaction for the lookup."""
+    opened: list[str] = []
+
+    @contextlib.contextmanager
+    def transaction(_engine: Any) -> Iterator[None]:
+        opened.append("transaction")
+        yield None
+
+    monkeypatch.setattr(board, "transaction", transaction)
+    monkeypatch.setattr(board, "engine_of", lambda _request: None)
+    monkeypatch.setattr(board, "revoke_leaked", lambda _conn, _found: [])
+    for value, expected in ((DUMMY, []), (SHAPED, ["transaction"])):
+        opened.clear()
+        with pytest.raises(ApiError) as refused:
+            board._refuse_credentials(None, {"title": f"see {value}"})  # type: ignore[arg-type]
+        assert refused.value.code == "credential_in_payload"
+        assert opened == expected, value

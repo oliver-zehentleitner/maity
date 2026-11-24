@@ -17,6 +17,7 @@ from maity_hub.routes import auth, joins
 from maity_hub.routes import badges as badge_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_orgs import make_org
 
 
 @pytest.fixture
@@ -103,6 +104,66 @@ def test_hidden_badges_never_validate_a_cache(
     assert response.json() == {
         "error": {"code": "not_found", "message": "no such resource", "details": {}}
     }
+    assert response.headers["cache-control"] == "no-store" and "etag" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "standing", ["held", "suspended", "pending", "deleted", "org_held", "org_deleted"]
+)
+def test_a_held_project_or_an_owner_out_of_standing_has_no_badge(
+    setup: tuple[flow.Human, TestClient, str], migrated: Engine, standing: str
+) -> None:
+    """§6.20: what takes a public page off takes the badge off, though the badge needs no
+    page: a moderation hold on the project, an owner suspended, pending or deleted, or an
+    owning organisation held or deleted (`public_projects.standing_of`). Answered as an
+    unknown project is."""
+    owner, public, project_id = setup
+    path = "/badge/maintainer/maity.svg"
+    org_id = ""
+    if standing.startswith("org_"):
+        org_id = make_org(owner)["id"]
+        made = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+        assert made.status_code in (200, 201), made.text
+        project_id = made.json()["id"]
+        changed = owner.patch(
+            "/projects/oz-team/shop", {"policy": {"badge": "members"}, "reason": "README"}
+        )
+        assert changed.status_code == 200, changed.text
+        path = "/badge/oz-team/shop.svg"
+    else:
+        enable(owner)
+    assert public.get(path).status_code == 200
+    with migrated.begin() as conn:
+        if standing == "org_deleted":
+            conn.execute(update(t.org).where(t.org.c.id == org_id).values(deleted_at=clock.now()))
+        elif standing in ("held", "org_held"):
+            # a project's `hide`, or an organisation's `suspend` (§16.8)
+            target, action = ("org", "suspend") if org_id else ("project", "hide")
+            conn.execute(
+                insert(t.abuse_report).values(
+                    id="rpt-badge", reporter=owner.id, account_id=owner.id,
+                    target_type=target, target_id=org_id or project_id, reason="spam",
+                    status="resolved", action=action, created_at=clock.now(),
+                )
+            )  # fmt: skip
+            conn.execute(
+                insert(t.moderation_hold).values(
+                    report_id="rpt-badge", target_type=target,
+                    target_id=org_id or project_id, action=action, at=clock.now(),
+                )
+            )  # fmt: skip
+        else:
+            by_standing: dict[str, dict[str, Any]] = {
+                "suspended": {"suspended_at": clock.now()},
+                "pending": {"account_status": "pending"},
+                "deleted": {"deleted_at": clock.now()},
+            }
+            conn.execute(
+                update(t.human).where(t.human.c.id == owner.id).values(**by_standing[standing])
+            )
+    response = public.get(path)
+    assert response.status_code == 404, standing
+    assert response.json()["error"]["code"] == "not_found"
     assert response.headers["cache-control"] == "no-store" and "etag" not in response.headers
 
 
@@ -294,7 +355,7 @@ def test_online_team_is_one_member(
         conn.execute(
             insert(t.credential).values(
                 id="crd-badge-sibling",
-                membership_id=agent.membership_id,
+                agent_id=agent.agent_id,
                 instance="abcd",
                 verifier="0" * 64,
                 created_at=clock.now(),
@@ -302,17 +363,30 @@ def test_online_team_is_one_member(
             )
         )
         conn.execute(
+            insert(t.instance_attachment).values(
+                credential_id="crd-badge-sibling",
+                membership_id=agent.membership_id,
+                instance="abcd",
+                attached_at=clock.now(),
+            )
+        )
+        conn.execute(
             insert(t.agent_session).values(
                 id="ses-badge-sibling",
                 credential_id="crd-badge-sibling",
-                membership_id=agent.membership_id,
                 harness="test",
                 model="test",
                 client="test",
                 started_at=clock.now(),
                 last_seen_at=clock.now(),
-                acknowledged_seq=0,
                 live=True,
+            )
+        )
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id="ses-badge-sibling",
+                membership_id=agent.membership_id,
+                acknowledged_seq=0,
             )
         )
     enable(owner, "agents_online")

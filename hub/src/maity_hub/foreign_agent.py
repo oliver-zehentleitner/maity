@@ -37,6 +37,7 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, lock_project
+from maity_hub.plain_text import plain_line
 from maity_hub.scopes import has_scope, in_admin_team
 from maity_hub.views import principal_id
 
@@ -176,10 +177,10 @@ def _credential(conn: Connection, membership_id: int, instance: str | None) -> A
     if instance is None:
         return None
     return conn.execute(
-        select(t.credential).where(
-            t.credential.c.membership_id == membership_id,
+        instances.credential_rows().where(
+            t.instance_attachment.c.membership_id == membership_id,
             t.credential.c.instance == instance,
-            t.credential.c.revoked_at.is_(None),
+            instances.attached_now(),
         )
     ).first()
 
@@ -239,8 +240,8 @@ def _summary(
     """What the decision needs, all in the request: the current and the proposed value of
     each field, in full while the summary fits, for an owner who may not be a member."""
     preamble = (
-        f"In the project {project.name} ({namespace.full_name(conn, project)}), {asker} asks "
-        f"to change your agent {handle}:"
+        f"In the project {plain_line(project.name)} ({namespace.full_name(conn, project)}), "
+        f"{asker} asks to change your agent {handle}:"
     )
     closing = "Nothing changes until you answer; a `no` or a withdrawal changes nothing."
     rows: list[tuple[str, _Piece, _Piece]] = []
@@ -362,7 +363,7 @@ def file(
         mine,
         caller,
         owner,
-        f"Change {handle} in {project.name}",
+        f"Change {handle} in {plain_line(project.name)}",
         _summary(conn, project, asker, handle, target, shown, reports_to_id, instance),
         proposal,
     )
@@ -497,10 +498,10 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         # One instance's rest, with the owner's `go` (§6.17); an instance revoked meanwhile
         # leaves nothing to change.
         held = conn.execute(
-            select(t.credential).where(
-                t.credential.c.membership_id == target.id,
+            instances.credential_rows().where(
+                t.instance_attachment.c.membership_id == target.id,
                 t.credential.c.instance == proposal.get("instance"),
-                t.credential.c.revoked_at.is_(None),
+                instances.attached_now(),
             )
         ).first()
         if held is not None:

@@ -12,10 +12,10 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, StringConstraints
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import idempotency, memory, namespace, paging, project_roles
+from maity_hub import attached, idempotency, memory, namespace, paging, project_roles
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row_or_removed, membership
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import Caller, in_attachment
 from maity_hub.deps import AgentCaller, AnyCaller, HumanCaller, engine_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, markdown
@@ -37,6 +37,8 @@ class SoulIn(Strict):
 
 class SoulProposalIn(SoulIn):
     reason: str = markdown(min_length=1)
+    # The project the consent request is filed in; an instance in several projects names it.
+    project: str | None = Field(default=None, max_length=attached.PROJECT_MAX)
 
 
 class EntryIn(Strict):
@@ -91,13 +93,15 @@ def propose_soul(body: SoulProposalIn, request: Request, caller: AgentCaller) ->
         raise invalid({"markdown": "too_long"}, "a soul is at most 8 KiB")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        project = conn.execute(select(t.project).where(t.project.c.id == caller.project_id)).one()
-        mine = membership(conn, caller, namespace.full_name(conn, project))
+        # The soul is the profile's, but its consent request is filed in one project: the one
+        # named, or the instance's only one; with several, `project: required` (§6.17).
+        here = in_attachment(caller, attached.one(conn, caller, body.project))
+        mine = membership(conn, here, namespace.name_of(conn, str(here.project_id)))
         agent_id = str(caller.agent_id)
         request_id = file_personal(
             conn,
             mine,
-            caller,
+            here,
             agent_id,
             "consent",
             "May my soul read like this?",
@@ -204,6 +208,7 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
             if mine.kind != "agent":
                 raise forbidden(message="team memory is written by the team's agents")
         elif body.store == "role":
+            memory.refuse_role_change(mine)  # an outsider's agent writes none (§2.3 "Outside")
             if body.role is not None and not memory.role_admin(mine):
                 raise forbidden(message="only an owner or admin may choose a role memory store")
             _role(mine, body.role or mine.role)
@@ -286,8 +291,7 @@ def delete_memory(
         elif row.store == "role":
             if not memory.reads_role(mine, row.role):
                 raise not_found()
-            if mine.trust == "guest":
-                raise forbidden("tasks:write", "a guest writes no memory")
+            memory.refuse_role_change(mine)  # a guest and an outsider's agent delete none
         elif mine.kind == "agent":
             raise humans_only("agents never delete community memory; propose a replacement")
         else:

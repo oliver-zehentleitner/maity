@@ -82,14 +82,34 @@ def forwarded(request: Any) -> bool:
 def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to=me`: whoever holds the request now (§7). Before a forward that is `to`;
     after one, the holding member, or every admin while the admins hold it as a pool;
-    an earlier holder no longer. Never an agent it is held for (§9.6)."""
+    an earlier holder no longer. Never an agent it is held for (§9.6).
+
+    `routes/overview.py` `_addressed_sql` restates this in plain columns for a request
+    without `held` and `cover` (with `_in_own_right` below): a change here is a change there."""
     if request.personal or held_back(request, mine.principal_id):
         return False
     if request.holder_member is not None:
         return bool(request.holder_member == mine.id)
     if request.holder_pool:
         return "trust:admin" in tokens_of(mine.trust, mine.role, mine.role_base)
-    return originally_addressed(conn, request, mine)
+    return originally_addressed(conn, request, mine) or relays_for_owner(request, mine)
+
+
+def open_requests(conn: Connection, membership_id: int) -> int:
+    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
+    through the listing's own rule so that the two cannot drift."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    mine = Membership(project, row, "agent" if row.agent_id else "human")
+    open_rows = conn.execute(
+        select(t.request).where(
+            t.request.c.project_id == row.project_id,
+            t.request.c.status == "open",
+            # A personal request is never addressed to a membership (§7): not read here.
+            t.request.c.personal.is_(False),
+        )
+    ).all()
+    return sum(1 for r in open_rows if addressed_to(conn, r, mine))
 
 
 def held_back(request: Any, principal: str | None) -> bool:
@@ -110,11 +130,29 @@ def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bo
 
 
 def _in_own_right(request: Any, mine: Membership) -> bool:
+    # Restated in SQL by `routes/overview.py` `_addressed_sql`.
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
         return mine.trust == "owner"
     return request.to_role in tokens_of(mine.trust, mine.role, mine.role_base)
+
+
+def relays_for_owner(request: Any, mine: Membership) -> bool:
+    """`to=me` for a proxy: an open request still addressed to `owner` or `trust:owner`,
+    which it relays (§2.3, §7), but never a project's consent to a bridge across owners,
+    which a human answers directly. A listing rule only: the proxy does not hold the
+    request, so it neither answers nor forwards it in its own right.
+
+    `routes/overview.py` `_addressed_sql` restates this: a change here is a change there."""
+    from maity_hub.bridges import PROJECT_KIND  # bridges reads this module's neighbours
+
+    if mine.role_base != "proxy" or mine.trust != "admin" or request.status != "open":
+        return False
+    to_owner = request.to_kind == "owner" or (
+        request.to_kind == "role" and request.to_role == "trust:owner"
+    )
+    return to_owner and (request.proposal or {}).get("kind") != PROJECT_KIND
 
 
 def is_asker(request: Any, mine: Membership) -> bool:

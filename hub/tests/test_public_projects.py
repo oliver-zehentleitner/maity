@@ -129,6 +129,15 @@ def test_a_text_the_markdown_rules_refuse_is_invalid(
     assert refused.json()["error"]["details"]["fields"] == {"public_about": problem}
 
 
+def test_a_lone_surrogate_is_a_control_character_and_an_emoji_is_text(owner: flow.Human) -> None:
+    refused = owner.raw("PATCH", "/projects/maintainer/maity", b'{"public_about": "a \\ud800 b"}')
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"public_about": "control_character"}
+    kept = owner.raw("PATCH", "/projects/maintainer/maity", b'{"public_about": "\\ud83d\\ude42"}')
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["public_about"] == "🙂"
+
+
 def test_a_text_of_4_kib_is_fine(owner: flow.Human) -> None:
     assert (
         owner.patch("/projects/maintainer/maity", {"public_about": "x" * 4096}).status_code == 200

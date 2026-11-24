@@ -5,8 +5,10 @@ member and pointed at the instance by the team's wake rule), created 10 minutes 
 longer and above the session's acknowledged cursor, and the session has made no call
 for events and no resume in those 10 minutes. The worker checks every minute.
 
-An episode lives on the session row: `not_listening_since` (when the 10 minutes ran
-out) and `not_listening_seq` (the oldest event that was waiting). It starts with
+An episode lives on the session's row of one project (`agent_session_project`, beside its
+cursor): `not_listening_since` (when the 10 minutes ran out) and `not_listening_seq` (the
+oldest event that was waiting); an instance in several projects has one per project. It
+starts with
 `member_not_listening` (`ended: false`); it ends when the acknowledged cursor reaches that
 event, when the session ends, or when an exclusion begins, with `member_not_listening`
 (`ended: true`). It files no request of its own: the owner hears of it through the hourly
@@ -24,12 +26,20 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, or_, select, update
+from sqlalchemy import Connection, Engine, and_, or_, select, update
 
-from maity_hub import clock, events, listening, maintenance, runner_revoke, worker_runs
+from maity_hub import (
+    clock,
+    cross_owner,
+    events,
+    instances,
+    listening,
+    maintenance,
+    runner_revoke,
+    worker_runs,
+)
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
-from maity_hub.views import routing_boss
 
 log = logging.getLogger(__name__)
 
@@ -134,6 +144,8 @@ def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> s
     # as in the views.
     if credential.revoked_at is not None or runner_revoke.due(credential):
         return "the credential was revoked"
+    if credential.detached_at is not None:  # its attachment to this project ended (§6.17)
+        return "the instance left the project"
     if credential.paused_since is not None or member.paused_since is not None:
         return "the agent is paused"
     if member.active is None or member.removed_at is not None:
@@ -148,8 +160,9 @@ def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> s
 def audience_of(conn: Connection, member: Any, *, admins_always: bool = True) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
     member (§8.2). Without `admins_always` the admins read only when there is no member to
-    report to (`holder_stalled`, `claim_expired`)."""
-    boss = routing_boss(conn, member.reports_to)
+    report to (`holder_stalled`, `claim_expired`). A boss of another owner gets none of these
+    and counts as no boss, so the admins read then too (§6.2, "What the edge does")."""
+    boss = cross_owner.notice_boss(conn, member)
     audience = [] if boss is not None and not admins_always else ["trust:admin"]
     if boss is not None:
         audience.insert(0, f"member:{boss}")
@@ -195,32 +208,72 @@ def _end(conn: Connection, member: Any, credential: Any, session: Any, reason: s
     withdraw_hub_notice(conn, session.not_listening_request_id, reason)
     _announce(conn, member, credential, session, session.not_listening_since, ended=True)
     conn.execute(
-        update(t.agent_session)
-        .where(t.agent_session.c.id == session.id)
+        update(t.agent_session_project)
+        .where(_position(session.id, session.membership_id))
         .values(not_listening_since=None, not_listening_seq=None, not_listening_request_id=None)
     )
 
 
-def check(engine: Engine, session_id: str) -> None:
-    """One session: start, end or keep its episode, under its project's lock."""
+def _position(session_id: str, membership_id: int) -> Any:
+    """The position row of the session in one project, for an update."""
+    p = t.agent_session_project
+    return and_(p.c.session_id == session_id, p.c.membership_id == membership_id)
+
+
+def _session_in(conn: Connection, session_id: str, membership_id: int) -> Any:
+    """The session as it is in one project: the session's columns with its position row's
+    (`membership_id`, `acknowledged_seq` and the episode)."""
+    p = t.agent_session_project
+    return conn.execute(
+        select(
+            t.agent_session,
+            p.c.membership_id,
+            p.c.acknowledged_seq,
+            p.c.not_listening_since,
+            p.c.not_listening_seq,
+            p.c.not_listening_request_id,
+        )
+        .join(p, p.c.session_id == t.agent_session.c.id)
+        .where(t.agent_session.c.id == session_id, p.c.membership_id == membership_id)
+    ).one()
+
+
+def check(engine: Engine, session_id: str, membership_id: int | None = None) -> None:
+    """One session: start, end or keep its episode in each project of its instance, or in
+    the one of `membership_id`, each under its project's lock."""
+    if membership_id is not None:
+        _check(engine, session_id, membership_id)
+        return
+    p = t.agent_session_project
+    with engine.connect() as conn:
+        memberships = (
+            conn.execute(
+                select(p.c.membership_id)
+                .where(p.c.session_id == session_id)
+                .order_by(p.c.membership_id)
+            )
+            .scalars()
+            .all()
+        )
+    for each in memberships:
+        _check(engine, session_id, each)
+
+
+def _check(engine: Engine, session_id: str, membership_id: int) -> None:
+    """The session in one project: start, end or keep its episode there, under the
+    project's lock."""
     with transaction(engine) as conn:
-        session = conn.execute(
-            select(t.agent_session).where(t.agent_session.c.id == session_id)
-        ).one()
-        member = conn.execute(
-            select(t.membership).where(t.membership.c.id == session.membership_id)
-        ).one()
+        member = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
         lock_project(conn, member.project_id)
         # Read again under the lock: whoever held it may have paused the agent, changed
         # its availability, its team's wake rule or its reports-to meanwhile.
-        member = conn.execute(
-            select(t.membership).where(t.membership.c.id == session.membership_id)
-        ).one()
-        session = conn.execute(
-            select(t.agent_session).where(t.agent_session.c.id == session_id)
-        ).one()
+        member = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+        session = _session_in(conn, session_id, membership_id)
         credential = conn.execute(
-            select(t.credential).where(t.credential.c.id == session.credential_id)
+            instances.credential_rows().where(
+                t.credential.c.id == session.credential_id,
+                t.instance_attachment.c.membership_id == membership_id,
+            )
         ).one()
         why = _excluded(conn, session, member, credential)
         if session.not_listening_since is not None:
@@ -241,13 +294,11 @@ def check(engine: Engine, session_id: str) -> None:
         since = max(oldest.at, called_at) + WAIT
         # No request of its own: the owner hears of it through the digest (§5.3).
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.id == session.id)
+            update(t.agent_session_project)
+            .where(_position(session.id, membership_id))
             .values(not_listening_since=since, not_listening_seq=oldest.seq)
         )
-        refreshed = conn.execute(
-            select(t.agent_session).where(t.agent_session.c.id == session_id)
-        ).one()
+        refreshed = _session_in(conn, session_id, membership_id)
         _announce(conn, member, credential, refreshed, since, ended=False)
         # The same episode, to the same member: a holder that stops (§6.5).
         from maity_hub import holder_stalled
@@ -256,23 +307,23 @@ def check(engine: Engine, session_id: str) -> None:
 
 
 def sweep(engine: Engine) -> None:
-    """Every live agent session, and every session with an episode still open."""
+    """Every live agent session, and every session with an episode still open, in each
+    project of its instance."""
+    p = t.agent_session_project
     with engine.connect() as conn:
-        ids = (
-            conn.execute(
-                select(t.agent_session.c.id).where(
-                    or_(
-                        t.agent_session.c.live.is_(True),
-                        t.agent_session.c.not_listening_since.is_not(None),
-                    )
+        pairs = conn.execute(
+            select(p.c.session_id, p.c.membership_id)
+            .join(t.agent_session, t.agent_session.c.id == p.c.session_id)
+            .where(
+                or_(
+                    t.agent_session.c.live.is_(True),
+                    p.c.not_listening_since.is_not(None),
                 )
             )
-            .scalars()
-            .all()
-        )
-    for session_id in ids:
+        ).all()
+    for session_id, membership_id in pairs:
         try:
-            check(engine, session_id)
+            check(engine, session_id, membership_id)
         except Exception:  # one session's failure must not stop the others
             log.exception("the not-listening check of %s failed", session_id)
 

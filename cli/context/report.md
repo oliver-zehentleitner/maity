@@ -60,7 +60,12 @@ reported commit, as the merged pull request's head, so nothing in the
 report is unverified. The hub's probe already treats a branch it no
 longer has as no mismatch and compares only the pull request head. The
 pull request is found by branch name without extra input, so no new
-flag can be misused to report a head nobody pushed.
+flag can be misused to report a head nobody pushed. Since 2026-11-20 the
+missing branch is no mismatch still, but no longer enough for the hub to
+close a card on the merge by itself: under `merged_closes: auto` such a
+report, sent after the merge, waits for the done authority (the root's
+context/reports.md, d068e91d-bf97-44e3-ba98-0f1c7e5b3674, card
+tsk-yfv9rnxpcwjd).
 
 **Rejected alternatives:**
 - A `--pr N` flag naming the pull request: an agent could name a merged
@@ -234,7 +239,8 @@ before PATH for a bare program name.
 **Revisit when:** the probe's pull request read gains or loses `head_sha`, gh works in cloud sessions again, or a report should name a pull request the card does not link
 
 When gh is missing, or is installed and fails (`gitfacts.collect` keeps that
-failure as `forge_error` instead of raising it), `maity report` reads the card
+failure as `forge_error` instead of raising it), or `git ls-remote` could not
+be read (below), `maity report` reads the card
 and asks the hub's probe about each pull request the card links, at most five
 by repository and number (more are named in one line and not read), with
 `max_age=0`; a link to another repository is asked too and counts toward the
@@ -242,7 +248,8 @@ five, but the probe reads only the project's repository, so such a link neither
 stands in nor refuses; the hub may still answer from a read up to 30 seconds
 old (`FORCED_FLOOR`, §11.4), and a head that is that stale refuses, never files
 another commit. A pull request whose `head_sha` equals what `git ls-remote`
-answered for the branch, compared whole, is reported as `pr_status: found` with
+answered for the branch (the local HEAD where it could not be read, as below),
+compared whole, is reported as `pr_status: found` with
 number, URL, head and state from the probe, and the terminal line says it was
 read by the hub's probe. The links are asked in order and the first match is
 the one reported, whatever the links before it read; only when none matches do
@@ -263,6 +270,24 @@ without a linked pull request no probe is asked and the branch counts as
 missing, as before. This runs only when the local check would refuse, and a
 card that cannot be read leaves that refusal as it is.
 
+Since 2026-11-23 (tsk-mfac5zscnkxs), a remote branch that could not be read is
+a third such case. When `git ls-remote` ran and failed or timed out (no
+network, a proxy git cannot reach; not a refusal of maity's git, which is
+raised as before), `gitfacts.collect` keeps the failure as `remote_error`
+instead of raising it, and on a clean checkout the report asks the probe about
+the card's linked pull requests whatever gh said. The first one that is open
+or merged and whose `head_sha` equals the local HEAD, compared whole as in the
+deleted-branch case, stands in for the remote branch (`remote_head` the local
+HEAD); a pull request gh read stays the one reported. A closed, unmerged one
+with that head does not stand in: its head says nothing about the branch now,
+which may have moved since it was closed. Only when none stands in do the
+linked pull requests it read with another head or closed refuse. Without one,
+or with a card that cannot be read, the failure stays an error, never "does not
+exist; push it", since the branch may well be there. While a proxy that carries
+credentials is set, a failed git or gh command shows its exit code and a coarse
+class (proxy, auth, not found, network, other) instead of its own text; without
+one, its last line without userinfo, as before.
+
 What decides here is the hub's record that the card links the pull request, and
 the probe's read of it, not a GitHub lookup by the branch's name. A link is
 added by a member and observed by the hub (§6.13); the head must still equal
@@ -274,7 +299,8 @@ hub's own forge read, with the operator's or the owner's grant and of the
 project's repository only, so the pull request still comes from the forge, not
 from the agent; asking only about pull requests the card links keeps the
 choice out of the agent's hands, and the exact head match keeps the report tied
-to what git pushed. Both earlier entries name this as their revisit trigger;
+to what git pushed, or where git could not read the remote, to the head the
+forge holds for the card's pull request. Both earlier entries name this as their revisit trigger;
 re-checked on 2026-11-07, both stay active: this entry extends them (a forge
 read when gh cannot answer), it replaces neither the refusal on a mismatch nor
 the check against the card's pull request.
@@ -288,6 +314,11 @@ the check against the card's pull request.
   installed and logged in, not where it is missing.
 - Reporting `pr_status: unknown` on a linked card: that is the partial truth
   66da7721 and 8c58cebb refuse.
+- Retrying through the proxy only, with no fallback: a placement whose proxy
+  git still cannot use (an auth scheme git lacks) could then never report.
+- Scrubbing the proxy's credential from git's output: git and libcurl print it
+  split, re-encoded or cut short in more ways than a list of shapes can follow,
+  which two review rounds showed (review of #2151).
 
 ## A pull request that does not name the card is shown and confirmed before the report goes out
 
@@ -331,7 +362,7 @@ contradict: the refusals that rest on facts keep no override.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-8qwmbw5xydpw from the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg): `report` refused with exit 4 and the fix was two `git config` lines, which agents hit repeatedly; the lead's assignment (Maity notice 104980, "contract first" where a contract line is needed); reproduced on main 126b030c with a branch cut by `git switch -c <b> --track origin/main` and pushed without `-u` ("origin/main is at …, local HEAD is at …; push or pull until they agree"); the boundaries (default branch only, only when the remote has the branch) are the author's, put to review in PR for tsk-8qwmbw5xydpw; `cli/src/maity/gitfacts.py` `track_own_branch`; review of PR #1608 (Maity review results 105408 and 105493, the lead's notices 105413 and 105495; round 2: review result 105659, the lead's notice 105664; round 3: review results 105854 and 105876, the lead's notices 105860, 105878 and 105887, lotse's notice 105886): the exact ref match of `ls-remote`, the read of the branch name, the push-configuration sentence, the two gaps not covered, and that the earlier refusal held only when the heads differed
+**Source:** card tsk-8qwmbw5xydpw from the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg): `report` refused with exit 4 and the fix was two `git config` lines, which agents hit repeatedly; the lead's assignment (Maity notice 104980, "contract first" where a contract line is needed); reproduced on main 126b030c with a branch cut by `git switch -c <b> --track origin/main` and pushed without `-u` ("origin/main is at …, local HEAD is at …; push or pull until they agree"); the boundaries (default branch only, only when the remote has the branch) are the author's, put to review in PR for tsk-8qwmbw5xydpw; `cli/src/maity/gitfacts.py` `track_own_branch`; review of PR #1608 (Maity review results 105408 and 105493, the review lead's notices 105413 and 105495; round 2: review result 105659, the review lead's notice 105664; round 3: review results 105854 and 105876, the review lead's notices 105860, 105878 and 105887, the lead's notice 105886): the exact ref match of `ls-remote`, the read of the branch name, the push-configuration sentence, the two gaps not covered, and that the earlier refusal held only when the heads differed
 **See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-10
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-10
 **Revisit when:** agents report from branches that deliberately track another branch than their own and want it kept, or a refusal shows that the default branch could not be told (no `origin/HEAD` and a remote whose `HEAD` is not readable), or agents push to another remote than the one the branch tracks (a fork with `remote.pushDefault`) and the named `git push -u` misleads them, or agents hit the refusal on a merged and deleted branch
@@ -448,3 +479,34 @@ reads what was pushed.
 - Resolving the effective push URL and ref: it repeats git's push logic
   (refspec matching, URL rewriting) in maity for configurations a runner's
   clone never has; refusing them is the smaller and safer rule.
+
+## gh looks for the pull request in the project's repository the hub names
+
+**Id:** 9bf7b445-c20d-4d95-a6e8-3d1a86413a9a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-k0x4jn4y4ykg (delivery from a fork), the fix the lead approved through the coordinator, 2026-11-23; `cli/src/maity/gitfacts.py` (`gh_repository`), `cli/src/maity/cli.py` (`_resume`, `cmd_report`)
+**Revisit when:** a project's repository is not on a host gh is asked about but `report` should still find its pull request, or the resume packet stops naming the repository
+
+`collect()` passes `--repo <host>/<owner>/<repo>` to `gh pr list` when the
+state names the project's repository: each resume stores
+`project.repository.url` from the packet as `repository` and drops it when
+the packet names none. Without it, or for a URL that is not one repository on
+a host gh is asked about (`gh_hosts`), gh picks the repository from the
+clone's remotes, as before.
+
+**Reason:** in a fork's clone whose only remote is the fork, gh asked the
+fork, which does not have the pull request, and the report went out as "no
+pull request" with no error. The project's repository is what the hub
+compares a report with (the probe reads only that one), so the pull request
+is looked for there.
+
+**Rejected alternatives:**
+- Telling a fork's agent to add an `upstream` remote or run
+  `gh repo set-default`: it depends on gh's choice of repository among the
+  remotes, and an agent that skips the step gets a silent "no pull request".
+- Reading the repository from the last resume packet kept on disk
+  (`LAST_PACKET`): it is kept for `--full`, and a field in the state is what
+  `report` already reads (`keep_the_why_required`). The rationale for both
+  is the coder's reading.

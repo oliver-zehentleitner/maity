@@ -152,7 +152,7 @@ and made unrelated PRs red. A test that wants the cache to expire moves `mainten
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13); the review of #1721 (maity-review-team-lead#vuur, order 4003, after maity-review-team-chatgpt#v5vp's leg: the 503 must never wait for the database it protects); `maintenance.refusal_page`, `maintenance.cached_frame`, `middleware.HubMiddleware._maintenance_refused`, `routes/pages.py`, `public_pages.py`. The fallbacks are this entry's reading
+**Source:** card tsk-tp97v64vpy5z, PR 4, as the lead split it (2026-11-13); the review of #1721 (the review lead, order 4003, after a reviewer's leg: the 503 must never wait for the database it protects); `maintenance.refusal_page`, `maintenance.cached_frame`, `middleware.HubMiddleware._maintenance_refused`, `routes/pages.py`, `public_pages.py`. The fallbacks are this entry's reading
 **Revisit when:** the join host serves the landing stylesheets, or the frame is drawn from something that is not in the database
 
 While a window runs, the `503` page of the hub's own pages (`/`, a stored public page, `/explore`,

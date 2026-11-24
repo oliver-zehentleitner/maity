@@ -204,6 +204,32 @@ table, `membership_area`, `request_option`. It would let the database
 filter audiences and areas, at the cost of a join on every read and a
 multi-row write for every event, for a volume where the scan is cheap.
 
+**2026-11-18, a human's stars (card tsk-kqn8zhptf06k, §5.1 "Stars"):** `human.starred` is
+one nullable JSON list of project ids in the order starred, as `human.start_tabs` is: the
+hub reads and writes it whole (`PATCH /me` sends the whole list) and no server query asks
+"who starred this project" — stars are private, with no count, event or notice. A star
+whose project is not public now stays in the list, hidden: `stars.visible` leaves it out
+of `GET /me` and the export, and `stars.checked` puts it back into every `PATCH` after the
+visible entry it followed; when the body drops that entry, after the nearest earlier
+visible entry the body keeps, first when it keeps none (a gap of the contract, filled in
+§5.1). `/me` is polled every 60 s per tab, so whether the stars are public is asked for
+all of them at once (`public_projects.served_among`, at most five statements, the same
+rule as `served`), never per project; `test_stars.py` counts the statements for two stars
+and for six. The points the contract left open, as the lead ruled them: an id that names
+no project is `not_public`, so the answer does not say whether a private one exists; a
+member is an active membership as `access` reads it, so a removed member may star the
+project again; the hub deletes no project, so a project gone is only filtered out on the
+read; and fail closed (the lead, 2026-11-18): with `MAITY_PUBLIC_PAGES` off nothing is
+public for an outsider, so `public_projects.public_for_outsiders` answers none, a star is
+`not_public` and a stored one is hidden, the rule the outsider read will share. A
+membership drops its star where it is made (`invitations.admit`, which every
+accepted invitation goes through, and `org_projects.keep_owner`); a project's creation
+needs no hook, since a new project cannot
+be starred yet. The export leaves hidden entries out: its full name is the current one,
+and it would name a project that is private now. Rejected: a `star` table (human,
+project, position) — it would let the database count and filter stars, which no server
+query needs, at the cost of a multi-row rewrite on every `PATCH` and a join on every poll.
+
 ## Timestamps: aware UTC in Python, naive UTC with microseconds in the database
 
 **Id:** f6041871-9416-4565-b3dc-c5af45c4528b
@@ -547,11 +573,16 @@ off.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23
+**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23; keys first and the batched search, card tsk-ybc2ma72dzvq (PR 2), 2026-11-18
 **Revisit when:** a project's board grows to thousands of cards, or a client reports paging through a board that does not finish while cards keep moving
+**See:** persistence.md — b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4 — as of 2026-11-18
 
-`GET …/tasks` reads a project's cards that match the filters and sorts them
-in Python by `ranks.board_key`: the columns in board order, then within
+`GET …/tasks` reads the order's keys (`id`, `status`, `rank`,
+`created_at`, `closed_at`, `updated_at`) of a project's cards that match
+the filters other than `q`, and sorts them
+in Python by `ranks.board_key`; the full rows are read only for the
+page's cards, and a search is applied to the sorted keys a batch at a
+time ([the card list reads keys first](#the-card-list-reads-keys-first-and-a-search-reads-card-text-and-notes-a-batch-at-a-time), b7d3e9a2). The order: the columns in board order, then within
 one by rank, then by `created_at`, then by `id`, and closed cards by
 `closed_at` newest first, then by `id`. A page's cursor names the last
 card it showed and the first card it did not show, each with its sort
@@ -603,6 +634,153 @@ board is a few hundred cards; the board asks for 200 at a time.
   move is what lasts, so the cursor follows the last card shown.
 - Integer positions renumbered on every move. They are simple to compare,
   but a move rewrites every card after it, and each of those is an event.
+
+## The closed columns alone are paged by the database, with a cursor of one card's key
+
+**Id:** 7bad4e04-7132-4825-94c5-825301c20800
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-d4anfsk1e94j and its plan, approved by the lead, 2026-11-18 (PR 1, seq 161546); the board run measured by ops on 2026-11-12 (done column about 790 cards, 4 pages one after another, 546 kB, about 830 ms after the first page); the owner's choice of 50 cards on the first page, req-aa0jka1xsfsy (PR 2)
+**See:** persistence.md#the-boards-card-order-is-sorted-in-python-not-by-the-database — 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3 — as of 2026-11-18
+**Revisit when:** the open columns get the same paging, or a closed card's place can change without its `closed_at` changing, or a project's closed cards grow far beyond the about 790 of 2026-11 (each page sorts them all in the database: an index for the order is the step then)
+
+A board read (`order=board`) whose `status` names closed statuses only, and that
+searches nothing (`q`), is sorted and paged by the database: the column's position
+in the contract's status order, a card without `closed_at` last, `closed_at` newest
+first, then the id, with `LIMIT`. The id compares bytewise as in Python:
+`COLLATE "C"` on PostgreSQL, while MySQL's tables are binary (`utf8mb4_bin`) and SQLite
+compares bytes. Its cursor (`paging.closed_cursor`) holds only the last card's column
+position, `closed_at` and id, bound to the list's filters: at most about 120 characters
+by its encoding, whatever the page size. A malformed cursor is refused as `invalid`: a
+time without a zone or out of range in UTC, a position that is no column of the board,
+an id longer than the id column, with a NUL, or that does not encode as UTF-8 (a lone
+surrogate, which JSON carries). The cursor is not signed, so an edited one
+that is well formed is taken; it shows only cards the caller may read anyway, since the
+read rights are checked before the cursor. A page of the whole board that ends on a
+closed card hands out the same cursor, and the Python-sorted path then goes on after that
+card's key (`_after_closed`). Open columns keep the cursor with the ids the page showed.
+A `key` cursor given out before this change still pages through the Python path.
+The card first said the cursor grew with the column. Measured, it did not (5551, 5551
+and 5550 characters on pages 2 to 4): it held the ids the page showed in its last column,
+up to the page size, not every id sent. Its size per request was the issue, not its growth.
+
+**Reason:** a closed card's place follows from its status, `closed_at` and id. No move
+re-ranks it, so the reason the board's cursor carries the ids a page showed (moves change
+keys of cards that did not move) does not hold there, and a keyset on the key alone is
+exact. Sorting in the database stops every page of the done column from reading and
+sorting all of the column's cards in Python: about 790 rows read four times for one board.
+No index carries this order: sorting by the `CASE` position and `closed_at IS NULL` is no
+plain btree's order, so each page is a top-N sort over the project's closed cards in the
+database. What it removes is the sort in Python and the rows sent to Python, not the
+database's work per page.
+The earlier entry rejected SQL keyset paging for the whole board because of collations and
+a `CASE` per state on three dialects. For the closed columns alone it is one `CASE` over
+two statuses and one collation on one dialect.
+
+**Rejected alternatives:**
+- Fetching the done column's follow-up pages in parallel: a keyset page depends on the
+  one before it, and the board's first page of 50 plus "Show more" on demand (PR 2)
+  removes the serial chain instead.
+- Only shrinking the cursor and keeping the Python sort: it fixes the request size
+  (5.5 kB per follow-up page), not the rows read per page.
+- Offset paging (`LIMIT … OFFSET …`): a card that closes or reopens between two pages
+  moves every card after it by one, so the next page skips or repeats a card.
+
+## The card list reads keys first, and a search reads card text and notes a batch at a time
+
+**Id:** b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 2 (the security team's round-3 load pass: "keys first, then full rows only for the page; search doesn't load every note body"), PR 2, 2026-11-18; `hub/tests/test_load_card_paging.py` for the numbers
+**Revisit when:** the board's order moves into SQL, or a project's cards outgrow sorting their keys in Python
+**See:** persistence.md — 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3 — as of 2026-11-18
+
+`GET …/tasks` (`routes/tasks.py`) selects only the order's columns (`KEYS`) for every card
+the filters let through, sorts or keyset-pages those, and reads `select(t.card)` only for the
+ids of the page (`_views`). With `q`, `card_search.Search` decides which keys are kept: it
+reads `id`, `title`, `body` and `report` for one batch of keys at a time, and the notes
+(redacted ones and those in the reader's hidden windows left out, §6.2) only of the cards
+whose own text did not match, and then of the page's cards so that `match` can name `note`.
+The first batch is the page plus one, each next one twice the last, at most 1000
+(`SEARCH_BATCH_MAX`); `order=updated` reads each batch of keys with a keyset after the last
+key read. A card deleted between its key and its row is left out. On PostgreSQL and MySQL
+under READ COMMITTED the key read and the row read are two statements, so a card can also
+change status between them. The page then shows its new status at its old place, and the
+cursor holds its old key. That is harmless: the next page sees a card that moved, and
+`_after`'s rules for a moved card apply.
+
+The board's cursor ([the board's card order](#the-boards-card-order-is-sorted-in-python-not-by-the-database), 4e61c371) is resolved among all cards of the filters, not only a
+search's hits. Before, a search sorted only its hits, so when the last card shown stopped
+matching, the next page went on from the first card not shown, or the column's top, and a
+card between the two that began to match was skipped. Now the page goes on after the last
+card shown where it still sits, the first card not shown is the next card of the filters,
+a hit or not, and such a card is found. That is the one change in
+behaviour; the contract's paging rule (§6.4) already said a card that did not move is never
+skipped.
+
+**Reason:** the old list read every full row the filters let through (bodies and reports
+included) and the search read every note body of those cards in one statement, so a call's
+memory and time grew with the project, not with the page. The keys are a few short columns;
+the body, the report and the notes are the bulk. Batches that start at the page's size keep a
+search that matches often at about the page's reads, and doubling keeps one that matches
+rarely at a few statements over the whole list. A card found by its own text needs no note
+read, except to name its `match` when it is shown.
+
+**Rejected alternatives:**
+- The search in SQL (`LIKE`/`ILIKE` over the columns and a join on the notes): the contract
+  folds both sides with NFKC and Unicode lowercasing, independent of the database's collation
+  (§6.4), which none of the three engines does the same way in SQL.
+- Keys first, but a search's text read for the whole list in one batch: it bounds nothing,
+  since a search that matches the first card still reads every card's text and notes.
+- A fixed batch the size of the page: a rare hit then costs one statement per page-sized
+  slice of the project.
+- Keeping only the hits in the board's sorted list for the cursor (the first cut of this
+  change): it skipped a card that began to match between two pages, as above.
+
+## The overview reads its reports keys first and counts open requests in one grouped statement, with a Python leftover
+
+**Id:** 8d41e6b2-57ca-4f93-b0d8-2e6a9c15f374
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 3 ("Overview: the latest reports and the request counts come from SQL with a limit and grouping"), option A approved by the manager, no migration, 2026-11-19; `hub/tests/test_load_overview.py` for the numbers
+**Revisit when:** the database's sort on `report->>'reported_at'` dominates the overview's time, or the held, covered and jour fixe requests stop being a few
+**See:** persistence.md — b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4 — as of 2026-11-19
+
+`GET …/overview` (`routes/overview.py`) selects only the ids of the latest reported cards,
+ordered by `coalesce(report["reported_at"].as_string(), '')`, `updated_at` and `id`, all
+descending, with `LIMIT`, and reads the shown columns of those cards only, put back in that
+order. The coalesce keeps a report without `reported_at` last on every engine. The coalesce
+matters on PostgreSQL only: there `DESC` puts NULL first, on SQLite last, so a test run on
+SQLite alone would not notice it missing. The request
+counts are one `GROUP BY priority` statement over the "plain" open requests: no `held`, no
+`cover` and, where they change the answer, no `jour_fixe` (for a holder of
+`requests:answer`) and no `proposal` (for a proxy). Its `where` restates
+`routes/requests.py` `listed_to_all`, and `_addressed_sql` restates `inbox.addressed_to`
+in plain columns. Every other open request is read with only the columns the Python rule
+needs and decided by `relayed`, `listed_to_all` and `inbox.addressed_to` unchanged, then
+added to the counts. Each side names the other in a comment.
+
+**Reason:** the overview read every reported card's whole report and every open request's
+full row, to sort and count them in Python, so its memory and time grew with the project
+(4.2 MB at 1000 cards and requests, 12.6 MB at 3000, on SQLite) for a response of at most
+50 reports and four numbers. The keys and the grouped count stay at about 0.4 MB at both
+sizes. What is held, covered or filed from a jour fixe round depends on a JSON list or on
+another table (`jour_fixe_round.config`). Restating that in SQL would mean JSON containment,
+so those few go through the rule the listing uses. A mistake there would then show as a
+leftover that grew, not as a wrong count. The test against `_filtered` covers every
+caller kind.
+
+**Rejected alternatives:**
+- The whole visibility in SQL with JSON containment for `held`, `cover.by` and the round's
+  circle: each database has its own syntax (`@>` on PostgreSQL, `JSON_CONTAINS` on MySQL,
+  `json_each` on SQLite), and the rule would have a second, dialect-split copy.
+- A functional index on `report->>'reported_at'`, or a `reported_at` column on the card:
+  the first is not portable across the three engines, the second needs a migration.
+  Deferred unless the numbers show the database's sort dominating.
+- Keeping the Python path: the rows read grow with the project, not with the response.
 
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
@@ -679,6 +857,44 @@ trusted with text that may quote a credential.
   and the masking missed real forms (tried, reverted).
 - Keep the code only (the SQLSTATE or number): psycopg's connection errors have neither.
 - Put the cause into the response: that is the leak §1.3 forbids, and a client cannot act on it.
+
+## `maity-hub` names a database error as the log does, never with the driver's text
+
+**Id:** 8a168e45-3260-4297-9e2a-cf673fde9c22
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit of the core platform, which found the CLI printing what the log never lets out; the lead's go for the pull request, 2026-11-23; its first review, which found a password in the URL's query string printed with the URL
+**Revisit when:** a command needs a cause the categories cannot name, or the driver's text can be shown without any route into a stored log
+**See:** persistence.md#a-database-error-is-logged-with-a-category-of-its-cause-never-with-the-drivers-text — 79c93ec6-d67e-4a0a-8d82-041409b1fd92 — as of 2026-11-23
+
+Every `maity-hub` command (`migrate`, `serve`, `quickstart`, `owner create`, the operator
+commands, `loadtest`, `attachments copy-to-s3` and its bucket clean-up) says of a database error
+only the URL with its password masked and its query string left out (`config.redact_database_url`),
+the original exception's class, the cause category and the driver's codes (`errors.driver_reason`,
+`errors.driver_fields`). The driver's own message is never printed or logged, not even its first
+line. Not covered: on MariaDB, a query option that PyMySQL or SQLAlchemy's MySQL dialect does not
+take, or a value it cannot use, ends in a plain Python error (`TypeError`, `ValueError`,
+`AttributeError`, `FileNotFoundError`), not a database error, and the command ends with its
+traceback, which can quote that value.
+
+**Reason:** the server and the CLI followed opposite rules for the same text. A malformed URL makes
+the driver quote the whole connection string, the password included, and `migrate` usually runs as
+a Kubernetes job or init container whose stderr ends up in the cluster's log store, which is the
+case the log's rule guards against. `serve` runs under a supervisor too. The query string is left
+out whole because the drivers take a password there as well (`password`, `passwd`, `sslpassword`,
+also in percent-encoded forms), and any other key can carry a secret too.
+
+**Rejected alternatives:**
+- The driver's first line on the operator's own terminal, since the operator holds the URL anyway:
+  the same command's output is a stored log as soon as it runs as a job, and the CLI cannot tell.
+- A `--verbose` flag that prints the text with a warning: not built; the operator who needs the
+  text can connect with the database's own client.
+- Masking the query parameters that carry a secret by name: each driver accepts its own names and
+  percent-encoded forms, any other key can carry a secret too, and a list would miss the next one;
+  `?***` still shows that a query was set.
+- Catching those plain Python errors around every command's database work for the one-line form:
+  it would also turn the hub's own bugs into one line without a traceback.
 
 ## The pool keeps connections warm, and a host name that does not resolve is tried once more
 
@@ -867,6 +1083,60 @@ not show the mistake, and `hub-mariadb` runs only on `main`.
 
 **Rejected alternatives:** none in contention; the type has to come from somewhere other than the
 reflection.
+
+## A name MySQL or MariaDB reserve is quoted with `quote=True`, not renamed
+
+**Id:** e70b5933-72f5-4951-b024-b92fe22dc521
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); a check of the foreign-key forms on SQLAlchemy 2.0.36 and 2.1.6, 2026-11-20; the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
+**Revisit when:** SQLAlchemy's MySQL/MariaDB reserved lists gain `vector` (`test_sqlalchemy_still_lacks_vector` fails), or the hub starts writing raw SQL against `notification_position`
+
+MariaDB 11.7 made `vector` a reserved word, and `notification_position` has a column of that name.
+SQLAlchemy quotes an identifier only when its dialect's reserved list holds it, and 2.1.6 lacks
+`vector`: migration `0034` sent `vector JSON NOT NULL` unquoted, so a new install on MariaDB 11.7+
+stopped there, and on a server upgraded under an existing hub the `INSERT` of a stored position
+failed (the `SELECT` survives, a reserved word after a period needs no quotes). The column carries
+`quote=True` in `tables.py` and in `0034`; the edit to the shipped revision changes only how its DDL
+is spelled, not what it creates, so its id stays and existing databases are untouched. The schema
+already depended on SQLAlchemy's quoting for `before`, `body`, `by`, `limit`, `rank`, `role` and
+`trigger`; `vector` is one the dialect did not know yet. `test_reserved_words.py` keeps a list of the
+words the servers reserve newer than SQLAlchemy's lists and fails, on every engine and without a
+server, on such a name without the flag, in the tables and in the revisions.
+
+**Reason:** a rename still needs the same edit to `0034`, because a new install runs its `CREATE
+TABLE` before any rename could, so it is the quoting plus a migration chained on main's head, a
+`CHANGE COLUMN` on MariaDB where the JSON column's `json_valid` CHECK names the column, and the old
+name quoted again in both directions. What it would buy, SQL written by hand without quotes, matters
+little in a hub whose rule is `op.*` and Core only.
+
+**Rejected alternatives:**
+- Renaming the column with a migration that keeps the data: more steps for the same edit to `0034`
+  (above).
+- Waiting for SQLAlchemy to list the word: an operator on 11.7+ could not install the hub meanwhile,
+  and the next word would surprise the same way.
+- A line-based pattern over the revisions instead of the `ast` walk (the first version of the test):
+  it misread calls over several lines and missed renames; found in review.
+
+**Known limit:** a table read with `autoload_with` gets plain names without the flag, so a revision
+that reflects `notification_position` and writes `vector` names that column itself, as with the JSON
+type above (inferred from how reflection builds its columns; not tested). The list in the test is
+kept by hand from the vendors' reserved-word pages. The revisions are checked by an `ast` walk over
+the calls that name tables, columns, indexes and constraints; which calls, and what each quoted form
+looks like, are in `hub/tests/test_reserved_words.py` and in `hub/README.md`, Migrations. Not
+judged: a name that is no string literal (a `Column` object included), the column lists of a key or
+an index other than a foreign key's target (`ForeignKeyConstraint`'s `columns`, the positional
+columns of `PrimaryKeyConstraint`, `UniqueConstraint` and `Index`, `create_foreign_key`'s
+`local_cols`/`remote_cols`, `create_primary_key`'s columns), the schema part of a three-part
+foreign-key target, and raw SQL in `op.execute`. A foreign key's target carries no quote of its
+own: the reference takes the referenced column's flag (checked on SQLAlchemy 2.0.36 and 2.1.6,
+2026-11-20). A string target `"t.vector"` comes out quoted only when it resolves to a column with
+`quote=True`, `quoted_name` or not. A tuple of `quoted_name` parts aimed at a column without the flag
+comes out plain on 2.1.6, and 2.0.36, the floor in `pyproject.toml`, refuses the tuple with an
+`ArgumentError` (the review of #2025 had reported it written plain there). The `Column` object
+carries the flag on both versions, so `hub/README.md` names that one.
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
@@ -1279,3 +1549,102 @@ aiosqlite keeps SQLite on the same code path as the servers.
   out on the runner, and it would still see such a stall only from 150 ms over its own lag, which
   no run has measured. The CPU time per callback catches it from 50 ms, with the reference in the
   process.
+
+## An `async def` runs no sync transaction on the event loop
+
+**Id:** 09716491-b10a-4c73-bf6e-cfe0eabba8ba
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pzex5cpkv6tx, 2026-11-15: web-e2e on #1843 (CI run 43712574171) got 503 from
+`POST /api/v1/admin/reports/{id}/resolve` after `total_ms=5014`, `loop_late_max_ms=4925`; the
+review of #1845 (A637: the helper the guard did not follow)
+**See:** persistence.md — 66f0bcf9-cb6f-4993-81de-541d13f0c942 — as of 2026-11-15
+
+A sync engine's transaction (`with engine.begin()` / `.connect()`, `events.transaction`,
+`idempotency.run`, `retrying`) never starts on the loop's thread: an `async def` route hands it to
+`run_in_threadpool`, as `routes/auth.py` does, or the route stays a plain `def`.
+That holds for a call of a sync helper that opens one, too (`device_codes._require_enabled`),
+and for a rate limiter's `hit`, `take`, `place` and `release`: on PostgreSQL they count in
+`shared_counts`, a sync transaction with an advisory lock (`ratelimit.Limiter`, replicas.md).
+`hub/tests/test_no_sync_db_on_loop.py` scans every `async def` in the package for those calls
+outside a nested function, and for unawaited calls of the package's sync functions and of
+methods of its objects (module-level objects, `self` and `self.<attr>`) that open one,
+transitively, and names file, line and function. A limiter made with `local=True` counts in the
+process and is left out. Startup and shutdown (`app.lifespan`) are exempt: no request holds the
+lock then. `routes/reports.py` (`file_report`, `resolve_report`), `routes/email_sign_in.py`
+(`complete_link`), `routes/device_codes.py` (`get_code`, `watch_redemption`) and the limiter
+calls of `routes/auth.py` (`login`), `routes/invitations.py` (`invitation_page`,
+`accept_invitation`), `routes/joins.py` (`exchange`), `routes/register_page.py`
+(`register_complete`), `routes/registration.py` (`register`), `routes/runners.py` (`pair`) and
+`forge_webhook.handle` broke the rule and were moved.
+
+**Reason:** on SQLite every transaction begins IMMEDIATE, and every request's authentication
+(`deps.authenticated`) is an async-engine transaction that holds the write lock across awaits. A
+sync transaction on the loop waits for that lock and blocks the loop its holder needs to commit,
+so it waits the whole busy timeout (5 s) and answers 503. On the server databases it costs the
+loop the statement's time, which the loop-lag guard watches only for the hot families.
+
+**Rejected alternatives:**
+- A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
+  busy timeout per run and shows only the families it calls; the scan covers every route at no
+  cost.
+
+## An IN list over many ids is cut into chunks by one leaf module, `chunks`
+
+**Id:** 63ffb6dc-48cb-400d-8692-5466fb7de939
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jttknmqzghw9 (clean-up audit round 5, batch 1, finding 2, 2026-11-22): the bound written four times (`export.CHUNK`, `public_projects.BATCH`, `reports.PATHS_PER_QUERY`, `loadtest.CHUNK`), held together by "mirrored" comments; `maity_hub.chunks`
+**See:** public-pages.md#whether-a-project-has-a-page-is-one-rule-over-rows-served-judges-the-row-it-is-given — 1def6e81-4be2-4e03-8bd7-4426d59407e5 — as of 2026-11-22
+**Revisit when:** a read needs a bound of its own other than `CHUNK`, or an engine's limit on bound parameters falls near 500
+
+A read that names a list of ids or paths whose length nothing bounds asks in IN lists of at most
+`chunks.CHUNK` (500) values: `chunks.chunks(values)` yields them without repeats, sorted, in lists of
+that size. The export, the public lists, the reporter's pages (`reports._pages_at`), the load test's
+purge and `namespace.full_names` use it; `namespace.full_names` batches itself, so every list of full
+names is bounded and `public_projects.full_names`, which batched it for the public lists, is gone.
+`CHUNK` is read at each call, so a test lowers it once (`monkeypatch.setattr(chunks, "CHUNK", 2)`)
+for every read on the path it drives.
+
+**Reason:** `chunks` imports nothing of the hub, so every module may use it: the copies existed
+because `export` imports `reports`, which imports `moderation`, which imports `public_projects`, and
+each later module could not import the first one's bound. One value cannot drift apart from its
+mirrors.
+
+**Rejected alternatives:**
+- Keeping a bound per module, each pointing at the shared value, so a test could lower one read's
+  bound alone: the tests that lower it (`test_public_lists_cost`, `test_reports_public`) check the
+  answer and the statements of a whole list, which every read on that path should cut alike.
+- Moving the bound into `export` or `namespace`: both import modules that would then import them
+  back.
+
+## A revocation reads the instance's attachments once, under its project locks
+
+**Id:** 17af5e56-276a-4ad3-b7a7-2fa53d574611
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** audit R5 batch 2, finding 3 (card tsk-eb06q8ef852k, PR #2131); review A2188 checked the lock order and the reads on PostgreSQL 16
+**Revisit when:** a step between the read and its uses starts writing an attachment or a membership column the read keeps, or `revoke` stops locking its projects first
+
+`auth.revocation.revoke` locks every project it writes in (`projects_of`,
+sorted, `lock_projects`), then reads the instance's live attachments with
+their memberships once (`_attached`, built on `instances.live_attachments`),
+before its own UPDATE of the credential. The overlap refresh, the lead's end
+(`_lead_revoked`) and `holder_stalled.revoked` all take those rows.
+
+**Reason:** the writes between the read and its uses (the credential, its
+session, the overlaps in `environment_overlap`) change no attachment and no
+membership column the rows hold, so one read under the locks answers all
+three. `live_attachments` keeps revoked credentials because the lead's end
+runs for a credential that was revoked already, not because the read comes
+after the UPDATE: it no longer does.
+
+**Rejected alternatives:**
+- One read per step, as before: four reads of the same rows in one
+  transaction (`projects_of`, the refresh loop, `_lead_revoked`,
+  `holder_stalled`).
+- Leaving revoked credentials out of `live_attachments`, as `attached_now()`
+  does: the lead's end of a credential revoked already would find nothing.

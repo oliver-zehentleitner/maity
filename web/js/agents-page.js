@@ -548,11 +548,11 @@ window.Maity = window.Maity || {};
     const { memberAdds, mayAdd } = bringing(ctx);
     const add = addPart({
       made: (made) => M.route.go(ctx.link("agents", "join") + "?agent=" + encodeURIComponent(made.id)),
-      opening: () => { if (menu) menu.closeAll(false); },
+      opening: () => { if (joining) joining.closeAll(false); },
     });
-    const menu = mayAdd ? M.joinMenu(ctx, { member: memberAdds, closeAny: () => add.close(false), started }) : null;
-    return [M.pageHead({ title, actions: [add.button, menu ? menu.el : null], tabs: agentsTabs(ctx, chosen) }),
-      add.slot, menu ? menu.slot : null];
+    const joining = mayAdd ? M.joinButton(ctx, { member: memberAdds, closeAny: () => add.close(false), started }) : null;
+    return [M.pageHead({ title, actions: [add.button, joining ? joining.el : null], tabs: agentsTabs(ctx, chosen) }),
+      add.slot, joining ? joining.slot : null];
   }
 
   // The credentials of one's own agents in a project, read for the ids asked for only (for a
@@ -580,23 +580,20 @@ window.Maity = window.Maity || {};
       .then((placed) => { if (placed) { listed = placed; append(slot, placed); } }, () => {});
   };
 
-  // One's own agents here as a tree under oneself, drawn again when a member changes.
+  // One's own agents here under oneself: the Team page's tree (js/org.js) with only these members
+  // fed in (tsk-zsbe48ty4ces), drawn again when a member changes.
   function fleetView(ctx, root) {
     const status = M.statusLine();
-    const box = h("div", { class: "org-box fleet-box" });
+    const box = h("div", { class: "org-box" });
     const draw = () => {
-      const fresh = M.org.drawFleet(ctx);
+      const fresh = M.org.drawTree(ctx, "own");
       M.dom.keepImages(box, fresh);
       append(clear(box), fresh);
     };
     append(root, tabHead(ctx, "organisation", M.t("agents.project.title")), h("h3", null, M.t("agents.fleet.title")),
       h("p", { class: "muted" }, M.t("agents.fleet.intro")), status.el, box);
     draw();
-    ctx.onEvents((events) => {
-      if (!events.some((e) => /^member_/.test(e.kind))) return;
-      M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(); status.done(); },
-        (err) => status.fail(M.t("org.reread_failed"), err));
-    });
+    M.org.follow(ctx, status, draw);
   }
 
   M.views.projectAgents = async function (ctx, root, args) {
@@ -719,8 +716,8 @@ window.Maity = window.Maity || {};
     // opens the panel at the head; the open joins stand as seats under the
     // cards, the others folded at the end. The panel, its form and a line
     // shown once live outside the redrawn cards, so a redraw loses neither.
-    // Join an agent is a menu (js/page-head.js, tsk-vkyp71qp95n9): any agent opens this page's
-    // panel, wired to its seats, its count and the limit; a runner opens the start form.
+    // Join an agent is one button (js/page-head.js, tsk-hdczmsq2r431): it opens this page's panel,
+    // wired to its seats, its count and the limit; the panel's last part starts on a runner instead.
     let anyClosed = null;
     const seatsBox = h("div", { class: "profiles join-seats" });
     const earlierBox = h("div", { class: "earlier-box" });
@@ -733,7 +730,8 @@ window.Maity = window.Maity || {};
     // What §3.1 counts: one's distinct agents with an active membership or
     // an open join; an instance of one already counted adds nothing.
     const ownMembers = () => items.filter((m) => P.ownAgent(m) && !m.removed_at);
-    const ownCount = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : [])).size;
+    const held = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : []));
+    const ownCount = () => held().size;
     const limitNote = h("span", { class: "muted member-agents-limit", id: "member-agents-limit" });
     // How many of one's agents are here, online, and the joins open.
     const countLine = h("p", { class: "muted agents-count" });
@@ -747,11 +745,13 @@ window.Maity = window.Maity || {};
       if (memberAdds) {
         const n = ownCount();
         const full = n >= maxOwn;
-        // At the limit the panel still makes an instance of one of them.
+        // At the limit the panel still makes an instance of one of them, and a profile with an
+        // open first join of one's own stays in the hub's held set (agents_held, §3.1): the hub
+        // takes it again without a new slot, so only holding none of them closes the way.
         const limit = [M.t("agents.limit", { n, count: maxOwn })];
-        if (full) limit.push(own.length ? M.t("agents.limit.instances_only") : M.t("agents.limit.no_more"));
+        if (full) limit.push(own.length ? M.t("agents.limit.instances_only") : n ? M.t("agents.limit.held_only") : M.t("agents.limit.no_more"));
         limitNote.textContent = limit.join(" · ");
-        anyClosed = full && !own.length ? limitNote.textContent : null;
+        anyClosed = full && !n ? limitNote.textContent : null;
       }
     }
     function drawJoins() {
@@ -764,31 +764,31 @@ window.Maity = window.Maity || {};
     }
 
     const panelSlot = h("div", { class: "join-panel-slot" });
-    const menu = mayAdd ? M.joinMenu(ctx, {
+    const joining = mayAdd ? M.joinButton(ctx, {
       member: memberAdds,
       any: (opener) => { if (J) J.open(opener, wanted); },
       anyDisabled: () => anyClosed,
       closeAny: () => { if (J) J.close(false); addProfile.close(false); },
     }) : null;
-    if (menu) menu.el.hidden = true;
+    if (joining) joining.el.hidden = true;
     // A profile made here is in no project yet: the join panel opens with it chosen.
     const addProfile = addPart({
       made: async (made, said) => {
         if (!J) return changed(made, said);
         await changed(made, M.t("agents.new.done_here", { handle: made.handle }));
         try { await J.reprofile(); } catch (err) { status.fail(M.t("agents.project.reread_failed"), err); return undefined; }
-        J.open(menu.button, made.id);
+        J.open(joining.button, made.id);
         return undefined;
       },
-      opening: () => { if (J) J.close(false); if (menu) menu.closeAll(false); },
+      opening: () => { if (J) J.close(false); if (joining) joining.closeAll(false); },
     });
     append(root, M.pageHead({ title: M.t("agents.project.title"), titleId: "project-agents-heading", note: memberAdds ? limitNote : null,
-      actions: [addProfile.button, menu ? menu.el : null], tabs: agentsTabs(ctx, "list") }),
+      actions: [addProfile.button, joining ? joining.el : null], tabs: agentsTabs(ctx, "list") }),
       h("p", { class: "hint agents-project-hint" }, (() => {
         const values = { name: ctx.project.name || ctx.slug, link: h("a", { href: "/agents" }, M.t("agents.title")) };
         return ctx.canAdmin ? M.tn("agents.project.hint_admin", values) : M.tn("agents.project.hint", values);
       })()),
-      countLine, status.el, addProfile.slot, menu ? menu.slot : null, panelSlot, note, cards, seatsBox, earlierBox);
+      countLine, status.el, addProfile.slot, joining ? joining.slot : null, panelSlot, note, cards, seatsBox, earlierBox);
     try {
       await readProfiles();
     } catch (err) {
@@ -798,19 +798,20 @@ window.Maity = window.Maity || {};
     if (mayAdd) {
       M.join.mount(ctx, {
         member: memberAdds,
-        full: () => memberAdds && ownCount() >= maxOwn,
+        // Full for a new profile only: one already held takes no new slot at the hub.
+        full: (id) => memberAdds && !(id && held().has(id)) && ownCount() >= maxOwn,
         changed: drawJoins,
         opened: (yes) => {
-          if (yes) { addProfile.close(false); menu.closeAll(false); } else menu.button.focus();
+          if (yes) { addProfile.close(false); joining.closeAll(false); } else joining.button.focus();
         },
       }).then((mounted) => {
         J = mounted;
-        menu.el.hidden = false;
+        joining.el.hidden = false;
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent of one's own here yet: the panel is the way
         // in, open at once. ?agent=<id> (Your agents' Add to a project): that profile chosen.
-        if (joinAsked || !ownMembers().length) J.open(menu.button, joinAsked ? M.route.current().query.get("agent") : null);
+        if (joinAsked || !ownMembers().length) J.open(joining.button, joinAsked ? M.route.current().query.get("agent") : null);
       }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, M.t("agents.project.joins_failed", { reason: err.message }))));
       // An agent running its line takes its seat: the list is read again,
       // unless the panel is open; then only the seats move.

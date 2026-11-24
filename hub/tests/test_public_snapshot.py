@@ -117,7 +117,7 @@ def test_a_public_merge_and_a_decision_on_a_public_card_are_shown(world: World) 
     # The merge as a pull request card, its text escaped; the decision as a line under it.
     assert '<a class="pr" href="https://github.com/o/r/pull/1" rel="nofollow ugc">' in text
     assert "<b>#1 merged &lt;b&gt;x&lt;/b&gt;</b>" in text
-    assert f"<span>Decided: {card_id}</span></li>" in text
+    assert f"<span>Decided: {card_id} Public card (req-1)</span></li>" in text
     raw = world.anyone.get(f"/api/v1/public/pages{BASE}").text
     assert "agt-secret-reason" not in raw and "secret/path.py" not in raw
 
@@ -151,7 +151,7 @@ def test_no_merge_while_the_repository_is_not_seen_public(world: World) -> None:
 def test_a_held_card_takes_its_decision_off_at_once_and_back_on_dismiss(world: World) -> None:
     card_id = world.owner.post(TASKS, {"title": "Spammy"}).json()["id"]
     item(world, decision(card_id))
-    assert texts(world) == [f"Decided: {card_id}"]
+    assert texts(world) == [f"Decided: {card_id} Spammy (req-1)"]
     got = report(world.anna, {"type": "card", "id": card_id, "project": "maintainer/maity"}, "spam")
     assert got.status_code == 201, got.text
 
@@ -162,7 +162,21 @@ def test_a_held_card_takes_its_decision_off_at_once_and_back_on_dismiss(world: W
     resolved("hide")
     assert texts(world) == []
     resolved("dismiss")
-    assert texts(world) == [f"Decided: {card_id}"]
+    assert texts(world) == [f"Decided: {card_id} Spammy (req-1)"]
+
+
+def test_a_decision_shows_the_card_s_current_title_at_once_after_an_edit(world: World) -> None:
+    """§16.9: the stored text keeps the title the card had when the decision was made; the page
+    builds the text from the card as it is, and a title edit renders the page at once."""
+    card_id = world.owner.post(TASKS, {"title": "Leaky first title"}).json()["id"]
+    stored = {**decision(card_id), "text": f"Decided: {card_id} Leaky first title (req-1)"}
+    item(world, stored)
+    assert texts(world) == [f"Decided: {card_id} Leaky first title (req-1)"]
+    got = world.owner.patch(f"{TASKS}/{card_id}", {"title": "Neutral title"})
+    assert got.status_code == 200, got.text
+    assert texts(world) == [f"Decided: {card_id} Neutral title (req-1)"]
+    page = world.anyone.get(BASE).text
+    assert "Leaky first title" not in page and "Neutral title (req-1)" in page
 
 
 def test_only_a_label_or_a_security_card_s_status_may_take_a_ticker_entry_off(
@@ -178,7 +192,8 @@ def test_only_a_label_or_a_security_card_s_status_may_take_a_ticker_entry_off(
         assert hides(conn, "task_updated", {"fields": ["status"]}, secret)
         assert hides(conn, "task_updated", {"fields": ["label"]}, plain)
         assert not hides(conn, "task_updated", {"fields": ["status"]}, plain)
-        assert not hides(conn, "task_updated", {"fields": ["title", "body"]}, secret)
+        assert hides(conn, "task_updated", {"fields": ["title", "body"]}, plain)  # its text
+        assert not hides(conn, "task_updated", {"fields": ["body"]}, secret)
         moved = {"status_before": "in_progress", "status_after": "review"}
         assert hides(conn, "task_reported", moved, secret)
         assert not hides(conn, "task_reported", moved, plain)
@@ -199,7 +214,7 @@ def test_a_card_event_renders_no_other_card_s_page_under_the_project_lock(
     rendered = count_renders(monkeypatch)
     board = [("card", edited), ("project_views", world.project_id)]
     for change, own_page in (
-        ({"title": "Edited again"}, []),
+        ({"title": "Edited again"}, [("project", world.project_id)]),  # a decision's text
         ({"status": "proposed"}, []),
         ({"label": "chore"}, [("project", world.project_id)]),  # its own page, no dependents
     ):
@@ -267,8 +282,7 @@ def test_who_is_online_is_counted_and_named_as_the_board_names_them(world: World
 
 
 def test_an_away_or_paused_member_is_not_counted_online(world: World, hub: Any) -> None:
-    from maity_hub.seen import SEEN_EVERY
-    from maity_hub.views import ONLINE
+    from maity_hub.seen import ONLINE, SEEN_EVERY
 
     worker = public_snapshot.Worker(world.migrated, hub)
     seen(world, world.anna_member, clock.now())

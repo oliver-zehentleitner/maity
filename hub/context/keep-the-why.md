@@ -202,6 +202,12 @@ wait for the next sweep, at most a minute.
   so the sweep's cost follows the outstanding commitments, not the history of
   instances.
 
+**Updated 2026-11-21 (tsk-yzj829xdmqyy):** the commitment's columns (`ktw_*`)
+moved from `credential` to the instance's row in `instance_attachment`
+(migration `20261121120000_inst_attach`), since the commitment is per project
+under the contract of one instance in several projects (§6.23). What the entry
+says of the credential row now holds for that row.
+
 ## The why on a report is validated by the hub in code, and only its shape is checked
 
 **Id:** 71939c22-e16b-42ba-9621-8454bb93d0ae

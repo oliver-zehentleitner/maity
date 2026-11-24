@@ -19,10 +19,22 @@ avatar), often after project locks, and a shared lock on it held from a transact
 start would deadlock against those. Nothing but this module and the deletion locks
 `account_lock`.
 
+Every human has the row from the transaction that makes the account (`make_row`; 0076 and
+a later backfill for the humans before). It is never made on first need: two transactions
+that each inserted their own row and then reached for the other's waited for each other's
+uncommitted insert (#1532). A human found without one is a bug (`AccountLockMissing`).
+
 Read-only transactions take no lock: under READ COMMITTED (and SQLite's serialised
 writer) a plain read holds nothing the deletion waits for, and what it reads of a
 deleted account is shaped by the views (§2.9). SQLite ignores the lock clause; its
 `BEGIN IMMEDIATE` already makes one transaction wait for the other.
+
+A call a bridge makes for an agent (`Maity-For`, §2.3) passes a second check the same way:
+before its first locking statement the transaction takes the project's lock and refuses
+(`not_your_bridge`) when the connection has ended since `bridges.carry` read it. An ending
+holds the same project lock, so a carried write either commits before the ending or waits
+for it and is refused, whether or not it emits an event. The project lock comes first, as
+in every write of the project, after its organisation's lock where it has one.
 
 Only `deleted_at` is checked, not the calling session's end: a logout ends its own
 session inside the transaction that is checked; the deletion ends every session and
@@ -36,13 +48,15 @@ from contextvars import ContextVar
 from typing import Any
 
 from sqlalchemy import Connection, Engine, event, insert, select
-from sqlalchemy.exc import IntegrityError
 
 from maity_hub import tables as t
 from maity_hub.errors import unauthenticated
 
 _HUMAN: ContextVar[str | None] = ContextVar("maity_write_guard_human", default=None)
 _HELD = "maity_write_guard_held"  # conn.info: this transaction passed the check
+# A bridge's call for an agent: the project and the connection it was carried through.
+_BRIDGE: ContextVar[tuple[str, str] | None] = ContextVar("maity_write_guard_bridge", default=None)
+_BRIDGE_HELD = "maity_write_guard_bridge_held"  # conn.info: the connection was checked
 _LOCKING = re.compile(
     r"^\s*(INSERT|UPDATE|DELETE)\b|\bFOR\s+(NO\s+KEY\s+)?UPDATE\b|\bFOR\s+(KEY\s+)?SHARE\b"
     r"|\bLOCK\s+IN\s+SHARE\s+MODE\b",
@@ -54,6 +68,11 @@ def bind(human_id: str) -> None:
     """The calling human of this request (its context, copied into the thread the route
     runs in); set once the caller is authenticated."""
     _HUMAN.set(human_id)
+
+
+def bind_bridge(project_id: str, bridge_id: str) -> None:
+    """The connection a bridge's call is carried through; set once the caller is resolved."""
+    _BRIDGE.set((project_id, bridge_id))
 
 
 def install(engine: Engine) -> None:
@@ -76,15 +95,38 @@ def locking(statement: str) -> bool:
 def _before(
     conn: Any, cursor: Any, statement: str, params: Any, context: Any, executemany: bool
 ) -> None:
-    human_id = _HUMAN.get()
-    if human_id is None or conn.info.get(_HELD):
+    human_id, carried = _HUMAN.get(), _BRIDGE.get()
+    held = conn.info.get(_HELD) or human_id is None
+    bridge_held = conn.info.get(_BRIDGE_HELD) or carried is None
+    if held and bridge_held:
         return
     # Taken before the first savepoint too: a lock taken inside a savepoint is given up
     # when that savepoint rolls back (PostgreSQL), and the flag would not know it.
     if not (locking(statement) or statement.lstrip()[:9].upper() == "SAVEPOINT"):
         return
-    conn.info[_HELD] = True  # set first: the check's own statements pass through here
-    hold(conn, human_id)
+    if not bridge_held:
+        assert carried is not None
+        conn.info[_BRIDGE_HELD] = True  # set first: the check's own statements pass here
+        still_carried(conn, *carried)
+    if not held:
+        assert human_id is not None
+        conn.info[_HELD] = True  # set first: the check's own statements pass through here
+        hold(conn, human_id)
+
+
+def still_carried(conn: Connection, project_id: str, bridge_id: str) -> None:
+    """Take the project's lock and refuse a connection that ended since the call was
+    carried (§2.3). Called before a carried transaction's first locking statement."""
+    from maity_hub import bridges, events, orgs  # they reach this module through `db`
+
+    # The order every write keeps: an organisation's lock before its project's (§6.26).
+    owner_org = conn.execute(
+        select(t.project.c.owner_org_id).where(t.project.c.id == project_id)
+    ).scalar()
+    if owner_org is not None:
+        orgs.lock(conn, owner_org)
+    events.lock_project(conn, project_id)
+    bridges.still_live(conn, bridge_id)
 
 
 def _forget(conn: Any) -> None:
@@ -95,31 +137,46 @@ def _forget(conn: Any) -> None:
     if conn.invalidated:
         return
     conn.info.pop(_HELD, None)
+    conn.info.pop(_BRIDGE_HELD, None)
 
 
 def exempt(conn: Connection) -> None:
     """Let this transaction write without the check: one that changes nothing of an account,
-    opened beside the caller's own transaction (`shared_counts`). Taking the shared lock there
-    would wait for the caller's transaction, which may have just made the `account_lock` row and
-    not committed it yet: a request waiting on itself."""
+    opened beside the caller's own transaction (`shared_counts`). It needs no account lock, and
+    taking one there could wait for the caller's own transaction (on MariaDB a deletion waiting
+    for the caller's shared lock queues ahead of a second shared request): a request waiting on
+    itself. Before the rows were made with the account, the caller's transaction could also hold
+    the row's uncommitted insert."""
     conn.info[_HELD] = True
+    conn.info[_BRIDGE_HELD] = True
 
 
-def ensure_row(conn: Connection, human_id: str) -> None:
-    """The human's `account_lock` row, made when missing (a human made after 0076)."""
+class AccountLockMissing(RuntimeError):
+    """A human without an `account_lock` row: the account was made by a path that skipped
+    `make_row`. A bug, refused loudly, since a lock on no row would guard nothing."""
+
+
+def make_row(conn: Connection, human_id: str) -> None:
+    """The human's `account_lock` row, made in the transaction that makes the human (every
+    `insert(t.human)`; 0076 and its backfill made the rows of the humans before). Never made
+    lazily inside a locking transaction: two of them each inserting their own row and then
+    waiting for the other's uncommitted insert deadlock (#1532)."""
+    conn.execute(insert(t.account_lock).values(human_id=human_id))
+
+
+def lock_row(conn: Connection, human_id: str, *, shared: bool) -> None:
+    """Take the human's `account_lock` row, shared or exclusively; `AccountLockMissing` when
+    the human exists without one. No human, nothing to lock: the caller's own read of the
+    human row decides what that means."""
     found = conn.execute(
-        select(t.account_lock.c.human_id).where(t.account_lock.c.human_id == human_id)
+        select(t.account_lock.c.human_id)
+        .where(t.account_lock.c.human_id == human_id)
+        .with_for_update(read=shared)
     ).first()
     if found is not None:
         return
-    exists = conn.execute(select(t.human.c.id).where(t.human.c.id == human_id)).first()
-    if exists is None:
-        return
-    try:
-        with conn.begin_nested():
-            conn.execute(insert(t.account_lock).values(human_id=human_id))
-    except IntegrityError:
-        pass  # made at the same moment by another transaction
+    if conn.execute(select(t.human.c.id).where(t.human.c.id == human_id)).first() is not None:
+        raise AccountLockMissing(f"the human {human_id} has no account_lock row")
 
 
 def share(conn: Connection, human_id: str) -> None:
@@ -127,12 +184,7 @@ def share(conn: Connection, human_id: str) -> None:
     account that no caller of it makes (the address's confirmation link, the mail links of a
     password reset, the daily cap's unlock and an admin's second-factor reset), so it takes
     its place in the same order against a deletion."""
-    ensure_row(conn, human_id)
-    conn.execute(
-        select(t.account_lock.c.human_id)
-        .where(t.account_lock.c.human_id == human_id)
-        .with_for_update(read=True)
-    ).first()
+    lock_row(conn, human_id, shared=True)
 
 
 def hold(conn: Connection, human_id: str) -> None:

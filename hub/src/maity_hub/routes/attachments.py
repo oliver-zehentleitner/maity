@@ -224,7 +224,7 @@ def _check_room(conn: Connection, mine: Any, settings: Any, size: int | None) ->
     instance: concurrent uploads into different projects may pass it by at most the sizes of
     the other uploads in flight when the last of them to be accepted was checked (§8.7)."""
     if size is not None:
-        quota = limits.of(conn, settings, limits.PROJECT_STORAGE)
+        quota = limits.project_storage(conn, settings, mine.project.id)
         used = attachments.used(conn, mine.project.id)
         if quota is not None and used + size > quota:
             raise attachments.quota_error("project", used=used, quota=quota)

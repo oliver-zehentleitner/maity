@@ -10,6 +10,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -204,6 +207,9 @@
      "social": {
       "object": {}
      },
+     "starred": {
+      "array": null
+     },
      "start_tabs": "null",
      "terms": "null",
      "timezone": "null",
@@ -389,6 +395,7 @@
     "object": {
      "chat": "null",
      "discussions": "null",
+     "docs": "null",
      "issues": "null",
      "wiki": "null"
     }
@@ -431,6 +438,8 @@
      "outside_roles": {
       "array": "string"
      },
+     "own_agents": "string",
+     "own_approvals": "number",
      "preset": "string",
      "signing": "string",
      "spawn_consent_by": "string",
@@ -813,6 +822,17 @@
         "id": "string",
         "runner_name": "string",
         "state": "string"
+       }
+      },
+      "placements": {
+       "array": {
+        "object": {
+         "desired": "string",
+         "id": "string",
+         "instance": "null",
+         "runner_name": "string",
+         "state": "string"
+        }
        }
       },
       "presence": "string",
@@ -1429,6 +1449,9 @@
            "available": "boolean",
            "confinement": "string",
            "default_mode": "string",
+           "efforts": {
+            "array": null
+           },
            "id": "string",
            "models": {
             "array": "string"
@@ -1515,6 +1538,9 @@
         "available": "boolean",
         "confinement": "string",
         "default_mode": "string",
+        "efforts": {
+         "array": null
+        },
         "id": "string",
         "models": {
          "array": "string"
@@ -1834,6 +1860,9 @@
    "owner_preferences": "boolean",
    "paused": "null",
    "placement": "null",
+   "placements": {
+    "array": null
+   },
    "presence": "string",
    "reports_to": "null",
    "role": "string",

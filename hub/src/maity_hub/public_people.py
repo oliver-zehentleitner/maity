@@ -25,7 +25,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, moderation, person_links, public_pages, render
+from maity_hub import clock, moderation, namespace, person_links, public_pages, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -159,7 +159,7 @@ def agent_entry(listed: ListedAgent) -> dict[str, Any]:
 def _listed(conn: Connection, human: Any) -> list[Listed]:
     """The projects with a public page the person is a member of, by full name, only while
     their profile is on (§16.9)."""
-    from maity_hub import namespace, public_projects
+    from maity_hub import public_projects
 
     m = t.membership.c
     projects = conn.execute(
@@ -168,17 +168,17 @@ def _listed(conn: Connection, human: Any) -> list[Listed]:
         .where(t.project.c.public_page == "on", m.human_id == human.id, m.active.is_(True))
         .order_by(t.project.c.id)
     ).all()
-    return (
-        sorted(
-            (
-                Listed(namespace.full_name(conn, p), p.name, p.member_role, p, p.membership_id)
-                for p in projects
-                if public_projects.served(conn, p)
-            ),
-            key=lambda listed: listed.full_name,
-        )
-        if human.public_profile
-        else []
+    if not human.public_profile:
+        return []
+    public = public_projects.served_of(conn, projects)
+    names = namespace.full_names(conn, public)
+    return sorted(
+        (
+            Listed(names[p.id], p.name, p.member_role, p, p.membership_id)
+            for p in projects
+            if p.id in public
+        ),
+        key=lambda listed: listed.full_name,
     )
 
 
@@ -223,8 +223,10 @@ def _data(
     agents: list[ListedAgent],
     shown: Shown,
     picture: str | None,
+    links: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """What the visitors' route answers; `website` and `social` only as the page shows them."""
+    """What the visitors' route answers; `website` and `social` only as the page shows them:
+    with the profile on and `links` (`person_links.public`) given."""
     data: dict[str, Any] = {
         "name": human.display_name,
         "handle": human.handle,
@@ -239,11 +241,8 @@ def _data(
         "online": shown.online,
         "statistics": shown.statistics,
     }
-    if human.public_profile and human.links_visible == "everyone":
-        data["website"] = human.website
-        data["social"] = {
-            network: human.social[network] for network in person_links.built(human.social)
-        }
+    if human.public_profile and links is not None:
+        data.update(links)
     return data
 
 
@@ -261,7 +260,9 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     named = _listed(conn, human)
     agents = listed_agents(conn, human)
     shown = _shown(conn, human, named)
-    data = _data(human, named, agents, shown, picture)
+    # No hold to pass: a person under a hold on the profile has no page (`served`).
+    links = person_links.public(conn, human)
+    data = _data(human, named, agents, shown, picture, links)
     path = f"/{human.handle}"
     # One page: the agents stand under the projects, no tabs (§16.9, "A person's agents").
     content = public_design.profile(KIND, data, path)

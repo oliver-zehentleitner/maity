@@ -13,7 +13,7 @@ a personal hub with SQLite running in about five minutes.
 
 | Path | When | Database | You provide |
 |---|---|---|---|
-| [Plain Python](#plain-python) | one machine you control; the smallest setup | SQLite (default), or an existing PostgreSQL or MariaDB | Python 3.12+, a TLS reverse proxy for anything beyond this machine |
+| [Plain Python](#plain-python) | one machine you control; the smallest setup | SQLite (default), or an existing PostgreSQL or MariaDB ([versions](#database-versions)) | Python 3.12+, a TLS reverse proxy for anything beyond this machine |
 | [Docker Compose](#docker-compose) | one host with Docker; PostgreSQL included | PostgreSQL 17 in a container | Docker, a TLS reverse proxy on the same host |
 | [Helm on Kubernetes](#helm-on-kubernetes) | a cluster you already run | an existing PostgreSQL, usually managed | ingress controller, TLS (cert-manager), DNS, a registry |
 | [k3s on one small instance](#kubernetes-on-a-single-small-instance-k3s) | one VM, Kubernetes without a cluster to run | PostgreSQL 17 in the same k3s | a VM with a public IPv4 address, DNS |
@@ -28,6 +28,22 @@ wake-ups, nonces and limits through it (`deploy/helm/maity-hub/README.md`,
 Agents and browsers reach the hub under one address, `MAITY_PUBLIC_URL`.
 It appears in join links and in `/help`, so set it to the `https://` URL
 others use.
+
+## Database versions
+
+| Database | Tested versions | What CI runs |
+|---|---|---|
+| SQLite | the one your Python ships | the full suite on every pull request that changes the hub |
+| PostgreSQL | 17 | the full suite on every pull request that changes the hub |
+| MariaDB | 11.4 LTS and 11.8 LTS | 11.4: the full suite on `main` after hub changes; 11.8: the migrations, the schema checks and the notification tests |
+| MySQL | none | nothing: MariaDB stands in for it |
+
+The supported MariaDB versions are 11.4 LTS and 11.8 LTS; other versions
+are untested. MariaDB 11.7 and newer reserve the word `vector`, which hub
+releases up to 0.1.0a10 use as a column name without quoting it: their
+`maity-hub migrate` fails on a new database there, and on an existing one
+the hub fails when it stores a notification position. Upgrade the hub to a
+later release first, then the MariaDB server.
 
 ## TLS and the client address
 
@@ -255,9 +271,14 @@ them with its release, and this guide does not pin them.
 kubectl create namespace maity
 (umask 077; openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40 > pg-password)
 kubectl -n maity create secret generic maity-postgres --from-file=password=./pg-password
-(umask 077; { printf 'postgresql://maity:'; cat pg-password; printf '@maity-postgres:5432/maity'; } > database-url)
+rm pg-password
+# The two roles' passwords (Database roles, below): the migrate Job's and the hub's URLs
+for r in owner app; do (umask 077; openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40 > "$r-password"); done
+(umask 077; { printf 'postgresql://maity_owner:'; cat owner-password; printf '@maity-postgres:5432/maity'; } > database-url)
+kubectl -n maity create secret generic maity-hub-db-migrate --from-file=database-url=./database-url
+(umask 077; { printf 'postgresql://maity_app:'; cat app-password; printf '@maity-postgres:5432/maity'; } > database-url)
 kubectl -n maity create secret generic maity-hub-db --from-file=database-url=./database-url
-rm pg-password database-url
+rm database-url   # keep owner-password and app-password until step 5
 (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > secret-key)
 kubectl -n maity create secret generic maity-secret-key --from-file=secret-key=./secret-key
 (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > mail-signing-key)
@@ -284,6 +305,45 @@ gpg --armor --export-secret-keys "maity backups" > maity-backup-private.asc   # 
 Without the private key, no backup can be restored. Keep its copy where you keep
 `secret-key`, and keep it off the instance.
 
+The backup Job also signs each encrypted file with a second key, made for that
+alone, so that a restore can check that a backup is one the Job wrote and was
+not changed since. Its private key goes into the cluster (the Job signs with
+it), so it has no passphrase and does nothing else; only its fingerprint is
+kept on the restore machine. It must be a key of its own: the Job refuses a
+signing key that can also decrypt, and one that is the key in
+`maity-backup-key`, and one Secret that holds more than one key.
+
+You keep this key; nobody else makes, reads or stores it:
+
+1. On your own machine, the one you restore from (where the decryption key
+   is), not on the instance, with `kubectl` pointed at the instance's
+   cluster, run the block below. It makes the key without a passphrase,
+   writes its private half to a file only readable by you, puts that file
+   into the Secret `maity-backup-signing-key`, and deletes the file. gpg on
+   your machine keeps the public half for checking.
+2. Note the fingerprint it prints: it is `MAITY_BACKUP_SIGNER` in the
+   shell where you restore (below). Keep it with your restore notes.
+3. After the next night's Job, its log says `signed by <fingerprint>` in
+   the `dump ok:` line (Backups on this setup, below).
+
+The block picks the new key by the fingerprint gpg reports when it makes
+it, so the same block also replaces an earlier signing key (below):
+
+```sh
+fpr=$(gpg --batch --yes --status-fd 1 --passphrase "" --quick-gen-key "maity backup signing <you@example.org>" ed25519 sign never \
+  | awk '$2 == "KEY_CREATED" {print $4}')
+(umask 077; gpg --armor --export-secret-keys "$fpr!" > backup-signing.key)
+kubectl -n maity create secret generic maity-backup-signing-key --from-file=backup-signing.key=./backup-signing.key \
+  --dry-run=client -o yaml | kubectl apply -f -
+rm backup-signing.key
+echo "$fpr"   # the fingerprint: MAITY_BACKUP_SIGNER where you restore
+```
+
+Without that Secret the Job still writes encrypted backups, unsigned, and its
+log says so first thing every night. A restore refuses an unsigned backup,
+and one whose signature does not check out against `MAITY_BACKUP_SIGNER`,
+unless you set `MAITY_RESTORE_UNSIGNED=1` for an emergency restore (below).
+
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
 `uploads.yaml` and `hub-values.yaml` first (and drop the join host from
 `cert.yaml` and `hub-values.yaml` if you run without one):
@@ -293,6 +353,16 @@ kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-n
   -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml \
   -f deploy/k3s-single/uploads.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
+```
+
+Then the hub's two database roles, once PostgreSQL is ready. The passwords
+go to `psql` on standard input:
+
+```sh
+kubectl -n maity wait --for=condition=ready pod/maity-postgres-0 --timeout=180s
+{ printf "%s '%s'\n" '\set owner_password' "$(cat owner-password)" '\set app_password' "$(cat app-password)"
+  cat deploy/postgres-roles.sql; } | kubectl -n maity exec -i maity-postgres-0 -- psql -X -v ON_ERROR_STOP=1 -U maity -d maity
+rm owner-password app-password
 ```
 
 Adding the join host to a running installation: extend the Certificate and
@@ -332,7 +402,24 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   it. Pull the `.gpg` files to another machine, for example with `rsync` from a cron job there; the files are 0600 and
   owned by the containers' users under k3s's storage path, so the account that reads them needs root on the instance.
   They are encrypted, so the
-  copy needs no further protection, but the private key must never be stored with them.
+  copy needs no further protection, but the private key must never be stored with them. Copy the `.sig` files
+  with them.
+- **Signed backups.** With the Secret `maity-backup-signing-key` (step 4) each file has a detached signature next to
+  it, `<file>.sig`, made over the encrypted file, so a copy can be checked without the private decryption key:
+  `gpg --status-fd 1 --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg | grep -E "^\[GNUPG:\] VALIDSIG ($MAITY_BACKUP_SIGNER .*|.* $MAITY_BACKUP_SIGNER)$"`
+  prints a line only for a good signature by that key (a plain `gpg --verify` accepts any key in your keyring). The
+  signature also carries the file's name, time stamp included, as the notation `backup-file@maity` (`gpg --verify`
+  prints it): keep the files under the names the Job gave them, since a restore compares that name with the one it is
+  given. The restore blocks below check all of it, and refuse a signing key that is revoked or expired. The signing key is on the cluster, so the
+  signature shows that a file came from the Job and was not changed on the copy's way or where it is kept; it
+  does not hold against someone who can read the cluster's Secrets. A key there that cannot sign (one with a
+  passphrase, or a public key only), that can also decrypt, or that is the key in `maity-backup-key` fails the Job
+  with `backup failed: maity-backup-signing-key …` before anything is written.
+- **A new signing key** (it was exposed, or is due): run the block of step 4 again, which makes a new key and replaces
+  the Secret, then set `MAITY_BACKUP_SIGNER` to the new fingerprint and delete the old key on this machine, so nothing
+  can sign with it there: `gpg --batch --yes --delete-secret-and-public-keys "<old fingerprint>!"`. The next night's
+  backups are signed with the new key. Older backups no longer pass the check; restore one only knowingly, with
+  `MAITY_RESTORE_UNSIGNED=1` (its signature is then not checked).
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
@@ -341,7 +428,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   running hub ([Backups](#backups)), make a new key pair, and replace the Secret.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
   (an older version of the script reported "Complete" for a dump that never happened). After a dump you rely on, the Job's log lists
-  the line `dump ok: /backups/maity-<UTC time>.dump.gpg <bytes> attachments <bytes> (encrypted; plain bytes: …)`. The first sizes are the encrypted files' sizes, the last ones the sizes before encryption.
+  the line `dump ok: /backups/maity-<UTC time>.dump.gpg <bytes> attachments <bytes> (encrypted, signed by <fingerprint>; plain bytes: …)`
+  (`unsigned` without the signing key). The first sizes are the encrypted files' sizes, the last ones the sizes before encryption.
   A Job that fails with `backup failed: no public key` has no `maity-backup-key` (step 4). Read the log of the pod
   that succeeded, not of a failed earlier try:
   `kubectl -n maity logs "$(kubectl -n maity get pod -l job-name=<job> --field-selector=status.phase=Succeeded -o name | head -1)"`
@@ -354,6 +442,13 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   against the free disk, and look at it when the attachments grow (the backup Job refuses to write a tar that would not fit twice). Images and
   most files are compressed already, so the tar is not compressed.
 - **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk.
+  Set `MAITY_BACKUP_SIGNER` to the signing key's fingerprint (step 4) in the shell that runs the blocks below, and
+  keep the `.sig` file next to each backup: both blocks then check the signature before they decrypt anything, and stop
+  when it is missing, holds more than one signature, does not verify, is by another key, or was made for another file
+  name (the name holds the backup's time stamp). The Job writes exactly one signature per file, so the key and the name
+  checked are always those of the same signature. Without `MAITY_BACKUP_SIGNER` they refuse too. A backup from
+  before the signing key, or one that no longer checks out, restores only with `MAITY_RESTORE_UNSIGNED=1` in that
+  shell: an emergency switch, which skips the check and says so in the block's output:
   Every `kubectl` below names the instance's kube context (`kubectl config get-contexts` lists them; `<kube context>` is
   that name), so a shell whose current context points at another cluster restores nothing there:
   1. Scale the hub to 0 (`kubectl --context <kube context> -n maity scale deploy/maity-maity-hub --replicas=0`).
@@ -363,7 +458,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      at the first failure and keeps the decrypted file for a second try; it also stops before anything is restored while
      the hub's Deployment wants a replica, one of its pods is still there, or either could not be read (each `kubectl` is
      an assignment of its own, since `sh -e` does not stop on a command substitution that fails inside a test).
-     `pg_restore` here must be 17 or later:
+     After the restore it runs `deploy/postgres-roles.sql` again ([Database roles](#database-roles)), so run it from the
+     checkout's root. `pg_restore` here must be 17 or later:
      ```sh
      sh -eu -c '
        ctx=$1
@@ -372,9 +468,26 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
        [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
        [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
+       signer=$(printf "%s" "${MAITY_BACKUP_SIGNER:-}" | tr -d " " | tr abcdef ABCDEF)   # the fingerprint of the signing key, if set
+       if [ "${MAITY_RESTORE_UNSIGNED:-}" = 1 ]; then   # the emergency switch: no check, and a line that says so
+         echo "MAITY_RESTORE_UNSIGNED=1: $2 is restored WITHOUT checking its signature (emergency restore)" >&2
+       elif [ -n "$signer" ]; then
+         printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
+         st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
+         [ "$(printf "%s\n" "$st" | grep -c "^\[GNUPG:\] NEWSIG")" = 1 ] || { echo "$2.sig holds more than one signature: the backup Job writes one" >&2; exit 1; }
+         printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
+         ! printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] (REVKEYSIG|KEYREVOKED|EXPKEYSIG)( |$)" || { echo "$2: the signing key is revoked or expired" >&2; exit 1; }
+         printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \
+           || { echo "$2 was signed under another name: give it the name the backup Job wrote" >&2; exit 1; }   # the time stamp is signed too
+       else
+         echo "MAITY_BACKUP_SIGNER is not set: set it to the fingerprint of the signing key, or MAITY_RESTORE_UNSIGNED=1 to restore an unsigned backup in an emergency" >&2
+         exit 1
+       fi
        gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
        k exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
+       # the two roles again: a dump from before them restores its objects to the superuser ("Database roles")
+       k exec -i maity-postgres-0 -- psql -X -q -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql
        rm maity.dump
      ' restore <kube context> maity-<UTC time>.dump.gpg
      ```
@@ -473,7 +586,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      ' open <kube context>
      ```
      Then check that the public address answers. The next `helm upgrade` writes the chart's rules anyway.
-- **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
+- **Test a restore** once after setting up the key, and after every new key: check the signature by its fingerprint
+  (the `gpg --status-fd 1 --verify … | grep … VALIDSIG …` line under "Signed backups"), then decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
   attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
   (GNU tar). That proves the key and the whole file together; a listing alone (`pg_restore --list`, `tar -tf`) passes a
@@ -484,7 +598,11 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   `uploads.yaml` existed applies it once, with its host name, like step 5.
   One whose backups were not yet encrypted creates the Secret
   `maity-backup-key` first (step 4) and applies the new `backup.yaml`
-  after it: without the key every night's Job fails.
+  after it: without the key every night's Job fails. One whose backups are
+  not yet signed creates `maity-backup-signing-key` (step 4) and applies the
+  new `backup.yaml`; until it does, the backups stay unsigned with a warning,
+  and restoring one needs `MAITY_RESTORE_UNSIGNED=1`. Restores of backups
+  from before the signing key need it too.
 - **The request limit** (`request-limit.yaml`) is one limit per client
   address for every request, in Traefik: 50 a second, bursts of 200, 100
   open at a time, and for uploads 4 at a time per address and 10 in all on
@@ -511,8 +629,16 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - the hub and its migrate Job (label `app.kubernetes.io/name: maity-hub`)
 - the backup Job (label `app: maity-pg-dump`)
 
-Any other pod in the cluster gets no answer on 5432. k3s enforces
+Any other pod in the cluster gets no answer on 5432, and PostgreSQL itself
+may open no connection at all (its egress policy has no rule). k3s enforces
 NetworkPolicy out of the box.
+
+**So is the hub's outbound traffic.** `hub-values.yaml` turns on the chart's
+egress policy (`networkPolicy.egress`): the hub's pods may reach DNS
+(CoreDNS in `kube-system`), PostgreSQL on 5432, any address on 443 (the
+forge, Keep the Why reads, an S3 store) and the SMTP port of `mail`, nothing
+else. A plain-HTTP service in the cluster (a MinIO beside the hub) needs a
+rule in `networkPolicy.egress.extra`.
 
 ## The first account, project and agent
 
@@ -530,7 +656,7 @@ NetworkPolicy out of the box.
      - Helm (release `maity` in namespace `maity`): `kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" --email <you@example.org> < password-file`
 2. **Sign in** with that address at `MAITY_PUBLIC_URL`, then **Create a project** (slug,
    name, policy).
-3. **Join an agent:** in the project, *Join an agent* → *Add any agent* creates a one-time
+3. **Join an agent:** in the project, *Join an agent* creates a one-time
    line. Paste it into the agent's session, in the clone it works in. The
    agent needs the `maity` CLI (`pipx install maity`, see
    [`cli/`](../../cli/README.md)) or follows the join page with `curl`.
@@ -545,8 +671,10 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
 1. **Mail first.** Set `MAITY_MAIL_SIGNING_KEY` and the SMTP server (host and
    sender at least), then send a test mail from *Mail settings* in the admin area.
    Without complete, enabled mail the hub refuses to open registration, and a
-   mode set in the environment stays closed in effect, with a warning in the
-   log.
+   mode set in the environment stays closed in effect. Nothing is logged for
+   it: `GET /api/v1/admin/settings/registration` shows `effective_mode`
+   `closed` with what is `missing`, and a registration is answered 403 with
+   the reason `registration_closed`.
 2. **The legal pages.** Write the imprint, privacy notice and terms as instance
    admin, before anyone registers. They live in the database, not in the
    repository. The registration form asks for the terms once a `terms` page
@@ -565,6 +693,98 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
    `MAITY_REGISTRATION_DOMAINS` or `MAITY_REGISTRATION_ADDRESSES`) or `open`, or
    choose the mode in the dashboard. `GET /api/v1/admin/settings/registration`
    shows `effective_mode` and, under `missing`, what still holds it closed.
+
+## Database roles
+
+On PostgreSQL the hub uses two roles of its own besides the superuser, so
+that the running hub cannot change the schema and the migrations do not run
+with every right on the server:
+
+| Role | Who logs in with it | What it may do |
+|---|---|---|
+| `maity` (the superuser) | you, for admin work and restores | everything |
+| `maity_owner` | `maity-hub migrate` (Compose's `migrate` service, the chart's migrate Job via `database.migrate.existingSecret`), and the k3s backup Job once the Secret `maity-hub-db-migrate` exists | owns the database and every object of the hub in it; no superuser, cannot create databases or roles |
+| `maity_app` | the running hub | reads and writes rows (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, sequences), nothing else |
+
+[`deploy/postgres-roles.sql`](../../deploy/postgres-roles.sql) sets them up
+in the hub's database, run by the superuser with `psql`. It takes the two
+passwords as psql variables on standard input, can run again (it then sets
+the passwords given), and grants `maity_app` the rows of every table the
+migrations create later too. It only grants: a right given to `maity_app`
+by hand (`TRUNCATE`, say) stays after it runs again. Each URL names its role:
+`postgresql://maity_app:<password>@<host>/maity` for the hub,
+`postgresql://maity_owner:<password>@<host>/maity` for the migrations.
+
+- **New installs:** Compose runs the script on the volume's first start
+  (`deploy/postgres-init-roles.sh`); the k3s walkthrough runs it in step 5;
+  with your own PostgreSQL, run it as shown at the top of the file, then
+  give `maity-hub migrate` the owner's URL and `maity-hub serve` the app's
+  (Helm: `database.existingSecret` and `database.migrate.existingSecret`).
+- **A restore, and the roles.** Roles are not in a dump, and a dump from
+  before the two roles brings the hub's objects back owned by the superuser,
+  without `maity_app`'s rights: the hub then cannot read its tables. So run
+  the script again after every restore, without passwords (it keeps them):
+  `psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql`.
+  It hands everything back to `maity_owner` and grants `maity_app` its rows;
+  for a dump that already names `maity_owner` it changes nothing, and with
+  `after_restore` it does nothing where the roles were never set up. The k3s
+  restore block above ([k3s](#kubernetes-on-a-single-small-instance-k3s)) does this itself. Into a new PostgreSQL: run the script
+  with the passwords first (the roles must exist for a dump that names
+  them), restore as the superuser, then run it again as above.
+  `deploy/scripts/test-postgres-roles.sh` runs these cases on a real
+  PostgreSQL (`hub/scripts/with_postgres.sh deploy/scripts/test-postgres-roles.sh`).
+- **MariaDB / MySQL and SQLite:** not covered; the hub uses the one URL.
+
+**The hub checks its role at the start.** On PostgreSQL, `maity-hub serve`
+refuses to start when its role is a superuser, owns the hub's schema or
+one of its tables, or may create objects in that schema, and names the
+reason. Each counts also through any role it is a member of, and the hub's
+schema is the one with the `alembic_version` table, wherever the
+`search_path` points. The roles script revokes
+that right from `PUBLIC`, which has it by default before PostgreSQL 15.
+`maity-hub migrate` does not check: it runs as the owner. An installation
+that has not moved to the two roles yet sets `MAITY_DB_ALLOW_PRIVILEGED=1`
+for the hub until it has (Helm: `extraEnv`; Compose: the `hub` service's
+`environment`), and gets a warning at each start instead; remove it after
+step 4 below.
+
+**Moving an existing installation to the two roles.** Until now the hub and
+its migrations used the superuser, which the hub now refuses at the start
+unless `MAITY_DB_ALLOW_PRIVILEGED=1` is set (above). The script hands every object of the
+hub to `maity_owner` and grants `maity_app` its rows; the hub keeps running
+until its URL changes. In this order:
+
+1. **Back up** ([Backups](#backups)).
+2. **The roles.** Make the two passwords as for a new install and run the
+   script against the running database:
+   - k3s: as in step 5 of the walkthrough (`kubectl -n maity exec -i
+     maity-postgres-0 -- psql …`).
+   - Compose: add the two passwords to `deploy/.env`, keeping
+     `MAITY_DB_PASSWORD`, then run the script in the `db` service:
+     ```sh
+     (umask 077; for v in MAITY_DB_OWNER_PASSWORD MAITY_DB_APP_PASSWORD; do
+        printf '%s=%s\n' "$v" "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"; done >> deploy/.env)
+     docker compose -f deploy/docker-compose.yml up -d db
+     ( set -a; . deploy/.env; set +a
+       { printf "%s '%s'\n" '\set owner_password' "$MAITY_DB_OWNER_PASSWORD" '\set app_password' "$MAITY_DB_APP_PASSWORD"
+         cat deploy/postgres-roles.sql; } | docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -U maity -d maity )
+     ```
+3. **The URLs.**
+   - k3s: create `maity-hub-db-migrate` with the owner's URL and replace
+     `maity-hub-db` with the app's, as in step 4
+     (`kubectl -n maity create secret generic maity-hub-db --from-file=database-url=./database-url --dry-run=client -o yaml | kubectl apply -f -`),
+     apply `postgres-netpol.yaml` again, then run
+     `deploy/scripts/helm-upgrade.sh -f deploy/k3s-single/hub-values.yaml`
+     with the new `hub-values.yaml` (`database.migrate`, `networkPolicy.egress`).
+     It stops and starts the hub, which then reads the new Secret.
+   - Compose: `docker compose -f deploy/docker-compose.yml up -d`, which
+     recreates `migrate` and `hub` with their new URLs.
+   - Your own setup: point `maity-hub migrate` at the owner's URL and the
+     hub at the app's, then restart the hub.
+4. **Check** that the hub now connects as `maity_app`:
+   `psql -U maity -d maity -Atc "select distinct usename from pg_stat_activity where datname = 'maity'"`
+   (in the postgres pod or the `db` service) lists `maity_app`, and `maity`
+   only for that `psql` itself.
 
 ## The agent firewall
 
@@ -588,12 +808,38 @@ agent or runner. Sealing them at rest is opt-in, default off: with
 `MAITY_SEAL_VERIFIERS=1` and `MAITY_SECRET_KEY` set, the hub stores new
 verifiers sealed with that key, so a database read without the key
 yields no usable verifier; with the setting off they are stored as they
-are. After switching the setting on, run `maity-hub seal-verifiers` once
-(with the same environment as the hub): it seals the verifiers stored
-before, leaves sealed ones alone and prints how many it sealed;
-`maity-hub migrate` seals nothing. Sealed verifiers stay readable with the setting off as long as the key is set.
-The hub logs at startup how many live verifiers are stored unsealed and
-whether sealing is on. Keep the key apart
+are. `maity-hub migrate` seals nothing. Sealed verifiers stay readable
+with the setting off as long as the key is set. The hub logs at startup
+how many live verifiers are stored unsealed and whether sealing is on.
+
+To seal every verifier and then refuse plain ones, in this order (both
+settings are off by default, and an upgrade switches neither on):
+
+1. Set `MAITY_SECRET_KEY`, and `MAITY_SEAL_VERIFIERS=1` on every hub
+   process, and roll it out. From then on no hub writes a plain verifier,
+   and a plain one that verifies a call is sealed in that call's update of
+   its last use. An idle credential is not, nor is an isolated agent's,
+   whose calls write nothing: the next step seals those.
+2. Run `maity-hub seal-verifiers` with the same environment as the hub
+   (`--dry-run` first, if you like: it only counts). It seals the plain
+   verifiers, revoked ones too, leaves sealed ones alone and prints
+   `sealed N, already sealed M, plain left K` per table and in all. Run it
+   again after adding the key and after every rolling deploy, since an
+   old process may still have written a plain one; it exits 1 while K is
+   not 0.
+3. Once it prints `plain left 0` and the startup log counts no unsealed
+   verifier, set `MAITY_SEALED_VERIFIERS_ONLY=1` in a rollout of its own.
+   A hub with it does not start while a live plain verifier is left: the
+   error names the count and the command. In a rolling update the
+   processes of the earlier rollout keep serving; with `Recreate` (the
+   chart's default single pod) or a single process the hub stays down
+   until `maity-hub seal-verifiers` has run or the setting is unset again.
+   A plain verifier written after the start verifies
+   nothing; its agent or runner joins (or pairs) again.
+
+To go back, unset `MAITY_SEALED_VERIFIERS_ONLY` and restart; nothing is
+changed in the database. Never change or drop the key once verifiers are
+sealed: every sealed agent and runner would have to join again. Keep the key apart
 from the backups. Store backups like you store secrets. If a backup and
 the key, a backup made without a key, or a backup that still holds
 unsealed verifiers (the startup log counts them) were exposed, revoke the agent
@@ -602,7 +848,7 @@ sessions it holds in the running hub, whether you restore it or not.
 | Engine | Backup | Restore |
 |---|---|---|
 | SQLite | The hub runs SQLite in WAL mode, so copying the `.db` file alone, while the hub runs, can lose recent writes. Use the backup API: `sqlite3 maity-hub.db ".backup 'maity-$(date +%F).db'"`, or `python3 -c "import sqlite3; sqlite3.connect('maity-hub.db').backup(sqlite3.connect('backup.db'))"`. Or stop the hub, then copy the `.db` with its `-wal` and `-shm` files. | stop the hub; put the backup in place as `maity-hub.db`; delete stale `-wal` and `-shm` files; start the same hub version |
-| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then `docker compose -f deploy/docker-compose.yml start hub` |
+| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`, the password in `PGPASSWORD` or `~/.pgpass` rather than in the URL, where other users of the machine can read it in the process list. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then the roles again with `docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql` ([Database roles](#database-roles)), then `docker compose -f deploy/docker-compose.yml start hub` |
 | MariaDB / MySQL | `mariadb-dump --single-transaction --default-character-set=utf8mb4 <database> > maity.sql` | stop the hub; `mariadb <database> < maity.sql`; start the same hub version |
 
 Back up before every upgrade.
@@ -637,7 +883,8 @@ k3s steps above show one way). Open it again only when both parts are done.
 1. Read the [upgrade page](../upgrade/README.md) of every version between
    yours and the new one, oldest first (`docs/upgrade/<version>.md`), and do
    what its "What the operator must do" says before the upgrade. The
-   `CHANGELOG.md` sections list every change in detail.
+   `CHANGELOG.md` sections list every change in detail. Upgrading the
+   database server too? Check [Database versions](#database-versions) first.
 2. **Back up.** On Helm, `deploy/scripts/helm-upgrade.sh` takes the dump
    itself, by default: it runs a Job from the CronJob `maity-pg-dump`
    (`DUMP_CRONJOB` names another) and stops before it changes anything when

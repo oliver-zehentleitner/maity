@@ -37,6 +37,26 @@ def test_sealing_verifiers_is_opt_in_and_needs_the_key() -> None:
         Settings.from_env({**on, "MAITY_SEAL_VERIFIERS": "maybe"})
 
 
+def test_sealed_verifiers_only_is_off_by_default_and_needs_sealing() -> None:
+    """MAITY_SEALED_VERIFIERS_ONLY (§2.2): off by default, also with sealing on; on, it needs
+    sealing on, or every new join would write a plain row and be refused at once."""
+    key = "q0bS0b3k1uN4b9dW8m2Yx5zR7cJ6vT1eH3gK8pL0aQs="
+    on = {"MAITY_SECRET_KEY": key, "MAITY_SEAL_VERIFIERS": "1"}
+    assert Settings.from_env({}).sealed_verifiers_only is False
+    assert Settings.from_env(on).sealed_verifiers_only is False
+    only = {**on, "MAITY_SEALED_VERIFIERS_ONLY": "1"}
+    assert Settings.from_env(only).sealed_verifiers_only is True
+    needs = "MAITY_SEALED_VERIFIERS_ONLY=1 needs MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY"
+    for env in (
+        {"MAITY_SECRET_KEY": key, "MAITY_SEALED_VERIFIERS_ONLY": "1"},
+        {**only, "MAITY_SEAL_VERIFIERS": "0"},
+    ):
+        with pytest.raises(ConfigError, match=needs):
+            Settings.from_env(env)
+    with pytest.raises(ConfigError, match="MAITY_SEALED_VERIFIERS_ONLY must be 1 or 0"):
+        Settings.from_env({**on, "MAITY_SEALED_VERIFIERS_ONLY": "maybe"})
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [
@@ -94,6 +114,32 @@ def test_the_dashboard_default_is_the_checkouts_or_the_packages() -> None:
 def test_redaction_masks_the_password() -> None:
     url = normalize_database_url("postgresql://maity:pw@db/maity")
     assert redact_database_url(url) == "postgresql+psycopg://maity:***@db/maity"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://maity@db/maity?password=s3cret-q",
+        "postgresql://maity@db/maity?PASSWORD=s3cret-q",
+        "postgresql://maity@db/maity?pass%77ord=s3cret-q",
+        "postgresql://maity@db/maity?sslmode=require&sslpassword=s3cret-q",
+        "postgresql://maity@db/maity?passfile=/run/s3cret-q",
+        "mariadb://maity@db/maity?passwd=s3cret-q",
+        "mariadb://maity@db/maity?password=s3cret-q&password=s3cret-q",
+        "postgresql://maity:pw@db/maity?options=-c%20password%3Ds3cret-q",
+    ],
+)
+def test_redaction_leaves_the_query_string_out(url: str) -> None:
+    """The drivers take a password in the query string too, under several names and in
+    percent-encoded forms, and any other key can carry a secret; the redaction shows none of the
+    query, only that there was one."""
+    shown = redact_database_url(normalize_database_url(url))
+    assert shown.endswith("@db/maity?***"), shown
+    assert "s3cret" not in shown and "pass" not in shown.lower()
+
+
+def test_redaction_of_a_url_without_a_query_adds_no_mark() -> None:
+    assert redact_database_url("sqlite:///maity-hub.db") == "sqlite:///maity-hub.db"
 
 
 def test_public_url_loses_its_trailing_slash() -> None:

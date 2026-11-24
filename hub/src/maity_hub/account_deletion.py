@@ -30,6 +30,7 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     chat_access,
+    chat_access_history,
     clock,
     contacts,
     invitations,
@@ -47,15 +48,19 @@ from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller
 from maity_hub.config import Settings
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import Actor, lock_project
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import tokens
+from maity_hub.ratelimit import Limiter
 
 PURPOSE = "account_deletion"
 VALID_FOR = timedelta(hours=24)
+# Requests that mail the confirmation, per human (§2.8.6): each one is security mail, so a
+# human cannot fill the security budget by asking again and again.
+PER_HUMAN = Limiter(3, 3600, name="account_deletion.PER_HUMAN")
 DELETED_NAME = "Deleted account"
 # Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given. Distinct
 # from the load test's seed marker (`loadtest.NO_PASSWORD`), which `purge` deletes by.
@@ -137,12 +142,7 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
 
 def lock_account(conn: Connection, human_id: str) -> None:
     """Take the human's `account_lock` exclusively: the first lock of a deletion."""
-    write_guard.ensure_row(conn, human_id)
-    conn.execute(
-        select(t.account_lock.c.human_id)
-        .where(t.account_lock.c.human_id == human_id)
-        .with_for_update()
-    ).first()
+    write_guard.lock_row(conn, human_id, shared=False)
 
 
 def lock_first(conn: Connection, human_id: str) -> None:
@@ -304,6 +304,11 @@ def request(conn: Connection, hub: Settings, caller: Caller, confirm: str) -> di
     address = _verified_address(conn, human.id)
     if address is None:
         raise ApiError(409, "address_unverified", "the account has no verified address")
+    # Counted only once everything else let the request through: only a request that mails
+    # spends one.
+    wait = PER_HUMAN.hit(human.id)
+    if wait:
+        raise rate_limited(wait)
     withdraw(conn, human.id, "replaced")
     now = clock.now()
     nonce = secrets.token_urlsafe(24)
@@ -438,7 +443,14 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
 
 def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     """Delete the account in the caller's transaction, in the order §2.9 lists, each part
-    through the code that already does it elsewhere."""
+    through the code that already does it elsewhere. For the other owners' chat-access history
+    it is one write (§9.6, "History"): one item per entry it narrows or deletes, written once
+    it is done, and none for the account's own, whose history goes with it."""
+    with chat_access_history.one_write(conn, leaving=human_id):
+        _delete_account(conn, hub, human_id)
+
+
+def _delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     from maity_hub.routes import runners as runner_routes
     from maity_hub.routes.agents import delete_profile
 
@@ -668,6 +680,9 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
         for installation_id in installations:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
+    # The instance admin's limits for this account (§16.5.1) go with it; who set a limit on
+    # another account or a project stays, as with an instance setting.
+    conn.execute(delete(t.limit_override).where(t.limit_override.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
     # The day's wrong second-factor codes (§2.8.6).
     conn.execute(delete(t.second_factor_day).where(t.second_factor_day.c.human_id == human_id))
@@ -741,6 +756,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
         t.notification_recipient,  # which messages may notify them (§18.1)
         t.account_record,  # sign-ins with their addresses and browsers, address changes
         t.not_listening_seen,  # what the human answered `seen` to in the digest (§5.3)
+        t.chat_access_history,  # the history of their lists, after every write to them (§9.6)
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))
@@ -762,10 +778,21 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            website=None,  # the person's links go with the profile (§16.9, §2.9)
+            social=None,
+            links_visible="private",  # the column's default: as if never chosen
             public_stats=False,
             public_agents="public_projects",
+            # Every public switch of a deleted account ends off, whatever its default on a new
+            # account: what the person said of themselves (§5.2 "Meat proxy") and whether public
+            # pages name them online (§16.9). public_presence starts true on a new row; off here,
+            # so no later use of it can make a deleted person show anywhere.
+            meat_proxy_lead=False,
+            meat_proxy_hands=False,
+            public_presence=False,
             interface_language=None,
             start_tabs=None,  # project ids only, but the person's choice (§5.1)
+            starred=None,  # the public projects the person kept (§5.1 "Stars", §2.9)
             experiment_notice_understood_at=None,  # the person's own confirmation (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),

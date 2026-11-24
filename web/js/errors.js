@@ -92,6 +92,7 @@ window.Maity = window.Maity || {};
     probe_unavailable: () => M.tOwn("error.probe_unavailable"),
     profile_in_use: () => M.tOwn("error.profile_in_use"),
     project_closed: () => M.tOwn("error.project_closed"),
+    project_quota: () => M.tOwn("error.project_quota"),
     rate_limited: () => M.tOwn("error.rate_limited"),
     release_in_flight: () => M.tOwn("error.release_in_flight"),
     release_not_ready: () => M.tOwn("error.release_not_ready"),
@@ -120,6 +121,7 @@ window.Maity = window.Maity || {};
     unauthenticated: () => M.tOwn("error.unauthenticated"),
     upload_expired: () => M.tOwn("error.upload_expired"),
     version_exists: () => M.tOwn("error.version_exists"),
+    watch_limit: () => M.tOwn("error.watch_limit"),
     webhook_signature: () => M.tOwn("error.webhook_signature"),
   };
 

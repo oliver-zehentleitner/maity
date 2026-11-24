@@ -16,6 +16,7 @@ from maity_hub import limits, registration
 from maity_hub.config import (
     DEFAULT_BIND,
     DEFAULT_CLI_INSTALL,
+    KTW_SKILL_COMMIT,
     KTW_SKILL_GUIDE,
     KTW_SKILL_SOURCE,
     Settings,
@@ -114,12 +115,14 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("MAITY_DB_POOL_RECYCLE", "database", "1800"),
     Entry("MAITY_DB_STATEMENT_TIMEOUT", "database", "30"),
     Entry("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "database", "60"),
+    Entry("MAITY_DB_ALLOW_PRIVILEGED", "database", "0"),
     # processes
     Entry("MAITY_WORKERS", "processes", "1"),
     Entry("MAITY_REPLICAS", "processes", "1"),
     # security
     Entry("MAITY_SECRET_KEY", "security", secret=True),
     Entry("MAITY_SEAL_VERIFIERS", "security", "0"),
+    Entry("MAITY_SEALED_VERIFIERS_ONLY", "security", "0"),
     Entry("MAITY_SECOND_FACTOR_WRONG_PER_DAY", "security", "50"),
     # sign_in: unset, the admin's choice or the hub's default (§2.6.6)
     Entry("MAITY_SIGN_IN_DEVICE_CODE", "sign_in", "1", admin=SIGN_IN),
@@ -171,18 +174,38 @@ ENTRIES: tuple[Entry, ...] = (
         _mail("registration_max_per_hour"),
         admin=MAIL,
     ),
+    Entry(
+        "MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR",
+        "mail",
+        _mail("second_factor_max_per_hour"),
+        admin=MAIL,
+    ),
+    Entry(
+        "MAITY_MAIL_VERIFICATION_MAX_PER_HOUR",
+        "mail",
+        _mail("verification_max_per_hour"),
+        admin=MAIL,
+    ),
+    Entry(
+        "MAITY_MAIL_INVITATION_MAX_PER_HOUR",
+        "mail",
+        _mail("invitation_max_per_hour"),
+        admin=MAIL,
+    ),
     Entry("MAITY_MAIL_ONLINE_GRACE_MINUTES", "mail", _mail("online_grace_minutes"), admin=MAIL),
     Entry("MAITY_MAIL_SIGNING_KEY", "mail", secret=True),
     # agents
     Entry("MAITY_AGENT_FIREWALL", "agents", "off"),
     Entry("MAITY_ON_RUNNER_REVOKE", "agents", "keep"),
     Entry("MAITY_KTW_SKILL_SOURCE", "agents", KTW_SKILL_SOURCE),
+    Entry("MAITY_KTW_SKILL_COMMIT", "agents", KTW_SKILL_COMMIT),
     Entry("MAITY_KTW_SKILL_GUIDE", "agents", KTW_SKILL_GUIDE),
     # limits
     Entry("MAITY_MAX_AGENTS_PER_HUMAN", "limits", _limit("max_agents_per_human"), admin=LIMITS),
     Entry("MAITY_MAX_ORGS_PER_HUMAN", "limits", _limit("max_orgs_per_human"), admin=LIMITS),
     Entry("MAITY_MAX_PROJECTS_PER_OWNER", "limits", _limit("max_projects_per_owner"), admin=LIMITS),
     Entry("MAITY_MAX_ALIASES", "limits", _limit(limits.ALIASES), admin=LIMITS),
+    Entry("MAITY_MAX_STARRED_PER_HUMAN", "limits", _limit(limits.STARRED), admin=LIMITS),
     Entry(
         "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT",
         "limits",
@@ -190,6 +213,7 @@ ENTRIES: tuple[Entry, ...] = (
         admin=LIMITS,
     ),
     Entry("MAITY_MAX_ATTACHMENT_STORAGE", "limits", _limit(limits.STORAGE), admin=LIMITS),
+    Entry("MAITY_MAX_READS_PER_MINUTE", "limits", _limit(limits.READS), admin=LIMITS),
     Entry("MAITY_ROUTE_LIMITS", "limits"),
     Entry("MAITY_PUBLIC_PAGE_LIMIT", "limits", "60/60"),
     Entry("MAITY_BADGE_LIMIT", "limits", "60/60"),

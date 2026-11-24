@@ -12,8 +12,10 @@ from sqlalchemy import Engine, delete, func, select, update
 
 from maity_hub import account_deletion, clock, contacts, write_guard
 from maity_hub import tables as t
+from maity_hub.auth import sessions
+from maity_hub.auth.caller import SESSION_COOKIE
 from maity_hub.errors import ApiError
-from tests import factory, flow
+from tests import concurrency, factory, flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import make_org
 
@@ -351,30 +353,34 @@ def test_a_stranger_gets_one_answer_for_every_name_that_is_not_an_active_person(
         assert answers["nobody-here"][0] == 404
 
 
-def test_two_people_adding_each_other_first_both_succeed(
-    anna: flow.Human, ben: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+def _untouched(make_client: ClientFactory, engine: Engine, handle: str) -> flow.Human:
+    """A human with a session and no transaction yet that took their `account_lock`: the
+    session is made directly, not by a sign-in, which shares the lock (`routes/auth.py`) and,
+    with rows made on first need, would have made the row already."""
+    human_id = factory.human(engine, handle)
+    with engine.begin() as conn:
+        session_id, csrf, _ = sessions.create(
+            conn, human_id, method="password", address="203.0.113.5", user_agent=None
+        )
+    client = make_client()
+    client.cookies.set(SESSION_COOKIE, session_id)
+    return flow.Human(client, csrf, human_id, handle)
+
+
+def test_two_people_adding_each_other_at_once_both_succeed(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Neither has an `account_lock` row yet. Each `PUT` holds its caller's lock and then
-    reaches for the other's at the same moment: both get theirs, nobody deadlocks (#1532
-    review, delta 1)."""
-    if migrated.dialect.name == "sqlite":
-        pytest.skip("a race needs two writers: PostgreSQL or MariaDB (CI)")
-    with migrated.begin() as conn:
-        conn.execute(delete(t.account_lock).where(t.account_lock.c.human_id.in_([anna.id, ben.id])))
-    meet = threading.Barrier(2, timeout=10)
-    first = {anna.id, ben.id}  # each caller's first hold is its change's transaction
-    guard = threading.Lock()
-    hold = write_guard.hold
-
-    def held(conn: Any, human_id: str) -> None:
-        hold(conn, human_id)
-        with guard:
-            waits = human_id in first
-            first.discard(human_id)
-        if waits:
-            meet.wait()  # both hold their own lock; now each reaches for the other's
-
-    monkeypatch.setattr(write_guard, "hold", held)
+    """#1532: each `PUT` holds its caller's `account_lock` and then, at the same moment as the
+    other, reaches for the other's. The rows exist from the accounts' creation, nothing is
+    prepared beforehand, and shared locks on existing rows do not wait for each other: both
+    succeed. Both humans have written nothing before (`_untouched`), so each `PUT` is their
+    first transaction that takes the lock: with the rows made on first need there, each would
+    wait for the other's uncommitted insert, a deadlock, and one `PUT` fails."""
+    meeting = concurrency.meet(
+        monkeypatch, write_guard, "hold", key=lambda conn, human_id: human_id, engine=migrated
+    )  # each caller's first hold is its change's transaction
+    anna = _untouched(make_client, migrated, "anna")
+    ben = _untouched(make_client, migrated, "ben")
     answers: dict[str, int] = {}
 
     def adds(who: flow.Human, other: str) -> None:
@@ -388,5 +394,23 @@ def test_two_people_adding_each_other_first_both_succeed(
         worker.start()
     for worker in workers:
         worker.join(30)
+    meeting.check()
     assert answers == {"anna": 204, "ben": 204}
     assert _rows(migrated) == 2
+
+
+def test_a_human_without_an_account_lock_row_is_refused_loudly(
+    anna: flow.Human, migrated: Engine
+) -> None:
+    """Every account gets its row when it is made; one without it is a bug, and the guard does
+    not lock nothing and carry on: `AccountLockMissing`, for the shared lock and the
+    deletion's exclusive one alike."""
+    with migrated.begin() as conn:
+        conn.execute(delete(t.account_lock).where(t.account_lock.c.human_id == anna.id))
+    for shared in (True, False):
+        with pytest.raises(write_guard.AccountLockMissing), migrated.begin() as conn:
+            write_guard.lock_row(conn, anna.id, shared=shared)
+    with pytest.raises(write_guard.AccountLockMissing), migrated.begin() as conn:
+        write_guard.share(conn, anna.id)
+    with migrated.begin() as conn:  # no human: nothing to lock and nothing refused here
+        write_guard.share(conn, "hum-nobody")

@@ -1,6 +1,7 @@
 # Credentials
 
-How the hub stores what verifies an agent's or a runner's credential.
+How the hub stores what verifies an agent's or a runner's credential, and which presented ids
+it looks up.
 
 ## Sealing a credential's verifier is opt-in behind MAITY_SEAL_VERIFIERS, default off; seal-verifiers seals older rows
 
@@ -8,8 +9,8 @@ How the hub stores what verifies an agent's or a runner's credential.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-d9r02hn5n32y and the lead's go on its five open points, 2026-11-14; the switch: card tsk-47b7fwkvft30 by lead lotse, 2026-11-15, and lotse's decision to edit the migration in place (seq 136270, 136323)
-**Revisit when:** sealing is switched on for good (tsk-ebc2fhdxttm7 adds a sealed-only setting), `MAITY_SECRET_KEY` becomes mandatory, the hub gets a previous-key mechanism for its sealed values, or credentials move to asymmetric keys
+**Source:** the card tsk-d9r02hn5n32y and the lead's go on its five open points, 2026-11-14; the switch: card tsk-47b7fwkvft30 by the lead, 2026-11-15, and the lead's decision to edit the migration in place (seq 136270, 136323); sealed-only, the counts and reseal on use: card tsk-ebc2fhdxttm7, its plan and the lead's approval, 2026-11-17 (seq 152498, 152518, 152522, 153623)
+**Revisit when:** sealing is switched on for good (both settings on in production, or made the default), `MAITY_SECRET_KEY` becomes mandatory, the hub gets a previous-key mechanism for its sealed values, or credentials move to asymmetric keys
 
 The verifier `sha256(<secret>)` is the HMAC key of a signed request (docs/api.md §2.2), so a
 copy of the database could sign as every agent and runner. `credential.verifier` and
@@ -32,8 +33,33 @@ scheme is unchanged.
   the hub already takes (a forge webhook secret that does not open counts as not set).
 - **Older rows:** `maity-hub seal-verifiers` seals them, and refuses unless the setting is on
   and the key set. It seals only plain rows (a row is written only while it still holds the
-  plain value read), so a second run seals nothing; it prints the count per table and in all.
-  A start of the hub writes nothing.
+  plain value read), so a second run seals nothing. It prints `sealed N, already sealed M,
+  plain left K` per table and in all, revoked rows counted, and exits 1 while K is not 0 after
+  a run (a plain row written meanwhile, by an old pod of a rolling deploy). `--dry-run` only
+  counts and needs neither the setting nor the key, so an operator can see the numbers before
+  switching anything on. A start of the hub writes nothing.
+- **Reseal on use:** with sealing on, a plain row that has just verified a call is sealed in
+  the update of `last_used_at` that every authenticated call already makes (agent and runner),
+  guarded as the command is (a `CASE` on the plain value read). It costs no statement of its
+  own and shrinks the window, but an idle credential is never resealed, nor is an isolated
+  agent's (its calls write nothing), so it replaces neither the command nor the gate.
+- **Sealed only:** `MAITY_SEALED_VERIFIERS_ONLY=1` (default off) makes a plain row verify
+  nothing. It needs `MAITY_SEAL_VERIFIERS=1` (a configuration error otherwise), since without
+  sealing every new join would write a plain row that is refused at once. The hub does not
+  start while a live plain row is left: the error names the count and `seal-verifiers`, so in a
+  rolling update the rollout stalls with the old pods still serving instead of locking agents
+  out; with `Recreate` (the chart's single-pod default) or a single process the hub stays down
+  until `seal-verifiers` has run or the setting is unset again. Revoked rows do
+  not count there; they are refused anyway, and the command still seals them.
+- **The refusal says nothing new:** a refused plain row takes the path of a sealed row the key
+  does not open: 401 `unauthenticated` on a bearer call (what an unknown id gets) and 401
+  `signature_invalid` on a signed one. That the signed path differs from an unknown id is
+  older than this setting and shows nothing about sealing. The leak check still reads plain
+  rows, so a leaked plain credential is revoked even while it is refused; switching the setting
+  off again would otherwise bring it back.
+- **Production:** both switches are off by default everywhere, the Helm chart included; an
+  upgrade turns nothing on. Switching them on is the owner's decision after a deploy, in the
+  order docs/install/README.md ("Backups") gives.
 - **The migration only widens:** `20261114020000_sealed_verifiers` was edited in place,
   revision ID and down_revision kept; in 0.1.0a6 it also sealed every row when given the key.
   Our instances go from 0.1.0a5 to 0.1.0a7 (the deploy of 0.1.0a6 was cancelled), so they run
@@ -73,3 +99,115 @@ older rows: it is explicit, runs again safely, and tsk-ebc2fhdxttm7 asked for th
   data (table, column, id) already separates the fields.
 - Sealing only `credential` and leaving runner credentials plain: a runner's verifier is an
   HMAC key with the same exposure.
+- Refusing plain rows only at runtime, with no startup gate: a setting switched on too early
+  would lock out every agent and runner still on a plain row, on every pod at once.
+- A refusal of its own for a plain row (a new error code or detail): it would tell a caller
+  that the instance seals, and which credentials are not sealed yet.
+- Making the signed path answer `unauthenticated` for a refused or unopenable row, as an
+  unknown id does: it changes an answer that exists already, for no gain against the
+  verifier's exposure.
+- Reseal on use as a statement of its own: it would add a write to the sealed path's every
+  call; the `last_used_at` update already touches the row.
+- Counting revoked rows in the startup gate: they verify nothing either way, and an old
+  revoked row would block the start for no protection.
+
+## A presented credential id is checked against `new_id`'s form before the hub looks it up
+
+**Id:** dcc12e31-541f-423a-95e7-0cd1b796bccf
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2fxk4frga487 (the follow-up the review of #2040 asked for, A1678) and its PR #2046, 2026-11-20; the rejected alternatives from the review of #2046 (A1691)
+**Revisit when:** `new_id` changes its form (prefix, length or alphabet), or a credential id comes from anything other than `ids.new_id` (both the lookup by `caller._credential` and, since #2172, leak revocation through `auth/leaks.lookups` rest on `has_shape`)
+
+`caller._credential`, which the bearer path, the signed path and the large-body precheck
+share, refuses an id that `ids.new_id` could not have made before any query, with the
+`unauthenticated` of an unknown id (docs/api.md §1.3, §2.2): the same status, body and
+headers. `ids.has_shape` is the test: the entity's prefix (`crd`, or `rcrd` for a runner),
+`-`, and exactly `RANDOM_LENGTH` (12) characters of the lowercase Crockford alphabet
+(`CROCKFORD`).
+
+The evidence differs by part. The gate, its place in `_credential` and the answer of an
+unknown id are confirmed: the card asks for them. Of the rejected alternatives the card names
+only the bearer parser's check; why each lost is inferred from the code and the review.
+
+**Reason:** a signed request's `Maity-HMAC` id reached the database as the header sent it, and
+the bearer parser (`credentials.parse`) checks only the value's alphabet. Nothing the hub
+issued can fail the check, so it refuses only strings that name no credential:
+
+- Every credential id comes from `new_id`, in the only three inserts of a credential row:
+  `routes/joins.py:1595` (a join's exchange), `routes/runners.py:507` (a runner's pairing) and
+  `loadtest.py:181` (the load test's seed). No migration writes one.
+- `new_id`'s form has not changed since it was written: the alphabet, the length and the `crd`
+  prefix since `ids.py` came with the V1 data model (9b555ddc), `rcrd` since the first runner
+  slice (fa2ad803); the change that added the gate only named the length `RANDOM_LENGTH`.
+- Ids compare byte for byte on every engine, MariaDB included (binary collation,
+  persistence.md, ae5662be), so no other spelling of an id, a mixed-case one among them, ever
+  found its row. Real clients send the id exactly as the hub issued it.
+
+**Constraint:** a later change of `new_id`'s form must keep `has_shape` accepting every id made
+before it; otherwise every agent and runner holding an older credential is refused as unknown
+and has to join or pair again.
+
+**Rejected alternatives:**
+- Reusing the bearer pattern's alphabet check (`credentials.PATTERN`, `[A-Za-z0-9_-]+` of any
+  length) as the gate on both paths: a wrong prefix and an over-long id would still reach the
+  database, which the card asked to stop.
+- Tightening `credentials.PATTERN` for the bearer value only: the signed path, in the precheck
+  too, takes its id from the header without that parser.
+- A refusal of its own (a distinct code or message) for a malformed id: it adds an answer that
+  differs from an unknown id's, for no gain.
+- The same gate in `auth/leaks.revoke_leaked`: it revokes only a row whose secret verifies, and
+  a malformed id matches no row (byte-for-byte comparison, above); its lookup is one batched
+  query over the ids found, capped at `MAX_IDS`, not a step of authentication.
+
+**Amended 2026-11-24 (tsk-ehtws6xrxdtf, #2172):** the last rejected alternative is now taken,
+for a reason this entry did not weigh: cost, not correctness. `auth/leaks.lookups` keeps only the
+ids `has_shape` accepts for an agent's or a runner's credential, and `revoke_leaked` looks up only
+those, so a request full of shapeless ids sends no query, and such ids no longer take the
+`MAX_IDS` places a real credential needs; the forge path (`routes/board._refuse_credentials`)
+opens no transaction then. What that alternative said stays true: a malformed id matches no row,
+so revocation is unchanged, and the refusal (400 `credential_in_payload`) never depended on the
+lookup. The **Constraint** above now holds for leak revocation too: a later `new_id` form that
+`has_shape` no longer accepted would also leave a leaked older credential unrevoked.
+
+## The query's credential filter answers before every other answer of the middleware
+
+**Id:** 7321212c-23ce-4c7c-8d3d-4442de0406c9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-a4n80ebqyaya and the lead's go on its plan, 2026-11-23 (confirmed: the scan first on every request, the join host included; a query hit leaves the body unread; the sentence in docs/api.md §2.2); a reproduction on main c92272f7 in the card (`/api/v1/no-such-route?x=<credential>` answered 404 and left the credential live); `hub/src/maity_hub/middleware.py`, `hub/tests/test_query_credential_first.py`
+**Revisit when:** the middleware gets an early answer that must not wait for the regex over the query, or the body is to be scanned before the early answers as well
+**See:** maintenance.md#a-maintenance-window-answers-503-to-everyone-and-isolates-nobody — c98a226a-75c6-45ea-af01-da3facfe3044 — as of 2026-11-23
+**See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-23
+
+`HubMiddleware.__call__` matches the query string, raw and percent-decoded, right after the
+answer headers are set up and before anything else answers: the maintenance window's `503`,
+the operator's route limit, the forge webhook, the `404` of an unrouted API path and the
+declared body cap. A match is answered by `_leaked` as before (refused with
+`credential_in_payload`, a real credential revoked, best-effort when the database cannot
+answer). On every host and path, the join host included. The body of such a request is not
+read, so a credential in that body is not revoked by it, as the large-body routes already had
+it. A clean query gets each early answer as before.
+
+The order, its reach and the unread body are confirmed by the card and the lead's go; the
+reasons the alternatives lost below are inferred from the code.
+
+**Reason:** §2.2 refuses a credential in any query string from every caller, and revokes a
+real one at once: a credential that travelled in a URL is in proxy and forge logs, wherever the
+request was sent. The query needs no body read, no caller and no database to be matched, so
+nothing an early answer protects is spent by checking it first; only a match costs a lookup,
+the same lookup a routed path already made. Each early answer stood in front of the scan, so
+a leaked credential sent to an unknown path, during a window, past a route limit, with a body
+over its cap or to the webhook stayed live.
+
+**Rejected alternatives:**
+- Keeping the scan after the early answers: those requests answered 404, 503, 429, 413 or the
+  webhook's own refusal and left a real credential live (the reproduction above).
+- Scanning inside each early handler: five places that must stay in step, and the next early
+  answer would have to remember it; one check in front covers them all.
+- Reading the body first so that a credential in both the query and the body is revoked by
+  one request: it would read bodies ahead of the window, the limits and the cap, which exist
+  to keep them unread.

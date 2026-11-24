@@ -10,7 +10,9 @@ import hmac
 import json
 import logging
 import os
+import time
 from dataclasses import replace
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -18,9 +20,10 @@ import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import body as body_reader
-from maity_hub import forge, forge_webhook, probe, secretbox
+from maity_hub import forge, forge_webhook, probe, ratelimit, secretbox, shared_counts
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.net import Origin
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_probe import READER, REPO, TOKEN, FakeGitHub
@@ -31,9 +34,19 @@ HOOK = "/api/v1/projects/maintainer/maity/forge/webhook"
 
 
 @pytest.fixture(autouse=True)
-def _limits() -> None:
+def _limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty limits, and one window for the whole test. The tests count sixty requests and
+    expect the 61st refused; on PostgreSQL the counts sit in fixed 60-s windows of the wall
+    clock, and requests that straddle a window's edge let the 61st through (it counts the
+    sixty only by weight). The limiter's clock and the windows' clock stand still instead,
+    the windows' at the start of one, as in test_mentions (at a window start) and
+    test_device_codes."""
     for limiter in (forge_webhook.VERIFIED, forge_webhook.UNVERIFIED, forge_webhook.NOBODY):
         limiter.reset()
+    frozen = time.monotonic()
+    monkeypatch.setattr(ratelimit, "time", SimpleNamespace(monotonic=lambda: frozen))
+    window_start = datetime.now(UTC).replace(second=0, microsecond=0)  # a 60-s multiple
+    monkeypatch.setattr(shared_counts, "_now", lambda: window_start)
 
 
 @pytest.fixture
@@ -389,7 +402,7 @@ def held(migrated: Engine, paths: list[str]) -> tuple[list[int], int]:
                 "method": "POST",
                 "path": path,
                 "headers": [(b"content-length", b"2"), (b"x-hub-signature-256", b"sha256=0")],
-                "state": {"origin": SimpleNamespace(address="192.0.2.7")},
+                "state": {"origin": Origin("192.0.2.7", "https")},
             }
 
         tasks = []
@@ -445,7 +458,7 @@ def test_a_body_that_does_not_arrive_in_time_is_request_timeout_alike_for_every_
             "method": "POST",
             "path": path,
             "headers": [(b"content-length", b"2"), (b"x-hub-signature-256", b"sha256=0")],
-            "state": {"origin": SimpleNamespace(address="192.0.2.8")},
+            "state": {"origin": Origin("192.0.2.8", "https")},
         }
         status = asyncio.run(forge_webhook.handle(scope, never, send, migrated, KEY))
         return status, dict(sent[0]["headers"])

@@ -113,13 +113,22 @@ and a runner's limit belongs to one placement of it.
 a membership created during the limit would miss it, and clearing it
 would have to find every copy.
 
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** an agent's credential is no longer one membership:
+an instance may be attached to several projects (§6.17), one membership in each. The limit
+stays on the membership, so it is now one per project the instance is in. `POST /me/limit`
+from an agent writes the membership the `project` it names is attached through, or, without
+`project`, every live attachment's membership that is not isolated, all or nothing
+(`routes/limit.py` through `attached.per_attachment`, as `PATCH /me`), with each project
+locked first in the order of their ids. The decision and its reason hold per membership: a
+runner's limit still belongs to one placement, and a placement is in one project.
+
 ## A cover run is named by its start; on return every item of it loses `cover`
 
 **Id:** 8e2ac695-1298-42a5-9c00-fb3fc7f5e20a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-23 (availability stage 2, cover); the review of #285 by oz-agent-h (a return overwrote a third party's claim)
+**Source:** implementation session, 2026-10-23 (availability stage 2, cover); the review of #285 by a reviewer (a return overwrote a third party's claim)
 **See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-29
 **Revisit when:** a moved item needs to show after the return who once covered it
 
@@ -184,7 +193,7 @@ by the substitute that covers.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the review of #285 by oz-agent-h (a delegated decision stalled at a substitute that got 403)
+**Source:** the review of #285 by a reviewer (a delegated decision stalled at a substitute that got 403)
 **Revisit when:** a proposal kind's answer rule depends on more than a scope and `humans_only`
 
 For a `consent` request or a request that carries a proposal, the cover
@@ -286,3 +295,32 @@ one carried `cover` too: the items are what a substitute actually holds.
 - `covering` from `cover.by` alone: a substitute went on listing the
   covered member after it had released the card or a third member had
   taken it over.
+
+## A replay's attachments are read again under the project locks
+
+**Id:** 9776f433-e7bc-4725-874f-5840e5f3f16a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** audit R5 batch 2, finding 2 (card tsk-eb06q8ef852k, PR #2131); review A2188 showed it on PostgreSQL 16 with two connections
+**Revisit when:** a replay of a write in every project stops locking its projects, or the server engines leave READ COMMITTED
+
+`attached.free_held`, the replay of a write in every attachment (§1.5),
+reads the credential's live attachments twice: once to learn which
+projects to lock (`held`), and once more under those locks, keeping only
+the attachments in the locked projects.
+
+**Reason:** the server engines run at READ COMMITTED and the project lock
+is a row lock. A statement after the lock wait gets a new snapshot, so an
+isolation or a detach that committed while the replay waited for the lock
+is seen only by the second read. Review A2188 showed it: the first read saw
+no isolation, the replay waited a second for the project row while another
+connection isolated the membership and committed, and the read under the
+lock saw it. `attached.recheck` reads again under the locks for the same
+reason.
+
+**Rejected alternatives:**
+- One read, filtered to the locked projects (the audit's proposal): it
+  answers from the snapshot before the lock and writes past an isolation.
+
+The cost is one indexed read per replay.

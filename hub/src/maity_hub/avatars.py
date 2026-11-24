@@ -609,10 +609,21 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     if caller.kind == "agent":
         if caller.agent_id == owner_id:
             return True
-        mine = conn.execute(
-            select(t.membership.c.project_id).where(t.membership.c.id == caller.membership_id)
-        ).scalar()
-        return mine is not None and mine in _projects_of(conn, owner_id)
+        # A project the instance shares with the member: on a project route the one it acts
+        # in, else any of its live attachments that is not isolated (§6.17), never a project
+        # its profile is in without this instance.
+        from maity_hub import attached
+
+        if caller.membership_id is not None:
+            memberships = select(t.membership.c.id).where(t.membership.c.id == caller.membership_id)
+        else:
+            memberships = attached.free_memberships(caller)
+        mine = set(
+            conn.execute(
+                select(t.membership.c.project_id).where(t.membership.c.id.in_(memberships))
+            ).scalars()
+        )
+        return bool(mine & _projects_of(conn, owner_id))
     if caller.kind != "human":
         return False
     me = caller.human_id

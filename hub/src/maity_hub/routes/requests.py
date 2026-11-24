@@ -29,6 +29,7 @@ from maity_hub import (
     idempotency,
     inbox,
     instances,
+    jcs,
     mentions,
     namespace,
     orgs,
@@ -284,8 +285,13 @@ def _instances(
     return {
         (found.id, found.membership_id): found.instance
         for found in conn.execute(
-            select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
-            .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
+            select(
+                t.agent_session.c.id,
+                t.instance_attachment.c.membership_id,
+                t.credential.c.instance,
+            )
+            .select_from(instances.credential_join())
+            .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
             .where(t.agent_session.c.id.in_(wanted))
         ).all()
     }
@@ -659,8 +665,12 @@ def _needs_in_session(
         )
     ).one()
     person = _person(_known(conn, [], [member.id]), member.id, None)
-    sessions = select(t.agent_session.c.id, t.agent_session.c.harness).where(
-        t.agent_session.c.membership_id == member.id
+    # The member's sessions: those with a row in its project (`agent_session_project`).
+    p = t.agent_session_project
+    sessions = (
+        select(t.agent_session.c.id, t.agent_session.c.harness)
+        .join(p, p.c.session_id == t.agent_session.c.id)
+        .where(p.c.membership_id == member.id)
     )
     if needs.session_id is not None:
         session = conn.execute(sessions.where(t.agent_session.c.id == needs.session_id)).first()
@@ -726,7 +736,11 @@ def _action_errors(body: RequestCreate, mine: Membership) -> dict[str, str]:
     if not action.path.startswith("/") or "?" in action.path or "#" in action.path:
         errors["action.path"] = "not_a_path"
     if action.body is not None:
-        if len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
+        # The unconstrained `str` lets a JSON-escaped lone surrogate through, which UTF-8,
+        # and so the size and `body_sha256`, cannot encode: refused before either (§7).
+        if jcs.has_lone_surrogate(action.body):
+            errors["action.body"] = "lone_surrogate"
+        elif len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
             errors["action.body"] = "too_large"
         else:
             try:
@@ -998,18 +1012,11 @@ def _filtered(
                 )
             except ApiError:
                 return []
-    rows = conn.execute(query).all()
-    if mine.role_base == "proxy":
-        # The project's consent to a bridge across owners is a human's own answer: a proxy
-        # neither lists nor relays it (§2.3, §7).
-        rows = [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
+    rows = relayed(conn.execute(query).all(), mine)
     if to == "me":
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
-    if to == "all":
-        if mine.may("requests:answer"):
-            alone = inbox.owners_alone(conn, rows)
-            return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
-        return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
+    if to == "all":  # restated in SQL by `routes/overview.py` `request_counts`
+        return listed_to_all(conn, mine, rows)
     target = _parse_to(conn, mine, to)
     # A member id alone also names the instance addresses of its team: the team reads them.
     whole_team = target.kind == "member" and target.instance is None
@@ -1020,6 +1027,33 @@ def _filtered(
         == target
         and inbox.may_read(conn, r, mine)
     ]
+
+
+def relayed(rows: Sequence[Any], mine: Membership) -> list[Any]:
+    """The project's consent to a bridge across owners is a human's own answer: a proxy
+    neither lists nor relays it (§2.3, §7)."""
+    if mine.role_base != "proxy":
+        return list(rows)
+    return [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
+
+
+def listed_to_all(conn: Connection, mine: Membership, rows: list[Any]) -> list[Any]:
+    """`to=all` (§7): a holder of `requests:answer` sees every request but one from an
+    owner's round it may not read and one held for it (§9.6: no scope opens that); anyone
+    else what it asked and what is addressed to it.
+
+    `routes/overview.py` `request_counts` restates this in SQL for the requests without
+    `held`, `cover`, `jour_fixe` (and, for a proxy, `proposal`), and hands the others to
+    this function: a change here is a change there."""
+    if mine.may("requests:answer"):
+        alone = inbox.owners_alone(conn, rows)
+        return [
+            r
+            for r in rows
+            if (r.id not in alone and not inbox.held_back(r, mine.principal_id))
+            or inbox.may_read(conn, r, mine)
+        ]
+    return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
 
 
 def _sorted(views: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:

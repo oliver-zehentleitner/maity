@@ -6,9 +6,10 @@ acknowledged, up to where its own first packet starts. It is delivered at least 
 `events` are: until the instance has acknowledged a position at or above the cursor of its
 first packet. It moves no cursor and wakes nothing.
 
-Three numbers on the credential make this independent of when the packet is asked for:
-`exchange_seq` (the project's newest event when the exchange created the instance), and
-`first_after` and `first_cursor` (`events.after` and `events.cursor` of its first packet).
+Three numbers on the instance's attachment to the project make this independent of when the
+packet is asked for: `exchange_seq` (the project's newest event when the exchange created the
+instance), and `first_after` and `first_cursor` (`events.after` and `events.cursor` of its
+first packet).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import events
+from maity_hub import events, instances
 from maity_hub import tables as t
 
 ITEMS_MAX = 50
@@ -35,8 +36,8 @@ def chain(conn: Connection, credential: Any) -> list[Any]:
     wanted = credential.replaces
     while wanted is not None and wanted not in seen:
         row = conn.execute(
-            select(t.credential).where(
-                t.credential.c.membership_id == credential.membership_id,
+            instances.credential_rows().where(
+                t.instance_attachment.c.membership_id == credential.membership_id,
                 t.credential.c.instance == wanted,
             )
         ).first()
@@ -44,17 +45,22 @@ def chain(conn: Connection, credential: Any) -> list[Any]:
             break
         seen.add(wanted)
         found.append(row)
-        if _acknowledged(conn, row.id) is not None:
+        if _acknowledged(conn, row.id, row.membership_id) is not None:
             break
         wanted = row.replaces
     return found
 
 
-def _acknowledged(conn: Connection, credential_id: str) -> int | None:
-    """The highest position a credential's sessions acknowledged, None without a session."""
+def _acknowledged(conn: Connection, credential_id: str, membership_id: int) -> int | None:
+    """The highest position a credential's sessions acknowledged in the project of
+    `membership_id`, None without a session there."""
+    p = t.agent_session_project
     value = conn.execute(
-        select(func.max(t.agent_session.c.acknowledged_seq)).where(
-            t.agent_session.c.credential_id == credential_id
+        select(func.max(p.c.acknowledged_seq))
+        .join(t.agent_session, t.agent_session.c.id == p.c.session_id)
+        .where(
+            t.agent_session.c.credential_id == credential_id,
+            p.c.membership_id == membership_id,
         )
     ).scalar()
     return None if value is None else int(value)
@@ -81,20 +87,25 @@ def block(
     nothing, or it has acknowledged its first packet's cursor. `after` and `cursor` are
     `events.after` and `events.cursor` of the packet being built; the first packet's are
     stored with it. The caller has stored the session of this packet already."""
-    credential = conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
+    credential = conn.execute(
+        instances.credential_rows().where(
+            t.credential.c.id == credential_id,
+            t.instance_attachment.c.membership_id == mine.id,
+        )
+    ).one()
     if credential.replaces is None:
         return None
     if credential.first_cursor is None:
         # The first packet always carries it, whatever cursor the resume named.
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == credential_id)
+            update(t.instance_attachment)
+            .where(instances.attachment_of(credential_id, mine.id))
             .values(first_after=after, first_cursor=cursor)
         )
         first_after = after
     else:
         first_after = credential.first_after
-        own = _acknowledged(conn, credential_id)
+        own = _acknowledged(conn, credential_id, mine.id)
         if own is not None and own >= credential.first_cursor:
             return None
     left = chain(conn, credential)
@@ -144,7 +155,7 @@ def _since(conn: Connection, project_id: str, left: list[Any]) -> int:
     instance made before `exchange_seq` existed has none: the project's newest event at the
     time it was created stands in."""
     for row in left:
-        acknowledged = _acknowledged(conn, row.id)
+        acknowledged = _acknowledged(conn, row.id, row.membership_id)
         if acknowledged is not None:
             return acknowledged
     oldest = left[-1]

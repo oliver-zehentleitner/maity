@@ -16,7 +16,7 @@ from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address, headers, settings, smtp
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import row_of
 
 router = APIRouter()
 
@@ -59,7 +59,7 @@ def test_mail(
             raise invalid(extra)
         to = body.get("to")
         if to is None:
-            own = preferences.row_of(conn, caller.principal_id)
+            own = row_of(conn, caller.principal_id)
             if own.address_status != "verified" or own.address is None:
                 raise invalid({"to": "no_verified_address"})
             to = own.address

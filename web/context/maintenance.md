@@ -39,14 +39,19 @@ keeps the views from each having to handle the 503 themselves.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the web part of card tsk-12hwmpykz2ht (docs/api.md §16.12), 2026-11-02
+**Source:** the web part of card tsk-12hwmpykz2ht (docs/api.md §16.12), 2026-11-02; the quiet read's exception from pull request #2036 (tsk-zf3wd9t5gjab), merged 2026-11-20, and a review of it
 **Revisit when:** the hub pushes the window over a stream the page already holds
 **See:** maintenance.md#the-maintenance-banner-stands-above-the-header-the-full-page-is-decided-where-a-drawing-starts — 2d7a3955-c125-4911-8e23-72e996cb7631 — as of 2026-11-02
+**See:** views.md#the-notifications-head-starts-beside-bootstrap-quiet-until-the-session-is-known-a-drawing-led-on-at-once-takes-the-same-head — 19a7d2b5-22af-4a7e-8592-b4446081e9cd — as of 2026-11-21
 
 `js/maintenance.js` knows the window from `GET /maintenance` (at most
 once a minute, before a drawing, for visitors too), from `/me`'s
-`maintenance` (on every read of the counts), and from the details of any
-`503 maintenance` (`js/api.js` hands every one to `M.onMaintenance`). Its
+`maintenance` (on every read of the counts), and from the details of a
+`503 maintenance` (`js/api.js` hands each one to `M.onMaintenance`, except
+a quiet read's: the boot's notifications head is asked before the session
+and the window are known, and the redraw its refusal would start asks the
+next head, refused again, without end; the drawing learns the window from
+its own reads). Its
 state is computed from `from` and `until` by the hub's clock as the page
 knows it (`M.api.now`). One timer is set for the next boundary, so the
 full page comes and goes without a request. While the full page stands,
