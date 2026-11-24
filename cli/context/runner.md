@@ -7663,10 +7663,12 @@ sandbox, so the build is held to running nothing the clone holds:
   repository, fetched into a bare repository of the runner's own (`skills._git`: no hooks, no
   user or system configuration), one per placement so two starts never share a FETCH_HEAD. The
   runner runs no git in a clone (workspace.py), and the work tree's copy is the agent's to edit.
-- Only `name==version` lines with sha256 hashes pass, extras and markers allowed; an option, a
-  URL, a path or an include refuses the lock.
-- pip installs hashed wheels only (`--only-binary=:all:`, `--no-deps`) into a venv the system
-  Python made just now, so no build script of any package runs.
+- Only `name==version` lines with sha256 hashes pass, extras and markers allowed; an option
+  (any token starting with `-` but a sha256 `--hash`, also after a marker), a URL, a path or an
+  include refuses the lock.
+- pip installs hashed wheels only (`--only-binary=:all:`, `--no-deps`) into a venv the runner's
+  python3 (the first on its PATH, which may be a pyenv or uv one) made just now, so no build
+  script of any package runs.
 - The clone's own package is not built (hatch_build.py and setup.py are clone code): a `.pth`
   names `<sub>/src`. The hub, run from a checkout, reads `web/` and `docs/join-page.md` from the
   repository (`config.checkout_web_dir`, `joins.py`), as tools/guards.sh already runs it with
@@ -7683,6 +7685,15 @@ sandbox, so the build is held to running nothing the clone holds:
 A venv that cannot be had is logged and never fails a start. Elsewhere (the agent_user layout, an
 ssh host) the runner builds none and says so: the agents' user could not read the runner's
 directory, and a build there would need its own path, as the skill has (skills.deliver).
+
+**Not verified:** the rules name the venv by its resolved path, while the session reaches it
+through the link in its clone, a path the clone's Edit and Write allow matches. For commands the
+OS sandbox resolves the link and its denyWrite holds. Claude Code's file tools apply its
+permission rules themselves, and whether their Edit deny follows the link to its target is not
+tested here; so writing the venv through the clone's link with the file tools is not claimed to
+be refused. The venv's `bin/python` links on to the runner's python3, which in the `single`
+layout may belong to the agents' user. Follow-up: a live probe on the pinned Claude Code (an
+Edit and a Write through `<sub>/.venv` into the venv, and through `bin/python`), recorded here.
 
 The same card's other parts: tools/guards.sh takes `hub/.venv/bin/python` when it is there, else
 `python3` as before; the repository's `.gitignore` hides the sandbox's placeholders, which
