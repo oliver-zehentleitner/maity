@@ -10,14 +10,16 @@
 **Revisit when:** the generated text grows a part that depends on the caller (then the digest has to cover that input as well), or projects are so many that a start which bumps them all is slow
 
 `rules.generate` renders the text a member reads; its sentences live in constants and inside the
-function. `rules.text_digest()` is a SHA-256 over every text constant of `rules.py` and over two
-rendered sample documents (supervised and not), so a sentence written inside `generate` moves it as
+function. `rules.text_digest()` is a SHA-256 over every text constant of `rules.py` and over eight
+rendered sample documents (the roles coder, a project role, reviewer and tester, each supervised and
+not, with sample `settings.role_rules`), so a sentence written inside `generate` moves it as
 well. `project.rules_text_digest` holds the digest the project's `rules_version` last counted. At every
-start the hub (`rules.sync_text`, in the lifespan) takes each project whose digest is not the current
+start the hub (`rules.sync_text`, in `start_once`: in the lifespan of a single process, in the parent
+of several workers before any is spawned) takes each project whose digest is not the current
 one (or is null), under that project's lock claims it with a conditional update, and bumps
 `rules_version` once with `rules_changed` (`reason: "generated text"`), so an agent that resumes with
 a current cursor reads the new text; a new project is created with the current digest and needs no
-bump. `sync_text` runs once in the lifespan after the schema check, in one transaction, and takes the
+bump. `sync_text` runs once per start in `start_once`, after the schema check, in one transaction, and takes the
 projects in id order, so two hubs starting together lock them in the same order and cannot deadlock.
 The first start after the migration counts every existing project once.
 

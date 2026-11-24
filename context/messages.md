@@ -9,8 +9,11 @@
 **Source:** contract change in `docs/api.md` §8.6, 2026-10-22
 **Revisit when:** members ask to be pinged from requests or chats, or mentions are needed in a field the hub does not scan
 
-`@handle` is a mention when the handle belongs to exactly one active
-member of the project; anything else stays plain text, never an error.
+`@handle` is a mention when it names exactly one active member of the
+project, a human whose current handle it is coming first; an unknown
+handle stays plain text, but a short handle two members share is refused
+(`invalid`, `ambiguous_mention`, with the global names it could mean in
+`details.mentions`).
 The hub resolves mentions when the text is written and stores them
 (member, field, offset); a client cannot supply them, and they are not
 resolved again later. A mention in a message body adds the member to the
@@ -77,9 +80,10 @@ a runner — around the rate that exists to bound exactly that.
 **Source:** contract change in `docs/api.md` §8.8, 2026-10-23; the dashboard's Messages tab, which reads them from the events
 **Revisit when:** the event log gains a server-side `kind` or `type` filter, or project messages get a read state of their own
 
-`GET /projects/{slug}/messages` lists the project's messages — every
-type but `chat` — newest first, with `before=`/`after=` starting points,
-a `type` filter, and exactly the readable set of `GET /events`. A
+`GET /projects/{owner}/{slug}/messages` lists the project's messages — every
+type but `chat` — newest first, or oldest first when an `after=` starting
+point is given (`before=` pages down from a seq), with a `type` filter,
+and exactly the readable set of `GET /events`. A
 redacted message is a tombstone and, having lost its type with its
 payload, is listed only without a `type` filter.
 
@@ -361,8 +365,10 @@ when it last read), so it can say so instead of a human finding out.
 **See:** messages.md#an-agent-that-stops-reading-is-noticed-by-the-hub-and-its-owner-and-lead-are-told-once — 544e600d-b2ee-4a61-afc7-85ebc426da09 — as of 2026-10-29
 
 An episode of not listening starts after 10 minutes, as before, and the
-member the agent reports to still gets `member_not_listening` then, so
-the team can re-route. The owner no longer gets one request per
+member the agent reports to still gets `member_not_listening` then,
+unless that boss is of another owner (members.md,
+8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a), so the team can re-route; the
+admins and the agent's owner, when a member, read it too. The owner no longer gets one request per
 episode. Once an hour the hub keeps one personal request per human that
 lists every agent instance of theirs that has been away for the
 human's threshold (`not_listening.minutes`, default 60, which the human
@@ -461,7 +467,9 @@ visible as such.
 Before a `review_result` is sent, the client checks its text against the
 head in the local clone, as it already checks the cites: a file and line
 (full path, the file long enough), a name in a code span (a path, or an
-identifier or key found as text), and an object hash. A name counts as
+identifier or key found as text), an object hash, and a quotation of
+four words or more that the text ties to a file, which has to stand
+verbatim in that file. A name counts as
 there at the head or at the tip of the default branch; a file and line
 only at the head. Addresses, hub ids, placeholders and words
 outside ASCII in a code span are skipped, and a hash is any object in

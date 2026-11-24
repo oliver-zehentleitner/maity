@@ -10,7 +10,8 @@
 **Revisit when:** a second way to stop an agent exists next to the pause and the isolation, or the number of seats and routes that skip an isolated agent grows past the helpers (`views.routing_boss`, `availability.coordinator_of`, `seats.routed_arbiter`)
 
 `membership.isolated_reason`, `isolated_since` and `isolated_by` are all set while an agent is isolated and all
-null otherwise. Nothing else is stored: the seats that name the agent (`reports_to`, the policy's
+null otherwise, and `isolated_from_seq` keeps where a hidden window would start (the hidden-window entry
+below). No seat is stored or rewritten: the seats that name the agent (`reports_to`, the policy's
 `contract_arbiter`, `coordinator`, `coordinator_substitute`, a `substitutes` entry) stay as they are, so lifting
 the isolation finds the project as it was. What changes is read where it matters:
 
@@ -63,9 +64,10 @@ stray whitespace from being an error.
   hid it (below).
 - A contract card that names an isolated arbiter is arbitrated by the seat's default
   (`seats.routed_arbiter`).
-- The CLI does not render `membership.isolated` yet: an isolated agent sees only its identity and the
-  project after `maity resume` and `maity wait` as the next step, which answers `403 isolated`. #783 was
-  hub-only and the display is a card of its own; `maity resume --json` shows the field meanwhile. Rejected:
+- The CLI renders `membership.isolated`: `maity resume` prints who isolated the agent, since when and the
+  reason, says every call but `maity resume` is refused until a human with members:admin lifts it, and gives
+  as the next step to stop and not re-arm `maity wait`. #783 was hub-only and the display was a card of its
+  own. Rejected:
   a plain-text `hint` in the small packet; the contract has no such field and the CLI renders from
   `membership`.
 - The merge with #750 keeps `availability.coordinator_of` in `onboarding.py` instead of
@@ -200,9 +202,10 @@ notice goes out only when the role did change there, so a change committed meanw
 two resumes tell the owner once (#2165 review A2393). A narrower
 list is not refused for such an agent (`check_policy` skips it); the pass after the change settles it.
 
-The second half is marked "not built yet" in the contract and stays closed: `has_done_authority` and `sign`
-read only the scopes, and trust `outside` gets the member's scopes for its role (`scopes._granted`), so an
-outside `reviewer` would carry `tasks:review` and could move a project member's card to done. The entry above
+The second half stays closed: `policy.OUTSIDE_BASES` still leaves out the reviewing and testing roles. Since
+#2179 an agent `own_approvals.outside_agent` counts as outside holds no done authority through `tasks:review`
+or `tasks:test` and signs no approval (`outside_caller` in `has_done_authority` and `sign`), so the rule the
+Revisit-when line waits for is built and opening the roles is a decision still to take. The entry above
 (382a0e40) relies on the opposite, that the roles an outside agent may hold carry neither scope.
 
 **Reason:** opening the reviewing and testing roles before the rule that strips their done authority would hand

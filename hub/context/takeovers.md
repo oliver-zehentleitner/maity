@@ -63,7 +63,7 @@ take a card from its holder. The requester learns of it through
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-25 (`docs/api.md` §6.19, §7); the mechanism agreed with the hub's owner
 
-The escalation is a `decision` request to `role:admin` with the replies
+The escalation is a `decision` request to `trust:admin` with the replies
 `transfer` and `keep`, filed through `requests.file_proposal` and carrying
 the proposal kind `takeover_escalation`. Its answer settles the takeover
 through `proposals.settle`. Three additions to the proposal mechanism make

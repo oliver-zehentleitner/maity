@@ -51,9 +51,11 @@ URL, not logged, and leaving the view drops it.
 
 An image source is never taken from data either (since 2026-10-22): a
 project's logo and banner are loaded only from the hub's own path, which
-the page builds from the slug and the ETag
-(`/api/v1/projects/<slug>/logo?v=<etag>`, `docs/api.md` §11.2), or from an
-object URL of a file chosen in the same tab; `Maity.dom.h` refuses any
+the page builds from the project's full name (owner and slug) and the ETag
+(`/api/v1/projects/<owner>/<slug>/logo?v=<etag>`, `docs/api.md` §11.2), or from an
+object URL of a file chosen in the same tab; `Maity.dom.h` accepts as `src` a
+relative dashboard file, a hub image it builds (logo, banner, avatar, public
+motif or badge) and an attachment or campaigns file path, and refuses any
 other `src` — an `https` URL of another origin included (links may be https, images may not). The hub serves the image from its own origin and never lets
 the browser load one from the forge.
 
@@ -976,10 +978,12 @@ under `forbidden` it says more. Each code is written out as `M.tOwn("error.<code
 `js/i18n.js` gives `M.t(key, values)` over `window.MAITY_I18N[lang]`,
 which `js/i18n/<lang>.js` sets; `tools/check.py --write` builds that file
 from `i18n/<lang>.json`, as it builds the fixtures' bundle, because a
-page from `file://` cannot fetch JSON. The bundle sits under `js/`, the one script
-directory the hub serves at `/assets/` besides `css/` and `brand/`
-(`hub/src/maity_hub/shell.py`), so it needs no hub change; the JSON
-beside it is the file a translator edits. A text is a string or plural
+page from `file://` cannot fetch JSON. The bundle sits under `js/`, which
+the hub already serves at `/assets/` together with `css/`, `brand/` and `vendor/`
+(`hub/src/maity_hub/shell.py`), so it needs no further hub change. The file a
+translator edits is the JSON under `i18n/` (`en.json` and the other language
+files); `check.py --write` builds the script under `js/i18n/` from that JSON,
+and the two directories are not beside each other. A text is a string or plural
 forms chosen by `Intl.PluralRules`; a number in a placeholder is
 formatted for the locale; a key the catalog lacks reads as itself.
 `M.fmt` formats dates and numbers with `Intl` in `M.i18n.locale`, the
@@ -993,8 +997,10 @@ at merge time, not from the branch's base: every view PR that lands
 first raises its file's count, so a ratchet PR merges main last and
 raises those counts by hand with the reason. Rejected: computing the
 baseline in CI from main, which would accept every new string and hold
-nothing back. English is the only catalog; the first
-keys are the chat's instance choice. A label kept in a table at load time
+nothing back. Ten catalogs are named in the language list (German,
+English, Spanish, French, Italian, Japanese, Korean, Dutch, Portuguese
+and Simplified Chinese); the English catalog's first keys are account
+texts, not the chat's instance choice. A label kept in a table at load time
 (the tabs, the states, a field's rules) is a getter that calls `M.t`
 when it is read, so a language set after the page loads still applies.
 A sentence that holds a link or a member
@@ -1025,9 +1031,10 @@ is a whole text of its own ("3 waiting for approval · 1 registered in
 the last hour"); what stays rejected is a sentence made of pieces. A language offered for choice
 is named in itself ("English", "Deutsch"), never through the catalog: a
 reader looks for their own language's name, not its name in the
-language shown now. Still the hub's words: an
-organisation's roles (`owner`, `admin`, `member`) in its sentences and
-options, until a second language gives them keys. A count said with a word ("3 in
+language shown now. An organisation's roles (`owner`, `admin`,
+`member`) are catalog sentences, one key each (`orgs.role.<role>`), and
+the other languages translate them; they are not left as the hub's raw
+words. A count said with a word ("3 in
 progress" in the board bar's name, "2 urgent") is one key per word with
 `{count}`, not the label lowercased after a number. A key that counts
 has its plural forms even where English writes them alike ("Earlier

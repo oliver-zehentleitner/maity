@@ -107,9 +107,9 @@ leaves the page. `form-action 'self'` is new: the old policy did not restrict wh
 **Evidence:** confirmed
 **Source:** card tsk-w62n5p0v9d47 and the lead's go on its plan (2026-11-05); contract `docs/api.md` §16.7.5, §18.6 (#1394); `link_frame.py`, `routes/mail_links.py`; why the policy changed is the root's context/security.md, 8191d964
 
-The four pages of `routes/mail_links.py` and the sign-in link's page are drawn by one helper,
+The five pages of `routes/mail_links.py` and the sign-in link's page are drawn by one helper,
 `link_frame.page`, which reads the frame's model and answers with `link_frame.HEADERS`
-(`render.DOOR_CSP`, `Referrer-Policy: no-referrer`). The four pages of `mail_links.py` keep their
+(`render.DOOR_CSP`, `Referrer-Policy: no-referrer`). The five pages of `mail_links.py` keep their
 words, statuses, the GET that changes nothing and the one button, and their content stands in a
 `.link-page` block of the door's column, which `public-pages.css` gives paragraph spacing and the
 quote's rule. The sign-in link's page keeps its own content and its GET's form cookie, as above. A test
@@ -117,7 +117,7 @@ pins the policy string and fetches each stylesheet the page names with the test 
 200 as `text/css` with `nosniff`, and every `url(...)` in it relative, the hub's own (no browser
 applies the policy there).
 
-**Reason:** one helper keeps the five link pages under one policy and one frame, so a change to
+**Reason:** one helper keeps the six link pages under one policy and one frame, so a change to
 either reaches all of them. The `.link-page` scope keeps the new rules off the dashboard's own
 door pages, which share the stylesheet.
 

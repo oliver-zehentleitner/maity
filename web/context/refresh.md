@@ -43,7 +43,7 @@ resource of the open view (the chat's messages, the board's tasks) on
 its own interval, as before — one call per view and interval instead of
 one feed, and nothing for the views that have no cheap "after" query.
 
-## Notification counts ride on the 15-second /me read; browser notifications long-poll their own endpoint, and only after the human turned them on
+## Notification counts ride on the 60-second /me read; browser notifications long-poll their own endpoint, and only after the human turned them on
 
 **Id:** e849f49d-bbdf-462c-972d-a67e7f6740e6
 **Type:** decision
@@ -105,7 +105,7 @@ prompt nobody asked for is what people learn to deny.
 **Source:** docs/api.md §2.6.5 and §18.3 (marking a `session_created` item read gives the reported session good standing); the coordinator's ruling on the review of the dashboard's notifications (PR #194), 2026-10-23
 **Revisit when:** the hub lets the bell confirm a sign-in itself, or §2.6.5 changes who may mark a security item
 **See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-10-23
-**See:** refresh.md#notification-counts-ride-on-the-15-second-me-read-browser-notifications-long-poll-their-own-endpoint-and-only-after-the-human-turned-them-on — e849f49d-bbdf-462c-972d-a67e7f6740e6 — as of 2026-10-23
+**See:** refresh.md#notification-counts-ride-on-the-60-second-me-read-browser-notifications-long-poll-their-own-endpoint-and-only-after-the-human-turned-them-on — e849f49d-bbdf-462c-972d-a67e7f6740e6 — as of 2026-10-23
 
 In the bell, opening an item marks it read, except an item of kind
 `security`: a new sign-in or an address change. It stays unread and

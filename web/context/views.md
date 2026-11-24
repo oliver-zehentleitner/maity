@@ -10,9 +10,11 @@
 **Revisit when:** the first weeks of use show the human opening another view first
 **See:** https://github.com/oliver-zehentleitner/maity — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-21
 
-The dashboard opens on the inbox, and the navigation lists the views in
-the order of their importance: inbox, board, agents and presence,
-organisation, chat. The inbox works one entry after the other: the first
+The dashboard opens on the inbox, and the navigation lists its tabs in
+this order (`NAV` without the `tab: false` routes): inbox, overview,
+board, members (the Team page), agents, chat, messages, ticker, why,
+memory, jour fixe, settings. Organisation is a tab of the Team page, not
+a tab of its own. The inbox works one entry after the other: the first
 open request is expanded with its context (task, what the agent tried,
 the options it sees) and its answers (prepared replies, free text,
 "neither — let's talk"); answering moves on to the next. The chat with
@@ -3485,10 +3487,11 @@ route would add a read without adding anything to see.
 
 The fixture hub's `GET /people/{handle}` answers `page_served` for an
 organisation from its `public_page` switch, and lists its projects with
-a served page as `shared: false`. The real hub reads the store, where no
-organisation page exists yet, so it answers `false` for every
-organisation. The person view's **View public page** branch for an
-organisation is drawn only in the fixture.
+a served page as `shared: false`. The real hub renders an organisation's
+page (`public_orgs.render_org`) and answers `page_served: true` for an
+organisation whose page is in the store and not on hold. The person
+view's **View public page** branch for an organisation is drawn against
+the real hub too.
 
 **Reason:** with the hub's answer the branch would never be drawn
 in smoke, and would break unseen when the hub starts serving the page.
@@ -4290,7 +4293,7 @@ and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
 
-## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation and Mine
+## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation, Runners and Mine
 
 **Id:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Type:** decision
@@ -4363,7 +4366,7 @@ proposed: see the reason.
 **Evidence:** inferred
 **Source:** the owner in the project chat, 2026-11-19, relayed on the card tsk-ert2k23kr5m4 (the Runners page "should become a tab of settings"; asked about keeping the old address: no, no legacy); the tab's place, its permission and the hub's `404` are the implementer's, 2026-11-20
 **Revisit when:** a runner's owner who is no admin gets a way to detach from the dashboard (1cf107b2), or the Settings tabs are regrouped
-**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
+**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-runners-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
 **See:** views.md#the-header-gets-a--menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc — as of 2026-11-20
 **See:** views.md#project--runners-is-the-project-admins-tab-refreshes-redraw-in-place-and-a-missing-list-fails-loud — 1cf107b2-991d-42e4-aa35-9dd8f84216eb — as of 2026-11-20
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-20
@@ -7595,7 +7598,7 @@ pairs that read better in the column. Inside the column fields and
 help texts fill it, so a panel has one right edge, and a form's buttons
 (`.actions`, `.row`, Remove, and a grid form's own: `form`,
 `.field-stack`, `.image-row`) start at its left, next to what they send;
-a form's own button is not stretched across it. A form's own width (32, 36 or 48rem) still
+a form's own button is not stretched across it. A form's own width (32, 36, 42 or 48rem) still
 holds outside a column (the admin area, the inbox, the sign-in): inside
 one the form fills the column. The instance admin area is not in this
 decision's scope; its forms keep their widths. The rules that put

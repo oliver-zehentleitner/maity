@@ -42,7 +42,7 @@ changes both ways (§6.4, §6.14).
 **Source:** implementation session, 2026-10-29 (migration 0078)
 **Revisit when:** pauses get an origin field in the contract
 
-`membership.paused_line` and `credential.paused_line` say that the pause
+`membership.paused_line` and `instance_attachment.paused_line` say that the pause
 beside them was set under `line:lead`. Who lifts a pause depends on the
 right it was set under (§5.3): a manager's is lifted by a manager above, an
 admin agent and the agent's owner; an admin agent's only by that agent or a

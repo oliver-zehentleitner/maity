@@ -96,9 +96,9 @@ migration (0020); a project that is switched on afterwards gets its moment
 from the PATCH that switches it on, and there is no other way to be on.
 §17.4 also discards a merge the probe did not see while it happened
 when `merged_at` is more than one hour before delivery. Exactly one
-hour old is still delivered. This scan applies that bound, before the
-forge is read and again when the item would be written (the entry on
-the two checks).
+hour old is still delivered. This scan applies that bound before the
+pull request's files are read, and again when the item would be written
+(the entry on the two checks).
 
 **Reason:** §17.4 announces nothing older than the switch, so the moment
 has to be stored; the dedupe key alone would announce the whole history
@@ -195,7 +195,7 @@ delivers a merge that is at most one hour old.
 **Revisit when:** a forge other than GitHub signs deliveries, or the hub runs more than one replica (the limits are in-process)
 **See:** packaging.md#cryptography-for-the-secrets-the-hub-stores-held-to-one-major-release — 2ea5c41e-7128-4205-91dc-04ff6110b338 — as of 2026-10-23
 
-`POST /api/v1/projects/{slug}/forge/webhook` never reaches the API's
+`POST /api/v1/projects/{owner}/{slug}/forge/webhook` never reaches the API's
 routes: `maity_hub.forge_webhook.handle` answers it from the middleware,
 before the middleware would read the body. Every slug is treated the
 same until a signature verifies. Every request first takes a place in

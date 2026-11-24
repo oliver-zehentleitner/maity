@@ -22,9 +22,10 @@ clockwise with a fading trail, one lap in 0.9 s; with
 are in `web/brand/`, with `BRAND.md` beside them.
 
 The fonts BRAND.md proposes (Space Grotesk, Inter, JetBrains Mono, all
-self-hosted rather than loaded from Google Fonts) are not part of the
-change that added the assets; they follow separately, as does wiring the
-assets into the dashboard.
+self-hosted rather than loaded from Google Fonts) were not part of the
+change that added the assets. They are now loaded from `css/fonts/` by
+the dashboard stylesheet, and the header lockup from `web/brand/` is
+wired into the dashboard.
 
 **Reason:** the round shows what Maity is about, humans and agents as
 members of one team around a project, and the drawn "m" belongs to the
@@ -47,7 +48,8 @@ sizes.
 **Revisit when:** the header needs the lockup in a colour other than its two files, or the site gets a build step
 
 The header's title is `maity-lockup.svg` and `maity-lockup-dark.svg` as
-two `<img>` with `alt="Maity"`, 28 px tall; app.css shows the dark one
+two `<img>` with an empty `alt`, 28 px tall, inside a link that carries
+the accessible name; app.css shows the dark one
 where the page is dark by the system (unless Light was picked) or by the
 picked Dark, the same two conditions the dark tokens use. The page loader
 is `loader.html` inline in index.html, its timing in `brand/loader.css`.
