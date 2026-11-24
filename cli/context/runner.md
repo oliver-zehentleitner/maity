@@ -7816,13 +7816,20 @@ set-aside tree dead.
 `[repositories."<repo>"] python_tools` names directories of the clone (`tools`, `web/tools`).
 For each one a sandboxed Claude Code session on the runner's own host gets
 `Bash(python3 <dir>/*.py)` and `Bash(python3 <dir>/*.py *)`, and the runner's PreToolUse hook
-gets the clone, the directories and the paths the session may write besides the clone. The
-hook holds every line that could match such a rule (a python3 word, by any path or in any case,
-followed later by a word that starts with a tool directory) to one form: `python3
-<dir>/<name>.py` and plain or single-quoted arguments, on one line, from the clone's root,
-every part of the script's path a real directory or a regular file (lstat, no link), and
-`python3` on the hook's PATH outside the clone and every writable path. When it cannot decide
-(no working directory, a lookup that fails, no python3), it refuses.
+gets the clone, the directories and the paths the session may write besides the clone: its
+scratch and the whole leaf of its own TMPDIR, since Claude Code opens its own `claude-<uid>/`
+beside the leaf's `tmp` to the session's commands. The hook holds every line that could match
+such a rule (a python3 word, by any path or in any case, whose first word after its options
+starts with a tool directory) to one form: `python3 <dir>/<name>.py` and plain or
+single-quoted arguments, on one line, from the clone's root, every part of the script's path a
+real directory or a regular file (lstat, no link), and `python3` on the hook's PATH outside the
+clone and every writable path. That last check takes the program as found, as resolved, and the
+directory it was found in resolved, against each root as given and as resolved, so a `python3`
+link in a writable directory under a linked ancestor (macOS's `/tmp`) counts as the session's.
+When it cannot decide (no working directory, a lookup that fails, no python3), it refuses. The
+check is wider than the rules on purpose, so a line with a tool directory right after a python3
+word for another reason (`git grep python3 tools/`) is refused too; `python3 -m pytest
+tools/…` is not, since no `python_tools` rule can match it.
 
 **Not verified:** the working directory is the `cwd` of Claude Code's hook input; that it
 follows the session's shell after a `cd` is not tested here (`cd` is not granted). A script
