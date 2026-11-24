@@ -21597,6 +21597,13 @@ At that start the runner sets the old clone aside and makes a new one:
   `maity runner status` lists the set-aside clone with its path, the
   time it was set aside and its unsaved count (git runs there only when
   its `.git` is laid out like a plain clone's, else `not inspected`).
+  That git runs with the clone's own configuration and hooks ignored, as
+  `gc`'s does: only on a `.git` whose configuration holds a plain
+  clone's keys alone (so no `include`), with `core.hooksPath=/dev/null`,
+  `core.fsmonitor=false` and git's other configured programs overridden
+  on its command line, and no system or global configuration
+  (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL=/dev/null`), since a
+  set-aside clone is untrusted.
 - **Removed by hand.** The set-aside clone is meant to be kept as a
   stopped clone is ("The workspace after a stop", above: the
   `workspace_retention` of the placement it was set aside for, from the

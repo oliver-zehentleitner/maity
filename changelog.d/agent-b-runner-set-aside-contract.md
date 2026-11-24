@@ -16,5 +16,6 @@
   waits for that owner (§15.6). A failed rename keeps the hub's state, and the next start
   reports `set_aside` again at the new epoch; a taken name gets `-2`, `-3`, …, never an
   overwrite. A set-aside clone is removed by hand, named by `maity runner status` with its
-  unsaved count; `gc --revoked` does not take it yet. Every other path in the other layout
+  unsaved count, counted by git with the clone's configuration and hooks ignored, as gc's;
+  `gc --revoked` does not take it yet (tsk-nnv2dg7j3bd4). Every other path in the other layout
   stays `workspace_in_use`. Not built yet (tsk-9f69y1hr1m6z).

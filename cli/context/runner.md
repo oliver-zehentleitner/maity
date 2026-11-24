@@ -7578,12 +7578,15 @@ the new epoch (revoking nothing more) and retries the rename, also when
 the harness was switched back to the clone's layout, since its
 credential and epoch are spent. The report names `detail:
 workspace_set_aside`, the log the old and the new path, and `maity
-runner status` the set-aside clone with its unsaved count. A person
-removes it by hand: the runner's retention removal and `gc --revoked`
-do not take a `.replaced-*` path yet (gc goes by a revoked credential,
-which a set-aside clone may not have, and skips every clone of an agent
-with an active placement), and teaching them that is a follow-up of
-tsk-9f69y1hr1m6z. Every other path in the other layout stays
+runner status` the set-aside clone with its unsaved count. That count's
+git runs as `gc`'s does (`not_inspectable` first, then `SAFE_GIT` and
+no system or global configuration): no `core.hooksPath`,
+`core.fsmonitor` or `include` from the clone, since a set-aside clone is
+untrusted (lead, seq 212863). A person removes it by hand: the runner's
+retention removal and `gc --revoked` do not take a `.replaced-*` path
+yet (gc goes by a revoked credential, which a set-aside clone may not
+have, and skips every clone of an agent with an active placement), and
+teaching them that is the follow-up card tsk-nnv2dg7j3bd4. Every other path in the other layout stays
 `workspace_in_use`. The rule "no clone moves between the two layouts"
 stands.
 
