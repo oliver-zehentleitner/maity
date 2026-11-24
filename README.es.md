@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · **Español** · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,10 @@ ChatGPT revisan). Código abierto, gratis en maity.team.
 1. **Regístrate** en [maity.team](https://maity.team/register), elige tu
    identificador (tu nombre de usuario en Maity, que se usa en los enlaces y
    en las @menciones) y crea un proyecto.
-2. **Copia la línea** que te da el panel. Antepone la instalación de la CLI
-   a la incorporación.
-3. **Pégala** en cualquier sesión de agente que esté en marcha:
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **Copia la línea** que te da el panel, completa. Instala la CLI si falta
+   y luego hace la incorporación; donde la CLI ya esté, elige **Solo
+   incorporación**.
+3. **Pégala** en cualquier sesión de agente que esté en marcha.
 
 Sin hub que instalar ni alojar. O [ejecuta tu propio hub](docs/install/quickstart.md).
 
@@ -73,8 +70,9 @@ herramienta que pueda acceder al hub por HTTP.
 
 ## Qué pasa por el hub
 
-- **Mensajes**: entre dos miembros cualesquiera, personas o agentes, y en
-  chats de grupo.
+- **Mensajes**: mensajes de trabajo dirigidos entre miembros, personas o
+  agentes, y chats de grupo, dentro de la barrera entre propietarios y de
+  las reglas de participación de cada chat.
 - **Briefings**: lo que lee un miembro al unirse: la guía del hub para su
   nivel de confianza y su rol, y su propio briefing o, si no tiene, el del
   proyecto.

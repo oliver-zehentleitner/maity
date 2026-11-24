@@ -790,6 +790,79 @@ writable surface and no write that leaves the scratch.
   cannot be anchored is refused with a reason the operator can act on
   (upgrade the host) instead, so the breakage is named, not hidden.
 
+## A Codex start stops the app-server daemon left in its codex-home
+
+**Id:** a0398852-94d9-4b31-b0d5-d337cbd74498
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh; the review of #2175 (A2463) and the lead's ruling on it: no signal fallback in slice 1, one deadline over the whole stop
+**See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
+**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close, and a fallback for a daemon that does not stop) lands, or the follow-up card tsk-p69g2w9ang28, which reads the agents' home again on a reconnect or an account change, lands
+
+At every Codex start, interactive or supervised, first or restart, the
+runner stops the app-server daemon that an earlier start left in the
+placement's `CODEX_HOME` (`codexd.stop_codex_daemon`, called from
+`Supervisor._start`). It does so in the start thread, outside the lock,
+after the skill and before `_context`, which removes the old TMPDIR leaf,
+and before the launch writes the new `config.toml`. The stop is
+`codex app-server daemon stop` with the probed binary, run as the agents'
+user with only `HOME`, `PATH` and that `CODEX_HOME` in its environment, on
+every target. The agents' home for its `HOME` is the one the target found,
+so no account lookup runs at the start. The agents' home is read when the
+target is set up or connects and stays for the life of the runner process;
+a change to the account takes effect at the next runner start. Reading it
+again on a reconnect or an account change is deferred to the follow-up card
+tsk-p69g2w9ang28.
+One deadline of 20 s covers the check and the stop: up to 5 s for one
+`sh` as the agents' user that walks from a root the runner makes and
+checks itself (the workspaces root for a home in the scratch, the agents'
+files without one) down to the home and says by a token whether it is a
+directory, a link (at the root, the home or on the way), something else or
+absent (a missing root included);
+the stop gets what is left, and none runs once the check has used it up.
+The check is a subprocess on every layout, so its wait is bounded; a child
+stuck in an uninterruptible wait on a dead mount can still hold the call
+while it is reaped, so the deadline bounds the wait, not every case. A
+home not there yet has no daemon to stop. A home not below its root, or
+one that is a link, lies behind one or is no directory, is not stopped: a
+stop through a link would reach whatever home the link names rather than
+this placement's. A check that gives no token, a failed sudo or ssh among
+them, is a home that cannot be checked, and is not stopped either. The
+check and the stop are not atomic: the path is named again to an external
+binary. A stop that exits non-zero,
+does not answer, cannot run or is skipped is one log line, and the start
+goes on. The runner signals no process itself. That the command is
+`codex app-server daemon stop`, with these exit codes, is as the card
+names it and not yet checked on a host; ops is checking.
+
+A stop that fails, does not answer or is skipped leaves the
+old daemon running, so the new session may still reach it and fail as it
+did before this change; the next start tries again.
+
+**Reason:** Codex 0.171 runs its turns in a managed daemon per `CODEX_HOME` that it
+detaches from the TUI's process group. The runner ends a session with a
+SIGTERM to the pane's process group (`Tmux.terminate`), so that TERM never
+reaches the daemon: it outlives the session, a restart's next TUI talks to
+it, and it still carries the environment of the start that made it. That
+environment's TMPDIR is a leaf the runner removes at every start, so every
+sandboxed command of the restarted session panicked.
+
+**Rejected alternatives:**
+- Only fixing the TMPDIR (keeping the first start's leaf, or one leaf for
+  the placement's life). The old daemon would still run with an older
+  generation's sandbox profile and network domains, which could stay in
+  force after a change that made a new generation.
+- Refusing the placement where the stop fails. The lead prefers an open
+  start over a blocked one, and the next start tries the stop again.
+- Killing every codex process of the agents' user. Other placements share
+  that user, and their daemons are theirs.
+- A signal fallback by CODEX_HOME in the environment or arguments, for the
+  processes of the agents' uid: no proof of ownership against another
+  process of that uid, a stale group snapshot or a reused pid (review of
+  #2175); deferred to slice 2 with an identity Codex records, checked with
+  a pidfd.
+
 ## agy's scratch lives under the host's shared temp directory, not beside the clone
 
 **Id:** 8ec06e26-42b6-47b7-9f23-2bad37da3dfa
@@ -7802,3 +7875,63 @@ set-aside tree dead.
   212827).
 - Deleting the old clone, or moving only its credential: deletes unsaved
   work, or puts the runner's hands on a credential it never holds.
+
+## A repository's own Python tools: the operator's grant names the directories, the runner's hook holds the exact form, and the sandbox stays the boundary
+
+**Id:** 647f183e-5e4c-4348-bf7d-bfbe41a9f90c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-z84jx2vp9mdd, on the maintainer's decision req-eghnjvn0p5n1 (coders on Claude Code may run the repository's Python tools; until then `python3 tools/*.py` was refused, which blocked PR 1606 and slowed docs work); the plan the lead approved on the card, 2026-11-24, with its rulings: the grant, not the runner's code; no absolute form; refuse when undecided; `cli/src/maity/runner/config.py`, `plaincall.python_tool`, `adapters.python_tools_dirs`
+**See:** runner.md — b2cbf1a7-e25c-4803-8bc4-845c488512fc — as of 2026-11-24
+**Revisit when:** Claude Code matches a `Bash(...)` rule by words rather than as a pattern over the whole line, so a rule alone could hold the form; or the hook on an ssh host is the runner's own code (then ssh hosts can get the rules too); or the clone stops being writable to the session
+
+`[repositories."<repo>"] python_tools` names directories of the clone (`tools`, `web/tools`).
+For each one a sandboxed Claude Code session on the runner's own host gets
+`Bash(python3 <dir>/*.py)` and `Bash(python3 <dir>/*.py *)`, and the runner's PreToolUse hook
+gets the clone, the directories and the paths the session may write besides the clone: its
+scratch and the whole leaf of its own TMPDIR, since Claude Code opens its own `claude-<uid>/`
+beside the leaf's `tmp` to the session's commands. The hook holds every line that could match
+such a rule (a python3 word, by any path or in any case, whose first word after its options
+starts with a tool directory) to one form: `python3 <dir>/<name>.py` and plain or
+single-quoted arguments, on one line, from the clone's root, every part of the script's path a
+real directory or a regular file (lstat, no link), and `python3` on the hook's PATH outside the
+clone and every writable path. That last check takes the program as found, as resolved, and the
+directory it was found in resolved, against each root as given and as resolved, so a `python3`
+link in a writable directory under a linked ancestor (macOS's `/tmp`) counts as the session's.
+When it cannot decide (no absolute working directory, a lookup that fails, no python3, a PATH
+that is unset or holds a relative or empty entry, which counts as a place the session can
+write), it refuses. With `python_tools` set it also refuses every line that holds a character
+`_odd` finds (a control character but a tab or a newline, a non-ASCII space, a format
+character), whatever program the line names: a harness may trim or split at one where the
+shell does not, and the lead chose to close that door rather than mirror any harness's
+normalisation. A plain `maity` call is not held to the tool form; it runs no python3. The
+check is wider than the rules on purpose, so a line with a tool directory right after a python3
+word for another reason (`git grep python3 tools/`) is refused too; `python3 -m pytest
+tools/…` is not, since no `python_tools` rule can match it.
+
+**Not verified:** timing between the hook's check and the run, and the working directory
+after a `cd`, are not tested here; the sandbox stays the boundary (the details are with the
+lead).
+
+**Reason:** Claude Code's `*` matches any text, `..` and a second command included, so a rule
+alone does not limit the script or the line; the hook reads the whole line, as it does for
+`maity`. The directories come from the operator's grant because a repository's commands stay
+the operator's to grant, and the runner names no repository's layout. The rules go only where
+the hook runs with them: with the sandbox on, since only then is there a hook, and on the
+runner's own host, since an ssh host's hook is that host's `maity`, which may not know the
+arguments, and a hook that fails refuses every call. The sandbox stays the boundary (b2cbf1a7):
+the clone is writable, so a session can put any code in a tool directory, as in a Makefile an
+allowed `make` runs. The rule limits the form, not what the code can reach.
+
+**Rejected alternatives:**
+- `python3 tools/*` in the grant's `allow` list: it matches `tools/../../x.py` and chains, and
+  it pins no interpreter.
+- A fixed list of tool directories in the runner's code: it would build one repository's
+  layout into every runner.
+- An absolute form (`python3 /<clone>/tools/x.py`): the session's commands start at the clone's
+  root, so the relative form is enough, and a second form is a second thing to hold (the lead).
+- Letting the hook pass a line it cannot check: an undecided hook that allows is no hold.
+- Normalising odd characters the way a harness might (trimming them, or splitting at them)
+  before the check: it would have to match each harness's reading exactly, and refusing such
+  a line costs a session nothing it needs (the lead).

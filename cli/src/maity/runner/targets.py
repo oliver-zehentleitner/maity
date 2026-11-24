@@ -39,6 +39,10 @@ class Target:
     agent_path: str
     max_agents: int
     agent_files: Path | None = None  # None until an ssh target has connected once
+    # The agents' user's home, found once where the target is set up or first connected, so a
+    # start reads it without an account lookup or a remote call; None until then. It stays for
+    # the life of the runner process: a change to the account takes effect at the next start.
+    agents_home: Path | None = None
     tmux_socket: Path | None = None
     probes: dict[str, capabilities.Probe] = field(default_factory=dict)
     sandbox: dict[str, bool] = field(default_factory=dict)  # harness id -> its OS sandbox
@@ -82,6 +86,7 @@ class Target:
         if self.backend is not None:
             return
         home = self.as_user.home()  # Unreachable, or OSError for a host set up wrong
+        self.agents_home = home
         self.agent_files = home / AGENT_FILES
         self.tmux_socket = self.agent_files / "tmux.sock"
         self.as_user = pin_maity(self.as_user, self.agent_path)
@@ -113,6 +118,8 @@ def local(
     def version(harness_id: str) -> str | None:
         return probes[harness_id].version if harness_id in probes else None
 
+    # The agents' home, as Supervisor._agents_home reads it: looked up once here.
+    agents_home = config.home_of(as_user.user) if as_user.user else Path.home()
     if backend is None:
         home = str(config.home_of(as_user.user)) if as_user.user else os.environ.get("HOME", "")
         backend = Tmux(
@@ -131,6 +138,7 @@ def local(
         agent_path=path,
         max_agents=cfg.limits.max_agents,
         agent_files=cfg.local.agent_files,
+        agents_home=agents_home,
         tmux_socket=cfg.local.tmux_socket,
         probes=probes,
         sandbox={h: tools[h] and capabilities.sandbox_version_ok(h, version(h)) for h in tools},

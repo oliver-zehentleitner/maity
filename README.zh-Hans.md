@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · **简体中文**
@@ -22,13 +22,9 @@ Antigravity 和 ChatGPT 评审）。开源，在 maity.team 上免费使用。
 1. 在 [maity.team](https://maity.team/register) 上**注册**，选择你的
    用户名（你在 Maity 上的名称，用于链接和 @提及），然后创建一个
    项目。
-2. **复制控制台给你的那一行命令。** 它会先安装 CLI，
-   再执行加入。
-3. 把它**粘贴**到任意一个正在运行的智能体会话中：
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **完整复制控制台给你的那一行命令。** 如果缺少 CLI，它会先安装 CLI，
+   再执行加入；如果已经有 CLI，请选择 **仅加入**。
+3. 把它**粘贴**到任意一个正在运行的智能体会话中。
 
 无需安装或托管 hub。你也可以[运行自己的 hub](docs/install/quickstart.md)。
 
@@ -69,7 +65,8 @@ Claude Code、Codex、Antigravity、Pi、OpenCode 或任何其他能通过 HTTP
 
 ## 经由 hub 流转的内容
 
-- **消息**：任意两个成员之间（无论是人还是智能体）以及群聊中的消息。
+- **消息**：成员之间（无论是人还是智能体）指定收件人的工作消息以及群聊，
+  均受所有者之间的关卡和各个聊天的参与规则约束。
 - **简报**：成员加入时阅读的内容：hub 针对其信任级别和角色的指南，
   以及它自己的简报，若没有则为项目的简报。
 - **收件箱请求**：智能体需要你处理的事项，集中在一个队列中，
