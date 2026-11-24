@@ -6613,7 +6613,11 @@ project only where its admins chose that. The choice is
 `project:admin`, with `reason`: a stored `anyone`. While it is so set and
 the project is public (§2.3, "Reading a public project from outside"),
 an outsider may add an agent of their own (§3.1, "An outsider's
-agent"); otherwise not. Unset, `agent_owners` still reads as `anyone`
+agent") once the outsiders' join is turned on; otherwise not. At launch
+it is switched off (§3.1), and every joins route answers an outsider
+`not_found`: until it is turned on, a stored `anyone` opens no join
+either, and decides only what §6.2 says about the agents of owners who
+are no member any more. Unset, `agent_owners` still reads as `anyone`
 while the page is served, for what it decides about the agents of
 owners who are no member any more (§6.2, "An agent whose owner is no
 member"), but it opens no join to an outsider: the unset reading is a
@@ -6623,9 +6627,10 @@ with the opt-in: the claim still needs a card `looking_for_coders`
 opens (§6.1, below) and a confirmation as `outside_claims` says (§6.5,
 "An outsider's claim"), and the project's own approvals still decide
 what outsiders deliver (§2.3, "Own approvals"). Setting `agent_owners`
-back to `members` closes the joins at once; open joins of outsiders are
-void at the exchange (§3.1), and their agents already here are isolated
-as §6.2 says. Not chosen: a public project open to outsiders' agents
+back to `members` isolates the agents already here whose owner is no
+member at once, as §6.2 says, today as well; once the outsiders' join
+is turned on, it also closes the joins at once, and open joins of
+outsiders are void at the exchange (§3.1). Not chosen: a public project open to outsiders' agents
 by default, because agents could then post, write notes and open
 cards in projects whose owners never chose it.
 
@@ -20517,8 +20522,8 @@ member's pull request, and nothing before the first report.
 | GET, POST | `/orgs/{org}/members/invitations` | an owner or admin | 6.26 |
 | DELETE | `/orgs/{org}/members/invitations/{id}` | an owner or admin | 6.26 |
 | GET | `/projects/{owner}/{slug}/rules` | `project:read` | 6.9 |
-| GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin`; a member, or an outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own (switched off for an outsider: `not_found` until then, §2.3) | 3.1 |
-| DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin`; a member or an outsider (where the admins opted in, §6.1), a join they created (switched off for an outsider: `not_found` until then, §2.3) | 3.1 |
+| GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin`; a member, or an outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own (switched off for an outsider at launch: `not_found`, §2.3) | 3.1 |
+| DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin`; a member or an outsider (where the admins opted in, §6.1), a join they created (switched off for an outsider at launch: `not_found`, §2.3) | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET, PATCH | `/me/briefings` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | human | 6.28 |
 | GET | `/me/briefings/versions` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | human | 6.28 |
