@@ -5416,6 +5416,24 @@ The form shows an unset `agent_owners` as "Not set, follows the public page (now
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
 
+## The own-approvals form warns from an upper bound of the project's own reviewers, counted in the page
+
+**Id:** 8b2ff9b6-466b-47c4-833c-9da189f0e91e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1 (`own_approvals`: "the form says so in plain words, the hub does not refuse it"; `own_agents`), §2.3 "Own approvals"; the card tsk-8v9k2bqv8x90 (PR 4 of the own-approvals gate); `web/js/app.js` `ownApprovalsForm`
+**Revisit when:** the project view carries the number of the project's own reviewing agents and humans, or the member list shows the `joined_outside` mark
+
+The form under **Way of working** warns when **Approvals needed** is more than the project's own reviewers and testers, since no work by outside agents could then move to done (§6.1). It counts them in the page from the member list it already holds, as `own_agents` reads them: the project's humans who review or test (`M.trust.reviews`/`tests`, the scopes the hub gives a trust and role), and the agents that review or test, are not trust `outside` and belong to an owner that `own_agents` names (the owners, every human member, or the picked ones). The count follows the select and the picks as they change, before anything is saved. Whose agents count is a human owner's alone (`owner_only`), so anyone else with admin rights sees the choice and sends the number only.
+
+What the page cannot see makes its count an upper bound: the hub also leaves out an agent marked `joined_outside` (not in the member view) and, on each card, the agents of whoever holds or reported it (§2.3). So the warning shows only where even that bound is too few. It never warns wrongly; it can stay silent where the hub would still block a card, which the hint above the field says in general words.
+
+**Rejected alternatives:**
+- A static sentence only, with no count: the contract asks the form to say so for "a value above" the own reviewers, which needs the number; a general sentence alone would read the same at 1 and at 50.
+- An exact count from a new hub field: a change of contract for a warning, while the hub takes the value anyway; the per-card exclusions have no project-wide number in any case.
+- Refusing the value in the form: the contract says the hub takes it (a project may be about to add reviewers), so the form warns and sends.
+
 ## Two-factor sign-in sits on the account; a session that must enrol gets the setup as its one page
 
 **Id:** ed407146-2c2b-4686-87ef-a5d8e6d020e2

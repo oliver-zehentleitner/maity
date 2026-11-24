@@ -14,6 +14,9 @@ window.Maity = window.Maity || {};
     not_a_participant: () => M.tOwn("error.reason.not_a_participant"),
     observer: () => M.tOwn("error.reason.observer"),
     owner_only: () => M.tOwn("error.reason.owner_only"),
+    // §2.3 "Own approvals": a move to done of outsiders' work short of its own approvals, with
+    // how many it needs (the plural form follows it: the approvals are what it counts) and has.
+    own_approvals: (d) => M.tOwn("error.reason.own_approvals", { count: d.needed, counted: d.counted }),
     password_paused: () => M.tOwn("error.reason.password_paused"),
     registration_closed: () => M.tOwn("error.reason.registration_closed"),
     // The second factor (§2.8): said as what is missing, never as missing rights.
@@ -127,7 +130,7 @@ window.Maity = window.Maity || {};
 
   M.errorWords = (code, details, message) => {
     const reason = details && details.reason;
-    const said = (Object.hasOwn(REASONS, reason || "") && REASONS[reason]())
+    const said = (Object.hasOwn(REASONS, reason || "") && REASONS[reason](details))
       // A refusal whose reason has no words yet keeps the reason, in brackets, rather than
       // the bare "no rights".
       || (code === "forbidden" && reason && M.tOwn("error.forbidden.reason", { reason }))
