@@ -4923,6 +4923,10 @@
     "en": "ef4b832d14c87894",
     "text": "276318a8f9d0a666"
   },
+  "error.reason.own_approvals": {
+    "en": "a4d6851a5e1fb581",
+    "text": "a46908d929919518"
+  },
   "error.reason.owner_only": {
     "en": "e2be9e00cb6b812d",
     "text": "4ba2ffa0be7cfe31"
@@ -18670,6 +18674,74 @@
   "settings.outside_roles.label": {
     "en": "deedc9fe832d5a0e",
     "text": "798d9124d68156ff"
+  },
+  "settings.own_agents.error.not_a_member": {
+    "en": "33f64e8ca7e487a9",
+    "text": "8e2bc82b5a7dcf69"
+  },
+  "settings.own_agents.error.too_many": {
+    "en": "dd964ae5d6b4e3a4",
+    "text": "5a66cca51829c6b4"
+  },
+  "settings.own_agents.error.unknown_handle": {
+    "en": "48b9a244bb34075d",
+    "text": "00b8ff18d5df3deb"
+  },
+  "settings.own_agents.label": {
+    "en": "ca6730326589cbb7",
+    "text": "76a05406c0107c9e"
+  },
+  "settings.own_agents.members": {
+    "en": "a963691f6bf28a57",
+    "text": "c3de8d92322f839f"
+  },
+  "settings.own_agents.not_member": {
+    "en": "edec6315a81c28a9",
+    "text": "f39856f459693c8f"
+  },
+  "settings.own_agents.owner_only": {
+    "en": "27c7c10238972090",
+    "text": "53d265c0bf0c18a0"
+  },
+  "settings.own_agents.owners": {
+    "en": "7ef4c31c0893ceda",
+    "text": "b179cd44faac5c6a"
+  },
+  "settings.own_agents.owners_of": {
+    "en": "41414bdf2d062ad0",
+    "text": "fc202f73d4924c51"
+  },
+  "settings.own_agents.picked": {
+    "en": "34bc9764196b8829",
+    "text": "cc4dbb305ac921b9"
+  },
+  "settings.own_approvals.error.out_of_range": {
+    "en": "2081b2ad97054444",
+    "text": "7dab30c3eb348912"
+  },
+  "settings.own_approvals.hint": {
+    "en": "0ca58bd1f125cbdb",
+    "text": "202868ecb010cab4"
+  },
+  "settings.own_approvals.label": {
+    "en": "d96a7a6cf2d2ae1b",
+    "text": "471cc2deb5ea57a6"
+  },
+  "settings.own_approvals.not_saved": {
+    "en": "e77e7f85c1001ae5",
+    "text": "9396680b4b75125c"
+  },
+  "settings.own_approvals.saved": {
+    "en": "1b6d0bf14329e9c8",
+    "text": "200060fe1163807b"
+  },
+  "settings.own_approvals.title": {
+    "en": "8bda2b763d836156",
+    "text": "31e1ff5aa90dd2e9"
+  },
+  "settings.own_approvals.too_many": {
+    "en": "b5adf9b95a70c74c",
+    "text": "8c23905f495b1115"
   },
   "settings.reason": {
     "en": "dafc3476fe7d3275",
