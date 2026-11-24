@@ -45,8 +45,12 @@ from maity_hub.config import Settings
 from maity_hub.db import make_engine
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_account_deletion import deleted_at, person, press, requested
 from tests.test_forge_links import DONE, start
 from tests.test_forge_links import setup as link_setup
+from tests.test_orgs import add_member, make_org
+from tests.test_two_factor import Clock
+from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
 
 URL = "https://github.com/acme/private-thing"
 REPO = "acme/private-thing"
@@ -1427,6 +1431,132 @@ def test_a_read_kept_while_the_link_change_commits_is_forgotten_after_the_commit
                 answered.append(f"{name}: {path}")
     assert answered == []
     assert reads.count(LINK_TOKEN) == 1, reads  # only the read before the commit used the link
+
+
+# --- the grants end without a link change: a move, an owner who stops being one, a deletion ---
+
+
+def _read_through_the_link(who: flow.Human, name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """§11.3 of `name` reads the family through the link and caches it: one private member."""
+    real_walk = ktw.walk
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        if reader.token == LINK_TOKEN:
+            return _family("secret-plan")
+        return real_walk(reader, repository, deadline)
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    read = who.get(f"/projects/{name}/keep-the-why")
+    assert read.status_code == 200 and "secret-plan" in read.text, read.text
+
+
+def _answered(name: str, *readers: flow.Human) -> list[str]:
+    """Every reader's §11.3 (also forced), project view and list that answers the link's read."""
+    answered = []
+    for who in readers:
+        for path in (f"{name}/keep-the-why", f"{name}/keep-the-why?max_age=0", name):
+            if "secret-plan" in who.get(f"/projects/{path}").text:
+                answered.append(f"{who.id}: {path}")
+        if "secret-plan" in who.get("/projects").text:
+            answered.append(f"{who.id}: /projects")
+    return answered
+
+
+@pytest.mark.parametrize("how", ["into_own_org", "go"])
+def test_a_moved_project_answers_nothing_read_with_the_old_owners_grants(
+    owner: flow.Human,
+    anna: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """A2591/A2592 follow-up: a transfer takes the repository's confirmation back (§6.25,
+    §6.26), into an organisation of the owner at once or on the receiver's `go`. Nothing read
+    through the old owner's link is answered afterwards."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _project_id(migrated)
+    _read_through_the_link(owner, "maintainer/maity", monkeypatch)
+    if how == "into_own_org":
+        org = make_org(owner, "oz-team", "OZ Team")
+        moved = owner.post("/projects/maintainer/maity/transfer", {"to": org["id"]})
+        assert moved.status_code == 200, moved.text
+        name = "oz-team/maity"
+    else:
+        factory.membership(migrated, project_id, "owner", human_id=anna.id)
+        filed = owner.post("/projects/maintainer/maity/transfer", {"to": anna.id})
+        assert filed.status_code == 202, filed.text
+        go = f"/projects/maintainer/maity/requests/{filed.json()['id']}/answer"
+        assert anna.post(go, {"reply_id": "go"}).status_code == 200
+        name = "anna/maity"
+    assert ktw.CACHE.cached(project_id) is None
+    assert _answered(name, owner, anna) == []
+
+
+@pytest.mark.parametrize("how", ["demoted", "removed", "left"])
+def test_an_owner_who_stops_being_one_leaves_nothing_their_link_read(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """The organisation owner who confirmed the repository is demoted, removed or leaves
+    (`org_projects.forget_confirmation`): their grants end with it (§11.4), and nothing read
+    through their link is answered afterwards."""
+    second = flow.human(make_client, migrated, "second")
+    org = make_org(owner, "oz-team", "OZ Team")
+    add_member(migrated, org["id"], second.id, "owner")
+    assert owner.post("/projects/maintainer/maity/transfer", {"to": org["id"]}).status_code == 200
+    _org_link(migrated, second.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    name = "oz-team/maity"
+    confirmed = second.post(f"/projects/{name}/repository/confirm", {"url": URL})
+    assert confirmed.status_code == 200, confirmed.text
+    project_id = _project_id(migrated)
+    _read_through_the_link(owner, name, monkeypatch)
+    if how == "demoted":
+        ended = owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "admin"})
+        assert ended.status_code == 200, ended.text
+    else:
+        by = owner if how == "removed" else second
+        ended = by.delete(f"/orgs/oz-team/members/{second.id}")
+        assert ended.status_code == 204, ended.text
+    assert ktw.CACHE.cached(project_id) is None
+    assert _answered(name, owner) == []
+
+
+def test_a_deleted_account_leaves_nothing_its_link_read(
+    moment: Clock,
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The organisation owner who confirmed the repository deletes their account (§2.9):
+    their grants end with it (§11.4), and nothing read through their link is answered
+    afterwards."""
+    moment.move(seconds=1)  # the owner stays the earliest account, the instance admin
+    second = person(make_client, migrated, moment, "second")
+    org = make_org(owner, "oz-team", "OZ Team")
+    add_member(migrated, org["id"], second.id, "owner")
+    assert owner.post("/projects/maintainer/maity/transfer", {"to": org["id"]}).status_code == 200
+    _org_link(migrated, second.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    name = "oz-team/maity"
+    confirmed = second.post(f"/projects/{name}/repository/confirm", {"url": URL})
+    assert confirmed.status_code == 200, confirmed.text
+    project_id = _project_id(migrated)
+    _read_through_the_link(owner, name, monkeypatch)
+    done = press(second, requested(second, migrated))
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, second.id) is not None
+    assert ktw.CACHE.cached(project_id) is None
+    assert _answered(name, owner) == []
 
 
 def _observed_then_not_admin(owner: flow.Human, migrated: Engine) -> None:

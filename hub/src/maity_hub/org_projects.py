@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, restricted, stars, start_tabs
+from maity_hub import clock, restricted, stars, start_tabs, wakeups
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.views import member_view
@@ -184,15 +184,18 @@ def forget_confirmation(conn: Connection, project: Any, human_id: str) -> None:
     """The repository confirmation of `human_id`, who stops being an owner of the project's
     organisation, ends with their grants (§11.4): another owner confirms again. The `UPDATE`
     names the owner again because `project` may be older than the row: a confirmation that
-    another owner made since is theirs and stays."""
+    another owner made since is theirs and stays. Nothing read with the ended grants is
+    answered after it: the project's reads are forgotten, now and again after the commit."""
     if project.repository_confirmed_by != human_id:
         return
     lock_project(conn, project.id)
-    conn.execute(
+    ended = conn.execute(
         update(t.project)
         .where(t.project.c.id == project.id, t.project.c.repository_confirmed_by == human_id)
         .values(repository_owner_confirmed=False, repository_confirmed_by=None)
-    )
+    ).rowcount
+    if ended:
+        wakeups.forget_repository_everywhere(conn, project.id)
 
 
 def keep_all_owners(conn: Connection, org_id: str, project: Any) -> None:

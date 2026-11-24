@@ -127,7 +127,16 @@ What a dropped key held is read or computed again on its next use. For
   `events.transaction`: the unlink, the link and its replacement
   (`routes/forge_links`), the owner check's result
   (`forge_links.refresh`), and a status a mint or a listing found
-  (`forge_access`, `routes/forge_links`). Rejected: asking the stored
+  (`forge_access`, `routes/forge_links`). The writers that end the
+  grants without touching a link forget the same way, per project they
+  change: a move to another namespace owner (`project_names.move_to`,
+  on the transfer and on its request's `go`), an organisation owner who
+  confirmed the repository and stops being one
+  (`org_projects.forget_confirmation`), and an account deletion
+  (`account_deletion._forget_confirmations`, which covers every project
+  the account's grants served, as a grant counts only for the human
+  who confirmed). Each runs in an `events.transaction` already.
+  Rejected: asking the stored
   link before each cached answer (one query per listed project, and an
   unlinked link leaves no row to ask); a generation kept in the
   database (one more query per §11.3 call); and SQLAlchemy's `commit`
