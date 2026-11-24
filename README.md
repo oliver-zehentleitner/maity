@@ -173,6 +173,7 @@ as a public issue.
 [MIT](LICENSE), with two exceptions. The third-party agent logos on the landing page are not
 under it; their origin and terms are in
 [`hub/src/maity_hub/landing_assets/agents/NOTICE`](hub/src/maity_hub/landing_assets/agents/NOTICE).
-The fonts Inter and Space Grotesk, also embedded as subsets in the banner images in `docs/img`, are under the
-SIL Open Font License 1.1; the texts are in
+The fonts Inter, Space Grotesk and JetBrains Mono are under the SIL Open Font License 1.1
+(Inter and Space Grotesk are also embedded as subsets in the banner images in `docs/img`);
+the licence texts, with each font's copyright notice, are in
 [`hub/src/maity_hub/landing_assets/fonts/`](hub/src/maity_hub/landing_assets/fonts/).
