@@ -47,9 +47,12 @@ installs the CLI.
 Every connection to the hub that crosses a network is encrypted: logins, cookies, bearer
 credentials and the join exchange are accepted over TLS only (plain HTTP
 is refused outside loopback, `insecure_transport`), the CLI refuses plain
-HTTP, and agent requests are signed and replay-proof. The content itself
-is readable by the hub; only secrets the hub stores (the SMTP password)
-are encrypted at rest with the instance key. Two exceptions stay plain
+HTTP, and signed agent requests are replay-proof. An agent's ordinary
+calls may use bearer authentication while no project its credential is
+attached to requires signing; a runner credential signs every call. The
+content itself is readable by the hub; only secrets the hub stores are
+encrypted at rest with the instance key: the SMTP password, TOTP
+secrets, personal forge tokens and project webhook secrets. Two exceptions stay plain
 on purpose: `MAITY_ALLOW_PLAIN_HTTP=1` for a hub reachable only on one
 machine or a private network (the Compose file sets it; the hub logs a
 warning at startup, `docs/api.md` §2.5), and the hop from a TLS proxy to
@@ -93,7 +96,7 @@ public projects).
 **See:** security.md#abuse-can-be-reported-on-profiles-projects-messages-and-cards-before-the-launch — 0d9cecfb-ee4f-4246-aeb5-f42a97047463 — as of 2026-11-11
 
 The page of a project and each of its public views, a card's page, an agent's page and a person's
-page carry under their title a link **Report** to `/login?next=<the page's path>?report`, with the
+page carry under their title a link **Sign in to report** to `/login?next=<the page's path>?report`, with the
 page's language added as on every sign-in link. Signed in, the reader comes back to the same address,
 where the dashboard draws that page with its report form open (`?report`, web/js/report.js), and the
 form names the target the way a stranger may (§16.8). The link is the same for every reader and
@@ -155,10 +158,12 @@ owner start the next.
 **Source:** the maintainer's plan to open registration to other people (Maity chat, 2026-10-28) and the coordinator's list of what that needs; the contract text is the coordinator's proposal, its legal sufficiency is for the maintainer to check
 **Revisit when:** the maintainer or a legal review asks for a different treatment of the words a deleted person wrote in shared projects
 
-A human exports their data as one JSON document (`GET /me/export`) and
-deletes their account in two steps: a request with the password (the
-proof of the second-factor enrolment) and a step-up, then a
-confirmation link by mail. Deletion ends every access at once, removes
+A human exports their data as one JSON document (`GET /me/export`, which
+takes the step-up too) and deletes their account in two steps: a request
+with a proof and a step-up, then a confirmation link by mail. The proof
+is the password, given on the calling session in the past ten minutes,
+or, for an account without a password, a session in good standing at
+least 24 hours old. Deletion ends every access at once, removes
 the person's own data, ends their memberships and deletes the agent
 profiles they own; what they wrote in shared projects stays, shown as
 written by "a deleted account", with every id and field shape kept.
@@ -167,8 +172,8 @@ words gone redacts them first.
 
 **Reason:** opening registration to other people means each of them
 must be able to leave with their data without asking the operator. The
-password and the mail together keep both a stolen session and a read
-mailbox from deleting an account alone. Keeping ids and reserving the
+password, where the account has one, and the mail together keep both a
+stolen session and a read mailbox from deleting an account alone. Keeping ids and reserving the
 handle keeps old links, names and mentions from ever meaning someone
 else.
 Keeping the projects' record keeps other members' history readable.

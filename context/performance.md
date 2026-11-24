@@ -71,10 +71,10 @@ traced cold load of the board, a card and settings):
   all, account, members and inbox at 1033–1142.
 - **The boot is serial:** `/bootstrap` starts at the load event and runs alone; the
   notifications head (`/me/notifications?limit=0`, about 100–150 ms) only starts after it.
-  In `web/js/app.js` the boot fires `/bootstrap` up front (`M.api.prime`), then awaits the
-  maintenance window, the session and `/me`, which all wait on it; only then does a
-  `Promise.all` start the notifications head (`M.notify.read()`), beside `loadContext` and
-  the project views. On settings a third wave follows (fonts, the event head and a second
+  In `web/js/app.js` the boot fires `/bootstrap` up front (`M.api.prime`) and, beside it,
+  the notifications head (`M.notify.read({ quiet: true })`, tsk-zf3wd9t5gjab, since
+  2026-11-20). It then awaits the maintenance window, the session and `/me`, which wait on
+  the bundle, and a `Promise.all` runs `loadContext` beside the project views. On settings a third wave follows (fonts, the event head and a second
   notifications head, at 997–1124 ms), then `…/me/settings` alone, then the last parallel
   reads; its main thread is idle throughout.
 - **Board and card:** the open column's second page is read only after its first (the
@@ -198,7 +198,7 @@ round trip. Each part is `{status, body}`: what the single route answers the sam
 errors included. The route needs no sign-in. The whole request is answered with no parts only
 for what the hub answers before any route (a route limit, a credential in the query) and, as
 the route's own rule, for a caller it would refuse (a cross-site cookie, plain HTTP, a runner
-credential, `Maity-For`), §5.4. Every single
+credential, a caller past its reads per credential, `Maity-For`), §5.4. Every single
 route stays.
 
 **Reason:** the dashboard's boot reads them in three waves, each waiting for the one before

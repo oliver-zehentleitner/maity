@@ -21,8 +21,8 @@ same mail signs in the browser that asked for it. Both are single use
 and short-lived (5 and 15 minutes), rate-limited, switchable per method
 by the instance admin (the mail link also by each human for their own
 account), and every new session shows up in the human's session list
-with a revoke button, as a notification and, by default, as a security
-mail. The new device learns which account it joins only after the
+with a revoke button, as a security banner and, by default, as a
+security mail; a new session is not in the notifications list. The new device learns which account it joins only after the
 approval. The hub refuses every agent and runner credential on these
 endpoints; it cannot refuse an agent that calls them without one, and
 for the mail link that limit is stated rather than claimed away (next
@@ -82,7 +82,8 @@ sign-in (and is itself signed in by password or already confirmed) can
 mark it read, explicitly and one by one, never by "mark all read" or
 by age — it stays unread until such a session reads it or its record
 expires; a session is in good standing once signed in by password or
-once its own alert was confirmed so; a session in good standing may end
+by a completed registration, once its sign-in was confirmed, or once it
+completed a TOTP or recovery-code check; a session in good standing may end
 any other, one not in good standing never ends one in good standing
 and, in its first hour, no older session at all;
 (Since 2026-11-02 reading an alert no longer confirms a sign-in:
@@ -230,9 +231,11 @@ well enough without a group break.
 
 `POST /auth/register` creates no account. It stores a pending
 registration for at most 24 hours and mails a signed link; the account
-is made only when the link is followed and completed. Every request
-gets the same `202`, whether or not the address has an account; only
-the mail differs. Registration is `closed` by default, and opening it
+is made only when the link is followed and completed. The checks that
+look at no account come first: without mail the hub refuses every
+registration, and an invalid or rate-limited request is refused. Every
+request past them gets the same `202`, whether or not the address has
+an account; only the mail differs. Registration is `closed` by default, and opening it
 needs mail.
 
 **Reason:** the maintainer's direction names it — on a team's own
@@ -268,7 +271,8 @@ one of ten single-use recovery codes, after the first factor of every
 new session — password, device code or mail link alike — and again
 before a short list of sensitive calls (address and password changes,
 changes of the factor itself, minting a credential, instance settings).
-The instance admin chooses `off`, `optional` or `required_admins`; a
+The instance setting takes `off`, `optional`, `required_admins` or
+`email`; a
 lost factor is reset by the instance admin only when the human confirms
 it by mail, or by the operator on the server.
 
