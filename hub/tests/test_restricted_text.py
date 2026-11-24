@@ -311,6 +311,8 @@ def test_line_endings_are_stored_as_line_feeds(owner: flow.Human, migrated: Engi
         ({"text": "bell\u0007", "base_version": 0}, {"text": "control_character"}),
         ({"text": "zero\u200bwidth", "base_version": 0}, {"text": "control_character"}),
         ({"text": "private\ue000", "base_version": 0}, {"text": "control_character"}),
+        ({"text": "unassigned\u0378", "base_version": 0}, {"text": "control_character"}),
+        ({"text": "nonchar\uffff", "base_version": 0}, {"text": "control_character"}),
         ({"text": "line\u2028sep", "base_version": 0}, {"text": "control_character"}),
         ({"text": "para\u2029sep", "base_version": 0}, {"text": "control_character"}),
         ({"text": "fine"}, {"base_version": "required"}),

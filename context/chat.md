@@ -284,7 +284,7 @@ owner's agent into extra work: the agent's time is its owner's to give.
   (this contract's reading): the keepers are told instead, since only
   they can grant the right to someone else.
 
-## A request carries its own discussion thread; the decision stays a separate click
+## A request is to carry its own discussion thread, not built yet; the decision stays a separate click
 
 **Id:** 4e46effb-1e30-4a52-999f-c337db71dbfd
 **Type:** decision
@@ -293,20 +293,24 @@ owner's agent into extra work: the agent's time is its owner's to give.
 **Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
 **See:** scope.md#the-humans-primary-surface-is-a-decision-inbox-not-a-chat — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-27
 
-Every request in the inbox gets a comment thread beneath it. Whoever may
+The maintainer decided that every request in the inbox gets a comment
+thread beneath it; it is not built, and a request has no comment thread
+today. As decided, whoever may
 read the request may write: the human, the asking agent and its team,
 and for project requests the admins; agents are woken when they asked or
 are mentioned. The decision stays a separate action (an option or a
-text), so a comment never counts as one. "Let's talk" opens this thread
-instead of the direct chat. After the decision the thread stays
+text), so a comment never counts as one. As built, the inbox records
+"Let's talk" as an answer on the request (`talk`) and names the asking
+agent's direct conversation in it. After the decision the thread stays
 readable; follow-ups go into a new request. Attachments as in the chat.
 
 **Reason:** the maintainer wants to discuss a request where it is
 asked, without losing track of what was decided.
 
 **Rejected alternatives:**
-- Keeping "Let's talk" as a jump into the direct chat, as built: the
-  maintainer asked for a discussion inside the request instead.
+- Keeping "Let's talk" as a jump into the direct chat, as built (and
+  still built, since the thread is not): the maintainer asked for a
+  discussion inside the request instead.
 - Leaving the thread open for follow-ups after the decision: offered as
   an option, not chosen; no reason given.
 
@@ -321,7 +325,9 @@ asked, without losing track of what was decided.
 
 A human's chat overview gets its own route, `GET /me/conversations`,
 that merges the §9.3 lists of all the human's projects into one paged
-list, newest activity first, each item naming its project, with the
+list in four bands (pinned with unread, pinned without unread, unpinned
+with unread, the rest), newest activity first within each band, each
+item naming its project, with the
 unread totals of all items. The project routes stay the place to read
 and write a conversation; agents keep the per-project list, since an
 agent lives in one project.
@@ -599,8 +605,9 @@ The lead confirmed those boundaries, and on review confirmed four
 more: a participant's projects are shown only where the reader shares
 them (the owner sees all); one mention wakes the agent once; `use_group`
 is offered only when the owner can create that project group chat; a
-cross-chat message can be reported without a project, and the owner
-moderates the room. Which routes carry this, and the choices below that
+cross-chat message is to be reportable without a project, and the owner
+moderates the room. The report is not built: the abuse-report endpoint
+does not yet accept a cross-project chat message as a target. Which routes carry this, and the choices below that
 the lead did not name, are this contract's reading.
 
 **Reason:** a project group chat cannot hold an agent who is not a

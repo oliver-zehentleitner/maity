@@ -648,6 +648,16 @@ def _shared_tmp(ctx: Context) -> list[str]:
     return [str(ctx.tmp_scratch_parent)] if ctx.tmp_scratch_parent is not None else []
 
 
+def python_tools_dirs(ctx: Context) -> tuple[str, ...]:
+    """The grant's `python_tools` a Claude Code session gets as rules, or none. Only with the
+    sandbox on, where the runner's PreToolUse hook runs, and only where that hook is this
+    runner's own code (`as_user.here`): on an ssh host it is the host's `maity`, which may not
+    know the arguments, and a hook that fails refuses every call (cli/context/runner.md)."""
+    if not ctx.sandbox or not ctx.as_user.here:
+        return ()
+    return ctx.grant.python_tools
+
+
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
     the clone and the placement's scratch only. Absolute paths take a double slash in Claude
@@ -664,6 +674,12 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     allow += [f"Bash(git -C {ws} {sub})" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash(git -C {ws} {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
+    # The repository's own Python tools (`python_tools`): `python3 <dir>/<name>.py …` from the
+    # clone's root. Claude Code's `*` also matches `..` or a second command, so the runner's
+    # hook holds such a line to that exact form (plaincall.python_tool); hence only where the
+    # hook runs with these directories (python_tools_dirs). The sandbox stays the boundary.
+    for tool_dir in python_tools_dirs(ctx):
+        allow += [f"Bash(python3 {tool_dir}/*.py)", f"Bash(python3 {tool_dir}/*.py *)"]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
         allow += [f"{tool}(/{ctx.scratch}/**)" for tool in ("Read", "Edit", "Write")]
@@ -778,7 +794,20 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # switched on for an older one, capabilities.sandbox_version_ok). Shell form, so a
         # version that predates exec form runs it too; `|| exit 2` refuses on any version
         # when the hook cannot start or fails.
-        module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
+        words = ctx.as_user.runner_module("plaincall")
+        if python_tools_dirs(ctx):
+            # What the hook holds a python3 tool line to: this clone, its tool directories, and
+            # the paths the session may write besides it, where no accepted python3 may lie: the
+            # scratch, and the whole leaf of its own TMPDIR (own_tmp_leaf), not only the `tmp`
+            # in it, since Claude Code opens its own `claude-<uid>/` beside that `tmp` to the
+            # session's commands (own_tmp_env).
+            words += ["--clone", ws]
+            for tool_dir in python_tools_dirs(ctx):
+                words += ["--python-tools", tool_dir]
+            for path in (ctx.scratch, own_tmp_leaf(ctx)):
+                if path is not None:
+                    words += ["--writable", str(path)]
+        module = " ".join(shlex.quote(word) for word in words)
         hook = f"{module} || exit 2"
         hooks["PreToolUse"] = [
             {"hooks": [{"type": "command", "command": hook, "timeout": 30,

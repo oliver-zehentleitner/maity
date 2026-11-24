@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -39,6 +38,7 @@ from maity_hub import (
     org_projects,
     orgs,
     placements,
+    plain_text,
     policy,
     project_links,
     project_names,
@@ -160,15 +160,6 @@ class RoleRuleIn(Strict):
 
 CHECKLIST_MAX = 30
 CHECKLIST_ITEM_MAX = 300
-# A line break, another control character or an invisible format character that turns or
-# hides text (Unicode Cc, Cf, Zl, Zp: zero-width, bidi controls and marks, BOM, soft hyphen):
-# an item is one plain line as it reads (§6.1, §16.7.4). By category, not a list of code
-# points, so a format character nobody named (U+061C, U+180E) is refused as well.
-NOT_PLAIN = frozenset({"Cc", "Cf", "Zl", "Zp"})
-
-
-def _not_plain(item: str) -> bool:
-    return any(unicodedata.category(ch) in NOT_PLAIN for ch in item)
 
 
 def _checked_role_rules(given: dict[str, RoleRuleIn]) -> dict[str, Any]:
@@ -202,7 +193,9 @@ def _checklist_error(role: str, items: list[str]) -> str | None:
     for item in items:
         if not item:
             return "empty_item"
-        if _not_plain(item):
+        # One plain line as it reads (§6.1, §1.7.1): no character of the plain-text rule's
+        # set, a line break, a lone surrogate, a private-use or an unassigned one included.
+        if not plain_text.plain(item):
             return "multiline"
         if len(item) > CHECKLIST_ITEM_MAX:
             return "too_long"

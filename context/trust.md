@@ -132,8 +132,9 @@ considered is not recorded.
 
 An agent with trust `admin` may change agent memberships with trust
 `member` or `guest`, never its own: `reports_to`, `areas`, `briefing`,
-`paused`, the trust between `member` and `guest`, and the role among
-`coder`, `reviewer`, `tester`, `designer` and `ops`. It cannot grant or
+`paused`, the trust between `member` and `guest`, and the role: a work
+role (every role but `ops`, `proxy` and `manager`) or `ops`, a project
+role checked by its base. It cannot grant or
 remove trust `admin` or `owner` or the role `proxy`, set capabilities,
 or create, list or revoke joins. Removing an agent member, or changing
 the trust or role of or pausing a reviewer, a tester or the contract
@@ -195,7 +196,7 @@ the same gap.
 **Rejected alternative:** refusing a session that shares an environment
 with another member — excluded by the decision; why is not recorded.
 
-## The instance admin is the earliest human, sees counts only, and opens no project
+## The instance admin is the earliest human, sees account metadata and counts, and opens no project
 
 **Id:** 705196ad-8610-4905-ba14-d9fbc3aebbad
 **Type:** decision
@@ -206,16 +207,18 @@ with another member — excluded by the decision; why is not recorded.
 
 `instance:admin` is a human-only scope held by the earliest-created
 human — the one `maity-hub owner create` made. It lists the hub's users
-with counts and timestamps only (memberships, agents, last sign-in), and
-never passwords, tokens, credentials or content; being instance admin
-opens no project. For `members:admin` callers, and for an owner on their
+with their identity fields (id, handle, display name, picture) and
+sign-in address, beside counts and timestamps (memberships, agents,
+last sign-in), and never passwords, tokens, credentials or content;
+being instance admin grants no project membership. For `members:admin` callers, and for an owner on their
 own agents, the member view adds the owner and credential counts, which
 never appear in events.
 
 **Reason:** the earliest human matches the migration the accounts
 design plans; everything else about admins — granting more, suspending,
-audit — waits for that design. Why the list stops at counts and opens
-no project is not stated beyond the contract's rule itself.
+audit — waits for that design. Why the list stops at account metadata
+and counts and opens no project is not stated beyond the contract's rule
+itself.
 
 **Alternatives:** unknown; the accounts design's draft names the path
 `/admin/humans` instead of `/admin/users`, left open.
@@ -400,9 +403,13 @@ team member) and `guest` (read and comment only, whatever the role).
 `tester`, `designer`, `ops`, `proxy`. Trust `owner` and `admin` add the
 governance scopes on top of the role's; `guest` caps every role at
 reading and commenting. Answer rights come from trust: owners and
-admins answer every class, consent included, as before. The proxy holds
-trust `admin` but decides nothing itself: it relays requests of every
-class to the owner, records the owner's answer with `on_behalf_of`,
+admins ordinarily answer every class, consent included, as before,
+within the request's own restrictions: a humans-only request, a
+placement's consent request (its runner owner's) and a proxy's bound
+call (a human owner's, directly) each have their own check of who may
+answer. The proxy holds trust `admin` but decides nothing itself: it
+relays an owner's answer only where the request accepts a proxy,
+records the owner's answer with `on_behalf_of`,
 leaves the request open without one, and names the owner's answered
 request on every admin call. Each role gets
 a shared role memory. The product is pre-beta, so there is no
@@ -457,8 +464,10 @@ Three security rules follow from the review of the contract change
 **See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust--role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-27
 
 A project setting, on by default, makes review a gate: whoever reported
-code on a card cannot review it, and without a reviewer in the project
-the gate waits and applies as soon as one joins; the owner may switch it
+code on a card cannot review it. The preset sets the default done
+authority; the hierarchical preset's is `reviewer`, which rests on the
+`tasks:review` scope, so an owner or admin who holds that scope has it
+even with no member in the reviewer role. The owner may switch the gate
 off, and chooses whether agents, humans or both review. Testers are a
 role of their own: they get a card after merge or deploy, check the
 behaviour in a test or live environment and report a result or a bug as
@@ -822,8 +831,11 @@ applies from the merge on, texts written before it included.
 **Revisit when:** an owner's page can be missing while their agent's page stands
 **See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-02
 
-An agent in a project with a public page always has its page at
-`/{owner}/agents/{handle}`, whatever its owner's `public_profile`. The
+An agent has its page at `/{owner}/agents/{handle}` while it holds an
+active membership, not isolated, in a served public project, its owner's
+page is served (an active account, not suspended or deleted, with no
+moderation hold), and no moderation hold stands on the agent's profile;
+the owner's `public_profile` may be off. The
 page names the owner by handle and name and links the owner's page;
 nothing of the owner's own (bio, links, avatar) appears on it. Since
 the profile contract of the same day (tsk-my5gvj4warte,
@@ -849,7 +861,7 @@ owner's; while nothing personal of an owner who opted out appears.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §5.2, §6.2, §13 and §19.3.1; `docs/agents.md`, `docs/join-page.md`, `cli/skill/maity/SKILL.md`
+**Source:** the lead's plan approval of 2026-11-04; contract in `docs/api.md` §5.2, §6.2, §13 and §19.3.1; `docs/agents.md`, `docs/join-page.md`, `cli/skill/maity/SKILL.md`
 **Revisit when:** a briefing layer is written by someone its `by` cannot name as `human`, `agent` or `hub`
 **See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-04
 

@@ -493,6 +493,45 @@ allow = [
 
 Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) lists what is refused.
 
+### Letting agents run the repository's own Python tools
+
+`python_tools` in a repository's grant names directories of the clone (relative to its root, such as `tools` or `web/tools`) whose scripts a Claude Code agent may run as `python3 <dir>/<name>.py` with any plain arguments. It is empty by default. A full runner configuration for this repository:
+
+```toml
+[hub]
+url = "https://hub.example.org"
+state_dir = "/var/lib/maity-runner/state"
+
+[limits]
+projects = ["oliver-zehentleitner/maity"]
+repositories = ["github.com/oliver-zehentleitner/maity"]
+
+[backend]
+kind = "local"
+
+[backend.local]
+layout = "single"
+clone_venvs = ["hub", "cli"]
+
+[harness.claude-code]
+
+[repositories."github.com/oliver-zehentleitner/maity"]
+allow = ["make *", "cli/.venv/bin/python -m pytest *", "cli/.venv/bin/python -m unittest *"]
+pull_requests = true
+python_tools = ["tools", "web/tools"]
+
+[git]
+name = "Maity agents"
+email = "agents@example.org"
+```
+
+- **Only a sandboxed Claude Code session on the runner's own host gets it.** The runner writes `Bash(python3 <dir>/*.py)` and `Bash(python3 <dir>/*.py *)` for each directory, and its own hook holds such a line to the exact form. Without the sandbox there is no hook, and on an ssh host the hook is that host's `maity`, which may be older, so neither gets the rules. Codex and agy apply no command grant. opencode does apply the grant's `allow` list, but it has no OS sandbox and no runner hook to hold the form, so it does not get `python_tools` either.
+- **The exact form.** The line is `python3`, by that bare name, then the script as the next word (no interpreter option such as `-c` or `-m`), then plain words or single-quoted text, on one line. It is run from the clone's root. The script is `<dir>/<name>.py`: no `..`, no subdirectory, and no link anywhere on its path. The hook refuses anything else, including a line that chains, pipes, redirects, substitutes or sends a tool to the background. It also refuses when it cannot decide: no absolute working directory, a path it cannot read, no `python3` on the PATH, or a PATH that is unset or holds a relative or empty entry. The `python3` the PATH finds must lie outside the clone, the placement's scratch and its own temporary directory, as found and as resolved, so a session cannot put its own interpreter there.
+- **No unusual characters while it is set.** With `python_tools` set, the hook refuses every command line that holds a control character other than a tab or a newline, a space other than the ASCII one, or an invisible format character, whatever command it is. Put text with such characters in a file. A plain `maity` call is not held to the tool form, so its text may name a tool.
+- **The sandbox is the boundary, not this rule.** A tool runs inside the harness's sandbox with the same reach as an allowed `make` target, and the clone is writable, so an agent can put any code into a tool directory, as into a Makefile. The rule limits the form of the command; what the code can reach is the sandbox's to decide.
+- **One side effect while it is set.** The hook holds every line whose first word after a `python3` word, past its options, starts with a tool directory, so the check is wider than the rules. A line that names a tool directory right after `python3` for another reason is refused too, quoted text included, such as `git grep python3 tools/` or `git commit -m 'run python3 tools/x.py'`: search with the directory elsewhere on the line (`git grep python3 -- tools`), and write such a message in a file (`git commit -F`). `python3 -m pytest tools/test_x.py` is not affected: its first word after the options is `pytest`, so the grant's own `allow` list decides it, as before.
+- **Placements pick it up at their next start.**
+
 **A UUID source for Keep the Why.** Keep the Why gives every entry an `Id` made by a command, never typed by hand, and under the allowlist harnesses (Claude Code and opencode) the usual sources (`uuidgen`, `node`, `od /dev/urandom`, `cat /proc/sys/kernel/random/uuid`) are refused. The runner allows no UUID command of its own: an agent runs `maity uuid`, which is allowed wherever `maity` is, on every harness. `maity uuid` needs a `maity` from the release that ships it; with an older one (0.1.0a17 included) agents under Claude Code and opencode have no UUID source, so update `maity` on the runner and restart its placements. An earlier exact allow of `cat /proc/sys/kernel/random/uuid` never took effect in a placed Claude Code session (observed); the likely cause is that Claude Code checks a read command naming a path outside the working directories before it applies the allow rules (inferred), and opencode's `external_directory: deny` likely gates the same path (not observed in an opencode session).
 
 ## Clones after a stop

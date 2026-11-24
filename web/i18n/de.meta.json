@@ -4303,9 +4303,13 @@
     "en": "8d7098bbd76929bf",
     "text": "bd90bea03c16c2b6"
   },
+  "data.refused.deletion_rate_limited": {
+    "en": "dd5f04c936a74336",
+    "text": "22130485c8676019"
+  },
   "data.refused.last_instance_admin": {
-    "en": "993b88c4c5441768",
-    "text": "99d8db471f21aec6"
+    "en": "e51d139fb5c370ae",
+    "text": "e6821f612d53921e"
   },
   "data.refused.mail_not_configured": {
     "en": "b8208720116ebe5f",
@@ -5808,8 +5812,8 @@
     "text": "960e2587d7de0fa8"
   },
   "handles.reserved": {
-    "en": "d74339b781cf7ebe",
-    "text": "c5141095b34454fb"
+    "en": "90faec94487053b7",
+    "text": "e4aceadeb0994873"
   },
   "handles.same": {
     "en": "140f66aa7a128909",
@@ -10068,8 +10072,8 @@
     "text": "c4b1b3f3c58246c3"
   },
   "mail.quiet.on": {
-    "en": "ec13e510c1a2bace",
-    "text": "b32ebe88a9695667"
+    "en": "bdb63796b7a23044",
+    "text": "c6de5ed4584e938e"
   },
   "mail.quiet.to": {
     "en": "b3214a20e45a7aed",
@@ -12832,8 +12836,8 @@
     "text": "6cc5df35f0338e23"
   },
   "orgs.field.reserved": {
-    "en": "4b6d9afb6c7ac7aa",
-    "text": "73cb3ab9ffd9590b"
+    "en": "5b3615cae20fe05e",
+    "text": "2badacaa0123036d"
   },
   "orgs.field.taken": {
     "en": "602ababe9582fbbe",
@@ -13036,8 +13040,8 @@
     "text": "9787b5d784f03fe8"
   },
   "orgs.refused.limit": {
-    "en": "608ed2348798d247",
-    "text": "97e1ea33e19360ae"
+    "en": "ef75952032288384",
+    "text": "ba2af19076d9f4b4"
   },
   "orgs.refused.org_role": {
     "en": "083edf9541e8357e",
@@ -13052,8 +13056,8 @@
     "text": "8fa2c441b161feda"
   },
   "orgs.refused.rate": {
-    "en": "ef35b855962f0ba3",
-    "text": "bd794f0b6377587b"
+    "en": "3e09831df1245195",
+    "text": "2dad439e9b9fcc38"
   },
   "orgs.reread_failed": {
     "en": "99b4fed0143bd7a2",
@@ -17700,8 +17704,8 @@
     "text": "e32092522f75820f"
   },
   "security.rate_limited": {
-    "en": "fc97a5f19f7514f3",
-    "text": "8355d5bdd50d9f68"
+    "en": "62f39c5f46a9b6a7",
+    "text": "3ebb1d1c7c757111"
   },
   "security.scan": {
     "en": "6cfff7199f8f49b2",

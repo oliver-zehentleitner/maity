@@ -175,9 +175,11 @@ def test_git_config_user_is_not_granted(tmp_path: Path, sandbox: bool) -> None:
 
 def docs_grant() -> dict[str, Any]:
     """The `[repositories."…"]` example of docs/runners.md that grants a Python repository's
-    checks, parsed as TOML."""
+    checks, parsed as TOML: a block that is a repository's grant alone, so a whole runner
+    configuration further down (the python_tools one) is not taken for it."""
     blocks = re.findall(r"```toml\n(.*?)```", DOCS.read_text(encoding="utf-8"), re.DOTALL)
-    found = [block for block in blocks if "[repositories." in block and "pytest" in block]
+    found = [block for block in blocks
+             if block.lstrip().startswith("[repositories.") and "pytest" in block]  # fmt: skip
     assert len(found) == 1, "docs/runners.md: one TOML example granting a repository's checks"
     return tomllib.loads(found[0])
 
