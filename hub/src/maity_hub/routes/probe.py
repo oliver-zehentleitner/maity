@@ -56,10 +56,24 @@ def read_probe(
         return errors.forge_refusal(reason, admin=admin, confirmer=confirmer, details=details)
 
     fg = reader_of(request).for_project(project.id)
+    first_kind, first_ref = next((k, r) for k, r in wanted if r is not None)
     if not fg.configured_for(project.repository_url):
         reason = forge.unread_reason(fg, project.repository_url)
-        first_kind, first_ref = next((k, r) for k, r in wanted if r is not None)
         raise refusal(reason, first_kind, first_ref or "")
+    if fg.granted is None and fg.owner_reason in errors.ORG_REASONS:
+        # The operator's token after a link on a forge organisation that serves nothing: it
+        # covers only a repository the forge reports public, asked before a cached observation
+        # is answered (§11.4, "What a project sees"; review A2545 #6), since the probe answers a
+        # young enough one without a read.
+        try:
+            fg.require_covered(forge.repository_of(project.repository_url))
+        except forge.NotCoveredError as error:
+            raise refusal(error.reason, first_kind, first_ref or "") from None
+        except forge.ForgeUnavailableError as error:
+            # Its visibility unread: no observation, `details.last` neither, as none read through
+            # the link may be answered once it serves nothing.
+            retry = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at else None
+            raise ApiError(503, "probe_unavailable", "the forge did not answer", retry) from None
     shown: dict[str, Any] = {"pr": None, "branch": None, "tag": None, "commit": None}
     observations: list[probe.Observation | probe.CommitObservation] = []
     for kind, ref in wanted:
