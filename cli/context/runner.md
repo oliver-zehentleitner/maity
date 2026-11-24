@@ -5743,7 +5743,7 @@ in his words are this design's (inferred).
   `hello`, and the CLI ships before such a hub is deployed everywhere;
   a runner that manages nothing has nothing to report, so it stays as
   it was. The lead chose this over waiting for the hub release
-  (confirmed by the lead, seq 139517). Rejected: a retry of `hello` without
+  (confirmed, seq 139517). Rejected: a retry of `hello` without
   `tools` after the refusal, and reading the hub's version first; both
   add a second path to every start for a gap that closes with the next
   hub release.
