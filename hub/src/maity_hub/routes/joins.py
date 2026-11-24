@@ -1845,16 +1845,9 @@ def _create_for_join(conn: Connection, row: Any) -> str:
     owned by the human who created the placement. A handle that human has meanwhile given
     another agent ends the join here, answered as every join that no longer works (§1.1):
     the placement cannot become that agent, and the runner's next pickup reports it."""
-    taken = conn.execute(
-        select(t.agent_profile.c.id).where(
-            t.agent_profile.c.owner_id == row.created_by,
-            t.agent_profile.c.handle == row.new_agent_handle,
-        )
-    ).first()
-    if taken is not None or handles.holder(conn, row.created_by, row.new_agent_handle) not in (
-        None,
-        "placement",
-    ):
+    # A live profile or a live alias of the owner holds the handle; a deleted profile's
+    # tombstone holds nothing (§6.3, §6.24).
+    if handles.holder(conn, row.created_by, row.new_agent_handle) not in (None, "placement"):
         raise _gone("pickup: its new profile's handle is taken or held", row)
     # `POST /agents` does not take the project lock: a profile of that handle may land
     # after the check above. Its `invalid`, or the unique constraint, is still a join
