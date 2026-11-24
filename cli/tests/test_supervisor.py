@@ -2381,6 +2381,145 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
 
 
+def test_every_session_gets_a_shell_not_the_accounts_nologin(tmp_path: Path) -> None:
+    """tsk-fjq2k0sx1n3r: without SHELL in its environment tmux takes the account's passwd
+    shell, nologin for the service account, as every pane's SHELL, and OpenCode's commands all
+    failed with "This account is currently not available.". The server starts with SHELL, and
+    the same call sets tmux's `default-shell` to it, which is what a pane's SHELL comes from."""
+    calls: list[list[str]] = []
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(list(argv), 0, "", "")
+
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run)  # fmt: skip
+    backend.start("maity_maity_agent-3", tmp_path, ["opencode"], {}, "plc-0003", 1)
+    shell = tmux.BASH if os.access(tmux.BASH, os.X_OK) else tmux.SH
+    new = calls[0]
+    assert f"SHELL={shell}" in new[: new.index("tmux")]
+    assert new[new.index("tmux") + 5 : new.index("new-session")] == [
+        "set-option", "-g", "default-shell", shell, ";",
+    ]  # fmt: skip
+    assert "nologin" not in " ".join(new)
+
+
+def _remote_side(probes: list[tuple[int, str]]) -> tuple[Any, Any, list[list[str]]]:
+    """An agents' side that is not the runner's own user (sudo or ssh), whose shell probes
+    answer `probes` in turn (exit code, stdout); every other command succeeds."""
+    from maity.runner.asuser import AsUser as Direct
+
+    asked: list[list[str]] = []
+    answers = list(probes)
+
+    class Remote(Direct):
+        @property
+        def direct(self) -> bool:
+            return False
+
+        @property
+        def here(self) -> bool:
+            return False
+
+        def argv(self, argv: Sequence[str], env: dict[str, str] | None = None) -> list[str]:
+            return list(argv)
+
+        def exists(self, path: Path, kind: str = "-e") -> bool:
+            return True
+
+        def write(self, path: Path, text: str) -> Path:
+            return path
+
+        def mkdir(self, path: Path) -> None:
+            return None
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        asked.append(list(argv))
+        if tmux.SHELL_PROBE in argv:
+            code, out = answers.pop(0)
+            return subprocess.CompletedProcess(list(argv), code, out, "")
+        return subprocess.CompletedProcess(list(argv), 0, "", "")
+
+    return Remote(), run, asked
+
+
+@pytest.mark.parametrize(
+    ("code", "out", "shell", "kept"),
+    [
+        (0, "shell\t/bin/bash\t/usr/bin/bash\n", "/bin/bash", True),
+        (0, "shell\t/bin/sh\t/usr/bin/dash\n", "/bin/sh", True),
+        (0, "none\n", "/bin/sh", True),
+        (255, "", "/bin/sh", False),  # ssh's own failure: no answer
+        (1, "", "/bin/sh", False),  # sudo refused: no answer either
+    ],
+)
+def test_on_another_users_side_the_sessions_shell_is_looked_up_there(
+    tmp_path: Path, code: int, out: str, shell: str, kept: bool
+) -> None:
+    """Over ssh, and through sudo in the agent_user layout, the shell is probed as the agents'
+    user (A2352). An answer is kept; no answer gives `/bin/sh` for now and is asked again."""
+    remote, run, asked = _remote_side([(code, out), (0, "shell\t/bin/bash\t/bin/bash\n")])
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=remote)  # fmt: skip
+    assert backend.session_shell() == shell
+    assert asked == [["sh", "-c", tmux.SHELL_PROBE, "sh", "/bin/bash", "/bin/sh"]]
+    assert backend.session_shell() == (shell if kept else "/bin/bash")
+    assert len(asked) == (1 if kept else 2)
+
+
+def test_one_start_gives_the_environment_and_default_shell_the_same_shell(
+    tmp_path: Path,
+) -> None:
+    """A2352: a first probe that gets no answer and a second that does must not give the
+    server's SHELL one value and `default-shell` another; the next start asks again."""
+    remote, run, asked = _remote_side([(255, ""), (0, "shell\t/bin/bash\t/bin/bash\n")] * 2)
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=remote)  # fmt: skip
+    backend.start("maity_p_c", tmp_path, ["opencode"], {}, "plc-0003", 1)
+    new = next(call for call in asked if "new-session" in call)
+    default = new[new.index("default-shell") + 1]
+    assert f"SHELL={default}" in new[: new.index("tmux")] and default == "/bin/sh"
+    assert sum(tmux.SHELL_PROBE in call for call in asked) == 1
+    backend.start("maity_p_d", tmp_path, ["opencode"], {}, "plc-0004", 1)
+    new = [call for call in asked if "new-session" in call][-1]
+    assert "SHELL=/bin/bash" in new and new[new.index("default-shell") + 1] == "/bin/bash"
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
+def test_real_tmux_pane_gets_the_session_shell_on_a_server_started_without_it(
+    tmp_path: Path,
+) -> None:
+    """A server an older runner started (here: with another SHELL, standing in for the
+    account's nologin) still gives a session the runner starts now the runner's shell."""
+    import tempfile
+    import time
+
+    # A socket path holds at most 107 bytes; pytest's tmp_path can be longer than that.
+    socket = Path(tempfile.mkdtemp(prefix="t")) / "t.sock"
+    other = tmux.SH if os.access(tmux.BASH, os.X_OK) else "/bin/false"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    seen = tmp_path / "shell"
+    try:
+        subprocess.run(
+            ["env", "-i", f"HOME={tmp_path}", "PATH=/usr/bin:/bin", f"SHELL={other}",
+             "tmux", "-S", str(socket), "-f", "/dev/null",
+             "new-session", "-d", "-s", "older", "--", "sleep", "30"],
+            check=True, timeout=15,
+        )  # fmt: skip
+        backend.start("maity_maity_agent-3", tmp_path,
+                      ["sh", "-c", f'printf %s "$SHELL" > {seen}.tmp; mv {seen}.tmp {seen}; '
+                       "sleep 30"], {}, "plc-0003", 1)  # fmt: skip
+        deadline = time.monotonic() + 10
+        while not seen.exists():
+            assert time.monotonic() < deadline, "the pane did not run"
+            time.sleep(0.05)
+        assert seen.read_text() == backend.session_shell() != other
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
+        shutil.rmtree(socket.parent, ignore_errors=True)
+
+
 @pytest.mark.parametrize("there", [False, True])
 def test_on_an_ssh_host_the_pane_log_exists_before_logcap_starts(
     tmp_path: Path, there: bool
@@ -2756,7 +2895,8 @@ def test_a_session_that_cannot_be_labelled_is_killed(tmp_path: Path) -> None:
 
     def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         calls.append(list(argv))
-        failing = "set-option" in argv
+        # The labels' set-option, not the default-shell one in the new-session call.
+        failing = "set-option" in argv and "new-session" not in argv
         return subprocess.CompletedProcess(list(argv), 1 if failing else 0, "", "boom")
 
     backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)

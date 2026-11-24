@@ -301,11 +301,14 @@ def test_the_join_stays_within_the_outsiders_limits(
 
 
 def test_blue_team_stays_closed_even_on_a_stored_list(
-    on: None, owner: flow.Human, outsider: flow.Human
+    on: None, owner: flow.Human, outsider: flow.Human, migrated: Engine
 ) -> None:
     """B.1 of §6.30: the join takes the contract's list as well, so a list that still names
-    `blue-team` lets no outsider's agent hold it; `coder` on the same list passes."""
-    _policy(owner, agent_owners="anyone", outside_roles=["coder", "blue-team"])
+    `blue-team` lets no outsider's agent hold it; `coder` on the same list passes. The list is
+    written as a project stored it while `blue-team` was allowed: a PATCH refuses it now."""
+    _policy(owner, agent_owners="anyone")
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(outside_roles=["coder", "blue-team"]))
     refused = _join(outsider, role="blue-team")
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"]["field"] == "role"

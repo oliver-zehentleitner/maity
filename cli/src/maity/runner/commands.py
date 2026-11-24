@@ -36,6 +36,7 @@ from . import (
     stub,
     supervisor,
     targets,
+    tmux,
     tools,
     trust,
     workspace,
@@ -578,12 +579,42 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
             )
 
 
+def _check_session_shell(report: Report, as_user: AsUser, where: str = "") -> None:
+    """The SHELL every session gets, looked up as a start does (tmux.Tmux.session_shell). A
+    harness runs its commands through it (OpenCode does), so one that is or links to nologin
+    or false fails every command, as the service account's nologin did (tsk-fjq2k0sx1n3r)."""
+    probe = tmux.probe_shell(as_user, lambda argv: as_user.run(argv))
+    if probe.shell is None:
+        who = "the host" if not as_user.here else f"sudo to {as_user.user}"
+        report.warn(f"{where}the sessions' SHELL is not checked: {who} gave no answer")
+    elif not probe.runs:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell}, which the agents' user cannot "
+            "run: every command a harness runs through it fails; install bash or a POSIX sh "
+            "there"
+        )
+    elif probe.resolved is None:
+        report.warn(
+            f"{where}sessions get SHELL={probe.shell}, not checked further: where it leads "
+            "could not be read (`readlink -f` failed), so nologin or false is not ruled out"
+        )
+    elif os.path.basename(probe.resolved) in tmux.NOT_A_SHELL:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell} ({probe.resolved}), which runs no "
+            "command: every command a harness runs through it fails; install bash or a POSIX "
+            "sh there"
+        )
+    else:
+        report.ok(f"{where}sessions get SHELL={probe.shell}, not the account's login shell")
+
+
 def _check_local(report: Report, local: config.Local) -> None:
     _check_agent_path(report, local)
     if shutil.which("tmux") is None:
         report.error("tmux is not installed; the local backend runs every agent in tmux")
     else:
         report.ok("tmux found")
+    _check_session_shell(report, _local_agents_user(local))
     if local.layout == "agent_user" and local.agent_user:
         _check_agent_user(report, local)
         return
@@ -1311,6 +1342,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
+    _check_session_shell(report, as_user, f"{name}: ")
     probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]

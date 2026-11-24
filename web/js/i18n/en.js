@@ -1329,6 +1329,7 @@ window.MAITY_I18N["en"] = {
   "error.unauthenticated": "You are not signed in.",
   "error.upload_expired": "The upload took too long. Send the file again.",
   "error.version_exists": "A release with this version already exists.",
+  "error.watch_limit": "There are already as many pull request watches as this hub allows.",
   "error.webhook_signature": "The forge's delivery has no valid signature.",
   "event.here": "This event has no other place you can open, so it is shown here.",
   "event.not_reached": "seq {seq} was not reached: it lies further back than the pages read here, or it is not in this list.",
