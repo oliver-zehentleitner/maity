@@ -7690,7 +7690,7 @@ ssh host) the runner builds none and says so: the agents' user could not read th
 directory, and a build there would need its own path, as the skill has (skills.deliver).
 
 **Not verified:** file-tool writes through the clone's link are not tested here; follow-up: a
-live probe on the pinned Claude Code, recorded here (the details are in the card's notes).
+live probe on the pinned Claude Code, recorded here (the details are with the lead).
 
 The same card's other parts: tools/guards.sh takes `hub/.venv/bin/python` when it is there, else
 `python3` as before; the repository's `.gitignore` hides the sandbox's placeholders, which
