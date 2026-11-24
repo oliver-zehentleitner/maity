@@ -16,9 +16,10 @@ window.Maity = window.Maity || {};
     mail_not_configured: () => M.t("data.refused.mail_not_configured"),
     address_unverified: () => M.t("data.refused.address_unverified"),
   };
-  function said(err) {
+  // deletion: true for the deletion request, whose limit is its own (3 an hour, §2.9), not the export's.
+  function said(err, deletion) {
     if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.confirm) return { message: M.t("data.refused.not_handle") };
-    if (err.code === "rate_limited") return { message: M.t("data.refused.rate_limited") };
+    if (err.code === "rate_limited") return { message: deletion ? M.t("data.refused.deletion_rate_limited") : M.t("data.refused.rate_limited") };
     // §6.26: an organisation always has an owner.
     if (err.code === "org_last_owner") {
       const orgs = ((err.details && err.details.orgs) || []).map((o) => "@" + o);
@@ -116,7 +117,7 @@ window.Maity = window.Maity || {};
           typed.disabled = false;
           settle();
           if (err.code === "cancelled") status.done();
-          else status.fail(M.t("data.delete.not_asked"), said(err));
+          else status.fail(M.t("data.delete.not_asked"), said(err, true));
         }
       },
     }, h("label", { for: id }, M.t("data.delete.confirm", { handle: "@" + ctx.me.handle })), typed, go, status.el);
