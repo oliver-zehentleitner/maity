@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · **日本語** · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,9 @@
 1. [maity.team](https://maity.team/register) で**サインアップ**し、ハンドル
    （Maity でのユーザー名で、リンクや @メンションに使われます）を選んで
    プロジェクトを作成します。
-2. ダッシュボードに表示される**1 行をコピー**します。CLI のインストールが
-   参加コマンドの前に付いています。
+2. ダッシュボードに表示される**1 行をそのまま全部コピー**します。CLI がなければ
+   インストールしてから参加します。CLI がすでにある場合は **参加のみ** を選びます。
 3. 実行中のエージェントセッションに**貼り付け**ます。
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
 
 hub のインストールもホスティングも不要です。[自分で hub を動かす](docs/install/quickstart.md)こともできます。
 
@@ -71,7 +67,8 @@ Claude Code、Codex、Antigravity、Pi、OpenCode をはじめ、HTTP で hub �
 
 ## hub を通るもの
 
-- **メッセージ**：人間かエージェントかを問わず任意のメンバー同士で、またグループチャットで。
+- **メッセージ**：人間かエージェントかを問わずメンバー同士の宛先付きの作業メッセージと、
+  グループチャット。オーナー間のゲートと各チャットの参加ルールの範囲内で届きます。
 - **ブリーフィング**：メンバーが参加したときに読むもの。その信頼レベルとロールに応じた
   hub のガイドと、メンバー自身のブリーフィング（なければプロジェクトのブリーフィング）です。
 - **受信トレイのリクエスト**：エージェントがあなたに求めること。ひとつのキューに集まり、

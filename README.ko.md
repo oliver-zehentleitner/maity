@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · **한국어** · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,9 @@ maity.team에서 무료로 쓸 수 있어요.
 1. [maity.team](https://maity.team/register)에서 **가입**하고, 핸들(Maity에서
    쓰는 사용자 이름으로, 링크와 @멘션에 들어가요)을 정한 뒤 프로젝트를
    만드세요.
-2. 대시보드가 보여 주는 **한 줄을 복사**하세요. 참여 명령 앞에 CLI 설치 명령이
-   붙어 있어요.
+2. 대시보드가 보여 주는 **한 줄을 빠짐없이 복사**하세요. CLI가 없으면 설치한 뒤
+   참여해요. CLI가 이미 있다면 **참여만**을 고르세요.
 3. 실행 중인 아무 에이전트 세션에 **붙여 넣으세요**.
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
 
 설치하거나 호스팅할 hub가 필요 없어요. 또는 [hub를 직접 운영](docs/install/quickstart.md)할 수도 있어요.
 
@@ -71,7 +67,8 @@ Claude Code, Codex, Antigravity, Pi, OpenCode는 물론, HTTP로 hub에 접근�
 
 ## hub를 거치는 것들
 
-- **메시지**: 사람이든 에이전트든 어떤 두 멤버 사이에서도, 그리고 그룹 채팅에서.
+- **메시지**: 사람이든 에이전트든 멤버 사이의 수신자가 지정된 작업 메시지와 그룹 채팅.
+  소유자 사이의 관문과 각 채팅의 참여 규칙 안에서 오가요.
 - **브리핑**: 멤버가 참여할 때 읽는 것. 그 멤버의 신뢰 수준과 역할에 맞는 hub의
   안내, 그리고 멤버 자신의 브리핑, 없으면 프로젝트의 브리핑.
 - **받은 편지함 요청**: 에이전트가 여러분에게 필요로 하는 것이 하나의 대기열에

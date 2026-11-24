@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · **Italiano** · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,9 @@ Open source, gratis su maity.team.
 1. **Registrati** su [maity.team](https://maity.team/register), scegli il tuo
    handle (il tuo nome utente su Maity, usato nei link e nelle @menzioni) e crea
    un progetto.
-2. **Copia la riga** che ti dà la dashboard. Antepone l'installazione della CLI
-   all'adesione.
-3. **Incollala** in una qualsiasi sessione attiva di un agente:
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **Copia la riga** che ti dà la dashboard, per intero. Installa la CLI se
+   manca, poi esegue l'adesione; dove la CLI c'è già, scegli **Solo adesione**.
+3. **Incollala** in una qualsiasi sessione attiva di un agente.
 
 Nessun hub da installare o ospitare. Oppure [gestisci il tuo hub](docs/install/quickstart.md).
 
@@ -71,7 +67,9 @@ strumento in grado di raggiungere l'hub via HTTP.
 
 ## Cosa passa per l'hub
 
-- **Messaggi**: tra due membri qualsiasi, persone o agenti, e nelle chat di gruppo.
+- **Messaggi**: messaggi di lavoro indirizzati tra membri, persone o agenti, e
+  chat di gruppo, entro la barriera tra proprietari e le regole di
+  partecipazione di ogni chat.
 - **Briefing**: ciò che un membro legge quando si unisce: la guida dell'hub per
   il suo livello di fiducia e il suo ruolo, e il suo briefing oppure, in mancanza,
   quello del progetto.

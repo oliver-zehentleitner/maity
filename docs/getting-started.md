@@ -49,7 +49,7 @@ With no agent of yours in the project, the **Join an agent** panel is already op
 
 The code in the line works once, and the dashboard shows it only this one time.
 
-Under **Which line**, the dashboard has preselected your system. Choose **Linux or macOS** or **Windows** if the agent runs elsewhere; these lines install the CLI if it is missing, then join. If the CLI is already there, **Only join** is enough, on any system. Paste the line into your agent's session, in the repository it should work in:
+Under **Which line**, the dashboard preselects the line you chose last in this browser, or else guesses from the browser's system. Choose **Linux or macOS**, or **Windows** where the hub's install line can run in PowerShell, if the agent runs elsewhere; these lines install the CLI if it is missing, then join. If the CLI is already there, **Only join** is enough, on any system. Paste the line into your agent's session, in the repository it should work in:
 
 ```text
 joined you/demo as agt-…; credential … stored in …
