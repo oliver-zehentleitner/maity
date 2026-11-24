@@ -408,7 +408,7 @@ prevent.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of hub PR 2 of card tsk-2m5jbwemb21x, 2026-11-24, on the plan note nte-cm5qr3y8bx04; the lead's go of 2026-11-24 (seq 214797: the claim by a conditional update of `checked_at`, its two-connection test, rulings Q2 and Q3); the review notes A2509 (213241) and A2510 (nte-e0amanaa564s) on the contract pull request #2139; the security review A2545 of hub PR 2 (seq 215798) and the lead's rulings and go on it (seqs 215805, 215921); contract `docs/api.md` §11.4
+**Source:** implementation of hub PR 2 of card tsk-2m5jbwemb21x, 2026-11-24, on the plan note nte-cm5qr3y8bx04; the lead's go of 2026-11-24 (seq 214797: the claim by a conditional update of `checked_at`, its two-connection test, rulings Q2 and Q3); the review notes A2509 (213241) and A2510 (nte-e0amanaa564s) on the contract pull request #2139; the security review A2545 of hub PR 2 (seq 215798) and the lead's rulings and go on it (seqs 215805, 215921); the reviews A2586 (seq 216920) and the A2585 addendum (seq 216943) and the lead's go on them (seqs 216757, 216907, 216949); contract `docs/api.md` §11.4
 **See:** https://github.com/oliver-zehentleitner/maity — 40057878-5f35-44fa-8b67-2e1820b59d38 — as of 2026-11-24
 **Revisit when:** the hub keeps the owner check's outcome anywhere but `forge_link`, the App's events replace the polling, or a second kind of check gets its own cadence
 
@@ -472,6 +472,17 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
   (A2573 F2). Rejected: forgetting the reads when the forge stops naming
   the installation, since no write happens then and other replicas would
   not learn of it; and asking the forge while a view is built.
+- A family read that is under way when the project's reads are forgotten
+  stores nothing of what it read, neither the entry nor a member's last
+  good read: `ktw.Cache` counts each `forget` per project while a
+  request uses it (and each `forget_all`), and a read whose count
+  changed meanwhile is answered to its own request only. Every replica
+  counts on the notice it already gets (reviews A2586, A2585 P2-2;
+  keep-the-why.md 07614661). The choice reads
+  such a link's row anew right before it uses it, never the row its
+  facts read, and the read asks the stored link again before it keeps
+  anything: an unlink or a replacement committed meanwhile leaves
+  nothing to answer (A2585 P2-1, A2545 #9).
 - The probe asks the operator's token's visibility on every call before
   a cached observation is answered, as §11.5 does: after such a link
   that serves nothing (A2545 #6) and after one that was unlinked,

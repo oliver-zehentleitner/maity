@@ -59,7 +59,7 @@ each member's last good export.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the reviews of #672 (the windows of a lock in use, a read without the lock; `forget` keeping an old repository's reads); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the reviews of #672 (the windows of a lock in use, a read without the lock; `forget` keeping an old repository's reads); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`; the generation per project from the reviews A2585 P2-2 and A2586 of #2192 (card tsk-2m5jbwemb21x) and the lead's go (seqs 216757, 217024), 2026-11-24, `hub/tests/test_forge_org_links.py`
 **Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows a bound too small (projects read anew too often) or too large; or projects can be deleted for good, so that their entries could go at once
 
 The hub keeps several caches per project in the process. Each gained a
@@ -98,6 +98,20 @@ What a dropped key held is read or computed again on its next use. For
   that a read still running writes after `forget` is never used for
   another repository. Only the project's lock stays while it is in use.
   Dropping for room spares a project in use entirely.
+- **A read that outlives a forget keeps nothing.** `forget` runs for more
+  than a changed URL: an unlinked or replaced link on a forge
+  organisation forgets too, and the read under way at that moment may
+  have been made through that link. Each `forget` of a project in use
+  counts up that project's generation (`Refresh.forgotten`, dropped with
+  its last user), and `forget_all` a cache-wide one; a read notes both
+  before it chooses its source, and keeps its entry, a member's last
+  good read or the mark that it read only while both are unchanged.
+  Otherwise its own request gets it, as it was made for that request,
+  and no later one does (review A2585 P2-2, A2586). Rejected: asking
+  the stored link before every cached answer (one database read per
+  project in a list, and an unlinked link leaves no row to ask);
+  shortening `until` (it only narrows the window); and taking the
+  project's lock in `forget` (an unlink would wait for a family read).
 - **Lock order.** In `ktw`, a project's lock first, then `guard`, never
   the other way round: under `guard` no project lock is taken, only
   looked up. In `images`, the gate first, then `_guard`; the gate is
