@@ -7869,3 +7869,64 @@ paired into the person's own `~/.local/state` and left the service on its revoke
   command under umask 002 against a 0644 stand-in, twice. Install's copy is made only once
   (`test -e … ||`), so a second paste keeps it. Rejected: a `chmod` after `tee`, which would only
   repeat what the file already is; `cp -n`, whose exit status differs between coreutils versions.
+
+## A chat of one's own agents across projects is on Chats, in a list of its own
+
+**Id:** 08235525-43fd-40a6-b7a7-440cef67e17e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract `docs/api.md` §9.5, which the hub already serves, and the dashboard's Chats page (`js/chats.js`), 2026-11-05; ported onto main and amended after 9bnr's pre-review A2494 (tsk-d00zszbbmvmy), 2026-11-24
+**Revisit when:** the hub starts notifying the owner of a message in this chat, or the owner wants the row among the pinned project chats
+**See:** https://github.com/oliver-zehentleitner/maity — adf88c46-52ea-4160-a875-a3da5560fe7b — as of 2026-11-05
+
+The dashboard shows an owner's cross-project group chats on `/chats`,
+under the project chats, from `GET /me/cross-chats`. A row has no project
+mark and no pin. Opening one is `/chats/cross/<id>`; creating one is
+`/chats/cross/new`. The open chat is the group chat's panes without a
+file, without the meat-proxy switch and without a wake control. The
+owner renames, adds and removes agents, and removes a message. Leaving
+closes the chat, and the owner can still read it and remove a message.
+An agent's projects on the chat are the ones the hub put on the
+participant. The header's Chat badge stays `counts.chat`.
+
+Amended when the chat was ported onto main (A2494). The pane has the
+group chat's full-screen button in its heading row, so "any chat takes
+the whole window" holds for this one too. **New chat across agents** is
+an icon link after the 📌 toggle in the list's heading row, as a
+project's New group chat is an icon. The heading keeps its row on a
+phone and the Lead stays at the left edge under it. A person, a mention
+and an instance in the chat link where a project's context would (its
+Team page, a session), through `link` of a project of the reader's that
+has them. A cross chat has no `link` of its own, so a renamed route
+cannot go stale here. The chat carries no verdicts (§9.7) and no waiting
+lines of the agent firewall (§9.6): both belong to a project's chats.
+
+**Reason:** the contract gives this room its own list, with no pin and
+no place in `GET /me/conversations`, and says the unread count on the
+chat is how a new message shows. The human already opens Chats for
+every conversation, so the room belongs on that page. The badge is the
+hub's notification count, and these messages are not notifications.
+
+**Rejected alternatives:**
+- Mixing the rows into the four bands of `GET /me/conversations`: that
+  list is ordered by the hub, and this chat has no pin. Sorting the two
+  together in the browser would invent an order the hub does not give.
+- A page of its own, away from Chats: the human would have to learn a
+  second place for a conversation.
+- Adding the unread count to the Chat badge: the badge is `counts.chat`,
+  which counts project conversations. A second source would show a
+  number the hub does not report there.
+- Files, the meat-proxy switch, or a wake control: the contract leaves
+  each of them out of this chat. Reporting a message stays out too,
+  because that call is not built (§16.8).
+- New chat across agents as a text button wrapped with the Lead in an
+  actions group (#1422 as first built): main's heading row became
+  icons (heading, Lead, 📌), and a text button would take a row of its
+  own on a phone.
+- Links built by hand as `/<project>/members/<id>`: the route became
+  `/team` (#1588) with no redirect, and every such link fell back to
+  `/chats`.
+- Loading `js/cross-chat.js` only on the first `/chats/cross` route,
+  to keep it out of the shell's budget: no other view is loaded that
+  way, and the budget is raised in the same change instead.
