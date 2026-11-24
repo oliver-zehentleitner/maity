@@ -87,11 +87,7 @@ So the machine is capped, not trusted:
   `services:` (PostgreSQL, MariaDB) need a Docker API, and the Docker group would be root.
   The services bind to `127.0.0.1` only, with their images pinned by digest in `ci.yml` and
   `hub-mariadb.yml`.
-- A firewall rule per user that keeps the runner user away from local services and the
-  internal network, IPv4 and IPv6, for example
-  `iptables -A OUTPUT -m owner --uid-owner <uid> -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16 -j REJECT`
-  and `ip6tables -A OUTPUT -m owner --uid-owner <uid> -d ::1/128,fc00::/7,fe80::/10 -j REJECT`,
-  with the loopback ports of its own Docker services allowed first.
+- A firewall chain for that user's uid, IPv4 and IPv6 (on a rented server bootstrap-server.sh installs it as MAITY_RUNNER, see SERVER-SETUP.md). It keeps the runner user away from ssh (port 22, on loopback and on the machine's own public address), from 169.254.169.254 and from the internal networks. The rest of loopback stays open to the job: its service containers and the test suite's own servers listen there.
 - Lingering keeps the runner user's systemd user manager running. `KillMode=control-group`
   does nothing against a process a job starts there (`systemd-run --user`, a unit under
   `~/.config/systemd/user`): it lives outside the unit's cgroup, under the same uid, and can
