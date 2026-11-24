@@ -134,7 +134,7 @@ pull_requests = true
 | Codex's exec helper lives in its `CODEX_HOME`, which the runner puts inside the state directory that the sandbox profile hides, so every command is denied. Fixed in maity 0.1.0a16 (#1979: `CODEX_HOME` in the placement scratch); not re-run in the lab yet | Ubuntu 26.04, Codex 0.169 and 0.170 | tsk-hv7jbgy75zjt |
 | Claude Code in a placement: several workflow commands (pytest, make, black, ruff, mypy, uuidgen, `git -C`, `cd … &&`) are refused under dontAsk, by the allow list's content and command form; the main session and subagents can differ | Ubuntu 26.04 (Debian not tested) | tsk-66zyvc4xnhtv, #1962 |
 | An OpenCode placement without a model runs OpenCode's own default model. Fixed in maity 0.1.0a16 (#1969: `default_model` used, fails closed); not re-run in the lab yet | both | tsk-kf2kp09d6qew |
-| Coders cannot build the project's dev venv or run its full checks in a placement | both | tsk-kshmb8vc92rr |
+| Coders cannot build the project's dev venv or run its full checks in a placement. Addressed by `[backend.local] clone_venvs` (the runner builds the venvs, Claude Code in the `single` layout; docs/runners.md); not re-run in the lab yet | both | tsk-kshmb8vc92rr |
 | The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind. Fixed in maity 0.1.0a16 (#1954); not re-run in the lab yet | both | tsk-estwtzbae972, #1954 |
 | A supervised agent shows as offline or away on the team page while its placement runs (green on **Managed agents**) | both | tsk-hv7jbgy75zjt (note nte-w7bwz93q1vnx) |
 | Claude Code without its sandbox as an opt-in where the host cannot allow it | – | tsk-yp2bprwv9whv |

@@ -1044,14 +1044,15 @@ runner's profile, and one reviewer saw that switch the sandbox off.
 **Revisit when:** Codex gains a per-command allowlist the runner can write, or a way for one command to leave its sandbox, so that `maity gh` could run outside it
 
 With its sandbox on, a Codex placement starts on a repository whose
-grant has an `allow` list or `pull_requests`. It does not get those two
-parts (`adapters.codex_left_out`): the `allow` list is not applied, so
+grant has an `allow` list or `pull_requests`. It does not get those
+parts, nor `lead` (`adapters.codex_left_out`): the `allow` list is not applied, so
 every command runs in Codex's sandbox, listed or not, and the runner
 writes no pull-request grant for it (an empty record, no word of `maity
 gh` in its prompt), as without the grant; it does not enforce that a
 Codex agent opens no pull request. With its sandbox off (`require_sandbox` unset, so the start is not
-refused for the sandbox alone), such a grant refuses the start
-(`harness_refused`), as every such grant did before.
+refused for the sandbox alone), a grant with any of `allow`,
+`pull_requests` or `lead` refuses the start (`harness_refused`), as every
+such grant did before.
 `maity runner check` warns about each part for every such repository
 when `[harness.codex]` is configured, and the runner logs them at each
 Codex start. Codex is still advertised with `confinement: "sandbox"`,
@@ -1135,9 +1136,11 @@ An `antigravity` placement runs agy in a folder the runner creates per
 placement, with the clone as `repo` inside it and nothing else. The
 runner refuses to start when the folder holds anything else. Every
 session gets settings the runner writes (`--settings`): the default agent
-mode, commands in the sandbox without asking, the sandbox on, the folder
-trusted, `.git/maity` denied to the file tools, `maity` and the
-repository's grants allowed. agy uses the home of the user the agents run
+mode (`accept-edits` for an interactive start since 7aa15a74), commands in
+the sandbox without asking, the sandbox on, the folder
+trusted, `.git/maity` denied to the file tools, `maity` allowed, with
+`read_url` for the hub, the forge and the grant's `network` hosts; the
+grant's `allow` commands are not given to agy (f8a7b727). agy uses the home of the user the agents run
 as, so that user's own agy settings apply to every agent.
 
 **Reason:** agy loads the start directory's hooks, MCP servers, plugins,
@@ -1343,7 +1346,7 @@ different lines, read as "cannot start".
   this change. The report stays `sandbox_unavailable`, and a code would
   be its own contract card.
 
-## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
+## agy's session settings: no command grants, the sign-in denied, hosts allowed
 
 **Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
 **Type:** decision
@@ -1379,7 +1382,7 @@ Details of the settings §15.3 describes, chosen in the code:
   hosts, agy's documented rule for a domain, so git and `maity`'s
   traffic may get out of the sandbox's network block. Not seen in a run.
 - `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
-  `git --exec-path`, `gh`); git is not allowed at all and runs in the
+  `git --exec-path`, `gh`, `maity runner`); git is not allowed at all and runs in the
   sandbox, as §15.3 lists only `maity` and the grant.
 - The delivered Keep the Why skill gets a `read_file` allow and keeps its
   `write_file` deny (2026-11-23). agy's sandbox shows only what a rule
@@ -1429,7 +1432,7 @@ Details of the settings §15.3 describes, chosen in the code:
 **Superseded by:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
 **Evidence:** inferred
 **Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
-**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
+**See:** runner.md#agys-session-settings-no-command-grants-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
 **Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match, keeps an empty word, or adds an exact form
 
 An exact `allow` entry `a b` (no `*`) becomes the allow rule
@@ -1608,6 +1611,103 @@ docs/runners.md, with no example.
 - A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
+
+## agy runs in both modes: accept-edits interactive, the supervised turn reaped and bounded
+
+**Id:** 7aa15a74-2d23-46a2-b50d-7480fb331107
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (a supervised `-p` turn that spawned a background `maity wait` and never ended); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits` and rejects an unknown `agentMode`); the lead's ruling on pre-review A2498 of #1939, 2026-11-24
+**See:** runner.md#agys-session-settings-no-command-grants-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
+**See:** runner.md#supervised-agy-ends-each-turns-own-process-group-agy-has-no-setting-to-stop-a-background-task-outliving-a-turn — c69eb132-ec8c-41e2-bab5-f83763d9b307 — as of 2026-11-24
+**Revisit when:** a live probe shows agy's denies on `.git/config`, `.git/hooks` and `.git/maity` hold inside a writable mount (then a clone write allow can be weighed again), agy changes what `agentMode` means, or a turn that ends at its time limit is seen to leave an event no later turn handles
+
+agy offers both modes. An interactive start sets `agentMode: accept-edits`,
+the agy mode that accepts the file tools' edits without a prompt; a supervised
+start keeps the empty default mode, since it runs headless. `auto` is still
+refused: its reviewer model may let a command leave the sandbox (b0646ec1).
+The file contract is the one af2e96d9 records, unchanged by this entry: no
+`write_file` allow, the clone's `.git` as agy's sandbox mounts it, a scratch
+clone for fetch and commit, and the delivered skill read through a `read_file`
+allow.
+
+A supervised turn runs in a process group of its own, which the loop ends
+when the turn ends, and at most for a time limit (`TURN_TIMEOUT`, which the
+spec may lower); c69eb132 records the reap. A turn that hits the limit is
+ended and reaped and not run again: the loop logs that the turn hit its time
+limit, counts no crash, and goes back to waiting for the next event.
+
+**Reason:** `accept-edits` is set only interactively because a person may be
+at the pane, while a supervised run has nobody to answer and needs no
+auto-accept. The time limit exists for a harness that keeps running while it
+reports idle or waits on a background task. A turn that long is past the
+restart policy's `quick_exit`, so if the loop treated the limit like any
+failed run it would back off and run the same turn again with the crash count
+reset each time: the retries would have no cap and the next event would never
+start. Ending the turn and waiting for the next event bounds it.
+
+**Rejected alternatives:**
+- A clone-wide `read_file`/`write_file` allow, with empty placeholders seeded
+  for the `.git` files a plain clone lacks, so the clone and its `.git` would
+  be agy's writable region. Rejected by the lead for main's file contract
+  (af2e96d9) until a live probe shows the denies hold inside a writable
+  mount; deferred as a note on the card.
+- Only rewording the time-limit behaviour in the docs: it would leave the
+  uncapped retry of a turn that hits the limit.
+
+## Supervised agy ends each turn's own process group; agy has no setting to stop a background task outliving a turn
+
+**Id:** c69eb132-ec8c-41e2-bab5-f83763d9b307
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17; the my22 incident ("root agent idle; waiting for 1 background task(s)": a supervised `-p` turn spawned a background `maity wait` and never ended); agy 1.5.10's `--settings` keys and `AGY_`/`ANTIGRAVITY_` environment probed directly for a background-disable switch, none found; the Claude Code adapter's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which has no agy equivalent
+**Revisit when:** agy gains a setting or environment variable to keep a background task from outliving a turn (then set it instead), or a background task that double-forks past its process group is seen to escape the reap
+
+agy has no `--settings` key and no environment variable to stop a background
+task outliving a turn — every candidate was probed against agy 1.5.10 and
+refused as unknown, and there is no `AGY_*`/`ANTIGRAVITY_*` variable for it —
+unlike Claude Code's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. So the
+supervised loop enforces it instead: an agy spec carries `reap_process_group`,
+and for such a spec the loop runs each turn with `start_new_session=True`, so
+the turn's harness process leads a session and process group of its own whose
+id is that process's pid. The loop waits at most a bound (`TURN_TIMEOUT`, which
+the spec may lower) for the harness, then ends the turn either way: when the
+turn ends the loop sends SIGTERM, then after a short grace SIGKILL, to exactly
+that group id, ending any background process the turn left (a stray `maity
+wait`, say). A turn that hits the bound is not run again: the loop waits for
+the next event (7aa15a74).
+
+**Reason:** in my22 a supervised turn spawned a background `maity wait`; the
+turn's process ended but the child kept the turn's group alive, and the run
+sat "idle; waiting for 1 background task(s)" instead of ending, so the agent
+stopped answering. The prompt already tells the agent not to run `maity wait`,
+but the enforcement must not depend on the prompt. Two cases have to be bounded:
+a harness that ends while a background task keeps its group alive, and a harness
+that never ends at all (it keeps running while it reports idle or waits on the
+task), which would otherwise hold the loop forever; the wait bound covers the
+second so a turn always ends. Scoping to a process group the loop creates fresh
+for each run is the hard safety requirement: the group id is that one run's own
+leader pid, so the signal reaches only that run's descendants and never another
+session's or placement's processes; the loop itself runs in the tmux pane's
+separate group and is untouched. `_reap` refuses a group id of 0 or 1, which
+could name a wide group, treats an empty group (ProcessLookupError) as the
+normal case — most turns leave nothing behind — and treats a group left with
+only zombies (already-exited, unreaped processes) as gone, so it does not wait
+out the full grace on an already-dead group (in a PID namespace the leftover's
+reaper can be the loop itself, where a plain "is the group still there" probe
+would call a zombie alive and stall).
+
+**Rejected alternatives:**
+- Relying on the prompt alone: a background task is a correctness-and-cost
+  bug when it holds the turn open; the loop must enforce it, not ask.
+- Killing the loop's own (the tmux pane's) process group minus the loop:
+  it would need to exclude the loop and anything the pane shares, and a
+  slip would kill the pane; a fresh per-run group has no such ambiguity.
+- A global sweep of the agents' user's stray processes: it could kill
+  another placement's work, the one thing that must never happen.
 
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
@@ -1991,7 +2091,7 @@ project does not need.
 runners per placement: a secret store in the hub, and a second place for
 a key to leak from.
 
-## Model access stays the operator's; a run's usage counts reach the hub
+## Model access stays the operator's; a run's usage counts are to reach the hub (not built yet)
 
 **Id:** 5f6c87ce-132d-4f7e-921d-d74741f369fe
 **Type:** decision
@@ -2003,10 +2103,11 @@ a key to leak from.
 
 How agents pay for their model is still up to the operator, and nothing
 about model **access** reaches the hub: no key, no account, no login
-method. What does reach it now is a supervised run's usage **counts**:
-input, output and prompt-cache tokens, and the cost figure the harness
-computed itself, sent by the runner when a run's work ends and before it
-reports the run's end (a later record is lost). The model name, the
+method. Decided (`docs/api.md` §15.15), not built yet: a supervised
+run's usage **counts** (input, output and prompt-cache tokens, and the
+cost figure the harness computed itself) are to be sent by the runner
+when a run's work ends and before it reports the run's end (a later
+record is lost); nothing about usage reaches the hub yet. The model name, the
 prompts, replies, tool calls and the provider's request ids never leave
 the runner. Interactive placements report nothing for now: the runner
 reads no stream from them, and the harness's session log is a format it
@@ -2042,7 +2143,9 @@ A placement that names no mode gets the harness's advertised
 `default_mode`. In the shipped configuration examples that is
 `interactive` for Claude Code locally and over ssh (a tmux session a
 human can attach to) and `supervised` for Codex (headless runs woken by
-events). The mode can be chosen per start.
+events) where the example names no `modes` (`docs/runners.md`); the lab
+example in `docs/runners-lab.md` lists `interactive` first, so Codex
+defaults to `interactive` there. The mode can be chosen per start.
 
 **Reason:** Claude Code wakes on a background `maity wait`, so an
 attachable session costs nothing while idle and lets a human answer in
@@ -2070,7 +2173,10 @@ asks the hub which placements are active and keeps every clone one of
 them names. git runs in a clone only when `.git` holds nothing but a
 plain clone's top-level entries, each a file or a directory as git
 makes it (so no `commondir`, `config.worktree`, submodules or object
-alternates, nothing in `info/` but `exclude`, and no symlink anywhere,
+alternates, nothing in `info/` but `exclude` and `refs` (an empty
+`config.worktree`, `config.lock` or alternates file, and empty
+`glab-cli`, `modules`, `remotes` and `worktrees` directories that Claude
+Code's sandbox leaves, pass as placeholders), and no symlink anywhere,
 since git follows them past every check) and `.git/config`, at most
 64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
 user name and email). git runs with `GIT_DIR` and `GIT_WORK_TREE` pinned
@@ -4283,8 +4389,10 @@ pushes the branch to its own name) and `fetch.recurseSubmodules=false`
 (fetch does not read `.gitmodules`, which the sandbox replaces with an
 unreadable placeholder in a repository that has none). They override the
 clone's own values, which in a runner's clone are a plain clone's: the
-clone check refuses a key a plain clone has not. Without a sandbox none of
-this is set and the clone's configuration stands. The start prompt of a
+clone check refuses a key a plain clone has not. Without a sandbox, a
+Claude Code or Codex session does not get those three settings, and the
+clone's configuration stands for them. An antigravity session gets the
+same three settings whether or not its sandbox is on. The start prompt of a
 sandboxed Claude Code or Codex session names what still fails: `push -u`,
 `--set-upstream`, `--track` and `branch -m`. `maity report` reads a
 branch without an upstream as its own branch on the push remote
@@ -5103,7 +5211,7 @@ query (`isMergeQueueEnabled`, `isInMergeQueue`, `headRefOid`; the owner,
 name and number as variables), and refuses unless both queue fields are
 false and the head is the one named, or when it cannot read them.
 GraphQL answers for a queue whatever required it and for every reader. The body filter drops only whole `Co-Authored-By:` and
-"Generated with" or "Generated by [tool](link)" lines (the second the
+"Generated with" or "Generated by \[tool\](link)" lines (the second the
 form the containers append). That is what the project leaves out of squash commits, and
 rewriting text inside a line could change what an author wrote. An edit
 is one REST call through gh, `PATCH repos/<owner>/<name>/pulls/<number>`
@@ -5718,7 +5826,7 @@ in his words are this design's (inferred).
   `hello`, and the CLI ships before such a hub is deployed everywhere;
   a runner that manages nothing has nothing to report, so it stays as
   it was. The lead chose this over waiting for the hub release
-  (confirmed by the lead, seq 139517). Rejected: a retry of `hello` without
+  (confirmed, seq 139517). Rejected: a retry of `hello` without
   `tools` after the refusal, and reading the hub's version first; both
   add a second path to every start for a gap that closes with the next
   hub release.
@@ -6018,16 +6126,22 @@ disk to one limit per placement.
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`
 (since tsk-c7zzd440x8pn `<workspaces>/.scratch/<project_id>/<placement id>`,
 under one holder; entry 87396593-13e8-4289-8b95-0f97fdf38e51),
-passed as `MAITY_SCRATCH` with `TMPDIR` inside it, but `TMPDIR` only when
-a Unix socket still fits under it: Claude Code binds its sandbox socket
+passed as `MAITY_SCRATCH` with `TMPDIR` inside the scratch when a Unix
+socket fits under that tmp: Claude Code binds its sandbox socket
 `claude-socks-<16 hex>.sock` (34 bytes) under `TMPDIR`, a socket path holds
 at most 107 bytes on Linux (103 on macOS), and a deep workspaces root made
 it 117 in cli 0.1.0a16,
 so no Claude Code placement's sandbox started. Where `<scratch>/tmp` leaves
-no room the session gets no `TMPDIR` at all (it starts from a clean
+no room, a Claude Code or Codex placement gets a private `TMPDIR` in a
+leaf under the per-user tmp parent, when that leaf can be made, and that
+path is what the session uses (`adapters.session_tmpdir`). A sandboxed
+Claude Code placement that gets no such `TMPDIR` is refused and is not
+started on the shared tmp. A placement that is neither of those two, or
+one of those two where no leaf can be made and the start is not a
+sandboxed Claude Code start, gets no `TMPDIR` (it starts from a clean
 environment, so tools use `/tmp`) and only `MAITY_SCRATCH` names the scratch
-(`adapters.scratch_tmpdir`). Under the default root `~/maity-workspaces` that
-is the usual case: a home longer than `/home/ab` already leaves no room. The runner removes it
+(`adapters.scratch_tmpdir`). Under the default root `~/maity-workspaces` a
+scratch tmp with no room is the usual case: a home longer than `/home/ab` already leaves no room. The runner removes it
 when the placement closes; after a stop it is to go on the clone's clock,
 which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and
@@ -7619,3 +7733,145 @@ session on it ended.
   a pane's `SHELL` is set from `default-shell` after the `-e` values, so it
   would not win (not checked against a live tmux).
 - Changing the account's shell: see the constraint above.
+
+## A coder's dev venvs are built by the runner, and nothing from the clone runs outside the sandbox while it does
+
+**Id:** 87f5fc87-a51c-48b6-9f60-1d8f6953276a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kshmb8vc92rr (placed coders cannot build the venv their project's checks run in; docs/runners-lab.md lists the gap); the lead's go on the plan for a smaller rework of PR 1940 (2026-11-24, with its three design rulings); the pre-review of PR 1940 (its pre-push hook ran the work tree's code outside the sandbox, reproduced); `cli/src/maity/runner/venvs.py`, `supervisor._venvs`, `adapters.claude_settings`
+**Revisit when:** placed sessions reach PyPI themselves, the runner gets a build step that may run a project's own build code in a sandbox, or the agent_user layout or ssh hosts are to get the venvs too
+
+`[backend.local] clone_venvs` names subpackages of the clone (hub, cli). For a Claude Code
+placement where the agents run as the runner's own user on this host, the runner builds a dev
+venv for each at the start, because the session cannot reach PyPI. The runner runs outside the
+sandbox, so the build is held to running nothing the clone holds:
+
+- The lock is `<sub>/requirements/dev.txt` as the placement's branch has it in the project's
+  repository, fetched into a bare repository of the runner's own (`skills._git`: no hooks, no
+  user or system configuration), one per placement so two starts never share a FETCH_HEAD. The
+  runner runs no git in a clone (workspace.py), and the work tree's copy is the agent's to edit.
+- Only `name==version` lines with sha256 hashes pass, extras and markers allowed; an option
+  (any token starting with `-` but a sha256 `--hash`, also after a marker), a URL, a path or an
+  include refuses the lock.
+- pip installs hashed wheels only (`--only-binary=:all:` on its command line and
+  `PIP_ONLY_BINARY=:all:` in its environment, `--no-deps`, no pip configuration read; the
+  environment is no hold against an option on a lock line, for which a pip 24.0 started a source
+  build all the same, so refusing that line in the lock check is the one hold) into a venv the runner's
+  python3 (the first on its PATH, which may be a pyenv or uv one) made just now, so no build
+  script of any package runs.
+- The clone's own package is not built (hatch_build.py and setup.py are clone code): a `.pth`
+  names `<sub>/src`. The hub, run from a checkout, reads `web/` and `docs/join-page.md` from the
+  repository (`config.checkout_web_dir`, `joins.py`), as tools/guards.sh already runs it with
+  `PYTHONPATH=hub/src`.
+- The venv sits in the runner's venvs directory beside its tools and skills, outside the state
+  directory and the scratch: the session reads and runs it and never writes it (a Read allow, an
+  Edit deny and the sandbox's denyWrite, as the delivered skill). The next build goes beside it and
+  replaces it by rename, so the runner never runs a venv's interpreter after a session could
+  reach it. It goes with the placement.
+- `<sub>/.venv` in the clone becomes a link to it only where nothing stands there, below a real
+  directory: a link the agent put on the way is never followed, and a venv of the agent's own
+  stays.
+
+A venv that cannot be had is logged and never fails a start. Elsewhere (the agent_user layout, an
+ssh host) the runner builds none and says so: the agents' user could not read the runner's
+directory, and a build there would need its own path, as the skill has (skills.deliver).
+
+**Not verified:** file-tool writes through the clone's link are not tested here; follow-up: a
+live probe on the pinned Claude Code, recorded here (the details are with the lead).
+
+The same card's other parts: tools/guards.sh takes `hub/.venv/bin/python` when it is there, else
+`python3` as before; the repository's `.gitignore` hides the sandbox's placeholders, which
+guards.sh's clean check would otherwise list, since it reads `.gitignore` files alone.
+
+**Rejected alternatives:**
+- The pre-push hook PR 1940 installed (`core.hooksPath` in `.git/config`): every git outside the
+  sandbox then ran the work tree's `tools/pre_push.py`, which the agent can edit (reproduced in
+  its pre-review). No hook at all: agents run the checks themselves, and CI stays the gate.
+- A hooks path for the session alone (its GIT_CONFIG_COUNT): the harness's own git calls run
+  outside the sandbox and read the session's environment too (adapters.launch), so the hook would
+  still run the work tree's code there.
+- Building the venv in the clone with the clone's own lock and `pip install -e .`: the lock is
+  the agent's to edit, and an editable install runs the package's build script, both outside the
+  sandbox.
+- A directory every placement can write, for shared run slots (PR 1940's
+  `sandbox_writable_dirs`): each placement has its own slots in its scratch since #2032, and a
+  shared writable directory is a channel between placements.
+- Ignoring the placeholders through `.git/info/exclude` alone: guards.sh reads `.gitignore` files
+  only, on purpose, so a personal exclude cannot hide a file a step wrote.
+
+## An agent's clone of the other layout is set aside whole, and the agent joins anew
+
+**Id:** 66b73260-77a7-421a-bba0-ef5b140f161d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use`/`workspace_unrecorded` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381, and on the set-aside clone's removal, seq 152442; the review of PR #1930 (A1056) and the review lead's fix order; the pre-review A2497 and the lead's go on its fixes, seq 212827 (removal by hand, no `gc` promise, the failure and collision rules); docs/api.md §15.5, §15.7, docs/runners.md
+**See:** https://github.com/oliver-zehentleitner/maity — 4edeef48-8684-4495-96dc-6063e25e31c7 — as of 2026-11-17
+**See:** https://github.com/oliver-zehentleitner/maity — 44fe553d-74c0-495d-80c4-e1af00a65f57 — as of 2026-11-24
+**See:** runner.md#local-mode-one-agent-in-the-foreground-no-pairing-also-on-windows — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-17
+**See:** runner.md#a-stopped-agents-clone-stays-for-its-retention-time-then-the-runner-removes-it — 161d5507-5b44-45d6-8bec-cacd58de58a2 — as of 2026-11-17
+**Revisit when:** clone paths stop being shared by the two layouts (tsk-rfa7fwa2sz5g kept them shared: a new placement still continues the membership's held clone), or a harness gets a third layout; or the runner's retention removal and `gc --revoked` learn `.replaced-*` paths (the follow-up of tsk-9f69y1hr1m6z); or the dashboard should reach a set-aside clone (in this contract only the runner's log and `maity runner status` do, lead's decision seq 152442)
+
+Contracted, not built yet. Both layouts use `<workspaces>/<project_id>/<clone>`:
+a plain clone, or for `antigravity` a folder with the clone as `repo`.
+When a start finds there a path the runner recorded for this placement's
+agent in the other layout (a new placement of that agent on this runner
+and clone, or a changed harness), no symbolic link and nothing using it,
+the runner reports `set_aside` first; once the hub took it, it renames the
+path whole to `.replaced-<time>-<clone>` beside it, runs no git and reads
+nothing in it, then makes the new clone under the new epoch and joins (a
+`replaces` join when the hub set `rejoin`, the ordinary one when the
+placement named no credential). When `.replaced-<time>-<clone>` exists,
+`-2`, `-3`, … go after `<time>`; nothing is renamed over a path. A
+refused report or a failed rename moves nothing and fails the start
+(`workspace_in_use`, `workspace_set_aside_failed`); after a failed rename
+the hub's state stays, and the next start reports `set_aside` again at
+the new epoch (revoking nothing more) and retries the rename, also when
+the harness was switched back to the clone's layout, since its
+credential and epoch are spent. The report names `detail:
+workspace_set_aside`, the log the old and the new path, and `maity
+runner status` the set-aside clone with its unsaved count. That count's
+git runs as `gc`'s does (`not_inspectable` first, then `SAFE_GIT` and
+no system or global configuration): no `core.hooksPath`,
+`core.fsmonitor` or `include` from the clone, since a set-aside clone is
+untrusted (lead, seq 212863). A person removes it by hand: the runner's
+retention removal and `gc --revoked` do not take a `.replaced-*` path
+yet (gc goes by a revoked credential, which a set-aside clone may not
+have, and skips every clone of an agent with an active placement), and
+teaching them that is the follow-up card tsk-nnv2dg7j3bd4. Every other path in the other layout stays
+`workspace_in_use`. The rule "no clone moves between the two layouts"
+stands.
+
+**Reason:** the shared path made the old clone and its record block the
+new layout, and the credential, which lives in the clone, was then
+expected at the new layout's place. Renaming moves the whole tree in one
+step without touching its content, so uncommitted files, unpushed
+commits, stashes and agy's entries beside `repo` survive, as in local
+mode's `.replaced-*`. A name with a leading `.` is never a clone token, so
+nothing starts there. Revoking the old credential leaves the copy in the
+set-aside tree dead.
+
+**Rejected alternatives:**
+- Moving the old clone into the new layout (into `repo`, or out of it)
+  and keeping its credential: one layout's clone would carry what the
+  other harness's runs left (agy's entries beside `repo`, a clone an
+  earlier harness configured), and the records keyed on the clone's path
+  (folder trust, the recorded `.git`) would point at a moved tree. The
+  lead chose the set-aside.
+- Reporting the move as `removed`: the clone is still on the disk; the
+  hub has a state of its own for it (`set_aside`, the hub entry).
+- An operator setting that turns it on: the owner made the new placement,
+  so the intent is there; the narrow condition keeps every other
+  `workspace_in_use` refused.
+- A retention of its own for set-aside clones: the lead kept one rule,
+  that of a stopped clone.
+- Promising `gc --revoked` for set-aside clones in this contract: gc
+  skips them today (the `.replaced-*` name is no clone token, the agent
+  has an active placement, a clone without a credential is never
+  revoked), and widening it is removal logic for trees nobody inspected,
+  so it belongs with the runner's code and tests (A2497, lead seq
+  212827).
+- Deleting the old clone, or moving only its credential: deletes unsaved
+  work, or puts the runner's hands on a credential it never holds.

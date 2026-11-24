@@ -804,7 +804,7 @@ window.Maity = window.Maity || {};
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx, save) => languageSection(ctx, save) },
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx, save) => stateForm(ctx, save) },
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => repositoryForm(ctx) },
-    { tab: "general", when: (ctx) => ctx.canAdmin && !!M.forge, build: (ctx) => M.forge.repositoryPart(ctx) },
+    { tab: "general", when: (ctx) => ctx.canAdmin && !!M.forge, build: (ctx, save) => M.forge.repositoryPart(ctx, save) },
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => linksForm(ctx) },
     // Its name: rename and transfer, for a human owner (§6.25).
     { tab: "general", when: (ctx) => !!M.projectNames, build: (ctx) => M.projectNames.section(ctx) },
@@ -832,6 +832,7 @@ window.Maity = window.Maity || {};
     // Way of working: how a card is closed and what the agents keep. Humans only, as every
     // policy field (§2.3 ʰ); the commitment follows the memory provider.
     { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => ownApprovalsForm(ctx, save) },
     { tab: "work", when: (ctx) => ctx.canAdmin && !!M.projectSetup, build: (ctx, save) => memoryPanel(ctx, save, humanAdminOf(ctx)) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyForm(ctx, save) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyDefaultsForm(ctx, save) },
@@ -1283,6 +1284,112 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint" }, M.t("settings.done_authority.hint")),
     h("label", { for: "done-authority-select" }, M.t("settings.done_authority.label")), select,
     h("label", { for: "done-authority-reason" }, M.t("settings.done_authority.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
+  }
+
+  // §6.1 own_approvals and own_agents, §2.3 "Own approvals": how many of the project's own
+  // approvals work by outside agents needs before its card moves to done, and whose agents count
+  // as the project's own. A human with project:admin sets the number; whose agents count is a human
+  // owner's alone, so anyone else reads it. Both with a reason, as every policy field. A number above
+  // the project's own reviewers and testers blocks every such card: the hub takes it, the form says
+  // so. The count is an upper bound (the hub also leaves out agents marked as having joined from
+  // outside, and on each card the agents of whoever holds or reported it), so the warning shows only
+  // where even that is too few.
+  const OWN_AGENTS = () => [["owners", M.t("settings.own_agents.owners")], ["members", M.t("settings.own_agents.members")],
+    ["owners_of", M.t("settings.own_agents.owners_of")]];
+  const OWN_APPROVALS_ERRORS = {
+    out_of_range: () => M.t("settings.own_approvals.error.out_of_range"),
+    unknown_handle: () => M.t("settings.own_agents.error.unknown_handle"),
+    not_a_member: () => M.t("settings.own_agents.error.not_a_member"),
+    too_many: () => M.t("settings.own_agents.error.too_many"),
+  };
+  function ownApprovalsForm(ctx, save) {
+    const pol = ctx.project.policy;
+    const needed = Number.isInteger(pol.own_approvals) ? pol.own_approvals : 1;
+    const stored = pol.own_agents || "members";
+    const storedMode = typeof stored === "object" ? "owners_of" : stored;
+    const storedPicked = typeof stored === "object" ? (stored.owners_of || []) : [];
+    const humans = (ctx.members || []).filter((x) => x.kind === "human");
+    // A picked handle that is no member now stays listed, so that saving never drops it unseen (§6.1).
+    const handles = [...new Set([...humans.map((x) => x.handle), ...storedPicked])];
+    const owner = ctx.isOwner;
+    const number = h("input", { id: "own-approvals-number", type: "number", min: "1", step: "1", required: true });
+    number.value = String(needed);
+    const mode = h("select", { id: "own-agents-select", disabled: owner ? null : true },
+      OWN_AGENTS().map(([v, l]) => h("option", { value: v }, l)));
+    mode.value = storedMode;
+    const boxes = handles.map((handle) => {
+      const box = h("input", { type: "checkbox", id: "own-agents-" + handle, value: handle, disabled: owner ? null : true });
+      box.checked = storedPicked.includes(handle);
+      return box;
+    });
+    const nameOf = (handle) => {
+      const human = humans.find((x) => x.handle === handle);
+      return human ? human.display_name : M.t("settings.own_agents.not_member", { handle });
+    };
+    const picker = h("fieldset", { class: "own-agents-picked" },
+      h("legend", null, M.t("settings.own_agents.picked")),
+      handles.map((handle, i) => h("label", { class: "check", for: "own-agents-" + handle }, boxes[i], " ", nameOf(handle))));
+    const warning = h("p", { class: "flag", id: "own-approvals-warning", role: "status" });
+    const error = h("p", { class: "field-error", id: "own-approvals-error", role: "alert" });
+    const picked = () => handles.filter((handle, i) => boxes[i].checked);
+    // The project's own reviewers and testers as `own_agents` reads them: its humans who review or
+    // test, and the agents that do whose owner it names; an agent with trust `outside` never counts,
+    // nor does an isolated member, until an admin lifts the isolation (§2.3, §6.1 own_agents).
+    const ownReviewers = () => {
+      const owners = mode.value === "owners" ? humans.filter((x) => M.trust.owner(x))
+        : mode.value === "owners_of" ? humans.filter((x) => picked().includes(x.handle)) : humans;
+      const ownerIds = owners.map((x) => x.id);
+      return (ctx.members || []).filter((x) => !x.isolated && (M.trust.reviews(x) || M.trust.tests(x))
+        && (x.kind === "human" || (x.trust !== "outside" && ownerIds.includes(x.owner_id)))).length;
+    };
+    const update = () => {
+      picker.hidden = mode.value !== "owners_of";
+      const n = Number(number.value);
+      const count = ownReviewers();
+      warning.textContent = Number.isInteger(n) && n > count ? M.t("settings.own_approvals.too_many", { needed: n, count }) : "";
+      warning.hidden = !warning.textContent;
+    };
+    number.addEventListener("input", update);
+    mode.addEventListener("change", update);
+    boxes.forEach((box) => box.addEventListener("change", update));
+    update();
+    const reason = h("input", { id: "own-approvals-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
+    const fieldError = (code) => (Object.hasOwn(OWN_APPROVALS_ERRORS, code || "") ? OWN_APPROVALS_ERRORS[code]() : null);
+    return h("form", {
+      class: "inline-form own-approvals-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        const policy = {};
+        const n = Number(number.value);
+        if (!Number.isInteger(n) || n < 1) { error.textContent = fieldError("out_of_range"); number.focus(); return; }
+        if (n !== needed) policy.own_approvals = n;
+        if (owner) {
+          const same = mode.value === storedMode && (mode.value !== "owners_of"
+            || JSON.stringify(picked().slice().sort()) === JSON.stringify(storedPicked.slice().sort()));
+          if (!same) policy.own_agents = mode.value === "owners_of" ? { owners_of: picked() } : mode.value;
+        }
+        if (!Object.keys(policy).length) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.own_approvals.saved"), notSaved: M.t("settings.own_approvals.not_saved") }, (err) => {
+          const fields = (err.details || {}).fields || {};
+          const said = fieldError(fields.own_approvals) || fieldError(fields.own_agents);
+          if (!said) return false;
+          error.textContent = said;
+          return true;
+        });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.own_approvals.title")),
+    h("p", { class: "hint" }, M.t("settings.own_approvals.hint")),
+    h("label", { for: "own-approvals-number" }, M.t("settings.own_approvals.label")), number,
+    warning,
+    h("label", { for: "own-agents-select" }, M.t("settings.own_agents.label")), mode,
+    owner ? null : h("p", { class: "hint" }, M.t("settings.own_agents.owner_only")),
+    picker,
+    error,
+    h("label", { for: "own-approvals-reason" }, M.t("settings.reason")), reason,
     h("button", { type: "submit" }, M.t("board.save")));
   }
 
@@ -1789,26 +1896,96 @@ window.Maity = window.Maity || {};
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
-  // on render, on the row's scroll and on a resize or rotation.
+  // on render, on the row's scroll, on a change of the row's own size and on
+  // a resize or rotation. before and
+  // after are the row's start and end: scrollLeft runs from 0 to the end,
+  // negative in a right-to-left row, so its distance from the start is its
+  // size; cue-rtl turns the fade's gradients to the physical sides (app.css).
+  function rightToLeft(el) {
+    return typeof window.getComputedStyle === "function" && window.getComputedStyle(el).direction === "rtl";
+  }
   function updateCue(nav) {
     const more = nav.scrollWidth - nav.clientWidth;
-    nav.classList.toggle("more-before", more > 1 && nav.scrollLeft > 1);
-    nav.classList.toggle("more-after", more > 1 && nav.scrollLeft < more - 1);
+    const at = Math.abs(nav.scrollLeft);
+    nav.classList.toggle("more-before", more > 1 && at > 1);
+    nav.classList.toggle("more-after", more > 1 && at < more - 1);
+    nav.classList.toggle("cue-rtl", more > 1 && rightToLeft(nav));
+  }
+  // The row's own size changes too, with no scroll and no window resize: the state block beside
+  // the tabs grows, a count comes or goes, a narrower box at scrollLeft 0 (review, PR #2115). One
+  // ResizeObserver for every row that has the cue; a row a render replaced is let go on the next
+  // call, so the observer holds no more than the rows of the screen. Without one (an old browser)
+  // the window's resize listener below stays the only one.
+  let cueSized = null;
+  const cueRows = new Set();
+  function watchSize(nav) {
+    if (typeof window.ResizeObserver !== "function") return;
+    if (!cueSized) {
+      cueSized = new window.ResizeObserver((entries) => {
+        entries.forEach((entry) => { if (entry.target.isConnected !== false) updateCue(entry.target); });
+      });
+    }
+    cueRows.forEach((row) => {
+      if (row.isConnected === false) { cueSized.unobserve(row); cueRows.delete(row); }
+    });
+    if (cueRows.has(nav)) return;
+    cueRows.add(nav);
+    cueSized.observe(nav);
   }
   function scrollCue(nav) {
     nav.addEventListener("scroll", () => updateCue(nav), { passive: true });
+    watchSize(nav);
     updateCue(nav);
   }
 
-  // A tab row scrolls sideways on its own when it is wider than the screen;
-  // the current tab is scrolled into it, without moving the page.
+  // A tab row scrolls sideways on its own when it is wider than its room;
+  // the current tab is scrolled into it, without moving the page, clear of
+  // the fade (32px, app.css) so it is not drawn faded. Measured on the screen
+  // (the row's box against the tab's) and moved by the difference, so a
+  // right-to-left row, whose scrollLeft is negative, is served alike; the
+  // browser keeps scrollLeft within the row.
+  const CUE_WIDTH = 32;
+  function intoRow(nav, el) {
+    if (!el || !nav.clientWidth) return;
+    const row = nav.getBoundingClientRect();
+    const tab = el.getBoundingClientRect();
+    if (tab.left < row.left + CUE_WIDTH) nav.scrollLeft += tab.left - (row.left + CUE_WIDTH);
+    else if (tab.right > row.right - CUE_WIDTH) nav.scrollLeft += tab.right - (row.right - CUE_WIDTH);
+  }
   function showCurrent(nav) {
-    const cur = nav && nav.querySelector('[aria-current="page"]');
-    if (!cur || !nav.clientWidth) return;
-    const left = cur.offsetLeft - nav.offsetLeft;
-    const right = left + cur.offsetWidth;
-    if (left < nav.scrollLeft) nav.scrollLeft = Math.max(0, left - 8);
-    else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
+    if (nav) intoRow(nav, nav.querySelector('[aria-current="page"]'));
+  }
+  // A tab reached with Tab stands in sight too, not under the fade (tsk-dradpje67ak1). Only a
+  // focus the browser would ring (:focus-visible, a keyboard's): a mouse press focuses the tab
+  // between its down and its up, and a row scrolled then put the up on another tab or none, so
+  // the click was lost (review, PR #2115). A browser without :focus-visible scrolls on every focus.
+  function showFocused(nav) {
+    nav.addEventListener("focusin", (e) => {
+      if (e.target === nav) return;
+      let keyboard = true;
+      try { keyboard = e.target.matches(":focus-visible"); } catch (err) { keyboard = true; }
+      if (keyboard) intoRow(nav, e.target.closest("a, button"));
+    });
+  }
+  // A mouse wheel turns the project's tabs (the nav.views in .views-row, a project's own): its up
+  // and down move the row while the row has more that way, and the page as before once the row is
+  // at its end or fits (tsk-dradpje67ak1). Only there: the other rows, All projects' pages among
+  // them, keep the wheel for the page (review, PR #2115).
+  // A trackpad's or a touch's sideways move is the browser's own; Ctrl (a zoom), Shift (the
+  // browser's own sideways wheel), Alt and Meta are left alone.
+  function wheelSideways(nav) {
+    nav.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const more = nav.scrollWidth - nav.clientWidth;
+      if (more <= 1) return;
+      const rtl = rightToLeft(nav);
+      const step = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? nav.clientWidth : 1);
+      // scrollLeft runs from 0 to the end, negative in a right-to-left row.
+      const at = Math.abs(nav.scrollLeft);
+      if ((step > 0 && at >= more - 1) || (step < 0 && at <= 1)) return;
+      e.preventDefault();
+      nav.scrollLeft += rtl ? -step : step;
+    }, { passive: false });
   }
 
 
@@ -1855,6 +2032,8 @@ window.Maity = window.Maity || {};
         const fresh = allCount(page);
         if (fresh) a.appendChild(fresh);
       });
+      // A count that came or went changed the row's width: the fade follows.
+      updateCue(nav);
       return;
     }
     nav.querySelectorAll("a").forEach((a) => {
@@ -1866,6 +2045,8 @@ window.Maity = window.Maity || {};
       const fresh = tabCount(ctx, route.route);
       if (fresh) a.appendChild(fresh);
     });
+    // The fade follows the row's new width; the scroll stays where the reader left it.
+    updateCue(nav);
   }
 
   // The bell follows the counts; an open one stays as it is until closed.
@@ -1882,6 +2063,18 @@ window.Maity = window.Maity || {};
       const profileBox = me ? Array.from(me.children).find((c) => c.querySelector && c.querySelector(".profile-menu")) : null;
       if (me) me.insertBefore(fresh, profileBox || null);
     }
+  }
+
+  // Everything in the header that shows M.notify's counts: the switcher, Chat, the bell, the tabs
+  // and the tab title. After a counts read, the page's own (render) or a later round (refreshCounts).
+  // The title only once the drawing that stands has named its page (render, `titled`): before, the
+  // base is the last page's, and its name would show for a moment (22c5 at #1582).
+  function renderCounts(ctx) {
+    renderSwitcher(ctx);
+    renderChat(ctx);
+    renderBell(ctx);
+    renderTabCounts(ctx);
+    if (titled === renderSeq) document.title = M.notify.title(baseTitle);
   }
 
   // The Chat button follows the counts too, keeping the focus if it had it.
@@ -1933,6 +2126,7 @@ window.Maity = window.Maity || {};
     old.remove();
     fresh.scrollLeft = scrolled;
     scrollCue(fresh);
+    showFocused(fresh);
   }
 
   function renderHeader(ctx, current) {
@@ -2003,13 +2197,27 @@ window.Maity = window.Maity || {};
         // (Lead,) Chat, "+", the gear, Notifications, the profile: in one row on a phone too.
         // The Lead button goes in right before Chat once known (renderLead).
         h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
-      // The projects, and at their right, apart, this project's state and
-      // the owner's absence with the settings that change them.
+      // The projects and their tabs menu.
       h("div", { class: "switcher-row" },
         switcher(ctx),
-        tabsMenu(ctx),
-        ctx.scope === "project"
-          ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
+        tabsMenu(ctx)),
+      ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
+      // The time is in the block below; what holds meanwhile, here.
+      absence
+        ? h("p", { class: "flag absence" }, M.t("header.while_away", { scope: absence.scope }))
+        : null,
+      // The project's tabs, and at their right, apart, its links, its state and the owner's
+      // absence, in one line: the tabs take the room the block leaves and scroll in it (the
+      // maintainer, tsk-dradpje67ak1). On a phone the block is a line of its own under the tabs,
+      // in the order the keyboard reaches them.
+      ctx.scope === "project"
+        ? h("div", { class: "views-row" },
+          h("nav", { class: "views", "aria-label": M.t("header.views") },
+            NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
+              href: projectLink(ctx.slug, item.route),
+              "aria-current": item.route === current ? "page" : null,
+            }, item.label, tabCount(ctx, item.route)))),
+          h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
             // On a phone the links are one row that scrolls; the state beside it stays in sight
             // (the maintainer, tsk-m9ew7v609fq0).
             projectLinkRow(ctx.project),
@@ -2019,19 +2227,7 @@ window.Maity = window.Maity || {};
             // The outsider's own actions in the tab's head, on every view of it (web/context/views.md
             // f461c919): empty here, and hidden while empty. "Add your agent" (§3.1 "An outsider's
             // agent", its own card) is drawn into it; nothing else is.
-            M.trust.outsider(ctx) ? h("span", { class: "outsider-actions", id: "outsider-actions", "data-slot": "outsider-add-agent" }) : null)
-          : null),
-      ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
-      // The time is in the block above; what holds meanwhile, here.
-      absence
-        ? h("p", { class: "flag absence" }, M.t("header.while_away", { scope: absence.scope }))
-        : null,
-      ctx.scope === "project"
-        ? h("nav", { class: "views", "aria-label": M.t("header.views") },
-          NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
-            href: projectLink(ctx.slug, item.route),
-            "aria-current": item.route === current ? "page" : null,
-          }, item.label, tabCount(ctx, item.route))))
+            M.trust.outsider(ctx) ? h("span", { class: "outsider-actions", id: "outsider-actions", "data-slot": "outsider-add-agent" }) : null))
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": !ctx.visiting && ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
@@ -2043,7 +2239,8 @@ window.Maity = window.Maity || {};
       const slot = header.querySelector(".outsider-actions");
       if (slot && typeof M.outsiderActions === "function") M.outsiderActions(ctx, slot);
     }
-    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); showFocused(nav); });
+    header.querySelectorAll(".views-row nav.views").forEach(wheelSideways);
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
@@ -2195,16 +2392,12 @@ window.Maity = window.Maity || {};
         ctx.projects = fresh.projects;
         // A star added or taken off elsewhere (§5.1): the row follows, as for a membership.
         if (fresh.member && Array.isArray(fresh.member.starred) && ctx.me) ctx.me.starred = fresh.member.starred;
-        renderSwitcher(ctx);
-        renderChat(ctx);
-        renderBell(ctx);
-        renderTabCounts(ctx);
+        renderCounts(ctx);
         if (moved) tabsChanged(ctx);
-        document.title = M.notify.title(baseTitle);
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
         // session ending elsewhere shows at once (§2.6.5).
-        if (bannerShown || sessionsRev() !== bannerFor) renderBanner(ctx);
+        if (bannerShown || (!bannerWaits && sessionsRev() !== bannerFor)) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -2335,7 +2528,7 @@ window.Maity = window.Maity || {};
   let quietNote = null;
   M.noteOnce = (text) => { quietNote = text; };
 
-  function watch(ctx, where, item, main) {
+  function watch(ctx, where, item, main, countsRead, live) {
     // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
     // which counts the personal requests the list holds; /me's open_requests
     // does not. Until the counts are read: open_requests.
@@ -2343,6 +2536,8 @@ window.Maity = window.Maity || {};
     const openNow = () => (where.scope === "all"
       ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
       : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
+    // Where the count is offered (the inbox), its list was read after the page's own counts read
+    // answered (render): the count starts there, and a later difference is a change.
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -2377,7 +2572,10 @@ window.Maity = window.Maity || {};
       }
     }
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, M.t("watch.refresh_failed", { message: err.message })));
-    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: notifyError.message }))); notifyError = null; }
+    const notifyFailed = (err) => append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: err.message })));
+    if (notifyError) { notifyFailed(notifyError); notifyError = null; }
+    // The page's own counts read, said here when it fails, also after the page was drawn.
+    countsRead.then((err) => { if (err && live()) notifyFailed(err); });
     // A hidden tab asks nothing; shown again, it reads what it missed.
     let missed = false;
     const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
@@ -2576,6 +2774,9 @@ window.Maity = window.Maity || {};
   // page renders, and again while it stands or when `sessions_rev` moves (a
   // sign-in or an end, §18.2); a sign-in is no bell item to count.
   let bannerFor = null;
+  // The early read (startBannerReads) the banner waits on while `sessions_rev` is not yet known: the
+  // rev the page's counts read brings is the one that read is for, not a move to read again for.
+  let bannerWaits = null;
   let bannerShown = false;
   let bannerSeq = 0;
   const sessionsRev = () => M.notify.state.sessionsRev;
@@ -2619,11 +2820,22 @@ window.Maity = window.Maity || {};
   // depend on the page, and after the view they waited on all of its reads (the board's 1.2 s).
   // The banners are still drawn after the view. The sessions' read carries the sessions_rev it
   // began under: a sign-in or an end meanwhile reads them again (renderBanner).
-  function startBannerReads(ctx) {
+  // countsRead: the page's own counts read, which the page no longer waits for (tsk-hyfqc0sp2bvc).
+  // While `sessions_rev` is unknown (the first drawing), the sessions are read once that read
+  // answered, under the rev it brought: read before it, they were read again for that rev (22c5 at
+  // #1582). The banner is drawn after the view, which rarely answers before the counts.
+  function startBannerReads(ctx, countsRead) {
     if (!ctx.me || ctx.me.kind !== "human") return null;
     if (M.factorBanner) M.factorBanner.warm(factorSession, /^\/account\/security(?:\/|$)/.test(M.route.current().path));
     if (!M.sessions) return null;
     const rev = sessionsRev();
+    if (rev === null && countsRead) {
+      const early = { rev: undefined, known: null, reading: null };
+      early.known = countsRead.then(() => { early.rev = sessionsRev(); });
+      early.reading = early.known.then(() => M.sessions.bannerSessions());
+      early.reading.catch(() => {});
+      return early;
+    }
     const reading = M.sessions.bannerSessions();
     reading.catch(() => {});
     return { rev, reading };
@@ -2635,7 +2847,14 @@ window.Maity = window.Maity || {};
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
     bannerFor = sessionsRev();
-    const reading = early && early.rev === bannerFor ? early.reading : null;
+    bannerWaits = null;
+    let reading = null;
+    if (early && early.rev === undefined) {
+      // The early read waits for the page's counts: the banner stands on the rev those bring.
+      reading = early.reading;
+      bannerWaits = early;
+      early.known.then(() => { if (bannerWaits === early) { bannerFor = early.rev; bannerWaits = null; } });
+    } else if (early && early.rev === bannerFor) reading = early.reading;
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
     M.sessions.banner(ctx, () => render(), reading).then((b) => {
       if (seq !== bannerSeq) return;
@@ -2645,8 +2864,9 @@ window.Maity = window.Maity || {};
     });
   }
 
-  // The tab title without its count, and a failed notifications read to say.
+  // The tab title without its count, the drawing that set it, and a failed notifications read to say.
   let baseTitle = "Maity";
+  let titled = 0;
   let notifyError = null;
 
   // Browser notifications run across renders, once per page; the account's
@@ -2706,6 +2926,8 @@ window.Maity = window.Maity || {};
     let wherePath = null;
     let ctx;
     let keptSlug = null;
+    // The page's own counts read (below): it answers with its failure, or null.
+    let countsRead = null;
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
@@ -2891,11 +3113,9 @@ window.Maity = window.Maity || {};
         M.route.go(projectLink(where.slug, "overview") + "?report", { replace: true });
         return;
       }
-      // Notifications never stop the page: a failed read is said in the
-      // notice (watch), and the counts stay as /me has them.
       // The project's own reads are kept only for a switch inside the same project.
       keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
-      // The head this drawing waits for: the boot's, asked beside /bootstrap; on a switch the last
+      // The head this drawing reads: the boot's, asked beside /bootstrap; on a switch the last
       // drawing's while it is fresh (takeable: a drawing that led on to this address), else a new
       // read. The boot's quiet head that met a 401, a 403, an ended session or a window's 503 is
       // asked again the usual way, now that the session is known and no running window held the
@@ -2912,11 +3132,15 @@ window.Maity = window.Maity || {};
       } else if (reuse && takeable(lastHead)) { head = lastHead; head.taken = true; }
       else head = shared(M.notify.read());
       lastHead = head;
+      // Notifications never stop the page, and hold up only the inbox's list (below): the head
+      // runs beside the page's reads, the page draws with the counts M.notify has so far (until
+      // the first read, /me's), and the header follows when the head answers (tsk-hyfqc0sp2bvc).
+      // A failed head is said in the notice (watch), and the counts stay as they were.
+      countsRead = head.answer.then(() => null, (err) => err);
       // Settings → Mine's own read beside the context, not after it (tsk-zf3wd9t5gjab).
       const minePath = mineAhead(where, me);
       if (minePath) aheadRead(minePath, reuse);
-      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null, outsider), projectViews(me),
-        head.answer.catch((err) => { notifyError = err; })]);
+      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null, outsider), projectViews(me)]);
       ctx = loaded;
       // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
       if (primed) M.api.unprime(primed);
@@ -2942,6 +3166,9 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
+    // The counts that come after the header was drawn: the header shows them at once, while the
+    // view may still be loading. A failed read changed nothing to show (watch says it).
+    countsRead.then((err) => { if (!err && seq === renderSeq) renderCounts(ctx); });
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = ["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
@@ -2952,7 +3179,16 @@ window.Maity = window.Maity || {};
     // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
     // are forms: one reading column (web/context/views.md).
     const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
-    const bannerReads = startBannerReads(ctx);
+    const bannerReads = startBannerReads(ctx, countsRead);
+    // The inbox reads its list after the page's own counts read answered, so that watch's count
+    // starts from counts that are no newer than the list: a request that comes between the two is
+    // in the list, or a change on the next round, never in neither (4hch at #1582). Its header
+    // draws before; every other page does not wait at all, nor does an inbox this member is not
+    // offered (an outsider's, which is not found).
+    if (known && (where.scope === "all" || where.route === "inbox")) {
+      await countsRead;
+      if (seq !== renderSeq) return;
+    }
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:
@@ -3016,10 +3252,10 @@ window.Maity = window.Maity || {};
     renderFactorBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
-    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
+    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && !bannerWaits && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     // Settings → Runners says when the runners changed, as their own route did (runner_ events).
     const runnersTab = known && !!item && item.route === "settings" && (where.args || [])[0] === "runners";
-    watch(ctx, where, runnersTab ? { watch: /^runner_/, changed: M.t("nav.runners.changed") } : known ? item : null, main);
+    watch(ctx, where, runnersTab ? { watch: /^runner_/, changed: M.t("nav.runners.changed") } : known ? item : null, main, countsRead, () => seq === renderSeq);
     if (reuse) keepFresh(seq, reuse, keptSlug, keptSlug ? null : ctx.keptProject || null);
     let label = M.t("not_found.title");
     if (empty) label = M.t("view.no_projects");
@@ -3039,8 +3275,10 @@ window.Maity = window.Maity || {};
     else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";
+    titled = seq;
     document.title = M.notify.title(baseTitle);
-    if (M.notify.state.counts) startBrowserNotifications(ctx);
+    // Browser notifications start once counts are known: the page's read, or an earlier one.
+    countsRead.then(() => { if (seq === renderSeq && M.notify.state.counts) startBrowserNotifications(ctx); });
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
   }
 

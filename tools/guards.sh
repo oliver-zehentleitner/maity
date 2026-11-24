@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The guard tests before a review request, in one run of seconds instead of a CI round each:
 #
-#   tools/guards.sh                   # HUB_PYTHON: a Python with hub/'s test requirements
+#   tools/guards.sh                   # HUB_PYTHON: a Python with hub/'s test requirements;
+#                                     # unset, hub/.venv/bin/python where it exists, else python3
 #
 # 1. hub/tests/test_per_human_tables.py: a new column that names a human is decided for the
 #    account deletion and the export (docs/api.md §2.9).
@@ -20,8 +21,9 @@
 # checkout's hub. A run that did not check never ends in 0: every step runs in an environment
 # of its own (see `clean`), so no inherited setting can make it pass without testing.
 #
-# Trusted, not checked: the caller's shell and PATH, and the clone's own git configuration and
-# hooks. An author who sets their clone against the guards can get past them; CI stays the gate.
+# Trusted, not checked: the caller's shell and PATH, the clone's own git configuration and
+# hooks, and the work tree's hub/.venv/bin/python, whoever made it (the default HUB_PYTHON). An
+# author who sets their clone against the guards can get past them; CI stays the gate.
 set -uo pipefail
 # Messages from git, make and Python in one language, whatever the reader's locale.
 export LC_ALL=C
@@ -31,25 +33,34 @@ die() {
   exit 2
 }
 
+# git takes its repository, index and settings from GIT_* variables as well; this work tree's
+# own, as found from where the caller stands, is the one checked, and the one the default
+# HUB_PYTHON below is looked for in.
+for v in $(compgen -e); do
+  case $v in GIT_*) unset "$v" ;; esac
+done
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
+
 # HUB_PYTHON as an absolute path, resolved where the caller stands: the steps run it from
 # hub/ and web/, where a relative path or a bare name could name another file or none.
 # A bare name is looked up on PATH first, and what that gives can still be relative (a PATH
-# entry such as `.venv/bin`).
-hub_python=${HUB_PYTHON:-python3}
+# entry such as `.venv/bin`). Unset, it is this work tree's hub venv where one is there
+# (`make -C hub dev` builds it, and a runner builds it for a placed coder), else python3.
+if [ -n "${HUB_PYTHON:-}" ]; then
+  hub_python=$HUB_PYTHON
+elif [ -x "$root/hub/.venv/bin/python" ]; then
+  hub_python=$root/hub/.venv/bin/python
+else
+  hub_python=python3
+fi
 case $hub_python in
   */*) ;;
-  *) hub_python=$(command -v "$hub_python") || die "no ${HUB_PYTHON:-python3} on PATH (HUB_PYTHON)" ;;
+  *) hub_python=$(command -v "$hub_python") || die "no $hub_python on PATH (HUB_PYTHON)" ;;
 esac
 case $hub_python in
   /*) ;;
   *) hub_python="$PWD/$hub_python" ;;
 esac
-# git takes its repository, index and settings from GIT_* variables as well; this work tree's
-# own, as found from where the caller stands, is the one checked.
-for v in $(compgen -e); do
-  case $v in GIT_*) unset "$v" ;; esac
-done
-root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
 cd "$root" || die "cannot enter $root"
 
 # The work tree's changes, as step 5 reads them: tracked files from git status, untracked ones

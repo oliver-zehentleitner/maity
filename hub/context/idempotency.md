@@ -21,10 +21,14 @@ parameters and the body. The project parameter counts by the project's id,
 resolved through `namespace.resolve`, so a call through an old name of the
 project (`project_alias`, §6.25) is the same call as through its current
 name, and a repeat after a rename still replays. Any other difference is
-`idempotency_mismatch`. The query string is not part of the hash: no
-create or update route takes one, and the only mutating route with a
-query parameter (`DELETE /agents/{id}?cascade`) is idempotent by itself,
-so a key there is optional (§1.5).
+`idempotency_mismatch`. The query string is not part of the hash.
+Mutating routes do take query parameters. On those that keep the key,
+for example the attachment upload (`?name=`), `DELETE /agents/{id}?cascade`
+and `DELETE …/tasks/{card_id}/restricted?base_version=`, a repeat with the
+same key and body but another query replays the first call. Others, for
+example the jour fixe series' choices (`?member=`) and
+`POST /admin/settings/legal/preview?page=`, keep no key at all. Neither
+list is complete.
 
 Keys stored before this change hold the body's hash alone, so a repeat of
 such a call after the deploy answers `409 idempotency_mismatch` until the

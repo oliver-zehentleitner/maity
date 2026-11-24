@@ -148,6 +148,42 @@ def test_the_same_head_reported_again_on_outsiders_work_leaves_it_done(
     }
 
 
+@pytest.mark.parametrize("state", ["merged", "closed"])
+def test_a_new_head_on_outsiders_work_whose_pull_request_is_no_longer_open_leaves_it_done(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, state: str
+) -> None:
+    """§6.6 "A report on a `done` card": only while the report's pull request is still open.
+    With it observed merged or closed, a new head is refused as on any `done` card
+    (`invalid_transition`), nothing is stored, and outsiders' work stays `done`."""
+    _policy(owner, done_authority="admin")
+    outsider = _outside(make_client, migrated, owner)
+    card_id, before = _closed(owner, outsider)
+    with migrated.begin() as conn:
+        report = conn.execute(select(t.card.c.report).where(t.card.c.id == card_id)).scalar_one()
+        observed = {**(report.get("observed") or {}), "pr_state": state}
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card_id)
+            .values(report={**report, "observed": observed})
+        )
+    pr = {
+        "number": 7,
+        "url": "https://github.com/acme/maity/pull/7",
+        "head": OTHER,
+        "state": "open",
+    }
+    again = outsider.post(
+        f"{PROJECT}/tasks/{card_id}/report", _report(head=OTHER, remote_head=OTHER, pr=pr)
+    )
+    assert again.status_code == 409, again.text
+    assert again.json()["error"]["code"] == "invalid_transition"
+    after = owner.get(f"{PROJECT}/tasks/{card_id}").json()
+    assert after["report"]["head"] == SHA
+    assert {k: after[k] for k in ("status", "closed_at", "claim")} == {
+        k: before[k] for k in ("status", "closed_at", "claim")
+    }
+
+
 # --- an outside agent holds no done authority and signs nothing --------------------------------
 
 

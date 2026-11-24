@@ -43,13 +43,13 @@ resource of the open view (the chat's messages, the board's tasks) on
 its own interval, as before — one call per view and interval instead of
 one feed, and nothing for the views that have no cheap "after" query.
 
-## Notification counts ride on the 15-second /me read; browser notifications long-poll their own endpoint, and only after the human turned them on
+## Notification counts ride on the 60-second /me read; browser notifications long-poll their own endpoint, and only after the human turned them on
 
 **Id:** e849f49d-bbdf-462c-972d-a67e7f6740e6
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the notifications contract (docs/api.md §18, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Source:** the notifications contract (docs/api.md §18, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22; the page not waiting for the counts, PR #1582 (tsk-hyfqc0sp2bvc)
 **Revisit when:** the hub offers a push channel without an open tab, or personal requests get a view of their own
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
@@ -61,6 +61,30 @@ and the tabs. The bell reads its latest 20 only when it opens.
 An item's link is built from its `target`, never from its `url`. A hub
 that answers 404 leaves the page as it was, with no bell. Any other
 failure is said in the notice and stops nothing.
+
+The read a page starts when it is drawn (the boot's head, or a
+switch's, views.md) does not hold that page up (tsk-hyfqc0sp2bvc). It
+runs beside the page's own reads. The page draws with the counts read
+so far, or /me's open requests before the first read. The header (the
+switcher, Chat, the bell, the tabs) follows when it answers, and the
+title once the drawing has named its page. Awaiting it with the page's
+own reads was the way before: when this was decided the read took
+about 2 s on prod, and every page waited that long; the hub has made
+it far cheaper since, and the boot asks it beside `/bootstrap`, but a
+switch still waited for its own. Reads now overlap, so one that
+answers after a later counts answer keeps nothing (notify.js). Before
+`sessions_rev` is known, the banner's sessions are read once that read
+answered, under the rev it brought, not once before it and again
+after. The inbox (All projects' and a project's) still reads its
+list only after that read answered; its header does not wait. Its
+inbox count starts from those counts, and a later difference is a
+change. Counts that answer after the list was read would start it at
+requests the list does not show, which then are neither drawn nor
+offered; counts from an earlier page, or /me's `open_requests`, would
+offer a change that is none (§18.2's inbox also counts personal
+requests). Where that read fails, the count starts from what was read
+before, as it did when every page waited. A failure that comes late is
+said in the same notice.
 
 Browser notifications run only when the account wants them and the
 browser allows them. They use the long-poll `?after=<position>&wait=55`,
@@ -90,8 +114,8 @@ newest 50 items, as this page did against the contract's first round:
 the numbers were too low whenever more than 50 were unread, and the hub
 now counts per project itself (`by_project`). Reading the bell's items
 on every poll: they are shown only when the bell is open. Showing
-browser notifications from the 15-second poll: fifteen seconds late,
-and every open tab would show them. Asking for permission when the
+browser notifications from the `/me` poll (every 15 seconds then, 60
+now): that late, and every open tab would show them. Asking for permission when the
 page loads: browsers block or suppress prompts without a click, and a
 prompt nobody asked for is what people learn to deny.
 
@@ -105,7 +129,7 @@ prompt nobody asked for is what people learn to deny.
 **Source:** docs/api.md §2.6.5 and §18.3 (marking a `session_created` item read gives the reported session good standing); the coordinator's ruling on the review of the dashboard's notifications (PR #194), 2026-10-23
 **Revisit when:** the hub lets the bell confirm a sign-in itself, or §2.6.5 changes who may mark a security item
 **See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-10-23
-**See:** refresh.md#notification-counts-ride-on-the-15-second-me-read-browser-notifications-long-poll-their-own-endpoint-and-only-after-the-human-turned-them-on — e849f49d-bbdf-462c-972d-a67e7f6740e6 — as of 2026-10-23
+**See:** refresh.md#notification-counts-ride-on-the-60-second-me-read-browser-notifications-long-poll-their-own-endpoint-and-only-after-the-human-turned-them-on — e849f49d-bbdf-462c-972d-a67e7f6740e6 — as of 2026-10-23
 
 In the bell, opening an item marks it read, except an item of kind
 `security`: a new sign-in or an address change. It stays unread and

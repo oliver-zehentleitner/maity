@@ -2521,11 +2521,11 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.locator("header .project-state .away")).to_contain_text(
         re.compile(r"Away until " + re.escape(absence["date"]) + r", 10:00")
     )
-    # The state block sits at the projects' right, in their row, behind a separator;
-    # on a phone it goes under them, and nothing scrolls sideways.
-    chips = page.locator("header nav.switcher").bounding_box()
+    # The state block sits at the project tabs' right, in their row, behind a separator
+    # (tsk-dradpje67ak1); on a phone it is a line of its own, and nothing scrolls sideways.
+    tabs = page.locator("header nav.views").bounding_box()
     block = page.locator("header .project-state").bounding_box()
-    assert block["x"] >= chips["x"] + chips["width"] and abs(block["y"] - chips["y"]) < chips["height"], (chips, block)
+    assert block["x"] >= tabs["x"] + tabs["width"] and abs(block["y"] - tabs["y"]) < tabs["height"], (tabs, block)
     page.set_viewport_size({"width": 360, "height": 780})
     block = page.locator("header .project-state").bounding_box()
     assert block["x"] >= 0 and block["x"] + block["width"] <= 361, block
@@ -5557,7 +5557,8 @@ def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
     and the head's slot stays empty and silent: no button, no reason in words, no join panel, no
     console error (watch_page). The button itself, the reasons
     `limit` and `blocked` and Claim for are the smoke test's, against the fixture hub. The empty
-    head at 1280 and 390 px in both schemes."""
+    head at 1280 and 390 px in both schemes; then a reason put in the slot by hand, wrapping inside
+    its block at 620, 390 and 1590 px."""
     run.step("outsider: Add your agent stays out while the hub's outsiders' joins are off (members_only)")
     assert answer.status == 200, f"GET …/contribution answered {answer.status}: {answer.text()}"
     body = answer.json()
@@ -5579,6 +5580,35 @@ def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
             wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"the outsider's empty head slot at {width}x{height} {scheme}: {wide} px wider than the window"
             run.shot(page, f"outsider-add-agent-off-{width}-{scheme}")
+    # A reason in words wraps inside the block beside the tabs (tsk-dradpje67ak1): the hub sends
+    # none here, so the slot is given the longest one the module draws, and at a narrow desktop
+    # width, a phone and the screenshot's width the page is no wider than the window and the slot
+    # stays inside its block. Taken out again after.
+    page.evaluate("""() => {
+      const slot = document.getElementById("outsider-actions");
+      const note = document.createElement("span");
+      note.className = "outsider-reason";
+      note.setAttribute("role", "note");
+      note.textContent = window.Maity.t("outsider.reason.limit", { max: 3 });
+      slot.appendChild(note);
+    }""")
+    for width, height in ((620, 900), (390, 844), (1590, 900)):
+        page.set_viewport_size({"width": width, "height": height})
+        settle(page, NOT_WIDER, None)
+        where = f"a reason in the outsider's slot at {width}x{height}"
+        expect(page.locator("header .project-state #outsider-actions .outsider-reason")).to_be_visible()
+        wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert wide <= 0, f"{where}: {wide} px wider than the window"
+        inside = page.evaluate("""() => {
+          const block = document.querySelector("header .project-state").getBoundingClientRect();
+          const slot = document.getElementById("outsider-actions").getBoundingClientRect();
+          return slot.left >= block.left - 1 && slot.right <= block.right + 1;
+        }""")
+        assert inside, f"{where}: the slot reaches out of its block"
+        tabs = page.locator("header .views-row nav.views").bounding_box()
+        assert tabs and tabs["width"] >= 150, f"{where}: the tabs are left {tabs}"
+        run.shot(page, f"outsider-reason-{width}")
+    page.evaluate("() => document.querySelector('#outsider-actions .outsider-reason')?.remove()")
     page.set_viewport_size({"width": 1280, "height": 900})
     page.emulate_media(color_scheme="light")
     # Silent so far: no console or page error, and nothing said of the read; the round's own
@@ -7650,6 +7680,74 @@ def project_links_step(run: Run, page: Page) -> None:
     page.route(project_read, with_repo)
     page.route(BOOTSTRAP, repo_in_bundle)
     try:
+        # At the owner's desktop width (about 1590 px) the tabs and the links share one line, the
+        # links at the right; the tabs take what is left and scroll there (tsk-dradpje67ak1).
+        page.set_viewport_size({"width": 1590, "height": 900})
+        page.reload()
+        expect(page.locator("header .project-links a.header-link", has_text="Actions")).to_be_visible()
+        line = page.evaluate("""() => { const r = (s) => document.querySelector(s).getBoundingClientRect();
+          const t = r('header nav.views'), l = r('header .project-links');
+          return [t.top, t.bottom, l.top, l.bottom, t.right, l.left]; }""")
+        assert line[2] < line[1] and line[0] < line[3] and line[4] <= line[5], f"the tabs and the links are not one line at 1590 px: {line}"
+        run.shot(page, "project-tabs-links-desktop")
+        # Narrowed so they overflow: the fade marks the side with more, the mouse wheel turns the row
+        # and lets the page scroll once the row is at its end, a tab reached with Tab is scrolled clear
+        # of the 32 px fade, and a mouse click near the edge opens the tab clicked (review, PR #2115).
+        # The narrowing is the row's own, at scrollLeft 0: no scroll and no window resize fire, so the
+        # fade after comes from the app's ResizeObserver alone.
+        views = page.locator("header nav.views")
+        views.evaluate("(e) => { e.style.maxWidth = '200px'; e.scrollLeft = 0; }")
+        page.wait_for_function("""() => { const n = document.querySelector('header nav.views');
+          return n.classList.contains('more-after') && !n.classList.contains('more-before'); }""")
+        box = views.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.wheel(0, 120)
+        page.wait_for_function("""() => { const n = document.querySelector('header nav.views');
+          return n.scrollLeft > 0 && n.classList.contains('more-before'); }""")
+        # At the row's end the fade before stays, the one after goes, and the wheel scrolls the page.
+        views.evaluate("(e) => { e.scrollLeft = e.scrollWidth; }")
+        page.wait_for_function("""() => { const n = document.querySelector('header nav.views');
+          return n.classList.contains('more-before') && !n.classList.contains('more-after'); }""")
+        page.evaluate("() => { document.body.style.minHeight = '4000px'; window.scrollTo(0, 0); }")
+        try:
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.mouse.wheel(0, 120)
+            page.wait_for_function("() => window.scrollY > 0")
+        finally:
+            page.evaluate("() => { window.scrollTo(0, 0); document.body.style.minHeight = ''; }")
+        # An inner tab whose box meets the fade band after (the row's last 32 px), not the current one:
+        # one that starts inside the band counts too, where the gap between tabs lands on its edge.
+        views.evaluate("(e) => { e.scrollLeft = 0; }")
+        under = page.evaluate("""() => { const n = document.querySelector('header nav.views'), r = n.getBoundingClientRect();
+          const tabs = Array.from(n.querySelectorAll('a'));
+          return tabs.findIndex((a, i) => { const c = a.getBoundingClientRect();
+            return i >= 1 && i < tabs.length - 1 && c.right > r.right - 32 && c.left < r.right && a.getAttribute('aria-current') !== 'page'; }); }""")
+        assert under >= 1, f"no inner tab under the fade at 200 px: {under}"
+        clear = """(i) => { const n = document.querySelector('header nav.views'), a = n.querySelectorAll('a')[i];
+          const r = n.getBoundingClientRect(), c = a.getBoundingClientRect();
+          return [c.left >= r.left + 31 && c.right <= r.right - 31, document.activeElement === a, [r.left, r.right, c.left, c.right]]; }"""
+        views.locator("a").nth(under - 1).focus()
+        views.evaluate("(e) => { e.scrollLeft = 0; }")
+        before = page.evaluate(clear, under)
+        assert not before[0], f"the tab is clear of the fade before Tab, nothing to prove: {before}"
+        page.keyboard.press("Tab")
+        after = page.evaluate(clear, under)
+        assert after[1] and after[0], f"the tab reached with Tab is not 32 px clear of the row's edges: {after}"
+        # The mouse: pressed on the same tab inside the fade band, the row must not move between the
+        # press and the release (the old focusin scroll moved it there, review of PR #2115).
+        views.evaluate("(e) => { e.scrollLeft = 0; }")
+        page.evaluate("() => document.activeElement && document.activeElement.blur()")
+        target = page.evaluate("""(i) => { const n = document.querySelector('header nav.views'), a = n.querySelectorAll('a')[i];
+          const r = n.getBoundingClientRect(), c = a.getBoundingClientRect();
+          return { href: a.getAttribute('href'), x: (Math.max(c.left, r.right - 32) + Math.min(c.right, r.right)) / 2, y: (c.top + c.bottom) / 2 }; }""", under)
+        scroll_of = "() => document.querySelector('header nav.views').scrollLeft"
+        page.mouse.move(target["x"], target["y"])
+        pressed_at = page.evaluate(scroll_of)
+        page.mouse.down()
+        held_at = page.evaluate(scroll_of)
+        page.mouse.up()
+        assert held_at == pressed_at, f"the tab row moved under a mouse press: scrollLeft {pressed_at} -> {held_at}"
+        expect(page).to_have_url(re.compile(re.escape(target["href"]) + r"$"))
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             for width in (390, 360):
@@ -7663,6 +7761,11 @@ def project_links_step(run: Run, page: Page) -> None:
                 # Docs after the issues link, before Chat and Why (tsk-qeftb8bg0yt6), on the row at phone width.
                 assert [t for t, _ in row][:5] == ["Repository", "Actions", "Pull Requests", "Issues", "Docs"], f"the links' order at {width} px {scheme}: {row}"
                 assert len({top for _, top in row}) == 1, f"the project's links wrap at {width} px {scheme}: {row}"
+                # Two lines on a phone, the tabs first and the block under them, as Tab reaches them
+                # (no flex order, tsk-dradpje67ak1).
+                lines = page.evaluate("""() => { const t = document.querySelector('header nav.views').getBoundingClientRect();
+                  const b = document.querySelector('header .project-state').getBoundingClientRect(); return [t.top, t.bottom, b.top]; }""")
+                assert lines[2] >= lines[1] - 1, f"the links and state are not under the tabs at {width} px {scheme}: {lines}"
                 width_now = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
                 assert width_now[0] <= width_now[1], f"the page scrolls sideways at {width} px {scheme}: {width_now}"
         run.shot(page, "project-links-actions-phone")
@@ -8782,8 +8885,8 @@ SETTINGS_SECTIONS = {
                 "README badge", "Change ticker", "Forge webhook", "Logo and banner"],
     "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
                            "Restricted access", "Agent signing", "Roles"],
-    "Way of working": ["Who closes a card", "Memory", "Keep the Why commitment", "Keep the Why personal settings",
-                       "Jour fixe series"],
+    "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Memory", "Keep the Why commitment",
+                       "Keep the Why personal settings", "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
     "Runners": [],
     "Mine": ["Your absence"],

@@ -1334,6 +1334,15 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   is gone ends after `stop_grace_max`.
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
+- **Dev venvs.** With `[backend.local] clone_venvs = ["hub", "cli"]`, a
+  Claude Code placement in the `single` layout gets a dev venv for each
+  named part of its clone, built by the runner at the start: from
+  `<part>/requirements/dev.txt` as the placement's branch has it in the
+  repository (every requirement pinned with sha256 hashes), wheels only,
+  the clone's own code taken from `<part>/src`. It lies in
+  `~/.local/share/maity-runner/venvs/`, read-only to the session, with
+  `<part>/.venv` in the clone a link to it, and goes with the placement.
+  One that cannot be built is logged; the start goes on without it.
 
 Settings this version does not carry out yet (`memory_max`,
 `cpu_quota`, a harness `env_file`) are errors in `check`,
@@ -1474,15 +1483,16 @@ project's own harness configuration is never loaded:
   its sandbox. Before every start the runner refuses a folder that holds
   anything besides `repo` (`workspace_not_bare`), lies inside a git work
   tree or is not at its real path (`workspace_in_repository`), and deletes
-  nothing there. Each session gets runner-written `--settings`: the
-  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
+  nothing there. Each session gets runner-written `--settings`:
+  `accept-edits` for an interactive start and the default agent mode for
+  a supervised one (never `auto`), `proceed-in-sandbox`, the terminal
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
   sign-in; `maity`, the hub's, forge's and `network` hosts and reading
   the delivered Keep the Why skill allowed (writing it denied; agy's
   documentation says its sandbox then mounts it read-only, not yet
-  confirmed in a live session). The
+  confirmed in a live session), and no `write_file` allow. The
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may

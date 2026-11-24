@@ -507,7 +507,7 @@ keeps a namesake from looking like the one the short handle would reach.
 **Source:** the coordinator's ruling on the subtasks CLI card, 2026-10-26 (the full cut, `task list` as the text board, no separate board command, refusal codes verbatim plus one hint line); `docs/api.md` §6.4
 **Revisit when:** the board needs columns or a window that one list cannot show, or the hub's refusals start to explain themselves in `details`
 
-`maity task` has four actions: `show`, `list`, `create` and `edit`.
+`maity task` has five actions: `show`, `list`, `create`, `edit` and `restricted`.
 `list` prints the board as text. Each card gets one line, and a
 parent's children are indented under it. `show` names the parent, the
 children and the related cards. A refusal from the hub keeps its code
@@ -828,7 +828,7 @@ text can have two spaces too, so refusing would block valid messages.
   harness often runs commands with a non-terminal stdin, so plain
   `maity say` calls would hang or read stray input.
 
-## `--review-file` sends the review as parsed JSON and leaves its rules to the hub
+## `--review-file` sends the review as parsed JSON and leaves the rest of its rules to the hub
 
 **Id:** 0870475d-9546-404c-871c-58290f51f954
 **Type:** decision
@@ -838,8 +838,10 @@ text can have two spaces too, so refusing would block valid messages.
 **Revisit when:** a review result gains a field that cannot be written as JSON by hand, or the hub's error paths stop naming the bad field
 
 `maity say … --type review_result --review-file <path|->` reads the review object of §8.4
-(`subject`, `head`, `verdict`, `cites`) as JSON and sends it as given. The CLI checks only that
-it is JSON: the hub owns the rules of §8.4 and names each bad field by its path
+(`subject`, `head`, `verdict`, `cites`) as JSON and sends it as given. The CLI checks that it
+is JSON and, before any request, checks the cites at the review's head, each quote's length
+against the hub's 300, and the message text (`citecheck`, `textcheck`). The hub owns the other
+rules of §8.4 and names each bad field by its path
 (`review.cites.2.line`), which the CLI shows unchanged. Only `review_result` takes the flag,
 and a `review_result` without it is refused before anything is sent. The message and the review
 cannot both come from standard input, which is read once (1be5edbf).
@@ -847,8 +849,9 @@ cannot both come from standard input, which is read once (1be5edbf).
 **Rejected alternatives:**
 - A flag per field (`--subject`, `--head`, `--cite path:line:quote`): a quote may hold any
   character, colons and quotes included, and a shell argument would mangle it.
-- Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
-  hub's.
+- Checking all of §8.4 in the CLI as well: a second copy of the rules that can only drift from the
+  hub's. The cites at the head, the quote length and the text are checked locally since (the
+  entries below); the other rules stay the hub's.
 
 ## `say --review-file` reads the cites at the head before sending
 

@@ -1,6 +1,6 @@
 # Views
 
-## The inbox is the first screen; board, agents, organisation and chat follow in that order
+## The inbox is the first screen; the other tabs follow in the navigation's order
 
 **Id:** a8f4ac34-b7be-47f0-aaec-dc494e6c2080
 **Type:** decision
@@ -10,9 +10,11 @@
 **Revisit when:** the first weeks of use show the human opening another view first
 **See:** https://github.com/oliver-zehentleitner/maity — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-21
 
-The dashboard opens on the inbox, and the navigation lists the views in
-the order of their importance: inbox, board, agents and presence,
-organisation, chat. The inbox works one entry after the other: the first
+The dashboard opens on the inbox, and the navigation lists its tabs in
+this order (`NAV` without the `tab: false` routes): inbox, overview,
+board, members (the Team page), agents, chat, messages, ticker, why,
+memory, jour fixe, settings. Organisation is a tab of the Team page, not
+a tab of its own. The inbox works one entry after the other: the first
 open request is expanded with its context (task, what the agent tried,
 the options it sees) and its answers (prepared replies, free text,
 "neither — let's talk"); answering moves on to the next. The chat with
@@ -29,8 +31,8 @@ any answer means.
 
 **Rejected alternative:** the board as the landing page, the default of
 task tools — it shows what is happening, not what waits for the human.
-The chat as the first screen — rejected at the root level; added as view
-five on the maintainer's requirement, as a channel and not as the way the
+The chat as the first screen — rejected at the root level; added as a
+view (the fifth then) on the maintainer's requirement, as a channel and not as the way the
 project is run.
 
 ## The organisation tree is computed from reports_to and scope ownership, never stored
@@ -87,7 +89,7 @@ drift above.
 **Evidence:** confirmed
 **Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
 **Revisit when:** a human asks to land on one project
-**See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-inbox-is-the-first-screen-the-other-tabs-follow-in-the-navigations-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
@@ -2989,6 +2991,61 @@ the page sideways once an absence stood beside the state.
 card asked to end. The state parts never wrapping: with an absence they need more than a phone's
 width.
 
+## A project's tabs share one line with its links and state, and scroll there with a fade, no arrow buttons
+
+**Id:** 7c3e9a41-2b6d-4f08-9e5a-d1f4b2c87a30
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request in a direct chat, 2026-11-22 (screenshot at about 1590 px: the tabs and the links on two lines), the proposal agreed the same day; card tsk-dradpje67ak1
+**Revisit when:** the header gets another part in the tabs' line, a project gets so many links that they leave no room for the tabs on a desktop, the tab rows get arrow buttons after all, or the maintainer wants the block above the tabs on a phone
+**See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-22
+
+The project's block of links, state, released mark and absence (`.project-state`) no longer stands
+at the right of the project switcher; it stands at the right of the project's tabs, behind its
+separator, in one row (`.views-row`). Where there is room the block keeps its full width;
+`nav.views` takes what is left and scrolls sideways in it, with the fade on the side that is cut
+off (the tab rows' existing cue) and no scrollbar. The fade also follows a change of the row's own
+size (a ResizeObserver on every row with the cue, the window's resize as the fallback), since the
+block or a count beside the tabs can narrow the row with no scroll and no window resize. A mouse
+wheel's up and down turn this row only (the `nav.views` inside `.views-row`) while it has more
+that way, and scroll the page as before once it is at its end or fits; All projects' page tabs,
+though also a `nav.views`, the switcher and the other rows that scroll keep the wheel for the page.
+A trackpad's and
+a touch's sideways move are the browser's own. The current tab, and a tab reached with the keyboard
+(a focus the browser rings, `:focus-visible`), are scrolled into the row clear of the 32 px fade; a
+tab focused by a mouse press is not moved, since a row moved between the press and the release
+put the click on another tab or none. The scroll, the fade and the wheel are measured from the
+row's start, so a right-to-left row is served too. On a desktop the row does not wrap: the tabs
+keep about two tabs' width (12rem), and where the block's full width would leave less, the block
+gives way, its links scrolling in their own row and the state going under them, still beside the
+tabs; the tabs stay at the header's bottom edge. At phone width (≤ 600 px) the row has two lines:
+the tabs scrolling in theirs, and the block a line of its own under them.
+
+**Reason:** the tabs and the links took two lines of the header on a desktop where one is enough
+once the tabs may scroll. The block moves whole, so the state stays beside the links (see the
+entry above) and the phone keeps its two lines. On a phone the block stands under the tabs, not
+above them where the links and the state stood before, because that is their order in the page and
+so the order Tab reaches them: a flex `order` put the block above while the keyboard went to the
+tabs first (WCAG 2.4.3, review of PR #2115). One line, the scroll, the fade without arrows and the
+phone's two lines are the maintainer's; moving the block whole, the wheel, the 12rem limit, the
+block giving way rather than wrapping on a desktop and the block under the tabs on a phone are the
+author's.
+
+**Rejected alternatives:** arrow buttons at the cut-off edges, which the agreed proposal ruled
+out in favour of the fade. Moving only the links beside the tabs: the state would stay in the switcher's
+row, apart from the links it was placed beside, and on a phone it would need a line of its own.
+The tabs wrapping instead of scrolling: what the request asked to end. On a desktop, the block
+wrapping under the tabs where too little room was left: it stood against the header's bottom edge
+with its separator beside nothing (review of PR #2115). On a phone, the block above the tabs by flex
+`order`: what is seen and the Tab order disagreed; putting the block first in the page instead would
+make the keyboard reach it before the tabs on a desktop too, where it stands at their right. The
+wheel on every header row, or on every `nav.views` (All projects' page tabs too): on the switcher,
+the account's rows and All projects' tabs it took the page's scroll from a reader who only meant
+to scroll the page, and the request was about the project's tabs (review of PR #2115). The fade
+recomputed only on scroll and window resize: a row narrowed by itself kept a stale fade, or none
+(review of PR #2115, seen in the e2e run).
+
 ## Runners in the gear menu, not in the projects' row
 
 **Id:** a6c7bf3a-9742-4535-ae21-110bd809dc47
@@ -3473,7 +3530,7 @@ names `GET /people` as the dashboard's read of a person, and gives the
 same list there (the hub's `listed_agents` serves both), so a second
 route would add a read without adding anything to see.
 
-## The fixture hub serves an organisation's page by its switch, which the hub does not yet
+## The fixture hub serves an organisation's page by its switch; the real hub now serves it from its store
 
 **Id:** efe947bc-444d-4b65-b694-610be9137806
 **Type:** workaround
@@ -3481,21 +3538,23 @@ route would add a read without adding anything to see.
 **Evidence:** confirmed
 **Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/src/maity_hub/routes/people.py` (`page_served` read from the store)
 **See:** https://github.com/oliver-zehentleitner/maity — 4423561d-6f8e-4ad5-8729-0b896fb37e3c — as of 2026-10-31
-**Revisit when:** the hub renders an organisation's page kind
+**Revisit when:** the fixture's switch no longer answers as the hub does; the first trigger, the hub rendering an organisation's page kind, has happened (`public_orgs.render_org`)
 
 The fixture hub's `GET /people/{handle}` answers `page_served` for an
 organisation from its `public_page` switch, and lists its projects with
-a served page as `shared: false`. The real hub reads the store, where no
-organisation page exists yet, so it answers `false` for every
-organisation. The person view's **View public page** branch for an
-organisation is drawn only in the fixture.
+a served page as `shared: false`. The real hub renders an organisation's
+page (`public_orgs.render_org`) and answers `page_served: true` for an
+organisation whose page is in the store and not on hold. The person
+view's **View public page** branch for an organisation is drawn against
+the real hub too.
 
-**Reason:** with the hub's answer the branch would never be drawn
-in smoke, and would break unseen when the hub starts serving the page.
+**Reason:** with the hub's answer of the time the branch would never
+have been drawn in smoke, and would have broken unseen when the hub
+started serving the page.
 
 **Rejected alternative:** `page_served: false` for every organisation in
-the fixture, as the hub answers today: it matches the hub, but leaves
-those branches untested.
+the fixture, as the hub answered then: it matched the hub of the time,
+but left those branches untested.
 
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
@@ -4290,7 +4349,7 @@ and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
 
-## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation and Mine
+## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation, Runners and Mine
 
 **Id:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Type:** decision
@@ -4305,8 +4364,9 @@ The project's **Settings** view is a row of tabs, drawn by the same
 `M.tabBar` as the Team and Agents pages (links in a `nav`, the shown one
 `aria-current="page"`), each tab at its own address: **General** at
 `settings`, **Members and agents** at `settings/members`, **Way of
-working** at `settings/work`, **Moderation** at `settings/moderation` and
-**Mine** at `settings/mine`. One table in `js/app.js`
+working** at `settings/work`, **Moderation** at `settings/moderation`,
+**Runners** at `settings/runners` (since 1245c407) and **Mine** at
+`settings/mine`. One table in `js/app.js`
 (`SETTINGS_SECTIONS`) names every section once with its tab and the rule
 of who gets it, the rule each section had on the one page; a tab is shown
 where one of its sections is, the project's tabs only to `project:admin`,
@@ -4363,7 +4423,7 @@ proposed: see the reason.
 **Evidence:** inferred
 **Source:** the owner in the project chat, 2026-11-19, relayed on the card tsk-ert2k23kr5m4 (the Runners page "should become a tab of settings"; asked about keeping the old address: no, no legacy); the tab's place, its permission and the hub's `404` are the implementer's, 2026-11-20
 **Revisit when:** a runner's owner who is no admin gets a way to detach from the dashboard (1cf107b2), or the Settings tabs are regrouped
-**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
+**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-runners-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
 **See:** views.md#the-header-gets-a--menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc — as of 2026-11-20
 **See:** views.md#project--runners-is-the-project-admins-tab-refreshes-redraw-in-place-and-a-missing-list-fails-loud — 1cf107b2-991d-42e4-aa35-9dd8f84216eb — as of 2026-11-20
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-20
@@ -4810,13 +4870,20 @@ The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: th
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
-**Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
+**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`); re-checked 2026-11-23 when the contract took up installations on a forge organisation (§11.4, "Organisations: Maity's and the forge's"; card tsk-2m5jbwemb21x), whose view is not built yet
+**Revisit when:** an organisation is to hold a forge grant of its own (§11.4, "Organisations: Maity's and the forge's"), or a second forge is added
 
 **Forge access** is a tab of the account's Security
 (`/account/security/forge`), next to the sessions. It shows:
 - the linked installations of the instance's GitHub App, each with its
-  status and the repositories it covers;
+  status and the repositories it covers; an installation on a GitHub
+  organisation whose link has gone `not_admin` (not built yet) shows
+  that as its own status, for the human who linked it: GitHub no longer
+  reports them as an owner of the organisation, nothing is read with the
+  link and no repositories are listed, and what to do is said with it:
+  have the owner role restored on GitHub (the link is active again
+  after its next check) or unlink it; meanwhile another owner of the
+  organisation may link it, which replaces this link;
 - **Link the GitHub App**, offered only where `app_configured`;
 - **Unlink**, which says it does not uninstall the App on GitHub and
   links to GitHub's page;
@@ -5408,6 +5475,24 @@ phone the heading keeps its row and the Lead its place under it at the left edge
 The form shows an unset `agent_owners` as "Not set, follows the public page (now: …)", worked out in the page from `public_page`, `state` and `moderation`, since the hub's policy returns only the stored value. Once set the option is gone, as the hub never takes null again. The roles offered are the four bases of §6.1 and project roles on them; a role already stored stays offered, so that saving cannot drop it unseen.
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
+
+## The own-approvals form warns from an upper bound of the project's own reviewers, counted in the page
+
+**Id:** 8b2ff9b6-466b-47c4-833c-9da189f0e91e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1 (`own_approvals`: "the form says so in plain words, the hub does not refuse it"; `own_agents`), §2.3 "Own approvals"; the card tsk-8v9k2bqv8x90 (PR 4 of the own-approvals gate); `web/js/app.js` `ownApprovalsForm`
+**Revisit when:** the project view carries the number of the project's own reviewing agents and humans, or the member list shows the `joined_outside` mark
+
+The form under **Way of working** warns when **Approvals needed** is more than the project's own reviewers and testers, since no work by outside agents could then move to done (§6.1). It counts them in the page from the member list it already holds, as `own_agents` reads them: the project's humans who review or test (`M.trust.reviews`/`tests`, the scopes the hub gives a trust and role), and the agents that review or test, are not trust `outside` and belong to an owner that `own_agents` names (the owners, every human member, or the picked ones). The count follows the select and the picks as they change, before anything is saved. Whose agents count is a human owner's alone (`owner_only`), so anyone else with admin rights sees the choice and sends the number only.
+
+What the page cannot see makes its count an upper bound: the hub also leaves out an agent marked `joined_outside` (not in the member view) and, on each card, the agents of whoever holds or reported it (§2.3). So the warning shows only where even that bound is too few. It never warns wrongly; it can stay silent where the hub would still block a card, which the hint above the field says in general words.
+
+**Rejected alternatives:**
+- A static sentence only, with no count: the contract asks the form to say so for "a value above" the own reviewers, which needs the number; a general sentence alone would read the same at 1 and at 50.
+- An exact count from a new hub field: a change of contract for a warning, while the hub takes the value anyway; the per-card exclusions have no project-wide number in any case.
+- Refusing the value in the form: the contract says the hub takes it (a project may be about to add reviewers), so the form warns and sends.
 
 ## Two-factor sign-in sits on the account; a session that must enrol gets the setup as its one page
 
@@ -7588,7 +7673,7 @@ pairs that read better in the column. Inside the column fields and
 help texts fill it, so a panel has one right edge, and a form's buttons
 (`.actions`, `.row`, Remove, and a grid form's own: `form`,
 `.field-stack`, `.image-row`) start at its left, next to what they send;
-a form's own button is not stretched across it. A form's own width (32, 36 or 48rem) still
+a form's own button is not stretched across it. A form's own width (32, 36, 42 or 48rem) still
 holds outside a column (the admin area, the inbox, the sign-in): inside
 one the form fills the column. The instance admin area is not in this
 decision's scope; its forms keep their widths. The rules that put
@@ -7869,3 +7954,64 @@ paired into the person's own `~/.local/state` and left the service on its revoke
   command under umask 002 against a 0644 stand-in, twice. Install's copy is made only once
   (`test -e … ||`), so a second paste keeps it. Rejected: a `chmod` after `tee`, which would only
   repeat what the file already is; `cp -n`, whose exit status differs between coreutils versions.
+
+## A chat of one's own agents across projects is on Chats, in a list of its own
+
+**Id:** 08235525-43fd-40a6-b7a7-440cef67e17e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract `docs/api.md` §9.5, which the hub already serves, and the dashboard's Chats page (`js/chats.js`), 2026-11-05; ported onto main and amended after 9bnr's pre-review A2494 (tsk-d00zszbbmvmy), 2026-11-24
+**Revisit when:** the hub starts notifying the owner of a message in this chat, or the owner wants the row among the pinned project chats
+**See:** https://github.com/oliver-zehentleitner/maity — adf88c46-52ea-4160-a875-a3da5560fe7b — as of 2026-11-05
+
+The dashboard shows an owner's cross-project group chats on `/chats`,
+under the project chats, from `GET /me/cross-chats`. A row has no project
+mark and no pin. Opening one is `/chats/cross/<id>`; creating one is
+`/chats/cross/new`. The open chat is the group chat's panes without a
+file, without the meat-proxy switch and without a wake control. The
+owner renames, adds and removes agents, and removes a message. Leaving
+closes the chat, and the owner can still read it and remove a message.
+An agent's projects on the chat are the ones the hub put on the
+participant. The header's Chat badge stays `counts.chat`.
+
+Amended when the chat was ported onto main (A2494). The pane has the
+group chat's full-screen button in its heading row, so "any chat takes
+the whole window" holds for this one too. **New chat across agents** is
+an icon link after the 📌 toggle in the list's heading row, as a
+project's New group chat is an icon. The heading keeps its row on a
+phone and the Lead stays at the left edge under it. A person, a mention
+and an instance in the chat link where a project's context would (its
+Team page, a session), through `link` of a project of the reader's that
+has them. A cross chat has no `link` of its own, so a renamed route
+cannot go stale here. The chat carries no verdicts (§9.7) and no waiting
+lines of the agent firewall (§9.6): both belong to a project's chats.
+
+**Reason:** the contract gives this room its own list, with no pin and
+no place in `GET /me/conversations`, and says the unread count on the
+chat is how a new message shows. The human already opens Chats for
+every conversation, so the room belongs on that page. The badge is the
+hub's notification count, and these messages are not notifications.
+
+**Rejected alternatives:**
+- Mixing the rows into the four bands of `GET /me/conversations`: that
+  list is ordered by the hub, and this chat has no pin. Sorting the two
+  together in the browser would invent an order the hub does not give.
+- A page of its own, away from Chats: the human would have to learn a
+  second place for a conversation.
+- Adding the unread count to the Chat badge: the badge is `counts.chat`,
+  which counts project conversations. A second source would show a
+  number the hub does not report there.
+- Files, the meat-proxy switch, or a wake control: the contract leaves
+  each of them out of this chat. Reporting a message stays out too,
+  because that call is not built (§16.8).
+- New chat across agents as a text button wrapped with the Lead in an
+  actions group (#1422 as first built): main's heading row became
+  icons (heading, Lead, 📌), and a text button would take a row of its
+  own on a phone.
+- Links built by hand as `/<project>/members/<id>`: the route became
+  `/team` (#1588) with no redirect, and every such link fell back to
+  `/chats`.
+- Loading `js/cross-chat.js` only on the first `/chats/cross` route,
+  to keep it out of the shell's budget: no other view is loaded that
+  way, and the budget is raised in the same change instead.

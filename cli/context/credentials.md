@@ -20,8 +20,10 @@ clone `.git/maity/` — with the directory at mode 0700 and two files at
 identity, event cursor). Every worktree of one clone shares that one
 directory. Outside a Git clone, `maity join` takes the directory from
 the join itself (`<state home>/maity/<hub host>/<handle>`, one per
-identity, the rule of 23e7642b); every other command refuses unless
-`MAITY_STATE_DIR` names a directory. The credential file is read only by
+identity, the rule of 23e7642b); every other command that uses the
+state refuses unless `MAITY_STATE_DIR` names a directory. `maity help
+--hub` and commands that read no state (such as `maity uuid`) run
+outside a clone as well. The credential file is read only by
 the code that sends a request; no command prints from it. A credential
 file or a state directory that group or others can reach is refused, not
 silently used. The one exception is `maity join`: it sets an empty
@@ -171,8 +173,9 @@ someone else.
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 
 `maity runner` refuses on Windows and points to WSL. Every other command works
-there. `pwd` is imported inside the two functions that use it, because
-`maity.cli` imports the runner's parser and every command would die on start.
+there. `pwd` is imported inside each function that uses it (in
+`runner/config.py`, `runner/commands.py`, `runner/asuser.py` and
+`runner/install.py`), because `maity.cli` imports the runner's parser and every command would die on start.
 
 **Reason:** the runner needs more than `pwd`, `fcntl` and `killpg`: `tmux` for
 the agents' sessions, `systemd` for the service, OS users for the separation.
@@ -182,7 +185,7 @@ WSL has all of them, so a port would build for a case nobody has asked for.
 - Porting it as a second stage: replacing `tmux` and the user separation is a
   second implementation, not a port.
 
-## The full runner stays off Windows; local mode runs there natively
+## The full runner stays off Windows; local mode, once built, is to run there natively
 
 **Id:** 116c5330-8dab-42ed-af06-74b6f02cee89
 **Type:** decision
@@ -191,17 +194,19 @@ WSL has all of them, so a port would build for a case nobody has asked for.
 **Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the review of #1294 by dzse; `docs/api.md` §15.13
 **See:** credentials.md — c7109a1d-4f47-40e2-9165-ec01f5f94277 — as of 2026-11-03
 **See:** runner.md — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-03
-**Supersedes:** c7109a1d-4f47-40e2-9165-ec01f5f94277 in part (`maity runner <harness>` in local mode is no longer refused on Windows)
+**Supersedes:** c7109a1d-4f47-40e2-9165-ec01f5f94277 in part, once local mode is built (`maity runner <harness>` in local mode is then not to be refused on Windows; today every `maity runner` command still is)
 **Revisit when:** the deny rules or a harness's sandbox are verified on Windows, or someone needs the full runner there
 
 The full runner's actions (`pair`, `serve`, `check`, …) keep refusing on
-Windows and point to WSL. `maity runner <harness> --join <url>`, local
-mode, is the exception and runs natively: one agent in the foreground,
-its credential in the workspace's `.git/maity` under the same protected
-access list as every other credential on Windows. Until a run on Windows
-has shown that a harness keeps `.git/maity` out of its file tools, local
-mode claims there only the access list against other users, and says so
-at start.
+Windows and point to WSL. Local mode, `maity runner <harness> --join
+<url>` (`docs/api.md` §15.13), is not built yet: today the CLI refuses
+every runner command on Windows with exit 4 and points to WSL, as the
+entry above says. Once local mode is built, it is meant to run natively:
+one agent in the foreground, its credential in the workspace's
+`.git/maity` under the same protected access list as every other
+credential on Windows. Until a run on Windows has shown that a harness
+keeps `.git/maity` out of its file tools, it is to claim there only the
+access list against other users, and to say so at start.
 
 **Reason:** what kept the runner off Windows (tmux, systemd, OS users)
 belongs to `serve`; a foreground loop needs a process group and a way to
@@ -211,8 +216,8 @@ already sets.
 
 **Rejected alternatives:**
 - Changing c7109a1d in place: its decision still holds for the full
-  runner, and a reader of the old text would miss that local mode is the
-  exception.
+  runner, and a reader of the old text would miss that local mode is to
+  be the exception.
 - Local mode through WSL as well: it would refuse the people on Windows
   who asked for one agent on their own machine without a runner.
 

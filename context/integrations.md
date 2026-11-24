@@ -32,12 +32,13 @@ descriptions repeats the incident it is meant to prevent.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
-**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
+**Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4; re-checked 2026-11-23 when the owner adopted installations on a GitHub organisation (the entry linked below)
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). Re-checked 2026-11-23: the contract now links an installation on a GitHub organisation for one of its owners (§11.4, not built yet); the code still refuses one (`hub/src/maity_hub/forge_links.py`, `organisation_installation`) until that is built
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
 **See:** https://github.com/oliver-zehentleitner/maity — 6af0bb67-32dd-40df-91df-df1eb03288fc — as of 2026-11-04
 **See:** integrations.md#the-instance-token-serves-only-the-operators-own-namespaces-every-other-project-connects-its-repository-itself — ce611bd9-ef89-43e2-8895-2340f87f6c6e — as of 2026-11-04
-**Revisit when:** a second forge kind comes, an installation on an organisation account is to be accepted, or the App's own webhook replaces the per-project one
+**See:** integrations.md#an-installation-on-a-github-organisation-is-linked-by-one-of-its-owners-re-checked-by-polling-and-stays-that-humans-grant — 40057878-5f35-44fa-8b67-2e1820b59d38 — as of 2026-11-23
+**Revisit when:** a second forge kind comes, or the App's own webhook replaces the per-project one
 
 A project's forge reads use the first grant that covers its repository:
 the namespace owner's linked installation of the instance's GitHub App,
@@ -49,9 +50,10 @@ owner who confirmed it), and only for a
 repository URL the owner confirmed for it with an explicit call under
 step-up; every URL change and a transfer reset that. Linking an installation checks, with the
 installing user's one-time OAuth authorisation, that the installation's
-account is that user (an installation on an organisation account is
-refused; see the organisation entry for whose grants an organisation's
-project uses). The owner's token must be fine-grained. Data read through
+account is that user, or, for an installation on a GitHub organisation,
+that the user is an active owner of that organisation (the entry linked
+above, 40057878; see the organisation entry for whose grants a Maity
+organisation's project uses). The owner's token must be fine-grained. Data read through
 an owner's grant reaches project readers only, never a page without
 sign-in, with one exception (§11.4): the bare number of merged pull
 requests on a public page may come from such a read, as long as that read
@@ -80,7 +82,8 @@ instance grows.
 - Checking only that the user can access the installation (the user's
   installation list): a member of an organisation with access to one
   repository would pass and the hub would read every repository of the
-  installation. The installation's account must be the user.
+  installation. The installation's account must be the user, or, on a
+  GitHub organisation, the user must be one of its owners (40057878).
 - Using the owner's grant for whatever URL the project names: a co-admin
   could point the project at another private repository of the owner;
   the owner confirms the URL instead.
@@ -88,6 +91,225 @@ instance grows.
   repositories, and `repo` can write.
 - Using any project member's grant: a member could make the hub read a
   repository with someone else's access by naming it in a project.
+
+## An installation on a GitHub organisation is linked by one of its owners, re-checked by polling, and stays that human's grant
+
+**Id:** 40057878-5f35-44fa-8b67-2e1820b59d38
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); the security delta round A2230 and the contract delta round A2231 of 2026-11-23 on that pull request and the lead's ruling of 2026-11-23 on them (one cadence counted from every check, a link of either status checked before a replacement; only a definite membership answer changes a link's status, one reason for every link that serves nothing, a link checked again right before another owner's link replaces it); the lead's rulings of 2026-11-23 on the contract amendment (a membership in another organisation is a definite answer on a re-check as at linking; a replacement checks the existing link at once, the one exception to the cadence); the pre-review A2500 of 2026-11-24 on that pull request and the contract fix round on it (suspended and removed links, the confirmation, the fallback while a check has no answer, the replacement's records and `checked_at`); contract `docs/api.md` §11.4, §11.5, §6.26
+**Verification:** uncorroborated — contract only, not built yet: the hub still refuses an organisation installation (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
+**See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-23
+**See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-23
+**Revisit when:** the forge's events are to replace the re-check; narrowing the read tokens' permissions gets a ruling; the 10-minute window after an owner loses the role is no longer acceptable; owners need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
+
+An installation of the instance's GitHub App on a GitHub organisation
+is linked when the human completing the link is, by the forge's answer
+to their own one-time user token, an active owner of that organisation
+(role `admin`, state `active`, and the organisation's id the
+installation account's id); anyone else gets `not_organisation_admin`,
+decided before whether the installation is linked to someone else.
+The link is that human's grant, like an installation on their own
+account: it serves their projects and the projects of a Maity
+organisation whose repository they confirmed as one of its owners
+(`confirmed_by`, unchanged). The forge user's id is kept on the link
+(`forge_user_id`, in no answer); the user token is still discarded.
+
+The link serves a read only on an owner check that succeeded less than
+10 minutes before. The hub re-checks with the App's key and an
+installation token, in a fixed order: the installation (current
+organisation login and id), the forge user by the kept id (current
+login), then that user's membership, whose user id must be the kept
+one. A link is checked at most once every 10 minutes, counted from its
+last check whatever came of it, for every caller but one: the source
+choice and the forge settings listing (`GET /me/forge`) take it as it
+stands, and only another owner's attempt to replace it checks it at
+once. A repository's confirmation makes no check and no forge call. A success less than
+10 minutes old serves without a check; a last check 10 minutes old or
+older is made again first; a check less than 10 minutes old that did
+not succeed is waited out without a call, and the link serves nothing
+meanwhile. A link's `checked_at` is its last check, whatever came of it
+(a replacement's check without a definite answer excepted, below).
+Only a definite membership answer changes a link's status: a
+membership that is not an active owner's, one of another user id, one
+in another organisation than the installation's (its login now belongs
+to another organisation), or no membership or user at all (`404`), the
+same answers that refuse a link at linking. A failed check sets the link
+`not_admin`: it mints nothing except for its own re-check, shows no
+repositories and serves no project, and the linking human gets a
+security item. A check that succeeds restores `active`. Every other
+refusal (a missing permission and a rate limit included) and no answer
+change no status, but the link then serves nothing once its last
+success is 10 minutes old; at linking they write no link and answer
+`forge_unavailable`. A link that serves nothing lists no repositories,
+`active` ones included, and within the window `GET /me/forge` makes no
+owner-check call, and for such a link no call to the forge at all. There is one reason for every link that
+serves nothing: other project admins see `installation_link_invalid`
+whether the link is `not_admin`, suspended, removed or without a recent
+successful check; the human who confirmed the project gets the
+specific reason (`installation_not_admin`, `installation_suspended`,
+`installation_removed`, or `probe_unavailable` while the check has no
+answer). Up to 10 minutes after an owner loses the role, their link may
+still serve; that window is accepted. One human holds an installation's
+link at a time, but another owner's link may replace it: a link is
+checked again right before another owner's link replaces it, `active`,
+`not_admin` or `suspended`, at once however recent its last check. The replacement goes ahead only on a
+definite answer that its human is no active owner; a success keeps the
+link (`installation_linked`), and no definite answer refuses with
+`forge_unavailable`. The replacement stands if the former owner
+becomes an owner again. The App asks for the
+organisation permission Members, read-only; nothing else turns on by
+itself, so there is no instance switch. Tokens stay per installation,
+not per repository.
+
+Evidence: everything up to the lead's rulings on the contract amendment
+is confirmed (Source); what follows from the pre-review A2500 (this
+paragraph, its reason below and the four rejected alternatives that
+name A2500) is the author's resolution in the contract fix round, not
+yet ruled on, so the entry is inferred until it is.
+
+From the contract fix round on the pre-review A2500: a `suspended`
+link leaves that status only through the owner check, never on a mint
+that succeeds again (a success under 10 minutes old counts as for an
+`active` link), and meets a replacement like the others; a `removed`
+link is replaced without a check. A repository's confirmation is no
+caller of the check. A link that serves nothing is not the project's
+source: the choice goes on to the confirming owner's token and the
+instance token also while the check has no answer, and only a forge
+that does not answer the choice's own installation lookup stops it
+before them. When nothing covers, the confirming human gets
+`probe_unavailable` with the last observation on the probe, and
+`ktw_unavailable` without the last export from the Keep the Why views.
+A replacement's definite failure writes the `not_admin` record (unless
+the link had it already) before `unlinked`; a replacement's check
+without a definite answer changes nothing, `checked_at` included.
+
+**Reason:** teams keep their repositories on GitHub organisations, and
+the only way to read them so far was a fine-grained token per person.
+The owner check is the organisation's counterpart of the user check of
+the entry linked above: the right to install the App is not enough on
+an organisation, and the installation id from the redirect is never
+trusted. Keeping the grant a person's needs no new grant holder and
+leaves the Maity organisation rule (no grant of its own, the confirming
+owner lends theirs) as it is. A bound on how old the check a read rests
+on may be, not only on how often it runs, is what makes the window
+after a lost role a fixed and stated one; one cadence counted from
+every attempt keeps the forge calls per link bounded whatever the forge
+answers. The replacement is its one exception because only a human who
+has just passed the owner check for that organisation can set it off,
+so no listing, source choice or other read brings a check forward, and
+a replacement then never rests on a check that may be up to 10 minutes
+old. Polling within that window
+needs no new contract surface, and nothing activates without an
+owner's deliberate link, so a switch would guard nothing. Letting a
+current owner replace a link whose human is no owner any more keeps
+"one human at a time" from becoming one former owner forever, also when
+nothing else has checked that link for a long time; checking it again
+right before keeps a replacement from resting on a status that may no
+longer hold.
+Taking only a definite membership answer as a failed check keeps a
+link's status from turning on a refusal that says nothing about the
+human, while reads still stop once the check is overdue. A membership
+in another organisation is such an answer: the login no longer names
+the organisation the installation was made on, so the re-check decides
+it as linking does. One reason for
+every link that serves nothing gives other project admins what they
+need to act (the link serves nothing) without telling one cause from
+another.
+The fix round's resolutions follow from the same rules (the author's,
+not yet ruled on). A suspension says nothing about the human, so its
+end cannot stand in for the owner check; taking the suspended link as
+it stands keeps the one cadence and the one exception, since a success
+under 10 minutes old is what an `active` link serves on anyway. A
+confirmation reads nothing from the forge as built, and the source
+choice it restarts already runs the check, so naming it a caller only
+promised calls nobody makes. The other sources are the confirming
+owner's own grants and the operator's, so a link that serves nothing
+taking them down with it would stop reads a working grant covers, while
+a forge that is down fails those reads by itself. The views' exports
+are never stored, so none read through the link may be shown after the
+link stops serving, while the probe's observations are records the
+reader already sees. The replaced human's `not_admin` record is the
+only `security` item of a replacement, since `unlinked` notifies
+nothing. A replacement's check is outside the cadence; counting its
+non-answer would let an owner who passes the owner check stop another
+owner's working link for 10 minutes.
+
+Open, without a ruling yet: narrowing the read tokens' permissions (a
+token without Members, for example, for the reads that do not need it)
+has no ruling of its own; it is deferred with the per-repository
+narrowing of question 8 below.
+
+**Rejected alternatives:**
+- The App's webhook (`installation`, `installation_repositories`,
+  member removal) now: a further contract change with a signature and
+  replay table of its own; polling within the existing window is
+  enough for launch.
+- Counting any refusal of the membership read as a failed check, a
+  refusal for a missing permission included, as the round before this
+  one said: a link's status would then change on an answer that is not
+  about the human; only a definite membership answer changes a link's
+  status.
+- Counting a membership in another organisation than the
+  installation's as no answer on a re-check, as the round before this
+  one said: it is a definite answer, and linking already refuses on it;
+  the re-check fails on it the same way.
+- A neutral reason given only for a `not_admin` link: it would stand
+  for exactly one cause; one reason for every link that serves nothing
+  is what makes it neutral.
+- Replacing a link on its recorded status alone, or only a link already
+  `not_admin`: the status may be old, and a link nothing else reads
+  may stay `active` long after its human left; a link is checked again
+  right before another owner's link replaces it.
+- Letting a check of the existing link up to 10 minutes old stand in
+  for the one before a replacement, as the round before this one said:
+  a replacement could then go ahead or be refused on a status that no
+  longer holds; the replacement checks at once instead.
+- Checking at once on a repository's confirmation or when a project's
+  source newly rests on the link, skipped only after a successful
+  check, as the round before said: after a failed or unanswered check
+  it would bring checks forward; one cadence counted from every attempt
+  holds for every caller but a replacement attempt.
+- Re-checking at once after every refusal, as the first draft of the
+  contract said: it would call the forge on every listing of a link
+  that stays refused; the 10-minute window per link holds whatever came
+  of the last check instead.
+- Letting a link keep serving on its last successful check while the
+  forge does not answer: the window after a lost role would then have
+  no fixed bound.
+- Keeping a `not_admin` link until its human unlinks it: a former
+  owner who left the organisation would block every current owner.
+- Matching a Maity organisation's name to the GitHub organisation's
+  login: Maity names are first come, so anyone could register a known
+  organisation's name; no name is ever matched.
+- Letting GitHub App managers (or anyone who may install the App on
+  the organisation) link it: they need not be owners, and a copied
+  installation id would pass with one's own code.
+- Minting installation tokens narrowed to the one repository: not for
+  launch (the lead's ruling on question 8); the hub's reads with a
+  grant already stay on the project's own repository. Recorded here so
+  that it can be taken up.
+- An instance switch, off by default, for organisation installations:
+  nothing switches on by itself without it.
+- Linking the installation to a Maity organisation instead of a person:
+  it would make an organisation a grant holder, which the organisation
+  entry linked above rules out.
+- Setting a `suspended` organisation link `active` on the first mint
+  that succeeds, as a user account's link is (A2500): an owner who lost
+  the role during the suspension would get the link back unchecked.
+  Checking it at once on that mint instead: a second exception to the
+  cadence, for no gain within the accepted 10-minute window.
+- Specifying forge calls and refusals for a repository's confirmation
+  (the other way A2500 offered): the confirmation reads nothing from
+  the forge today, and the next source choice runs the check anyway.
+- Answering `probe_unavailable` at once, without trying the owner's
+  token and the instance token, while an organisation link's check has
+  no answer (A2500): reads a working grant covers would stop with the
+  membership read.
+- Counting a replacement's check without a definite answer as the
+  link's last check (A2500): it would start the existing link's
+  10-minute wait and stop it serving on a recent success.
 
 ## The instance token serves only the operator's own namespaces; every other project connects its repository itself
 

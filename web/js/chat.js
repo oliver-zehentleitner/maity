@@ -120,14 +120,18 @@ window.Maity = window.Maity || {};
   // (`last_message`, null in a chat with none yet), else nothing. Presence is the dot
   // (and its words for a screen reader), not a line of its own. The open
   // chat's own draft is in its composer, not repeated here.
+  // A cross-project chat (§9.5, js/chats.js) is a room like a group, with one agent left too.
   function sublines(ctx, chat, current) {
     const one = chat.participants.length === 1 ? chat.participants[0] : null;
+    const room = chat.kind === "group" || chat.kind === "cross";
     const who = chat.kind === "group"
       ? [chat.access === "observer" ? M.t("chat.who.observer") : null, chat.closed ? M.t("chat.who.closed") : null, M.t("chat.who.group", { names: M.fmt.list(chat.participants.map((m) => m.display_name)) })].filter(Boolean).join(" · ")
+      : chat.kind === "cross"
+      ? [chat.closed ? M.t("chat.who.closed") : null, M.fmt.list(chat.participants.map((m) => m.display_name))].filter(Boolean).join(" · ")
       : one
       ? [one.kind === "human" ? M.t("chat.who.human") : M.t("chat.who.agent"), one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
       : M.fmt.list(chat.participants.map((m) => m.display_name));
-    const presence = chat.kind !== "group" && one ? presenceWord(one.presence) || null : null;
+    const presence = !room && one ? presenceWord(one.presence) || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
     const last = chat.last_message;
     let line = null;
@@ -863,7 +867,7 @@ window.Maity = window.Maity || {};
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
   M.chatParts = { applyVerdict, verdictRedacted, takeVerdicts, actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC, reveal };
+    chatsOf, ordered, listItem, togglePin, pinColumn, iconLink, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;

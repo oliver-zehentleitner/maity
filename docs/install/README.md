@@ -19,8 +19,9 @@ a personal hub with SQLite running in about five minutes.
 | [k3s on one small instance](#kubernetes-on-a-single-small-instance-k3s) | one VM, Kubernetes without a cluster to run | PostgreSQL 17 in the same k3s | a VM with a public IPv4 address, DNS |
 
 Every path runs **one hub process** by default, and that is all a laptop or
-a small self-hosted hub needs: SQLite or any supported database, attachments
-on local disk. More processes per pod (`MAITY_WORKERS`) and more pods (the
+a small self-hosted hub needs: SQLite or any supported database. Attachments
+are off until a store is configured (`MAITY_ATTACHMENT_DIR` for a directory on
+local disk, or a bucket); plain Python and the stock Compose file set none. More processes per pod (`MAITY_WORKERS`) and more pods (the
 chart's `replicas`) are opt-in and need PostgreSQL; the processes then share
 wake-ups, nonces and limits through it (`deploy/helm/maity-hub/README.md`,
 "Several pods").
@@ -345,7 +346,9 @@ and one whose signature does not check out against `MAITY_BACKUP_SIGNER`,
 unless you set `MAITY_RESTORE_UNSIGNED=1` for an emergency restore (below).
 
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
-`uploads.yaml` and `hub-values.yaml` first (and drop the join host from
+`uploads.yaml` and `hub-values.yaml` first, every occurrence, including the
+escaped one in `cert.yaml`'s www-redirect regex (`www\\.maity\\.example\\.org`)
+(and drop the join host from
 `cert.yaml` and `hub-values.yaml` if you run without one):
 
 ```sh
@@ -423,7 +426,7 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
-- **A lost or exposed backup.** A backup holds the verifiers of every agent and runner credential, sealed with `MAITY_SECRET_KEY` when the hub has one ([Backups](#backups)). Encrypted, it is safe as long as
+- **A lost or exposed backup.** A backup holds the verifiers of every agent and runner credential, sealed with `MAITY_SECRET_KEY` when the hub has `MAITY_SEAL_VERIFIERS=1` and the key set ([Backups](#backups)). Encrypted, it is safe as long as
   the private key is. If the private key or an unencrypted backup was exposed, revoke the agent sessions it holds in the
   running hub ([Backups](#backups)), make a new key pair, and replace the Secret.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
@@ -442,7 +445,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   against the free disk, and look at it when the attachments grow (the backup Job refuses to write a tar that would not fit twice). Images and
   most files are compressed already, so the tar is not compressed.
 - **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk.
-  Set `MAITY_BACKUP_SIGNER` to the signing key's fingerprint (step 4) in the shell that runs the blocks below, and
+  Export `MAITY_BACKUP_SIGNER` with the signing key's fingerprint (step 4; `export MAITY_BACKUP_SIGNER=<fingerprint>`) in
+  the shell that runs the blocks below, so that their `sh -eu -c` child receives it, and
   keep the `.sig` file next to each backup: both blocks then check the signature before they decrypt anything, and stop
   when it is missing, holds more than one signature, does not verify, is by another key, or was made for another file
   name (the name holds the backup's time stamp). The Job writes exactly one signature per file, so the key and the name
@@ -603,10 +607,12 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   new `backup.yaml`; until it does, the backups stay unsigned with a warning,
   and restoring one needs `MAITY_RESTORE_UNSIGNED=1`. Restores of backups
   from before the signing key need it too.
-- **The request limit** (`request-limit.yaml`) is one limit per client
-  address for every request, in Traefik: 50 a second, bursts of 200, 100
-  open at a time, and for uploads 4 at a time per address and 10 in all on
-  their way to the hub. It
+- **The request limit** (`request-limit.yaml`) is a limit per client
+  address (an IPv6 client per /64), in Traefik: 50 a second, bursts of
+  200, 100 open at a time, and for uploads 4 at a time per address and 10
+  in all on their way to the hub. The upload route and the join host each
+  count apart from the rest of the host, so one address may reach these
+  values once on each. It
   is off until you switch it on. Switch it on only once every agent runs a
   `maity` whose `maity wait` retries a 429 (`maity --version`, and the
   changelog). An older one ends its wait on the first refusal. To switch it
@@ -802,7 +808,9 @@ is and takes effect at the next start.
 
 ## Backups
 
-The database is the whole hub. It also holds the verifiers of every agent
+The database is the whole hub, except the attachment files: with attachments
+on, those live in their store (a directory or a bucket, docs/api.md §8.7), not
+in the database, and a full backup takes that store as well. The database also holds the verifiers of every agent
 and runner credential, and a verifier is enough to sign requests as that
 agent or runner. Sealing them at rest is opt-in, default off: with
 `MAITY_SEAL_VERIFIERS=1` and `MAITY_SECRET_KEY` set, the hub stores new

@@ -10,7 +10,7 @@ instead: it covers TLS, backups and upgrades.
 
 ## What you need
 
-- Python 3.12 or newer, and [pipx](https://pipx.pypa.io/)
+- Python 3.12 or newer for the hub (the CLI alone needs 3.11), and [pipx](https://pipx.pypa.io/)
   (`python3 -m pip install --user pipx`, or your package manager's
   `pipx`).
 - git.
@@ -26,7 +26,11 @@ pipx install maity
 ```
 
 This gives you two commands: `maity-hub` (the server and the dashboard)
-and `maity` (the CLI your agent uses), both from PyPI. Both are
+and `maity` (the CLI your agent uses), both from PyPI. If the shell does
+not find them, the directory pipx installs into (`~/.local/bin` by
+default) is not on `PATH`: run `pipx ensurepath` and open a new shell, or
+for the current one `export PATH="$HOME/.local/bin:$PATH"`
+([`cli/README.md`](../../cli/README.md)). Both are
 pre-releases (`0.1.0a1`, …) until the beta; to pin one, write for example
 `pipx install "maity-hub==0.1.0a1"`. pipx resolves the dependencies'
 newest compatible versions. For the exact versions the project tests,
@@ -104,8 +108,11 @@ rules and what to do next. Add the printed Maity block to the
 repository's `AGENTS.md` (or join with `--pointer` to have it written),
 so that every new session starts with `maity resume`.
 
-The agent now appears in the dashboard under **Agents**. Its first step is to
-send you a message and ask how to start: answer it under **Chat**. With Keep
+The agent now appears in the dashboard under **Agents**. Its first step
+follows its reporting line: with no card assigned, it reports with a
+message to the member it reports to, or to you when it has none; answer
+it under **Chat**. An agent that already has a card assigned claims that
+card first. With Keep
 the Why as the project memory, it also confirms that with
 `maity ack keep-the-why` within 30 minutes. Then give it a card on the board,
 and it picks it up with `maity wait` and `maity claim`.

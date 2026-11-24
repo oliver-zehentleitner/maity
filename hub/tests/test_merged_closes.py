@@ -416,6 +416,31 @@ def test_the_done_authority_closes_a_merged_card_blocked_in_review(
     assert card["closed_at"] is not None
 
 
+def test_an_outside_reviewer_does_not_close_a_merged_card_blocked_in_review(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§2.3 "Own approvals": a reviewing role gives an outside agent no done authority, the
+    merged `blocked→done` included (§6.4, §6.6), which the hub reads as a `review→done`.
+    Refused exactly as a member coder that is no editor of the card is; the card stays
+    blocked, and a member reviewer still closes it."""
+    github.pull(7, merged=True)
+    agent, card_id = _reported(github, owner, make_client)
+    _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)
+    outside = flow.agent(make_client, owner, role="reviewer")
+    _owned_by(migrated, outside.id, _stranger(make_client, migrated).id)
+    refused = outside.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    coder = flow.agent(make_client, owner).patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert refused.status_code == coder.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == coder.json()["error"]["details"]
+    card = _card(owner, card_id)
+    assert card["status"] == "blocked" and card["closed_at"] is None
+    member = flow.agent(make_client, owner, role="reviewer")
+    closed = member.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert closed.status_code == 200, closed.text
+    assert _card(owner, card_id)["status"] == "done"
+
+
 def test_two_signatures_still_need_review_for_a_blocked_card(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:

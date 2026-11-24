@@ -198,11 +198,14 @@ but without the skill's setup check, its linter run or its rules.
 **Learned:** an instruction that lives in one file is only as good as
 every agent's way of reading that file. The contract now says Maity
 hands the skill's install and load instructions to every agent in its
-resume (§6.23, decided the same day). As of this entry the hub does not
-do it yet: its resume still carries only `enabled` and `instruction`.
-Until that is built and verified on the live hub, each Claude Code
-agent keeps a local `CLAUDE.md` that imports `AGENTS.md`, and loads the
-skill as `AGENTS.md` says.
+resume (§6.23, decided the same day). The hub has built this since #476
+(2026-10-29): for a project that uses Keep the Why, the resume's
+`keep_the_why` block carries `skill` (`name`, `source`, `install`,
+`load`, `guide`), `config` and `personal_defaults` beside `enabled` and
+`instruction` (`hub/src/maity_hub/ktw_skill.py`, `loading_block`). On
+the day of this incident it carried only `enabled` and `instruction`,
+and Claude Code agents kept a local `CLAUDE.md` importing `AGENTS.md`
+until then.
 
 **Rejected alternative:** commit a root `CLAUDE.md` with `@AGENTS.md`.
 The ignore file marks it as personal, so committing it would override
@@ -251,12 +254,11 @@ heredoc early.
 **Learned:** text with code goes to a command through a file or a quoted
 heredoc with a delimiter it cannot contain, never inline in double
 quotes. With the installed CLI that means a quoted heredoc into a shell
-variable that is then passed quoted. The remediation in the CLI is in
-review (PR #435): free text from standard input (`-`) and files, a
-warning for inline text that looks eaten, and the safe form in the
-pointer block, the skill and `docs/agents.md`. Agents can use it only
-once a CLI with it is released to the index they install from.
-Instructions must not use a flag ahead of that release.
+variable that is then passed quoted. The remediation is in the CLI (PR
+#435, released since cli 0.1.0a2): free text from standard input (`-`)
+and from files (`--body-file`), a warning for inline text with a gap
+where a word could have been, and the safe form `maity say <to> --type
+notice - <<'EOF'` in the pointer block and `docs/agents.md`.
 
 ## A rejoined identity on a new machine replayed thousands of old events
 

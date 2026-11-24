@@ -15,8 +15,12 @@
 `maity report` reads the head commit from git, the remote head from
 `git ls-remote` on the branch's upstream, and the pull request from `gh`
 when gh is installed, and refuses (exit 4) while any of them disagree.
-It also refuses on uncommitted changes to tracked files, on a detached
-HEAD and on a branch without upstream. When gh is installed but fails —
+It also refuses on uncommitted changes to tracked files and on a
+detached HEAD. A branch without an upstream is read as the branch of its
+own name on the remote a plain `git push` chooses (the entry on the push
+remote below); it is refused only when maity cannot tell that remote (it
+has no URL, or a `pushurl`, `push` refspec or `pushInsteadOf` applies).
+When gh is installed but fails —
 not logged in, no network — that is an error, not "no pull request";
 the pull request is reported as unknown (`pr_status: unknown`, with the
 reason) only when gh is not installed or the remote is not on a GitHub

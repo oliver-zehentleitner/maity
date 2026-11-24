@@ -282,6 +282,9 @@ class Context:
     # <key>`), on the runner's machine whatever the target: the bytes a Codex placement's own
     # skills directory gets (codex_skill). None with `skill`.
     skill_source: Path | None = None
+    # The dev venvs the runner built for this clone (`clone_venvs`, venvs.py), each under the
+    # runner's venvs directory: read and run by the session, never written (claude_settings).
+    venvs: tuple[Path, ...] = ()
 
 
 def skill_env(ctx: Context) -> dict[str, str]:
@@ -572,8 +575,18 @@ def _write(ctx: Context, path: Path, data: Any) -> Path:
     return ctx.as_user.write(path, json.dumps(data, indent=2) + "\n")
 
 
-def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str, str]) -> Launch:
-    """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen."""
+def _supervised(
+    ctx: Context,
+    first: list[str],
+    again: list[str],
+    env: dict[str, str],
+    *,
+    reap: bool = False,
+) -> Launch:
+    """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen. With
+    `reap`, the loop runs each turn in a process group of its own and ends that group when the
+    turn ends, so no background process the turn started outlives it (§6.2); it is scoped to
+    that one run's group and reaches no other session's processes (loop.py)."""
     policy = ctx.restart
     spec = _write(ctx, ctx.agent_dir / "loop.json",
         {
@@ -581,6 +594,10 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             "again": again,
             "env": env,
             "clone": str(ctx.clone),  # where `maity wait` runs: agy starts above it
+            # Every turn in its own process group, ended when the turn ends: no background
+            # task may hold a supervised run open past its turn, and the prompt that forbids
+            # `maity wait` is not relied on (cli/context/runner.md).
+            **({"reap_process_group": True} if reap else {}),
             # agy's workspace folder, checked before every run as before the start (§15.5).
             **({"folder": str(ctx.folder)} if ctx.folder is not None else {}),
             "restart": {
@@ -654,6 +671,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # The delivered skill's references (skills.py), read only: the skill sends the agent to
         # them, and without this rule a read outside the clone and the scratch is refused.
         allow += [f"Read(/{ctx.skill}/**)"]
+    # The dev venvs the runner built (venvs.py): the clone's `<sub>/.venv` links to them.
+    allow += [f"Read(/{venv}/**)" for venv in ctx.venvs]
     # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
     # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
     # git could no longer fetch or commit. The credential is not readable through Read.
@@ -664,6 +683,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
     if ctx.skill is not None:  # never written from the session, whatever another rule allows
         deny += [f"Edit(/{ctx.skill}/**)"]
+    # A venv the runner built is never written from the session: the runner builds the next one
+    # beside it and runs nothing from a venv the session could have reached (venvs.py).
+    deny += [f"Edit(/{venv}/**)" for venv in ctx.venvs]
     deny += [f"Bash({rule})" for rule in
              (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
     # The same git escapes through `git -C <clone>` (the allow forms above), mirrored so a deny
@@ -740,7 +762,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          *(str(p) for p in ctx.private),
                                          *(_shared_tmp(ctx) if own is None else []),
                                          # The delivered skill (skills.py): read, never written.
-                                         *([str(ctx.skill)] if ctx.skill is not None else [])],
+                                         *([str(ctx.skill)] if ctx.skill is not None else []),
+                                         # The dev venvs (venvs.py): read and run, never written.
+                                         *(str(venv) for venv in ctx.venvs)],
                            # Commands write the placement's scratch besides the clone (§15.5),
                            # and its own TMPDIR; both are read again under their hidden parents.
                            **({"allowWrite": writable} if writable else {}),
@@ -1286,17 +1310,21 @@ def _agy_private(path: Path) -> Path:
 
 
 def antigravity_settings(ctx: Context) -> dict[str, Any]:
-    """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
-    `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
-    the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity`, URLs of the hub, the forge and the
-    grant's `network` hosts, and reads of the delivered skill.
+    """The session's settings (`--settings`, never saved; §15.3): the agent mode `accept-edits`
+    for an interactive start, so the file tools' edits are accepted without a prompt, and the
+    empty default mode for a supervised one; never `auto`, whose reviewer may let a command
+    leave the sandbox. Commands no rule names run in the sandbox without asking; the sandbox
+    on; the workspace folder trusted, so an interactive start asks nothing. Allowed: `maity`,
+    URLs of the hub, the forge and the grant's `network` hosts, and reads of the delivered
+    skill; no `write_file` allow.
     A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
-    left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
-    tools: the clone's credential, what makes git run something (GIT_PROTECTED), the other
-    clones' credentials and the runner's private paths. agy merges these with the agents'
-    user's own settings (cli/context/runner.md)."""
+    left out and runs in agy's sandbox, named by `maity runner check`.
+
+    Denied: the clone's credential (`.git/maity`), writing what makes git run something
+    (GIT_PROTECTED), the other clones' credentials, the runner's private paths and writing the
+    delivered skill. agy merges these with the agents' user's own settings
+    (cli/context/runner.md)."""
     assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
@@ -1314,7 +1342,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
         deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {
-        "agentMode": "",
+        # `accept-edits` auto-accepts the file tools' edits in interactive mode; supervised
+        # runs headless and needs no auto-accept, so it keeps the empty default mode.
+        "agentMode": "accept-edits" if not headless(ctx) else "",
         "toolPermission": "proceed-in-sandbox",
         "enableTerminalSandbox": True,
         "trustedWorkspaces": [str(ctx.folder)],
@@ -1346,4 +1376,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     # `-c` continues the latest conversation of the working directory: the placement's own
     # folder, so never another placement's (cli/context/runner.md).
     prompt = folder + SUPERVISED_PROMPT + extra
-    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env)
+    # agy has no setting or environment variable to keep a background task from outliving the
+    # turn (unlike Claude Code's CLAUDE_CODE_DISABLE_BACKGROUND_TASKS); the loop ends the
+    # turn's own process group instead (reap, §6.2).
+    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env, reap=True)
