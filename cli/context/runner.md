@@ -1062,7 +1062,8 @@ An `antigravity` placement runs agy in a folder the runner creates per
 placement, with the clone as `repo` inside it and nothing else. The
 runner refuses to start when the folder holds anything else. Every
 session gets settings the runner writes (`--settings`): the default agent
-mode, commands in the sandbox without asking, the sandbox on, the folder
+mode (`accept-edits` for an interactive start since 7aa15a74), commands in
+the sandbox without asking, the sandbox on, the folder
 trusted, `.git/maity` denied to the file tools, `maity` and the
 repository's grants allowed. agy uses the home of the user the agents run
 as, so that user's own agy settings apply to every agent.
@@ -1535,6 +1536,103 @@ docs/runners.md, with no example.
 - A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
+
+## agy runs in both modes: accept-edits interactive, the supervised turn reaped and bounded
+
+**Id:** 7aa15a74-2d23-46a2-b50d-7480fb331107
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (a supervised `-p` turn that spawned a background `maity wait` and never ended); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits` and rejects an unknown `agentMode`); the lead's ruling on pre-review A2498 of #1939, 2026-11-24
+**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
+**See:** runner.md#supervised-agy-ends-each-turns-own-process-group-agy-has-no-setting-to-stop-a-background-task-outliving-a-turn — c69eb132-ec8c-41e2-bab5-f83763d9b307 — as of 2026-11-24
+**Revisit when:** a live probe shows agy's denies on `.git/config`, `.git/hooks` and `.git/maity` hold inside a writable mount (then a clone write allow can be weighed again), agy changes what `agentMode` means, or a turn that ends at its time limit is seen to leave an event no later turn handles
+
+agy offers both modes. An interactive start sets `agentMode: accept-edits`,
+the agy mode that accepts the file tools' edits without a prompt; a supervised
+start keeps the empty default mode, since it runs headless. `auto` is still
+refused: its reviewer model may let a command leave the sandbox (b0646ec1).
+The file contract is the one af2e96d9 records, unchanged by this entry: no
+`write_file` allow, the clone's `.git` as agy's sandbox mounts it, a scratch
+clone for fetch and commit, and the delivered skill read through a `read_file`
+allow.
+
+A supervised turn runs in a process group of its own, which the loop ends
+when the turn ends, and at most for a time limit (`TURN_TIMEOUT`, which the
+spec may lower); c69eb132 records the reap. A turn that hits the limit is
+ended and reaped and not run again: the loop logs that the turn hit its time
+limit, counts no crash, and goes back to waiting for the next event.
+
+**Reason:** `accept-edits` is set only interactively because a person may be
+at the pane, while a supervised run has nobody to answer and needs no
+auto-accept. The time limit exists for a harness that keeps running while it
+reports idle or waits on a background task. A turn that long is past the
+restart policy's `quick_exit`, so if the loop treated the limit like any
+failed run it would back off and run the same turn again with the crash count
+reset each time: the retries would have no cap and the next event would never
+start. Ending the turn and waiting for the next event bounds it.
+
+**Rejected alternatives:**
+- A clone-wide `read_file`/`write_file` allow, with empty placeholders seeded
+  for the `.git` files a plain clone lacks, so the clone and its `.git` would
+  be agy's writable region. Rejected by the lead for main's file contract
+  (af2e96d9) until a live probe shows the denies hold inside a writable
+  mount; deferred as a note on the card.
+- Only rewording the time-limit behaviour in the docs: it would leave the
+  uncapped retry of a turn that hits the limit.
+
+## Supervised agy ends each turn's own process group; agy has no setting to stop a background task outliving a turn
+
+**Id:** c69eb132-ec8c-41e2-bab5-f83763d9b307
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17; the my22 incident ("root agent idle; waiting for 1 background task(s)": a supervised `-p` turn spawned a background `maity wait` and never ended); agy 1.5.10's `--settings` keys and `AGY_`/`ANTIGRAVITY_` environment probed directly for a background-disable switch, none found; the Claude Code adapter's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which has no agy equivalent
+**Revisit when:** agy gains a setting or environment variable to keep a background task from outliving a turn (then set it instead), or a background task that double-forks past its process group is seen to escape the reap
+
+agy has no `--settings` key and no environment variable to stop a background
+task outliving a turn — every candidate was probed against agy 1.5.10 and
+refused as unknown, and there is no `AGY_*`/`ANTIGRAVITY_*` variable for it —
+unlike Claude Code's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. So the
+supervised loop enforces it instead: an agy spec carries `reap_process_group`,
+and for such a spec the loop runs each turn with `start_new_session=True`, so
+the turn's harness process leads a session and process group of its own whose
+id is that process's pid. The loop waits at most a bound (`TURN_TIMEOUT`, which
+the spec may lower) for the harness, then ends the turn either way: when the
+turn ends the loop sends SIGTERM, then after a short grace SIGKILL, to exactly
+that group id, ending any background process the turn left (a stray `maity
+wait`, say). A turn that hits the bound is not run again: the loop waits for
+the next event (7aa15a74).
+
+**Reason:** in my22 a supervised turn spawned a background `maity wait`; the
+turn's process ended but the child kept the turn's group alive, and the run
+sat "idle; waiting for 1 background task(s)" instead of ending, so the agent
+stopped answering. The prompt already tells the agent not to run `maity wait`,
+but the enforcement must not depend on the prompt. Two cases have to be bounded:
+a harness that ends while a background task keeps its group alive, and a harness
+that never ends at all (it keeps running while it reports idle or waits on the
+task), which would otherwise hold the loop forever; the wait bound covers the
+second so a turn always ends. Scoping to a process group the loop creates fresh
+for each run is the hard safety requirement: the group id is that one run's own
+leader pid, so the signal reaches only that run's descendants and never another
+session's or placement's processes; the loop itself runs in the tmux pane's
+separate group and is untouched. `_reap` refuses a group id of 0 or 1, which
+could name a wide group, treats an empty group (ProcessLookupError) as the
+normal case — most turns leave nothing behind — and treats a group left with
+only zombies (already-exited, unreaped processes) as gone, so it does not wait
+out the full grace on an already-dead group (in a PID namespace the leftover's
+reaper can be the loop itself, where a plain "is the group still there" probe
+would call a zombie alive and stall).
+
+**Rejected alternatives:**
+- Relying on the prompt alone: a background task is a correctness-and-cost
+  bug when it holds the turn open; the loop must enforce it, not ask.
+- Killing the loop's own (the tmux pane's) process group minus the loop:
+  it would need to exclude the loop and anything the pane shares, and a
+  slip would kill the pane; a fresh per-run group has no such ambiguity.
+- A global sweep of the agents' user's stray processes: it could kill
+  another placement's work, the one thing that must never happen.
 
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
