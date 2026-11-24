@@ -25,7 +25,17 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, errors, forge, forge_access, forge_links, github_app, probe, secretbox
+from maity_hub import (
+    clock,
+    errors,
+    forge,
+    forge_access,
+    forge_links,
+    github_app,
+    ktw,
+    probe,
+    secretbox,
+)
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.db import make_engine
@@ -78,6 +88,7 @@ class FakeApp:
         self.kept: list[bool] = []  # `keep` of each mint
         self.during_check: Any = None  # called once while the owner check reads the membership
         self.during_own: Any = None  # called once while linking reads the user's own membership
+        self.lookup: Any = None  # an exception the choice's installation lookup raises
 
     def installation(self, installation_id: int) -> dict[str, Any] | None:
         self.calls.append("installation")
@@ -147,9 +158,12 @@ class FakeForge:
     def __init__(self) -> None:
         self.sent: list[tuple[str | None, str]] = []
         self.private = True
+        self.down = False  # the operator's token gets no answer, its visibility read included
 
     def send(self, fg: forge.Forge, path: str, query: Any = None) -> Any:
         self.sent.append((fg.token, path))
+        if self.down and fg.token == OPERATOR:
+            raise forge.ForgeUnavailableError("the forge did not answer: timeout")
         if path == f"/repos/{REPO}":
             if fg.token in (OPERATOR, None) and self.private:
                 return {"private": True} if fg.token == OPERATOR else None
@@ -172,6 +186,8 @@ def app(monkeypatch: pytest.MonkeyPatch) -> FakeApp:
 
     def installation_of(_app: Any, repository: str) -> int:
         fake.calls.append("installation_of")
+        if fake.lookup is not None:
+            raise fake.lookup
         return INSTALLATION
 
     def repositories(_app: Any, installation_id: int, limit: int = 100) -> list[str]:
@@ -913,6 +929,176 @@ def test_a_link_on_a_user_account_keeps_its_reasons_for_every_admin(
         assert _error(who.get(PROBE)) == removed
 
 
+# --- review A2545 #5 and #6: no cache answers for a link that serves nothing ----------------------
+
+
+def _cached_export(engine: Engine) -> str:
+    """An export in §11.3's cache, as a read through the link left it: a private one."""
+    project_id = _project_id(engine)
+    snapshot = ktw.Snapshot(clock.rfc3339(clock.now()), [], False)
+    with ktw.CACHE.guard:
+        ktw.CACHE.entries[project_id] = ktw._Entry(snapshot, ktw.now(), URL)
+    return project_id
+
+
+def _operators(who: flow.Human) -> None:
+    """The project's namespace is one of the operator's own (`MAITY_FORGE_INSTANCE_NAMESPACES`)."""
+    who.client.app.state.forge_access.instance_namespaces = frozenset({"maintainer"})  # type: ignore[attr-defined]
+
+
+def test_the_why_cache_is_not_answered_while_the_visibility_after_such_a_link_is_unread(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """In an operator's namespace the operator's token comes after a link that serves nothing,
+    and only for a public repository; while the forge does not say whether it is, §11.3
+    answers `forge_unavailable` without `details.last`, never the cached export."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=12))
+    _confirm(owner)
+    _operators(owner)
+    _cached_export(migrated)
+    repo.down = True
+    assert _error(owner.get(WHY)) == (503, "ktw_unavailable", {"reason": "forge_unavailable"})
+
+
+def test_the_why_cache_is_not_answered_while_the_choice_has_no_answer(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """The choice's own installation lookup gets no answer: the reader holds no token and no
+    refusal, and with a link on a forge organisation among the grants §11.3 answers
+    `forge_unavailable` without `details.last`, never the cached export."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _cached_export(migrated)
+    app.lookup = forge.ForgeUnavailableError("the forge did not answer: timeout")
+    assert _error(owner.get(WHY)) == (503, "ktw_unavailable", {"reason": "forge_unavailable"})
+
+
+def test_the_why_reads_with_the_reader_it_checked(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The source §11.3 checked is the one its cache reads with: one choice per call, never a
+    second one that could differ from the first."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    chosen: list[str] = []
+    choose = forge_access.ForgeAccess.reader
+
+    def counted(self: Any, project_id: str, base: forge.Forge) -> forge.Forge:
+        chosen.append(project_id)
+        return choose(self, project_id, base)
+
+    monkeypatch.setattr(forge_access.ForgeAccess, "reader", counted)
+    owner.get(WHY)  # a cold cache: the family is read
+    assert len(chosen) == 1
+
+
+def test_an_unlinked_link_leaves_no_cached_export(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """Without the link the choice refuses with `no_grant`, which §11.3 does not ask about: the
+    unlink takes the project's reads from the cache, so none read through the link is answered."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _cached_export(migrated)
+    assert owner.get(WHY).status_code == 200  # served from the cache while the link serves
+    assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+    assert ktw.CACHE.cached(project_id) is None
+    assert owner.get(WHY).status_code != 200
+
+
+def test_a_replaced_link_leaves_no_cached_export(
+    owner: flow.Human, anna: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _cached_export(migrated)
+    app.memberships[("acme", "maintainer-gh")] = None
+    assert _anna_links(anna) == DONE
+    assert ktw.CACHE.cached(project_id) is None
+    assert owner.get(WHY).status_code != 200
+
+
+def _observed_then_not_admin(owner: flow.Human, migrated: Engine) -> None:
+    """A probe observation read while the link served, then the link `not_admin`."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _operators(owner)
+    assert owner.get(PROBE).status_code == 200
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(status="not_admin"))
+
+
+def test_the_probe_cache_is_not_answered_after_such_a_link_for_a_private_repository(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+) -> None:
+    """In an operator's namespace the operator's token comes after the link and finds the
+    repository private: each reader gets their answer, never the observation the link read."""
+    _observed_then_not_admin(owner, migrated)
+    admin, guest = _readers(owner, make_client, migrated)
+    for who in (admin, guest):
+        _operators(who)
+    specific = {"reason": "installation_not_admin"}
+    assert _error(owner.get(PROBE)) == (409, "probe_not_configured", specific)
+    invalid = {"reason": "installation_link_invalid"}
+    assert _error(admin.get(PROBE)) == (409, "probe_not_configured", invalid)
+    assert _error(guest.get(PROBE)) == (409, "probe_not_configured", {})
+
+
+def test_the_probe_cache_is_not_answered_while_the_visibility_after_such_a_link_is_unread(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    _observed_then_not_admin(owner, migrated)
+    repo.down = True
+    status, code, details = _error(owner.get(PROBE))
+    assert (status, code) == (503, "probe_unavailable") and not details
+
+
+# --- review A2545 #4: an answer of no shape is never a "no" ---------------------------------------
+
+
+def test_linking_compares_the_membership_with_the_linking_users_id(
+    owner: flow.Human, app: FakeApp, migrated: Engine
+) -> None:
+    app.own[42] = owner_of(99)  # the user's own membership names another user
+    assert _error(_json_setup(owner)) == (403, "forbidden", {"reason": "not_organisation_admin"})
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.forge_link)).first() is None
+
+
+def test_an_installation_now_on_another_account_is_no_answer(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    """Step 1 names another account than the link's: no status changes, no membership read,
+    and the link's last success stays as it was."""
+    _org_link(migrated, owner.id, checked=TEN, ok=TEN)
+    _confirm(owner)
+    ok_before = _link_row(migrated).owner_ok_at
+    app.account_id = 901
+    app.memberships[("acme", "maintainer-gh")] = owner_of(42, org_id=901)
+    assert _check(migrated, app) == "active"
+    row = _link_row(migrated)
+    assert row.owner_ok_at == ok_before and not forge_links.serves(row)
+    assert not any(call.startswith("membership:") for call in app.calls)
+
+
+@pytest.mark.parametrize(
+    ("account_id", "user_id"), [(None, None), (True, None), (ORG_ID, True), ("900", 42)]
+)
+def test_an_owner_check_with_no_id_to_compare_is_no_answer(account_id: Any, user_id: Any) -> None:
+    with pytest.raises(forge.ForgeUnavailableError):
+        forge_links.is_owner(owner_of(42, org_id=account_id), account_id, user_id)
+    with pytest.raises(forge.ForgeUnavailableError):
+        forge_links.is_owner(None, account_id, user_id)
+
+
 # --- replacing another owner's link -----------------------------------------------------------
 
 
@@ -1146,3 +1332,99 @@ def test_an_unkept_mint_is_neither_taken_from_nor_put_into_the_held_tokens(
     del github_app._tokens[("1", 7)]
     APP.token(7, keep=False)
     assert ("1", 7) not in github_app._tokens
+
+
+INSTALLATION_ANSWER = {
+    "id": 7,
+    "account": {"id": ORG_ID, "login": "acme", "type": "Organization"},
+    "repository_selection": "all",
+    "suspended_at": None,
+}
+
+
+def _without(answer: dict[str, Any], where: str, key: str, value: Any = ...) -> dict[str, Any]:
+    """The answer with `key` of its part `where` ("" for the top) set to `value`, or gone."""
+    changed: dict[str, Any] = json.loads(json.dumps(answer))
+    part = changed[where] if where else changed
+    if value is ...:
+        part.pop(key)
+    else:
+        part[key] = value
+    return changed
+
+
+@pytest.mark.parametrize(
+    ("where", "key", "value"),
+    [
+        ("", "id", ...),
+        ("", "id", True),
+        ("account", "id", ...),
+        ("account", "id", None),
+        ("account", "id", True),
+        ("account", "login", ...),
+        ("account", "login", ""),
+        ("account", "type", ...),
+        ("account", "type", ""),
+    ],
+)
+def test_an_installation_of_no_shape_is_no_answer(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch, where: str, key: str, value: Any
+) -> None:
+    """Review A2545 #4: two missing account ids would match, an organisation without a login
+    would read as another kind of account; neither is an answer."""
+    monkeypatch.setattr(github_app.GitHubApp, "jwt", lambda self, now=None: "jwt")
+    opener.answers[f"{API}/app/installations/7"] = INSTALLATION_ANSWER
+    assert APP.installation(7) is not None
+    opener.answers[f"{API}/app/installations/7"] = _without(INSTALLATION_ANSWER, where, key, value)
+    with pytest.raises(forge.ForgeUnavailableError):
+        APP.installation(7)
+
+
+def test_a_repositorys_installation_of_no_shape_is_no_answer(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(github_app.GitHubApp, "jwt", lambda self, now=None: "jwt")
+    opener.answers[f"{API}/repos/{REPO}/installation"] = {"id": 7}
+    assert APP.installation_of(REPO) == 7
+    opener.answers[f"{API}/repos/{REPO}/installation"] = {"id": True}
+    with pytest.raises(forge.ForgeUnavailableError):
+        APP.installation_of(REPO)
+
+
+@pytest.mark.parametrize(
+    ("where", "key", "value"),
+    [
+        ("", "role", ...),
+        ("", "role", ""),
+        ("", "state", ""),
+        ("organization", "id", ...),
+        ("organization", "id", True),
+        ("user", "id", ...),
+        ("user", "id", None),
+        ("", "user", ...),
+    ],
+)
+def test_a_membership_of_no_shape_is_no_answer(
+    opener: FakeOpener, where: str, key: str, value: Any
+) -> None:
+    """A missing `role` or id would make a "no" (`not_admin`) of an answer that says nothing."""
+    path = f"{API}/orgs/acme/memberships/maintainer-gh"
+    opener.answers[path] = _without(MEMBERSHIP, where, key, value)
+    with pytest.raises(forge.ForgeUnavailableError):
+        APP.org_membership("ghs_inst", "acme", "maintainer-gh")
+
+
+@pytest.mark.parametrize(
+    "user", [{"id": True, "login": "maintainer-gh"}, {"id": 42, "login": ""}, {"id": 42}]
+)
+def test_a_user_of_no_shape_is_no_answer(opener: FakeOpener, user: dict[str, Any]) -> None:
+    """At linking (the user token's `GET /user`) and at step 2 (`GET /user/{id}`): an empty login
+    would cut the membership's path short, and its `404` would read as a "no"."""
+    opener.answers[EXCHANGE] = {"access_token": "gho_user"}
+    opener.answers[f"{API}/user"] = user
+    with pytest.raises(forge.ForgeUnavailableError):
+        APP.user_of_code("c0de", "acme")
+    if user.get("login") != "maintainer-gh":  # step 2 reads the login alone
+        opener.answers[f"{API}/user/42"] = user
+        with pytest.raises(forge.ForgeUnavailableError):
+            APP.user_login("ghs_inst", 42)
