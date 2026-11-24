@@ -7,6 +7,7 @@ inside one transaction.
 from __future__ import annotations
 
 from collections.abc import Collection
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select, update
@@ -163,7 +164,9 @@ def sign(
 
 def _stands(conn: Connection, project_id: str, signer: str, scope: str) -> bool:
     """Whether `signer` is still an active member of the project, not isolated, whose
-    trust and role give `scope` (§6.4)."""
+    trust and role give `scope` (§6.4), and, for an agent, not one `own_approvals.outside_agent`
+    counts as outside now: the same eligibility as a new signature (`sign`), checked again
+    wherever a stored signature is read (§2.3 "Own approvals")."""
     m = t.membership.c
     row = conn.execute(
         select(m.trust, m.role_base, m.human_id, m.isolated_since).where(
@@ -175,7 +178,14 @@ def _stands(conn: Connection, project_id: str, signer: str, scope: str) -> bool:
     if row is None or row.isolated_since is not None:
         return False
     kind = "human" if row.human_id is not None else "agent"
-    return has_scope(row.trust, row.role_base, kind, scope)
+    if not has_scope(row.trust, row.role_base, kind, scope):
+        return False
+    if kind == "agent":
+        from maity_hub import own_approvals  # own_approvals reads cards
+
+        # `outside_agent` reads only the project's id.
+        return not own_approvals.outside_agent(conn, SimpleNamespace(id=project_id), signer)
+    return True
 
 
 def standing(conn: Connection, project_id: str, approvals: Any) -> dict[str, Any]:

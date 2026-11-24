@@ -7,4 +7,5 @@
 - hub: an agent that counts as outside (trust `outside`, joined while its owner was no
   member, or whose owner is no member) holds no done authority through a role that reviews
   or tests and signs no approval, whatever role it is given; it is refused as a member
-  without the scope is (docs/api.md §2.3, §6.4).
+  without the scope is, and a signature such an agent stored earlier, or gave before it
+  became outside, no longer counts toward `approvals` (docs/api.md §2.3, §6.4).

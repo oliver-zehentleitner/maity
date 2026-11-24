@@ -223,6 +223,78 @@ def test_the_signature_itself_refuses_an_outside_agent(
     assert refused.value.details == {"scope": "tasks:review"}
 
 
+def _now_outside(make_client: ClientFactory, engine: Engine, agent: Any, how: str) -> None:
+    """The agent, a member's until now, counts as outside from here on: marked
+    `joined_outside`, or its profile given to a human who is no member."""
+    if how == "joined_outside":
+        row = _row(engine, agent.id)
+        with engine.begin() as conn:
+            conn.execute(
+                update(t.membership).where(t.membership.c.id == row).values(joined_outside=True)
+            )
+        return
+    stranger = flow.human(make_client, engine, f"left-{agent.id[-6:]}")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent.id)
+            .values(owner_id=stranger.id)
+        )
+
+
+def _second_signature(owner: flow.Human, make_client: ClientFactory, card_id: str) -> str:
+    """A member tester signs `test`; the card's status after it."""
+    tester = flow.agent(make_client, owner, role="tester")
+    signed = _done(tester, card_id, approve="test")
+    assert signed.status_code == 200, signed.text
+    status: str = signed.json()["status"]
+    return status
+
+
+@pytest.mark.parametrize("how", ["joined_outside", "owner_no_member"])
+def test_a_stored_signature_of_an_agent_now_outside_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, how: str
+) -> None:
+    """A `review` signature stored on the card (as one given before outside agents were
+    refused): its signer is outside now, so the second signature does not complete
+    `approvals` and the card stays in `review`."""
+    _policy(owner, done_authority="reviewer_and_tester")
+    judge = flow.agent(make_client, owner, role="reviewer")
+    card_id = _own_work(owner, make_client)
+    mark = {"by": judge.id, "at": "2026-11-23T10:00:00Z", "revision": 1}
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card_id)
+            .values(approvals={"review": mark, "test": None})
+        )
+    _now_outside(make_client, migrated, judge, how)
+    assert _second_signature(owner, make_client, card_id) == "review"
+
+
+@pytest.mark.parametrize("how", ["joined_outside", "owner_no_member"])
+def test_a_signature_drops_when_its_signer_becomes_outside(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, how: str
+) -> None:
+    _policy(owner, done_authority="reviewer_and_tester")
+    judge = flow.agent(make_client, owner, role="reviewer")
+    card_id = _own_work(owner, make_client)
+    signed = _done(judge, card_id, approve="review")
+    assert signed.status_code == 200, signed.text
+    _now_outside(make_client, migrated, judge, how)
+    assert _second_signature(owner, make_client, card_id) == "review"
+
+
+def test_a_members_stored_signature_still_counts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _policy(owner, done_authority="reviewer_and_tester")
+    judge = flow.agent(make_client, owner, role="reviewer")
+    card_id = _own_work(owner, make_client)
+    assert _done(judge, card_id, approve="review").status_code == 200
+    assert _second_signature(owner, make_client, card_id) == "done"
+
+
 def test_a_member_reviewer_keeps_its_done_authority_and_its_signature(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

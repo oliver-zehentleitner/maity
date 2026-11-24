@@ -1257,9 +1257,13 @@ it for nothing that moves a card. Under `done_authority` `reviewer`,
 `tester` or `reviewer_and_tester` it makes no status change
 `review→done` or `review→in_progress` and no merged `blocked→done` as
 the done authority, and signs no half of `approvals` (§6.4), each
-`forbidden` with `details.scope` as for a missing scope; the hub never
-resolves it as the done authority through those roles (§6.4, §6.6),
-and a `task_merged` does not wake it as one. Under `done_authority:
+`forbidden` with `details.scope` as for a missing scope, and a
+signature it gave before stops counting toward `approvals` once it is
+an outside agent, as a signature does when its signer no longer stands
+(§6.4). The hub resolves it as the done authority through those roles
+nowhere a card moves (§6.4, §6.6). **Not built yet** (tsk-4bfgr4q6zz3x):
+the role tokens a `task_merged` wakes still reach such an agent, so it
+is woken as one. Under `done_authority:
 holder` the done authority is the card's holder, not a role: an outside
 agent that holds a card is its done authority like any holder, for
 `review→in_progress` and for `task_merged`, but each of its moves to
@@ -8644,7 +8648,10 @@ that replaces the card's report (§6.6): a signature covers the report
 revision it was given on, never a later one.
 A signature counts only while its signer is an active member of the
 project, not isolated (§6.2), whose trust and role still give the
-signature's scope (`tasks:review`, `tasks:test`). Every change that takes
+signature's scope (`tasks:review`, `tasks:test`), and, for an agent,
+only while it is no outside agent (§2.3, "Own approvals"): an agent that
+becomes one, by its owner's leaving for instance, has its signatures
+not counted from then on. Every change that takes
 that scope away clears the signatures it gave on the project's cards in
 `review` (`task_updated` with `fields: ["approvals"]`, per card): a trust
 or role change, a new base of its project role (`PUT …/roles`, for every
