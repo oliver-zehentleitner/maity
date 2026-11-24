@@ -54,7 +54,8 @@
 
 ### Changed
 
-- deploy: the instance's GitHub App asks for the organisation permission Members
-  (read-only) beside its repository read permissions (§11.4), for the owner check of an
-  organisation installation; a membership read refused for want of it changes no link's
-  status. Installations on user accounts need nothing new.
+- deploy: contract only, not built yet (§11.4): the instance's GitHub App is to ask for
+  the organisation permission Members (read-only) beside its repository read
+  permissions, for the owner check of an organisation installation; a membership read
+  refused for want of it changes no link's status. Installations on user accounts need
+  nothing new.
