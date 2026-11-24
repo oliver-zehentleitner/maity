@@ -1886,12 +1886,14 @@ window.Maity = window.Maity || {};
 
   // Everything in the header that shows M.notify's counts: the switcher, Chat, the bell, the tabs
   // and the tab title. After a counts read, the page's own (render) or a later round (refreshCounts).
+  // The title only once the drawing that stands has named its page (render, `titled`): before, the
+  // base is the last page's, and its name would show for a moment (22c5 at #1582).
   function renderCounts(ctx) {
     renderSwitcher(ctx);
     renderChat(ctx);
     renderBell(ctx);
     renderTabCounts(ctx);
-    document.title = M.notify.title(baseTitle);
+    if (titled === renderSeq) document.title = M.notify.title(baseTitle);
   }
 
   // The Chat button follows the counts too, keeping the focus if it had it.
@@ -2210,7 +2212,7 @@ window.Maity = window.Maity || {};
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
         // session ending elsewhere shows at once (§2.6.5).
-        if (bannerShown || sessionsRev() !== bannerFor) renderBanner(ctx);
+        if (bannerShown || (!bannerWaits && sessionsRev() !== bannerFor)) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -2587,6 +2589,9 @@ window.Maity = window.Maity || {};
   // page renders, and again while it stands or when `sessions_rev` moves (a
   // sign-in or an end, §18.2); a sign-in is no bell item to count.
   let bannerFor = null;
+  // The early read (startBannerReads) the banner waits on while `sessions_rev` is not yet known: the
+  // rev the page's counts read brings is the one that read is for, not a move to read again for.
+  let bannerWaits = null;
   let bannerShown = false;
   let bannerSeq = 0;
   const sessionsRev = () => M.notify.state.sessionsRev;
@@ -2630,11 +2635,22 @@ window.Maity = window.Maity || {};
   // depend on the page, and after the view they waited on all of its reads (the board's 1.2 s).
   // The banners are still drawn after the view. The sessions' read carries the sessions_rev it
   // began under: a sign-in or an end meanwhile reads them again (renderBanner).
-  function startBannerReads(ctx) {
+  // countsRead: the page's own counts read, which the page no longer waits for (tsk-hyfqc0sp2bvc).
+  // While `sessions_rev` is unknown (the first drawing), the sessions are read once that read
+  // answered, under the rev it brought: read before it, they were read again for that rev (22c5 at
+  // #1582). The banner is drawn after the view, which rarely answers before the counts.
+  function startBannerReads(ctx, countsRead) {
     if (!ctx.me || ctx.me.kind !== "human") return null;
     if (M.factorBanner) M.factorBanner.warm(factorSession, /^\/account\/security(?:\/|$)/.test(M.route.current().path));
     if (!M.sessions) return null;
     const rev = sessionsRev();
+    if (rev === null && countsRead) {
+      const early = { rev: undefined, known: null, reading: null };
+      early.known = countsRead.then(() => { early.rev = sessionsRev(); });
+      early.reading = early.known.then(() => M.sessions.bannerSessions());
+      early.reading.catch(() => {});
+      return early;
+    }
     const reading = M.sessions.bannerSessions();
     reading.catch(() => {});
     return { rev, reading };
@@ -2646,7 +2662,14 @@ window.Maity = window.Maity || {};
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
     bannerFor = sessionsRev();
-    const reading = early && early.rev === bannerFor ? early.reading : null;
+    bannerWaits = null;
+    let reading = null;
+    if (early && early.rev === undefined) {
+      // The early read waits for the page's counts: the banner stands on the rev those bring.
+      reading = early.reading;
+      bannerWaits = early;
+      early.known.then(() => { if (bannerWaits === early) { bannerFor = early.rev; bannerWaits = null; } });
+    } else if (early && early.rev === bannerFor) reading = early.reading;
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
     M.sessions.banner(ctx, () => render(), reading).then((b) => {
       if (seq !== bannerSeq) return;
@@ -2656,8 +2679,9 @@ window.Maity = window.Maity || {};
     });
   }
 
-  // The tab title without its count, and a failed notifications read to say.
+  // The tab title without its count, the drawing that set it, and a failed notifications read to say.
   let baseTitle = "Maity";
+  let titled = 0;
   let notifyError = null;
 
   // Browser notifications run across renders, once per page; the account's
@@ -2958,8 +2982,8 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     // The counts that come after the header was drawn: the header shows them at once, while the
-    // view may still be loading.
-    countsRead.then(() => { if (seq === renderSeq) renderCounts(ctx); });
+    // view may still be loading. A failed read changed nothing to show (watch says it).
+    countsRead.then((err) => { if (!err && seq === renderSeq) renderCounts(ctx); });
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = ["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
@@ -2970,12 +2994,13 @@ window.Maity = window.Maity || {};
     // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
     // are forms: one reading column (web/context/views.md).
     const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
-    const bannerReads = startBannerReads(ctx);
+    const bannerReads = startBannerReads(ctx, countsRead);
     // The inbox reads its list after the page's own counts read answered, so that watch's count
     // starts from counts that are no newer than the list: a request that comes between the two is
     // in the list, or a change on the next round, never in neither (4hch at #1582). Its header
-    // draws before; every other page does not wait at all.
-    if (where.scope === "all" || where.route === "inbox") {
+    // draws before; every other page does not wait at all, nor does an inbox this member is not
+    // offered (an outsider's, which is not found).
+    if (known && (where.scope === "all" || where.route === "inbox")) {
       await countsRead;
       if (seq !== renderSeq) return;
     }
@@ -3042,7 +3067,7 @@ window.Maity = window.Maity || {};
     renderFactorBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
-    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
+    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && !bannerWaits && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     // Settings → Runners says when the runners changed, as their own route did (runner_ events).
     const runnersTab = known && !!item && item.route === "settings" && (where.args || [])[0] === "runners";
     watch(ctx, where, runnersTab ? { watch: /^runner_/, changed: M.t("nav.runners.changed") } : known ? item : null, main, countsRead, () => seq === renderSeq);
@@ -3065,6 +3090,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";
+    titled = seq;
     document.title = M.notify.title(baseTitle);
     // Browser notifications start once counts are known: the page's read, or an earlier one.
     countsRead.then(() => { if (seq === renderSeq && M.notify.state.counts) startBrowserNotifications(ctx); });

@@ -15154,12 +15154,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tabCountOf("Chat") === "5", "notifications: a refresh of the counts updates the project's Chat tab in place " + tabCountOf("Chat"));
   win.Maity.api.get = tcGet;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
-  // The counts never hold the page up (tsk-hyfqc0sp2bvc: /me/notifications?limit=0 took ~2 s on prod): with that
+  // The counts never hold the page up (tsk-hyfqc0sp2bvc, a switch included): with that
   // read held back, the page draws with the counts read so far, and the header follows when it answers.
   const hbGet = win.Maity.api.get;
   let hbRelease = null;
-  const hbHold = (answer) => (p) => (p.startsWith("/me/notifications?limit=0")
-    ? new Promise((resolve, reject) => { hbRelease = () => hbGet(p).then((r) => resolve(answer(r)), reject); }) : hbGet(p));
+  // The read's options ({ quiet: true } for the boot's head) go on to the read it holds.
+  const hbHold = (answer) => (p, ...rest) => (p.startsWith("/me/notifications?limit=0")
+    ? new Promise((resolve, reject) => { hbRelease = () => hbGet(p, ...rest).then((r) => resolve(answer(r)), reject); }) : hbGet(p, ...rest));
   hbRelease = null;
   win.Maity.api.get = hbHold((r) => ({ ...r, counts: { ...r.counts, mention: (r.counts.mention || 0) + 5, chat: 4 } }));
   await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
@@ -15256,6 +15257,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   hbLate(); for (let k = 0; k < 4; k++) await tick();
   expect(hbLate && main.querySelector("section.view-board") && !text(main).includes("answered too late"),
     "notifications: a held read of a page already left says nothing on the next page");
+  // A counts read that answers after a later one (22c5 at #1582): it keeps nothing, the later answer stands.
+  let hbSlow = null;
+  win.Maity.api.get = (p, ...rest) => (p.startsWith("/me/notifications?limit=0")
+    ? new Promise((resolve, reject) => { hbSlow = () => hbGet(p, ...rest).then((r) => resolve({ ...r, counts: { ...r.counts, chat: 71 } }), reject); })
+    : hbGet(p, ...rest));
+  const hbOld = win.Maity.notify.read();
+  win.Maity.api.get = (p, ...rest) => (p.startsWith("/me/notifications?limit=0") ? hbGet(p, ...rest).then((r) => ({ ...r, counts: { ...r.counts, chat: 6 } })) : hbGet(p, ...rest));
+  await win.Maity.notify.read();
+  hbSlow(); await hbOld; for (let k = 0; k < 4; k++) await tick();
+  expect(hbSlow && win.Maity.notify.state.counts.chat === 6,
+    "notifications: a counts read that answers after a later one keeps nothing; the later counts stand " + win.Maity.notify.state.counts.chat);
+  win.Maity.api.get = hbGet;
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  // The page's held read answering before the inbox named its page (22c5 at #1582): the tab title never shows
+  // the page left.
+  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const hbTitles = [];
+  let hbTitle = document.title;
+  Object.defineProperty(document, "title", { configurable: true, enumerable: true, get: () => hbTitle, set: (v) => { hbTitle = v; hbTitles.push(v); } });
+  hbRelease = null;
+  win.Maity.api.get = hbHold((r) => r);
+  await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+  const hbTitleHeld = hbRelease;
+  if (hbRelease) hbRelease();
+  for (let k = 0; k < 6; k++) await tick();
+  delete document.title;
+  document.title = hbTitle;
+  expect(hbTitleHeld && main.querySelector("section.view-all") && hbTitles.length && !hbTitles.some((t) => / · Maity$/.test(t) && t.includes("Board")),
+    "notifications: the page's counts answering before the inbox named itself leave the tab title alone " + JSON.stringify(hbTitles));
+  win.Maity.api.get = hbGet;
+  // The first drawing, with sessions_rev not yet known (22c5 at #1582): the banner's sessions are read once, under
+  // the rev the page's counts read brings, not again when that read answers.
+  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const hbSes = [];
+  win.Maity.notify.state.sessionsRev = null;
+  hbRelease = null;
+  const hbSesHold = hbHold((r) => r);
+  win.Maity.api.get = (p, ...rest) => { if (p === "/auth/sessions") hbSes.push(p); return hbSesHold(p, ...rest); };
+  await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+  const hbSesHeld = hbRelease;
+  if (hbRelease) hbRelease();
+  for (let k = 0; k < 8; k++) await tick();
+  expect(hbSesHeld && main.querySelector("section.view-overview") && win.Maity.notify.state.sessionsRev !== null && hbSes.length === 1,
+    "banner: with sessions_rev unknown, the sessions are read once, not again when the page's counts answer " + hbSes.length);
   win.Maity.api.get = hbGet;
   if (!win.Maity.notify.state.counts) win.Maity.notify.state.counts = hbCounts;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();

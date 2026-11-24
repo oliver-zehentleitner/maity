@@ -40,6 +40,10 @@ window.Maity = window.Maity || {};
   // counts: null until read. sessionsRev: the hub's `sessions_rev` (§18.2), which moves
   // with every sign-in and end; the banner and the "Current sessions" box follow it.
   const state = { counts: null, byProject: {}, settings: null, sessionsRev: null };
+  // The counts' answers in the order they were asked (read) or came (the long-poll): `countsAsked`
+  // counts every one, `countsApplied` is the one the state stands on.
+  let countsAsked = 0;
+  let countsApplied = 0;
   // Who follows `sessions_rev` without asking for the long-poll (the banner):
   // told whenever any answer moves it, the count round's or the long-poll's.
   const revWatchers = new Set();
@@ -98,8 +102,14 @@ window.Maity = window.Maity || {};
   // The counts, per project too (by_project, computed by the hub over
   // every unread item, §18.2), and the head for the long-poll; no items.
   // opts: { quiet } for the boot's head, asked before the session is known (js/app.js).
+  // A drawing no longer waits for its read (tsk-hyfqc0sp2bvc), so reads overlap: one that answers
+  // after a later one, or after the long-poll, was answered (applied), keeps nothing and tells
+  // nobody; the state that stands is newer than its answer.
   async function read(opts) {
+    const mine = ++countsAsked;
     const answer = await M.api.get("/me/notifications?limit=0", opts && opts.quiet ? { quiet: true } : undefined);
+    if (mine < countsApplied) return state;
+    countsApplied = mine;
     state.counts = answer.counts;
     state.byProject = answer.by_project || {};
     if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);
@@ -370,6 +380,7 @@ window.Maity = window.Maity || {};
           if (after === null) {
             const head = await M.api.get("/me/notifications?limit=0");
             after = head.next_after;
+            countsApplied = ++countsAsked;
             state.counts = head.counts || state.counts;
             state.byProject = head.by_project || state.byProject;
             if ("sessions_rev" in head) knowSessionsRev(head.sessions_rev);
@@ -399,6 +410,7 @@ window.Maity = window.Maity || {};
         if (answer.superseded) { await pause(SUPERSEDED_MS); after = null; continue; }
         const items = answer.items || [];
         if (answer.next_after) after = answer.next_after;
+        countsApplied = ++countsAsked;
         state.counts = answer.counts || state.counts;
         state.byProject = answer.by_project || state.byProject;
         if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);

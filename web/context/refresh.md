@@ -49,7 +49,7 @@ one feed, and nothing for the views that have no cheap "after" query.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the notifications contract (docs/api.md §18, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Source:** the notifications contract (docs/api.md §18, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22; the page not waiting for the counts, PR #1582 (tsk-hyfqc0sp2bvc)
 **Revisit when:** the hub offers a push channel without an open tab, or personal requests get a view of their own
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
@@ -62,13 +62,20 @@ An item's link is built from its `target`, never from its `url`. A hub
 that answers 404 leaves the page as it was, with no bell. Any other
 failure is said in the notice and stops nothing.
 
-The read a page starts when it is drawn does not hold that page up
-(tsk-hyfqc0sp2bvc). It runs beside the page's own reads. The page
-draws with the counts read so far, or /me's open requests before the
-first read. The header (the switcher, Chat, the bell, the tabs, the
-title) follows when it answers. Awaiting it with the page's own reads
-was the way before: on prod it took about 2 s, and every page waited
-that long. The inbox (All projects' and a project's) still reads its
+The read a page starts when it is drawn (the boot's head, or a
+switch's, views.md) does not hold that page up (tsk-hyfqc0sp2bvc). It
+runs beside the page's own reads. The page draws with the counts read
+so far, or /me's open requests before the first read. The header (the
+switcher, Chat, the bell, the tabs) follows when it answers, and the
+title once the drawing has named its page. Awaiting it with the page's
+own reads was the way before: when this was decided the read took
+about 2 s on prod, and every page waited that long; the hub has made
+it far cheaper since, and the boot asks it beside `/bootstrap`, but a
+switch still waited for its own. Reads now overlap, so one that
+answers after a later counts answer keeps nothing (notify.js). Before
+`sessions_rev` is known, the banner's sessions are read once that read
+answered, under the rev it brought, not once before it and again
+after. The inbox (All projects' and a project's) still reads its
 list only after that read answered; its header does not wait. Its
 inbox count starts from those counts, and a later difference is a
 change. Counts that answer after the list was read would start it at
