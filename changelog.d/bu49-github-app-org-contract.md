@@ -16,10 +16,11 @@
   minutes before; the remaining window after an owner loses the role is stated as
   accepted. The hub re-checks in a fixed order (the installation, the user by the kept
   id, that user's membership, whose user id must match) at most once every 10 minutes
-  per link, counted from its last check whatever came of it: the source choice, a
-  repository's confirmation and `GET /me/forge` serve on a success under 10 minutes old,
-  check first when the last check is 10 minutes old or older, and otherwise wait without
-  a call; a link's `checked_at` is its last check. Only a definite membership answer
+  per link, counted from its last check whatever came of it: the source choice and
+  `GET /me/forge` serve on a success under 10 minutes old, check first when the last
+  check is 10 minutes old or older, and otherwise wait without a call; a repository's
+  confirmation makes no owner check and no forge call, and the next source choice takes
+  the link as it stands; a link's `checked_at` is its last check. Only a definite membership answer
   changes a link's status, a membership in another organisation than the installation's
   among them, as at linking: every other refusal
   and no answer change none, but leave the link serving nothing once its last success is

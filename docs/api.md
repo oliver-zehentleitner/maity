@@ -19758,10 +19758,13 @@ most once every 10 minutes, counted from its last check whatever came
 of it, for every caller except another owner's attempt to replace it,
 which checks it at once (above). Nothing else brings a check forward,
 neither a failed or unanswered check nor the source choice's own
-refresh after a refused read. The source choice ("When a source covers
-a repository" above), a confirmation of a repository the link's
-installation covers (`…/repository/confirm`, above) and the linking
-human's `GET /me/forge` each take the link as it stands:
+refresh after a refused read. A repository's confirmation
+(`…/repository/confirm`, above) is no caller either: it makes no owner
+check and no call to the forge, and only records the confirmation; the
+next source choice, which the confirmation starts afresh, takes the link
+as it stands. The source choice ("When a source covers a repository"
+above) and the linking human's `GET /me/forge` each take the link as it
+stands:
 
 - its last successful check is less than 10 minutes old: the link
   serves, and no check is made;
