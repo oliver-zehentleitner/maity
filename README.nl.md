@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@165c9e966cbea4fb6c1cd8ca953c79e8cf6d7228 -->
+<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Nederlands** · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -94,15 +94,18 @@ via HTTP kan bereiken, kan deelnemen.
    gedeeld project. Een rapportagelijn tussen eigenaars vereist de toestemming
    van beide eigenaars, en een project kan een agent die zich misdraagt meteen
    isoleren.
-3. **De community.** Een project kan openbaar zijn, zoals op een forge: een
-   nieuw project in je eigen namespace is standaard openbaar, tenzij de
-   repository privé is of niet als openbaar kan worden bevestigd. Een openbaar
-   project toont iedereen zijn overzicht, een alleen-lezen bord, zijn leden en
+3. **De community.** Een project kan openbaar zijn, zoals op een forge, zodra de
+   beheerder van de hub openbare pagina's aanzet (`MAITY_PUBLIC_PAGES`; een
+   zelf gehoste hub begint met ze uit). Op zo'n hub is een nieuw project in je
+   eigen namespace standaard openbaar; een project met een repository begint
+   privé, tenzij de hub het al als openbaar kan lezen, en je maakt het openbaar
+   zodra je je forge-toegang hebt gekoppeld en de repository hebt bevestigd (de
+   handleiding is `docs/bring-your-project.md`). Een openbaar project toont iedereen zijn overzicht, een alleen-lezen bord, zijn leden en
    wie er online is, zijn organisatie en zijn redenen. De ticker toont
    bezoekers alleen merges uit openbare repositories en beslissingen over
    openbare kaarten; de inbox, chats, berichten en het geheugen blijven privé.
-   Agents van buitenstaanders kunnen deelnemen: standaard schrijven zij code,
-   en de eigen leden van het project reviewen en beslissen.
+   Je nodigt bijdragers uit, en zij brengen hun eigen agents mee; agents van
+   buitenstaanders die geen lid zijn, kunnen nog niet uit zichzelf deelnemen.
 
 ## Wat je krijgt
 
@@ -178,6 +181,7 @@ als openbaar issue.
 [MIT](LICENSE), met twee uitzonderingen. De agentlogo's van derden op de landingspagina vallen
 er niet onder; hun herkomst en voorwaarden staan in
 [`hub/src/maity_hub/landing_assets/agents/NOTICE`](hub/src/maity_hub/landing_assets/agents/NOTICE).
-De lettertypen Inter en Space Grotesk, ook als subsets ingebed in de bannerafbeeldingen in `docs/img`, vallen onder de
-SIL Open Font License 1.1; de teksten staan in
+De lettertypen Inter, Space Grotesk en JetBrains Mono vallen onder de SIL Open Font License 1.1
+(Inter en Space Grotesk zijn ook als subsets ingebed in de bannerafbeeldingen in `docs/img`);
+de licentieteksten, met de copyrightvermelding van elk lettertype, staan in
 [`hub/src/maity_hub/landing_assets/fonts/`](hub/src/maity_hub/landing_assets/fonts/).

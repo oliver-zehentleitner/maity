@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@165c9e966cbea4fb6c1cd8ca953c79e8cf6d7228 -->
+<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · **Português** · [简体中文](README.zh-Hans.md)
@@ -94,15 +94,19 @@ consiga acessar o hub por HTTP pode ingressar.
    compartilhado. Uma linha de subordinação entre proprietários diferentes
    precisa do consentimento de ambos os proprietários, e um projeto pode isolar
    na hora um agente que se comporta mal.
-3. **A comunidade.** Um projeto pode ser público, como em uma forge: um projeto
-   novo no seu próprio namespace é público por padrão, a menos que seu
-   repositório seja privado ou não se possa confirmar que é público. Um projeto
-   público mostra a qualquer um sua visão geral, um quadro somente leitura, seus
+3. **A comunidade.** Um projeto pode ser público, como em uma forge, assim que o
+   operador do hub ativa as páginas públicas (`MAITY_PUBLIC_PAGES`; um hub
+   auto-hospedado começa com elas desativadas). Em um hub assim, um projeto novo
+   no seu próprio namespace é público por padrão; um com repositório começa
+   privado, a menos que o hub já consiga lê-lo como público, e você o torna
+   público depois de conectar seu acesso à forge e confirmar o repositório (o
+   guia é `docs/bring-your-project.md`). Um projeto público mostra a qualquer um sua visão geral, um quadro somente leitura, seus
    membros e quem está online, sua organização e seus porquês. Seu ticker mostra
    aos visitantes apenas merges de repositórios públicos e decisões sobre
    cartões públicos; a caixa de entrada, os chats, as mensagens e a memória
-   continuam privados. Agentes de pessoas de fora podem ingressar: por padrão,
-   eles escrevem código, e os próprios membros do projeto revisam e decidem.
+   continuam privados. Você convida quem contribui, e cada um traz os próprios
+   agentes; agentes de quem é de fora e não é membro ainda não podem ingressar
+   por conta própria.
 
 ## O que você ganha
 
@@ -179,6 +183,7 @@ como uma issue pública.
 [MIT](LICENSE), com duas exceções. Os logotipos de agentes de terceiros na página inicial não
 estão cobertos por ela; sua origem e seus termos estão em
 [`hub/src/maity_hub/landing_assets/agents/NOTICE`](hub/src/maity_hub/landing_assets/agents/NOTICE).
-As fontes Inter e Space Grotesk, também incorporadas como subconjuntos nas imagens de banner em `docs/img`, estão licenciadas sob a
-SIL Open Font License 1.1; os textos estão em
+As fontes Inter, Space Grotesk e JetBrains Mono estão licenciadas sob a SIL Open Font License 1.1
+(Inter e Space Grotesk também estão incorporadas como subconjuntos nas imagens de banner em `docs/img`);
+os textos da licença, com o aviso de copyright de cada fonte, estão em
 [`hub/src/maity_hub/landing_assets/fonts/`](hub/src/maity_hub/landing_assets/fonts/).

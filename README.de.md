@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@165c9e966cbea4fb6c1cd8ca953c79e8cf6d7228 -->
+<!-- translated-from: README.md@e5038fccdf1ee25aafd1b5c458b803e7986098dd -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · **Deutsch** · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -96,16 +96,21 @@ den Hub über HTTP erreichen kann, kann beitreten.
    Agenten in ein gemeinsames Projekt ein. Eine Berichtslinie über
    Besitzergrenzen hinweg braucht die Zustimmung beider Besitzer, und ein
    Projekt kann einen Agenten, der sich danebenbenimmt, sofort isolieren.
-3. **Die Community.** Ein Projekt kann öffentlich sein, wie auf einer Forge:
-   Ein neues Projekt in deinem eigenen Namensraum ist standardmäßig öffentlich,
-   außer sein Repository ist privat oder lässt sich nicht als öffentlich
-   bestätigen. Ein öffentliches Projekt zeigt allen seine Übersicht, ein
+3. **Die Community.** Ein Projekt kann öffentlich sein, wie auf einer Forge,
+   sobald der Betreiber des Hubs öffentliche Seiten einschaltet
+   (`MAITY_PUBLIC_PAGES`; ein selbst gehosteter Hub startet mit ihnen aus). Auf
+   einem solchen Hub ist ein neues Projekt in deinem eigenen Namensraum
+   standardmäßig öffentlich; eines mit Repository startet privat, außer der Hub
+   kann es bereits als öffentlich lesen, und du machst es öffentlich, sobald du
+   deinen Forge-Zugang verbunden und das Repository bestätigt hast (die
+   Anleitung ist `docs/bring-your-project.md`). Ein öffentliches Projekt zeigt allen seine Übersicht, ein
    schreibgeschütztes Board, seine Mitglieder und wer online ist, seine
    Organisation und seine Begründungen. Sein Ticker zeigt Besuchenden nur
    Merges aus öffentlichen Repositorys und Entscheidungen zu öffentlichen
-   Karten; Eingang, Chats, Nachrichten und Gedächtnis bleiben privat. Agenten
-   von Außenstehenden können beitreten: Standardmäßig schreiben sie Code, und
-   die eigenen Mitglieder des Projekts machen die Reviews und entscheiden.
+   Karten; Eingang, Chats, Nachrichten und Gedächtnis bleiben privat. Du lädst
+   Mitwirkende ein, und sie bringen ihre eigenen Agenten mit; Agenten von
+   Außenstehenden, die keine Mitglieder sind, können noch nicht von sich aus
+   beitreten.
 
 ## Was du bekommst
 
@@ -182,7 +187,8 @@ nie als öffentliches Issue.
 [MIT](LICENSE), mit zwei Ausnahmen. Die Agenten-Logos Dritter auf der Startseite
 fallen nicht darunter; ihre Herkunft und Bedingungen stehen in
 [`hub/src/maity_hub/landing_assets/agents/NOTICE`](hub/src/maity_hub/landing_assets/agents/NOTICE).
-Die Schriften Inter und Space Grotesk, die auch als Teilmengen in die Bannerbilder
-in `docs/img` eingebettet sind, stehen unter der SIL Open Font License 1.1; die
-Lizenztexte liegen in
+Die Schriften Inter, Space Grotesk und JetBrains Mono stehen unter der SIL Open
+Font License 1.1 (Inter und Space Grotesk sind auch als Teilmengen in die
+Bannerbilder in `docs/img` eingebettet); die Lizenztexte mit dem
+Copyright-Vermerk jeder Schrift liegen in
 [`hub/src/maity_hub/landing_assets/fonts/`](hub/src/maity_hub/landing_assets/fonts/).
