@@ -810,6 +810,10 @@ class Refresh:
     # dropped, so a read in progress keeps its last good reads and its lock.
     users: dict[str, int] = field(default_factory=dict)
     last_read: OrderedDict[str, tuple[str | None, float]] = field(default_factory=OrderedDict)
+    # project id -> how often `Cache.forget` ran for it while a request used it: a read that
+    # started before a `forget` stores nothing after it (review A2586). Kept only while the
+    # project has users, so it stays as small as `users`.
+    forgotten: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -834,6 +838,8 @@ class Cache:
     before_read: Callable[[forge.Forge, str, str], None] | None = field(
         default=None, repr=False, compare=False
     )
+    # how often `forget_all` (or `clear`) ran: with `Refresh.forgotten`, a read's generation
+    forgotten_all: int = 0
 
     @property
     def locks(self) -> dict[str, threading.Lock]:
@@ -849,29 +855,43 @@ class Cache:
 
     def clear(self) -> None:
         with self.guard:
+            self.forgotten_all += 1
             self.entries.clear()
             self.last_good.clear()
         with self.refresh.guard:
             self.refresh.locks.clear()
             self.refresh.users.clear()
             self.refresh.last_read.clear()
+            self.refresh.forgotten.clear()
 
     def forget_all(self) -> None:
         """`forget` for every project; the locks stay, as requests may hold them."""
         with self.guard:
+            self.forgotten_all += 1
             self.entries.clear()
             self.last_good.clear()
 
     def forget(self, project_id: str) -> None:
-        """The repository changed: no answer of the old one may stand for the new one, so
-        the answers and the last good reads go even while a request uses the project;
-        only its lock stays then."""
+        """The repository or the grants changed: no answer read before may stand after, so
+        the answers and the last good reads go even while a request uses the project; only
+        its lock stays then, and a read in progress stores nothing of what it read (its
+        generation changed: review A2586). Every replica runs this on the notice
+        (`wakeups.forgotten`), so the generation holds on each."""
         with self.guard:
             self.entries.pop(project_id, None)
             self._drop_reads(project_id)
             with self.refresh.guard:
                 if self.refresh.users.get(project_id, 0) == 0:
                     self.refresh.locks.pop(project_id, None)
+                else:
+                    forgotten = self.refresh.forgotten
+                    forgotten[project_id] = forgotten.get(project_id, 0) + 1
+
+    def _generation(self, project_id: str) -> tuple[int, int]:
+        """What `forget` and `forget_all` changed so far for the project. The caller holds
+        `guard`, as they do while they change it."""
+        with self.refresh.guard:
+            return self.forgotten_all, self.refresh.forgotten.get(project_id, 0)
 
     def _drop(self, project_id: str) -> None:
         """Dropped for room: the project's last good reads and its lock, unless a request
@@ -924,6 +944,7 @@ class Cache:
                 self.refresh.users[project_id] = left
             else:
                 self.refresh.users.pop(project_id, None)
+                self.refresh.forgotten.pop(project_id, None)  # no read left to compare it
                 if not kept:
                     self.refresh.locks.pop(project_id, None)
 
@@ -975,8 +996,16 @@ class Cache:
                         and self._read_lately(project_id, repository_url)
                     ):
                         return entry, False
-                entry = self._read(reader, project_id, repository_url, entry)
                 with self.guard:
+                    generation = self._generation(project_id)
+                entry = self._read(reader, project_id, repository_url, entry, generation)
+                with self.guard:
+                    if self._generation(project_id) != generation:
+                        # forgotten while it read (an org link unlinked or replaced, the
+                        # repository changed): its own request gets it, as it was read for
+                        # it, but nothing is kept for another (review A2586)
+                        self._drop_reads(project_id)
+                        return entry, True
                     in_use = self.refresh.users.get
                     for gone in bounded.put(
                         self.entries, project_id, entry, PROJECTS_KEPT, lambda p: in_use(p, 0) > 0
@@ -990,8 +1019,15 @@ class Cache:
             self._leave(project_id)
 
     def _read(
-        self, reader: forge.Forge, project_id: str, repository_url: str | None, last: _Entry | None
+        self,
+        reader: forge.Forge,
+        project_id: str,
+        repository_url: str | None,
+        last: _Entry | None,
+        generation: tuple[int, int],
     ) -> _Entry:
+        """The family as it reads now. A member's last good read is kept only while the
+        project's `generation` is the one the read started with (`get`)."""
         read_at = now()
         observed = clock.rfc3339(clock.now())
         if forge.kind_of(repository_url) != "github" or repository_url is None:
@@ -1037,11 +1073,21 @@ class Cache:
             with self.guard:  # read through a grant that has ended: no member falls back on it
                 self._drop_reads(project_id)
         _read_exports(family, deadline)
+        if reader.still_serves is not None and not reader.still_serves():
+            # Read through a link on a forge organisation that was unlinked, replaced or
+            # stopped serving during the read: none of it is kept or answered (A2585 P2-1).
+            with self.guard:
+                self._drop_reads(project_id)
+            error = _error("forge_unavailable")
+            snapshot = Snapshot(observed, [], False, error, errors.ORG_UNANSWERED)
+            return _Entry(snapshot, read_at, repository_url)
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
                 continue  # its path is location text, never read: no last good read
             key = (project_id, repository, member.path)
             with self.guard:  # another project's eviction may walk `last_good` meanwhile
+                if self._generation(project_id) != generation:
+                    continue  # forgotten while it read: `get` keeps none of it (A2586)
                 if member.read is not None:
                     self.last_good[key] = (member.read, member.observed_at)
                 elif member.error is not None and key in self.last_good:

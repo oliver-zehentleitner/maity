@@ -15,6 +15,7 @@ import base64
 import contextvars
 import io
 import json
+import threading
 import urllib.error
 import urllib.request
 from collections import OrderedDict
@@ -36,6 +37,7 @@ from maity_hub import (
     ktw,
     probe,
     secretbox,
+    wakeups,
     write_guard,
 )
 from maity_hub import tables as t
@@ -1025,6 +1027,232 @@ def test_a_replaced_link_leaves_no_cached_export(
     assert _anna_links(anna) == DONE
     assert ktw.CACHE.cached(project_id) is None
     assert owner.get(WHY).status_code != 200
+
+
+@pytest.mark.parametrize("how", ["unlinked", "replaced"])
+def test_a_read_in_flight_when_the_link_goes_stores_nothing(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """Review A2586 (22c5's P3 #4): a family read through the link that is still in flight when
+    the link is unlinked or replaced, and finishes afterwards, puts nothing back into the cache
+    (no export, no member's last good read). Otherwise the view, the list and §11.3 would answer
+    it until the grant it was read with ends, as nothing asks the link again then: it is gone."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    anna = request.getfixturevalue("anna") if how == "replaced" else None
+    project_id = _project_id(migrated)
+    reading, release = threading.Event(), threading.Event()
+    read_with: list[str | None] = []
+    real_walk = ktw.walk
+
+    def blocked_walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        read_with.append(reader.via)
+        if len(read_with) > 1:  # the reads after the link went: the forge as it is
+            return real_walk(reader, repository, deadline)
+        reading.set()
+        assert release.wait(10)
+        summary = {
+            "status": dict.fromkeys((*ktw.STATUSES, "other"), 0),
+            "findings": {"errors": 0, "warnings": 0},
+            "entries": 0,
+            "attention": 0,
+        }
+        read = ktw.Read(summary, [], 0)
+        return ktw.Family([ktw.Member(path=".", name="secret-plan", id="sid", read=read)], False)
+
+    monkeypatch.setattr(ktw, "walk", blocked_walk)
+    base = forge.Forge(OPERATOR, access=_access(migrated))
+    errors_in_read: list[BaseException] = []
+
+    def read() -> None:
+        try:
+            ktw.CACHE.get(base, project_id, URL)
+        except BaseException as error:  # noqa: BLE001 - reported below
+            errors_in_read.append(error)
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    try:
+        assert reading.wait(10)
+        if anna is None:
+            assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+        else:
+            app.memberships[("acme", "maintainer-gh")] = None
+            assert _anna_links(anna) == DONE
+    finally:
+        release.set()
+        reader.join(10)
+    assert not reader.is_alive() and errors_in_read == []
+    assert read_with == ["app"]  # it read through the link
+    guest = flow.human(make_client, migrated, "bob")
+    factory.membership(migrated, project_id, role="guest", human_id=guest.id)
+    answered = []  # every reader that answers what the link read, so a failure names them all
+    for name, who in (("owner", owner), ("guest", guest)):
+        view = who.get(VIEW)
+        assert view.status_code == 200, view.text
+        # (an error answered after the link went is an export too, with no member in it)
+        if "secret-plan" in str(view.json()["keep_the_why_export"]):
+            answered.append(f"{name}: view")
+        listed = who.get("/projects").json()["items"]
+        if "secret-plan" in str([item.get("keep_the_why_export") for item in listed]):
+            answered.append(f"{name}: list")
+        why = who.get(WHY)
+        if why.status_code == 200 or "secret-plan" in why.text:
+            answered.append(f"{name}: §11.3")
+    assert answered == []
+    entry = ktw.CACHE.cached(project_id)
+    assert entry is None or entry.snapshot is None or entry.snapshot.members == []
+    assert not [key for key in ktw.CACHE.last_good if key[0] == project_id]
+
+
+@pytest.mark.parametrize("forget", ["one", "all", "notice"])
+def test_a_forget_during_a_read_keeps_nothing_it_read(
+    monkeypatch: pytest.MonkeyPatch, forget: str
+) -> None:
+    """The cache alone (A2586): `forget` or `forget_all` while a family is read, or the
+    `repository:` notice another replica's unlink sends, leaves neither the entry nor a
+    member's last good read, and marks nothing read, so the next request reads again."""
+    cache = ktw.Cache(bind=False) if forget != "notice" else ktw.CACHE
+    summary = {
+        "status": dict.fromkeys((*ktw.STATUSES, "other"), 0),
+        "findings": {"errors": 0, "warnings": 0},
+        "entries": 0,
+        "attention": 0,
+    }
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        if forget == "one":
+            cache.forget("prj-1")
+        elif forget == "all":
+            cache.forget_all()
+        else:  # as the listener hands it over (`wakeups.Listener`)
+            wakeups.forgotten("repository:prj-1")
+        read = ktw.Read(summary, [], 0)
+        return ktw.Family([ktw.Member(path=".", name="secret-plan", id="sid", read=read)], False)
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    entry, fresh = cache.get(forge.Forge(OPERATOR), "prj-1", URL)
+    assert fresh and entry.snapshot is not None  # its own request gets what it read
+    assert cache.cached("prj-1") is None
+    assert cache.last_good == {}
+    assert cache.refresh.forgotten == {} and cache.refresh.users == {}  # nothing outlives it
+    assert "prj-1" not in cache.refresh.last_read  # a forced read is not held back
+
+
+LINK_TOKEN = f"ghs_installation_{INSTALLATION}"
+
+
+@pytest.mark.parametrize("how", ["unlinked", "replaced"])
+def test_a_link_that_goes_after_the_choice_read_it_serves_nothing(
+    owner: flow.Human,
+    anna: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """Review A2585 P2-1 (jc4h): the link is unlinked or replaced after the choice read the
+    grants and before it uses the link (here inside its installation lookup). Nothing is read
+    with the link's token after that, and nothing such a read found is answered by §11.3 or
+    the project view."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    reads: list[str | None] = []
+    real_walk = ktw.walk
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        reads.append(reader.token)
+        if reader.token == LINK_TOKEN:  # one private member, as the link reads it
+            return ktw.Family([ktw.Member(path=".", name="secret-plan", id="sid")], False)
+        return real_walk(reader, repository, deadline)
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    changed: list[bool] = []
+    lookup = github_app.GitHubApp.installation_of
+
+    def installation_of(self: Any, repository: str) -> int | None:
+        if not changed:  # once, after the grants were read, before the link is used
+            changed.append(True)
+            if how == "unlinked":
+                assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+            else:
+                app.memberships[("acme", "maintainer-gh")] = None  # the check: no owner
+                assert _anna_links(anna) == DONE
+        return lookup(self, repository)
+
+    monkeypatch.setattr(github_app.GitHubApp, "installation_of", installation_of)
+    first = owner.get(WHY)
+    assert changed, "the change did not run inside the choice"
+    second = owner.get(WHY)
+    view = owner.get(VIEW).json()["keep_the_why_export"]
+    assert LINK_TOKEN not in reads, reads
+    assert "secret-plan" not in first.text, first.text
+    assert "secret-plan" not in second.text, second.text
+    assert "secret-plan" not in str(view)
+
+
+@pytest.mark.parametrize("how", ["unlinked", "replaced", "deleted", "before"])
+def test_a_link_that_goes_during_the_read_keeps_nothing_of_it(
+    owner: flow.Human,
+    anna: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """A2585 P2-1 and P2-2: the link is unlinked or replaced inside the family walk made with
+    its token, or its row deleted with no `forget` at all; `before`: unlinked before the read,
+    which must hold as well. Neither that call nor a later one (§11.3 twice and forced, the
+    project view and the list, the owner's and a guest's) answers what the walk found."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _project_id(migrated)
+    guest = flow.human(make_client, migrated, "bob")
+    factory.membership(migrated, project_id, role="guest", human_id=guest.id)
+    reads: list[str | None] = []
+    real_walk = ktw.walk
+
+    def unlink() -> None:
+        if how in ("unlinked", "before"):
+            assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+        elif how == "replaced":
+            app.memberships[("acme", "maintainer-gh")] = None  # the check: no owner
+            assert _anna_links(anna) == DONE
+        else:
+            with migrated.begin() as conn:
+                conn.execute(t.forge_link.delete().where(t.forge_link.c.id == link_id))
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        reads.append(reader.token)
+        if reader.token != LINK_TOKEN:
+            return real_walk(reader, repository, deadline)
+        if how != "before":
+            unlink()
+        return ktw.Family([ktw.Member(path=".", name="secret-plan", id="sid")], False)
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    if how == "before":
+        unlink()
+    answered = []
+    for name, who in (("owner", owner), ("guest", guest)):
+        for path in (WHY, WHY, WHY + "?max_age=0", VIEW, "/projects"):
+            answer = who.get(path)
+            if "secret-plan" in answer.text:
+                answered.append(f"{name}: {path}")
+    assert answered == []
+    assert (LINK_TOKEN in reads) == (how != "before"), reads
+    entry = ktw.CACHE.cached(project_id)
+    assert entry is None or entry.snapshot is None or entry.snapshot.members == []
 
 
 def _observed_then_not_admin(owner: flow.Human, migrated: Engine) -> None:

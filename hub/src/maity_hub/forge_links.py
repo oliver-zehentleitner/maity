@@ -525,20 +525,31 @@ def refresh(engine: Engine, app: GitHubApp, link: Any) -> Any | None:
     would otherwise take the organisation's and the project's locks before that
     `account_lock`, the order a deletion takes them the other way round."""
     if not due(link):
-        return link
+        # Read again, never the row the caller read before: an unlink or a replacement that
+        # committed since must not serve (review A2585 P2-1).
+        with engine.connect() as conn:
+            return current(conn, link)
     at = clock.now()
     with engine.begin() as conn:
         write_guard.exempt(conn)
         claimed = claim(conn, link.id, at)
         if not claimed:
-            return conn.execute(select(t.forge_link).where(t.forge_link.c.id == link.id)).first()
+            return current(conn, link)
     check = owner_check(app, Link.of(link))
     with engine.begin() as conn:
         write_guard.exempt(conn)
         status = apply_check(conn, link.id, check, at)
         if check.outcome is not None and status not in ("active", STALE):
             wakeups.forget_token_everywhere(conn, app, link.installation_id)
-        return conn.execute(select(t.forge_link).where(t.forge_link.c.id == link.id)).first()
+        return current(conn, link)
+
+
+def current(conn: Connection, link: Any) -> Any | None:
+    """The link's row as stored now; None when it is gone or is another human's now."""
+    row = conn.execute(select(t.forge_link).where(t.forge_link.c.id == link.id)).first()
+    if row is None or row.human_id != link.human_id:
+        return None
+    return row
 
 
 def shown(app: GitHubApp | None, row: Any) -> tuple[list[str], str | None]:

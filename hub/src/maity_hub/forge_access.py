@@ -26,6 +26,7 @@ import logging
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -214,11 +215,14 @@ class ForgeAccess:
             facts.token is not None and facts.token[0] == "active"
         )
         if facts.confirmed:
-            via_app, owner_reason, until = self._by_app(facts, repository)
+            via_app, owner_reason, until, served = self._by_app(facts, repository)
             if via_app is not None:
                 bound = self._bound(base, project_id, repository, "app", via_app)
-                # only a link on a forge organisation keeps its grant for a time (`_by_org_link`)
-                return dataclasses.replace(bound, serves_until=until), until
+                # only a link on a forge organisation keeps its grant for a time (`_by_org_link`),
+                # and what it read is kept only while it serves still (review A2585 P2-1)
+                still = None if served is None else self._still_serves(served)
+                bound = dataclasses.replace(bound, serves_until=until, still_serves=still)
+                return bound, until
             # A link that serves nothing is not the project's source: the choice goes on with
             # the owner's token, then the operator's where it may serve (§11.4).
             via_token, token_reason = self._by_token(facts, repository)
@@ -242,60 +246,74 @@ class ForgeAccess:
 
     def _by_app(
         self, facts: _Facts, repository: str
-    ) -> tuple[str | None, str | None, datetime | None]:
+    ) -> tuple[str | None, str | None, datetime | None, forge_links.Link | None]:
         """An installation token when the owner's linked installation covers the
-        repository; else None and the reason it no longer does, if it once did; and until
-        when the answer may be kept, for a link whose state changes with time."""
+        repository; else None and the reason it no longer does, if it once did; until
+        when the answer may be kept, for a link whose state changes with time; and the link
+        on a forge organisation the token rests on, if it does."""
         if self.app is None or not facts.links:
-            return None, None, None
+            return None, None, None, None
         installation_id = self.app.installation_of(repository)
         mine = [link for link in facts.links if link.installation_id == installation_id]
         if installation_id is None or not mine:
-            return None, None, None  # any other installation of the App is never tried
+            return None, None, None, None  # any other installation of the App is never tried
         link = mine[0]
         if link.organisation:
             return self._by_org_link(link)
         if link.status == "removed":
-            return None, "installation_removed", None
+            return None, "installation_removed", None, None
         if link.status == "suspended" and not forge_links.retry_due(link):
             # retried at most every 10 minutes (§11.4)
-            return None, "installation_suspended", link.checked_at + forge_links.CHECK_EVERY
+            until = link.checked_at + forge_links.CHECK_EVERY
+            return None, "installation_suspended", until, None
         if link.status != "active":  # only a new mint says it is back, not a token held before
             github_app.forget_token(self.app.app_id, installation_id)
         try:
             token = self.app.token(installation_id)
         except github_app.InstallationGoneError as gone:
             self._gone(link, gone.state)
-            return None, f"installation_{gone.state}", None
+            return None, f"installation_{gone.state}", None, None
         if link.status != "active":
             with self.engine.begin() as conn:
                 forge_links.set_status(conn, link.id, "active")
-        return token, None, None
+        return token, None, None, None
 
     def _by_org_link(
         self, link: forge_links.Link
-    ) -> tuple[str | None, str | None, datetime | None]:
+    ) -> tuple[str | None, str | None, datetime | None, forge_links.Link | None]:
         """A link on a forge organisation (§11.4): checked first when its owner check is due,
         then a token only while it serves, kept until 10 minutes after its last success; else
         the reason, kept for the project's readers apart from a user account's (`errors.ORG_*`),
-        until its next check is due."""
+        until its next check is due. The row is read anew here, whatever the choice read
+        before it, so a link unlinked or replaced meanwhile serves nothing (A2585 P2-1)."""
         assert self.app is not None
         row = forge_links.refresh(self.engine, self.app, link)
         if row is None:
-            return None, errors.ORG_REMOVED, None
+            return None, errors.ORG_REMOVED, None, None
         link = forge_links.Link.of(row)
         if forge_links.serves(link):
             try:
                 token = self.app.token(link.installation_id)
             except github_app.InstallationGoneError as gone:
                 self._gone(link, gone.state)
-                return None, errors.ORG_REASONS_BY_STATUS[gone.state], None
+                return None, errors.ORG_REASONS_BY_STATUS[gone.state], None, None
             assert link.owner_ok_at is not None  # `serves` says so
-            return token, None, link.owner_ok_at + forge_links.CHECK_EVERY
+            return token, None, link.owner_ok_at + forge_links.CHECK_EVERY, link
         reason = errors.ORG_REASONS_BY_STATUS.get(link.status, errors.ORG_UNANSWERED)
         if link.status == "removed":
-            return None, reason, None  # never checked again: nothing to keep it until (A2545 #9)
-        return None, reason, link.checked_at + forge_links.CHECK_EVERY
+            return None, reason, None, None  # never checked again: nothing to keep it until
+        return None, reason, link.checked_at + forge_links.CHECK_EVERY, None
+
+    def _still_serves(self, link: forge_links.Link) -> Callable[[], bool]:
+        """Whether the link serves still, its row read now: gone, another human's or no longer
+        serving, it does not."""
+
+        def ask() -> bool:
+            with self.engine.connect() as conn:
+                row = forge_links.current(conn, link)
+            return row is not None and forge_links.serves(row)
+
+        return ask
 
     def _gone(self, link: forge_links.Link, state: str) -> None:
         """A mint the forge refused: the link's status, and no token of it held anywhere. Exempt

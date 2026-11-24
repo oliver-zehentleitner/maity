@@ -46,7 +46,7 @@ def test_the_ktw_cache_keeps_the_newest_projects_and_drops_their_reads(
 ) -> None:
     monkeypatch.setattr(ktw, "PROJECTS_KEPT", 2)
     monkeypatch.setattr(
-        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw.now(), url)
+        ktw.Cache, "_read", lambda _self, _r, _p, url, _last, _g: ktw._Entry(None, ktw.now(), url)
     )
     cache = ktw.Cache()
     cache.last_good[("p0", "a/b", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
@@ -63,7 +63,7 @@ def test_a_ktw_project_in_use_is_never_dropped(monkeypatch: pytest.MonkeyPatch) 
     neither drop p0's answer nor its last good reads nor its lock."""
     monkeypatch.setattr(ktw, "PROJECTS_KEPT", 2)
     monkeypatch.setattr(
-        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw.now(), url)
+        ktw.Cache, "_read", lambda _self, _r, _p, url, _last, _g: ktw._Entry(None, ktw.now(), url)
     )
     cache = ktw.Cache()
     cache.get(forge.Forge(None), "p0", None, max_age=0)
