@@ -460,9 +460,26 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
   compares; step 1 naming another account than the link's is no answer
   either (A2545 #4).
 - A replacement rereads the existing link under its row lock after the
-  check and compares it with the link the check was made for; any
-  difference is `forge_unavailable` with nothing written and no retry
-  (the lead's ruling Q2).
+  check and compares it with the link the check was made for, before
+  anything else: any difference, an unlink, a removal and a link of the
+  caller's own meanwhile included, is `forge_unavailable` with nothing
+  written and no retry (the lead's ruling Q2; review A2545 #1). Its
+  check mints a token for its own reads alone, and a replacement drops
+  the installation's held tokens on every replica (A2545 #7).
+- A link is read under its row lock whenever there is one, the caller's
+  own included; a first link that meets another's committed row on
+  insert is `forge_unavailable`, not `installation_linked`, since that
+  row may be the caller's own (A2545 #10).
+- A claimed check writes nothing once the link's `checked_at` is no
+  longer its claim's (`STALE`): a replacement's check that kept the
+  link, or a relink, wrote a newer one meanwhile (A2545 #8).
+- The check's write and a refused mint's run exempt from the calling
+  request's write guard: they are the link human's writes, never the
+  caller's, so a caller deleted, suspended or whose bridge ended
+  meanwhile drops no `not_admin`; and the link human's `account_lock`
+  comes first, as in an account's deletion, where the guard's check of
+  a bridged call would take the project's lock before it (A2545 #2,
+  §2.9's lock order).
 
 **Reason:** with one timestamp, a refused mint or a check without an
 answer would move the time a read rests on, and a link could serve on a
