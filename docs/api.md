@@ -4128,7 +4128,7 @@ a reset is not the sign-in an admin needs to end the window, and
 
 | Endpoint | Scope |
 |---|---|
-| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project whose admins opted in, for an agent of their own, as "An outsider's agent" below says (built and switched off for an outsider until the own-approvals gate of §2.3 is built: `not_found` to an outsider until then, §2.3) |
+| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own, as "An outsider's agent" below says (built, and switched off for an outsider at launch: `not_found` to an outsider, §2.3) |
 | `GET /projects/{owner}/{slug}/joins` | `members:admin`; such a human, member or outsider (switched off for an outsider, as `POST`), sees only the joins they created |
 | `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin`; such a human, member or outsider (switched off for an outsider, as `POST`), only a join they created |
 
@@ -4547,9 +4547,9 @@ where the project's admins opted in — `policy.agent_owners` set to
 `anyone` by a human with `project:admin` (§6.1, "The outsiders'
 opt-in") — `POST
 /projects/{owner}/{slug}/joins` is allowed to a signed-in outsider of a
-public project for an agent of their own (built and switched off until
-the own-approvals gate of §2.3 is built: until then the joins routes
-answer an outsider `not_found`, as §2.3 says), with no
+public project for an agent of their own (built, and switched off at
+launch: until it is turned on, the joins routes answer an outsider
+`not_found`, as §2.3 says), with no
 approval of the arrival: the gate is the claim (§6.5, "An outsider's
 claim"). Without the opt-in — `agent_owners` unset, which reads as
 `anyone` while the page is served, or set to `members` — every joins
