@@ -137,8 +137,10 @@ own and send the lead its number.
 
 ## The guard tests before a review request
 
-Run `tools/guards.sh` before you ask for a review (`HUB_PYTHON=` a Python
-with the hub's test requirements). In about half a minute it runs what
+Run `tools/guards.sh` before you ask for a review. It tests with the Python
+`HUB_PYTHON=` names, one with the hub's test requirements; unset, with
+`hub/.venv/bin/python` where `make -C hub dev` built it, else with
+`python3`. In about half a minute it runs what
 otherwise fails in CI one round at a time: the hub's per-human tables test,
 `make -C web shapes`, `make -C web fixtures` and `make -C web check`. It
 fails while any of them fails or leaves the work tree changed. Commit what
