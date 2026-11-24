@@ -21955,8 +21955,6 @@ placement as `reported`; the history is the `placement_reported` events.
 | `workspace_in_repository` | `workspace_in_use`: an `antigravity` workspace folder lies inside a git work tree, an entry `.git` in its parent or a directory above, or its path is not its real path (§15.3); the runner starts nothing, and its log names that directory |
 | `workspace_not_bare` | `workspace_in_use`: an `antigravity` workspace folder holds an entry besides the clone `repo` (§15.5), such as agy configuration a run left there; the runner starts nothing and deletes nothing, and its log names the entries, without their contents |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
-| `workspace_set_aside` | `starting`: the runner set this agent's clone of the other layout aside and made a new one for this start (§15.5). Not built yet (tsk-9f69y1hr1m6z): today the hub refuses the code (`invalid`) |
-| `workspace_set_aside_failed` | `workspace_in_use`: the set-aside was refused by the hub or its rename failed, and the clone stays where it was (§15.5). Not built yet (tsk-9f69y1hr1m6z): today the hub refuses the code (`invalid`) and the runner reports `workspace_in_use` (`workspace_unrecorded`) |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `keep_the_why_unavailable` | `running`: the placement names a Keep the Why skill (`keep_the_why`, §15.5) and the runner could not fetch or check that commit, or cannot deliver it where this session runs yet (docs/runners.md), so the session started without the delivered skill; the resume packet's install text (§6.23) is its only way to it. The runner's log says why; the next report after a start with the skill clears it. Never for a placement whose `keep_the_why` is `null`, and `sandbox_unavailable` goes first when both hold. A runner sends it only to a hub whose placements carry `keep_the_why` (req-b3q6ttwgrp1v) |
 | `hot_loop` | `crash_loop` in `supervised` mode |
@@ -21964,6 +21962,16 @@ placement as `reported`; the history is the `placement_reported` events.
 | `not_listening`, `never_joined` | `hung`: from the runner's watch (§15.14), the placement's session stayed not listening (§5.3) past the runner's grace, or no session of the placement's credential started within the runner's time for a join after it started the harness; `exited` when the runner resumes the session, `failed` when it stops retrying. The hub takes both, and the runner reports them (tsk-bzmd0avm4yhb) |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
 | `mode_unsupported`, `model_unsupported`, `effort_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `effort_unsupported`: the placement names an effort its harness no longer offers on the runner (§15.5); `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
+
+Two details of the set-aside for a layout change (§15.5) join the
+table above once the hub takes them, not built yet (tsk-9f69y1hr1m6z):
+`workspace_set_aside` with `starting` (the runner set this agent's clone
+of the other layout aside and made a new one for this start) and
+`workspace_set_aside_failed` with `workspace_in_use` (the set-aside was
+refused by the hub or its rename failed, and the clone stays where it
+was). Until then both are codes outside the table, which the hub refuses
+(`invalid`), and the runner reports `workspace_in_use`
+(`workspace_unrecorded`) instead.
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
