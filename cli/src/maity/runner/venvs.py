@@ -158,11 +158,20 @@ def build(venvs_dir: Path, placement_id: str, sub: str, lock: str, clone: Path) 
             raise Unavailable("the new venv has no single site-packages")
         (site[0] / f"_maity_clone_{sub}.pth").write_text(f"{clone / sub / 'src'}\n")
         (fresh / STAMP).write_text(stamp)
+        # The old venv is set aside, not removed, until the new one stands in its place: a
+        # rename that fails puts it back, so a failed swap never leaves the clone without one.
+        old = None
         if target.exists() or target.is_symlink():
             old = home / f".{sub}.old-{secrets.token_hex(4)}"
             target.rename(old)
+        try:
+            fresh.rename(target)
+        except OSError:
+            if old is not None:
+                old.rename(target)
+            raise
+        if old is not None:
             shutil.rmtree(old, ignore_errors=True)
-        fresh.rename(target)
     finally:
         if fresh.exists():
             shutil.rmtree(fresh, ignore_errors=True)

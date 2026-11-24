@@ -169,6 +169,28 @@ def test_a_failed_build_leaves_no_half_venv_and_keeps_the_built_one(
     assert (built / "requirements.txt").read_text() == venvs.check_lock(UV_LOCK)
 
 
+def test_a_swap_that_fails_puts_the_old_venv_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The old venv is set aside, not removed, until the new one stands in its place."""
+    monkeypatch.setattr(venvs, "_run", _fake_run([]))
+    clone = tmp_path / "clone"
+    built = venvs.build(tmp_path / "venvs", "plc-0003", "hub", venvs.check_lock(UV_LOCK), clone)
+    rename = Path.rename
+
+    def failing(self: Path, target: Any) -> Path:
+        if self.name.startswith(".hub.new-"):
+            raise OSError("rename refused")
+        return rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", failing)
+    other = venvs.check_lock(f"x==1 --hash=sha256:{H}\n")
+    with pytest.raises(OSError, match="rename refused"):
+        venvs.build(tmp_path / "venvs", "plc-0003", "hub", other, clone)
+    assert [p.name for p in built.parent.iterdir()] == ["hub"]
+    assert (built / "requirements.txt").read_text() == venvs.check_lock(UV_LOCK)
+
+
 def test_the_link_is_made_only_where_nothing_stands_below_a_real_directory(tmp_path: Path) -> None:
     venv = tmp_path / "venvs" / "plc-0003" / "hub"
     venv.mkdir(parents=True)
