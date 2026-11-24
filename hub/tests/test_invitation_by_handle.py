@@ -15,7 +15,18 @@ from maity_hub import account_deletion, clock, events, invitations
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_invitations import PATH, accept, issue, kinds, member, project_id, reason, token_of
+from tests.test_invitations import (
+    PATH,
+    STANDING,
+    accept,
+    ada_by_mail,
+    issue,
+    kinds,
+    member,
+    project_id,
+    reason,
+    token_of,
+)
 from tests.test_orgs import make_org
 
 
@@ -117,6 +128,69 @@ def test_go_makes_the_person_a_member_with_the_invited_trust_and_role(
     assert row.used_by == anna.id and row.used_at is not None
     assert [e.kind for e in kinds(migrated)][-1] == "invitation_used"
     assert answer(anna, pending["id"], "go").status_code == 409  # answered already
+
+
+@pytest.mark.parametrize("how", ["email_link", "email_code"])
+def test_a_go_from_a_session_fresh_from_the_mailbox_accepts_nothing(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """§3.4 "By handle": a `go` accepts with the same checks as the token's accept, good
+    standing (§2.6.5) among them; refused, the request stays open and nothing changes."""
+    two = ada_by_mail(make_client, migrated, monkeypatch, how)
+    made = invite(owner, "ada")
+    assert made.status_code == 201, made.text
+    [pending] = requests_of(two.by_mail)
+    refused = answer(two.by_mail, pending["id"], "go")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["code"] == "forbidden"
+    assert reason(refused) == "not_in_good_standing"
+    assert request_status(migrated, pending["id"]) == "open"
+    assert not is_member(migrated, two.id)
+    row = row_of(migrated, made.json()["id"])
+    assert (row.used_at, row.voided_at, row.declined_at) == (None, None, None)
+    assert [e.kind for e in kinds(migrated)] == ["invitation_created"]
+    # "This was me" from her password session: the same session's go now accepts.
+    confirmed = two.confirm_from_password()
+    assert confirmed.status_code == 200, confirmed.text
+    joined = answer(two.by_mail, pending["id"], "go")
+    assert joined.status_code == 200, joined.text
+    assert is_member(migrated, two.id)
+
+
+@pytest.mark.parametrize("way", sorted(STANDING))
+def test_a_go_from_every_way_into_good_standing_accepts(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    way: str,
+) -> None:
+    two = ada_by_mail(make_client, migrated, monkeypatch, "email_code")
+    two.mail_session(**STANDING[way])
+    assert invite(owner, "ada").status_code == 201
+    [pending] = requests_of(two.by_mail)
+    joined = answer(two.by_mail, pending["id"], "go")
+    assert joined.status_code == 200, joined.text
+    assert is_member(migrated, two.id)
+
+
+def test_a_no_from_a_session_not_in_good_standing_still_declines(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Declining grants nothing, so it needs no standing."""
+    two = ada_by_mail(make_client, migrated, monkeypatch, "email_link")
+    made = invite(owner, "ada").json()
+    [pending] = requests_of(two.by_mail)
+    assert answer(two.by_mail, pending["id"], "no").status_code == 200
+    assert row_of(migrated, made["id"]).declined_at is not None
+    assert not is_member(migrated, two.id)
 
 
 def test_go_writes_the_membership_and_its_events_as_an_accept_by_token_does(

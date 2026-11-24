@@ -55,6 +55,13 @@ CLAUDE_MAITY_PROMPT = (
     "or a `$` outside single quotes is refused. Pass longer text in a file in this clone "
     "(`--body-file`)."
 )
+# Claude Code matches the allowlist against the command line as written, so a form that wraps an
+# allowed command is refused (tsk-66zyvc4xnhtv). This tells the agent how to phrase its checks.
+CLAUDE_COMMAND_PROMPT = (
+    " Run one command per Bash call: a chain (`cd pkg && …`) is allowed only if every part is, "
+    "so use `make -C <pkg>` and path arguments (`python3 -m pytest cli/tests`) instead of "
+    "`cd <pkg> && …`, and do not prefix a command with a variable (`PYTHONPATH=… python3 …`)."
+)
 # What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
 MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
 # An interactive session the runner ended because its agent stopped listening (§15.14) starts
@@ -94,8 +101,9 @@ GIT_DENIED = (
 # about git running programs or reading configuration, and which agy's rules mirror.
 # Only the subcommand itself: a pattern with a wildcard before `worktree` (`git * worktree *`,
 # also `git -C * worktree *`) would deny ordinary commands that only mention the word
-# (`git log --grep worktree`, a commit message), so it is not used. `git -C <dir> worktree …`
-# is not matched; no allow rule matches it either (cli/context/runner.md).
+# (`git log --grep worktree`, a commit message), so it is not used. For Claude Code these
+# denies are mirrored as `git -C <clone> worktree …` (claude_settings); `git -C <dir>` with any
+# other directory matches no allow rule (cli/context/runner.md).
 GIT_WORKTREE_DENIED = ("git worktree", "git worktree *")
 # No session runs gh: the token is the operator's and reaches every repository it may, and no
 # glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests
@@ -631,6 +639,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    # The same subcommands through `git -C <clone>`, which agents working from a sibling
+    # directory (a package subfolder, another clone's path) need. Scoped to this clone's exact
+    # path, never `git -C *`: a free `-C` would point git at any repository. The `-C` form
+    # carries the same denies as plain git (mirrored below), so it is gated no more and no less
+    # than `git <sub>` (tsk-66zyvc4xnhtv).
+    allow += [f"Bash(git -C {ws} {sub})" for sub in GIT_SUBCOMMANDS]
+    allow += [f"Bash(git -C {ws} {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
@@ -651,6 +666,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         deny += [f"Edit(/{ctx.skill}/**)"]
     deny += [f"Bash({rule})" for rule in
              (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
+    # The same git escapes through `git -C <clone>` (the allow forms above), mirrored so a deny
+    # wins over the `git -C <clone> <sub> *` allow: every git deny begins `git `, replaced here by
+    # `git -C <clone> ` (tsk-66zyvc4xnhtv).
+    deny += [f"Bash(git -C {ws} {rule[len('git '):]})" for rule in
+             (*GIT_DENIED, *GIT_WORKTREE_DENIED)]  # fmt: skip
     deny += list(CLAUDE_WORKTREE_DENIED)  # every placement, with or without the sandbox
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
@@ -823,12 +843,17 @@ def lead_record(ctx: Context) -> str:
 
 
 def _sandbox_prompt(ctx: Context) -> str:
-    """What the start prompt adds: under the harness's sandbox the git commands that fail, and
-    for Claude Code that `maity` runs alone; with the grant's pull requests, `maity gh`."""
+    """What the start prompt adds. Claude Code's `dontAsk` allowlist is set for every placement
+    (claude_settings), sandbox or not, so a claude-code session always gets the command-phrasing
+    guidance; the git-config notice and the `maity`-alone hint are only about the sandbox (the
+    unwritable `.git/config`, the plaincall hook); with the grant's pull requests, `maity gh`."""
     pulls = PULL_REQUEST_PROMPT if pull_requests_record(ctx) else ""
+    is_claude = ctx.harness.id == "claude-code"
+    command = CLAUDE_COMMAND_PROMPT if is_claude else ""
     if not writes_denied(ctx):
-        return pulls
-    return GIT_PROMPT + (CLAUDE_MAITY_PROMPT if ctx.harness.id == "claude-code" else "") + pulls
+        return command + pulls
+    maity = CLAUDE_MAITY_PROMPT if is_claude else ""
+    return GIT_PROMPT + maity + command + pulls
 
 
 def hide_placeholders(ctx: Context) -> None:

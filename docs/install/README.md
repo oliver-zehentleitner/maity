@@ -671,8 +671,10 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
 1. **Mail first.** Set `MAITY_MAIL_SIGNING_KEY` and the SMTP server (host and
    sender at least), then send a test mail from *Mail settings* in the admin area.
    Without complete, enabled mail the hub refuses to open registration, and a
-   mode set in the environment stays closed in effect, with a warning in the
-   log.
+   mode set in the environment stays closed in effect. Nothing is logged for
+   it: `GET /api/v1/admin/settings/registration` shows `effective_mode`
+   `closed` with what is `missing`, and a registration is answered 403 with
+   the reason `registration_closed`.
 2. **The legal pages.** Write the imprint, privacy notice and terms as instance
    admin, before anyone registers. They live in the database, not in the
    repository. The registration form asks for the terms once a `terms` page
@@ -726,7 +728,7 @@ by hand (`TRUNCATE`, say) stays after it runs again. Each URL names its role:
   It hands everything back to `maity_owner` and grants `maity_app` its rows;
   for a dump that already names `maity_owner` it changes nothing, and with
   `after_restore` it does nothing where the roles were never set up. The k3s
-  restore block below does this itself. Into a new PostgreSQL: run the script
+  restore block above ([k3s](#kubernetes-on-a-single-small-instance-k3s)) does this itself. Into a new PostgreSQL: run the script
   with the passwords first (the roles must exist for a dump that names
   them), restore as the superuser, then run it again as above.
   `deploy/scripts/test-postgres-roles.sh` runs these cases on a real

@@ -50,7 +50,7 @@ Pause it in the **Agents** view: it hears about it at once and takes no new work
 
 ## Is my project public?
 
-A new project is public unless you tick **Private** when you create it, or the hub can't see that its repository is public. In an organisation you don't own, it starts private. A public project shows its overview, board, members and organisation to anyone; its inbox, chats and messages stay private ([Open, and public unless you choose otherwise](how/what-we-deliver.md#open-and-public-unless-you-choose-otherwise)).
+Only where the hub's operator has turned public pages on (`MAITY_PUBLIC_PAGES`, off by default); until then no project is public. There, a new project is public unless you tick **Private** when you create it, or the hub can't see that its repository is public. In an organisation you don't own, it starts private. A public project shows its overview, board, members, organisation and Why to anyone (Why with counts, family names and the titles of what needs attention, where those are readable); its inbox, chats and messages stay private ([Open, and public unless you choose otherwise](how/what-we-deliver.md#open-and-public-unless-you-choose-otherwise)).
 
 ## What is Keep the Why, and do I have to use it?
 
@@ -62,4 +62,4 @@ Yes. Maity is open source under the MIT licence, and the same code runs on a lap
 
 ## Where do I ask a question?
 
-On [Discord](https://discord.gg/VRWUe7zKzp), where the people who build Maity answer questions and talk about it. A bug goes to the [issues](https://github.com/oliver-zehentleitner/maity/issues) on GitHub. The small line at the end of every page of the dashboard and the hub's own pages links both: **Found a bug?** to the issues and **Chat with us on Discord** to the server. On a phone, up to 600 pixels wide, the line shows only Maity and the year, so the two links are not there; use the addresses above.
+On [Discord](https://discord.gg/VRWUe7zKzp), where the people who build Maity answer questions and talk about it. A bug goes to the [issues](https://github.com/oliver-zehentleitner/maity/issues) on GitHub. The small line at the end of the dashboard's pages links both: **Found a bug?** to the issues and **Chat with us on Discord** to the server. Pages in the site's frame (the start page, **Explore**, the legal pages, the signed-out views and the pages a mail link opens) show the site footer instead. On a phone, up to 600 pixels wide, the line shows only Maity and the year, so the two links are not there; use the addresses above.
