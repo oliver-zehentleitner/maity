@@ -25,7 +25,9 @@
   and no answer change none, but leave the link serving nothing once its last success is
   10 minutes old. A failed check sets the new link status `not_admin`: the link serves
   nothing and is re-checked on `GET /me/forge` and on the source choice, so a restored
-  role restores it, and the linking human gets the account record change `not_admin` as
+  role restores it; a `suspended` link that the forge unsuspends comes back only through
+  the same owner check, never on a successful mint alone. The linking human gets the
+  account record change `not_admin` as
   a `security` item (`Forge access stopped: no longer an owner of <account login>`). A
   link that serves nothing shows no repositories on `GET /me/forge`, which within the
   window makes no owner-check call. One reason for every link that serves nothing: other
@@ -34,7 +36,8 @@
   confirmed the project the specific reason (the new `installation_not_admin` among
   them). One human holds an installation's link at a time, but another owner's link may
   replace it: a link is checked again right before another owner's link replaces it,
-  `active` or `not_admin`, at once, the one exception to the 10-minute cadence, since
+  `active`, `not_admin` or `suspended`, at once, the one exception to the 10-minute
+  cadence (a `removed` link is replaced without a check), since
   only a human who has passed the owner check for that organisation can set it off;
   only a definite answer that its human is
   no active owner lets the replacement go ahead (the replaced human gets `unlinked`), a
