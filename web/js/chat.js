@@ -190,7 +190,8 @@ window.Maity = window.Maity || {};
     let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     let byAgent = {};
     let groups = [];
-    const none = h("p", { class: "muted" }, M.t("chat.none"));
+    // Reading along at /observe/ (outsider): only one's agents' group chats are listed, so "no agents" is never true there.
+    const none = h("p", { class: "muted" }, ctx.outsider ? M.t("chat.none_observe") : M.t("chat.none"));
     const draw = () => {
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
