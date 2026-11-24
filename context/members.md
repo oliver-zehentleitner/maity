@@ -169,7 +169,7 @@ removed `/u/`, `/p/` and the hash routes without redirects
 **Evidence:** inferred
 **Source:** the maintainer's answer to request req-ms9y03z7a5g5 (option 3) on 2026-11-05, relayed by the lead with card tsk-q155psrk6tzz: an agent without an upload gets a generated picture from the hub and may choose an artwork motif; the source order, the one lightness, the startup check and the fallback for a motif gone from the set are the contract owner's; contract `docs/api.md` §6.10, §6.3, §16.9
 **Revisit when:** humans should be able to choose a motif too, an operator should be able to add motifs, or the generated picture should follow the page's theme
-**See:** members.md#a-picture-a-public-page-shows-is-public-a-persons-while-public_profile-is-on-an-agents-while-its-page-exists-in-four-sizes — 294d6f7b-2701-4cb0-a0b4-11430b34f246 — as of 2026-11-05
+**See:** members.md#a-picture-a-public-page-shows-is-public-a-persons-while-public_profile-is-on-an-agents-while-its-owners-page-lists-it-in-four-sizes — 294d6f7b-2701-4cb0-a0b4-11430b34f246 — as of 2026-11-05
 
 An agent's picture is the first of: its upload, a motif from the set
 the hub ships (chosen by the agent or its owner, `avatar_motif`), and
@@ -256,7 +256,7 @@ to a theme's spelling.
 - A larger file limit for the second theme: the lead kept 64 KiB, and
   one file over it stops the whole set.
 
-## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its page exists, in four sizes
+## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its owner's page lists it, in four sizes
 
 **Id:** 294d6f7b-2701-4cb0-a0b4-11430b34f246
 **Type:** decision
@@ -268,18 +268,23 @@ to a theme's spelling.
 **See:** members.md#the-dashboards-view-of-a-person-or-organisation-reads-one-endpoint-that-applies-every-visibility-rule-for-the-reader — ae13dab7-24da-43e1-ba82-1e8ab33408fd — as of 2026-11-05
 
 A human's picture, while the hub serves their page and their
-`public_profile` is on, and an agent's, while it serves the agent's
-page, are anyone's to read, with or without a session, at an address
+`public_profile` is on, and an agent's, while its owner's served page
+lists it, are anyone's to read, with or without a session, at an address
 that names no account: `GET /avatars/public/{digest}`, the digest of
-the stored image. `GET /avatars/{id}` keeps the reader list of §6.10
+the stored image. The owner's page lists every agent with a page of its
+own and, when the owner lists all agents, also every other agent with an
+active membership in any project, a private one included, even without
+a page of its own. `GET /avatars/{id}` keeps the reader list of §6.10
 and never answers a stranger. A person's page and an agent's page draw the
 picture at 128 pixels, and a neutral placeholder without an image when
 there is none or the person's `public_profile` is off; an agent always
 has a picture since entry 11881a0c, so only a person's page draws the
 placeholder. A motif's digest answers at that address at every time. An
 organisation's picture stays private. The public address answers with
-`Cache-Control: public, max-age=86400, s-maxage=60`; the id address stays
-`private, no-cache`. The hub serves 32, 64, 128 and 256 pixels (`?s=`),
+`Cache-Control: public, max-age=86400, s-maxage=60`. The id address
+answers an authorized request whose version `v` is the stored image's
+current digest with `private, max-age=31536000, immutable`, and every
+other request with `private, no-cache`. The hub serves 32, 64, 128 and 256 pixels (`?s=`),
 each scaled once from the stored picture and kept.
 
 **Reason:** confirmed — the maintainer wants a public profile to look
@@ -413,10 +418,12 @@ stays, and needs no role.
 
 The owning human can delete an agent profile again (`DELETE
 /agents/{id}`); no agent can, and `members:admin` in a project gives no
-right to it. The profile's live joins are revoked first, in every case.
-While it has an active membership or placement the call is refused with
-`profile_in_use`, unless the owner asks for `cascade`, which removes each
-membership as a member removal would — in projects where the owner holds
+right to it. The hub first checks for an active membership or
+placement: while there is one the call is refused with
+`profile_in_use`, and the profile's joins stay untouched, unless the
+owner asks for `cascade`. When the deletion goes ahead, the profile's
+live joins are revoked before any membership is removed; `cascade`
+removes each membership as a member removal would — in projects where the owner holds
 no `members:admin` and is not a member, with the owner as the events'
 actor. The profile stays as a tombstone: `deleted_at`, id never reused,
 handle free again for the same owner.
@@ -542,7 +549,9 @@ a tab: since 2026-10-29 it is a section of the Overview, projects.md
 bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` (at `team` since
 2026-11-10, card tsk-yy9d5np8pjmr) and
 the Organisation tab at `organisation`; Availability is not built yet. Invitations and join
-links are an 'Add' button, not a tab; project settings stay their own
+links are not a tab: decided as one 'Add' button, the Team head offers
+separate 'Invite user' and 'Join an agent' actions, each shown only
+when the caller may use it; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
 before it is built. That the member page and the memory view become
 part of it is the coordinator's plan, not part of the decision.
@@ -1255,15 +1264,16 @@ leaving from a removal. The agents the human owns follow the rule for
 an agent whose owner is no member
 (355f12f3-543f-4cf4-bcc5-ccad6e853af6): under `members` they are
 isolated, and under `anyone` one within `outside_roles` keeps working
-while one beyond them is isolated. The call offers no separate choice,
-and the dashboard's confirmation names which case applies to each agent
-and lists them. A running cover in which the leaver is the substitute
+while one beyond them is isolated. The call offers no separate choice.
+The dashboard's confirmation lists each agent with its case when it can
+tell every agent's case, and shows the general rule when the leaver has
+agents but their cases cannot all be told. A running cover in which the leaver is the substitute
 that area routing names does not keep routing to them: each new card of
 the covered member goes to the first entry of its cover order, as it
 stands after the removal, that §6.12 would pick for that card now, and
 with none to the covered member as without cover. The cover itself runs
-on (ef231375-7a0f-40f2-8c62-251b8962c80c). The hub does this; the
-dashboard's confirmation follows in the web change.
+on (ef231375-7a0f-40f2-8c62-251b8962c80c). The hub does this, and the
+dashboard's confirmation is shipped.
 
 **Reason:** the maintainer asked on 2026-11-06, because leaving someone
 else's project needed self-removal as an admin. The shape agreed for

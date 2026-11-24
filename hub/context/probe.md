@@ -8,16 +8,19 @@
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-21 (the probe slice)
 **See:** https://github.com/oliver-zehentleitner/maity — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-21
-**Revisit when:** a second replica runs (each would sweep the same projects), or one sweep takes longer than its interval
+**Revisit when:** one sweep takes longer than its interval, or the claim that holds a round to one pod (`worker_runs.claim`) stops covering the sweep
 
 A report is stored and answered without touching the forge; its card id
 then goes onto the queue of one daemon thread per hub process, which reads
-the branch and the pull request and fills `report.observed`. The same
-thread sweeps every five minutes: reports without an observation on open
-cards of any age and on cards closed within a day, the open release of
+the branch and the pull request and fills `report.observed`. Every five
+minutes, once across the pods (`worker_runs.claim`), the same thread
+sweeps: first the repository visibility of every project with a public
+page, then reports without an observation on open cards of any age and on
+cards closed within a day, then the open release and the card links of
 every observable project, then the 15 reports with the oldest observation
-whose pull request was last seen open. A round ends at the first read the
-forge does not answer, and between two reads when the hub stops. A project
+whose pull request was last seen open. Apart from the visibility reads,
+which never end the round, a round ends at the first read the forge does
+not answer, and between two reads when the hub stops. A project
 no source covers (`NotCoveredError`) is no such read: only its own work is
 left out, it logs its id, and its reports don't count against the 15. Ending
 the round there stopped every round from reaching the re-reads, in production
@@ -30,8 +33,10 @@ holds no budget. Every GraphQL read of the hub names its repository in its
 `owner` and `name` variables; one that does not is refused, so no read skips
 the check. Forge reads
 happen with no database connection held; each result is written in a short
-transaction of its own under the project lock. The thread starts only when
-`MAITY_FORGE_GITHUB_TOKEN` is set.
+transaction of its own under the project lock. The thread starts when the
+hub has any forge source: `MAITY_FORGE_GITHUB_TOKEN`, the instance's
+GitHub App (`MAITY_FORGE_GITHUB_APP_*`), or `MAITY_SECRET_KEY`, which
+owners' sealed tokens need.
 
 **Reason:** the forge is slow and fallible, and a write must never wait
 on it (docs/api.md §6.6). A thread with blocking `urllib` keeps the

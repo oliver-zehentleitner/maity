@@ -336,7 +336,13 @@ Why it is laid out this way, and what was rejected:
 
 ## Signing
 
-Every request is signed as `docs/api.md` §2.2 specifies. The headers are
+Every call made with the session credential is signed as `docs/api.md`
+§2.2 specifies. A few calls are made without one and go out unsigned:
+the join's code exchange, made before there is a credential to sign
+with; `maity help`, a public page; the read of the join page outside a
+clone, for the handle the state directory is named after; the runner's
+pairing exchange; and the runner's check of the hub's `/health`. The
+headers are
 `Authorization: Maity-HMAC <credential id>`, `Maity-Timestamp`,
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
