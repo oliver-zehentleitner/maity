@@ -1353,7 +1353,10 @@ PYTHON_TOOL_REFUSED = (
     "from the clone's root, with <dir> one of this repository's tool directories ({dirs}): "
     "python3 by that bare name, the script as the next word (no interpreter option), no `..`, "
     "no subdirectory, no link, and nothing piped, chained, redirected, sent to the background "
-    "or substituted. Arguments are plain words or single-quoted text. ({why})"
+    "or substituted. Arguments are plain words or single-quoted text. A line that names a tool "
+    "directory right after a python3 word counts as such a call even when it is no call, quoted "
+    "text included: put such text in a file (`git commit -F`), or name the directory elsewhere "
+    "on the line (`git grep python3 -- tools`). ({why})"
 )
 
 
