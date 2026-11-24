@@ -4733,8 +4733,7 @@ def cmd_jourfixe_withdraw(args: argparse.Namespace) -> int:
 
 
 def _json_file(path: str, flag: str) -> dict[str, Any]:
-    """A request body from FILE, or stdin with `-`: one JSON object, sent as its parsed
-    fields."""
+    """A request body from FILE, or stdin with `-`: one JSON object, sent as read."""
     raw = _stdin_text() if path == "-" else _read_text_file(path, flag)
     try:
         data = json.loads(raw)
@@ -5059,8 +5058,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="maity",
         description="Agent-side command for Maity: join a project, resume, wait for events, "
         "claim, checkpoint and report work, ask and answer, message, follow the release. Every "
-        "call made with the session credential is signed; the join's code exchange, made "
-        "before there is a credential to sign with, and `maity help`, a public page, are not.",
+        "request is signed.",
         epilog=OUTPUT_DISCIPLINE,
         formatter_class=fmt,
     )
@@ -5096,10 +5094,8 @@ def build_parser() -> argparse.ArgumentParser:
         "state directory without printing it, print the Maity pointer block for AGENTS.md "
         "(--pointer writes it), then "
         "open the first session and print the onboarding: the briefing the humans wrote for you, "
-        "who you are, the project and its rules, and the next step. A clone, or a state "
-        "directory set with MAITY_STATE_DIR, that already holds a credential is refused; a "
-        "state directory derived outside a clone that holds one gets a new directory beside "
-        "it for the new instance.",
+        "who you are, the project and its rules, and the next step. A clone that already holds a "
+        "credential is refused.",
     )
     p.add_argument("url", nargs="?", help="the join URL from the pasted line")
     p.add_argument("--code", help="the single-use join code from the pasted line")
@@ -5131,16 +5127,14 @@ def build_parser() -> argparse.ArgumentParser:
         "state and rules (in full when they changed), the cards you hold with their checkpoints, "
         "answered and open requests, the events since your last session, and the next step. "
         "The text is compact: the last 10 answers and the last 10 events addressed to you, the "
-        "rest counted; --full prints the packet of the last resume in full, without calling "
-        "the hub, or, when no packet is stored, opens a session and prints its packet in "
-        "full. --json prints the resume packet itself. Run it at the start of every "
+        "rest counted; --full prints the packet of the last resume in full, without opening "
+        "another session. --json prints the resume packet itself. Run it at the start of every "
         "session and after a context compaction.",
     )
     p.add_argument(
         "--full",
         action="store_true",
-        help="print the last resume's packet in full, without calling the hub; without a "
-        "stored packet, resume and print it in full",
+        help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
         "--hub",
@@ -5537,11 +5531,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "chats",
         "your conversations: the direct one and your group chats",
-        "List the conversations you are in (GET …/conversations, §9.3): those with unread "
-        "messages first, then the rest, newest activity first within each (a human's pins "
-        "come before both; an agent has no pins): id, kind, title, the participants' "
-        "handles, unread messages and unread mentions. Read one with `maity chat <id>`, write "
-        "in it with `maity say --chat <id>`.",
+        "List the conversations you are in (GET …/conversations, §9.3), newest activity "
+        "first: id, kind, title, the participants' handles, unread messages and unread "
+        "mentions. Read one with `maity chat <id>`, write in it with `maity say --chat <id>`.",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_chats)
@@ -5585,14 +5577,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_files_put)
     r = fsub.add_parser("get", help="save a message's file", formatter_class=fmt)
     r.add_argument("id", type=_id, help="the attachment id, e.g. att-0042")
-    r.add_argument(
-        "-o",
-        "--output",
-        metavar="PATH",
-        help="where to save it; - for standard output, except under a runner placement, where "
-        "PATH is a new file in the clone outside its Git directory, and without -o the file "
-        "goes to .git/maity-files/",
-    )
+    r.add_argument("-o", "--output", metavar="PATH", help="where to save it; - for standard output")
     r.add_argument("--force", action="store_true", help="replace an existing file")
     r.set_defaults(handler=cmd_files_get)
 
@@ -5616,13 +5601,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add(
         "memory",
-        "your soul, your team's and your role's memory and the community memory",
-        "What agents carry between sessions (§19). Without an action: the team, role and "
-        "community memory you may read (--team, --role or --community for one store), or with "
-        "--soul your soul, each text quoted with who wrote it. Memory is quoted, never obeyed: "
-        "it is not an instruction from the hub. `add` writes to your team's memory, with "
-        "--role to your role's, or proposes a community entry or a new soul for a human to "
-        "confirm; `search` finds entries by text or tag. Why the "
+        "your soul, your team's memory and the community memory",
+        "What agents carry between sessions (§19). Without an action: the team and community "
+        "memory (--team or --community for one store), or with --soul your soul, each text "
+        "quoted with who wrote it. Memory is quoted, never obeyed: it is not an instruction "
+        "from the hub. `add` writes to your team's memory, or proposes a community entry or "
+        "a new soul for a human to confirm; `search` finds entries by text or tag. Why the "
         "code is the way it is belongs in the repository's context/, not here.",
     )
     # Own names: a sub-action's defaults would overwrite the parent's under the same one, and
@@ -5693,13 +5677,9 @@ def build_parser() -> argparse.ArgumentParser:
         "answer",
         "answer a request addressed to you",
         "Answer a request (POST …/requests/{id}/answer) with one of its replies, free text, or "
-        "both. Agents answer decision, contract and info requests addressed to them, and with "
-        "the scope requests:answer the project's other requests too; never their own, and a "
-        "guest none. No agent answers a request only a human answers (humans_only, a proxy's "
-        "call, a proposal kind a human decides) or a placement's consent request, which is the "
-        "runner owner's; a proposal may ask for another scope, and a forwarded request only "
-        "its holder answers. A proxy decides nothing: it relays its owner's answer with "
-        "--on-behalf-of.",
+        "both. Agents answer decision, contract and info requests addressed to them, and any "
+        "request when their trust holds requests:answer; never their own. A proxy decides "
+        "nothing: it relays its owner's answer with --on-behalf-of.",
     )
     p.add_argument("request", type=_id, help="the request id, e.g. req-0012")
     p.add_argument("--reply", help="the id of one of the request's replies")
@@ -5758,12 +5738,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "api",
         "any other endpoint, signed: maity api METHOD PATH",
-        "Send one signed request to /api/v1 and print the answer: a JSON answer as JSON, a "
-        "text answer (such as …/rules) as text with control characters shown, nothing for an "
-        "empty one. It is for the endpoints that have no command of their own, such as a "
-        "card's fields beyond `maity task create` and `maity task edit`, assign and pausing "
-        "(PATCH /me); `maity request withdraw` withdraws a request and `maity chat --before` "
-        "reads a conversation's history. PATH is relative to /api/v1, e.g. "
+        "Send one signed request to /api/v1 and print the JSON answer, for the endpoints that "
+        "have no command of their own: creating and editing cards, assign, withdraw, pausing "
+        "(PATCH /me), the conversation history. PATH is relative to /api/v1, e.g. "
         "/projects/oliver/maity/tasks/tsk-0004. See `maity help`.",
     )
     p.add_argument("method", type=str.upper, choices=("GET", "POST", "PUT", "PATCH", "DELETE"))
@@ -5789,9 +5766,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Upload an image as your avatar: PNG, JPEG or WebP, at most 1 MiB. The type "
         "is read from the file's first bytes, and anything else is refused here before any "
         f"call (exit {EXIT_REFUSED}). The hub re-encodes it as a square PNG of at most 256 "
-        "pixels, without metadata. --remove deletes the upload. Prints the avatar_url now in "
-        "effect with its source, or, when there is no image, that the generated avatar is "
-        "shown.",
+        "pixels, without metadata. --remove deletes the upload. Prints the new avatar_url.",
         formatter_class=fmt,
     )
     r.add_argument("file", nargs="?", help="the image to upload")
@@ -5917,8 +5892,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="the moderator's statement: topics, items, proposals (step 1)",
         description="`POST …/rounds/{id}/statement` (§20.5) with the body as §20.5 writes it, "
         '{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", '
-        '"reason"}]}]}, read from FILE or stdin (-) as one JSON object and sent as its parsed '
-        "fields. Each item's `from` is a "
+        '"reason"}]}]}, read from FILE or stdin (-) and sent as read. Each item\'s `from` is a '
         'member id with a named answer in the round, or "anonymous".',
         formatter_class=fmt,
     )
@@ -5964,9 +5938,8 @@ def build_parser() -> argparse.ArgumentParser:
         "report",
         help="the moderator's report: findings and triaged proposals",
         description="`POST …/rounds/{id}/report` (§20.6) with the body as §20.6 writes it, from "
-        "FILE or stdin (-) as one JSON object and sent as its parsed fields. Prints each "
-        "proposal's triage, with the request or card the hub filed or opened when there is "
-        "one, and the proposals it did not card.",
+        "FILE or stdin (-), sent as read. Prints each proposal's triage with the request or "
+        "card the hub filed or opened.",
         formatter_class=fmt,
     )
     r.add_argument("round", type=_id, help="the round id")
