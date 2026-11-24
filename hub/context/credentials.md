@@ -119,7 +119,7 @@ older rows: it is explicit, runs again safely, and tsk-ebc2fhdxttm7 asked for th
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-2fxk4frga487 (the follow-up the review of #2040 asked for, A1678) and its PR #2046, 2026-11-20; the rejected alternatives from the review of #2046 (A1691)
-**Revisit when:** `new_id` changes its form (prefix, length or alphabet), or a credential id comes from anything other than `ids.new_id`
+**Revisit when:** `new_id` changes its form (prefix, length or alphabet), or a credential id comes from anything other than `ids.new_id` (both the lookup by `caller._credential` and, since #2172, leak revocation through `auth/leaks.lookups` rest on `has_shape`)
 
 `caller._credential`, which the bearer path, the signed path and the large-body precheck
 share, refuses an id that `ids.new_id` could not have made before any query, with the
@@ -137,8 +137,8 @@ the bearer parser (`credentials.parse`) checks only the value's alphabet. Nothin
 issued can fail the check, so it refuses only strings that name no credential:
 
 - Every credential id comes from `new_id`, in the only three inserts of a credential row:
-  `routes/joins.py:1186` (a join's exchange), `routes/runners.py:507` (a runner's pairing) and
-  `loadtest.py:178` (the load test's seed). No migration writes one.
+  `routes/joins.py:1595` (a join's exchange), `routes/runners.py:507` (a runner's pairing) and
+  `loadtest.py:181` (the load test's seed). No migration writes one.
 - `new_id`'s form has not changed since it was written: the alphabet, the length and the `crd`
   prefix since `ids.py` came with the V1 data model (9b555ddc), `rcrd` since the first runner
   slice (fa2ad803); the change that added the gate only named the length `RANDOM_LENGTH`.
@@ -161,6 +161,16 @@ and has to join or pair again.
 - The same gate in `auth/leaks.revoke_leaked`: it revokes only a row whose secret verifies, and
   a malformed id matches no row (byte-for-byte comparison, above); its lookup is one batched
   query over the ids found, capped at `MAX_IDS`, not a step of authentication.
+
+**Amended 2026-11-24 (tsk-ehtws6xrxdtf, #2172):** the last rejected alternative is now taken,
+for a reason this entry did not weigh: cost, not correctness. `auth/leaks.lookups` keeps only the
+ids `has_shape` accepts for an agent's or a runner's credential, and `revoke_leaked` looks up only
+those, so a request full of shapeless ids sends no query, and such ids no longer take the
+`MAX_IDS` places a real credential needs; the forge path (`routes/board._refuse_credentials`)
+opens no transaction then. What that alternative said stays true: a malformed id matches no row,
+so revocation is unchanged, and the refusal (400 `credential_in_payload`) never depended on the
+lookup. The **Constraint** above now holds for leak revocation too: a later `new_id` form that
+`has_shape` no longer accepted would also leave a leaked older credential unrevoked.
 
 ## The query's credential filter answers before every other answer of the middleware
 

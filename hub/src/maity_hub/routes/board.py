@@ -17,7 +17,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import access, cards, clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, leaks
 from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
@@ -753,8 +753,9 @@ def _refuse_credentials(request: Request, issue: dict[str, Any]) -> None:
     found = credentials.find_all(text.encode())
     if not found:
         return
-    with transaction(engine_of(request)) as conn:
-        revoke_leaked(conn, found)
+    if leaks.lookups(found):  # only an id the hub could have made is worth the database
+        with transaction(engine_of(request)) as conn:
+            revoke_leaked(conn, found)
     raise ApiError(
         400,
         "credential_in_payload",
