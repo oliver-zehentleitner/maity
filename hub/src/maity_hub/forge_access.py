@@ -117,8 +117,12 @@ class ForgeAccess:
         except forge.ForgeUnavailableError:
             # The forge did not answer the choice: a reader without a token, whose reads
             # fail as unavailable (or read a public repository anonymously); kept for
-            # nothing, so the next read chooses again.
-            return forge.Forge(None, project_id=project_id)
+            # nothing, so the next read chooses again. Where the grants hold a link on a forge
+            # organisation it carries that link's "no answer", so that §11.3 does not answer an
+            # export such a link may have read from its cache meanwhile (review A2545 #5).
+            organisation = any(link.organisation for link in facts.links)
+            unanswered = errors.ORG_UNANSWERED if organisation else None
+            return forge.Forge(None, project_id=project_id, owner_reason=unanswered)
         with self._lock:
             entry = (time.monotonic(), key, chosen, until)
             bounded.put(self._chosen, project_id, entry, CHOSEN_KEPT)

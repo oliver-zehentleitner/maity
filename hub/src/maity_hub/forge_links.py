@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
-from sqlalchemy import Connection, Engine, delete, insert, select, update
+from sqlalchemy import Connection, Engine, delete, insert, or_, select, update
 
 from maity_hub import clock, forge, github_app, wakeups, write_guard
 from maity_hub import tables as t
@@ -293,6 +293,22 @@ def _drop(conn: Connection, existing: Link) -> None:
     """The existing link goes, and its human gets the `unlinked` record."""
     conn.execute(delete(t.forge_link).where(t.forge_link.c.id == existing.id))
     records.forge_access_changed(conn, existing.human_id, "app", "unlinked", existing.account_login)
+    _forget_reads_of(conn, existing.human_id)
+
+
+def _forget_reads_of(conn: Connection, human_id: str) -> None:
+    """A link on a forge organisation that goes: the Keep the Why reads of every project whose
+    grants may have been that human's, here and on every replica at commit
+    (`wakeups.forget_repository_everywhere`). Without the link the source choice refuses with
+    `no_grant`, which §11.3 does not ask about, so an export the link read must not stay in the
+    cache to be answered (review A2545 #5). More projects than the link served may lose their
+    reads: that costs one read each, nothing else."""
+    p = t.project.c
+    projects = conn.execute(
+        select(p.id).where(or_(p.repository_confirmed_by == human_id, p.owner_id == human_id))
+    ).scalars()
+    for project_id in list(projects):
+        wakeups.forget_repository_everywhere(conn, project_id)
 
 
 def unlink(conn: Connection, app: GitHubApp | None, human_id: str, link_id: str) -> bool:
@@ -306,6 +322,8 @@ def unlink(conn: Connection, app: GitHubApp | None, human_id: str, link_id: str)
         return False
     conn.execute(delete(t.forge_link).where(t.forge_link.c.id == link_id))
     records.forge_access_changed(conn, human_id, "app", "unlinked", row.account_login)
+    if row.account_type == ORGANISATION:
+        _forget_reads_of(conn, human_id)
     if app is not None:
         wakeups.forget_token_everywhere(conn, app, row.installation_id)
     return True
