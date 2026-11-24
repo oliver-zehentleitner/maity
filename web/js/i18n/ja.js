@@ -1342,6 +1342,8 @@ window.MAITY_I18N["ja"] = {
   },
   "forge.link.selected": "選択したリポジトリ",
   "forge.link.what": "GitHub App のリンク",
+  "forge.public_offer": "リポジトリは確認済みです。プロジェクトの公開ページはまだオフです。今すぐオンにするか、後で下の「公開ページ」でオンにしてください。",
+  "forge.public_offer.button": "公開ページを今すぐオンにする",
   "forge.settings_hint": "アクセス権は {link} で設定します。",
   "forge.settings_link": "フォージアクセス",
   "forge.status.active": "有効",
