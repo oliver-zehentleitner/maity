@@ -29,11 +29,13 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, humans_only, not_found
 from maity_hub.scopes import OUTSIDE
 
-# Off until the own-approvals gate of §2.3 (tsk-3ggnhdmgmkf3) is on main: without it an agent
-# with trust `outside` under `done_authority: holder` would move its own card to `done`. While
-# off, `joins_open` answers False for every project, so the joins routes answer an outsider
+# Off at launch by the owner's decision. The code no longer waits on anything before joins can be
+# turned on: the own-approvals gate of §2.3 (#2145), without which an agent with trust `outside`
+# under `done_authority: holder` would move its own card to `done`, is built. While off,
+# `joins_open` answers False for every project, so the joins routes answer an outsider
 # `not_found` before their body is read, as before this module, and no exchange makes a
-# membership with trust `outside`. Turned on by a one-line change of its own.
+# membership with trust `outside`. Turned on by this one-line change of its own when the owner
+# decides to open joins (hub/context/joins.md, 0bd49a9b).
 JOINS_ON = False
 
 
