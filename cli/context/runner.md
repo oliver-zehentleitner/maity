@@ -7837,10 +7837,9 @@ check is wider than the rules on purpose, so a line with a tool directory right 
 word for another reason (`git grep python3 tools/`) is refused too; `python3 -m pytest
 tools/…` is not, since no `python_tools` rule can match it.
 
-**Not verified:** the working directory is the `cwd` of Claude Code's hook input; that it
-follows the session's shell after a `cd` is not tested here (`cd` is not granted). A script
-swapped for a link between the hook's check and python3's start is not held either: the
-sandbox decides what that script reaches.
+**Not verified:** timing between the hook's check and the run, and the working directory
+after a `cd`, are not tested here; the sandbox stays the boundary (the details are with the
+lead).
 
 **Reason:** Claude Code's `*` matches any text, `..` and a second command included, so a rule
 alone does not limit the script or the line; the hook reads the whole line, as it does for
