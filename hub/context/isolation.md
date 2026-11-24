@@ -1,6 +1,6 @@
 # Isolating an agent member
 
-## An isolation is three columns on the membership, checked where the hub authenticates, reads and routes
+## An isolation is columns on the membership, checked where the hub authenticates, reads and routes
 
 **Id:** 996ab6fd-22bf-4720-bcc0-94743dfc60d6
 **Type:** decision
@@ -34,7 +34,8 @@ the isolation finds the project as it was. What changes is read where it matters
 
 **Reason:** the contract says the isolation is the project's lever against another owner's agent and must be
 undone without losing the project's shape; storing it on the membership and reading it at the few points
-that route keeps a lift a three-column update. Deriving the effective seats on read means no stored seat is
+that route keeps a lift an update of the membership's own columns (the three, `isolated_from_seq` and, for a
+hidden window, `isolation_windows`). Deriving the effective seats on read means no stored seat is
 ever rewritten and nothing can drift.
 
 **Rejected alternatives:**
@@ -98,7 +99,7 @@ effects of an isolation is unchanged.
 **Evidence:** inferred
 **Source:** docs/api.md §6.2, §8.2 and #826; the maintainer's decision of 2026-10-31 it records; the card tsk-895q91frvjnw; the implementation (`isolation.lift`, `events.in_window`)
 **Revisit when:** a second reason to keep events from one reader appears, so that the window list would better be a table, or a read path shows events without `readable_by`
-**See:** isolation.md#an-isolation-is-three-columns-on-the-membership-checked-where-the-hub-authenticates-reads-and-routes — 996ab6fd-22bf-4720-bcc0-94743dfc60d6 — as of 2026-10-31
+**See:** isolation.md#an-isolation-is-columns-on-the-membership-checked-where-the-hub-authenticates-reads-and-routes — 996ab6fd-22bf-4720-bcc0-94743dfc60d6 — as of 2026-10-31
 
 `isolation_windows` is a list of `{from_seq, to_seq}` on the membership, both ends included: `from_seq` is the
 seq of the first event the isolation makes (the project's head when it began, plus one; kept in
@@ -140,7 +141,7 @@ was not).
 **Evidence:** inferred
 **Source:** docs/api.md §6.1 `agent_owners`, `outside_roles`, §6.2 "An agent whose owner is no member" (#827); the card tsk-kkgk4cpksrvx from the coordinator, 2026-10-31; the maintainer's decisions recorded in context/members.md (355f12f3, 68b4deba); the implementation of `agent_owners.py`
 **Revisit when:** the offer flow lets owners from outside bring agents (the limits then also bind the joins), or a third place needs "the project reads `members`" (the pass is called from each such place by hand)
-**See:** isolation.md#an-isolation-is-three-columns-on-the-membership-checked-where-the-hub-authenticates-reads-and-routes — 996ab6fd-22bf-4720-bcc0-94743dfc60d6 — as of 2026-10-31
+**See:** isolation.md#an-isolation-is-columns-on-the-membership-checked-where-the-hub-authenticates-reads-and-routes — 996ab6fd-22bf-4720-bcc0-94743dfc60d6 — as of 2026-10-31
 
 `agent_owners.reconcile(conn, project_id)` is the only place that decides which agents go: under `members`
 every active agent whose profile's owner holds no active membership, under `anyone` those of such an owner that
@@ -186,7 +187,7 @@ carry neither `tasks:review` nor `tasks:test`, and the hub never moved a card on
 **Evidence:** confirmed
 **Source:** card tsk-mqzhnmf4bak6; docs/api.md §6.1 `outside_roles`, §6.2 "An agent whose owner is no member" and B.1 of §6.30 as they stood at main 314d5465; the plan and the lead's go, 2026-11-23 (seq 206654); the code at that commit (`policy.OUTSIDE_BASES`, `cards.has_done_authority`, `scopes._granted`)
 **See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-23
-**Revisit when:** the rule that gives an outside owner's agent no done authority by a reviewing or testing role is built (then open those roles in `policy.OUTSIDE_BASES` and drop the contract's "not built yet"), or the dashboard's leave confirmation gets a line for an agent that continues as a coder
+**Revisit when:** it is decided to open the reviewing and testing roles to an outside owner's agent; the rule that gives such an agent no done authority by those roles, which this line first waited for, is built since #2179 (then open those roles in `policy.OUTSIDE_BASES` and drop the contract's "not built yet"), or the dashboard's leave confirmation gets a line for an agent that continues as a coder
 
 The contract closes `blue-team` to an outside owner's agent and opens `reviewer`, `tester`, `red-team`,
 `purple-team` and the project roles on `reviewer` or `tester`, each such role held without done authority. The
@@ -215,8 +216,8 @@ Building through `apply_patch` rather than a direct update keeps one path for a 
 ends (a signature, a bridge, a manager's line) is left behind by the hub's own change.
 
 **Rejected alternatives:**
-- Opening the reviewing and testing roles now with the contract's text: rejected, the done-authority rule is not
-  built and the gap would be live at once (above).
+- Opening the reviewing and testing roles now with the contract's text: rejected, the done-authority rule was not
+  built then (it is since #2179) and the gap would have been live at once (above).
 - Building the done-authority rule in this change: left to its own card, a cross-cutting change to the done
   paths (`has_done_authority`, `sign`, `merged`) that needs its own review; the lead chose the "not built yet"
   mark (seq 206654).

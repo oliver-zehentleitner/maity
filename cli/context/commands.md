@@ -828,7 +828,7 @@ text can have two spaces too, so refusing would block valid messages.
   harness often runs commands with a non-terminal stdin, so plain
   `maity say` calls would hang or read stray input.
 
-## `--review-file` sends the review as parsed JSON and leaves its rules to the hub
+## `--review-file` sends the review as parsed JSON and leaves the rest of its rules to the hub
 
 **Id:** 0870475d-9546-404c-871c-58290f51f954
 **Type:** decision
@@ -849,8 +849,9 @@ cannot both come from standard input, which is read once (1be5edbf).
 **Rejected alternatives:**
 - A flag per field (`--subject`, `--head`, `--cite path:line:quote`): a quote may hold any
   character, colons and quotes included, and a shell argument would mangle it.
-- Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
-  hub's.
+- Checking all of §8.4 in the CLI as well: a second copy of the rules that can only drift from the
+  hub's. The cites at the head, the quote length and the text are checked locally since (the
+  entries below); the other rules stay the hub's.
 
 ## `say --review-file` reads the cites at the head before sending
 

@@ -147,7 +147,7 @@ from being read as what this scan already does.
 announce every missed merge whenever the forge can be read again: that
 is the scan as it stands, and it is what the one-hour bound rules out.
 
-## A missed merge is checked against the hour before the forge is read and again at delivery
+## A missed merge is checked against the hour before the pull request's files are read and again at delivery
 
 **Id:** 111bf1fe-97b6-4a1b-9453-c89e1921108f
 **Type:** decision

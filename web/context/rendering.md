@@ -973,7 +973,7 @@ under `forbidden` it says more. Each code is written out as `M.tOwn("error.<code
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's card tsk-k9j3nxcw9htw, 2026-10-29 (multilingual support comes last, but what saves rework later is done now: a catalog function reading a static file per language, never the database; Intl for dates and numbers; no assembled sentences; a check that flags new strings in views if it can be done without noise; old strings move over view by view); the coordinator's instruction to land the mechanism and the check first, the views in small PRs after, 2026-10-30
-**Revisit when:** a second language is added, the account gets a language and locale of its own, the hub's WORDS move to per-language files, or the hub adds a role or trust (its sentence gets a key; the neutral one stays only the fallback)
+**Revisit when:** the account gets a language and locale of its own (a second language, which this line also waited for, has come: ten catalogs are named in the language list), the hub's WORDS move to per-language files, or the hub adds a role or trust (its sentence gets a key; the neutral one stays only the fallback)
 
 `js/i18n.js` gives `M.t(key, values)` over `window.MAITY_I18N[lang]`,
 which `js/i18n/<lang>.js` sets; `tools/check.py --write` builds that file

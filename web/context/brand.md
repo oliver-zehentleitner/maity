@@ -7,7 +7,7 @@
 **Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-23, delivered by the design agent; web/brand/BRAND.md
-**Revisit when:** the mark, the loader or the shape language changes, or the fonts proposed in BRAND.md are bundled
+**Revisit when:** the mark, the loader or the shape language changes (the fonts proposed in BRAND.md, which this line also waited for, are bundled since #1492: f39935ad below)
 
 Maity's mark is direction C, "the round": six seats in a circle, five
 humans and one agent (the blue rounded square) taking its seat at the

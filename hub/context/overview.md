@@ -10,7 +10,7 @@ Why `GET /projects/{owner}/{slug}/overview` (`docs/api.md` §6.11,
 **Status:** active
 **Evidence:** confirmed
 **Source:** the contract PR #189 (2026-10-22), `docs/api.md` §6.11 ("Why one endpoint, and only for these three", approved by the maintainer); the implementation of the card (#590) and its review (seq 11091, the deleted reporter)
-**Revisit when:** the overview needs a part that has a cheap source elsewhere, the request list's visibility rule moves out of `_filtered`, or a project holds so many reported cards that `latest_reports`, which reads them all and sorts them in Python, gets slow
+**Revisit when:** the overview needs a part that has a cheap source elsewhere, the request list's visibility rule moves out of `listed_to_all`, `relayed` and their SQL twins in `request_sql` (`plain`, `listed_to_all`, `addressed`), or a project holds so many reported cards that `latest_reports`, where the database sorts and limits the ids and only those cards are read, gets slow
 
 The endpoint returns the board's column counts, the open requests as
 counts (never a title), and the latest report per card, taken from the

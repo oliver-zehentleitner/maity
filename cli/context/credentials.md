@@ -185,7 +185,7 @@ WSL has all of them, so a port would build for a case nobody has asked for.
 - Porting it as a second stage: replacing `tmux` and the user separation is a
   second implementation, not a port.
 
-## The full runner stays off Windows; local mode runs there natively
+## The full runner stays off Windows; local mode, once built, is to run there natively
 
 **Id:** 116c5330-8dab-42ed-af06-74b6f02cee89
 **Type:** decision
@@ -194,7 +194,7 @@ WSL has all of them, so a port would build for a case nobody has asked for.
 **Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the review of #1294 by dzse; `docs/api.md` §15.13
 **See:** credentials.md — c7109a1d-4f47-40e2-9165-ec01f5f94277 — as of 2026-11-03
 **See:** runner.md — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-03
-**Supersedes:** c7109a1d-4f47-40e2-9165-ec01f5f94277 in part (`maity runner <harness>` in local mode is no longer refused on Windows)
+**Supersedes:** c7109a1d-4f47-40e2-9165-ec01f5f94277 in part, once local mode is built (`maity runner <harness>` in local mode is then not to be refused on Windows; today every `maity runner` command still is)
 **Revisit when:** the deny rules or a harness's sandbox are verified on Windows, or someone needs the full runner there
 
 The full runner's actions (`pair`, `serve`, `check`, …) keep refusing on
@@ -216,8 +216,8 @@ already sets.
 
 **Rejected alternatives:**
 - Changing c7109a1d in place: its decision still holds for the full
-  runner, and a reader of the old text would miss that local mode is the
-  exception.
+  runner, and a reader of the old text would miss that local mode is to
+  be the exception.
 - Local mode through WSL as well: it would refuse the people on Windows
   who asked for one agent on their own machine without a runner.
 

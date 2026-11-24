@@ -462,7 +462,7 @@ visible as such.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's go of 2026-11-02 in chat on the lead's proposal, card tsk-g9kybnt9kf6b; the review lead's pre-send script and its false alarms of that day; the lead's answers to the plan (seq 39060); contract `docs/api.md` §8.4 and §6.9
-**Revisit when:** a check of the text refuses real reviews often enough that reviewers work around it, or a review invents content the three forms do not cover often enough to need a fourth
+**Revisit when:** a check of the text refuses real reviews often enough that reviewers work around it, or a review invents content the four forms do not cover often enough to need a fifth
 
 Before a `review_result` is sent, the client checks its text against the
 head in the local clone, as it already checks the cites: a file and line

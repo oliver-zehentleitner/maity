@@ -1273,7 +1273,7 @@ different lines, read as "cannot start".
   this change. The report stays `sandbox_unavailable`, and a code would
   be its own contract card.
 
-## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
+## agy's session settings: no command grants, the sign-in denied, hosts allowed
 
 **Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
 **Type:** decision
@@ -1359,7 +1359,7 @@ Details of the settings §15.3 describes, chosen in the code:
 **Superseded by:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
 **Evidence:** inferred
 **Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
-**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
+**See:** runner.md#agys-session-settings-no-command-grants-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
 **Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match, keeps an empty word, or adds an exact form
 
 An exact `allow` entry `a b` (no `*`) becomes the allow rule
@@ -1547,7 +1547,7 @@ docs/runners.md, with no example.
 **Evidence:** inferred
 **Verification:** uncorroborated
 **Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (a supervised `-p` turn that spawned a background `maity wait` and never ended); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits` and rejects an unknown `agentMode`); the lead's ruling on pre-review A2498 of #1939, 2026-11-24
-**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
+**See:** runner.md#agys-session-settings-no-command-grants-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
 **See:** runner.md#supervised-agy-ends-each-turns-own-process-group-agy-has-no-setting-to-stop-a-background-task-outliving-a-turn — c69eb132-ec8c-41e2-bab5-f83763d9b307 — as of 2026-11-24
 **Revisit when:** a live probe shows agy's denies on `.git/config`, `.git/hooks` and `.git/maity` hold inside a writable mount (then a clone write allow can be weighed again), agy changes what `agentMode` means, or a turn that ends at its time limit is seen to leave an event no later turn handles
 
@@ -2018,7 +2018,7 @@ project does not need.
 runners per placement: a secret store in the hub, and a second place for
 a key to leak from.
 
-## Model access stays the operator's; a run's usage counts reach the hub
+## Model access stays the operator's; a run's usage counts are to reach the hub (not built yet)
 
 **Id:** 5f6c87ce-132d-4f7e-921d-d74741f369fe
 **Type:** decision

@@ -90,8 +90,8 @@ newest 50 items, as this page did against the contract's first round:
 the numbers were too low whenever more than 50 were unread, and the hub
 now counts per project itself (`by_project`). Reading the bell's items
 on every poll: they are shown only when the bell is open. Showing
-browser notifications from the 15-second poll: fifteen seconds late,
-and every open tab would show them. Asking for permission when the
+browser notifications from the `/me` poll (every 15 seconds then, 60
+now): that late, and every open tab would show them. Asking for permission when the
 page loads: browsers block or suppress prompts without a click, and a
 prompt nobody asked for is what people learn to deny.
 
