@@ -342,8 +342,29 @@ def _set_changed(
     seq = events.emit(
         conn, project.id, KIND, [SET_TOKEN], payload, actor=actor, restricted_list=sorted(listed)
     )
-    _notify(conn, project.id, None, seq, sorted(listed), named)
+    # The members it names are not told of themselves, nor the member who made the change
+    # of its own (§18.1), nor the human `by` names where the actor is someone else (a join
+    # exchange's new membership, the hub's own keep of an organisation's owner).
+    own = {actor.membership_id} if getattr(actor, "membership_id", None) is not None else set()
+    by_own = _by_membership(conn, project.id, by)
+    _notify(conn, project.id, None, seq, sorted(listed), named | own | by_own)
     return seq
+
+
+def _by_membership(conn: Connection, project_id: str, by: dict[str, Any] | str | None) -> set[int]:
+    """The active membership in the project of the human `by` names; none for `"hub"`."""
+    if not isinstance(by, dict) or by.get("kind") != "human":
+        return set()
+    return set(
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.human_id == by["id"],
+                t.membership.c.agent_id.is_(None),
+                t.membership.c.removed_at.is_(None),
+            )
+        ).scalars()
+    )
 
 
 def entered(

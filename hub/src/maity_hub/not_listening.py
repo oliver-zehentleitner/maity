@@ -28,10 +28,18 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, and_, or_, select, update
 
-from maity_hub import clock, events, instances, listening, maintenance, runner_revoke, worker_runs
+from maity_hub import (
+    clock,
+    cross_owner,
+    events,
+    instances,
+    listening,
+    maintenance,
+    runner_revoke,
+    worker_runs,
+)
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
-from maity_hub.views import routing_boss
 
 log = logging.getLogger(__name__)
 
@@ -152,8 +160,9 @@ def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> s
 def audience_of(conn: Connection, member: Any, *, admins_always: bool = True) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
     member (§8.2). Without `admins_always` the admins read only when there is no member to
-    report to (`holder_stalled`, `claim_expired`)."""
-    boss = routing_boss(conn, member.reports_to)
+    report to (`holder_stalled`, `claim_expired`). A boss of another owner gets none of these
+    and counts as no boss, so the admins read then too (§6.2, "What the edge does")."""
+    boss = cross_owner.notice_boss(conn, member)
     audience = [] if boss is not None and not admins_always else ["trust:admin"]
     if boss is not None:
         audience.insert(0, f"member:{boss}")

@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import placements
+from maity_hub import ids, placements
 from maity_hub import runners as runner_rows
 from maity_hub import tables as t
 from maity_hub.auth import credentials, verifiers
@@ -29,10 +29,25 @@ REASON = "leaked_in_payload"
 MAX_IDS = 16
 
 
+def lookups(found: list[credentials.Presented]) -> list[credentials.Presented]:
+    """Those of `found` whose id the hub could have made for an agent's or a runner's
+    credential (`ids.has_shape`): only they can be a real credential, so only they are worth a
+    database lookup. The forge path (`routes/board._refuse_credentials`) opens no transaction
+    when none is left and refuses the request all the same; the middleware still opens one
+    (`middleware._revoke`, a follow-up of tsk-a4n80ebqyaya)."""
+    return [
+        presented
+        for presented in found
+        if ids.has_shape("credential", presented.credential_id)
+        or ids.has_shape("runner_credential", presented.credential_id)
+    ]
+
+
 def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[str]:
-    """Revoke every verified credential in `found`; returns their ids."""
+    """Revoke every verified credential in `found`; returns their ids. An id the hub could not
+    have made is never looked up (`lookups`), and takes none of the `MAX_IDS` places."""
     secrets_by_id: dict[str, set[str]] = {}
-    for presented in found:
+    for presented in lookups(found):
         if presented.credential_id in secrets_by_id or len(secrets_by_id) < MAX_IDS:
             secrets_by_id.setdefault(presented.credential_id, set()).add(presented.secret)
     if not secrets_by_id:

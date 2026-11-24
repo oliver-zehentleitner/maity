@@ -620,7 +620,7 @@ open that chat.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with lotse that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with the lead that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
 **Revisit when:** §8.8 gains a `wait` of its own, or the listing's page or scan budget no longer fits one opening
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-04
 
@@ -795,7 +795,7 @@ person.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's screenshot of the deployed chat view, relayed by the coordinator (tsk-2my9kqmjp6nk), 2026-10-23: every entry read "Oliver Zehentleit…", the time sat on the name, the list was a narrow column beside the heading; the dashboard's implementation, 2026-10-23
+**Source:** the maintainer's screenshot of the deployed chat view, relayed by the coordinator (tsk-2my9kqmjp6nk), 2026-10-23: every entry read "[the maintainer's name]…", the time sat on the name, the list was a narrow column beside the heading; the dashboard's implementation, 2026-10-23
 **Revisit when:** the header gets a nav that is not a row of links, or the chat list leaves its `<nav>`
 
 The header's link rules (a scrolling flex row, links on one line) apply
@@ -1569,7 +1569,7 @@ Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at t
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision (lotse) of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
 **Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over); for the opencode model rule: the hub refuses an opencode placement without a model itself, or every runner in use fails closed on the model (#1969), so the form need not hold it
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
@@ -1649,7 +1649,7 @@ with `--model`, and without it exits 2 before the join link is redeemed
 2026-11-18 two opencode reviewers ran with no model set, so on
 opencode's hosted model, and repository content went to opencode's
 servers. Fail closed on the model wherever opencode starts, the lead's
-decision (lotse), recorded 2026-11-18.
+decision, recorded 2026-11-18.
 Rejected: keeping "The runner's default" for OpenCode, since only the
 runner knows whether it resolves to a configured model; offering
 OpenCode without models and letting the runner refuse it, a choice that
@@ -3429,7 +3429,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11, the tab taken back for the card tsk-2t7efzj1p8zt, 2026-11-15
+**Source:** the maintainer's report that a manager's page (`/<handle>`) showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11, the tab taken back for the card tsk-2t7efzj1p8zt, 2026-11-15
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3912,7 +3912,7 @@ the view already says the organisation is suspended.
 
 `M.orgs.handleOf` decodes the handle from `/account/orgs/<handle>`,
 trims it, drops a leading `@` and writes it in lowercase, for the call
-and for the page title, so `/account/orgs/%40OZ-Team` opens @oz-team.
+and for the page title, so `/account/orgs/%40Acme-Team` opens @acme-team.
 
 **Reason:** a link copied with an `@` or typed with capitals names the
 same organisation for a human.
@@ -4099,7 +4099,7 @@ up the state, so the mark belongs there as well as in the header.
 **Type:** workaround
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor) and §8.8 (the listing holds messages only, with no filter by sender); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history; the card tsk-0m6qx612y5px and lotse's agreement, 2026-11-04 (project message seq 69405): the Messages view moves to §8.8, the Activity keeps the window
+**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor) and §8.8 (the listing holds messages only, with no filter by sender); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history; the card tsk-0m6qx612y5px and the lead's agreement, 2026-11-04 (project message seq 69405): the Messages view moves to §8.8, the Activity keeps the window
 **Revisit when:** §8.3 takes `actor=` (`GET /events?actor=`)
 
 The hub cannot be asked for one member's events, nor for a project's
@@ -4121,7 +4121,7 @@ window when the Messages view leaves it: it lists every kind of a
 member's events (cards claimed, requests answered, members joined, and
 messages), while §8.8 lists messages only and cannot be asked for one
 sender, so it would show a fraction of the Activity and still need the
-scan for the rest. Settled with lotse on 2026-11-04 (seq 69405).
+scan for the rest. Settled with the lead on 2026-11-04 (seq 69405).
 
 **Rejected alternative:** reading the whole feed from the first event:
 its cost grows with the hub's history, which the 2026-10-26 rule rules
@@ -4697,7 +4697,7 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); the lead's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
 **Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
@@ -4752,7 +4752,7 @@ A bubble (`.msg`, web/css/app.css) is `max-width: min(max(36rem, 60%), 60rem, 90
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by the lead (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
 **Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
@@ -5886,7 +5886,7 @@ reset.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03; lotse#wtwy's decision on #1287 (message seq 65368, 2026-11-03)
+**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03; the lead's decision on #1287 (message seq 65368, 2026-11-03)
 **See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
@@ -5909,7 +5909,7 @@ stands, so a page drawn again (another language, the same address) does not lose
 Every view that is not the sign-in takes it down itself: the invitation, the mail's second step
 without a session, the maintenance page, a failed page, and every drawing once a session is known.
 A visitor's public page and "not found" stand in the frame too (see
-6d168e98-d442-4a3a-bd1c-57158eeeb273). The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
+6d168e98-d442-4a3a-bd1c-57158eeeb273). The scope is confirmed: the lead decided it on 2026-11-03 (on
 #1287, after the review found the frame at those addresses). It was chosen over drawing the
 frame at `/login` and `/register` alone; why it lost is inferred, not stated: that choice would show
 the same form in two designs depending on the address.
@@ -5943,7 +5943,7 @@ which does not know whether the frame stands or its read failed.
 page without the frame and without the line, as §16.13 says for a read that waits. A timeout was
 not added: it would put a second clock beside the API's own error handling, and a hub that does
 not answer leaves the sign-in itself unusable anyway (review of #1287 by
-maity-review-team-grok#dzse).
+a reviewer).
 **Known gap:** a session that ended on the hub without the page being told (signed out in
 another tab, expired) stays in `M.api.session()`. A 401 on `GET /auth/session` is a public call
 and does not clear it (`js/api.js`; only `endSession` does), so `render()` takes the frame down
@@ -5951,8 +5951,8 @@ and lets the product line go on each such drawing: the app's bar and the line sh
 trip of `/auth/session` before the sign-in enters the frame again. The stale session itself is
 older than #1287 (`js/api.js` answered that 401 the same way before it); the flash is #1287's,
 since only #1287 leaves the frame and holds the line by the session. Found in the review of #1287
-by maity-review-team-grok#spq4. Recording it rather
-than clearing the session on that 401 here was lotse#wtwy's decision (message seq 66307,
+by a reviewer. Recording it rather
+than clearing the session on that 401 here was the lead's decision (message seq 66307,
 2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
@@ -6511,7 +6511,7 @@ inferred, the card did not discuss them.
 **Status:** superseded
 **Superseded by:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
 **Evidence:** confirmed
-**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
+**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); the lead's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
 **Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
 
 `render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
@@ -6677,8 +6677,8 @@ words keep every hint's length known whatever the handle or the host.
 
 **Rejected alternatives:** a filled-in example cut to a length, which
 still varies with the host and reads oddly when cut; a filled-in example
-only on wide screens, which gives two texts to keep true. The example
-`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+only on wide screens, which gives two texts to keep true. An example
+agent or organisation handle as a fixed word was dropped too: it read as a fact
 about the reader's own agent or organisation.
 
 ## A handle field's rule and its word while typed come from one helper, and nothing is lower-cased
@@ -6873,7 +6873,7 @@ left at its first page with a count. The closed columns say the failure, as
 before. A reload after a write reads every page before it draws, as before.
 
 Since tsk-3b2t7hwc352s (2026-11-20) the late draw replaces only the columns
-that changed. Ops traced the board and the card panel on oliver-pc01-l
+that changed. Ops traced the board and the card panel on the maintainer's machine
 (prod fccd88f, the card's note of 2026-11-20). The board was drawn twice. The
 late draw emptied every column (`clear`, one `removeChild` per child: 46 ms
 of script and 10–15k layout invalidations) and built them again, and each
@@ -7028,7 +7028,7 @@ results come whole, still draws the 50 closed last of each closed column
 and a button the rest ("Show 11 more closed cards").
 
 The `Revisit when` above about a full redraw over 200 ms has come about. Ops'
-trace of 2026-11-20 on oliver-pc01-l (prod fccd88f, before tsk-qw08c8ds214g)
+trace of 2026-11-20 on the maintainer's machine (prod fccd88f, before tsk-qw08c8ds214g)
 followed each of the board's two draws with a style recalculation of 175–200
 ms over about 16k elements. The late draw's script took 138 ms: 46 ms emptied
 the columns one `removeChild` at a time, about 29 ms formatted dates. The

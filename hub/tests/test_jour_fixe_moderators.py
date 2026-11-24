@@ -13,6 +13,7 @@ from sqlalchemy import Engine, insert, select
 from maity_hub import clock, listening
 from maity_hub import tables as t
 from maity_hub.jourfixe import rounds, worker
+from maity_hub.notifications import items, mailer
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_jour_fixe import BASE, ensure_series, listen
@@ -273,6 +274,45 @@ def test_the_no_moderator_item_goes_with_its_series(
         headers={"X-CSRF-Token": owner.csrf},
     )
     assert items() == []  # §18.1: dropped once the series cannot be read
+
+
+def test_the_no_moderator_item_goes_to_the_keepers_at_read_time(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§18.1, §20.9: the skip with `no_moderator` is the keepers' item, bell and mail alike;
+    a keeper who keeps the series no more loses it, though every member sees the series."""
+    keeper = flow.human(make_client, migrated, "keeper")
+    factory.membership(migrated, _project_id(migrated), "coder", trust="admin", human_id=keeper.id)
+    member = flow.agent(make_client, owner)
+    listen(member)
+    sid = ensure_series(owner)  # `circle: all`, kept by the humans with `project:admin`
+    owner.patch(f"{BASE}/jour-fixe/series/{sid}", {**DAILY_UTC, "reason": "t"})
+    next_at = datetime.fromisoformat(owner.get(f"{BASE}/jour-fixe").json()["series"][0]["next_at"])
+    now[0] = next_at + timedelta(seconds=30)
+    owner.get("/me")
+    worker.sweep(migrated)
+
+    def bell(who: flow.Human) -> list[Any]:
+        found = who.get("/me/notifications").json()["items"]
+        return [i for i in found if (i.get("target") or {}).get("type") == "jour_fixe_series"]
+
+    def for_mail(who: flow.Human) -> list[Any]:
+        """What the mail pass selects from (`mailer.for_human`): the derived mailable items."""
+        with migrated.connect() as conn:
+            derived = items.derive(conn, items.scope(conn, who.id, "https://hub.example"))
+        return [
+            i
+            for i in derived
+            if i.kind in mailer.MAILED_KINDS and (i.target or {}).get("type") == "jour_fixe_series"
+        ]
+
+    assert len(bell(owner)) == 1 and len(for_mail(owner)) == 1
+    assert len(bell(keeper)) == 1 and len(for_mail(keeper)) == 1
+    demoted = owner.patch(f"{BASE}/members/{keeper.id}", {"trust": "member"})
+    assert demoted.status_code == 200, demoted.text
+    assert keeper.get(f"{BASE}/jour-fixe/series").status_code == 200  # still sees the series
+    assert bell(keeper) == [] and for_mail(keeper) == []  # but keeps it no more
+    assert len(bell(owner)) == 1 and len(for_mail(owner)) == 1  # a keeper still is told
 
 
 def test_a_replayed_grant_names_the_same_consent_requests(
