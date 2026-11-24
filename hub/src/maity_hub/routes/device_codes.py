@@ -31,7 +31,7 @@ from maity_hub import (
     wakeups,
 )
 from maity_hub.auth import anonymous, device_codes, second_factor, sessions, sign_in_settings
-from maity_hub.auth.caller import SESSION_COOKIE, Caller
+from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found, rate_limited
 from maity_hub.ratelimit import Limiter
@@ -155,7 +155,9 @@ def create_code(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.get("/device-codes/{code_id}")
 async def get_code(code_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     session_hash = _creator(caller)
-    _require_enabled(request)
+    # Off the event loop (hub/context/persistence.md, tests/test_no_sync_db_on_loop.py), in the
+    # same place, so the checks keep their order.
+    await run_in_threadpool(_require_enabled, request)
     wait = wait_of(request)
     engine = engine_of(request)
 
@@ -242,7 +244,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
     tripped = _breaker_shut_for()
     if tripped > 0:
         raise rate_limited(max(1, int(tripped + 0.999)))
-    wait = REDEEM_BY_ADDRESS.hit(origin.address)
+    wait = REDEEM_BY_ADDRESS.hit(origin.limit_key)
     if wait:
         raise rate_limited(wait)
     with engine_of(request).begin() as conn:
@@ -283,7 +285,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
 @router.get("/device-login")
 async def watch_redemption(request: Request) -> JSONResponse:
     anonymous.entry(request)
-    _require_enabled(request)
+    await run_in_threadpool(_require_enabled, request)  # off the event loop, as in get_code
     wait = wait_of(request)
     pending = request.cookies.get(PENDING_COOKIE)
     engine = engine_of(request)
@@ -351,8 +353,9 @@ def methods(request: Request) -> JSONResponse:
     """What the login page may show (§2.6.1); nothing about any account. `registration`
     is the mode in effect (§2.7: `allowlist` with an entry or `open`, with complete, enabled
     mail, which `effective_mode` already folds in), never the entries of the lists; `terms` the
-    instance's or `null`."""
+    instance's or `null`. Over TLS, as every endpoint of §2.6 (§2.5)."""
     hub = settings_of(request)
+    require_secure_transport(origin_of(request), hub.allow_plain_http)
     with engine_of(request).begin() as conn:
         device_code = sign_in_settings.device_code_enabled(conn, hub)
         offered = sign_in_settings.view(conn, hub)

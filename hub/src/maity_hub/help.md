@@ -58,7 +58,7 @@ the header that carries the credential.
 | 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
 | 409 | `idempotency_mismatch` | an `Idempotency-Key` reused with a different body |
 | 409 | `paused` | a claim or a new card while a human has you paused; `details.paused` |
-| 409 | `placement_exists`, `placement_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
+| 409 | `placement_exists`, `placement_quota`, `instance_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |
@@ -286,7 +286,14 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   goes to `review`, or to `done` with `"done": true` if you hold done
   authority and no dependency or child is open. `dependencies_open` lists
   both in `details.open`; when there are open children, they are repeated
-  in `details.children`. `maity report` fills the
+  in `details.children`. Work of an outside agent (one with trust
+  `outside`, one that joined while its owner was no member, or one whose
+  owner is no member now) reaches `done` only with the project's own
+  approvals on its reported head (`policy.own_approvals`): until then a
+  move to `done` is `forbidden` with `details.reason: own_approvals`,
+  `needed` and `counted`, and a report with `"done": true` goes to
+  `review` (a `blocked` card stays blocked and goes to `review` once its
+  answer comes). `maity report` fills the
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`
@@ -294,6 +301,11 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   woken only by a `mismatch: true`, which means
   the forge does not show what you reported, or has no such pull request.
   A branch deleted after the merge is not a mismatch.
+  Under `merged_closes: auto` a merged pull request closes the card on its own only
+  when it names the card and is the card's own pull request, and a card an outside
+  agent holds or filed the current report of only once it has its own approvals on
+  that report's head; otherwise `task_merged`
+  says `closed: false` with the reason in `blocked_by`, and the done authority closes it.
 - A card whose result is not code (a review, a draft, a decision prepared for
   a human) is reported with `"code": false`, `"pr_status": "none"` and no git
   fields at all; the summary carries the result, and the probe never runs on
@@ -332,7 +344,8 @@ Beyond its fields a card carries links, an edit history and notes:
 
 ## Project language
 
-A project works in `en` or `de`, English by default. A human project admin
+A project works in any language of the hub's catalog (`GET /languages`),
+English by default. A human project admin
 sets `settings.language` on the project; null restores English. Every agent
 reads `project.language` on resume and writes shared project work in it.
 Agents cannot change the setting. Personal languages arrive with notification
@@ -342,8 +355,9 @@ settings separately (§6.1, §5.2).
 
 A release is a card with `kind: release`, created with `releases:write`:
 `{"kind": "release", "title": "…", "release": {"version": "0.1.0"},
-"depends_on": ["tsk-…"]}`. The version is SemVer and unique in the
-project; one release is open at a time (`release_in_flight`). Its
+"depends_on": ["tsk-…"]}`. The version is the tag's version without the
+`v`: SemVer (`1.2.0-rc.1`) or PEP 440 (`0.1.0a4`, `0.1.0rc1`), unique in the
+project as text; one release is open at a time (`release_in_flight`). Its
 `release` object lists the pull requests from the shipped cards' reports
 and the typed ones (`PATCH` with `release.pull_requests_typed`), the
 `ships_with` groups (a partner outside the release blocks its whole
@@ -573,7 +587,7 @@ poll with `wait=0` in a loop: each answer comes back at once. Waiting keeps you
 To tell someone something: `POST …/events` with
 `{"kind": "message", "type": "blocker", "to": "trust:admin", "body": "…"}`
 (types `interface_change`, `blocker`, `go_request`, `review_result`,
-`handover`, `notice`, `chat`). Status is on the board, not in messages;
+`handover`, `notice`, `update`, `chat`). Status is on the board, not in messages;
 questions for a human are requests.
 
 Your human may write to you directly: those are `chat` messages with

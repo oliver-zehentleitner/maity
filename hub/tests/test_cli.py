@@ -10,6 +10,8 @@ from maity_hub.db import head_revision, make_engine
 
 PASSWORD = "s3cret-pw"
 ACCOUNT_PASSWORD = "correct-horse-battery-staple"
+# A driver's message that quotes the connection string, as one does for a malformed URL.
+QUOTED = f'invalid connection option "x" in "host=db user=maity password={PASSWORD}"'
 
 
 def head() -> str | None:
@@ -49,7 +51,9 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
     assert main(["migrate"]) == 1
     err = capsys.readouterr().err.splitlines()
     assert err[0] == f"maity-hub: schema stays at empty, head {head()} not reached"
-    assert err[1].endswith(": deadlock detected")
+    # The cause is named by its class and codes; the driver's own text is not printed.
+    assert err[1].endswith(": builtins.Exception unclassified code=- number=- behind=-")
+    assert "deadlock detected" not in err[1]
 
 
 def test_migrate_hands_the_instance_key_to_the_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -115,14 +119,100 @@ def test_seal_verifiers_seals_the_plain_rows_once_and_prints_a_count(
         capsys.readouterr()
         assert main(["seal-verifiers"]) == 0
         out = capsys.readouterr().out.splitlines()
-        assert out == ["credential: 1", "runner_credential: 0", "sealed 1 verifier(s)"]
+        assert out == [
+            "credential: sealed 1, already sealed 0, plain left 0",
+            "runner_credential: sealed 0, already sealed 0, plain left 0",
+            "total: sealed 1, already sealed 0, plain left 0",
+        ]
         with engine.connect() as conn:
             stored = conn.execute(
                 select(t.credential.c.verifier).where(t.credential.c.id == agent.credential_id)
             ).scalar_one()
         assert stored.startswith("s1:")
         assert main(["seal-verifiers"]) == 0
-        assert capsys.readouterr().out.splitlines()[-1] == "sealed 0 verifier(s)"
+        assert capsys.readouterr().out.splitlines()[-1] == (
+            "total: sealed 0, already sealed 1, plain left 0"
+        )
+    finally:
+        engine.dispose()
+
+
+def _plain_agent_in(path: str) -> tuple[Any, str]:
+    from tests import factory
+
+    engine = make_engine(f"sqlite:///{path}")
+    project_id = factory.project(engine)
+    human = factory.human(engine)
+    factory.membership(engine, project_id, human_id=human)
+    return engine, factory.agent(engine, project_id, human).credential_id
+
+
+def _verifier(engine: Any, credential_id: str) -> str:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    with engine.connect() as conn:
+        value: str = conn.execute(
+            select(t.credential.c.verifier).where(t.credential.c.id == credential_id)
+        ).scalar_one()
+    return value
+
+
+@pytest.mark.parametrize("env", [{}, {"MAITY_SEAL_VERIFIERS": "1"}], ids=["no key", "sealing on"])
+def test_seal_verifiers_dry_run_counts_and_writes_nothing(
+    env: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """It needs neither the key nor the setting, and leaves every row as it is."""
+    import base64
+
+    monkeypatch.delenv("MAITY_SEAL_VERIFIERS", raising=False)
+    monkeypatch.delenv("MAITY_SECRET_KEY", raising=False)
+    if env:
+        monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+    assert main(["migrate"]) == 0
+    engine, credential_id = _plain_agent_in("maity-hub.db")
+    try:
+        before = _verifier(engine, credential_id)
+        capsys.readouterr()
+        assert main(["seal-verifiers", "--dry-run"]) == 0
+        assert capsys.readouterr().out.splitlines() == [
+            "credential: sealed 0, already sealed 0, plain left 1",
+            "runner_credential: sealed 0, already sealed 0, plain left 0",
+            "total: sealed 0, already sealed 0, plain left 1",
+            "dry run: nothing written",
+        ]
+        assert _verifier(engine, credential_id) == before
+    finally:
+        engine.dispose()
+
+
+def test_seal_verifiers_fails_while_a_plain_row_is_left(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A row written plain while it ran (an old pod in a rolling deploy) is left: exit 1."""
+    import base64
+
+    from maity_hub.auth import verifiers
+
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(bytes(range(32))).decode())
+    monkeypatch.setenv("MAITY_SEAL_VERIFIERS", "1")
+    assert main(["migrate"]) == 0
+    engine, credential_id = _plain_agent_in("maity-hub.db")
+
+    def sealed_nothing(_engine: object, _key: bytes) -> dict[str, int]:
+        return {"credential": 0, "runner_credential": 0}
+
+    monkeypatch.setattr(verifiers, "seal_plain", sealed_nothing)
+    try:
+        capsys.readouterr()
+        assert main(["seal-verifiers"]) == 1
+        captured = capsys.readouterr()
+        assert captured.out.splitlines()[-1] == "total: sealed 0, already sealed 0, plain left 1"
+        assert "1 plain verifier(s) left" in captured.err
+        assert not _verifier(engine, credential_id).startswith(verifiers.SEALED)
     finally:
         engine.dispose()
 
@@ -216,8 +306,11 @@ def test_a_non_numeric_port_is_refused_without_echo(
 @pytest.mark.parametrize(
     ("url", "reason"),
     [
-        ("foo://x/y", "Can't load plugin"),  # unknown dialect
-        ("postgresql+psycopg2://maity:s3cret@db/maity", "psycopg2"),  # driver not installed
+        ("foo://x/y", "sqlalchemy.exc.NoSuchModuleError unclassified code="),  # unknown dialect
+        (  # no driver: the line names the module to install
+            "postgresql+psycopg2://maity:s3cret@db/maity",
+            "builtins.ModuleNotFoundError unclassified module=psycopg2 code=",
+        ),
     ],
 )
 def test_an_unusable_dialect_or_driver_fails_in_one_line(
@@ -248,6 +341,79 @@ def test_an_unreachable_database_fails_in_one_line_without_the_password(
     assert "Traceback" not in err
 
 
+@pytest.mark.parametrize("command", ["migrate", "serve"])
+def test_the_drivers_text_never_reaches_the_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """A malformed URL can make the driver quote the whole connection string, the password
+    included, in its message; `migrate` runs as a job whose output stays in the logs. The
+    command says the classes, the driver's codes and a fixed cause, never the driver's text."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("connect", {}, psycopg.ProgrammingError(QUOTED))
+
+    monkeypatch.setattr(cli, "make_engine", refuse)  # migrate
+    monkeypatch.setattr(cli, "serving_engine", refuse)  # serve builds its engine there
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity:{PASSWORD}@db/maity")
+    assert main([command]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err == (
+        "maity-hub: database postgresql+psycopg://maity:***@db/maity: "
+        "psycopg.ProgrammingError unclassified code=- number=- behind=-\n"
+    )
+    assert PASSWORD not in err and "s3cr" not in err and "host=db" not in err
+
+
+@pytest.mark.parametrize("query", ["password", "PASSWORD", "pass%77ord", "sslpassword"])
+def test_a_password_in_the_query_string_is_not_printed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], query: str
+) -> None:
+    """A database error names the URL without its query string, where a password can stand."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("connect", {}, psycopg.OperationalError("connection refused"))
+
+    monkeypatch.setattr(cli, "make_engine", refuse)
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity@db/maity?{query}={PASSWORD}")
+    assert main(["migrate"]) == 1
+    err = capsys.readouterr().err
+    assert err == (
+        "maity-hub: database postgresql+psycopg://maity@db/maity?***: "
+        "psycopg.OperationalError refused code=- number=- behind=-\n"
+    )
+
+
+def test_the_bucket_clean_up_logs_no_drivers_text(caplog: pytest.LogCaptureFixture) -> None:
+    """The clean-up after `attachments copy-to-s3` logs a database error and goes on; the log line
+    names it as a command's output does, never with the driver's text."""
+    import psycopg
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli as cli
+    from maity_hub import attachments
+
+    def refuse(*_args: Any, **_kw: Any) -> Any:
+        raise OperationalError("select", {}, psycopg.ProgrammingError(QUOTED))
+
+    with pytest.MonkeyPatch.context() as patch, caplog.at_level("ERROR"):
+        patch.setattr(attachments, "sweep", refuse)
+        done = cli._clean_bucket(None, None, apply=True)  # type: ignore[arg-type]
+    assert done == {"tombstoned": 0, "orphans": 0, "failed": 1}
+    assert [r.getMessage() for r in caplog.records] == [
+        "cleaning the bucket: psycopg.ProgrammingError unclassified code=- number=- behind=-"
+    ]
+    assert PASSWORD not in caplog.text and "host=db" not in caplog.text
+
+
 def test_an_unwritable_sqlite_path_fails_in_one_line(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -255,7 +421,7 @@ def test_an_unwritable_sqlite_path_fails_in_one_line(
     assert main(["migrate"]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
-    assert "unable to open database file" in err
+    assert "sqlite3.OperationalError unclassified" in err  # the class, not the driver's text
 
 
 def test_owner_create_reads_the_password_from_stdin(
@@ -436,6 +602,7 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     monkeypatch.setenv("MAITY_DB_STATEMENT_TIMEOUT", "11")
     monkeypatch.setenv("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "22")
     monkeypatch.setattr(cli, "require_current_schema", lambda engine: None)
+    monkeypatch.setattr(cli, "require_unprivileged_role", lambda engine, settings: None)
     monkeypatch.setattr(cli, "warn_on_connection_budget", lambda engine, settings: None)
     served: list[Any] = []
     monkeypatch.setattr(

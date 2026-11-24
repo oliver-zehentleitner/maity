@@ -3,15 +3,17 @@
 // what is wanted (`desired`), what the runner last reported, the
 // generation — with Stop for the runner's owner and the agent profile's
 // owner, Start and Restart for the runner's side only (§15.6: the runner's
-// owner, with members:admin or as the profile's owner), and Remove for a
-// placement made before only the runner's owner could (`foreign`). Stop
-// asks nothing, it is the safe direction; a restart is confirmed with one
-// more click. A placement waiting for consent links to
+// owner, with members:admin or as the profile's owner) — Reset beside Restart, a
+// restart on a fresh harness session (`fresh_session`) — and Remove for the
+// runner's owner and the profile's owner, an own placement as much as a
+// `foreign` one (DELETE, §15.6; tsk-44x5grp6fcsq). Stop
+// asks nothing, it is the safe direction; a restart and a reset are confirmed
+// with one more click. A placement waiting for consent links to
 // its request in the inbox, which answers it. Every action is one contract
 // call; a refusal is the hub's envelope as it comes. Placement events
-// (§15.10) read the list again. A human with members:admin starts an agent
-// on one of their own runners here too: an agent of theirs in the project
-// or a new profile, with what the runner advertises (§15.6, tsk-dsp6htj4c686).
+// (§15.10) read the list again. Starting an agent on one of one's own
+// runners is the runner part of the one Join an agent form (`runnerPart`,
+// js/join.js; §15.6, tsk-dsp6htj4c686, tsk-hdczmsq2r431).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -91,179 +93,6 @@ window.Maity = window.Maity || {};
       h("code", { tabindex: "0", role: "region", "aria-label": words.region }, text), copy);
   }
 
-  // The form that starts an agent on a runner (POST …/placements, §15.6). `runners`: the
-  // attachments of one's own runners with a live credential (§15.4); `placed`: the agent ids
-  // that have an active placement already, one per membership (§15.5). `made(placement)`:
-  // after the hub's 201. A refusal is the hub's message and code, a field's as it names it.
-  function startForm(ctx, runners, placed, hooks) {
-    const words = M.runnerWords;
-    const status = M.statusLine();
-    const id = (x) => "placement-new-" + x;
-    const field = (key, label, control, hint) => h("div", { class: "field" },
-      h("label", { for: id(key) }, label), control, hint ? h("p", { class: "hint", id: id(key) + "-hint" }, hint) : null);
-    const select = (key, options) => h("select", { id: id(key) }, options);
-    const input = (key, attrs) => h("input", Object.assign({ id: id(key) }, attrs || {}));
-
-    // The agent: one's own agents here without a placement, or a new profile (humans only, §15.6).
-    const own = ctx.members.filter((m) => m.kind === "agent" && !m.removed_at && m.owner_id === ctx.me.id && !placed.has(m.id));
-    const agent = select("agent", [h("option", { value: "" }, M.t("placements.new.agent_new"))]
-      .concat(own.map((m) => h("option", { value: m.id }, m.display_name + " (@" + m.handle + ")"))));
-    const handle = input("handle", { pattern: M.dom.NAME_RULES.handle.pattern, autocomplete: "off" });
-    const name = input("name", { autocomplete: "off" });
-    // Trust admin and the role proxy only from an owner (§3.1, owner_only §2.3), as in a join.
-    const trust = select("trust", (ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"]).map((r) => h("option", { value: r }, M.trust.trustWord(r))));
-    trust.value = "member";
-    const role = select("role");
-    const fillRoles = () => M.trust.fillRoles(role, M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")), role.value || "coder", "coder");
-    const roleHelp = M.trust.roleHint(role);
-    trust.addEventListener("change", fillRoles);
-    fillRoles();
-    // A guest is never reported to (§2.3).
-    const reportsTo = select("reports", [h("option", { value: "" }, M.t("join.reports.nobody"))]
-      .concat(ctx.members.filter((x) => !x.removed_at && !M.trust.guest(x)).map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")"))));
-    reportsTo.value = ctx.me.id;
-    const areas = input("areas", { placeholder: "hub/, docs/" });
-    const briefing = h("textarea", { id: id("briefing"), rows: "4", placeholder: M.t("join.briefing.placeholder") });
-    const fresh = h("fieldset", { class: "placement-new-profile" }, h("legend", null, M.t("placements.new.profile")),
-      // What a handle is, as at every other agent handle (#1488), and its rule.
-      h("div", { class: "field" }, h("label", { for: id("handle") }, M.t("agents.handle")), handle,
-        M.handles.explain("agent", handle), M.handles.rule(handle)),
-      field("name", M.t("agents.display_name"), name),
-      field("trust", M.t("join.field.trust"), trust),
-      h("div", { class: "field" }, h("label", { for: id("role") }, M.t("join.field.role")), role, roleHelp),
-      field("reports", M.t("join.field.reports_to"), reportsTo),
-      field("areas", M.t("join.field.areas"), areas),
-      field("briefing", M.t("placements.new.briefing"), briefing));
-
-    // The runner, and what it advertises (§15.3): where, which tool, its modes and models.
-    const runner = select("runner", runners.map((a) => {
-      const c = a.runner.capabilities || {};
-      return h("option", { value: a.runner.id }, M.t("placements.new.runner_option", { name: a.runner.name, presence: words.presenceText(a.runner),
-        running: String(c.running || 0), max: String(c.max_agents || 0) }));
-    }));
-    runner.value = runners[0].runner.id;
-    const target = select("target");
-    const tool = select("tool");
-    tool.setAttribute("aria-describedby", id("tool") + "-none");
-    const mode = select("mode");
-    const model = select("model");
-    const submit = h("button", { type: "submit", class: "primary" }, M.t("placements.new.submit"));
-    const chosen = () => runners.find((a) => a.runner.id === runner.value).runner;
-    const caps = () => chosen().capabilities || {};
-    const tools = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
-    const harness = () => tools().find((x) => x.id === tool.value);
-    const fillModes = () => {
-      const x = harness();
-      const modes = x ? x.modes || [] : [];
-      append(clear(mode), modes.map((m) => h("option", { value: m }, Object.hasOwn(words.MODES, m) ? words.MODES[m] : m)));
-      mode.value = x && modes.includes(x.default_mode) ? x.default_mode : modes[0] || "";
-      append(clear(model), h("option", { value: "" }, M.t("placements.new.model_default")), (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
-    };
-    const fillTools = () => {
-      const kept = tool.value;
-      const list = tools();
-      append(clear(tool), list.map((x) => h("option", { value: x.id }, words.toolName(x.id) + (x.version ? " " + x.version : ""))));
-      tool.value = list.some((x) => x.id === kept) ? kept : list.length ? list[0].id : "";
-      noTool.hidden = !!list.length;
-      // Nothing to start with: the hub would refuse it (harness_not_offered).
-      submit.disabled = !list.length;
-      fillModes();
-    };
-    const fillTargets = () => {
-      append(clear(target), h("option", { value: "" }, M.t("placements.new.target_any")),
-        (caps().targets || []).filter((x) => x.reachable !== false).map((x) => h("option", { value: x.name }, x.name)));
-      fillTools();
-    };
-    const noTool = h("p", { class: "hint", id: id("tool") + "-none", hidden: true }, M.t("placements.new.no_tool"));
-    runner.addEventListener("change", fillTargets);
-    target.addEventListener("change", fillTools);
-    tool.addEventListener("change", fillModes);
-
-    const clone = input("clone", { pattern: "[a-z0-9][a-z0-9\\-]{0,62}", autocomplete: "off", "aria-describedby": id("clone") + "-hint" });
-    const branch = input("branch", { autocomplete: "off" });
-    // A reason is required while the project plans or is in review (§6.1).
-    const needsReason = ["plan", "review"].includes(ctx.project.state);
-    const reason = h("textarea", { id: id("reason"), rows: "2", required: needsReason || null });
-    const followAgent = () => {
-      // Hidden and disabled together: a disabled fieldset's controls are not validated, so a
-      // handle typed before an existing agent was chosen cannot block the submit unseen.
-      fresh.hidden = !!agent.value;
-      fresh.disabled = !!agent.value;
-      const m = own.find((x) => x.id === agent.value);
-      clone.setAttribute("placeholder", m ? m.handle : handle.value.trim() || M.t("placements.new.clone_placeholder"));
-    };
-    agent.addEventListener("change", followAgent);
-    handle.addEventListener("input", followAgent);
-
-    const cancel = h("button", { type: "button", onclick: () => hooks.cancel() }, M.t("placements.cancel"));
-    const form = h("form", { class: "placement-new", "aria-labelledby": id("title") },
-      // Under the page's h2 (the Join an agent menu opens it under the page's head), one level down.
-      h("h3", { id: id("title") }, M.t("placements.new.title")),
-      h("p", { class: "hint" }, M.t("placements.new.hint")),
-      field("agent", M.t("join.field.agent"), agent), fresh,
-      field("runner", M.t("placements.new.runner"), runner),
-      field("target", M.t("placements.new.target"), target),
-      h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool),
-      field("mode", M.t("placements.new.mode"), mode),
-      field("model", M.t("placements.new.model"), model),
-      field("clone", M.t("placements.new.clone"), clone, M.t("placements.new.clone_hint")),
-      field("branch", M.t("placements.new.branch"), branch),
-      field("reason", needsReason ? M.t("placements.new.reason_required", { state: ctx.project.state }) : M.t("placements.new.reason"), reason),
-      h("div", { class: "actions" }, submit, " ", cancel), status.el);
-
-    // What the hub is sent: an agent by id, or a new profile with its join fields (§3.1).
-    function body() {
-      const b = {};
-      if (agent.value) {
-        b.agent = { id: agent.value };
-      } else {
-        b.agent = { handle: handle.value.trim(), display_name: name.value.trim() };
-        b.trust = trust.value;
-        b.role = role.value;
-        b.reports_to = reportsTo.value || null;
-        b.areas = areas.value.split(",").map((a) => a.trim()).filter(Boolean);
-        b.capabilities = [];
-        if (briefing.value.trim()) b.briefing = briefing.value.trim();
-      }
-      b.runner = runner.value;
-      b.target = target.value || null;
-      b.harness = tool.value;
-      if (mode.value) b.mode = mode.value;
-      b.model = model.value || null;
-      const workspace = {};
-      if (clone.value.trim()) workspace.clone = clone.value.trim();
-      if (branch.value.trim()) workspace.branch = branch.value.trim();
-      if (Object.keys(workspace).length) b.workspace = workspace;
-      if (reason.value.trim()) b.reason = reason.value.trim();
-      return b;
-    }
-    // A refusal as the hub sends it; the fields it names, each with its code.
-    const said = (err) => {
-      const fields = err.code === "invalid" && err.details && err.details.fields;
-      const named = fields ? Object.entries(fields).map(([k, v]) => M.t("placements.new.field", { field: k, why: v })).join("; ") : "";
-      const text = err.code ? M.t("placements.refusal", { reason: err.message || M.t("placements.an_error"), code: err.code }) : err.message || M.t("placements.an_error");
-      return { message: named ? text + " — " + named : text };
-    };
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (submit.disabled || !tool.value) return;
-      submit.disabled = true;
-      status.busy(M.t("placements.new.busy"));
-      try {
-        const made = await M.api.post(ctx.base + "/placements", body());
-        status.done();
-        await hooks.made(made);
-      } catch (err) {
-        status.fail(M.t("placements.new.failed"), said(err));
-      } finally {
-        submit.disabled = !tool.value;
-      }
-    });
-    fillTargets();
-    followAgent();
-    return { form, first: agent };
-  }
-
   // The section, read and drawn into the Agents view. `credentials`: for whether a placement's
   // credential was revoked (§15.6 `rejoin`), the agents' credentials as the view read them
   // ({agentId: [credential]}), or a function asked for the agents placed here only, once each
@@ -297,9 +126,14 @@ window.Maity = window.Maity || {};
     try {
       mine = new Set((await M.api.getAll("/runners")).items.filter((r) => r.owner_id === ctx.me.id).map((r) => r.id));
     } catch (err) { /* no runner of one's own known */ }
+    // The agent profile's owner. A placement that admits a profile that is not a member yet
+    // (§15.6) runs no membership to name the owner until its first pickup; only that profile's
+    // owner creates such a placement, so its creator is the owner (§15.5 `created_by`).
     const owns = (p) => {
-      const m = p.agent && p.agent.id && ctx.memberById ? ctx.memberById[p.agent.id] : null;
-      return !!m && m.owner_id === ctx.me.id;
+      const id = p.agent && p.agent.id;
+      const m = id && ctx.memberById ? ctx.memberById[id] : null;
+      if (m) return m.owner_id === ctx.me.id;
+      return !!id && !p.proposed_by && p.created_by === ctx.me.id;
     };
     const listed = (list) => (opts.own ? list.filter(owns) : list);
     // `logs_hint` reaches the runner's owner only (§15.5): the hub's own word on it.
@@ -353,22 +187,40 @@ window.Maity = window.Maity || {};
         onclick: () => act(p, M.t("placements.stopping"), M.t("placements.not_stopped"), () => M.api.patch(path(p), { desired: "stopped" }), row) }, M.t("placements.stop"));
       const start = h("button", { type: "button", "aria-label": M.t("placements.start.label", { name }),
         onclick: () => act(p, M.t("placements.starting"), M.t("placements.not_started"), () => M.api.patch(path(p), { desired: "running" }), row) }, M.t("placements.start"));
-      // A restart re-runs the agent: one more click says so.
-      const restartWith = (rejoin) => {
-        const label = rejoin ? M.t("placements.restart_rejoin") : M.t("placements.restart");
-        const b = h("button", { type: "button", "aria-label": rejoin ? M.t("placements.restart_rejoin.label", { name }) : M.t("placements.restart.label", { name }) }, label);
+      // A restart re-runs the agent: one more click says so. A new join is a restart
+      // with `rejoin`, a reset one with `fresh_session` (§15.6): the agent starts on a fresh
+      // harness session instead of resuming the last one, the clone and its branches kept.
+      // Each with its words: the button, its label, the question, the yes, and the status line's.
+      const RESTARTS = {
+        restart: { body: {}, button: () => M.t("placements.restart"), label: (v) => M.t("placements.restart.label", v),
+          ask: (v) => M.t("placements.restart.ask", v), yes: () => M.t("placements.restart.yes"),
+          busy: () => M.t("placements.restarting"), failed: () => M.t("placements.not_restarted") },
+        rejoin: { body: { rejoin: true }, button: () => M.t("placements.restart_rejoin"), label: (v) => M.t("placements.restart_rejoin.label", v),
+          ask: (v) => M.t("placements.restart_rejoin.ask", v), yes: () => M.t("placements.restart_rejoin.yes"),
+          busy: () => M.t("placements.restarting"), failed: () => M.t("placements.not_restarted") },
+        reset: { body: { fresh_session: true }, button: () => M.t("placements.reset"), label: (v) => M.t("placements.reset.label", v),
+          ask: (v) => M.t("placements.reset.ask", v), yes: () => M.t("placements.reset.yes"),
+          busy: () => M.t("placements.resetting"), failed: () => M.t("placements.not_reset") },
+      };
+      const restartWith = (kind) => {
+        const k = RESTARTS[kind];
+        const b = h("button", { type: "button", "aria-label": k.label({ name }) }, k.button());
         b.addEventListener("click", () => {
           busy.add(p.id);
-          const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, M.t("placements.restarting"), M.t("placements.not_restarted"),
-            () => M.api.post(path(p) + "/restart", rejoin ? { rejoin: true } : {}), row) }, rejoin ? M.t("placements.restart_rejoin.yes") : M.t("placements.restart.yes"));
+          const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, k.busy(), k.failed(),
+            () => M.api.post(path(p) + "/restart", k.body), row) }, k.yes());
           const no = h("button", { type: "button", onclick: () => { busy.delete(p.id); draw(); } }, M.t("placements.cancel"));
-          append(clear(row), h("span", null, rejoin ? M.t("placements.restart_rejoin.ask", { name }) : M.t("placements.restart.ask", { name }), " "), yes, " ", no);
+          append(clear(row), h("span", null, k.ask({ name }), " "), yes, " ", no);
           yes.focus();
         });
         return b;
       };
       // Ended by the runner's owner or the profile's owner, who places it again on a
-      // runner of their own: a foreign one does not move otherwise (§15.5, §15.14).
+      // runner of their own (§15.5, §15.14): its instance stops counting toward the agent's
+      // max_instances, which the start form (`runnerPart`) counts, once its credential is
+      // revoked. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
+      // owner with any trust, members:admin with the runner included, or the profile's
+      // owner): `mayAct` above.
       const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),
         onclick: () => {
           if (!window.confirm(M.t("placements.remove.ask", { name }))) return;
@@ -376,8 +228,8 @@ window.Maity = window.Maity || {};
         } }, M.t("placements.remove"));
       const starts = mayStart(p);
       append(row, p.desired === "running" ? stop : starts ? start : null,
-        starts ? [" ", restartWith(false), revoked(p) ? [" ", restartWith(true)] : null] : null,
-        p.foreign ? [" ", remove] : null);
+        starts ? [" ", restartWith("restart"), " ", restartWith("reset"), revoked(p) ? [" ", restartWith("rejoin")] : null] : null,
+        " ", remove);
       return row;
     }
 
@@ -388,7 +240,9 @@ window.Maity = window.Maity || {};
       }
       append(clear(list), items.map((p) => h("li", { class: "placement", "data-placement": p.id },
         h("div", { class: "placement-head" },
-          p.agent.id ? M.dom.memberRef(ctx, p.agent.id) : h("span", null, p.agent.display_name),
+          // The object, not the id: before its first pickup a profile is no member here and is
+          // named by the placement's display_name, not its id (review A1878 of #2085).
+          p.agent.id ? M.dom.memberRef(ctx, p.agent) : h("span", null, p.agent.display_name),
           h("span", { class: "muted" }, " ", p.target
             ? M.tn("placements.on_target", { runner: h("strong", null, p.runner.name), target: p.target })
             : M.tn("placements.on", { runner: h("strong", null, p.runner.name) })),
@@ -399,6 +253,7 @@ window.Maity = window.Maity || {};
           // The generation is for the curious: folded into the reported line, muted.
           h("dt", null, M.t("placements.reported")), h("dd", null, stateLine(ctx, p),
             h("span", { class: "muted placement-generation" }, " · ", M.t("placements.generation", { generation: String(p.generation) }),
+              p.fresh_session ? [" · ", M.t("placements.fresh_session")] : null,
               p.reported && p.reported.reported_at ? [" · ", M.t("placements.last_report", { ago: formatAgo(p.reported.reported_at, M.api.now()) })] : null))),
         actions(p),
         // The runner's owner sees how to look at it (§15.5: theirs only),
@@ -454,7 +309,7 @@ window.Maity = window.Maity || {};
     if (missed) reread();
     append(box, heading(),
       opts.own ? null : h("p", { class: "muted" }, M.t("placements.hint")), list, status.el);
-    // A start from the page's Join an agent menu lists its placement at once, not only on its event.
+    // A start from the page's Join an agent form lists its placement at once, not only on its event.
     sections.set(box, reread);
     return box;
   }
@@ -551,45 +406,378 @@ window.Maity = window.Maity || {};
     return p === tokens.length;
   }
 
-  // Start on a runner, the second way of the Join an agent menu (tsk-vkyp71qp95n9; once a part
-  // of this list, which now shows only what runs): for a human with members:admin, over the
-  // runners of their own that are attached here with a live credential (§15.4, §15.6) and offer
-  // this project's repository (the hub's `repository_not_offered`); none, and why, with the way
-  // to allow one. Returns `{ node, first }`: the form and its first field, or a line saying why
-  // there is none (`first` null); null for whom it is not offered. hooks: `cancel()`,
-  // `made(placement)` after the hub's 201.
-  async function startBox(ctx, hooks) {
-    const why = (node) => ({ node, first: null });
-    // The menu offers this way to a human with members:admin only (`startOffered`).
+  // Start on a runner instead of a join line: the section at the end of the one Join an agent
+  // form (js/join.js, tsk-hdczmsq2r431; once a form of its own behind a menu). For a human with
+  // members:admin, or a member who brings agents of their own (`startOffered`; hooks.member:
+  // then only a profile of their own that is not in the project yet, §15.6 "A profile that is
+  // not a member yet", tsk-at3gnzqd8svy), over the runners of their own that are attached here
+  // with a live credential (§15.4, §15.6) and offer this project's repository (the hub's
+  // `repository_not_offered`); none, and why, with the way to allow one, and the join line stays.
+  // The form holds the agent and its place in the team; this part holds what the runner
+  // advertises (§15.3) and the workspace, and is read when it is turned on. Returns null for
+  // whom it is not offered, else:
+  // - el: the section; on(): turned on; ready(): on, read, with a tool to start;
+  // - follow(agentId, member, handle): the agent the form chose, for what it says about it;
+  // - blocked(): why that agent cannot start here now (words), else null;
+  // - body(): the runner's part of POST …/placements; said(err): a refusal in words;
+  //   refuse(status, err): a refusal into a status line, placement_quota with its link;
+  // - reread(): read again while it is on (the panel opened anew, a placement made).
+  // hooks.changed(): turned on or off, or read; the form shows and hides its fields.
+  // The tools that start only on a model named in the placement: opencode without `--model`
+  // runs opencode's own default, an opencode-hosted model, and the clone's conversation would go
+  // to opencode's servers (docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). The form
+  // offers such a tool only with the models its runner names, with no "runner's default", and
+  // leaves it out where the runner names none (web/context/views.md, the opencode model entry).
+  const MODEL_NAMED = new Set(["opencode"]);
+
+  function runnerPart(ctx, hooks) {
     if (!M.placements.startOffered(ctx)) return null;
-    // A project without a repository: the hub refuses every placement, so no form.
-    const repo = ctx.project && ctx.project.repository && ctx.project.repository.url;
-    if (!repo) return why(h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository")));
-    let runners = [];
-    let placed = new Set();
-    try {
-      const [attached, current] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements")]);
-      runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
-      placed = new Set(current.items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
-    } catch (err) {
-      return why(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
+    // A member bringing their own agent, as the join form has it (js/join.js): its callers set it
+    // only without members:admin (M.bringing, or the Agents page's !M.trust.governs).
+    const own = !!hooks.member;
+    const words = M.runnerWords;
+    const id = (x) => "placement-new-" + x;
+    const field = (key, label, control, hint) => h("div", { class: "field" },
+      h("label", { for: id(key) }, label), control, hint ? h("p", { class: "hint", id: id(key) + "-hint" }, hint) : null);
+    const select = (key) => h("select", { id: id(key) });
+    const input = (key, attrs) => h("input", Object.assign({ id: id(key) }, attrs || {}));
+
+    const offer = h("input", { type: "checkbox", id: id("on"), "aria-describedby": id("on") + "-hint" });
+    // What the read brought: the fields, or a line saying why there are none.
+    const box = h("div", { class: "join-runner-box" });
+    // What the chosen agent means here: not in the project yet, or at its instance limit.
+    const why = h("p", { class: "hint join-runner-why", role: "status", hidden: true });
+    // An agent that runs already and has room: the next one is another instance (§15.5).
+    const another = h("p", { class: "hint join-runner-another", role: "status", hidden: true });
+    const el = h("fieldset", { class: "join-runner wide" },
+      h("legend", null, M.t("placements.new.legend")),
+      h("div", { class: "join-offer" }, offer, " ", h("label", { for: id("on") }, M.t("placements.new.offer"))),
+      h("p", { class: "hint", id: id("on") + "-hint" }, M.t("placements.new.hint")),
+      why, another, box);
+    box.hidden = true;
+
+    let fields = null;          // the controls, once one's runners were read and one offers the repository
+    let current = [];           // the project's active placements, read with the runners (§15.5)
+    let chosen = { id: "", member: null, handle: "" };
+    let round = 0;              // each turning on reads anew; an answer after it was turned off draws nothing
+
+    function build(runners) {
+      const runner = select("runner");
+      append(runner, runners.map((a) => {
+        const c = a.runner.capabilities || {};
+        return h("option", { value: a.runner.id }, M.t("placements.new.runner_option", { name: a.runner.name, presence: words.presenceText(a.runner),
+          running: String(c.running || 0), max: String(c.max_agents || 0) }));
+      }));
+      runner.value = runners[0].runner.id;
+      const target = select("target");
+      const tool = select("tool");
+      const mode = select("mode");
+      const model = select("model");
+      // No tool to start: said with each listed tool's reason (§15.3), not an empty choice alone.
+      const noToolWhy = h("ul", { class: "placement-new-no-tool-why" });
+      const noTool = h("div", { class: "hint", id: id("tool") + "-none", hidden: true }, h("p", null, M.t("placements.new.no_tool")), noToolWhy);
+      // A tool left out because its runner names no model for it (MODEL_NAMED, above).
+      const noModel = h("p", { class: "hint placement-new-no-model", id: id("tool") + "-no-model", hidden: true });
+      const modelHint = h("p", { class: "hint", id: id("model") + "-hint", hidden: true }, M.t("placements.new.model_named"));
+      // A control is described only by the hints shown now: a screen reader reads a hidden
+      // element named in aria-describedby too, so a hint that does not apply is not named.
+      const describe = (control, hints) => {
+        const shown = hints.filter((x) => !x.hidden).map((x) => x.id).join(" ");
+        if (shown) control.setAttribute("aria-describedby", shown);
+        else control.removeAttribute("aria-describedby");
+      };
+      const caps = () => (runners.find((a) => a.runner.id === runner.value).runner.capabilities || {});
+      const installed = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
+      const tools = () => installed().filter((x) => !MODEL_NAMED.has(x.id) || (x.models || []).length);
+      const harness = () => tools().find((x) => x.id === tool.value);
+      const fillModes = () => {
+        const x = harness();
+        const modes = x ? x.modes || [] : [];
+        append(clear(mode), modes.map((m) => h("option", { value: m }, Object.hasOwn(words.MODES, m) ? words.MODES[m] : m)));
+        mode.value = x && modes.includes(x.default_mode) ? x.default_mode : modes[0] || "";
+        // A tool of MODEL_NAMED starts only on a model chosen here: no "runner's default", and
+        // the placeholder keeps the required select empty until one is.
+        const named = !!x && MODEL_NAMED.has(x.id);
+        append(clear(model), h("option", { value: "" }, named ? M.t("placements.new.model_choose") : M.t("placements.new.model_default")),
+          (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
+        model.required = named;
+        modelHint.hidden = !named;
+        describe(model, [modelHint]);
+      };
+      const fillTools = () => {
+        const kept = tool.value;
+        const list = tools();
+        append(clear(tool), list.map((x) => h("option", { value: x.id }, words.toolName(x.id) + (x.version ? " " + x.version : ""))));
+        tool.value = list.some((x) => x.id === kept) ? kept : list.length ? list[0].id : "";
+        // Nothing to start with: the hub would refuse it (harness_not_offered).
+        // An installed tool left out only for its missing model is said by noModel below, not
+        // as "no tool installed" (review A2144).
+        noTool.hidden = !!list.length || installed().length > 0;
+        const listed = (caps().harnesses || []).filter((x) => !target.value || (x.targets || []).includes(target.value));
+        const chosenRunner = runners.find((a) => a.runner.id === runner.value).runner;
+        append(clear(noToolWhy), noTool.hidden ? [] : !chosenRunner.capabilities ? h("li", null, M.t("runners.caps.unreported"))
+          : listed.length ? listed.filter((x) => x.available === false).map((x) => h("li", null, words.unavailableText(chosenRunner, x)))
+            : h("li", null, M.t("placements.new.no_tool_listed")));
+        noToolWhy.hidden = !noToolWhy.childNodes.length;
+        const left = installed().filter((x) => !list.includes(x)).map((x) => words.toolName(x.id));
+        noModel.hidden = !left.length;
+        noModel.textContent = left.length ? M.t("placements.new.no_model", { tools: M.fmt.list(left) }) : "";
+        describe(tool, [noTool, noModel]);
+        fillModes();
+      };
+      const fillTargets = () => {
+        append(clear(target), h("option", { value: "" }, M.t("placements.new.target_any")),
+          (caps().targets || []).filter((x) => x.reachable !== false).map((x) => h("option", { value: x.name }, x.name)));
+        fillTools();
+      };
+      runner.addEventListener("change", fillTargets);
+      target.addEventListener("change", fillTools);
+      tool.addEventListener("change", fillModes);
+      const clone = input("clone", { pattern: "[a-z0-9][a-z0-9\\-]{0,62}", autocomplete: "off", "aria-describedby": id("clone") + "-hint" });
+      const branch = input("branch", { autocomplete: "off" });
+      // A reason is required while the project plans or is in review (§6.1).
+      const needsReason = ["plan", "review"].includes(ctx.project.state);
+      const reason = h("textarea", { id: id("reason"), rows: "2", required: needsReason || null });
+      // Disabled while the part is off: a disabled fieldset's controls are not validated, so a
+      // required reason or a clone's pattern cannot block a join line unseen.
+      const set = h("fieldset", { class: "join-runner-fields" },
+        field("runner", M.t("placements.new.runner"), runner),
+        field("target", M.t("placements.new.target"), target),
+        h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool, noModel),
+        field("mode", M.t("placements.new.mode"), mode),
+        h("div", { class: "field" }, h("label", { for: id("model") }, M.t("placements.new.model")), model, modelHint),
+        field("clone", M.t("placements.new.clone"), clone, M.t("placements.new.clone_hint")),
+        field("branch", M.t("placements.new.branch"), branch),
+        h("div", { class: "field wide" }, h("label", { for: id("reason") },
+          needsReason ? M.t("placements.new.reason_required", { state: ctx.project.state }) : M.t("placements.new.reason")), reason));
+      fillTargets();
+      return { set, runner, target, tool, mode, model, clone, branch, reason };
     }
-    if (!runners.length) {
-      return why(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-        { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) })));
+
+    // One's runners here and the placements, read each time the part is turned on.
+    async function load() {
+      const mine = ++round;
+      fields = null;
+      const say = (node) => { if (mine === round) append(clear(box), node); };
+      const repo = ctx.project && ctx.project.repository && ctx.project.repository.url;
+      // A project without a repository: the hub refuses every placement, so nothing is read.
+      if (!repo) { say(h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository"))); return; }
+      say(h("p", { class: "muted", role: "status" }, M.t("placements.new.reading")));
+      let runners;
+      let placements;
+      try {
+        // With the closed ones too (§15.6 closed=true): a clone a closed placement still holds on a
+        // runner is one the hub will not give a start of another member (cloneFor).
+        const [attached, listed] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements?closed=true")]);
+        if (mine !== round) return;
+        runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
+        placements = listed.items;
+        // The project's list names a runner's capabilities to members:admin only (§15.4); a
+        // member reads what their own runners advertise from their own runner views (§15.3).
+        if (runners.some((a) => !a.runner.capabilities)) {
+          const views = new Map((await M.api.getAll("/runners")).items.map((r) => [r.id, r]));
+          if (mine !== round) return;
+          runners = runners.map((a) => (views.has(a.runner.id)
+            ? Object.assign({}, a, { runner: Object.assign({}, a.runner, { capabilities: views.get(a.runner.id).capabilities }) }) : a));
+        }
+      } catch (err) {
+        say(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
+        return;
+      }
+      if (!runners.length) {
+        // The project's Runners tab and attaching a runner are members:admin's (app.js, §15.4):
+        // a member is told to ask an admin, with no link to a tab they cannot open.
+        say(h("p", { class: "hint placement-new-none" }, ctx.canAdmin
+          ? M.tn("placements.new.none", { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })
+          : M.t("placements.new.none_member")));
+        return;
+      }
+      const name = repositoryName(repo);
+      runners = runners.filter((a) => ((a.runner.capabilities || {}).repositories || []).some((p) => typeof p === "string" && fnmatch(name, p)));
+      if (!runners.length) {
+        say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) })));
+        return;
+      }
+      current = placements;
+      fields = build(runners);
+      fields.runner.addEventListener("change", () => follow(chosen.id, chosen.member, chosen.handle));
+      // The clone decides whether a start takes up a credential (carriesCredential): both lines again.
+      fields.clone.addEventListener("input", () => follow(chosen.id, chosen.member, chosen.handle));
+      say(fields.set);
+      follow(chosen.id, chosen.member, chosen.handle);
+      hooks.changed();
     }
-    const name = repositoryName(repo);
-    runners = runners.filter((a) => ((a.runner.capabilities || {}).repositories || []).some((p) => typeof p === "string" && fnmatch(name, p)));
-    if (!runners.length) {
-      return why(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) })));
+
+    offer.addEventListener("change", () => {
+      box.hidden = !offer.checked;
+      if (offer.checked) load();
+      else { round += 1; fields = null; current = []; clear(box); }
+      follow(chosen.id, chosen.member, chosen.handle);
+      hooks.changed();
+    });
+
+    // How many instances a member holds as the hub counts them for a new placement (§15.5): its
+    // active instances, plus its active placements that hold no instance yet (no credential
+    // before the first pickup), against its `max_instances` (1 when its view names none, §6.18).
+    // A placement holds no instance yet when it has no credential, or when the instance its
+    // credential made is not among the member's live ones (a revoked credential, waiting to
+    // rejoin): the hub counts both (`instances_held`, review A1746 of #2058).
+    function instancesOf(member) {
+      const liveInstances = (member.instances || []).filter((i) => !i.revoked_at);
+      const liveIds = new Set(liveInstances.map((i) => i.id));
+      // A members:admin view names each instance's credential (review A1745 of #2058): then a
+      // placement's credential among the live ones is what makes it hold a live instance; else
+      // its instance id among the live ones.
+      const byCredential = liveInstances.some((i) => i.credential_id);
+      const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
+      // Without credentials named, its instance id among the live ones; with no live instance at
+      // all, no placement holds one (review A1815 of #2058).
+      const holdsLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : liveIds.size > 0 && (!p.instance || liveIds.has(p.instance)));
+      const mine = current.filter((p) => p.active && p.agent && p.agent.id === member.id);
+      const waiting = mine.filter((p) => !p.credential_id || !holdsLive(p)).length;
+      const live = liveIds.size;
+      // The stored maximum, a hint: a ceiling or the owner's account override can hold the limit
+      // in effect lower (§6.31). The member view does not name that one, GET …/limits does
+      // (tsk-9zssa5a9fq34 reads it); until then the hub's instance_quota says it (review A1816).
+      const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
+      const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
+      // Its credential is live when a live instance names it, else when the instance it made is.
+      const isLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : !!p.instance && liveIds.has(p.instance));
+      const carried = carriesCredential(member, isLive);
+      return { count: live + waiting, max, where, carried, adding: carried ? 0 : 1 };
     }
-    const f = startForm(ctx, runners, placed, hooks);
-    return { node: f.form, first: f.first };
+    // Whether a start of `member` on the chosen runner and clone takes up a credential, as the
+    // hub does (`carried_credential`, §15.5 "Carried-over credential"): the latest closed
+    // placement of that (member, runner, clone) holds a credential that is live and that no
+    // active placement runs. Such a start is an instance already and adds none, so it passes at
+    // the limit: removing a placement and placing the agent there again (review A1815 of #2058).
+    // The hub orders by the stored closing time; the list gives closed_at to the second. Closes
+    // within the newest second cannot be told apart here, so when any of them would carry the
+    // check is unsure: the start is let through and the hub's answer decides. The form is a hint
+    // and never blocks what the hub would take (review A1816 of #2058, the lead's ruling).
+    function carriesCredential(member, isLive) {
+      if (!fields) return false;
+      const clone = fields.clone.value.trim() || cloneFor((member && member.handle) || chosen.handle);
+      const closed = current.filter((p) => !p.active && p.agent && p.agent.id === member.id && p.runner
+        && p.runner.id === fields.runner.value && p.workspace && p.workspace.clone === clone);
+      if (!closed.length) return false;
+      const at = (p) => Date.parse(p.closed_at || 0) || 0;
+      const newest = Math.max(...closed.map(at));
+      const carries = (p) => !!p.credential_id && isLive(p) && !current.some((q) => q.active && q.credential_id === p.credential_id);
+      return closed.filter((p) => at(p) === newest).some(carries);
+    }
+    // §15.6: an agent by id is an active member of the project with room under its instance
+    // limit for one more (§15.5: one placement per instance, several per membership), or a
+    // profile of the caller's own that is not a member yet, which the placement admits with a
+    // first join's fields (the join form offers only the caller's own profiles, GET /agents).
+    // A member without members:admin: only that profile of their own; an agent already here, or
+    // a new profile, needs members:admin.
+    function blocked() {
+      if (own) return chosen.id && !chosen.member ? null : M.t("placements.new.own_only");
+      // A member that lists no instances (null: the join line's member by the hub's word) gives
+      // nothing to count: the hub's instance_quota answers, as the join's quota line leaves it
+      // unsaid. The hub's member view of an agent always carries the list (views.py).
+      if (!chosen.id || !chosen.member || chosen.member.instances === null) return null;
+      const n = instancesOf(chosen.member);
+      if (n.count + n.adding > n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
+      return null;
+    }
+    // An agent that runs already, with room: what the start adds and where the others run. A
+    // start that takes up a credential adds no instance, so nothing is said.
+    function anotherText() {
+      // Not before the placements are read: where the others run is not known until then.
+      if (!fields || !chosen.member || chosen.member.instances === null || blocked()) return null;
+      const n = instancesOf(chosen.member);
+      if (!n.count || n.carried) return null;
+      const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
+      return M.t("placements.new.instance_room", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max), where });
+    }
+    // The clone a start without one gets, as the hub picks it (§15.5 `workspace`): the handle,
+    // else the first `<handle>-N` that on the chosen runner no active placement names, nor a
+    // closed one of another member whose clone the runner has not reported removed (the member's
+    // own closed clone is taken up again; review A1746 of #2058).
+    function cloneFor(handle) {
+      if (!fields || !handle) return handle;
+      const holds = (p) => p.active || ((!p.agent || p.agent.id !== chosen.id)
+        && !(p.workspace_outcome && p.workspace_outcome.state === "removed"));
+      const taken = new Set(current.filter((p) => p.runner && p.runner.id === fields.runner.value && holds(p))
+        .map((p) => p.workspace && p.workspace.clone).filter(Boolean));
+      if (!taken.has(handle)) return handle;
+      let n = 2;
+      while (taken.has(handle + "-" + n)) n += 1;
+      return handle + "-" + n;
+    }
+    function follow(agentId, member, handle) {
+      chosen = { id: agentId || "", member: member || null, handle: handle || "" };
+      const text = offer.checked ? blocked() : null;
+      why.hidden = !text;
+      why.textContent = text || "";
+      const more = offer.checked ? anotherText() : null;
+      another.hidden = !more;
+      another.textContent = more || "";
+      if (fields) fields.set.disabled = !offer.checked;
+      // The clone the hub would give: for an agent here or a new profile's handle alike.
+      const named = (member && member.handle) || chosen.handle;
+      if (fields) fields.clone.setAttribute("placeholder", named ? cloneFor(named) : M.t("placements.new.clone_placeholder"));
+    }
+
+    function body() {
+      const f = fields;
+      const b = { runner: f.runner.value, target: f.target.value || null, harness: f.tool.value };
+      if (f.mode.value) b.mode = f.mode.value;
+      b.model = f.model.value || null;
+      const workspace = {};
+      if (f.clone.value.trim()) workspace.clone = f.clone.value.trim();
+      if (f.branch.value.trim()) workspace.branch = f.branch.value.trim();
+      if (Object.keys(workspace).length) b.workspace = workspace;
+      if (f.reason.value.trim()) b.reason = f.reason.value.trim();
+      return b;
+    }
+    // A refusal as the hub sends it; the fields it names, each with its code.
+    const said = (err) => {
+      const named = err.code === "invalid" && err.details && err.details.fields;
+      const list = named ? Object.entries(named).map(([k, v]) => M.t("placements.new.field", { field: k, why: v })).join("; ") : "";
+      const text = err.code ? M.t("placements.refusal", { reason: err.message || M.t("placements.an_error"), code: err.code }) : err.message || M.t("placements.an_error");
+      return { message: list ? text + " — " + list : text };
+    };
+    // A refusal into the form's status line: the project's limit of placements reached by name,
+    // with where a human admin raises it (§6.1 max_placements, tsk-6s5n7egy4e5r); else said(err).
+    const refuse = (status, err) => {
+      // The agent at its instance limit, by the hub (a start that raced another, §15.5): the
+      // limit in effect and who raises it, as the form says before sending (blocked()).
+      if (err.code === "instance_quota") {
+        const n = chosen.member ? instancesOf(chosen.member) : { max: 1 };
+        const max = err.details && Number.isInteger(err.details.max) ? err.details.max : n.max;
+        status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.instance_quota", { max: String(max) }) });
+        return;
+      }
+      if (err.code !== "placement_quota") { status.fail(M.t("placements.new.failed"), said(err)); return; }
+      const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
+      status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });
+      // Settings, Members and agents is an admin's tab (app.js): a member asks an admin instead.
+      append(status.el, " ", ctx.canAdmin
+        ? M.tn("placements.new.quota_raise",
+          { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) })
+        : M.t("placements.new.quota_ask"));
+    };
+    return {
+      el,
+      on: () => offer.checked,
+      ready: () => offer.checked && !!fields && !!fields.tool.value,
+      // A tool that needs a model named (MODEL_NAMED) without one chosen: words, else null.
+      unnamed: () => (fields && fields.model.required && !fields.model.value ? M.t("placements.new.model_missing", { tool: words.toolName(fields.tool.value) }) : null),
+      first: () => (fields ? fields.runner : offer),
+      model: () => (fields ? fields.model : offer),
+      follow, blocked, body, said, refuse,
+      reread: () => { if (offer.checked) load(); },
+    };
   }
 
   // The sections drawn, each with its way to read the list again (`reread(box)`).
   const sections = new WeakMap();
   const reread = (box) => (sections.has(box) ? sections.get(box)() : Promise.resolve());
-  const startOffered = (ctx) => !!ctx.canAdmin && ctx.me.kind === "human";
-  M.placements = { section, startBox, startOffered, reread, fnmatch };
+  // A human with members:admin, or a member who brings agents of their own here (§3.1, §15.6;
+  // M.bringing in js/page-head.js: trust member, the policy's member_agents not off).
+  const startOffered = (ctx) => ctx.me.kind === "human" && (!!ctx.canAdmin || (!!M.bringing && M.bringing(ctx).memberAdds));
+  M.placements = { section, runnerPart, startOffered, reread, fnmatch };
 })(window.Maity);

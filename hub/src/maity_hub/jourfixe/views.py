@@ -3,13 +3,42 @@ owner who reads along from outside the project."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from maity_hub import clock
+from sqlalchemy import Connection
+
+from maity_hub import events
+from maity_hub.clock import rfc3339_or_none as ts
 
 
-def _ts(value: Any) -> str | None:
-    return clock.rfc3339(value) if value is not None else None
+@dataclass(frozen=True)
+class Hidden:
+    """A reader's hidden isolation windows (§6.2) as a round meets them: the statement and
+    the posts by their `message_seq`, the round's opening and its report by their time,
+    mapped as a card's history is (`events.window_times`)."""
+
+    membership: Any
+    times: list[tuple[Any, Any]]
+
+    @classmethod
+    def of(cls, conn: Connection, reader: Any) -> Hidden | None:
+        """`None` for a reader without hidden windows: a human, an owner reading along from
+        outside, an agent never lifted with `hide_isolation_events`."""
+        row = getattr(reader, "row", None)
+        if not events.windows_of(row):
+            return None
+        return cls(row, events.window_times(conn, reader.project.id, row))
+
+    def at(self, value: Any) -> bool:
+        return value is not None and any(start <= value <= end for start, end in self.times)
+
+    def seq(self, value: Any) -> bool:
+        return value is not None and events.seq_in_window(value, self.membership)
+
+    def round(self, round_row: Any) -> bool:
+        """The whole round: it opened while the reader was isolated (hub/context/jour-fixe.md)."""
+        return self.at(round_row.opened_at)
 
 
 def participants(round_row: Any, active: set[str]) -> list[dict[str, Any]]:
@@ -103,9 +132,19 @@ def full(
     active: set[str],
     reader: Any = None,
     readers: frozenset[str] | set[str] = frozenset(),
+    hidden: Hidden | None = None,
 ) -> dict[str, Any]:
-    """`readers`: who reads a redaction's reason in the round's thread (§8.5)."""
+    """`readers`: who reads a redaction's reason in the round's thread (§8.5). `hidden`: the
+    reader's isolation windows (§6.2), which drop the statement, the posts and the report
+    that came about in one of them."""
     readers = set(readers)
+    statement, posts, report = round_row.statement, round_row.posts, round_row.report
+    if hidden is not None:
+        if statement is not None and hidden.seq(statement.get("message_seq")):
+            statement = None
+        posts = [p for p in posts or [] if not hidden.seq(p.get("message_seq"))]
+        if hidden.at(round_row.reported_at):
+            report = None
     return {
         "id": round_row.id,
         "project": slug,
@@ -115,13 +154,13 @@ def full(
         "reason": round_row.reason,
         "skip_reason": round_row.skip_reason,
         "missed_slots": round_row.missed_slots,
-        "scheduled_for": _ts(round_row.scheduled_for),
-        "opened_at": _ts(round_row.opened_at),
-        "answers_close_at": _ts(round_row.answers_close_at),
+        "scheduled_for": ts(round_row.scheduled_for),
+        "opened_at": ts(round_row.opened_at),
+        "answers_close_at": ts(round_row.answers_close_at),
         "steps": round_row.steps,
-        "exchange_closed_at": _ts(round_row.exchange_closed_at),
-        "report_due_at": _ts(round_row.report_due_at),
-        "reported_at": _ts(round_row.reported_at),
+        "exchange_closed_at": ts(round_row.exchange_closed_at),
+        "report_due_at": ts(round_row.report_due_at),
+        "reported_at": ts(round_row.reported_at),
         "config": round_row.config,
         "moderator": round_row.moderator,
         "invited": round_row.invited,
@@ -129,9 +168,9 @@ def full(
         "absent": round_row.absent,
         "answers_received": round_row.answers_received,
         "conversation_id": round_row.conversation_id,
-        "statement": _statement(round_row.statement, reader, readers),
-        "posts": _posts(round_row, reader, readers),
-        "report": _report(round_row.report, reader),
+        "statement": _statement(statement, reader, readers),
+        "posts": [post(p, reader, readers) for p in posts],
+        "report": _report(report, reader),
     }
 
 
@@ -166,10 +205,10 @@ def minimal(
         "id": round_row.id,
         "project": slug,
         "status": round_row.status,
-        "opened_at": _ts(round_row.opened_at),
-        "answers_close_at": _ts(round_row.answers_close_at),
-        "exchange_closed_at": _ts(round_row.exchange_closed_at),
-        "reported_at": _ts(round_row.reported_at),
+        "opened_at": ts(round_row.opened_at),
+        "answers_close_at": ts(round_row.answers_close_at),
+        "exchange_closed_at": ts(round_row.exchange_closed_at),
+        "reported_at": ts(round_row.reported_at),
         "participants": participants(round_row, active),
         "statement": _statement(round_row.statement, reader, set(readers)),
         "posts": _posts(round_row, reader, set(readers)),

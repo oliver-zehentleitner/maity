@@ -16,23 +16,31 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import hub, onboarding, state
+from .. import clonecheck, hub, onboarding, proc, state
 from . import (
     adapters,
     capabilities,
     config,
     install,
+    keeper,
     limitread,
     logcap,
     loop,
     operate,
     plaincall,
+    scratch,
+    scratchop,
     serve,
+    skillop,
+    skills,
     stub,
     supervisor,
     targets,
+    tmux,
     tools,
     trust,
+    workspace,
+    worktree,
 )
 from .asuser import RUNNER, AsUser
 
@@ -40,12 +48,93 @@ STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
+REMOVED_SHOWN = 20  # `status --removed`: the newest removals shown
 # The agents' user's Claude Code settings, read by `check`: larger is not looked at.
 SETTINGS_MAX = 1024 * 1024
 
 
 class Refused(Exception):
     """The command is refused before anything is sent; exits 2 like a usage error."""
+
+
+# The `maity runner` subcommands that run inside a placed session, started there by the
+# runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
+# the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
+# runner's own, and an agent's call of it is refused (cli.main).
+# Not `pgenv`: it reads a placement's password and starts any command outside the sandbox, so it
+# is no `maity runner` subcommand at all; the runner starts it as a module (adapters.pg_launch).
+IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
+# Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
+# pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
+# be the one the runner wrote for it, never one an agent chose (runner_own_file).
+IN_SESSION_FILE = {"loop": "spec", "logcap": "log"}
+
+
+def _own_home() -> Path | None:
+    """This OS user's home from the user database, not from `HOME`, which a caller sets."""
+    try:
+        import pwd  # noqa: PLC0415 - POSIX only; the runner's agents' side is POSIX
+    except ImportError:
+        return None
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        return None
+
+
+def runner_own_file(command: str, given: str) -> bool:
+    """Whether `given` is the file the runner hands `maity runner <command>`. The runner calls
+    these through `maity` only on an ssh host, where its files lie in the agents' user's
+    `~/.maity-runner` (targets.AGENT_FILES): the loop's spec at `agents/<placement>/loop.json`,
+    the pane's log at `logs/<placement>.log`. An allow list, checked on every call, with or
+    without `MAITY_PLACEMENT`. The path must be written as exactly that one (absolute, the home
+    from the user database, not from `HOME`; no `..`, no doubled or trailing slash), and no
+    step from `~/.maity-runner` down may be a link: each directory is this user's and others
+    may not write it, and the file is an existing regular file of this user with one link
+    that neither group nor others may write. Under a placement it must be that placement's own file.
+    """
+    home = _own_home()
+    if home is None or "\0" in given or not os.path.isabs(given):
+        return False
+    if os.path.normpath(given) != given or given.startswith("//"):
+        return False
+    root = home / targets.AGENT_FILES
+    try:
+        rel = Path(given).relative_to(root).parts
+    except ValueError:
+        return False
+    if command == "loop":
+        shaped = len(rel) == 3 and rel[0] == "agents" and rel[2] == "loop.json"
+        placement = rel[1] if shaped else ""
+    elif command == "logcap":
+        shaped = len(rel) == 2 and rel[0] == targets.LOGS and rel[1].endswith(".log")
+        placement = rel[1].removesuffix(".log") if shaped else ""
+    else:
+        return False
+    if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
+        return False
+    # Under a placement only its own file; set but not a placement id (empty included) is a
+    # placed session of unknown identity, which owns no file.
+    if clonecheck.placed() and clonecheck.placement_id() != placement:
+        return False
+    uid = os.getuid()
+    step = root
+    for part in ("", *rel):
+        step = step / part if part else step
+        try:
+            info = os.lstat(step)
+        except OSError:
+            return False
+        last = step == root.joinpath(*rel)
+        kind = stat.S_ISREG(info.st_mode) if last else stat.S_ISDIR(info.st_mode)
+        # The file is written 0600; its directories may carry the user's group-write bit (an
+        # umask of 002 makes the parents), never the others'.
+        barred = stat.S_IWGRP | stat.S_IWOTH if last else stat.S_IWOTH
+        if not kind or info.st_uid != uid or info.st_mode & barred:
+            return False
+        if last and info.st_nlink != 1:  # not a hard link to another file of this user
+            return False
+    return True
 
 
 # --- pair ------------------------------------------------------------------------------------
@@ -183,6 +272,10 @@ class Report:
     def warn(self, text: str) -> None:
         self.lines.append(("warn", text))
 
+    def note(self, text: str) -> None:
+        """Worth knowing, nothing to fix: the operator's own choice (`track = "newest"`)."""
+        self.lines.append(("note", text))
+
     def error(self, text: str) -> None:
         self.lines.append(("error", text))
 
@@ -203,6 +296,13 @@ DEFAULTS = (
                        "an exit within 60 s counts as a crash"),  # fmt: skip
     ("limits.log_keep_bytes", "10 MiB per placement; a full log drops its older half"),
     ("limits.require_local_approval", "false"),
+    (
+        "limits.watch.not_listening_grace_minutes",
+        "15 (1-1440; how long the hub must report the session not listening)",
+    ),
+    ("limits.watch.join_within_minutes", "10 (1-120; how long after a start the agent may join)"),
+    ("limits.watch.auto_restarts", "1 (0-3; the watch's restarts within the window)"),
+    ("limits.watch.retry_window_minutes", "120 (10-1440; the window those restarts count in)"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
     ("backend.local.tmux_socket", "<state_dir>/tmux.sock; agent_user: ~<user>/.maity-runner/"),
@@ -223,6 +323,11 @@ DEFAULTS = (
         " other harnesses start without their sandbox; false: never refused for the sandbox",
     ),
     ("harness.<id>.env_file", "unset"),
+    (
+        "harness.claude-code.track",
+        '"checked": the update installs at most the sandbox-checked version; "newest": the'
+        " vendor's newest, which check notes as unchecked",
+    ),
     (
         "git.name, git.email",
         f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
@@ -268,8 +373,9 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
     `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
     antigravity configured, a command grant is not applied to agy (adapters.agy_grants): it is
-    named as left out and runs in agy's sandbox like an unlisted command. Said, never an
-    error, so a restart before the table is edited keeps every placement running."""
+    named as left out and runs in agy's sandbox like an unlisted command. With codex
+    configured, the grant parts a Codex placement starts without (adapters.codex_left_out).
+    Said, never an error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
         if grant.refused:
             listed = ", ".join(repr(rule) for rule in grant.refused)
@@ -287,6 +393,16 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                     f"repositories.{name}: allow {rule!r} is left out for antigravity and runs "
                     f"in agy's sandbox like an unlisted command: {why}"
                 )
+        if "codex" in cfg.harnesses:
+            # Codex starts without what it cannot enforce, said here and at each start.
+            for part in adapters.codex_left_out(grant):
+                report.warn(f"repositories.{name}: {part}")
+        if grant.lead and not grant.pull_requests:
+            # Whether the placed member is a manager is the hub's to say at each call; the
+            # check reads no member, so it does not warn about that.
+            report.warn(
+                f"repositories.{name}: lead = true gives nothing without pull_requests = true"
+            )
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
@@ -307,6 +423,26 @@ def _check_git(report: Report, cfg: config.Config) -> None:
         )
 
 
+def _check_skills(report: Report, cfg: config.Config) -> None:
+    """The Keep the Why copies the runner holds (skills.copies), each named with its commit:
+    ok when whole and the one it recorded; a warning otherwise, never an error, since a start
+    fetches again or goes without the skill and says so (tsk-7casfxb7cn49). Nothing fetched."""
+    found = skills.copies(cfg.skills_dir, cfg.state_dir)
+    if not found:
+        report.ok(f"Keep the Why skill: no copy in {cfg.skills_dir} yet; a start fetches one")
+        return
+    for name, _source, commit, state_text in found:
+        where = cfg.skills_dir / skills.NAME / name
+        if state_text == "ok":
+            report.ok(f"Keep the Why skill at {commit[:12]}: {where}, checked")
+        elif state_text == "unrecorded":
+            report.warn(f"Keep the Why skill at {commit[:12]}: {where} has no record in the "
+                        "state directory; the next start fetches and compares")  # fmt: skip
+        else:
+            report.warn(f"Keep the Why skill: {where} {state_text}; it is not handed out, and "
+                        "the next start fetches it again or starts without it")  # fmt: skip
+
+
 def _check_state(report: Report, cfg: config.Config) -> None:
     directory = cfg.state_dir
     if not directory.is_dir():
@@ -319,11 +455,166 @@ def _check_state(report: Report, cfg: config.Config) -> None:
         report.error(f"no runner credential in {directory}; run `maity runner pair` first")
 
 
+def _check_agent_path(report: Report, local: config.Local) -> None:
+    """An `agent_path` entry that does not exist, said with the agents' home when it lies under
+    another one (tsk-2k0jcaxfd0ja: a service's agent_path named /home/maity-runner/..., while
+    `maity runner install` gives that user /var/lib/maity-runner). A warning: an entry that is
+    missing finds nothing, and the harness checks say what is then not found."""
+    if not local.agent_path:
+        return
+    home = (
+        config.home_of(local.agent_user)
+        if local.layout == "agent_user" and local.agent_user
+        else Path(os.path.expanduser("~"))
+    )
+    as_user = _local_agents_user(local)
+    if not _reaches(as_user):
+        return  # the sudo error is said by _check_agent_user
+    for entry in local.agent_path.split(os.pathsep):
+        seen = _seen(as_user, Path(entry)) if entry else True
+        if seen is None:  # said as such, as the gh login is (review A2167 of #2125)
+            report.warn(f"agent_path entry {entry} not checked: it cannot be looked at from here")
+        if seen is not False:
+            continue
+        said = f"agent_path entry {entry} does not exist"
+        parts = Path(entry).parts
+        if (
+            Path(entry).is_absolute()
+            and len(parts) > 2
+            and parts[1] == "home"
+            and _seen(as_user, Path(*parts[:3])) is False
+        ):
+            said += f"; {Path(*parts[:3])} is no home here, the agents' home is {home}"
+        report.warn(said)
+
+
+def _reaches(as_user: AsUser) -> bool:
+    """Whether the agents' side can be looked at: always on the runner's own side, through sudo
+    only when sudo to the agents' user works. Where it does not, `_check_agent_user` reports
+    that, and a failed look must not read as absent on top of it (review A2168 of #2125)."""
+    if as_user.direct:
+        return True
+    try:
+        return as_user.run(["true"], timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _local_agents_user(local: config.Local) -> AsUser:
+    """The agents' user of a local backend (supervisor.agents_user, from the backend alone)."""
+    return AsUser(local.agent_user if local.layout == "agent_user" and local.agent_user else None)
+
+
+def _seen(as_user: AsUser, path: Path, kind: str = "-e") -> bool | None:
+    """Whether `path` exists as the agents' user sees it (review A2159/A2160 of #2125): through
+    sudo in the agent_user layout, by stat on the runner's own side. None where this user
+    cannot look (EACCES, which pathlib's predicates raise up to Python 3.13 and hide from 3.14
+    on: cli/context/runner.md, 52b35dea): never taken for absent."""
+    try:
+        return as_user.exists(path, kind)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -> None:
+    """What a grant lets the agents run, or open, that this host does not have (local
+    backend; tsk-2k0jcaxfd0ja, a fresh host): a granted command whose program is not on
+    agent_path, gh missing for `pull_requests = true`, and gh without a login stored where
+    `maity gh` finds it (only HOME reaches gh: `~/.config/gh/hosts.yml` of the agents' user).
+    Warnings: the grant is not wrong, the host is not ready for it."""
+    local = cfg.local
+    if local is None:
+        return
+    agents_home = (
+        config.home_of(local.agent_user)
+        if local.layout == "agent_user" and local.agent_user
+        else Path(os.path.expanduser("~"))
+    )
+    agents = local.agent_user if local.layout == "agent_user" and local.agent_user else None
+    who = agents or getpass.getuser()
+    as_user = supervisor.agents_user(cfg)
+    reaches = _reaches(as_user)  # without sudo, the agents' side is not looked at at all
+    for name, grant in cfg.repositories.items():
+        for rule in grant.allow:
+            program = rule.split(" ")[0]
+            if not reaches or not config.plain_command(rule) or "/" in program:
+                continue
+            # As the agents' user finds it: a program under that user's home counts. A look
+            # that fails (sudo gone, a timeout) says nothing (review A2167 of #2125).
+            try:
+                where = capabilities.which(program, agent_path, as_user)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if where is None:
+                report.warn(
+                    f"repositories.{name}: allow {rule!r}: `{program}` is not on agent_path "
+                    f"({agent_path}) for {who}; install it, or the command fails in every session"
+                )
+        if not grant.pull_requests:
+            continue
+        if proc.program("gh") is None:
+            # `maity gh` looks gh up on the runner's PATH at each call (ghpr.find_gh): once
+            # gh is installed, running sessions find it without a restart.
+            report.warn(
+                f"repositories.{name}: pull_requests = true, but gh is not on the runner's PATH, "
+                "so `maity gh` refuses until it is installed; install gh (sessions find it at "
+                "their next call)"
+            )
+            continue
+        if not reaches:
+            continue
+        hosts = agents_home / ".config" / "gh" / "hosts.yml"
+        seen = _seen(as_user, hosts, "-f")
+        if seen is None:
+            report.warn(
+                f"repositories.{name}: gh's login for {who} not checked: {hosts} cannot be "
+                "looked at from this user"
+            )
+        elif not seen:
+            report.warn(
+                f"repositories.{name}: pull_requests = true, but gh has no login for {who} "
+                f"(no {hosts}); as that user: gh auth login, then "
+                "gh auth setup-git (an agent's git push uses that login too: without it, "
+                '"could not read Username")'
+            )
+
+
+def _check_session_shell(report: Report, as_user: AsUser, where: str = "") -> None:
+    """The SHELL every session gets, looked up as a start does (tmux.Tmux.session_shell). A
+    harness runs its commands through it (OpenCode does), so one that is or links to nologin
+    or false fails every command, as the service account's nologin did (tsk-fjq2k0sx1n3r)."""
+    probe = tmux.probe_shell(as_user, lambda argv: as_user.run(argv))
+    if probe.shell is None:
+        who = "the host" if not as_user.here else f"sudo to {as_user.user}"
+        report.warn(f"{where}the sessions' SHELL is not checked: {who} gave no answer")
+    elif not probe.runs:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell}, which the agents' user cannot "
+            "run: every command a harness runs through it fails; install bash or a POSIX sh "
+            "there"
+        )
+    elif probe.resolved is None:
+        report.warn(
+            f"{where}sessions get SHELL={probe.shell}, not checked further: where it leads "
+            "could not be read (`readlink -f` failed), so nologin or false is not ruled out"
+        )
+    elif os.path.basename(probe.resolved) in tmux.NOT_A_SHELL:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell} ({probe.resolved}), which runs no "
+            "command: every command a harness runs through it fails; install bash or a POSIX "
+            "sh there"
+        )
+    else:
+        report.ok(f"{where}sessions get SHELL={probe.shell}, not the account's login shell")
+
+
 def _check_local(report: Report, local: config.Local) -> None:
+    _check_agent_path(report, local)
     if shutil.which("tmux") is None:
         report.error("tmux is not installed; the local backend runs every agent in tmux")
     else:
         report.ok("tmux found")
+    _check_session_shell(report, _local_agents_user(local))
     if local.layout == "agent_user" and local.agent_user:
         _check_agent_user(report, local)
         return
@@ -374,12 +665,28 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
+def _check_version(
+    report: Report, harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> None:
+    """The installed version against the sandbox-checked one: a warning, or under
+    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too
+    (capabilities.unchecked_warning)."""
+    note = capabilities.unchecked_note(harness.id, version, harness.track)
+    if note is not None:
+        report.note(note)
+    warning = capabilities.unchecked_warning(harness, version, tools_dir)
+    if warning is not None:
+        report.warn(warning)
+
+
 def _check_harness(
     report: Report,
     harness: config.Harness,
     agent_path: str,
     as_user: AsUser = RUNNER,
     tools_dir: Path | None = None,
+    layout: str | None = None,
+    state_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
@@ -400,18 +707,22 @@ def _check_harness(
         report.error(f"harness {harness.id}: `{found.path} --version` failed")
         return
     report.ok(f"harness {harness.id}: {found.path} ({found.version})")
-    warning = capabilities.unchecked(harness.id, found.version)
-    if warning is not None:
-        report.warn(warning)
+    _check_version(report, harness, found.version, tools_dir)
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user, agent_path, found.version)
+        _check_claude_code(
+            report, harness, as_user, agent_path, found.version, found.path, state_dir
+        )
+        _check_user_skill(report, as_user)
     if harness.id == "antigravity":
-        _check_antigravity(report, harness, as_user, agent_path)
+        _check_antigravity(report, harness, as_user, binary=found.path)
+    if harness.id == "opencode":
+        _check_opencode(report, harness, layout)
+        _check_opencode_flags(report, harness, found.path, agent_path, as_user)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -421,24 +732,131 @@ def _check_harness(
             report.warn(f"harness codex: no login at {login}; agents would start without one")
 
 
-def _check_antigravity(
-    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
-    where: str = "",
+def _check_user_skill(report: Report, as_user: AsUser) -> None:
+    """A Keep the Why skill the agents' user installed for Claude Code by hand: a placed
+    session still sees it beside the one the runner delivers, as a plain `keep-the-why` that
+    may be another version and whose files the session cannot read (skills.py, the review of
+    #2056). The operator's content, so named, never refused or removed."""
+    home = config.home_of(as_user.user) if as_user.user else Path.home()
+    found = home / ".claude" / "skills" / skills.NAME
+    if as_user.exists(found) or as_user.exists(found, "-L"):
+        report.warn(
+            f"harness claude-code: {found} is installed for the agents' user; placed sessions "
+            f"also get the skill the runner delivers, as `keep-the-why:keep-the-why`, and see "
+            "this copy beside it under the plain name"
+        )
+
+
+def _check_opencode(
+    report: Report, harness: config.Harness, layout: str | None = None, where: str = "",
 ) -> None:  # fmt: skip
-    """agy's sandbox (reported off; the namespaces it needs as a diagnostic), its sign-in,
-    and what of the agents' user's own agy settings every agent inherits (§15.3)."""
+    """opencode has no OS sandbox the runner switches on, so the deny/allow rules it writes
+    are model-steering, not a boundary: an opencode agent runs any command as the agents' OS
+    user. Under layout = "single" that user is the runner's own, so the agent can read the
+    runner's state, the other clones and logins. Every opencode placement is therefore
+    unsandboxed, so `require_sandbox = true` refuses it — an error, the way claude-code and
+    antigravity call `capabilities.sandbox_refused` when their sandbox is off; without it the
+    residual risk is a warning as before. Both fire on either backend (local through
+    `_check_harness`, each ssh host through `_check_host`) whenever the opencode check reaches
+    it — a missing binary or a failed `--version` errors out before this. Unlike agy's `sandbox
+    reported off`, this is not a diagnostic the runner might later clear: opencode never has a
+    runner-switched OS sandbox to report. An ssh host has no local layout, so it takes the
+    generic wording (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)."""
+    risk = (
+        "under layout single an agent can run any command as the runner's own user, including "
+        "reading the runner's state, the other clones and logins"
+        if layout == "single"
+        else "an agent can run any command as the agents' user"
+    )
+    line = f"{where}harness opencode: no OS sandbox; {risk}"
+    cite = " (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)"
+    if capabilities.sandbox_refused(harness, False, False):
+        report.error(line + ", and require_sandbox = true refuses them" + cite)
+    else:
+        report.warn(line + cite)
+
+
+def _check_opencode_flags(
+    report: Report, harness: config.Harness, binary: str | None, agent_path: str,
+    as_user: AsUser = RUNNER, where: str = "",
+) -> None:  # fmt: skip
+    """Whether the installed opencode's commands name the flags the adapter passes, for each
+    configured mode (capabilities.OPENCODE_FLAGS): OpenCode 2.3's TUI refused `--model` and
+    every interactive start exited at once (tsk-daa6e0gfncg0). A flag its `--help` does not
+    name is an error, as that start would fail; a help that cannot be read is a warning."""
+    if binary is None:
+        return
+    found = capabilities.opencode_missing_flags(binary, agent_path, harness.modes, as_user)
+    for mode, missing in found.items():
+        command = " ".join(("opencode", *capabilities.OPENCODE_FLAGS[mode][0]))
+        if missing is None:
+            report.warn(
+                f"{where}harness opencode: `{command} --help` could not be read; whether it "
+                f"takes the flags the runner's {mode} start passes is not checked"
+            )
+        elif missing:
+            report.error(
+                f"{where}harness opencode: `{command} --help` does not name "
+                f"{', '.join(missing)}; the runner's {mode} start passes it, so opencode would "
+                "exit at once (tsk-daa6e0gfncg0)"
+            )
+        else:
+            report.ok(f"{where}harness opencode: `{command}` takes the {mode} start's flags")
+
+
+_AGY_UNTIL = (
+    "Until then require_sandbox = true under [harness.antigravity] refuses agy's starts; unset "
+    "or false, they go ahead unsandboxed and each says so in the log. Either way this stays an "
+    "error"
+)
+
+
+def _check_antigravity(
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, where: str = "",
+    binary: str | None = None,
+) -> None:  # fmt: skip
+    """agy's sandbox (reported off; whether it can start as a diagnostic, an error where it
+    cannot, tsk-xjy2d5617sar), its sign-in, and what of the agents' user's own agy settings
+    every agent inherits (§15.3)."""
     here = not where  # an ssh host is Linux
+    state = None
     if here and not capabilities.agy_sandbox_platform():
         report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
-    elif capabilities.agy_namespaces(agent_path, as_user):
+    else:
+        state = capabilities.agy_sandbox(as_user, binary)
+    if state == capabilities.AGY_STARTS:
         report.ok(
             f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
             "agy's sandbox start not verified"
         )
-    else:
+    elif state == capabilities.AGY_PROFILE:
         report.warn(
-            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs do not "
-            "start (or no `unshare`); agy would run commands unsandboxed"
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs are "
+            "refused here, but an AppArmor profile named for agy is loaded, which may grant agy "
+            "its own; not verified (what it attaches to and allows cannot be read unprivileged)"
+        )
+    elif state == capabilities.AGY_CANNOT:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "user namespace's uid_map, gid_map or setgroups write is refused (AppArmor's "
+            "restriction of unprivileged user namespaces) and no AppArmor profile lifts that, "
+            "so agy runs commands unsandboxed. On Ubuntu an AppArmor profile for agy clears "
+            "this: named `agy`, attached to agy's real path, allowing `userns`, loaded as root, "
+            "then a restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_REFUSED:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "kernel or a container refuses user namespaces to the agents' user (the unshare "
+            "call itself is refused: a sysctl such as kernel.unprivileged_userns_clone, or a "
+            "container's seccomp), so agy runs commands unsandboxed. An AppArmor profile for "
+            "agy does not clear this; allowing unprivileged user namespaces there does "
+            "(docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_UNKNOWN:
+        report.warn(
+            f"{where}harness antigravity: whether agy's terminal sandbox can start is not "
+            "checked (no `unshare`, or the probe could not tell)"
         )
     line = (
         f"{where}harness antigravity: sandbox reported off: the runner has not seen agy's "
@@ -512,12 +930,46 @@ def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: st
             return
 
 
+def _check_codex_home(report: Report, cfg: config.Config, as_user: AsUser = RUNNER) -> None:
+    """Codex's per-placement CODEX_HOME must lie under the workspaces root, which the codex
+    sandbox re-opens for the placement, not under a path it hides (the state directory): under
+    a hidden path Codex's own sandbox cannot create or run its per-command helper, so no
+    command runs and `maity resume` never starts (card tsk-hv7jbgy75zjt). The home sits inside
+    the placement scratch (adapters.codex_home), so codex must be a harness that gets one and
+    the workspaces root must not be inside the state directory; `check` reports either from the
+    local configuration before a placement starts, and does not confirm that the scratch is
+    created when a placement actually runs (a runtime fall-back to no scratch is beyond it)."""
+    if "codex" not in cfg.harnesses or cfg.local is None:
+        return
+    if "codex" not in workspace.SCRATCH_HARNESSES:  # a regression guard: no scratch, no home
+        report.error(
+            "harness codex: no scratch is carved for codex placements, so CODEX_HOME would fall "
+            "under the hidden state directory and Codex could run no command"
+        )
+        return
+    workspaces = cfg.local.workspaces.resolve() if as_user.here else cfg.local.workspaces
+    state_dir = cfg.state_dir.resolve() if as_user.here else cfg.state_dir
+    if workspaces == state_dir or state_dir in workspaces.parents:
+        report.error(
+            f"harness codex: the workspaces root {workspaces} is inside the state directory "
+            f"{state_dir}, which the codex sandbox hides; Codex's CODEX_HOME would be hidden and "
+            "no command could run. Move the workspaces out of the state directory"
+        )
+    else:
+        report.ok(
+            f"harness codex: CODEX_HOME lies in each placement's scratch under {workspaces}, "
+            "which the codex sandbox re-opens"
+        )
+
+
 def _check_claude_code(
     report: Report,
     harness: config.Harness,
     as_user: AsUser = RUNNER,
     agent_path: str = "",
     version: str | None = None,
+    binary: str | None = None,
+    state_dir: Path | None = None,
 ) -> None:
     # On the agents' PATH, as their user finds it: that is where the sandbox starts.
     tools = capabilities.claude_sandbox_tools()
@@ -535,18 +987,282 @@ def _check_claude_code(
         (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
-        _check_claude_hooks(report, as_user, "")
+        # The settings first: the headless probe runs, and its pass is kept, only under
+        # settings a start accepts.
+        clean = _check_claude_hooks(report, as_user, "")
+        clean = _check_claude_socket_settings(report, as_user, "") and clean
+        if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
+            _check_claude_nesting(report, agent_path, as_user)
+            record = None if state_dir is None else ProbeRecord(state_dir, "local", version)
+            _check_claude_seccomp(report, as_user, "", binary, agent_path, record, clean)
+    _check_worktree_guard(report, as_user, "", version)
     _check_claude_settings(report, as_user, "")
 
 
-def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> None:
+    """Only a refused mapping is an error: it is what makes every sandboxed command fail. A
+    probe that could not tell says so, without blaming the host (cli/context/runner.md)."""
+    found = capabilities.claude_nested_userns(agent_path, as_user)
+    if found.outcome == "ok":
+        report.ok("harness claude-code: a user namespace starts inside bubblewrap")
+    elif found.outcome == "refused":
+        report.error(
+            "harness claude-code: a user namespace does not start inside bubblewrap "
+            f"({found.detail}), so every sandboxed command fails (subagents included) while "
+            "the session itself starts; on Ubuntu this is AppArmor's "
+            'bwrap-userns-restrict profile: see docs/runners.md, "Ubuntu: nested user '
+            'namespaces"'
+        )
+    elif found.outcome == "missing":
+        report.warn(
+            f"harness claude-code: not on agent_path: {found.detail}; whether a user "
+            "namespace starts inside bubblewrap is not checked"
+        )
+    else:
+        report.warn(
+            "harness claude-code: could not tell whether a user namespace starts inside "
+            f"bubblewrap ({found.detail})"
+        )
+
+
+# Configured, not seen working: the hook rests on Claude Code's documented behaviour, which no
+# check here runs (cli/context/runner.md).
+WORKTREES_OFF = (
+    "harness claude-code: placements are set up without git worktrees (EnterWorktree and git "
+    "worktree denied; a WorktreeCreate hook refuses worktree creation; not confirmed on this "
+    "Claude Code version)"
+)
+# Claude Code's working trees: a leftover directory there alone does not stop maity's git.
+CLAUDE_WORKTREES = Path(".claude", "worktrees")
+# git's registration of a worktree: while it holds an entry maity runs no git in the clone.
+GIT_WORKTREES = Path(".git", "worktrees")
+
+
+def _check_worktree_guard(report: Report, as_user: AsUser, where: str, version: str | None) -> None:
+    """The worktree guard as the runner's settings configure it, or a warning, sandbox or not,
+    where the hook is not written (a version older than CLAUDE_WORKTREE_HOOK_MIN, or unknown)
+    or would not run (capabilities.claude_hooks_off): then only the deny rules hold. It reports
+    the configuration, it runs nothing. Under the sandbox `_check_claude_hooks` already reports
+    the refused starts as an error; this line stays a warning, never an ok after it."""
+    why: str | None
+    if not capabilities.worktree_hook_version_ok(version):
+        oldest = ".".join(str(part) for part in capabilities.CLAUDE_WORKTREE_HOOK_MIN)
+        why = f"version {version or 'unknown'} is older than {oldest} or unknown"
+        written = "the runner writes no WorktreeCreate hook"
+    else:
+        why = capabilities.claude_hooks_off(as_user)
+        written = "the runner's WorktreeCreate hook does not run"
+    if why is None:
+        report.ok(f"{where}{WORKTREES_OFF}")
+        return
+    report.warn(
+        f"{where}harness claude-code: {why}, so {written} and a subagent's worktree isolation "
+        "is not refused; the EnterWorktree and git worktree denies remain"
+    )
+
+
+def _check_leftover_worktrees(
+    report: Report, cfg: config.Config, as_user: AsUser, host: str = "", where: str = ""
+) -> None:
+    """A warning per clone the runner recorded on this target (`workspaces.json`; the clones
+    it made, kept or not) that holds a registered worktree or a leftover directory under
+    `.claude/worktrees/`. Read-only: the runner clears a `.claude/worktrees/` leftover only at
+    the placement's next start (worktree.py)."""
+    for key, entry in sorted(workspace.records(cfg.state_dir).items()):
+        # `host:/path` for an ssh target, the bare path for the local one (Place.key); a
+        # Windows drive letter is no host, as the remote path is always absolute POSIX.
+        on_host, _, path = key.partition(":")
+        if not path.startswith("/") or key.startswith("/"):
+            on_host, path = "", key
+        if on_host != host:
+            continue
+        repo = Path(path) / workspace.REPO if workspace.recorded_layout(entry) else Path(path)
+        if _holds_entries(as_user, repo / GIT_WORKTREES):
+            report.warn(f"{where}clone {repo} {_registered(repo, as_user)}")
+        # Only a real directory there is what the start's prune removes (worktree._is_real_dir);
+        # a file or a link there neither stops maity's git nor is removed, so it is not named.
+        elif _holds_entries(as_user, repo / CLAUDE_WORKTREES, directories=True):
+            report.warn(
+                f"{where}clone {repo} holds a leftover directory under .claude/worktrees/ with "
+                "no registration; it does not stop maity's git, and the runner clears it at the "
+                "placement's next start"
+            )
+
+
+BLOCKS_GIT = "so maity runs no git there and `maity report` and `maity gh` fail"
+
+
+def _registered(repo: Path, as_user: AsUser) -> str:
+    """What a clone's worktree registration means, by the start prune's own rule
+    (worktree.registrations): cleared at the next start, or left for a person. Read here as
+    the runner's own user only; through sudo or ssh the kind is not told apart."""
+    counts = worktree.registrations(str(repo)) if as_user.direct else None
+    if counts is None or sum(counts) == 0:
+        return (
+            f"holds a git worktree registration (.git/worktrees), {BLOCKS_GIT}; the runner "
+            "clears one whose working tree is under .claude/worktrees/ at the placement's next "
+            "start, uncommitted work in it included, and leaves any other for a person"
+        )
+    if counts[1]:
+        return (
+            f"holds a git worktree registration (.git/worktrees) the runner's start does not "
+            f"clear (its working tree is not under .claude/worktrees/), {BLOCKS_GIT}; a person "
+            "removes it outside the session (`git worktree remove` or `git worktree prune`)"
+        )
+    return (
+        f"holds a git worktree registration (.git/worktrees) of a working tree under "
+        f".claude/worktrees/, {BLOCKS_GIT}; the runner clears it at the placement's next start, "
+        "uncommitted work in it included"
+    )
+
+
+def _holds_entries(as_user: AsUser, path: Path, directories: bool = False) -> bool:
+    """Whether the directory `path` has any entry (with `directories`, any real directory, a
+    link to one not counted), as the agents' user sees it; a missing or unreadable one counts
+    as none (check warns, it does not refuse). The directory and its parent (`.claude`,
+    `.git`) are tested with `test -L`, and a link as either counts as none; the clone's path
+    above them is the runner's own record and is not tested. Only a boolean reaches the
+    operator."""
+    try:
+        if not as_user.exists(path, "-d") or any(
+            as_user.exists(part, "-L") for part in (path.parent, path)
+        ):
+            return False
+        if as_user.direct:
+            with os.scandir(path) as listed:
+                return any(not directories or e.is_dir(follow_symlinks=False) for e in listed)
+        kind = ["-type", "d"] if directories else []  # find follows no link without -L
+        done = as_user.run(["find", str(path), "-mindepth", "1", "-maxdepth", "1", *kind,
+                            "-print", "-quit"])  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and bool(done.stdout.strip())
+
+
+@dataclass(frozen=True)
+class ProbeRecord:
+    """Where `check` keeps the Claude Code version whose probe passed (capabilities.
+    PROBE_FILE): the state directory, the target's name and the installed version."""
+
+    state_dir: Path
+    target: str
+    version: str | None
+
+
+def _check_claude_seccomp(
+    report: Report,
+    as_user: AsUser,
+    where: str,
+    binary: str | None,
+    agent_path: str,
+    record: ProbeRecord | None = None,
+    settings_clean: bool = True,
+) -> None:
+    """Linux only: what Claude Code's seccomp step needs from the host (capabilities.
+    claude_seccomp). Anything but `ok` is an error: the supervisor starts no sandboxed Claude
+    Code placement on it, an unreadable answer included. On `ok`, the headless probe, only
+    when the hook and socket settings are clean (`settings_clean`): otherwise it is not run
+    and no pass is kept, as for a probe that did not pass."""
+    found = capabilities.claude_seccomp(as_user)
+    if found.outcome != "ok":
+        report.error(f"{where}{capabilities.claude_seccomp_line(found)}")
+        _probe_stale(report, where, record)
+        return
+    report.ok(
+        f"{where}harness claude-code: seccomp for blocking Unix sockets: machine "
+        f"{found.arch}, kernel seccomp filtering present"
+    )
+    if binary is None:
+        return
+    if not settings_clean:
+        _keep_probe(report, where, record, False)
+        report.warn(f"{where}harness claude-code: probe not run: the settings above refuse "
+                    "every sandboxed start")  # fmt: skip
+        _probe_stale(report, where, record)
+        return
+    _check_claude_socket_probe(report, as_user, where, binary, agent_path, record)
+
+
+def _probe_stale(report: Report, where: str, record: ProbeRecord | None) -> None:
+    """What a start on this target will warn about: the installed version is not the one
+    whose probe last passed (capabilities.probe_stale_line). An error here, so the operator
+    sees it; a start only logs it. Called only where the probe did not pass in this run,
+    after its record was updated, so a fresh pass never reads as stale."""
+    if record is None or not record.state_dir.is_dir():
+        return
+    passed = capabilities.probe_passed(record.state_dir, record.target)
+    stale = capabilities.probe_stale_line(passed, record.version)
+    if stale is not None:
+        report.error(f"{where}{stale}")
+
+
+def _keep_probe(report: Report, where: str, record: ProbeRecord | None, passed: bool) -> None:
+    """Record the probed version as passed, or forget the target's record when it did not
+    pass. The service reads it at each start (supervisor._probe_warning)."""
+    if record is None or not record.state_dir.is_dir():  # `check` reports the directory
+        return
+    try:
+        capabilities.record_probe(record.state_dir, record.target,
+                                  record.version if passed else None)  # fmt: skip
+    except (OSError, state.StateError) as exc:
+        report.warn(f"{where}harness claude-code: the probe result is not kept "
+                    f"({onboarding.inline(str(exc))[:160]})")  # fmt: skip
+
+
+def _check_claude_socket_probe(
+    report: Report,
+    as_user: AsUser,
+    where: str,
+    binary: str,
+    agent_path: str,
+    record: ProbeRecord | None = None,
+) -> None:
+    """One headless run of Claude Code (capabilities.claude_socket_probe), here and never at a
+    start; anything but the runtime's line that it applied the filter is an error. Its result
+    is kept per target for the service's start warning."""
+    probe = capabilities.claude_socket_probe(binary, agent_path, as_user)
+    _keep_probe(report, where, record, probe.outcome == "ok")
+    if probe.outcome != "ok":
+        _probe_stale(report, where, record)
+    if probe.outcome == "ok":
+        report.ok(f"{where}harness claude-code: probe run: Unix socket blocking applied")
+    elif probe.outcome == "off":
+        report.error(
+            f"{where}harness claude-code: probe run: Unix socket blocking is off "
+            f"({probe.detail}); Claude Code placements must not run here"
+        )
+    else:
+        report.error(
+            f"{where}harness claude-code: probe run: Unix socket blocking not confirmed "
+            f"({probe.detail}); treat Claude Code placements here as unprotected"
+        )
+
+
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> bool:
     """With the sandbox on, the runner's hook must run: settings that switch hooks off
-    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error.
+    True when the settings are clean."""
     why = capabilities.claude_hooks_off(as_user)
     if why is None:
         report.ok(f"{where}harness claude-code: hooks are not switched off")
-    else:
-        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+        return True
+    report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+    return False
+
+
+def _check_claude_socket_settings(report: Report, as_user: AsUser, where: str) -> bool:
+    """With the sandbox on, the managed and the agents' user's settings must carry no Unix
+    socket setting (capabilities.SOCKET_SETTINGS): such settings refuse every start of a
+    sandboxed agent (supervisor), so `check` says so as an error. True when they are clean."""
+    why = capabilities.claude_socket_settings(as_user)
+    if why is None:
+        report.ok(
+            f"{where}harness claude-code: the managed and user settings carry no Unix socket "
+            "setting"
+        )
+        return True
+    report.error(f"{where}{capabilities.claude_socket_settings_line(why)}")
+    return False
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
@@ -626,6 +1342,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
+    _check_session_shell(report, as_user, f"{name}: ")
     probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
@@ -635,9 +1352,13 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
-            warning = capabilities.unchecked(harness.id, probe.version)
+            # No tool is managed on an ssh host: the way back is to install it by hand.
+            warning = capabilities.unchecked_warning(harness, probe.version, None)
             if warning is not None:
                 report.warn(f"{name}: {warning}")
+            note = capabilities.unchecked_note(harness.id, probe.version, harness.track)
+            if note is not None:
+                report.note(f"{name}: {note}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
                 if capabilities.sandbox_version_ok(harness.id, probe.version):
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
@@ -646,9 +1367,21 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 refused = capabilities.sandbox_refused(harness, False, harness.id in held)
                 (report.error if refused else report.warn)(line)
             elif harness.id == "claude-code":
-                _check_claude_hooks(report, as_user, f"{name}: ")
+                record = ProbeRecord(cfg.state_dir, name, probe.version)
+                where = f"{name}: "
+                clean = _check_claude_hooks(report, as_user, where)
+                clean = _check_claude_socket_settings(report, as_user, where) and clean
+                _check_claude_seccomp(report, as_user, where, probe.path, target.agent_path,
+                                      record, clean)  # fmt: skip
+            if harness.id == "claude-code":
+                _check_worktree_guard(report, as_user, f"{name}: ", probe.version)
             if harness.id == "antigravity":
-                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
+                _check_antigravity(report, harness, as_user, f"{name}: ", probe.path)
+            if harness.id == "opencode":
+                _check_opencode(report, harness, where=f"{name}: ")
+                _check_opencode_flags(
+                    report, harness, probe.path, target.agent_path, as_user, f"{name}: "
+                )
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -657,6 +1390,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
         report.ok(f"{name}: workspaces {root}")
     if "claude-code" in cfg.harnesses:
         _check_claude_settings(report, as_user, f"{name}: ")
+        _check_leftover_worktrees(report, cfg, as_user, target.host, f"{name}: ")
     if "antigravity" in cfg.harnesses:
         _check_agy_workspaces(report, root, as_user, f"{name}: ")
     if as_user.run(["sudo", "-n", "true"]).returncode == 0:
@@ -707,6 +1441,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     _check_state(report, cfg)
     _check_repositories(report, cfg)
     _check_git(report, cfg)
+    _check_skills(report, cfg)
     if cfg.ssh is not None:
         _check_ssh(report, cfg, getattr(args, "target", None))
     elif getattr(args, "target", None):
@@ -718,10 +1453,18 @@ def cmd_check(args: argparse.Namespace) -> int:
             report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
         else:
             report.ok("maity found on agent_path")
+        _check_grant_programs(report, cfg, agent_path)
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
+            _check_harness(
+                report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
+                cfg.local.layout, cfg.state_dir,
+            )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
+        if "codex" in cfg.harnesses:
+            _check_codex_home(report, cfg, supervisor.agents_user(cfg))
+        if "claude-code" in cfg.harnesses:
+            _check_leftover_worktrees(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -769,7 +1512,7 @@ def cmd_tools(args: argparse.Namespace) -> int:
             print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
             return 1
         try:
-            done = tools.rollback(cfg.tools_dir, args.tool)
+            done = tools.rollback(cfg.tools_dir, args.tool, cap=keeper.cap(managed[args.tool]))
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -790,9 +1533,12 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        # From the active `track`, not the last check's: a switch shows at once.
+        target = tools.hold(row["latest"], keeper.cap(managed[row["id"]]))
+        held = f" (held at {target}: track = checked)" if target else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
-            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}{held}; "
             f"checked {row['checked_at'] or 'never'}"
         )
     return 0
@@ -821,8 +1567,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         rec = rec if isinstance(rec, dict) else {}
         live = rec.get("state") in ("starting", "running")
         hint = rec.get("session_hint") if live else None
+        sizes = {k: rec.get(k) if type(rec.get(k)) is int else None
+                 for k in ("clone_bytes", "scratch_bytes")}  # fmt: skip
         placements.append({**placement, "state": rec.get("state"),
-                           "attach": hint if isinstance(hint, str) else None})  # fmt: skip
+                           "attach": hint if isinstance(hint, str) else None,
+                           **sizes})  # fmt: skip
     view: dict[str, Any] = {
         "hub": paired.get("hub"),
         "runner_id": paired.get("runner_id"),
@@ -831,6 +1580,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         **{k: current.get(k) for k in ("session_id", "error", "retry_at", "updated_at")},
         "placements": placements,
     }
+    if getattr(args, "removed", False):
+        # What the runner removed (§15.5), newest last; from the state directory only.
+        view["removed"] = scratch.removals(cfg.state_dir, REMOVED_SHOWN) if cfg.state_dir.is_dir() \
+            else []  # fmt: skip
     if args.json:
         print(json.dumps(view, indent=2))
         return 0
@@ -850,7 +1603,28 @@ def cmd_status(args: argparse.Namespace) -> int:
         )
         if placement["attach"]:
             print(f"  attach   {show(placement['attach'])}")
+        if placement["clone_bytes"] is not None or placement["scratch_bytes"] is not None:
+            print(f"  disk     clone {_bytes(placement['clone_bytes'])}, "
+                  f"scratch {_bytes(placement['scratch_bytes'])}")  # fmt: skip
+    for entry in view.get("removed") or []:
+        print(f"removed  {show(entry.get('at'))}  {show(entry.get('placement'))}  "
+              f"{_bytes(entry.get('size_bytes'))}  {show(entry.get('why'))}  "
+              f"{show(entry.get('path'))}")  # fmt: skip
     return 0
+
+
+def _bytes(value: Any) -> str:
+    """A size for a person: `-` when unknown."""
+    if type(value) is not int:
+        return "-"
+    if value < 1024:
+        return f"{value} B"
+    amount = float(value)
+    for unit in ("KiB", "MiB", "GiB"):
+        amount /= 1024
+        if amount < 1024 or unit == "GiB":
+            break
+    return f"{amount:.1f} {unit}"
 
 
 def _seconds(value: str) -> int:
@@ -888,6 +1662,23 @@ def _installer(command: Any) -> Any:
     return handler
 
 
+# --- worktree-prune --------------------------------------------------------------------------
+
+
+def cmd_worktree_prune(args: argparse.Namespace) -> int:
+    """The supervisor's git-free prune of a Claude Code subagent's leftover worktree under a
+    clone's `.claude/worktrees/`, run on the agents' side on placement start
+    (worktree.prune_orphans, AsUser.worktree_prune). Internal, the supervisor's own: refused for a
+    placed agent, which cannot redirect it at another path, and needs `--repo` to name the clone.
+    There is no in-session remover; a placed agent's leftover is cleared when the placement next
+    starts. The refusal for a placed session is cli.main's, before this runs: worktree-prune
+    is not in IN_SESSION."""
+    if not args.repo:
+        raise Refused("`maity runner worktree-prune` needs --repo to name the clone to prune")
+    print(json.dumps(worktree.prune_orphans(args.repo)))
+    return 0
+
+
 # --- parser ----------------------------------------------------------------------------------
 
 
@@ -918,6 +1709,36 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
+    # Internal too: a placement's scratch made, measured or removed on the agents' side, and
+    # Codex's launch-time writes inside its per-placement home (codex), every directory from
+    # the workspaces root opened without following a link (scratchop). An ssh host runs these
+    # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
+    # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
+    r = rsub.add_parser("scratchop")
+    # `pgmake` and `pgremove`: the test clusters' password holder and a placement's file in it.
+    r.add_argument("op", choices=(*scratchop.OPS, "codex", "pgmake", "pgremove"))
+    r.add_argument("--under", required=True)
+    r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
+    r.add_argument("path")
+    r.set_defaults(handler=lambda a: scratchop.main(
+        ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
+        if a.op == "codex" else [a.op, "--under", a.under, a.path]
+    ))  # fmt: skip
+    # Internal too: the delivered Keep the Why skill's copy put below the agents' home and
+    # checked there (skillop), for an ssh host, whose own `maity` runs it; the arguments go to
+    # skillop as they are, which answers a usage error (2) as an older host's `maity` does.
+    r = rsub.add_parser("skillop")
+    r.add_argument("args", nargs=argparse.REMAINDER)
+    r.set_defaults(handler=lambda a: skillop.main(a.args))
+    # Internal (no `help`, so not listed): the supervisor's own git-free prune of a Claude Code
+    # subagent's leftover worktree under the clone's `.claude/worktrees/` on placement start, so
+    # the clone reads as plain again (worktree). The runner runs no git in an existing clone, so
+    # this removes by file operations only; it is refused for a placed agent, which cannot
+    # redirect it at another path. An ssh host runs it through its own `maity`.
+    r = rsub.add_parser("worktree-prune")
+    r.add_argument("--repo", help=argparse.SUPPRESS)  # supervisor only: the clone to prune
+    r.set_defaults(handler=cmd_worktree_prune)
+
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")
@@ -993,6 +1814,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     )
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.add_argument(
+        "--removed", action="store_true",
+        help=f"also the last {REMOVED_SHOWN} scratch directories the runner removed",
+    )  # fmt: skip
     r.set_defaults(handler=cmd_status)
 
     r = rsub.add_parser(
@@ -1114,12 +1939,19 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
 
     r = runner_cmd(
         "gc",
-        "list, and with --yes remove, workspaces whose credential is revoked",
-        "For every recorded workspace without a placement whose credential the hub reports as "
-        "revoked: its uncommitted files and the commits on no remote (git run with hooks, "
-        "fsmonitor and pagers off). Removes only with --yes.",
+        "list, and with --yes remove, workspaces whose credential is revoked and old scratch",
+        "--revoked: every recorded workspace without a placement whose credential the hub "
+        "reports as revoked, with its uncommitted files and the commits on no remote (git run "
+        "with hooks, fsmonitor and pagers off). --scratch: every placement's scratch the hub "
+        "does not list as active. --skills: every Keep the Why copy that no active placement "
+        "names and no running session started with. Removes only with --yes.",
     )
-    r.add_argument("--revoked", action="store_true", help="required: the only kind gc knows")
+    r.add_argument("--revoked", action="store_true",
+                   help="workspaces whose credential is revoked")  # fmt: skip
+    r.add_argument("--scratch", action="store_true",
+                   help="the scratch of placements that are not active (§15.5)")  # fmt: skip
+    r.add_argument("--skills", action="store_true",
+                   help="Keep the Why copies nothing names or runs with any more")  # fmt: skip
     r.add_argument("--yes", action="store_true", help="remove the workspaces listed")
     r.set_defaults(handler=_operate("cmd_gc"))
 

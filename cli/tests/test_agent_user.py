@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -102,7 +103,10 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
                         "/usr/bin:/bin", home / "logs", run=run,
                         as_user=AsUser("maity-agent"))  # fmt: skip
     backend.start("maity_maity_agent-3", tmp_path, ["stub"], {}, "plc-0003", 1)
-    assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
+    # The sessions' shell is probed as the agents' user first (A2352), then the server starts.
+    assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "sh", "-c"]
+    new = next(call for call in calls if "new-session" in call)
+    assert new[:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
     assert all(call[:5] == ["sudo", "-n", "-u", "maity-agent", "--"] for call in calls)
     assert (home / "tmux.conf").read_text().startswith("set -g update-environment")
     assert "maity-agent -- sh -c mkdir -p" in fake_sudo.read_text()
@@ -381,9 +385,18 @@ def test_the_attach_hint_goes_through_sudo() -> None:
     socket = Path("/home/maity-agent/.maity-runner/tmux.sock")
     assert tmux.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
         "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux.sock attach -t "
-        "maity_maity_agent-3"
+        "'=maity_maity_agent-3'"
     )
     assert tmux.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
+
+
+def test_the_attach_hint_quotes_the_exact_target_for_zsh() -> None:
+    # zsh expands a bare word that starts with `=` (`=maity_x_y` to the path of a command
+    # `maity_x_y`), which `shlex.quote` leaves bare.
+    socket = Path("/srv/runner/tmux.sock")
+    hint = tmux.attach_hint(socket, "maity_x_y", AsUser())
+    assert hint.endswith(" -t '=maity_x_y'")
+    assert shlex.split(hint) == tmux.attach_words(socket, "maity_x_y", AsUser())
 
 
 def test_harnesses_are_probed_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
@@ -415,7 +428,7 @@ def test_the_deny_lists_come_from_the_agents_side(
     assert agent_home / ".claude" in ctx.private and agent_home / ".ssh" in ctx.private
     assert cfg.local.agent_files.resolve() in ctx.private
     assert sibling.resolve() in ctx.private
-    assert "-path */.git/maity" in fake_sudo.read_text()  # listed as maity-agent
+    assert "-mindepth 2 -maxdepth 2 -print0" in fake_sudo.read_text()  # listed as maity-agent
 
 
 def test_a_partial_clone_listing_refuses_the_start(

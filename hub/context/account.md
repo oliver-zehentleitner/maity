@@ -150,7 +150,9 @@ one place every write passes, whichever route or helper made it.
 `write_guard` still binds the authenticated human caller per request, but
 checks at the start instead of the commit: before a transaction's first
 locking statement (a write or a locking read) it takes the human's row in
-`account_lock` (one row per human, made by 0076 and on first need) with a
+`account_lock` (one row per human; made by 0076 and on first need until
+2026-11-23, since then with the account, see "An account's `account_lock`
+row is made with the account" below) with a
 shared lock and refuses a deleted account. The deletion takes that row
 exclusively as its first lock (`account_deletion.lock_account`), takes no
 lock on the human row before its object locks, and writes the human row
@@ -178,6 +180,71 @@ the deletion waits for.
   on MariaDB.
 - The check at the commit (the superseded entry): it took the human row
   after object locks, the opposite of the deletion's order.
+
+## An account's `account_lock` row is made with the account, never on first need
+
+**Id:** ea51e4b3-cb81-492d-a733-2d9d1dad740c
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** lead decision on the card, 2026-11-22; counter-checks on SQLite, 2026-11-23: with the lazy insert back the refusal test fails (`hub/tests/test_contacts.py`), with the backfill off the migration test fails (`hub/tests/test_migrations.py`); #1532 review, delta 1; review A2143, 2026-11-23 (the reciprocal test's humans, the lock-order test's first statement); review A2157, 2026-11-23: on PostgreSQL, with the lazy insert back and no row at creation, the reciprocal test fails (40P01, one PUT 503) 3 of 3 times and passes when reverted
+**Revisit when:** a human row is inserted somewhere other than `write_guard.make_row`'s callers, or `account_lock` is replaced by another lock
+**See:** account.md#one-lock-order-against-a-deletion-the-account-lock-before-any-other — 2cecbd85-ba32-43db-905f-11efddb97f3d — as of 2026-11-23
+
+Every `insert(t.human)` makes the human's `account_lock` row in the same
+transaction (`write_guard.make_row`: registration, quickstart and the
+account command, the load-test seed, the tests' factory); a migration
+backfilled the humans made between 0076 and this change. The lock path
+(`write_guard.lock_row`, under `share`, `hold` and the deletion's
+`lock_account`) never inserts: a human found without a row raises
+`AccountLockMissing`. `ensure_row` and the separate committed transaction
+that made the rows before a contact or chat-access change
+(`contacts.lock_rows`, `chat_access.lock_rows`) are gone. The migration's
+downgrade keeps the rows.
+
+**Reason:** a row made on first need is inserted inside the transaction
+that is about to lock it. Two humans adding each other (#1532) each
+inserted their own row, held it, then reached for the other's and waited
+for its uncommitted insert: a deadlock. With the row made when the
+account is made, every locking transaction finds both rows committed, and
+shared locks on existing rows never wait for each other. Failing loudly on
+a missing row keeps a bug visible: a lock on no row guards nothing against
+a deletion, silently.
+
+**Rejected alternatives:**
+- Keep the lazy insert and make the rows first in an extra committed
+  transaction per route (`lock_rows`, the #1532 fix): every new route that
+  names a second human had to remember it, and it cost a transaction per
+  call.
+- Keep `ensure_row` as a safety net beside the creation-time rows: the net
+  is the very lazy insert that deadlocks, and it would hide a creation path
+  that forgot the row.
+
+**Why the barrier helper (`tests/concurrency.py`, `meet`):** the earlier
+reciprocal test deleted both rows but the route's own `lock_rows` made them
+again before the change, so its barrier never stood between two lazy
+inserts, and the other one (chat access) relied on timing; neither could
+fail on the deadlock. `meet` wraps a function so each caller's first pass
+waits on a shared barrier, and fails with "interleaving not reached" when
+the parties never meet, instead of passing on whatever order the threads
+ran in. It skips on SQLite, whose single writer never lets two
+transactions stand inside at once. The barrier forces the interleaving
+only for humans whose first locking transaction is the one under test: a
+human made through the HTTP flow has usually locked already (the sign-in
+shares the lock), so with lazy rows the row would exist before the test
+and the reciprocal test would pass anyway (a counter-check on PostgreSQL
+showed exactly that, review A2143). That test therefore makes its humans
+with a session written directly and no prior write.
+
+**Lock-order tests:** since the lock path never inserts, `lock_row` starts
+with the locking read of `account_lock` itself (`FOR SHARE`, or `FOR
+UPDATE` for the deletion); no plain read precedes it. A test of the order
+counts the first locking statement as the account lock when it is that
+read (on SQLite, which renders no lock clause, the read comes before the
+first locking statement instead). Rejected: a plain read put back in
+`lock_row` to keep the older shape, an extra round trip that locks
+nothing.
 
 ## The operator's counter is derived from `deleted_at`, nothing is stored
 
@@ -272,7 +339,7 @@ the time the table is added.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's request (Oliver, Maity message 94251, 2026-11-08: "I would like to see users' email addresses in the admin area"), the card tsk-q7t7g34z0rpd and its plan note nte-fbffkr8q896t; docs/api.md §16.1
+**Source:** the owner's request (Maity message 94251, 2026-11-08: "I would like to see users' email addresses in the admin area"), the card tsk-q7t7g34z0rpd and its plan note nte-fbffkr8q896t; docs/api.md §16.1
 **Revisit when:** a second read gives one human's address to another, or the accounts design adds an instance audit log of admin reads
 
 `GET /admin/users` (`routes/admin.py`) gives each item `email`: the
@@ -297,3 +364,19 @@ same admin); the privacy statement's sentence is the owner's to add.
   or someone else's.
 - A per-row query for the address: the list's cost would grow with the
   page.
+
+## A human requests the account's deletion at most 3 times an hour
+
+**Id:** fb05e80a-d84a-4ab8-962a-d153f0eed5e1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.8.6, §2.9; tsk-q4zynccy5t0b and the lead's ruling on it, 2026-11-14; `hub/src/maity_hub/account_deletion.py` `PER_HUMAN`
+
+`POST /me/deletion` counts per human, 3 an hour; a fourth answers `rate_limited` with `Retry-After` and mails nothing. Only a request that passed every other check counts, the one that would mail. The confirmation stays security mail.
+
+**Reason:** each request replaces the last and mails the confirmation on the security budget, so one account asking in a loop could fill that budget. Its confirmation is about the account's security, so it keeps that budget; the limit bounds what one human can spend.
+
+**Rejected alternatives:**
+- A budget of its own for the deletion mail: it is security mail about the account, and a per-human limit already bounds it.
+- Counting refused requests too: a wrong handle or a missing address mails nothing, so it spends nothing.

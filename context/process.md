@@ -216,7 +216,9 @@ base it merges into (`git diff HEAD^1 HEAD`) and gates each suite on the
 paths it reads: the hub's suites on `hub/` and `docs/join-page.md` (the
 join page ships in the wheel), the image also on `deploy/Dockerfile*`,
 the join smoke and the browser test also on `cli/`, the dashboard on
-`web/`, the CLI on `cli/`, the Helm chart on `deploy/`. The changelog
+`web/`, the CLI on `cli/`, the Helm chart on `deploy/`, the vendored
+Keep the Why views (`web-vendor`) on `web/vendor/` and
+`web/tools/vendor_ktw.py`. The changelog
 check always runs; a change to the workflow runs everything; a push to
 main runs everything. A new push to a pull request cancels its older run.
 `ci-ok` is the one check to require: green when every suite passed or
@@ -437,11 +439,12 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (from the reviews of #2022 and #2025: the reader, then the table of introducing commits, the lead's decision of 2026-11-20 after three review rounds); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
 **See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
 `publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
@@ -453,7 +456,26 @@ read-only token and lets the tag through only when:
 - for the hub and its image also: the newest hub-mariadb run that
   actually ran the suite on a commit of main with the same files the
   suite reads as the tag (the list `decide` compares; `git diff`) is
-  green. A run that skipped the suite counts for nothing. Only runs of
+  green: the 11.4 suite and, since 2026-11-20, the 11.8 subset beside it.
+  Whether a run had the 11.8 job is git's answer, not the workflow
+  file's: `tools/release_gate.py` keeps a table of each job beside the
+  11.4 suite and the commit of main that added it (`hub-mariadb-11-8`,
+  `4fafdf1f`, #2022), and a run whose workflow commit has that commit in
+  its history (`git merge-base --is-ancestor`) needs the job green;
+  missing, skipped or red stops the gate. Only a run from before that
+  commit counts on 11.4 alone. A history git cannot answer from (a
+  shallow checkout, a commit it cannot get, a git error) stops the gate,
+  never passes it, so both gate jobs check out with `fetch-depth: 0`. A
+  run that lists a `hub-mariadb*` job the table does not know stops it
+  too, until the first pull request after the one that adds the job
+  adds its line: the squash merge makes the commit the line names, so
+  the adding pull request cannot know it, and every hub release and
+  image tag stops in between. The jobs
+  API lists a job by its name, the same as its key only while no job of
+  `hub-mariadb.yml` sets `name:` (`test_release_gate.py` holds it so); a
+  renamed job reads as missing, which stops the gate. A run
+  that skipped the suite counts for nothing, unless a job beside it went
+  red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's
@@ -499,6 +521,19 @@ the tag lacks.
 - Skipping a run whose commit cannot be compared, or one still running
   (the first version): an older green run then decides although a newer
   one may be red; found in review.
+- Reading the jobs from `hub-mariadb.yml` at the run's commit with a
+  reader of its own (#2022, and three rounds of #2025): a file that
+  defines the job needs it, one that does not predates it. Every round
+  of review found another layout the reader got wrong, a comment after
+  `jobs:`, quoted keys, values wrapped to column 0, open quotes and flow
+  values, anchors, tags, sequence items, and a wrong read let 11.4 count
+  alone; the table asks git a question with one answer instead.
+- Reading it with PyYAML: the gate runs on the release job's bare
+  interpreter, standard library only, and the file's layout would still
+  decide what the gate requires.
+- The run's job list alone: it is blind to a job the run does not list
+  (a partial re-run, a job that never started), so the commit decides
+  and the list only adds the jobs the table does not know.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
@@ -1246,7 +1281,7 @@ history is one human and one project with one kind of item (requests).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review findings on #755 by agt-2dkh5tfqppxd and agt-mbf0gthrsash (2026-10-30); task tsk-hzjqn875bcmt
+**Source:** review findings on #755 by two reviewers (2026-10-30); task tsk-hzjqn875bcmt
 **See:** https://github.com/oliver-zehentleitner/maity — 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880 — as of 2026-10-30
 **Revisit when:** CLI documentation is generated directly from `cli.py` argparse definitions
 
@@ -1432,7 +1467,7 @@ sets.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on); that this is the project's own practice, not one the platform imposes, is the lead's paraphrase of the same answer (seq 118099), not a quote; the lead's relay to the review lead of 2026-11-12 (seq 118096): "No retro legs for #1692, #1675 and #1680." and "The open question of what the two Grok coders do from now on is with Oliver (req-68g15m2vs02m); until he answers, their PRs keep Antigravity + ChatGPT."; the maintainer's decision of req-68g15m2vs02m (2026-11-12, option 1), relayed by the lead in seq 118290: "the two Grok coders (maity-coder-grok-002, maity-coder-grok-003) keep coding; their PRs are reviewed by Antigravity + ChatGPT. This settles the interim from 118096 as the rule."; card tsk-tc191z1765fy
+**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on); that this is the project's own practice, not one the platform imposes, is the lead's paraphrase of the same answer (seq 118099), not a quote; the lead's relay to the review lead of 2026-11-12 (seq 118096): "No retro legs for #1692, #1675 and #1680." and "The open question of what the two Grok coders do from now on is with [the maintainer] (req-68g15m2vs02m); until he answers, their PRs keep Antigravity + ChatGPT."; the maintainer's decision of req-68g15m2vs02m (2026-11-12, option 1), relayed by the lead in seq 118290: "the two Grok coders ([…], […]) keep coding; their PRs are reviewed by Antigravity + ChatGPT. This settles the interim from 118096 as the rule."; card tsk-tc191z1765fy
 **Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, the maintainer changes the number of at least two reviews, or he changes which vendors code
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
@@ -1510,7 +1545,7 @@ for the newest run to finish.
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
 
-## Every CI job has a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
+## Every job ci-ok waits for and the MariaDB run have a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
@@ -1535,8 +1570,9 @@ the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
-`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job; before, a
-hung MariaDB run ended without a word.
+`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job: a
+`cancelled` there is the job's timeout or a cancel by hand, and neither ends silently. Before, a hung MariaDB run ended
+without a word.
 
 **Rejected alternatives:**
 - A per-test timeout (`pytest-timeout`): names the hanging test, which the job timeout does not, but is a new dependency in the
@@ -1558,6 +1594,12 @@ keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 m
 (2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
 19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
 
+(2026-11-21: the revisit condition above fired for `hub-sqlite`. On #2073 at 8c9e34f9 (ci 44893089313, hosted) it took
+81.8 minutes of its 90, from 10:17:07 to 11:38:57 UTC, while the three `hub-postgresql` shards of the same run took 32.9,
+41.1 and 34.2; the card names green runs of 54 to 65 minutes and one of 82. Card tsk-v76hkc0fcse7. `hub-sqlite` keeps 90
+and now runs in three shards like `hub-postgresql`, each shard with the 90 on its own; see the note of the same day on
+f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
+
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
 **Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
@@ -1571,8 +1613,8 @@ The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit f
 cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
 open. The job timeouts above (97f338fd) stay.
 
-**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
-depends on a human; the approval has to come from Oliver).
+**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss [der Maintainer] geben" (today every cancel
+depends on a human; the approval has to come from [the maintainer]).
 
 **Alternatives:** none recorded.
 
@@ -1584,7 +1626,7 @@ depends on a human; the approval has to come from Oliver).
 **Evidence:** inferred
 **Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
 `hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
 with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
@@ -1639,8 +1681,8 @@ value is the author's weighing, not measured against a real hang beyond #1255.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
-**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, or the maintainer's runner gets more than one `pg` or `sqlite` runner
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-21
 
 `hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
 keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
@@ -1677,6 +1719,18 @@ and it needs no commit.
   runners, and the self-hosted machine runs one job per type by design (the entry on one runner
   service per database job type).
 - A sharding plugin: a new dependency in the hashed locks for what one hook does.
+
+(2026-11-21: `hub-sqlite` runs in the same three shards, `MAITY_TEST_SHARD=k/3` from a matrix, each shard with the
+90-minute limit on its own; ci-ok's `needs` is unchanged. The check runs are now named `hub-sqlite (1)` to `(3)`; nothing
+in the repository requires the old name, ci-ok being the one required check. Lint and types run in shard 1 only, since
+they do not depend on the shard; `PYTEST_ADDOPTS: --durations=50` as in `hub-postgresql`. Card tsk-v76hkc0fcse7. Reason:
+the whole suite in one job took 81.8 of the 90 minutes on #2073 (ci 44893089313), while that run's three PostgreSQL
+shards took 32.9 to 41.1; the job already ran `-n auto` (4 workers on 4 hosted cpus), so xdist was not missing; the
+per-test SQLite setup copies a schema migrated once per worker, so no fixture stands out; what is left is the suite's
+length spread over its tests, the same finding as above. The SQLite job's logs were not read for this note: no
+`--durations` data of it exists yet. On the maintainer's one `sqlite` runner, a push's three shards run one after
+another, as the PostgreSQL shards do; pull requests stay hosted. Not chosen: a larger hosted runner class (costs money,
+the owner's call) and a higher timeout (the card keeps 90).)
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
@@ -1882,7 +1936,7 @@ because every version of an image stays in the history.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17; running without a slot when the slot directory cannot be written, the lead's go, 2026-11-20)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1892,6 +1946,26 @@ on SQLite only. On a machine several contributors share under one Unix account, 
 named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
 (`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
 are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
+
+Since 2026-11-17 every run that gets a slot appends a start line (time, slot, pid, seconds waited,
+who, the program and its first argument), and once its process is gone an end line (time, seconds
+held), to `log` in the run-slot directory; the format is in the script's header. The log is
+append-only, one `printf` per short line, created 0640. The end line comes from a watcher the
+script starts before its `exec`, not from a wrapper around the command; the watcher runs in a
+session of its own (`setsid`) and ignores INT, HUP and TERM, so cancelling the command's process
+group leaves it running. A KILL to the watcher or a reboot still ends it, so the log does not
+promise an end line for every run: once a run is over, a start line without a matching end line
+(same slot and pid) means it was aborted. A log that is not a regular file is skipped, one that
+cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
+`handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
+tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
+
+Since 2026-11-20 a run that cannot write the slot directory or a slot file in it does not fail:
+the script warns once on stderr and runs the command without a slot and without a log line, as
+it does without `flock`. `MAITY_RUN_SLOTS_DIR` points it to a directory the run may write.
+`make smoke SLOT=` is only for a machine where nothing else runs tests. The slot file is opened
+with `command exec`, so a failed open never ends the script, even in bash's POSIX mode; a holder
+whose `.who` is empty or missing shows as `unknown` in the waiting message.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1915,6 +1989,34 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 - The slots and the server are files of one account (the data directory is the owner's only), so
   they bind the runs of that account. That is how the machine is shared; several accounts would
   each get two slots and a server of their own.
+- The slot log: a short line written in one `printf` onto a file opened for appending is one
+  write, so runs that log at the same moment do not interleave. A watcher keeps the `exec`, so
+  fd 7, the pid and the signals reach the command as before; a wrapper that waited for the command
+  would have to pass on every signal and its exit status. The watcher holds neither fd 7 nor the
+  run's output, and is no child of the command. Its cost: the end is when the command's process
+  ended, to the second; a process the command left running can hold the slot longer. Logging
+  never stops a run: a measurement must not become a new way for a run to fail.
+- The watcher's own session (review A1081): created before the `exec`, it was in the command's
+  process group, and a supervisor that sent TERM to that group (an ordinary cancellation) took the
+  watcher along, so exactly the interrupted runs lost their end line. `setsid` comes from
+  util-linux, like `flock`; without it the watcher only ignores the signals. They are ignored
+  before the watcher is forked (review A1093), so a group signal right after the `exec` cannot
+  reach it ahead of the trap. Only a regular file
+  (or none yet) is opened as the log: an append open of a FIFO without a reader blocks, and it
+  came after the slot was taken and before the command started, so the run held its slot without
+  running.
+- The program and its first argument, not the whole command line (review A1081): the log is kept,
+  and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
+  slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
+  writes the log is the account's own, so only reading it needs the group.
+- Running without a slot when the directory cannot be written (card tsk-deaaanqsq5e2, the lead's
+  go, 2026-11-20): a Claude Code or Codex session the runner places may write only its clone, its
+  temporary directory and its scratch, not `~/.local/state/maity`. Under `set -e` the `mkdir` or
+  the slot file's open ended the script before the command ran, so such agents skipped the slot
+  with `make smoke SLOT=` or a set `MAITY_RUN_SLOT`, and their runs were not logged either. A
+  run without a slot is no worse than that, and the warning says what was lost and how to get it
+  back. A writable shared slot directory for placements is the runner's to give, on a card of
+  its own.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1928,6 +2030,14 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+- For the slot log, the command as a child of the script, logged when it exits: an exact end,
+  but the `exec` goes, and with it the pid and the signals the command gets today.
+- For the slot log, the whole command line cut at 200 characters (the first version): more than
+  the measurement needs, kept in a file that is not cleaned up.
+- For a slot directory the run cannot write, failing as before: it does not get the run a slot,
+  it only teaches agents to skip the slot by hand, without a warning and without a log line.
+- For the same case, running without a slot silently: the run would not show in the log, and no
+  one would learn why or that `MAITY_RUN_SLOTS_DIR` fixes it.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 
@@ -2204,7 +2314,8 @@ server, count as minor (the coordinator's scope for #1475).
   passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
   github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
   github.com. A URL without a host (a local path,
-  `file://` with or without `localhost`) names no server to ask and stops the check.
+  `file://` with or without `localhost`, the scheme in any case) names no server to ask and stops the
+  check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -2679,6 +2790,35 @@ a tool that only sends what it is given is the place to refuse one before it is 
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
 
+## The README's translations are held to README.md's headings by a check, and each names the commit it was translated from
+
+**Id:** ceef8737-c419-47ef-806d-55fd060c2238
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-1e2qmy78kams, 2026-11-13
+**Revisit when:** the web client gains or drops a language, or a translation falls behind more often than the check catches
+
+`README.md` is translated into every language of the web client but English (`web/js/i18n/languages.js`),
+one `README.<lang>.md` next to it, and every version carries the same language line. `tools/readme_sync.py`,
+run in CI's changelog job, fails when a translation is missing, when it lacks the line or its first-line
+comment `<!-- translated-from: README.md@<commit> -->` (whose hash is checked for its form only), when it
+has another number of headings or other levels in sequence, or when its link and image targets differ.
+Heading text is not compared: two sections of the same level swapped, or one replaced by another, pass
+unless their links differ.
+
+**Reason:** a translated README goes stale silently: a section added in English is invisible in the
+others until a reader notices. A section added or dropped now fails CI in the pull request that makes it, and
+the comment names the commit to diff against (`git diff <commit> -- README.md`) when the translations
+follow. The language names are each language's own, as in the web client's language menu.
+
+**Rejected alternatives:**
+- Failing whenever `README.md` changed since the named commit: every typo fix would then need nine
+  translations in the same pull request. The check holds the structure; a reworded sentence is caught up
+  at the next translation pass.
+- Translating in CI: the translations are reviewed text in the glossary's terms and forms of address
+  (`web/i18n/glossary.md`), not generated output.
+
 ## Every hub release ships an upgrade page, and the release is refused without it
 
 **Id:** eb6ffcd4-28b0-4413-bc51-db3ead6cefb5
@@ -2718,3 +2858,96 @@ view of them.
 The check counts the five headings and that each has text; it cannot tell
 whether the text is right. That is what the confirmation by the lead and ops
 before the tag is for.
+
+**Fences, comments and the list of pages (2026-11-18):** (Source: the P3
+follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
+page as CommonMark does for what it counts, since GitHub and the docs site
+render it that way and a page that renders right must not be refused, nor a
+heading the reader cannot see accepted. A byte order mark is dropped. A fence
+is three or more backticks or tildes at the start of the line (a backtick
+fence's info string has no backtick); it closes only with a run of the same
+character at least as long, and an unclosed one runs to the end. A line
+indented by four columns or more (a tab counts to the next four) is an
+indented code block unless it continues paragraph text: it is no fence and no
+heading, and it counts as text, comments in it too, as a code block with
+content does; list items are not followed, so such a line in one is code. A
+second-level heading may be indented by up to three spaces. An HTML comment
+alone is no text, so `<!-- TODO -->` cannot stand in for `Nothing.`; a comment
+that starts a line runs as a block to its `-->` (or the end), and a heading
+inside it is no section. Comments are cut from prose only, never from code,
+where they show. Not followed either, on purpose: HTML blocks other than
+comments (a heading inside a `<div>` counts, as does a section holding only a
+link reference definition), closing `#`s, `##` plus a tab, and setext
+headings (refused, so the author writes a plain `## ` heading). Each needs
+markup no page uses. The alternative, a Markdown library, was left out: the
+check runs in ci's changelog job and the release gate on the standard library
+alone. `docs/upgrade/README.md` lists every version page, oldest first: the
+docs site renders only that README (`docs/nav.yml`), so its links are how a
+site reader finds a page. `check` refuses, on every pull request and before
+the fold too, a version page the README does not link. A page counts as
+linked only by a list line `- [version](version.md)` (or `* `, at column 0
+with no space in front; `./`, a `#fragment` and angle brackets allowed; no
+`[`, `]`, `<`, backtick or backslash in the text, so no code span, raw HTML
+tag, comment or autolink opens there and spans the destination) that is no
+code and in no comment block opened at the start of a line. Reference links,
+links inside a paragraph and images do not count; the error names the line
+to add. Why so narrow: each round of a fuller recognizer (inline and
+reference links on the rendered text) found the next edge: a reference
+resolved to the wrong label, an image, a link glued across a code span or a
+comment, an escaped bracket, an unclosed `<!--` that hid
+every later link; a list line is all the README needs, and the check stays
+standard library only. A full CommonMark inline parser was left out for the
+same reason as a Markdown library. The release gate does not ask again,
+since the release pull request has passed ci. Listing each version in
+`docs/nav.yml` as a page of its own was left out: it would grow the site's
+navigation by one entry per release. Review round 4 (A1420) showed a list
+item's own fence or comment (an item `- ~~~` with an indented list line under
+it) faking a list line that CommonMark shows as code, so the list line now
+starts at column 0. A fence line with one to three leading spaces makes the
+README or version page refused as a whole ("write code fences at the start of
+the line", with the line's number), wherever it stands: in a list item, inside
+a fence or inside a comment too. The check is a plain scan of the lines, with
+no fence or comment state. Reason (lead, round 5): CommonMark's closing rules
+for indented fences cannot be followed by a few patterns without failing
+open: round 4's rule (an indented fence closes only on one indented at least
+as far) let a re-opened fence, an empty code block and a hidden duplicate
+heading pass (A1435); the scan is fail-closed by construction, the repository
+has no such fence, and a refusal costs one edit. Rejected: following
+CommonMark's fence-indent closing (round 4, failed open per A1435), and
+refusing only a less-indented closer (still needs fence state). One edge
+fails closed, on purpose: a list line right after a list item that opened a
+comment on an indented line is refused, though CommonMark ends the comment
+with the item and shows the link. The error names the line to add, or the
+section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
+but odd README costs one edit; a parser costs a review round each time; fail
+closed beats fail open. Rejected: following list items (their indent and
+where they end), built and dropped as round 4's option A.
+
+## The runner lab's state is a page in docs/, kept up to date by every runner change
+
+**Id:** 37546df5-acb8-4acd-a595-781e15e44079
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's order on the runner lab card, 2026-11-18 (tsk-sfs7kkrz7tk8, tsk-gw1e87ev707f)
+**Revisit when:** the lab's matrix moves into the runner itself (`maity runner check` reports what this page lists), or CI runs the harnesses on each OS
+
+`docs/runners-lab.md` holds where the runner and its harnesses are tested,
+how the test machines are set up, what `maity runner check`'s warnings
+mean, and the open gaps with their cards. A pull request that changes the
+runner updates that page in the same pull request. Environments are named
+by OS and version only, because the repository is public.
+
+**Reason:** the lab's findings lived in card notes and in the lab agents'
+heads. Someone setting up a runner, or a coder changing it, could not see
+which OS and harness combinations work today, or which host change a
+fix depends on.
+
+**Rejected alternatives:**
+- The card notes alone: they do not reach readers of the repository and
+  go stale without anyone noticing.
+- The matrix inside `maity runner check`: it can only report the host it
+  runs on, not what was seen on another OS or harness; it is the long-term
+  aim (see Revisit when), not a replacement for a cross-host record today.
+- CI per OS and harness: it needs signed-in harnesses and real hosts that
+  CI does not have yet.

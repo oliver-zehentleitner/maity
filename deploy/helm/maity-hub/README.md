@@ -108,8 +108,18 @@ example; any cluster with the same pieces works.
    rm database-url
    ```
 
-   `sslmode=require` encrypts but does not check the server's certificate.
-   To check it, put the provider's CA into a Secret, mount it with
+   That URL is the hub's, and on PostgreSQL its role may only read and
+   write rows: the hub refuses to start as a superuser or as the owner of
+   its schema or tables. Give the migrate Job the owner's URL in a Secret of
+   its own (`database.migrate.existingSecret`); the roles are in
+   [Database roles](../../../docs/install/README.md#database-roles). Until
+   they are set up, `extraEnv: [{name: MAITY_DB_ALLOW_PRIVILEGED, value: "1"}]`
+   lets the hub start on one URL, with a warning.
+
+   `sslmode=require` makes encryption required. libpq checks the server's
+   certificate with it only when a root CA file is present (then as
+   `verify-ca`, without the host name); `verify-full` also checks the
+   host name. To check both, put the provider's CA into a Secret, mount it with
    `extraVolumes` and `extraVolumeMounts` (the hub and the migrate Job both
    get them), and use
    `?sslmode=verify-full&sslrootcert=/etc/maity/db-ca/ca.crt`:
@@ -232,6 +242,7 @@ silently ignored. These are the values that matter:
 | `image.allowTag`, `image.tag` | `false`, none | pull by tag instead: both must be set and the digest empty (an opt-in; there is no default tag) |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
+| `database.migrate.existingSecret`, `.key` | empty, `database-url` | the migrate Job's own `MAITY_DATABASE_URL`: the role that owns the schema, while the hub's Secret names one that only reads and writes rows ([`docs/install/README.md`, "Database roles"](../../../docs/install/README.md#database-roles)); empty, the Job uses the hub's |
 | `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |
 | `replicas` | `1` | hub pods and `MAITY_REPLICAS`; above 1 only with PostgreSQL and without `attachments.existingClaim` (see Several pods) |
 | `config.workers` | `1` | `MAITY_WORKERS`, serving processes per pod; above 1 only with PostgreSQL |
@@ -244,6 +255,7 @@ silently ignored. These are the values that matter:
 | `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `secretKey.sealVerifiers` | `false` | `MAITY_SEAL_VERIFIERS=1`: the hub seals the verifiers of agent and runner credentials with the instance key (docs/api.md §2.2); needs `secretKey.existingSecret`. Opt-in, default off; sealed verifiers are read either way. After switching it on, run `maity-hub seal-verifiers` once in a hub pod to seal the verifiers stored before (idempotent, prints a count); the migrate Job seals nothing |
+| `secretKey.sealedVerifiersOnly` | `false` | `MAITY_SEALED_VERIFIERS_ONLY=1`: a plain verifier verifies nothing, and a hub pod does not start while a live one is left (docs/api.md §2.2); needs `secretKey.sealVerifiers`. Default off. Switch it on in a rollout of its own, after `maity-hub seal-verifiers` printed `plain left 0` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
@@ -258,6 +270,12 @@ silently ignored. These are the values that matter:
 | `ingress.annotations` | ingress-nginx long-poll settings and `proxy-body-size: 11m` | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |
+| `networkPolicy.egress.enabled` | `false` | a second policy for the hub's outbound connections: DNS, the database, HTTPS and SMTP, nothing else |
+| `networkPolicy.egress.dns` | CoreDNS / kube-dns in `kube-system` | the peers answering DNS (UDP and TCP 53) |
+| `networkPolicy.egress.database.to`, `.port` | any address, `5432` | the database's peers (a `podSelector` in the cluster, an `ipBlock` outside) and port |
+| `networkPolicy.egress.https` | `true` | TCP 443 to any address: the forge, Keep the Why reads, an S3 store, images |
+| `networkPolicy.egress.smtpPorts` | `mail.port` with `mail.host` set, else 587 and 465 | the SMTP ports |
+| `networkPolicy.egress.extra` | none | more `egress` rules as given, e.g. a plain-HTTP MinIO in the cluster |
 | `service.type`, `.annotations` | `ClusterIP`, none | |
 | `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | for the hub and the migrate Job; a `ReadWriteOnce` claim here must land both on one node |
 | `resources` | 50m / 128Mi requested, 512Mi limit | |
@@ -316,16 +334,26 @@ The event long-poll holds a request open for up to 55 seconds. The
 controller must allow at least that per request (the defaults give 75 s)
 and must pass the response on unbuffered.
 
+A proxy that sends a request again after its upstream connection broke
+(ingress-nginx does so for a `GET` by default, `proxy-next-upstream`) can
+deliver a signed call twice, for instance an event long-poll during a pod
+restart. The hub refuses the second delivery as `nonce_reused`, since it
+cannot tell it from a replay. A `maity` CLI with this change signs such a
+`GET` again and sends it once more; on one without it, `maity wait` ends
+on it.
+
 An attachment upload is one body of up to 10 MiB (`docs/api.md` §8.7).
 The controller must let it through: ingress-nginx refuses bodies over 1 MiB
 unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
 k3s's Traefik, `deploy/k3s-single/uploads.yaml` gives the upload its own
 route, which buffers the body before it reaches the hub.
 
-The hub has no general request budget. Its own limits are per route,
-among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
-reads. The general limit belongs to the controller: one limit
-per client address for every request. `ingress.requestLimit` sets it for
+The hub has no general request budget per client address. Its own limits
+are per route, among them sign-ins, codes, sign-ups, mail, uploads and the
+public pages' reads, and per credential for a signed-in caller's reads
+(`MAITY_MAX_READS_PER_MINUTE`, default 1000 a minute, counted in each pod;
+past it a read is `429 rate_limited` with `Retry-After`). The general limit
+belongs to the controller: one limit per client address for every request. `ingress.requestLimit` sets it for
 ingress-nginx (`limit-rps`, `limit-burst-multiplier`, `limit-connections`).
 It is off by default. Switch it on only once every agent runs a `maity`
 whose `maity wait` retries a 429. An older one ends its wait on the first

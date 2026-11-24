@@ -204,7 +204,7 @@ ones — no clients outside the project depend on them yet.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's direction of 2026-11-17 in his chat (card tsk-rfa7fwa2sz5g); the lead's approval of the plan's six points, seq 151385; contract in `docs/api.md` §6.17, §15.5, §15.11
+**Source:** the maintainer's direction of 2026-11-17 in his chat (card tsk-rfa7fwa2sz5g); the lead's approval of the plan's six points, seq 151385; the lead's choice of variant (a) for the runner's limit after reviews A1089 and A1090, relayed in the fix order of 2026-11-17; contract in `docs/api.md` §6.17, §15.5, §15.11
 **Revisit when:** placements need a limit of their own apart from `max_instances`, or instances of one agent need a different spec per runner beyond harness, model and clone
 **See:** instances.md#each-team-has-a-rulebook-set-by-a-human-size-work-distribution-who-a-team-message-wakes-review-within-the-team — e42155de-c20d-43cc-a042-4151f860e25d — as of 2026-11-17
 
@@ -215,13 +215,29 @@ its owner sets: the hub checks it when a placement is created or
 proposed, counting active instances, placements still waiting for their
 first credential and the new one, and again at the pickup;
 `instance_quota` beyond it. Two instances on one runner work in two
-clones, `<handle>` and `<handle>-2`, the hub's default. Where an agent
+clones. Unless the placement names one, the hub takes the first free
+name of `<handle>`, `<handle>-2`, `<handle>-3`, … (§15.5): a name is
+taken by an active placement of the project on that runner, or by
+another member's closed one whose clone the runner has not reported
+removed. So a second instance gets the plain `<handle>` when the first
+runs in a named clone and that name is still free (review A1128). Where an agent
 runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
-agent `limited` only while every running placement of it is
-rate-limited: the hub recomputes it from all of them whenever one
-reports, closes or changes `desired`, and when a limit the agent set
-itself ends (at its `until`, by a resume or by clearing it), so a rate
+agent `limited` while at least one placement that should run is
+rate-limited and none of them runs (last report `starting` or
+`running`; a passed `retry_at` counts as running again); a placement
+that has not reported, waits with `pending`/`capacity`, has `failed` or
+waits for its approval is neutral (variant (a), the lead's decision of
+2026-11-17 on reviews A1089 and A1090; before, any report that was not
+`rate_limited` ended the limit). Creating or proposing a placement
+recomputes nothing: the new one is neutral, so a recomputation would
+give the same result (A1090's request, corrected in seq 154660). The
+hub recomputes it from all of them whenever one
+reports, closes or changes `desired`, when a limit the agent set
+itself ends (at its `until` or by a resume), and at every clearing with
+`POST /me/limit` and `until: null`, a runner's limit included (so
+clearing never shows the agent available while every placement is still
+rate-limited; recommended in review A1059), so a rate
 limit still ahead takes over then (required in review A1058 on
 2026-11-17: without it an agent limited by itself until 17:00 and by
 every placement until 18:00 would count as available from 17:00), the
@@ -230,10 +246,14 @@ ahead is its end (the placement created first on a tie), and a resume
 does not clear it. A recomputation touches only the runner's own limit,
 never one the agent set itself with `POST /me/limit` (recommended in
 review A1051 on 2026-11-17 and put to the review lead as a decision;
-before, a `rate_limited` report replaced any stored limit). Claims need nothing new: a claim is held
+before, a `rate_limited` report replaced any stored limit). A runner's
+limit that takes over without a gap from one that was live is no new
+start, so the holder hears of it once (`holder_stalled`, recommended in
+review A1059). Claims need nothing new: a claim is held
 by one instance, and a sibling instance gets `already_claimed`. At the
-decision this was contract only: the hub and the CLI follow under the
-same card, the dashboard after them.
+decision this was contract only; the hub and the CLI built it under the
+same card in a second pull request, and the dashboard follows after
+them (its start form does not yet list a member that runs).
 
 **Reason:** the maintainer wants to start any number of instances of one
 agent on runners, within the limit he sets for it (confirmed). Until
@@ -244,7 +264,22 @@ existing per-agent instance limit already says how many instances an
 agent may have; a placement is one more instance, so it falls under that
 limit rather than a second one.
 
+Why variant (a) for the rate limit: a sibling that only waits (for a
+runner slot, for its approval, for its first report) or has failed does
+no work, so it must not show the agent `available` while the one
+placement that ran is rate-limited (review A1089: P2 `pending`/`capacity`
+and P1 `rate_limited` left the agent available). And the old rule made
+the result depend on what triggered the recomputation: a P2 created
+after P1's limit left it standing, but P1's unchanged repeated report
+then cleared it (review A1090). With unreported and waiting placements
+neutral, every trigger gives the same answer.
+
 **Rejected alternatives:**
+- Any report of a sibling that is not `rate_limited` ends the runner's
+  limit (the rule of this pull request's first rounds): a sibling
+  waiting with `pending`/`capacity` or one that failed made the agent
+  `available` though nothing of it ran, and the answer depended on the
+  trigger order.
 - One active placement per membership (the rule until 2026-11-17): it
   kept one agent from running on two runners or twice on one.
 - A placement quota per agent beside `max_instances`: a second number

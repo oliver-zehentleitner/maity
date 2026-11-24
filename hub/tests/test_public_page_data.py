@@ -292,13 +292,17 @@ def test_a_project_that_leaves_the_public_set_takes_its_harness_off_the_other_pa
         row = dict(latest._mapping)
         row |= {
             "id": "ses-in-second",
-            "membership_id": in_second,
             "harness": "y-harness",
             "started_at": latest.started_at + timedelta(seconds=1),
             "live": None,
             "ended_at": clock.now(),
         }
         conn.execute(insert(t.agent_session).values(**row))
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id="ses-in-second", membership_id=in_second, acknowledged_seq=0
+            )
+        )
         public_pages.touch(conn, "project", world.project_id, dependents=False)
     assert snapshot(world)["agents"][0]["harness"] == "y-harness"  # the latest, from Second
     off = world.owner.patch("/projects/maintainer/second", {"public_page": "off"})

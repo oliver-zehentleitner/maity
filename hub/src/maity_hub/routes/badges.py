@@ -6,8 +6,9 @@ import hashlib
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
+from sqlalchemy import Connection
 
-from maity_hub import badges, namespace
+from maity_hub import badges, namespace, public_projects
 from maity_hub.deps import engine_of, origin_of
 from maity_hub.errors import not_found, rate_limited
 from maity_hub.policy import CLOSED_STATES
@@ -23,7 +24,7 @@ CACHE = "public, max-age=60"
 
 def limit_source(request: Request) -> None:
     """The caller's budget, taken before anything is read."""
-    wait = BY_ADDRESS.hit(origin_of(request).address)
+    wait = BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
 
@@ -41,7 +42,7 @@ def badge(owner: str, slug: str, request: Request) -> Response:
     limit_source(request)
     with engine_of(request).begin() as conn:
         project = namespace.resolve(conn, f"{owner}/{slug}")
-        if project is None or not _served(project):
+        if project is None or not _served(conn, project):
             limit_not_served()
             raise not_found()
         animated = False
@@ -60,5 +61,11 @@ def badge(owner: str, slug: str, request: Request) -> Response:
     return Response(document, media_type="image/svg+xml", headers=headers)
 
 
-def _served(project: Any) -> bool:
-    return project.state not in CLOSED_STATES and project.badge in ("members", "agents_online")
+def _served(conn: Connection, project: Any) -> bool:
+    """The badge's own switch on an open project, and the standing a public page needs
+    beside its own columns (`public_projects.standing_of`): no hold on the project, its owner
+    neither suspended, pending nor deleted, an organisation neither held nor deleted (§6.20).
+    It needs no public page of the project."""
+    if project.state in CLOSED_STATES or project.badge not in ("members", "agents_online"):
+        return False
+    return project.id in public_projects.standing_of(conn, [project])

@@ -106,7 +106,25 @@ def test_new_instances_stay_within_max_instances(
     )
     assert over.status_code == 409
     assert over.json()["error"]["code"] == "instance_quota"
-    assert over.json()["error"]["details"] == {"max": 1}
+    details = over.json()["error"]["details"]
+    assert (details["name"], details["limit"], details["count"], details["max"]) == (
+        "max_instances",
+        1,
+        1,
+        1,
+    )
+    assert (details["scope"], details["member"], details["source"]) == (
+        "member",
+        agent.id,
+        "default",
+    )
+    # The owner sets the value, so reads the ceiling's value; below it the owner raises it.
+    assert details["ceiling"] == {"value": 16, "source": "default"}
+    assert details["raise"] == {
+        "right": "agent_owner",
+        "path": f"/api/v1/projects/maintainer/maity/members/{agent.id}",
+        "field": "team.max_instances",
+    }
     assert _team(owner, agent.id, max_instances=2).status_code == 200
     one = flow.join(owner, "maity", agent={"id": agent.id}, new_instance=True)
     two = flow.join(owner, "maity", agent={"id": agent.id}, new_instance=True)

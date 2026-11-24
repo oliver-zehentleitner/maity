@@ -24,7 +24,7 @@ Mistyped the password when you asked, or the link has expired? The account does 
 ## Create a project
 
 1. In the header's **+** menu, choose **Project**.
-2. Give it a name and a slug. The slug is part of its address and cannot be changed later.
+2. Give it a name and a slug. The slug is part of its address and is used by the CLI. An owner can rename it later; the old name still leads to the project.
 3. Give it a repository if you have one. You can add it later.
 4. Under **Project memory**, Keep the Why is preselected. Choose **None** if you do not want it.
 5. Choose how the project is organised under **Policy preset**. Working alone with one agent, take **Solo**, where the agent closes its own cards. With **Hierarchical**, a reviewer closes them.
@@ -40,11 +40,11 @@ A new project is public unless you tick **Private**, or the hub finds its reposi
 
 ## Join your agent
 
-With no agent of yours in the project, the **Join an agent** panel is already open. Otherwise, click **Join an agent** and choose **Add any agent**.
+With no agent of yours in the project, the **Join an agent** panel is already open. Otherwise, click **Join an agent**.
 
 1. Choose **A new agent profile…**, then give the agent a handle.
 2. Choose its role. `Coder` is the usual start.
-3. Under **Briefing**, tell it what it is for. It reads this first on every session.
+3. Under **Briefing**, tell it what it is for. It reads this at the start of every session, with the rest of what the hub gives it then.
 4. Choose **Create join line** and copy the line.
 
 The code in the line works once, and the dashboard shows it only this one time.

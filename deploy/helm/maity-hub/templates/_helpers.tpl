@@ -118,6 +118,9 @@ the cluster.
 {{- if and .Values.secretKey.sealVerifiers (not .Values.secretKey.existingSecret) -}}
 {{- fail "secretKey.sealVerifiers needs secretKey.existingSecret: the verifiers are sealed with the instance key" -}}
 {{- end -}}
+{{- if and .Values.secretKey.sealedVerifiersOnly (not .Values.secretKey.sealVerifiers) -}}
+{{- fail "secretKey.sealedVerifiersOnly needs secretKey.sealVerifiers: without sealing every new verifier is plain and refused" -}}
+{{- end -}}
 {{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
 {{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}
 {{- end -}}
@@ -134,6 +137,31 @@ the chart.
     secretKeyRef:
       name: {{ required "database.existingSecret is required: a Secret holding MAITY_DATABASE_URL" .Values.database.existingSecret }}
       key: {{ .Values.database.key }}
+{{- include "maity-hub.sharedEnv" . }}
+{{- end -}}
+
+{{/*
+The migrate Job's database URL: database.migrate's Secret when one is named (the role that owns the schema,
+docs/install/README.md "Database roles"), else the hub's own.
+*/}}
+{{- define "maity-hub.migrateEnv" -}}
+- name: MAITY_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      {{- if .Values.database.migrate.existingSecret }}
+      name: {{ .Values.database.migrate.existingSecret }}
+      key: {{ .Values.database.migrate.key }}
+      {{- else }}
+      name: {{ required "database.existingSecret is required: a Secret holding MAITY_DATABASE_URL" .Values.database.existingSecret }}
+      key: {{ .Values.database.key }}
+      {{- end }}
+{{- include "maity-hub.sharedEnv" . }}
+{{- end -}}
+
+{{/*
+Everything in the environment but the database URL; it begins with a newline, so it follows a list entry.
+*/}}
+{{- define "maity-hub.sharedEnv" -}}
 {{- with .Values.forge.github.existingSecret }}
 - name: MAITY_FORGE_GITHUB_TOKEN
   valueFrom:
@@ -154,6 +182,10 @@ the chart.
 {{- end }}
 {{- if .Values.secretKey.sealVerifiers }}
 - name: MAITY_SEAL_VERIFIERS
+  value: "1"
+{{- end }}
+{{- if .Values.secretKey.sealedVerifiersOnly }}
+- name: MAITY_SEALED_VERIFIERS_ONLY
   value: "1"
 {{- end }}
 {{- with .Values.mail.signingKeySecret.existingSecret }}

@@ -20,8 +20,24 @@ from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import preferences, tokens
+from maity_hub.notifications.address import (
+    NO_PENDING_ORIGIN,
+    VERIFY_BY_HUMAN_DAY,
+    VERIFY_BY_HUMAN_HOUR,
+    VERIFY_BY_RECIPIENT_DAY,
+    VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+    VERIFY_BY_RECIPIENT_HOUR,
+    VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+    VERIFY_BY_RECIPIENT_MAILS_DAY,
+    VERIFY_BY_RECIPIENT_MAILS_HOUR,
+    _recipient_over,
+    decide_held,
+    has_verified_address,
+    row_of,
+    void_pending_address,
+)
 from maity_hub.ratelimit import Attempt
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
 
@@ -82,7 +98,7 @@ def test_an_address_is_verified_by_its_link(make_client: ClientFactory, migrated
     assert (got["email"]["address"], got["email"]["pending_address"]) == (None, "me@example.org")
     assert got["email"]["address_status"] == "pending"
     [mail] = outbox_rows(migrated)
-    assert (mail.kind, mail.recipient) == ("security", "me@example.org")
+    assert (mail.kind, mail.recipient) == ("verification", "me@example.org")
     assert "maintainer" not in mail.body and "ignore this mail" in mail.body
     token = link(mail, "verify")
     page = owner.client.get(f"/mail/verify/{token}")
@@ -156,7 +172,7 @@ def test_removing_the_address_voids_unsubscribe_links(
     factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
     owner = verified(make_client, migrated, "me@example.org")
     with migrated.begin() as conn:
-        epoch = preferences.row_of(conn, owner.id).epoch
+        epoch = row_of(conn, owner.id).epoch
     token = preferences.unsubscribe_token(b"s" * 32, owner.id, "chat", epoch)
     assert owner.client.get(f"/mail/unsubscribe/{token}").status_code == 200
     owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
@@ -194,20 +210,20 @@ def test_a_human_without_a_password_needs_an_old_session(
         change = preferences.view(conn, owner.id, True)["email"]["address_change"]
         assert change["address"] == "new@example.org" and change["id"].startswith("adc-")
         with pytest.raises(ApiError) as too_new:
-            preferences.decide_held(
+            decide_held(
                 conn, step_up=lambda: None, keeps_factor=lambda: None,
                 human=human, session=session, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
             )  # fmt: skip
         assert too_new.value.details == {"reason": "session_too_new"}
         with pytest.raises(ApiError) as wrong:
-            preferences.decide_held(
+            decide_held(
                 conn, step_up=lambda: None, keeps_factor=lambda: None,
                 human=human, session=session, change_id="adc-other",
                 address=change["address"], approve=False, signing_key=None, public_url="",
             )  # fmt: skip
         assert wrong.value.code == "conflict"
-        preferences.decide_held(
+        decide_held(
             conn, step_up=lambda: None, keeps_factor=lambda: None,
                 human=human, session=session, change_id=change["id"],
             address=change["address"], approve=False, signing_key=None, public_url="",
@@ -277,7 +293,7 @@ def test_a_verify_token_binds_the_pending_address(
     owner = with_mail(make_client, migrated)
     owner.patch(S, {"email": {"address": "me@example.org"}})
     with migrated.begin() as conn:
-        row = preferences.row_of(conn, owner.id)
+        row = row_of(conn, owner.id)
     other = tokens.make(
         b"s" * 32,
         {"h": owner.id, "p": "verify", "a": "attacker@example.org", "n": row.pending_nonce,
@@ -320,7 +336,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
             )  # fmt: skip
         assert replaced.value.details == {"reason": "not_in_good_standing"}
         with pytest.raises(ApiError) as decided:
-            preferences.decide_held(
+            decide_held(
                 conn, human=human, session=weak, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
                 step_up=lambda: None, keeps_factor=lambda: None,
@@ -401,8 +417,8 @@ def test_a_registration_claims_its_address_once(migrated: Engine) -> None:
             registration_accounts.claim_address(conn, "ada@example.com", second, secret_key=None)
             is False
         )
-        assert preferences.has_verified_address(conn, "ada@example.com") is True
-        assert preferences.has_verified_address(conn, "grace@example.com") is False
+        assert has_verified_address(conn, "ada@example.com") is True
+        assert has_verified_address(conn, "grace@example.com") is False
         view = preferences.view(conn, first, True)["email"]
     assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
     assert view["verified_at"] is not None and view["hard_failures"] == 0
@@ -636,6 +652,85 @@ def test_a_wrong_password_holds_its_place_in_the_count_while_it_compares(
     assert len(seen) == 1 and seen[0] > 0
 
 
+# --- verification mails are limited per human and per recipient (§18.4, §16.2) ----------
+
+
+def _verifications(engine: Engine) -> list[Any]:
+    rows = [r for r in outbox_rows(engine) if (r.headers or {}).get("_purpose") == "verify"]
+    return rows
+
+
+def test_a_human_asks_for_three_verification_mails_an_hour(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = with_mail(make_client, migrated)
+    for n in range(3):
+        assert owner.patch(S, {"email": {"address": f"me{n}@example.org"}}).status_code == 200
+    refused = owner.patch(S, {"email": {"address": "me3@example.org"}})
+    assert refused.status_code == 429, refused.text
+    assert refused.json()["error"]["code"] == "rate_limited"
+    assert int(refused.headers["Retry-After"]) > 0
+    sent = _verifications(migrated)
+    assert len(sent) == 3
+    # a budget of their own: security mail never waits behind them
+    assert {row.kind for row in sent} == {"verification"}
+    assert outbox.BUDGETS["verification"] == "verification_max_per_hour"
+    with migrated.connect() as conn:
+        pending = conn.execute(
+            select(t.notification_settings.c.pending_address).where(
+                t.notification_settings.c.human_id == owner.id
+            )
+        ).scalar_one()
+    assert pending == "me2@example.org"  # the refused one changed nothing
+
+
+def test_one_address_gets_three_verification_mails_an_hour_from_all_accounts(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    for n in range(4):
+        human = with_mail(make_client, migrated, f"asker-{n}")
+        answer = human.patch(S, {"email": {"address": "Target@Example.org"}})
+        assert answer.status_code == 200, answer.text  # the same answer, sent or not
+    rows = _verifications(migrated)
+    assert len(rows) == 3
+
+
+def test_the_verification_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    counted = (
+        VERIFY_BY_RECIPIENT_HOUR,
+        VERIFY_BY_RECIPIENT_DAY,
+        VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_MAILS_HOUR,
+        VERIFY_BY_RECIPIENT_MAILS_DAY,
+    )
+    for limiter in counted:
+        limiter.reset()
+    owner = with_mail(make_client, migrated)
+    assert owner.patch(S, {"email": {"address": "Target@Example.org"}}).status_code == 200
+    assert len(_verifications(migrated)) == 1
+    stored_keys.assert_keyed(migrated, counted, "target@example.org")
+
+
+def test_two_accounts_asking_again_and_again_leave_the_owner_a_verification_mail(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # A1014 F2: the address's places are counted in asking accounts, not in mails, so two
+    # accounts asking up to their own limit hold two of its three, and the owner gets the third.
+    for n in range(2):
+        asker = with_mail(make_client, migrated, f"asker-{n}")
+        for _ in range(3):  # the most an account may ask in an hour
+            answer = asker.patch(S, {"email": {"address": "Target@Example.org"}})
+            assert answer.status_code == 200, answer.text
+    assert len(_verifications(migrated)) == 6  # 3 + 3: more than the address's three
+    owner = with_mail(make_client, migrated, "owner")
+    assert owner.patch(S, {"email": {"address": "target@example.org"}}).status_code == 200
+    rows = _verifications(migrated)
+    assert len(rows) == 7 and rows[-1].human_id == owner.id
+
+
 def test_the_address_mails_read_exactly_as_composed(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -769,9 +864,12 @@ def test_the_origin_is_replaced_removed_and_voided_with_the_pending_address(
     owner.patch(S, {**body, "email": {"address": "newer@example.org"}})  # a new request
     assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
     with migrated.begin() as conn:
-        preferences.void_pending_address(conn, owner.id)  # a new password (§2.10)
+        void_pending_address(conn, owner.id)  # a new password (§2.10)
     assert _origin(migrated, owner.id) == (None, None, None)
-    owner.patch(S, body)
+    # The fourth verification mail of this hour: past the per-human limit (context/
+    # notifications.md aedbf93a), which is not what this test is about.
+    VERIFY_BY_HUMAN_HOUR.reset()
+    assert owner.patch(S, body).status_code == 200
     assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
     owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
     assert _origin(migrated, owner.id) == (None, None, None)
@@ -786,8 +884,126 @@ def test_a_change_asked_before_the_hub_kept_where_names_nothing(
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)
-            .values(**preferences.NO_PENDING_ORIGIN)
+            .values(**NO_PENDING_ORIGIN)
         )
     owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
     notice = outbox_rows(migrated)[-1]
     assert notice.recipient == "old@example.org" and "From:" not in notice.body
+
+
+# --- the recipient's verification mails in any hour and any day (A1019 P10/P11) --------------
+
+
+def _verify_clock(monkeypatch: pytest.MonkeyPatch) -> tuple[list[float], list[float], Any]:
+    """A clock for the limits, the moments of the verification mails sent to one address,
+    and `ask(human, times)`: the per-human limits as `apply_address` keeps them, then the
+    recipient's."""
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    sent: list[float] = []
+
+    def ask(human: str, times: int = 1) -> int:
+        got = 0
+        for _ in range(times):
+            if VERIFY_BY_HUMAN_HOUR.blocked(human):
+                continue
+            if VERIFY_BY_HUMAN_DAY.blocked(human):
+                continue
+            VERIFY_BY_HUMAN_HOUR.hit(human)
+            VERIFY_BY_HUMAN_DAY.hit(human)
+            if not _recipient_over("target@example.org", human):
+                sent.append(now[0])
+                got += 1
+        return got
+
+    return now, sent, ask
+
+
+def _most_in(times: list[float], width: float) -> int:
+    most, start = 0, 0
+    for end, at in enumerate(times):
+        while times[start] <= at - width:
+            start += 1
+        most = max(most, end - start + 1)
+    return most
+
+
+def test_an_address_gets_at_most_9_verification_mails_in_any_hour(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Three accounts take the hour's places with one mail each and ask twice more late in
+    # their hold; three more take the places as they come free and ask three times at once.
+    # Without a count of the mails, 15 in one hour.
+    now, sent, ask = _verify_clock(monkeypatch)
+    for human in ("a0", "a1", "a2"):
+        ask(human)
+    now[0] = 2700.0
+    for human in ("a0", "a1", "a2"):
+        ask(human, 2)
+    now[0] = 3600.0
+    for human in ("b0", "b1", "b2"):
+        ask(human, 3)
+    assert _most_in(sent, 3600) == 9
+
+
+def test_an_address_gets_at_most_100_verification_mails_in_any_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ten accounts take the day's places with one mail each and send their other nine late
+    # in their hold, three accounts an hour; ten more take the places as they come free.
+    # Without a count of the mails, 186 in one day.
+    now, sent, ask = _verify_clock(monkeypatch)
+    early = [f"a{n}" for n in range(10)]
+    for n, human in enumerate(early):
+        now[0] = n // 3 * 3600.0
+        ask(human)
+    turns = early * 3
+    for k in range(10):
+        now[0] = (14 + k) * 3600.0
+        for human in turns[3 * k : 3 * k + 3]:
+            ask(human, 3)
+    late = [f"b{n}" for n in range(10)]
+    for hour in range(24, 48):
+        now[0] = hour * 3600.0
+        chosen = 0
+        for human in late:
+            if chosen == 3:
+                break
+            if not VERIFY_BY_HUMAN_DAY.blocked(human) and ask(human, 3):
+                chosen += 1
+    assert _most_in(sent, 86400) == 100
+    assert _most_in(sent, 3600) <= 9
+
+
+def test_two_accounts_at_their_own_limits_never_reach_the_verification_mail_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now, sent, ask = _verify_clock(monkeypatch)
+    for hour in range(48):
+        now[0] = hour * 3600.0
+        for human in ("a0", "a1"):
+            ask(human, 3)
+    # Each its own 10 a day, all delivered: the count of the mails never refused one.
+    assert len(sent) == 2 * 20
+    assert _most_in(sent, 3600) == 6 and _most_in(sent, 86400) == 20
+
+
+def test_an_account_asking_again_late_in_its_hold_takes_no_second_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A1027 P12 for verification: two accounts ask again late in their hold; the owner's
+    # account, a third, still gets its mail.
+    now, sent, ask = _verify_clock(monkeypatch)
+    for human in ("h1", "h2"):
+        assert ask(human) == 1
+    now[0] = 3591.0
+    for human in ("h1", "h2"):
+        assert ask(human) == 1
+    now[0] = 3595.0
+    assert ask("owner") == 1

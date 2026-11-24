@@ -676,7 +676,7 @@ leaves its old owner's cross-project group chats with
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his answer of 2026-11-12 to `req-55469pjca13n` in chat, "mal alles o2" (seq 116129), which picks the request's option o2 ("o2: auch hinter die Firewall", the request's wording): free work messages from another side pass the same gate, and his answer of 2026-11-12 to `req-a89crp06kjf3`, the option the request labelled "gesperrt bis Owner zustimmt": a waiting jour fixe moderator does not write the statement, all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
-**Revisit when:** the maintainer revisits the gate on free work messages (his answer "mal alles o2" reads as "for now" in the reading of the lead, lotse#wtwy, seq 116131; `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+**Revisit when:** the maintainer revisits the gate on free work messages (his answer "mal alles o2" reads as "for now" in the reading of the lead, seq 116131; `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
 asking. A human and the agents they own are one side, and the owner says
@@ -764,7 +764,7 @@ inbox whether or not they are a member of the project.
   each one by hand (his own third option): the maintainer answered
   "mal alles o2" (seq 116129), the option whose text in the request
   reads "Von einem anderen Owner gehen diese freien Nachrichten durch
-  dieselbe Firewall wie Chat"; the lead, lotse#wtwy, read his answer as
+  dieselbe Firewall wie Chat"; the lead read his answer as
   "for now" (seq 116131).
 - Letting a waiting jour fixe moderator write the statement while it
   waits (the build until the answer, `req-a89crp06kjf3` o1): the
@@ -822,6 +822,62 @@ chance to set their entries.
 - Leaving the start's marking to the minute sweep
   (`chat_request.sweep_owners`): it only syncs owners who already have
   an open request, so a fresh switch-on would file none.
+
+## An owner's firewall history is their own, kept as long as the account, from the deploy on
+
+**Id:** 756da7d0-c973-4ea0-82a0-5fe28a238f59
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish of 2026-11-15 as the lead wrote it on card tsk-v34cv43wvec3 (a history of his own firewall decisions on Chat access, to audit them; no instance-wide admin view; retention to be decided in the contract; no backfill unless the existing rows carry it); the retention and the cap proposed by the contract author and accepted by the lead on 2026-11-18 (seq 163771); a deleted account and agent profile shown as `handle: null`, `deleted: true` without exception, and an account's deletion as one write, decided by the lead on 2026-11-18 (seq 163796, relayed by the review lead in 163800) after reviews A1340 and A1341 of #1970; the start is the contract author's reading
+**Revisit when:** the maintainer or an operator asks for a time limit on the history, for an admin's view of it, or the 10,000-item cap is reached in practice
+**See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-18
+
+`GET /me/chat-access/history` (§9.6, "History") lists every change of
+a human's allow and deny entries and every answer they gave to the
+request to chat with their agents, read by that human alone. It is kept
+as long as the account exists, capped at the newest 10,000 items per
+human, deleted with the account and in the export. It starts with the
+hub version that brings it. An item keeps the ids it names when that
+agent or person is deleted, and shows a deleted account or agent
+profile as `handle: null`, `deleted: true`, applied when it is read.
+
+**Reason:** the history exists to audit decisions, and the decisions
+that matter most last longest: an "allow always" given months ago is
+exactly the one an owner later wants to trace, so a time limit would
+drop what the audit is for. The cap only bounds a scripted write loop;
+the lists themselves hold at most 1,000 entries and most changes come
+from a human's click. No backfill, as the card allows only where rows
+carry the data: an entry stores `by` and `since` but not whether a
+click, an answer or an add made it, nor its state at creation, and an
+answered request keeps its button but not the ticked agents, the ticked
+person or the entries it wrote, so a backfilled item would look complete
+and be wrong. An item records the owner's own past decision, so taking
+a deleted agent or person out of it would falsify it; the ids are
+enough for that. The handle is a different matter: §2.9 shows a deleted
+person with `handle: null` everywhere, and a deleted agent's handle may
+be given to a new agent of its owner, so the history follows §2.9
+rather than keep a handle no other route shows.
+
+**Rejected alternatives:**
+- A fixed number of days (for instance 90, as the account records,
+  `records.KEPT`): it would forget the long-lived allows first, the
+  ones worth auditing.
+- No cap: one client looping create and delete would grow one human's
+  rows without bound.
+- An instance-wide view for admins: the maintainer did not want one.
+- Keeping a deleted person's or agent's handle in the items as it was,
+  since the handle stays reserved (the first draft of the contract):
+  reserving a handle stops its reuse but does not justify showing it,
+  §2.9 hides a deleted person's handle on every other route, and the
+  reviews of #1970 (A1340, A1341) found that the history would be the
+  one place to show it; the lead decided for §2.9 without exception.
+- Backfilling items from the entries' `since` and the requests'
+  `answer`: half of each item would be guessed (above).
+- Deriving the history from events: a write to the lists emits only
+  `chat_rules_changed`, an entry id for the agent alone, and an answer
+  to this request, which has no project, writes no `request_answered`
+  event; neither carries the ticks or the entries.
 
 ## 👍 and 👎 on a chat message are a decision, kept as events
 

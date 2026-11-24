@@ -148,6 +148,15 @@ def test_a_holder_without_a_session_is_still_session_ended(setup: Setup) -> None
     also by the expiry that follows (§6.5's precedence)."""
     card = setup.claim()
     with setup.engine.begin() as conn:
+        sessions = select(t.agent_session.c.id).where(
+            t.agent_session.c.credential_id == setup.agent.credential_id
+        )
+        # Each session's project rows first: they name the session (§5.3).
+        conn.execute(
+            delete(t.agent_session_project).where(
+                t.agent_session_project.c.session_id.in_(sessions)
+            )
+        )
         conn.execute(
             delete(t.agent_session).where(
                 t.agent_session.c.credential_id == setup.agent.credential_id

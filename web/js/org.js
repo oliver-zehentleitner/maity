@@ -2,7 +2,8 @@
 // (/<owner>/<slug>/organisation; the maintainer, 2026-10-30; it was a
 // section of the Overview): an indented tree computed from reports_to and
 // area ownership on every render; nothing chart-shaped is stored or fetched.
-// Its second face, Paths, is js/paths.js.
+// Its second face, Paths, is js/paths.js. The Agents page's Organisation tab
+// (js/agents-page.js) draws the same tree with only one's own agents fed in.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -66,84 +67,62 @@ window.Maity = window.Maity || {};
     return { roots, children, parentOf };
   }
 
-  // An agent's live instances, each a link to its Sessions on the member's page, as an
-  // instance is everywhere else (the maintainer, 2026-11-01). A dormant one answers only
-  // its own address (§6.17), and says so beside its link.
-  function instances(ctx, m) {
-    const live = (m.instances || []).filter((i) => !i.revoked_at);
-    if (m.kind !== "agent" || !live.length) return null;
-    const handle = M.dom.handleOf(ctx, m) || m.handle || m.id;
-    return h("span", { class: "org-instances" }, live.map((i) => h("span", { class: "org-instance" },
-      h("a", { class: "member-instance", href: M.dom.instanceHref(ctx, m.id, i.id),
-        "aria-label": M.t("org.instance.label", { address: "@" + handle + "#" + i.id }) }, "#" + i.id),
-      i.dormant ? h("span", { class: "muted member-dormant" }, " " + M.dom.dormantNote(ctx, m, i)) : null)));
-  }
-
-  // Who is below a lead, from the hub's `manages` (§6.2), never counted here: the direct
-  // reports with their instances, and the whole branch on hover when it is larger.
-  function manages(m) {
-    const direct = M.dom.managesText(m.manages, "direct");
-    if (!direct) return null;
-    const total = m.manages.total.members > m.manages.direct.members ? M.dom.managesText(m.manages, "total") : null;
-    return h("span", { class: "muted org-manages", title: total ? M.t("manages.total", { text: total }) : null }, direct);
-  }
-
-  function node(ctx, m, tree) {
-    const kids = tree.children[m.id] || [];
-    const link = tree.parentOf[m.id];
-    return h("li", null,
-      h("div", { class: "org-node" },
-        h("span", { class: "dot " + (m.kind === "human" ? "human" : m.presence), "aria-hidden": "true" }),
-        M.avatar(m, 20),
-        h("strong", null, M.dom.memberRef(ctx, m.id)),
-        h("span", { class: "role" }, M.trust.words(m)),
-        m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
-        link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null,
-        instances(ctx, m),
-        manages(m)),
-      kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
-  }
-
-  // The top follows trust (the maintainer, 2026-10-31): whoever has no place
-  // by reports_to or area stands at their trust's level, owners at the top,
-  // then admins, members and guests, each a level deeper; a level nobody holds
-  // leaves no empty step. Not under one owner's node: with several owners that
-  // would claim a line to one of them that the project does not have.
-  function drawTree(ctx) {
-    const tree = buildTree(ctx.members || []);
-    if (!tree.roots.length) return h("p", { class: "muted" }, M.t("org.empty"));
-    const tier = (t) => tree.roots.filter((m) => (M.trust.TRUSTS.includes(m.trust) ? m.trust : "member") === t);
-    const levels = M.trust.TRUSTS.map(tier).filter((list) => list.length);
-    // From the deepest up: each level's members, the deeper levels in one item under them.
-    let deeper = null;
-    for (let i = levels.length - 1; i > 0; i--) {
-      deeper = h("li", { class: "org-level" }, h("ul", null, levels[i].map((m) => node(ctx, m, tree)), deeper));
-    }
-    return h("ul", { class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)), deeper);
-  }
-
-  // One's own fleet, the Organisation tab of a project's Agents (tsk-q989pagmk2x9; the maintainer,
-  // 2026-11-02): the same tree, built from one's own agents here alone, under oneself. An agent
-  // that reports to someone else's shows that as a stub, and nothing more of the other side.
   const live = (m) => (m.instances || []).filter((i) => !i.revoked_at);
 
   const STATE_WORDS = {
     online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
     offline: () => M.t("chat.presence.offline"), dormant: () => M.t("org.fleet.dormant"),
+    paused: () => M.t("chat.presence.paused"), revoked: () => M.t("chat.presence.revoked"),
   };
-  // An instance as a dot in its presence's colour, the lead ringed, a link to its sessions.
-  function fleetDots(ctx, m) {
-    const handle = M.dom.handleOf(ctx, m) || m.handle || m.id;
+  const stateWord = (state) => (Object.hasOwn(STATE_WORDS, state) ? STATE_WORDS[state]() : state);
+  // The tree's lists keep their list semantics, which list-style: none drops in Safari (A2290).
+  const list = (attrs, kids) => h("ul", Object.assign({ role: "list" }, attrs), kids);
+
+  // An agent's live instances, each `#abcd` after a dot in its presence's colour, the lead ringed
+  // (tsk-zsbe48ty4ces: one row for Team and Agents), and a link to its Sessions on the member's
+  // page, as an instance is everywhere else (the maintainer, 2026-11-01). The link's name says the
+  // address and the state. A dormant one answers only its own address (§6.17), and says so beside it.
+  function instances(ctx, m) {
+    if (m.kind !== "agent") return null;
     const list = live(m);
-    if (!list.length) return h("span", { class: "muted fleet-none" }, M.t("org.fleet.no_instances"));
-    return h("span", { class: "fleet-dots" }, list.map((i) => {
-      const state = i.dormant ? "dormant" : (i.presence || "offline");
-      const words = [Object.hasOwn(STATE_WORDS, state) ? STATE_WORDS[state]() : state];
+    if (!list.length) return h("span", { class: "muted org-none" }, M.t("org.fleet.no_instances"));
+    const handle = M.dom.handleOf(ctx, m) || m.handle || m.id;
+    return h("span", { class: "org-instances" }, list.map((i) => {
+      // Paused before dormant: a paused instance says so in its dot, its dormant note stands beside it.
+      const state = i.presence === "paused" ? "paused" : i.dormant ? "dormant" : (i.presence || "offline");
+      const words = [stateWord(state)];
       if (i.lead) words.push(M.t("org.fleet.lead"));
-      return h("a", { class: "fleet-dot " + state + (i.lead ? " lead" : ""), href: M.dom.instanceHref(ctx, m.id, i.id),
-        "aria-label": M.t("org.fleet.dot", { address: "@" + handle + "#" + i.id, state: words.join(", ") }),
-        title: "#" + i.id + " · " + words.join(", ") });
+      return h("span", { class: "org-instance" },
+        h("a", { class: "member-instance org-dot " + state + (i.lead ? " lead" : ""), href: M.dom.instanceHref(ctx, m.id, i.id),
+          "aria-label": M.t("org.instance.label", { address: "@" + handle + "#" + i.id, state: words.join(", ") }),
+          title: words.join(", ") }, "#" + i.id),
+        i.dormant ? h("span", { class: "muted member-dormant" }, " " + M.dom.dormantNote(ctx, m, i)) : null);
     }));
+  }
+
+  // An agent's open claims, its live instances' together.
+  function claims(m) {
+    if (m.kind !== "agent") return null;
+    return h("span", { class: "muted org-claims" }, M.t("org.fleet.claims", { count: live(m).reduce((n, i) => n + (i.claims || 0), 0) }));
+  }
+
+  // Who is below a lead, from the hub's `manages` (§6.2), never counted here: the direct
+  // reports with their instances, and the whole branch beside it when it is larger (in the text,
+  // not in a title a keyboard never reaches: A2290).
+  function manages(m) {
+    const direct = M.dom.managesText(m.manages, "direct");
+    if (!direct) return null;
+    const total = m.manages.total.members > m.manages.direct.members ? M.dom.managesText(m.manages, "total") : null;
+    return [h("span", { class: "muted org-manages" }, direct),
+      total ? h("span", { class: "muted org-manages-total" }, M.t("manages.total", { text: total })) : null];
+  }
+
+  // A member's own paused or revoked state in words where no instance's dot already says it
+  // (the member's dot is colour alone, and hidden from a screen reader).
+  function memberState(m) {
+    if (m.presence !== "paused" && m.presence !== "revoked") return null;
+    if (live(m).some((i) => i.presence === m.presence)) return null;
+    return h("span", { class: "org-state presence " + m.presence }, stateWord(m.presence));
   }
 
   // Someone else's boss by its handle alone, as text: no link to their page, no name, no tooltip
@@ -155,33 +134,65 @@ window.Maity = window.Maity || {};
     return handle ? M.t("org.fleet.reports_to", { who: "@" + handle }) : M.t("org.fleet.reports_to_someone");
   }
 
-  function fleetNode(ctx, m, tree, own, byId) {
-    const kids = tree.children[m.id] || [];
-    const claims = live(m).reduce((n, i) => n + (i.claims || 0), 0);
-    const boss = m.reports_to && !own.has(m.reports_to) && m.reports_to !== ctx.me.id ? m.reports_to : null;
-    return h("li", { class: "fleet-member", "data-member": m.id },
-      h("div", { class: "org-node fleet-node" },
-        M.avatar(m, 20),
-        h("strong", null, M.dom.memberRef(ctx, m.id)),
-        m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
-        fleetDots(ctx, m),
-        h("span", { class: "muted fleet-claims" }, M.t("org.fleet.claims", { count: claims }))),
-      boss ? h("p", { class: "fleet-stub" }, bossStub(ctx, boss)) : null,
-      kids.length ? h("ul", null, kids.map((k) => fleetNode(ctx, byId[k.id], tree, own, byId))) : null);
+  // One member's row, the same on Team and on Agents (tsk-zsbe48ty4ces): what differs between
+  // the two tabs is only which members are fed in. `via` is how the tree placed the member.
+  function row(ctx, m, via) {
+    const areas = m.areas || [];
+    return h("div", { class: "org-node" },
+      h("span", { class: "dot " + (m.kind === "human" ? "human" : m.presence), "aria-hidden": "true" }),
+      M.avatar(m, 20),
+      h("strong", null, M.dom.memberRef(ctx, m.id)),
+      h("span", { class: "role" }, M.trust.words(m)),
+      memberState(m),
+      areas.length ? h("span", { class: "area" }, areas.join(", ")) : null,
+      via && via.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null,
+      instances(ctx, m),
+      claims(m),
+      manages(m));
   }
 
-  function drawFleet(ctx) {
-    const mine = (ctx.members || []).filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id && !m.removed_at);
-    if (!mine.length) return h("p", { class: "muted fleet-empty" }, M.t("org.fleet.empty"));
-    // Built from one's own agents alone: a boss or an area owner of someone else's places nobody
-    // here (buildTree follows a reports_to only to a member it was given).
-    const tree = buildTree(mine);
-    const own = new Set(mine.map((m) => m.id));
-    const byId = Object.fromEntries(mine.map((m) => [m.id, m]));
-    const me = (ctx.members || []).find((m) => m.id === ctx.me.id) || ctx.me;
-    return h("ul", { class: "org-tree fleet-tree" }, h("li", { class: "fleet-member", "data-member": ctx.me.id },
-      h("div", { class: "org-node fleet-node fleet-me" }, M.avatar(me, 20), h("strong", null, M.dom.memberRef(ctx, ctx.me.id))),
-      h("ul", null, tree.roots.map((r) => fleetNode(ctx, byId[r.id], tree, own, byId)))));
+  // A member's item: its row, a stub for a boss outside the members drawn where `stubOf` names
+  // one (Agents only), and the members under it.
+  function node(ctx, m, tree, stubOf) {
+    const kids = tree.children[m.id] || [];
+    const boss = stubOf ? stubOf(m) : null;
+    return h("li", { class: "org-tree-member", "data-member": m.id },
+      row(ctx, m, tree.parentOf[m.id]),
+      boss ? h("p", { class: "org-stub" }, bossStub(ctx, boss)) : null,
+      kids.length ? list(null, kids.map((k) => node(ctx, k, tree, stubOf))) : null);
+  }
+
+  // The one tree object behind both tabs; `scope` chooses the members fed in.
+  // "team" (the Team page): every member. The top follows trust (the maintainer, 2026-10-31):
+  // whoever has no place by reports_to or area stands at their trust's level, owners at the top,
+  // then admins, members and guests, each a level deeper; a level nobody holds leaves no empty
+  // step. Not under one owner's node: with several owners that would claim a line to one of them
+  // that the project does not have.
+  // "own" (the Agents page, tsk-q989pagmk2x9; the maintainer, 2026-11-02): the caller with their
+  // own agents here alone under them. Built from those agents alone, so a boss or an area owner of
+  // someone else's places nobody (buildTree follows a reports_to only to a member it was given);
+  // an agent that reports to someone else's shows that as a stub, and nothing more of the other side.
+  function drawTree(ctx, scope) {
+    if (scope === "own") {
+      const mine = (ctx.members || []).filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id && !m.removed_at);
+      if (!mine.length) return h("p", { class: "muted org-empty" }, M.t("org.fleet.empty"));
+      const tree = buildTree(mine);
+      const own = new Set(mine.map((m) => m.id));
+      const stubOf = (m) => (m.reports_to && !own.has(m.reports_to) && m.reports_to !== ctx.me.id ? m.reports_to : null);
+      const me = (ctx.members || []).find((m) => m.id === ctx.me.id) || ctx.me;
+      return list({ class: "org-tree" }, h("li", { class: "org-tree-member", "data-member": me.id },
+        row(ctx, me, null), list(null, tree.roots.map((r) => node(ctx, r, tree, stubOf)))));
+    }
+    const tree = buildTree(ctx.members || []);
+    if (!tree.roots.length) return h("p", { class: "muted" }, M.t("org.empty"));
+    const tier = (t) => tree.roots.filter((m) => (M.trust.TRUSTS.includes(m.trust) ? m.trust : "member") === t);
+    const levels = M.trust.TRUSTS.map(tier).filter((list) => list.length);
+    // From the deepest up: each level's members, the deeper levels in one item under them.
+    let deeper = null;
+    for (let i = levels.length - 1; i > 0; i--) {
+      deeper = h("li", { class: "org-level" }, list(null, levels[i].map((m) => node(ctx, m, tree)).concat(deeper || [])));
+    }
+    return list({ class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)).concat(deeper || []));
   }
 
   // Tree or Paths (js/paths.js), kept per browser like the other per-reader choices; a
@@ -216,12 +227,17 @@ window.Maity = window.Maity || {};
     append(root, M.teamHead(ctx, "organisation"),
       h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), faces, status.el, box);
     draw();
+    follow(ctx, status, draw);
+  };
+
+  // Both tabs draw again from the members read anew when a member changes.
+  function follow(ctx, status, draw) {
     ctx.onEvents((events) => {
       if (!events.some((e) => /^member_/.test(e.kind))) return;
       M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(); status.done(); },
         (err) => status.fail(M.t("org.reread_failed"), err));
     });
-  };
+  }
 
-  M.org = { buildTree, drawTree, drawFleet, contains };
+  M.org = { buildTree, drawTree, follow, contains };
 })(window.Maity);

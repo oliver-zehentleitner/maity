@@ -33,6 +33,7 @@ from maity_hub import (
     paths,
     public_pages,
     serving,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.app import (
@@ -41,6 +42,7 @@ from maity_hub.app import (
     check_web_dir,
     create_app,
     require_current_schema,
+    require_unprivileged_role,
     serving_engine,
     start_once,
     warn_on_connection_budget,
@@ -49,11 +51,11 @@ from maity_hub.auth import second_factor_reset, verifiers
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, driver_fields, driver_reason
 from maity_hub.ids import new_id
 from maity_hub.mail import address as addresses
-from maity_hub.models import one_line
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified
+from maity_hub.plain_text import plain_name
 
 EXIT_FAILURE = 1
 EXIT_CONFIG = 2
@@ -65,10 +67,15 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="serve the API and the dashboard")
     commands.add_parser("migrate", help="bring the database schema to the current version")
-    commands.add_parser(
+    seal = commands.add_parser(
         "seal-verifiers",
         help="seal the credentials' plain verifiers with MAITY_SECRET_KEY; only with "
         "MAITY_SEAL_VERIFIERS=1, a second run seals nothing",
+    )
+    seal.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="only count the sealed and the plain verifiers; writes nothing, needs no setting",
     )
     owner = commands.add_parser("owner", help="manage human accounts")
     owner_commands = owner.add_subparsers(dest="owner_command", required=True)
@@ -142,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "migrate":
         return _migrate(settings)
     if args.command == "seal-verifiers":
-        return _seal_verifiers(settings)
+        return _seal_verifiers(settings, args.dry_run)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name, args.email)
     if args.command == "second-factor":
@@ -208,9 +215,13 @@ def _clean_bucket(engine: Any, target: attachment_store.S3Store, *, apply: bool)
     try:
         done = attachments.sweep(engine, target, expiring=False, apply=apply)
     except (attachment_store.StoreError, SQLAlchemyError) as error:
-        # The driver's first line only, as in `_database_error`: no SQL, no parameters.
-        original = getattr(error, "orig", None) or error
-        reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
+        # A database error as `_database_error` gives it, never the driver's text; the store's
+        # own errors are the hub's words.
+        reason = (
+            _database_reason(error)
+            if isinstance(error, SQLAlchemyError)
+            else (str(error).strip().splitlines() or [type(error).__name__])[0]
+        )
         logging.getLogger(__name__).error("cleaning the bucket: %s", reason)
         return {"tombstoned": 0, "orphans": 0, "failed": 1}
     return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
@@ -324,8 +335,10 @@ def _owner_create(
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
-    if not one_line(display_name):
-        return _fail("--display-name: one line, no control character", EXIT_CONFIG)
+    if not plain_name(display_name):
+        return _fail(
+            "--display-name: plain text: no control, format or line-break character", EXIT_CONFIG
+        )
     email = email.strip()
     if not addresses.valid(email):
         return _fail("--email: one address, local-part@domain (docs/api.md §18.4)", EXIT_CONFIG)
@@ -383,9 +396,8 @@ def _owner_create(
                 conn.execute(insert(t.human).values(**values))
                 if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
                     raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
-            if not preferences.claim_verified(
-                conn, normalized, human_id, secret_key=settings.secret_key
-            ):
+            write_guard.make_row(conn, human_id)
+            if not claim_verified(conn, normalized, human_id, secret_key=settings.secret_key):
                 raise _AddressTaken  # another account's address: the account rolls back
     except _HandleTaken:
         return _fail(f"the handle {handle!r} was taken meanwhile", EXIT_FAILURE)
@@ -467,12 +479,25 @@ def _fail(message: str, code: int) -> int:
     return code
 
 
+def _database_reason(error: Exception) -> str:
+    """What a command says of a database error: the classes, the driver's codes and one cause
+    from a fixed list, as the hub's log does (`errors.driver_fields`, `errors.driver_reason`).
+    Never the driver's text: a malformed URL makes the driver quote the whole connection
+    string, the password included, and `migrate` runs as a job whose output is kept in logs."""
+    reason = driver_reason(error)
+    if not reason:  # no driver behind it: SQLAlchemy's own error, or a missing driver
+        reason = f"{type(error).__module__}.{type(error).__qualname__} unclassified"
+        if isinstance(error, ImportError) and error.name:
+            reason += f" module={error.name}"  # the driver to install; a module name, no secret
+    return f"{reason} {driver_fields(error)}"
+
+
 def _database_error(settings: Settings, error: Exception) -> int:
-    # The driver's own message, first line only: SQLAlchemy appends the SQL and
-    # its parameters. The URL is printed only in its redacted form.
-    original = getattr(error, "orig", None) or error
-    reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
-    return _fail(f"database {redact_database_url(settings.database_url)}: {reason}", EXIT_FAILURE)
+    # The URL only in its redacted form, the error only as `_database_reason` gives it.
+    return _fail(
+        f"database {redact_database_url(settings.database_url)}: {_database_reason(error)}",
+        EXIT_FAILURE,
+    )
 
 
 def _migrate(settings: Settings) -> int:
@@ -512,10 +537,13 @@ def _migrate(settings: Settings) -> int:
     return 0
 
 
-def _seal_verifiers(settings: Settings) -> int:
+def _seal_verifiers(settings: Settings, dry_run: bool = False) -> int:
     """The explicit step that seals the verifiers written before sealing was switched on
-    (hub/context/credentials.md); no migration seals. Idempotent: a sealed row stays."""
-    if not settings.seal_verifiers or settings.secret_key is None:
+    (hub/context/credentials.md); no migration seals. Idempotent: a sealed row stays. Prints
+    `sealed N, already sealed M, plain left K` per table and in all; exit 1 when a plain row
+    is left after a real run (one written meanwhile). `--dry-run` only counts."""
+    key = settings.secret_key
+    if not dry_run and (not settings.seal_verifiers or key is None):
         return _fail(
             "refused: sealing is off; set MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY first",
             EXIT_CONFIG,
@@ -526,16 +554,33 @@ def _seal_verifiers(settings: Settings) -> int:
         return _database_error(settings, error)
     try:
         require_current_schema(engine)
-        counted = verifiers.seal_plain(engine, settings.secret_key)
+        if dry_run or key is None:
+            counted = verifiers.count(engine)
+        else:
+            counted = verifiers.seal_and_count(engine, key)
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
-    for table, count in counted.items():
-        print(f"{table}: {count}")
-    print(f"sealed {sum(counted.values())} verifier(s)")
+    total = verifiers.Counted(
+        sealed=sum(c.sealed for c in counted.values()),
+        already=sum(c.already for c in counted.values()),
+        left=sum(c.left for c in counted.values()),
+    )
+    for name, line in (*counted.items(), ("total", total)):
+        print(
+            f"{name}: sealed {line.sealed}, already sealed {line.already}, plain left {line.left}"
+        )
+    if dry_run:
+        print("dry run: nothing written")
+        return 0
+    if total.left:
+        return _fail(
+            f"{total.left} plain verifier(s) left: written while this ran; run it again",
+            EXIT_FAILURE,
+        )
     return 0
 
 
@@ -625,6 +670,7 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
         engine = serving_engine(settings)
         require_current_schema(engine)
+        require_unprivileged_role(engine, settings)
         warn_on_connection_budget(engine, settings)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
@@ -661,6 +707,7 @@ def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
         engine = serving_engine(serving.per_worker(settings))
         try:
             check_startup(engine, settings)
+            require_unprivileged_role(engine, settings)
             warn_on_connection_budget(engine, settings)
             start_once(engine, settings)
         finally:

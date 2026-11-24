@@ -21,7 +21,10 @@ PLACEMENT = {"id": "plc-0007", "mode": "supervised"}  # headless: no folder trus
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
-    harness = config.Harness(harness_id, ("interactive", "supervised"), "supervised")
+    # A model so the opencode adapter can launch (it fails closed without a configured one);
+    # the model does not affect the git identity these tests check.
+    harness = config.Harness(harness_id, ("interactive", "supervised"), "supervised",
+                             ("xai/grok-4.7",), "xai/grok-4.7")  # fmt: skip
     agent_dir = tmp_path / "st" / "agents" / "plc-0007"
     agent_dir.mkdir(parents=True, mode=0o700)
     data: dict[str, Any] = {

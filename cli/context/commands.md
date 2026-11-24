@@ -331,9 +331,9 @@ d1d6b49d.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-7jstyhznnmte (lotse, seq 127806: test runners collected files from `./maity-files/`, and `git add -A` committed them); `docs/api.md` §13 (`files get`); decision 3a8f1852 above; it moves the folder of context/attachments.md b623825e out of the work tree
+**Source:** card tsk-7jstyhznnmte (the lead, seq 127806: test runners collected files from `./maity-files/`, and `git add -A` committed them); `docs/api.md` §13 (`files get`); decision 3a8f1852 above; it moves the folder of context/attachments.md b623825e out of the work tree
 **Revisit when:** an agent needs an attachment inside its work tree often enough that `-o` is not enough, a harness's sandbox keeps the agent from reading the clone's `.git`, or git or a test runner starts reading `.git/maity-files/`
-**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-13
+**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-or-the-placements-scratch-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-13
 
 Without `-o`, `files get` saves into `files/` in the state directory,
 `<git common dir>/maity/files/` unless `MAITY_STATE_DIR` names another
@@ -1598,6 +1598,7 @@ make a wait that never ends while the harness believes it is listening.
 **Status:** active
 **Evidence:** inferred
 **Source:** the card tsk-a0tcd1epcf5k (2026-10-31): after the deploy of dc9b3a6 the hub answered slowly (p99 13.6 s) and `wait` kept printing `hub connection lost`; probes showed idle connections and 55 s polls surviving, Traefik timeouts unchanged and no 5xx, so the read timeout of the window's last poll was the cause; the 10 s and the silent end were agreed with the team lead before they were built
+**See:** commands.md#wait-retries-a-dropped-connection-silently-for-a-minute-counted-across-waits-then-names-the-outage-in-utc — 403fe74d-33d8-41d4-aea5-83578db941e1 — as of 2026-11-17
 
 Each events long-poll asks the hub to hold for what is left of the
 window less a slack of 10 seconds (`POLL_SLACK`; half the window, less
@@ -1612,9 +1613,12 @@ answer time a poll in the middle of the window gets, separate from
 `POLL_SLACK`, which only keeps the window's last poll inside it. A read
 that times out or is cut once the deadline has passed is not reported:
 `wait` ends as any timeout does, with the unread-chats hint and exit 3.
-A connection error before the deadline still prints `hub connection
-lost, retrying until the timeout` and retries with backoff. The exit
-codes are unchanged.
+A connection error before the deadline is still retried with backoff;
+it printed `hub connection lost, retrying until the timeout` at once
+until 2026-11-17. Since then a line comes only after a minute without an
+answer, counted across waits, and names its UTC times without promising
+a retry (`hub connection lost since …Z, still at …Z`,
+403fe74d-33d8-41d4-aea5-83578db941e1). The exit codes are unchanged.
 
 **Reason:** the poll used to be what was left less one second, so the
 last poll of every window gave the hub about a second to answer; a hub
@@ -1644,12 +1648,15 @@ deadline is what the deadline promises, not an outage.
 **Evidence:** confirmed
 **Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built; for the 503, card tsk-p80cre8r9355 (2026-11-11), its split into a hub PR and this CLI PR agreed with the team lead
 **Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule, or the hub sends `Retry-After` on a 5xx other than 503
+**See:** commands.md#wait-retries-a-dropped-connection-silently-for-a-minute-counted-across-waits-then-names-the-outage-in-utc — 403fe74d-33d8-41d4-aea5-83578db941e1 — as of 2026-11-17
 
 A `429` on the events long-poll is retried with the same cursor, as a
-`5xx` or a dropped connection is: the first one prints `hub answered
-429, retrying until the timeout`, and the pause is the backoff (2 s up
+`5xx` or a dropped connection is, and the pause is the backoff (2 s up
 to 30 s) or the answer's `Retry-After`, whichever is longer, never past
-the deadline. A `429` without `Retry-After`, as a limit on open
+the deadline. Until 2026-11-17 the first one printed `hub answered 429,
+retrying until the timeout`; since then a line waits for a minute
+without an answer, counted across waits, and reads `hub answered 429
+since …Z, still at …Z` (403fe74d-33d8-41d4-aea5-83578db941e1). A `429` without `Retry-After`, as a limit on open
 requests sends it, gets the backoff alone. A wait whose deadline comes
 first ends as any timeout does, with exit 3, so the loop around it
 re-arms. Every other `4xx` still ends `wait` with exit 1.
@@ -1682,6 +1689,144 @@ resolve, so a busy moment would drop agents out of their wait loops.
 - Cap a `503`'s `Retry-After` at the 30 s backoff ceiling: the hub's
   value is a fixed 5 s, and the wait's deadline already caps every pause.
   A `429` is not capped either, so one rule covers both.
+
+## `wait` retries a dropped connection silently for a minute, counted across waits, then names the outage in UTC
+
+**Id:** 403fe74d-33d8-41d4-aea5-83578db941e1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3kbpak51yqyn from the jour fixe of 2026-11-05 (round jfx-269b897etn83), with ops' findings of 2026-11-09 (the hub and Traefik end every 55 s hold; CLIs older than #910 printed the line at almost every timeout) and the reviewers' "about a minute without connection"; the plan, including the clock across waits, approved by the team lead on 2026-11-17 before it was built
+**Revisit when:** ops needs the line sooner or later than a minute, or a harness kills `wait` so often that a clock older than a minute hides a real outage
+**See:** commands.md#wait-retries-a-429-like-a-5xx-never-sooner-than-its-retry-after-a-503s-too — 6288d23f-c0fb-477d-a120-8e862ae10628 — as of 2026-11-17
+
+A dropped connection, a `5xx` or a `429` on the events long-poll is
+still retried with the same cursor and the same backoff until the
+deadline, but silently while the hub has given no good answer for less
+than 60 seconds (`OUTAGE_AFTER`), counted from the first failed read.
+Once 60 seconds have passed, one line on stderr names that read's UTC
+time and the time now, to the second (`hub connection lost since …Z,
+still at …Z`), once per wait: at a failed read, before the next poll or
+before the timeout, so a minute that passes during a backoff or the rest
+of the window is named too. The line promises nothing about what follows
+(it once ended `; retrying until the timeout`): whether another read
+comes is known only afterwards, and the line can be the last thing before
+exit 3, after the unread-chats note. The first good answer after a
+reported outage prints `hub answering again at …Z`. When the minute
+passes inside the good read itself (a poll held after a retried drop),
+that answer checks the threshold before it clears the clock and prints
+one combined line, `hub connection lost since …Z; hub answering again at
+…Z`, since the outage is over by then. Within a wait the elapsed time is the monotonic clock's, so a jump of the
+system clock neither starts the count afresh nor turns a short drop into
+an outage; the wall clock only names the times (the first failed read as
+now less the elapsed time) and carries the count to the next wait. The
+count outlives the process in `outage.json` beside `state.json`, so an
+outage that spans several short waits is reported too. The file is read
+when the wait starts, and a saved count whose last failure was more than
+60 seconds old by the wall clock then, or in the future, is stale and
+starts afresh: judged after the first poll instead, a quiet poll held for
+55 seconds would make a reported outage stale and its end would go
+unsaid. A carried count is named by the new wait only once one of its own
+reads fails (it is not this wait's outage before it has tried the hub),
+or by the good answer that ends it; its reason is kept in the file. Every
+path to exit 3 checks the threshold last, after the unread-chats note,
+whose read on a dead hub can carry the minute past it. Reading or writing
+the file never costs the wait: an unreadable, undecodable or malformed
+file only loses the count. An answer that breaks off (a status line,
+headers or body cut short, which `http.client` raises as an
+`HTTPException`) counts as a lost connection in every command, at all
+three places `hub` opens a connection (`Client._send`, `get_text`,
+`_exchange`), so `wait` retries it, any other command fails once with
+`… broke off its answer`, and `maity runner check` records it and goes
+on; a `200` that is empty or no
+object is no page to `wait`, retried the same way, and never ends the
+outage count. Exit 3 at the timeout, maintenance, isolation (exit 5), a
+superseded wait (exit 6) and every other `4xx` are unchanged.
+
+**Reason:** agents saw `hub connection lost, retrying until the timeout`
+on drops that recovered on the next read, mostly the proxy closing a
+held poll, and learned to ignore the line, so a real outage looked the
+same as noise. A retry from the same cursor loses and repeats nothing,
+so a short drop needs no word; a minute without any answer is longer
+than one held poll plus its answer time and is worth searching the hub's
+and the proxy's logs for, which is why the times are UTC to the second.
+Agents' waits are often shorter than a minute, so a clock per process
+would never reach the threshold during a real outage. The wall clock
+alone would report an hour-long outage after a one-second drop when the
+system clock is set forward, and the monotonic clock alone cannot be
+carried from one process to the next.
+
+**Rejected alternatives:**
+- Warn on the first failure, as before: the noise this card is about.
+- Retry silently with no threshold: a hub that is down would look like a
+  quiet project until someone noticed the missing work.
+- A clock per wait only: a loop of 30 second waits would never report an
+  outage.
+- Check the minute only at a failed read: an outage whose minute passed
+  during the last backoff ended the wait with exit 3 and no line.
+- The clock in `state.json`: `Session.save` writes the whole file it read
+  at the start, so a save during an outage could put an older cursor back
+  over one another process saved.
+
+## `wait --related` keeps what concerns the reader and reads past the rest
+
+**Id:** 1b373b05-67e9-41ce-a535-6efbc46fd0e9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3kbpak51yqyn from the jour fixe of 2026-11-05 (round jfx-269b897etn83; the review lead needs other members' presence events, so an option, not the default); the definition, keeping messages and requests to `all` or a role, approved by the team lead on 2026-11-17 before it was built
+**Revisit when:** the hub filters the long-poll per reader beyond the wake-relevant set, or an agent misses work because `--related` read past it (a `role:` or `trust:` event it needed)
+**See:** commands.md#wait-returns-every-pending-event-by-default-and---kind-reads-past-the-rest — b8049c3d-c652-421c-a10e-ab7d6d0bec60 — as of 2026-11-17
+
+`maity wait --related` returns only events related to the reader and
+reads past the rest, acknowledging them as `--kind` does (so neither goes
+with `--keep-cursor`; with both flags an event must pass both). Related,
+from what the event itself carries (`cli._related`): (a) a `message` or
+`request_*` event; (b) `state_changed`, `policy_changed`,
+`rules_changed`; (c) an event whose `mentions` name the reader, by the
+hub's instance rule; (d) an event about the reader, its `subject` the
+member or its `payload.member_id`; (e) an event whose audience names the
+reader: `member:<id>`, this instance's `instance:` token (any of the
+agent's with no instance and no bridge), or a card's private list the
+hub delivers only to the readers on it (`watchers:<task id>`,
+`restricted:<task id>`; not `restricted:set`, which names no card and
+wakes nobody). Under `--for` the reader is the served agent, without an
+instance.
+
+Read past are, by an explicit rule, `member_joined`, `member_updated` and
+`member_availability_changed` about another member, even when they name
+the reader by `member:` as coordinator, boss or owner; and, since no rule
+above keeps them, the events whose audience reaches the reader only
+through `all`, a `role:` or `trust:` token, or another instance's
+`instance:` token of its agent. The hub's other audience tokens (`held:`,
+`waiting:`, `runner:`, `restricted:set`) deliver nothing to the agent's
+wait by themselves. Known gap: such an event is skipped unless it is a
+message or a request, for example a `task_reported` to `role:reviewer`.
+
+**Reason:** the long-poll already returns only the wake-relevant set
+(docs/api.md §8.2), and what is left as noise is what reaches an agent as
+an observer: through `all`, its role or trust, or as coordinator, boss or
+owner of another member whose presence changed. The fields an event
+carries are enough to tell those apart without another call. Messages and
+requests stay whatever their address, since someone wrote them to a set
+that includes the reader; the project's state, policy and rules stay
+because they change what every agent may do, the same set a supervised
+session is still woken by (§15.11). A boss's `holder_stalled` and
+`member_not_listening` stay: they name it by `member:` so it can
+re-route.
+
+**Rejected alternatives:**
+- Filter on the hub: a contract change for what the client can decide
+  from the event, and the hub already narrows the long-poll.
+- Filter by default: the review lead and the coordinator need other
+  members' presence events, and a default that reads past events
+  acknowledges them unseen.
+- Count `role:` and `trust:` tokens as related: an admin agent would keep
+  every `member_availability_changed`, the noise the card names.
+- Keep only events addressed by `member:` or `instance:`: an announcement
+  to `all` and a request to a role would be read past unseen, and so
+  would a card's `restricted_changed`, which the hub sends by
+  `restricted:<task id>` alone, only to a reader on that list.
 
 ## `join` ends with how to put `maity` on PATH
 
@@ -2134,3 +2279,37 @@ permissions it has, short of a raw `maity api` call.
   command would only ever fail.
 - Setting a member's role from here: that is `PATCH …/members/<id>`, a general members
   command, not one about roles.
+
+## `maity uuid` makes Keep the Why Ids where `uuidgen` is refused
+
+**Id:** 2b2be9a9-25d6-4396-b35d-5a2c242a4997
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-1rejhywcw3qh, the owner's decision (2026-11-20); the lead's confirmation that `maity` is allowed in every harness, 2026-11-20; `cli/tests/test_uuid.py`; card tsk-jjxxspts3t40 (the runner's `/proc` allow dropped, 2026-11-20)
+**See:** runner.md#the-allowlist-harnesses-allow-one-os-uuid-v4-source-the-kernels-generator — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-20
+**See:** runner.md#the-runner-allows-no-uuid-command-maity-uuid-makes-the-ids — 4f960c44-8b9f-459e-978f-dff9237271a6 — as of 2026-11-20
+**Revisit when:** every harness sandbox a placement runs in allows an OS UUID command
+
+`maity uuid` prints a lowercase UUID v4 from `uuid.uuid4()` (the OS's randomness through
+`os.urandom`), `-n N` for 1 to 1000 of them. It calls no hub, reads no state and needs no
+join, so it runs wherever `maity` runs.
+
+**Reason:** placed sessions may run `maity` in every harness sandbox, but `uuidgen` and
+`cat /proc/sys/kernel/random/uuid` are often refused there. That included the `/proc` read
+the runner once allowed for its Claude Code and opencode placements (the entries under
+**See**). The Keep the Why skill requires an entry's Id to come from a command, never typed
+by hand, so an agent there had no way to make one.
+
+**Rejected alternatives:**
+- Relying only on the runner's allowed `/proc` read, or adding `uuidgen` per harness: that
+  rule covers only runner placements on Claude Code and opencode, and each harness has its
+  own list and sandbox. `maity` is already allowed in all of them, so one `maity` command
+  covers every harness, and sessions outside the runner too.
+- The lead hands out UUIDs on request: it cost a round trip for every entry and kept the
+  lead busy with work a command can do.
+
+The card confirms the decision, the refused commands and the lead handing out UUIDs. The
+lead confirmed that `maity` is allowed in every harness. `maity uuid` was first added
+beside the runner's `/proc` allow. That allow was dropped later, since it never took effect
+in a placed session, and `maity uuid` is now the one source in a runner placement.

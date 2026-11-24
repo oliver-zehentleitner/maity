@@ -177,7 +177,7 @@ def answer(
             maintenance.cached_frame(engine_of(request)),
             request.headers.get("accept-language"),
         )
-    wait = BY_ADDRESS.hit(origin_of(request).address)
+    wait = BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     shelled = None
@@ -251,7 +251,7 @@ def read(request: Request, path: str) -> Response:
     session and the credentials of the request are never looked at (§16.9)."""
     if not settings_of(request).public_pages:
         raise not_found()
-    wait = BY_ADDRESS.hit(origin_of(request).address)
+    wait = BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     with engine_of(request).begin() as conn:
@@ -337,6 +337,12 @@ def configure(hub: Settings | None) -> None:
     """The settings `touch` reads: the write paths do not carry them."""
     global _hub
     _hub = hub
+
+
+def serving() -> bool:
+    """Whether this process serves public pages (`MAITY_PUBLIC_PAGES`), as `touch` reads it:
+    false before any settings are configured, so a reader that asks fails closed."""
+    return _hub is not None and _hub.public_pages
 
 
 def refresh(

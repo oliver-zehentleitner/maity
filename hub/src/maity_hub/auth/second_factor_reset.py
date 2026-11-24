@@ -29,8 +29,11 @@ from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
-from maity_hub.notifications import mailer, preferences, tokens
+from maity_hub.mail.text import quoted
+from maity_hub.notifications import tokens
+from maity_hub.notifications.address import verified_row
 from maity_hub.ratelimit import Limiter
+from maity_hub.text_language import text_language
 
 PURPOSE = "second_factor_reset"
 LINK_FOR = timedelta(hours=24)
@@ -67,7 +70,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
     second_factor.require_step_up(conn, hub, caller)
     if not _mail_ready(conn, hub):
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
-    settings_row = preferences.verified_row(conn, human_id)
+    settings_row = verified_row(conn, human_id)
     if settings_row is None:
         raise ApiError(409, "address_unverified", "the human has no verified address")
     # The human's account lock before their factor's row, as against a deletion: the
@@ -106,7 +109,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
         },
     )
     admin_handle = second_factor._handle(conn, caller.principal_id)
-    language = preferences.text_language(conn, human_id)
+    language = text_language(conn, human_id)
     words = catalog.section("second_factor_reset", language)
     outbox.enqueue(
         conn,
@@ -116,7 +119,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
         body=words["text"].format(
             admin=admin_handle,
             url=hub.public_url,
-            reason=mailer.quoted(cleaned),
+            reason=quoted(cleaned),
             link=f"{hub.public_url}/mail/second-factor-reset/{token}",
         ),
         human_id=human_id,
@@ -168,7 +171,7 @@ def page(conn: Connection, hub: Settings, token: str) -> dict[str, str] | None:
         "display_name": human.display_name,
         "admin": second_factor._handle(conn, row.requested_by),
         "reason": row.reason,
-        "language": preferences.text_language(conn, row.human_id),
+        "language": text_language(conn, row.human_id),
     }
 
 

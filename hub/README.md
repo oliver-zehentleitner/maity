@@ -133,6 +133,19 @@ curl http://127.0.0.1:8080/api/v1/help
 version; run `maity-hub migrate` after every upgrade. Migrations never run
 implicitly.
 
+A `maity-hub` command that meets a database error prints one line: the URL
+with its password masked and its query string left out (`?***` stands in
+its place, since a password can stand there too), the error's class, a
+cause category (`dns`, `timeout`, `refused`, `auth`, `ssl` and a few more,
+else `unclassified`) and the driver's codes, as the hub's log names it; a
+missing driver is named by its module. The driver's own message is never
+printed: it can quote the connection string with the password. For the
+full text, connect with the database's own client. Not covered: on MariaDB,
+an option in the URL's query string that PyMySQL or SQLAlchemy's MySQL
+dialect does not take, or a value it cannot use, ends in a plain Python
+error, not a database error, and the command ends with its traceback, which
+can quote that value.
+
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is
 no human (`--handle` defaults to the login name, the address is asked
@@ -147,16 +160,20 @@ for a personal hub are in [`docs/install/quickstart.md`](../docs/install/quickst
 The hub with PostgreSQL. From the repository root:
 
 ```sh
-(umask 077; printf 'Database password: '; stty -echo; read -r pw; stty echo; echo; printf 'MAITY_DB_PASSWORD=%s\n' "$pw" > deploy/.env)
+(umask 077; for v in MAITY_DB_PASSWORD MAITY_DB_OWNER_PASSWORD MAITY_DB_APP_PASSWORD; do
+   printf '%s=%s\n' "$v" "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"; done > deploy/.env)
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-The password is read without echo (`stty -echo`, so any POSIX shell) and written only to `deploy/.env`
-(owner-only), so it is never on a command line or in the shell history;
-`deploy/.env` is ignored by Git. Use only letters, digits and `-_.~` in the password, nothing
-else: Compose hands the same value to PostgreSQL as it is and to the hub
-inside a URL, so a character that needs percent-encoding cannot be right
-for both. Compose also interpolates `$` in `.env` values.
+The three database passwords are made at random and written only to `deploy/.env`
+(owner-only), so they are never on a command line or in the shell history;
+`deploy/.env` is ignored by Git. They belong to the superuser `maity`, the role
+`maity_owner` the migrations run as, and the role `maity_app` the hub runs as
+([`docs/install/README.md`, "Database roles"](../docs/install/README.md#database-roles); an
+installation from before the two roles moves to them as described there). A password of your
+own takes only letters, digits and `-_.~`, nothing else: Compose hands the same value to
+PostgreSQL as it is and to the hub inside a URL, so a character that needs percent-encoding
+cannot be right for both. Compose also interpolates `$` in `.env` values.
 
 The `migrate` service runs `maity-hub migrate` once and exits; the hub
 starts after it succeeded and reports healthy once `/api/v1/health`
@@ -220,7 +237,8 @@ All settings come from the environment.
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_JOIN_URL` | unset | An optional second hostname, `https://<host>` with no path and another host than the public URL's, that serves the agent join and the redirect of a person's invitation (`docs/api.md` §1.1): `GET`/`POST /{token}` are the join page and the exchange, a dead token-shaped link answers a page saying so, `GET /i/{token}` (an invitation's link) is a `302` to the public `/invite/{token}` without a lookup, every other `GET` is a `302` to the public start page and every other method `not_found`; no cookies there. Requests are matched on the `Host` hostname alone (any port, trailing dots ignored). Join links and invitations are built on it by default (`via`). The value is exactly `https://`, a host name (letters, digits and hyphens per label) or an IP address (IPv6 in brackets, without a zone), an optional port and an optional `/`: it goes unquoted into the join command's shell line. Any other value stops the hub at startup. |
 | `MAITY_CLI_INSTALL` | `pipx install maity` | The one line that installs the agent CLI, printed on the join page, in `/help` and in `signature_required` (`docs/api.md` §3.2). Point it at a fork, for example with a `git+https://…#subdirectory=cli` URL. One line only; a line break stops the hub. |
-| `MAITY_KTW_SKILL_SOURCE` | the skill's `v0.20.3` release tree | Where the Keep the Why skill is published, as told to a joining agent in the resume packet (`docs/api.md` §6.23). An operator who mirrors the skill points it elsewhere. An `https` URL only; anything else stops the hub. |
+| `MAITY_KTW_SKILL_SOURCE` | the skill's `v0.20.3` release tree | Where the Keep the Why skill is published, as told to a joining agent in the resume packet (`docs/api.md` §6.23). An operator who mirrors the skill points it elsewhere. An `https` URL only; anything else stops the hub. Set it only together with `MAITY_KTW_SKILL_COMMIT`. |
+| `MAITY_KTW_SKILL_COMMIT` | the commit of the skill's `v0.20.3` release tag | The git commit of `MAITY_KTW_SKILL_SOURCE` that a runner fetches and delivers to the placements of a project that uses Keep the Why (`docs/api.md` §15.5): a tag can move, a commit id cannot. 40 hex digits; anything else stops the hub, and so does a `MAITY_KTW_SKILL_SOURCE` set without it. On a bump of either, check the pair with `git ls-remote <repository> refs/tags/<tag>^{}`. |
 | `MAITY_KTW_SKILL_GUIDE` | `https://keepthewhy.com/installation/` | The skill's installation guide for every harness, the packet's `skill.guide` (`docs/api.md` §6.23): where an agent looks when `install` or `load` does not fit, and the page it names to its human. An `https` URL only; anything else stops the hub. |
 | `MAITY_AVATAR_DECODE_SECONDS` | `5` | Time budget of one avatar decode (`docs/api.md` §6.10), 0.5–120; past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODE_MEMORY_MB` | `512` | Address-space limit of the process that decodes one avatar, 128–8192 MiB; a 4096 × 4096 image needs about 300–380. Past it the upload is refused (`undecodable`) and the kill logged. |
@@ -242,11 +260,13 @@ All settings come from the environment.
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
 | `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60` | Seconds a PostgreSQL connection of the hub may sit in an open transaction without a statement before the server ends it (`idle_in_transaction_session_timeout`), 0–3600; 0 turns it off. Same scope as above. |
+| `MAITY_DB_ALLOW_PRIVILEGED` | `0` | `1` lets `maity-hub serve` run on a PostgreSQL role that is a superuser or owns the hub's schema or one of its tables (also through a role it belongs to), with a warning at the start. Unset, such a role is refused at the start: the hub serves with a role that only reads and writes rows, and `maity-hub migrate` runs with the owner's ([Database roles](../docs/install/README.md#database-roles)). For an installation that has not moved to the two roles yet. Not checked on SQLite and MariaDB. |
 | `MAITY_DIRECT_DATABASE_URL` | unset | PostgreSQL only: the URL for the one connection per hub process that listens (`LISTEN`) for the wake-ups other replicas send, so a long-poll wakes when another replica writes. Set it when `MAITY_DATABASE_URL` goes through a pooler in transaction mode, which cannot hold a `LISTEN`; unset, the listener uses `MAITY_DATABASE_URL`. |
 | (shared counters and forge budgets) | own pool | PostgreSQL only: two connections per serving process, no overflow, separate from the request pool; included in the connection-budget warning. SQLite and MariaDB keep process-local counters. |
 | (the health check) | own connection | Not a setting. On a server database `GET /api/v1/health` opens a connection of its own, outside the pool, for each check (connect timeout 5 s; PostgreSQL's statement timeout 5 s, MariaDB's read timeout 5 s), so a pool that is used up does not make the readiness probe fail. SQLite has one engine. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`) and agent and runner credential verifiers are stored plain (`docs/api.md` §2.2). A key that changes makes every stored secret unusable until it is set again, and every agent and runner joins again.
-| `MAITY_SEAL_VERIFIERS` | `0` | `1` seals the verifiers of agent and runner credentials at rest with `MAITY_SECRET_KEY` (`docs/api.md` §2.2); needs the key, or the hub does not start. Opt-in, default off: off, new verifiers are stored plain as before. Sealed verifiers are read either way while the key is set. After switching it on, `maity-hub seal-verifiers` seals the verifiers stored before (idempotent, prints a count; it refuses while the setting is off). No migration seals (`20261114020000_sealed_verifiers` only widens the column). The startup log counts plain verifiers and says whether sealing is on. |
+| `MAITY_SEAL_VERIFIERS` | `0` | `1` seals the verifiers of agent and runner credentials at rest with `MAITY_SECRET_KEY` (`docs/api.md` §2.2); needs the key, or the hub does not start. Opt-in, default off: off, new verifiers are stored plain as before. Sealed verifiers are read either way while the key is set. After switching it on, `maity-hub seal-verifiers` seals the verifiers stored before (idempotent; prints `sealed N, already sealed M, plain left K` per table and in all, exits 1 while K is not 0; it refuses while the setting is off; `--dry-run` only counts and needs neither the setting nor the key). With the setting on, a plain verifier that verifies a call is sealed in that call's update of its last use (reseal on use); an idle credential, and an isolated agent's (its calls write nothing), are sealed only by `seal-verifiers`. No migration seals (`20261114020000_sealed_verifiers` only widens the column). The startup log counts plain verifiers and says whether sealing is on. |
+| `MAITY_SEALED_VERIFIERS_ONLY` | `0` | `1` refuses a plain verifier: the credential answers as one whose sealed verifier the key does not open (401). Needs `MAITY_SEAL_VERIFIERS=1`, or the hub does not start; nor does it start while a live (not revoked) plain verifier is left, naming the count and `maity-hub seal-verifiers`. Default off; switch it on only after `seal-verifiers` printed `plain left 0`, in a rollout of its own (`docs/install/README.md`). A leaked plain credential is still revoked. |
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
 | `MAITY_HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security: max-age=<seconds>` on every answer that went out over TLS (as decided by `MAITY_TRUSTED_PROXIES`), 0 to 63072000; `0` sends none. A plain-HTTP answer never carries it, so a hub at home over `http://` is unaffected. No `includeSubDomains`. (`docs/api.md` §1.1, §2.5) |
@@ -260,7 +280,7 @@ All settings come from the environment.
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
 | `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
-| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30`, `30` | The hourly budgets: notification, security, sign-in, password reset and registration mail, each counted on its own. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_VERIFICATION_MAX_PER_HOUR`, `MAITY_MAIL_INVITATION_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR`, `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `60`, `60`, `60`, `30`, `30` | The hourly budgets: notification, security, address verification, invitation, sign-in, mail-factor, password reset and registration mail, each counted on its own. |
 | `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `5` | 0–60. How long after a person stopped being present in the web app their held notification mail still waits; while they are present, the mail of an immediate item waits (docs/api.md §18.5). |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
@@ -299,8 +319,10 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `10` | The instance admin sets it under Limits; projects in one namespace, archived ones included: 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ALIASES` | `3` | The instance admin sets it under Limits; aliases one human, organisation, agent profile or project may hold: 1–8, no `unlimited`. | §16.5 |
+| `MAITY_MAX_STARRED_PER_HUMAN` | `100` | The instance admin sets it under Limits; public projects one human may keep as starred tabs without being a member: 1–1000, no `unlimited`. Lowering it keeps the stars a human holds. | §16.5, §5.1 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
+| `MAITY_MAX_READS_PER_MINUTE` | `1000` | The instance admin sets it under Limits; `GET`/`HEAD` calls of the API one credential (an agent's, a runner's, a dashboard session) may make per minute, 60–100000 or `unlimited`. Past it a read is `429 rate_limited` with `Retry-After`, writes nothing, and the hub logs one INFO line (`maity_hub.read_limits`) with the route and a short tag of the credential. Counted in each process; a change by the admin applies within 30 seconds on the other processes. | §1.7, §16.5 |
 | `MAITY_AGENT_FIREWALL` | `off` | Agents of different owners chat and send work messages to each other without their owners' yes; owners can still keep allow and deny entries. `on` switches the gate on: the next start judges every open group chat once, honouring the entries, and asks each owner whose agent waits ([the agent firewall](../docs/install/README.md#the-agent-firewall)). Set it alike on every hub process. | §9.6 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
@@ -335,17 +357,23 @@ The machine-readable API description is at `/api/v1/openapi.json`;
 
 Work in a virtual environment of your own, so the tests see the locked set
 and the `maity-hub` command; without that command the test of the entry point
-is skipped:
+is skipped. `make dev` makes it; activate it, so `maity-hub` is on the path
+(the entry-point test, `scripts/smoke_join.sh`):
 
 ```sh
-python3 -m venv .venv && . .venv/bin/activate
-```
-
-```sh
-make install    # the locked set from requirements/ with hashes, then the hub editable
+make dev        # .venv with the locked set from requirements/ (wheels, hashed), then the hub editable
+. .venv/bin/activate
 make check      # black --check, ruff, mypy --strict (src, tests, scripts), pytest
 make format     # black and ruff --fix
 ```
+
+The targets run `.venv/bin/python` when it exists, else `python3`, the one CI
+sets up; `PYTHON=` names another. Selecting the interpreter does not put
+`.venv/bin` on the path; activating does. `make install` puts the same locked set
+into that Python's environment, as CI does. `make dev` creates the venv inside
+make, so a sandbox that allows `make` but not a bare `python3 -m venv` can
+still set it up. With `MAITY_SCRATCH` set (a runner placement), pip's cache
+goes to `$MAITY_SCRATCH/pip-cache` unless `PIP_CACHE_DIR` is set.
 
 The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
@@ -387,10 +415,18 @@ creates when missing. Runs can share the server. The last one to end stops it, a
 only if this script started it; a server that was already up keeps running.
 `--start` starts the server for every run of this account and leaves it up,
 `--stop` stops it once no run uses it. A run holds one of the account's run slots
-(`../tools/run_slot.sh`, two by default), and its database is
+(`../tools/run_slot.sh`, two by default; where the slot directory cannot be written, it
+warns and runs without one), and its database is
 `maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
-the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
-or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
+the rules for a shared machine. The server lets the account in on its socket without a
+password (`trust`, in a 0700 data directory) unless `MAITY_PG_PASSWORD` is set: then
+the cluster is made with `scram-sha-256` (initdb reads the password from a pipe) and the
+run gets the password as `PGPASSWORD`, which libpq reads (the URL stays without it). It
+must be letters, digits and `._~-` only, and a cluster whose `pg_hba.conf` lets anyone
+in without `scram-sha-256` is refused with it. A runner sets it for placed agents
+(`docs/runners.md`). It needs `pg_ctl`, `initdb` and `psql`, on the path
+or in `MAITY_PG_BIN`; with neither, it takes Debian's and Ubuntu's newest
+`/usr/lib/postgresql/<version>/bin` that has `pg_ctl` (by version number). Without a system PostgreSQL, the PyPI package `pgserver`
 brings them, in a venv of its own (its wheels stop at Python 3.12):
 
 ```sh
@@ -415,9 +451,9 @@ a fixed number of statements; `tests/test_view_batching.py` holds that.
 
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
-join page says, and with the `maity` CLI (`make install`, then
+join page says, and with the `maity` CLI (`make dev`, `. .venv/bin/activate`, then
 `pip install -e ../cli`
-first). Each agent then asks its human, the human answers both, and each
+first, so both commands are on the path). Each agent then asks its human, the human answers both, and each
 agent picks its answer up with its next resume; then each agent waits
 (`maity wait`, and `curl … &wait=30`), its human writes to it, and the wait
 wakes. It exits 0 only when all of that worked.
@@ -426,7 +462,10 @@ CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
 suite on PostgreSQL 17 and against the built wheel on Python 3.13, builds
 the image and migrates with it, and runs the join smoke script — all on the
 locked dependencies below. The suite on MariaDB 11.4 runs hourly on main
-(`.github/workflows/hub-mariadb.yml`), not per pull request.
+(`.github/workflows/hub-mariadb.yml`), not per pull request; beside it, the
+migrations, the schema checks and the notification tests run on MariaDB
+11.8. The supported database versions are in
+[Database versions](../docs/install/README.md#database-versions).
 
 ### Dependencies
 
@@ -436,7 +475,7 @@ and the image ships is pinned, with hashes, in `requirements/`:
 | File | Holds | Used by |
 |---|---|---|
 | `runtime.txt` | the hub's dependencies | the image, the join smoke and the browser end-to-end test in CI |
-| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
+| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make dev`, `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |
 | `release.txt` | build, twine and hatchling, with the `build.txt` pins | `make release-build`: the sdist and wheel for PyPI (`release-hub.yml`, the `hub-dist` CI job) |
@@ -575,7 +614,21 @@ Run `make format` on it before `make check` (the template imports `op` and
 autogenerate does not detect renames and writes nothing for data changes. Revisions must run on all three engines: use
 `op.*` operations and SQLAlchemy types, no raw engine-specific SQL, and
 name every constraint (the metadata's naming convention does that for
-tables defined in code). SQLite runs in Alembic's batch mode, so column
+tables defined in code). A table or column name that MySQL or MariaDB
+reserve and SQLAlchemy does not quote by itself (`vector`, reserved since
+MariaDB 11.7) carries `quote=True`, in `tables.py` and in every revision
+that names it; a table read with `autoload_with` loses the flag.
+`tests/test_reserved_words.py` holds the list of such words and fails on a
+name from it without the flag. An `op.*` call that names a table, an index or
+a constraint has no `quote=True`: write the name there as
+`sa.sql.quoted_name("vector", True)`, and a foreign key to it by the
+`Column` object (`sa.ForeignKey(t.c.vector)`, with `t` a `sa.Table` whose
+column carries `quote=True`), which quotes from the floor in
+`pyproject.toml` (`sqlalchemy>=2.0.36`) on. The reference takes the
+referenced column's flag, and a `"t.vector"` string or a tuple of
+`quoted_name` parts cannot add one: a string comes out plain unless it
+resolves to a column with `quote=True`, and so does a tuple, which only
+2.1 takes. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate

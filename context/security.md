@@ -217,7 +217,7 @@ dropping it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-w62n5p0v9d47 (the maintainer found the four pages bare, 2026-11-04) and lotse#wtwy's go on the plan (2026-11-05); contract `docs/api.md` §1.1, §16.7.5, §16.13, §18.6
+**Source:** card tsk-w62n5p0v9d47 (the maintainer found the four pages bare, 2026-11-04) and the lead's go on the plan (2026-11-05); contract `docs/api.md` §1.1, §16.7.5, §16.13, §18.6
 **See:** security.md#the-pages-without-inline-style-allow-the-product-lines-one-block-by-its-hash — 32f18f7d-91c7-40c3-898f-6137cac6969a — as of 2026-11-05
 
 The pages of §18.6 (verify the address, unsubscribe, second-factor
@@ -243,7 +243,7 @@ alike. A test pins the string.
   needs `landing.css` and the fonts as well; it adds nothing over `'self'`.
 - The whole look as more inline style allowed by its hash: every change
   to the look changes the header, and the fonts still need `font-src`.
-- The product line under the frame's footer: lotse#wtwy chose the same
+- The product line under the frame's footer: the lead chose the same
   ending for every link page, as on `/mail/sign-in` and the framed
   `/login` (req-5k1gvfsmcg9k).
 
@@ -328,3 +328,32 @@ they were.
 
 **Alternatives for the default max-age:** one year was chosen without a
 recorded comparison (unknown).
+
+## An error answer escapes a lone surrogate in a field path, so no client key can make it a 500
+
+**Id:** 3f9c2a71-6d48-4b0e-9a57-c1e83d24f6b9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** decided by the project manager in review of card tsk-dks1vknta4kv (pull request #1987); contract `docs/api.md` §1.3; `hub/src/maity_hub/errors.py`
+
+The field paths in an `invalid` answer are made encodable in one place,
+the error envelope (`errors.envelope`): every lone surrogate in a string
+or key of `details` is written as its escape text (`\ud800`, six
+characters). A client's JSON may hold one, Python's parser accepts it,
+and UTF-8 cannot encode it, so a path that echoes such a key made the
+answer itself fail with a 500. Codes and messages the hub writes are not
+touched, and a valid path looks as before.
+
+**Reason:** the hand-written validators of the landing, legal, sign-in
+and sign-up pages echo client keys into their paths (an extra key, a
+variant slug, a language key); a refusal in each validator is something
+every new validator would have to remember, and one missed path is a
+500 again.
+
+**Rejected alternatives:**
+- A refusal or the parent's path in each validator: kept only for the
+  language keys of the landing, legal, sign-in and sign-up pages, where
+  the parent's path is the better answer.
+- Dropping the key from the answer: the client could not find its
+  mistake.

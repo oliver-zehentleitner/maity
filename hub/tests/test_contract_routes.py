@@ -17,20 +17,23 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # and path, its reason on the same line: a pull request adding or removing an entry touches only
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
+    ("DELETE", "/projects/{}/{}/members/{}/instances/{}"),  # no route yet: tsk-jrwpngsn584f, detach
     ("DELETE", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("DELETE", "/projects/{}/{}/pulls/{}/watch"),  # no route yet: tsk-rhgzcjqcfb9s, PR watches
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("GET", "/agents/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
+    ("GET", "/me/events"),  # no route yet: tsk-jrwpngsn584f, one stream over every project
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/projects/{}/{}/contribution"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("GET", "/projects/{}/{}/pulls/watches"),  # no route yet: tsk-rhgzcjqcfb9s, PR watches
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
@@ -38,8 +41,10 @@ NOT_ROUTED = {
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
     ("PATCH", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("POST", "/agents/{}/instances/{}/revoke"),  # no route yet: tsk-jrwpngsn584f, revoke everywhere
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
+    ("POST", "/projects/{}/{}/events/{}/forward"),  # no route yet: tsk-c7caka34dhkw, forward
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/nudge"),  # no route yet: tsk-j9e0yapj21wj
@@ -48,6 +53,7 @@ NOT_ROUTED = {
     ("POST", "/projects/{}/{}/tasks/{}/claim/decline"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/runner/placements/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
+    ("PUT", "/projects/{}/{}/pulls/{}/watch"),  # no route yet: tsk-rhgzcjqcfb9s, PR watches
     ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
 }
 

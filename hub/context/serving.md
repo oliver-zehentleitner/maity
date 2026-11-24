@@ -300,7 +300,7 @@ create humans with handles such as `admin` without going through the CLI.
   envelope and from the tests that read routes, and would have to know the hub's paths as well.
 - Refusing to start on a held reserved word, as the contract words it: right for a release, but it would stop
   every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
-  owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
+  owner decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
   contract text with it.
 
 ## The request log carries `ms=` and the route's pattern, and one `stats` line a minute says how loaded the hub is
@@ -671,7 +671,7 @@ range; a HEAD says the whole length and sends no body.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
+**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); the lead (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
 **Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
 **See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
 **Verification:** corroborated — re-checked on 2026-11-15, when "Chat with us on Discord" became the fifth part (card tsk-01tt7j11yx3w): the rule hides every part after the first, so the decision holds; only the count changed
@@ -705,11 +705,11 @@ markup for every width, as the dashboard does.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by lotse#wtwy, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
+**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by the lead, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
 **Revisit when:** a dashboard file is loaded by a name the shell neither writes nor lists, a file under `/assets/` carries anything per user, or the dashboard gets a build step that names its files itself
 **See:** serving.md#the-dashboards-files-are-revalidated-by-an-etag-of-their-content-not-no-store — c6768529-3654-45c7-bd5e-aab3067ce04f — as of 2026-11-09
 
-c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (maity-ops-team#q8q9's measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
+c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (ops' measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
 
 - `shell.versioned` adds `?v=<version>` to every `src`/`href` of the shell that names a file under `brand/`, `css/`, `js/` or `vendor/`. The version is the first 16 hex digits of the SHA-256 of the body sent, the same form `/assets/landing/` uses.
 - A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. Like every file here, it is sent from the bytes kept in memory, and a range is cut from them.
@@ -737,14 +737,14 @@ c6768529 left one revalidation per file: after #1518, a warm load of a signed-in
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by lotse#wtwy (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5
-**Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet 600 reads a minute in normal work, or plans set limits per account
+**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by the lead (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5. The instance-level build (slice 6a): the plan the team lead approved with three conditions (seq 160482), the default of 1000 from the lead's final decision (seq 160489) on the operations team's measurement after the deploy; the per-request counting of the long-poll and the order in `_cookie` are tested in hub/tests/test_read_limits.py
+**Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet the limit in normal work, the refusal log lines give a per-credential peak to lower the default against, or plans set limits per account
 **See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-14
 
 The 2026-11-04 decision left the hub without a general request budget:
 the ingress limits per client address, and the hub only single routes.
 That changes for signed-in callers. `max_reads_per_minute` (instance
-setting, §16.5, default 600) limits the `GET` and `HEAD` calls of the API
+setting, §16.5, default 1000, see below) limits the `GET` and `HEAD` calls of the API
 per credential; a project may set a lower value for its agents'
 credentials (`policy.max_reads_per_minute`, §6.1), never a higher one.
 Past it a read is `rate_limited` with `Retry-After`, checked once the
@@ -775,3 +775,116 @@ reason.
   the operator's protection of the whole server.
 - **A fixed limit in code:** the owner chose a setting with a generous
   default.
+
+**How the instance's part is built** (slice 6a; the project's own value,
+`policy.max_reads_per_minute`, needs a migration and follows):
+
+- **The default, 1000.** The operations team measured, after the deploy,
+  only the sum of all clients' reads per minute: median 180, at most 279,
+  about 60 of it a health probe, the events long-poll at most 54. That sum
+  is the one bound measurable now, and it caps what any one credential
+  read. The lead's rule is at least three times the peak; 600 is about
+  2.2 times 279, 1000 about 3.6 times. A lower value is planned with the
+  owner once the refusal log lines (below) show what credentials meet.
+  The number lives in one constant, `limits.READS_PER_MINUTE_DEFAULT`.
+- **Where the check runs.** `auth/caller.py` `_count_read`, once per
+  authentication path: in `_agent` after the signing and isolation
+  refusals and before the last use, presence, the session and the leases;
+  in `_runner` before its last use and presence; in `_cookie` after the
+  session is known live (and after the CSRF check) and before presence.
+  A refused read so writes nothing that stays: a signed call's nonce,
+  spent before the count, is rolled back with the refusal; no other write
+  is even sent. A bridge authenticates with its own credential before
+  `bridges.carry` makes it the served agent, so its reads count as its own.
+- **What is a read is decided on the routed path.** `read_limits.counts`
+  takes `RequestFacts.path`, the decoded `scope["path"]` the router
+  matches, not the raw path: the server decodes every escape before
+  routing, so only the decoded path says which route a call reaches, and
+  §1.7 defines a read by the route. Counting every authenticated `GET` and
+  `HEAD` instead was not chosen: §1.7 limits reads of the API, and the
+  decoded path keeps that boundary. The isolation gate stays on the raw
+  path, compared byte for byte: there another spelling only refuses.
+- **`_cookie` checks the session before presence.** Before, the presence
+  updates came first and a dead session matched no row; now the session
+  and its human are read first, and an ended, expired or deleted
+  account's session sends no update. The presence update is sent only when
+  that read says it is due (once a minute), which also drops the update
+  that matched nothing on every other call. Within `SEEN_EVERY` of the last
+  presence the call sends no update and takes no lock: the session read it
+  starts with says the session is alive, and the second-factor gate and
+  the pending check decide on that read. When presence is due, the call
+  updates the session, which locks its row, and reads the session again
+  under that lock, so the gate and the pending check decide on the session
+  as it stands under READ COMMITTED (#1540 review; `test_auth_statements`
+  makes presence due before it checks this); that second read costs one
+  statement once a minute per session. It is made when the update matches
+  no row too: then either another call of the session wrote its presence
+  first, and the read finds the session alive, or the session ended or its
+  account was deleted since the first read, and the read refuses it before
+  any lease is renewed.
+- **The count: in the process, two fixed windows.** One minute; the
+  estimate is the current minute's count plus the previous one's weighted
+  by what the sliding window still covers, the estimate the shared limits
+  use (`ratelimit.estimate_wait`, factored out of `Limiter._wait` for it).
+  Two numbers per credential instead of a timestamp per read, so 1000 a
+  minute cost no more memory than 60. Keys live in an ordered dict, least
+  recently read first; each call forgets at most eight that no longer
+  reach the estimate, because authentication runs on the event loop
+  (`NonceWindow` does the same). `RequestFacts.reads_paid`, one per
+  request, holds the credentials its read was counted for, so a
+  transaction run again (`retrying_async`) does not count its request
+  twice, also when other reads of the same credential run meanwhile.
+  A float's last digit may round
+  `Retry-After` up a second, never down.
+- **The instance's value is kept 30 seconds per process.** No statement
+  per read: a read finds the value in memory, read again from the settings
+  at most every 30 seconds. The environment's value needs no read at all.
+  `PATCH /admin/settings/limits` drops it after its transaction commits,
+  so the process that takes the change applies it at once, others within
+  30 seconds.
+- **The long-poll counts once per call.** Authentication runs once when
+  the request arrives; the passes of a held wait look at liveness
+  (`gone`) and never authenticate again. `maity wait` asks once per
+  answer, so a quiet loop makes about one read a minute and a busy one at
+  most one per answer, and it keeps a 429's `Retry-After`. `GET
+  /bootstrap` authenticates once for its parts, so it counts once, and its
+  refusal answers the whole request so that the header is kept.
+- **One log line per refusal, with a tag, not an id.** INFO on
+  `maity_hub.read_limits`: method, route pattern, a tag, the limit and the
+  wait; nothing for allowed reads, which would add a line to every read.
+  The tag is the first 12 hex digits of an HMAC-SHA256 of the counted key,
+  under a key derived from `MAITY_SECRET_KEY` (stable across processes and
+  restarts) or else a random key of the process. Someone who reads the log
+  can tell refusals of one credential apart from another's, which is what
+  lowering the default needs, but cannot get the credential id, the
+  member or the session back from it, and a plain hash of an id could be
+  matched against known ids. The ordinary request log carries no tag; that
+  is the owner's privacy decision.
+
+**Rejected alternatives (6a):**
+- **`ratelimit.Limiter(local=True)`:** a deque with a timestamp per read
+  per credential, up to 1000 entries each, and a pass over all keys when
+  it prunes.
+- **Reading the setting on every read:** a statement per read, the cost
+  the limit exists to shed.
+- **Counting each pass of a long-poll:** a quiet `maity wait` would count
+  every few seconds for doing nothing.
+- **Counting in `deps` after authentication:** the presence, last use and
+  leases would already be written for a refused read.
+- **Keeping presence first in `_cookie`:** the count would come after the
+  writes, and a dead session would still send its update.
+- **Counting a session's reads by the cookie, or logging the id:** the
+  key is the session's hash, and the log names neither.
+
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** an agent's read is no longer counted in `_agent`.
+An instance may be attached to several projects (§6.17), and whether a call is isolated, which
+refuses it without a count, depends on the route's project, known only after authentication.
+`auth.caller.count_agent_read` counts it in the same transaction, in `deps._resolve`'s
+`confine`: on a project route, before the `not_found` of a project the instance is not
+attached to (so probing other projects stays limited, as before), and in `settle_in_project`
+after the isolation refusal; outside a project, in `settle_project_less` after the refusal of
+an instance isolated everywhere. Either way the count still comes before the last use,
+presence, the session and the leases, which moved to those helpers with it, so the rejected
+"counting in `deps` after authentication" stays rejected for its reason: a refused read still
+writes nothing that stays. The runner's and the cookie's counts are where the bullet above
+puts them; a bridge's read still counts against its own credential, before `bridges.carry`.

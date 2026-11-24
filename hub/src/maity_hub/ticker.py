@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import chat_gate, clock, events
+from maity_hub import cards, chat_gate, clock, events
 from maity_hub import tables as t
 from maity_hub.scopes import tokens_of
 from maity_hub.ticker_read import may_read_request, reason_of
@@ -376,6 +376,15 @@ def _principal_of(conn: Connection, membership_id: int | None) -> str | None:
     return (row.agent_id or row.human_id) if row else None
 
 
+def decision_text(card: Any, request_id: str) -> str:
+    """A decision entry's text: the card's id and title as the card has them, or the request
+    alone. Stored with the entry, and built again from the card as it is now wherever a
+    visitor reads the entry (§16.9), so a later title edit leaves no old title on a page."""
+    if card is None:
+        return f"Decided: {request_id}"
+    return f"Decided: {card.id} {_card_title(card)} ({request_id})"
+
+
 def on_request_answered(
     conn: Connection, project: Any, request: Any, actor: events.Actor | None
 ) -> None:
@@ -425,11 +434,7 @@ def on_request_answered(
         protected=protected,
         may_read=lambda m: m.principal in may,
     )
-    text = (
-        f"Decided: {card.id} {_card_title(card)} ({request.id})"
-        if card is not None
-        else f"Decided: {request.id}"
-    )
+    text = decision_text(card, request.id)
     write(
         conn,
         project.id,
@@ -869,7 +874,7 @@ def linked_cards(conn: Connection, project_id: str, number: int, head: str | Non
     ).all()
     found = []
     for card in rows:
-        report_pr = ((card.report or {}).get("pr") or {}).get("number")
+        report_pr = cards.pr_number(card)
         branch = (card.checkpoint or {}).get("branch")
         typed = [p.get("number") for p in (card.release_data or {}).get("pull_requests_typed", [])]
         if report_pr == number or (head is not None and branch == head) or number in typed:
@@ -928,8 +933,8 @@ def write_merge(
         for source in m.expert_sources:
             if any(contains(source, path) for path in merge.paths):
                 audience.add(m.principal, f"expert_source:{source}")
-    cards = linked_cards(conn, project.id, merge.number, merge.head)
-    for card in cards:
+    linked = linked_cards(conn, project.id, merge.number, merge.head)
+    for card in linked:
         holder = _principal_of(conn, card.claim_holder)
         assignee = _principal_of(conn, card.assigned_to)
         if holder:
@@ -1004,7 +1009,7 @@ def write_merge(
             "paths_truncated": merge.paths_truncated,
             "areas": areas,
             "contract": contract,
-            "tasks": [c.id for c in cards],
+            "tasks": [c.id for c in linked],
         },
         people=people,
     )

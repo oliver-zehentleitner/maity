@@ -20,6 +20,19 @@ from tests.conftest import ClientFactory
 BASE = "/projects/maintainer/maity"
 
 
+def _with_position() -> Any:
+    """A session with its one project row (§5.3): the position and the episode."""
+    p = t.agent_session_project
+    return select(
+        t.agent_session,
+        p.c.membership_id,
+        p.c.acknowledged_seq,
+        p.c.not_listening_since,
+        p.c.not_listening_seq,
+        p.c.not_listening_request_id,
+    ).join(p, p.c.session_id == t.agent_session.c.id)
+
+
 class Setup:
     def __init__(self, owner: flow.Human, agent: flow.Agent, engine: Engine) -> None:
         self.owner, self.agent, self.engine = owner, agent, engine
@@ -35,7 +48,7 @@ class Setup:
     def session(self) -> Any:
         with self.engine.connect() as conn:
             return conn.execute(
-                select(t.agent_session).where(
+                _with_position().where(
                     t.agent_session.c.credential_id == self.agent.credential_id,
                     t.agent_session.c.live.is_(True),
                 )
@@ -222,7 +235,7 @@ def test_an_ended_session_ends_its_episode_and_a_new_one_starts_clean(setup: Set
     assert s.agent.resume().status_code == 200  # a new session; the old one ends
     s.sweep()
     with s.engine.connect() as conn:
-        old = conn.execute(select(t.agent_session).where(t.agent_session.c.id == first)).one()
+        old = conn.execute(_with_position().where(t.agent_session.c.id == first)).one()
     assert old.not_listening_since is None
     assert [e.payload["ended"] for e in s.events()] == [False, True]
 
@@ -281,9 +294,12 @@ def _supervise(s: Setup) -> None:
 def _place(s: Setup, make_client: ClientFactory) -> str:
     """An active placement on a paired runner that names the agent's credential, as the
     pickup sets it (§15.9)."""
+    from tests.test_placements import allow_instances
     from tests.test_runner_stream import attach, hello
     from tests.test_runners import paired
 
+    # Room for the placement at its creation (§15.5); it then runs the joined instance.
+    allow_instances(s.engine, s.agent.id, 2)
     repository = {"url": "https://github.com/oliver-zehentleitner/maity"}
     patched = s.owner.patch(BASE, {"repository": repository})
     assert patched.status_code == 200, patched.text
@@ -483,8 +499,8 @@ def test_a_request_per_episode_from_before_is_withdrawn_at_the_first_digest_hour
             conn, member.project_id, member.id, s.agent.id, "agent (x) is not listening", "-"
         )
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.id == session.id)
+            update(t.agent_session_project)
+            .where(t.agent_session_project.c.session_id == session.id)
             .values(not_listening_request_id=old)
         )
     assert [n["status"] for n in s.notices()] == ["open"]

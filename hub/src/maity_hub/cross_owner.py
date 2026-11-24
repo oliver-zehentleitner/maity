@@ -23,7 +23,8 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, lock_project
-from maity_hub.views import principal_id
+from maity_hub.plain_text import plain_line
+from maity_hub.views import principal_id, routing_boss
 
 KIND = "cross_owner_reports_to"
 # What the hub itself withdraws a pair for.
@@ -38,6 +39,32 @@ def owner_of(conn: Connection, row: Any) -> str | None:
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == row.agent_id)
     ).scalar()
     return None if owner is None else str(owner)
+
+
+def same_side(conn: Connection, member: Any, boss: Any) -> bool:
+    """Whether `boss` is of `member`'s own owner, so that what the hub routes to a member's
+    boss reaches it (§6.2, "What the edge does"; §8.4): its owner (`owner_of`) is the owner of
+    the agent it leads. An owner that cannot be resolved on either side counts as another
+    owner. A human's own `reports_to` is never of another owner (§6.2, "Across owners"), so a
+    human's boss whose owner resolves is on its side."""
+    side = owner_of(conn, boss)
+    if side is None:
+        return False
+    if member.agent_id is None:
+        return True
+    return owner_of(conn, member) == side
+
+
+def notice_boss(conn: Connection, member: Any) -> str | None:
+    """The member id of the boss the hub's notices about `member` go to: its `reports_to` as
+    `views.routing_boss` resolves it (an isolated boss is routed past), and nobody when that
+    boss is of another owner (§6.2, "What the edge does"). `session_paused`, the one event the
+    edge routes across owners, names the boss itself and does not ask here."""
+    boss_id = routing_boss(conn, member.reports_to)
+    if boss_id is None:
+        return None
+    boss = conn.execute(select(t.membership).where(t.membership.c.id == member.reports_to)).one()
+    return boss_id if same_side(conn, member, boss) else None
 
 
 def new_agent(agent_id: str | None) -> Any:
@@ -253,7 +280,7 @@ def _summary(
     """What the decision needs, all in the request: a human who is no member reads nothing
     else of the project (§6.2)."""
     lines = [
-        f"In the project {project.name} ({namespace.full_name(conn, project)}), "
+        f"In the project {plain_line(project.name)} ({namespace.full_name(conn, project)}), "
         f"the agent {handle}, owned by {sub_owner}, is to report to {boss}, of {boss_owner}.",
         (
             f"The other owner's consent is still open (request {other})."

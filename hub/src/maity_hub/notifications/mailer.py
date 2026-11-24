@@ -13,14 +13,13 @@ human put security in one (context/notifications.md da12f2b5).
 
 A mail carries only the hub's own links. Every text the hub did not write is quoted as
 plain text, an agent's marked as such, and anything a mail client could turn into a
-link is defanged.
+link is defanged (`maity_hub.mail.text`).
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 import threading
 from datetime import UTC, datetime, time, timedelta, tzinfo
 from typing import Any
@@ -32,11 +31,14 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import catalog, clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import second_factor
-from maity_hub.mail import headers, outbox
+from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
+from maity_hub.mail.text import defang, quoted, subject_line
 from maity_hub.notifications import items, listing, preferences, presence, records, retention
 from maity_hub.notifications.items import Item
+from maity_hub.plain_text import plain_line
+from maity_hub.text_language import text_language
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +46,6 @@ INTERVAL = 60.0  # seconds between passes
 WINDOW = timedelta(minutes=2)  # the immediate batching window (§18.5)
 IMMEDIATE_PER_HOUR = 10
 DIGEST_MAX = 50
-SUBJECT_MAX = 120
 CONTENT_MAX = 500
 MAILED_KINDS = ("inbox", "chat", "mention", "invitation")
 # An open matter the dashboard shows and no mail carries (§18.5).
@@ -56,58 +57,6 @@ SIGN_IN_ALERT = records.SIGN_IN
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
 AT_ONCE = ("second_factor_changed", "second_factor_failed", "password_reset", "password_changed")
 PASSWORD = ("password_reset", "password_changed")
-
-
-_SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
-_WORD = re.compile(r"\w")
-_DOT = re.compile(r"(?<=[A-Za-z0-9-])\.(?=[A-Za-z])")
-
-
-def _schemes(text: str) -> str:
-    """`scheme://` as `scheme[:]//`: a letter at a word's start, then letters, digits, `+`,
-    `.` or `-` up to the `:`. Each `://` looks back over its own run only, so the work grows
-    with the text's length; the pattern it replaces tried every word start of a long run."""
-    out = []
-    last = 0
-    at = text.find("://")
-    while at >= 0:
-        start = at
-        while start > last and text[start - 1] in _SCHEME_CHARS:
-            start -= 1
-        # The leftmost letter at a word boundary: the run's first character after a
-        # character that is no word character, or one after a `+`, `.` or `-`.
-        boundary = (start == 0 or not _WORD.match(text[start - 1])) and start < at
-        found = start < at and text[start].isascii() and text[start].isalpha() and boundary
-        found = found or any(
-            text[i - 1] in "+.-" and text[i].isascii() and text[i].isalpha()
-            for i in range(start + 1, at)
-        )
-        if found:
-            out.append(text[last:at])
-            out.append("[:]")
-            last = at + 1
-        at = text.find("://", at + 1)
-    out.append(text[last:])
-    return "".join(out)
-
-
-def defang(text: str) -> str:
-    """No mail client turns this into a link: `https[:]//`, `example[.]org`,
-    `www[.]x`, `me@example[.]org` (§18.5)."""
-    return _DOT.sub("[.]", _schemes(text))
-
-
-def quoted(text: str) -> str:
-    """Text the hub did not write, as plain quoted text on one line."""
-    return '"' + defang(" ".join(text.split())) + '"'
-
-
-def subject_line(text: str) -> str:
-    """A subject with text the hub did not write in it: on one line with every control
-    character gone, defanged as the body is, and cut at `SUBJECT_MAX` (§18.5). A subject is
-    shown before the mail is opened, so it is no place for a link either."""
-    flat = defang(" ".join(headers.clean(text).split()))
-    return flat if len(flat) <= SUBJECT_MAX else flat[: SUBJECT_MAX - 1] + "…"
 
 
 def key(item: Item) -> str:
@@ -171,7 +120,7 @@ def for_human(
     state = _state(conn, human_id)
     # The settings, with the language this mail is in (§6.2).
     email = preferences.preferences(conn, human_id)["email"]
-    prefs = {**email, "language": preferences.text_language(conn, human_id)}
+    prefs = {**email, "language": text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
@@ -500,8 +449,9 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        # A project's name and a title are text the hub did not write (§18.5).
-        line = subject_line(f"[Maity] {name}: {only.title or ''}")
+        # A project's name and a title are text the hub did not write (§18.5), folded first
+        # (`_project_names` folds the name): `subject_line` cleans only Cc, Zl and Zp (§1.7.1).
+        line = subject_line(f"[Maity] {name}: {plain_line(only.title or '')}")
     else:
         line = "[Maity] " + words["updates"].format(n=len(chosen))
     lines: list[str] = []
@@ -510,13 +460,14 @@ def compose(
         lines.append(quoted(projects.get(project_id or "", "Maity")))
         for item in (i for i in shown if i.project_id == project_id):
             stamp = item.at.astimezone(zone).strftime("%Y-%m-%d %H:%M")
-            lines.append(f"- {quoted(item.title or '')}")
+            lines.append(f"- {quoted(plain_line(item.title or ''))}")
             lines.append(f"  {stamp} {item.url}")
             content = (prefs["kinds"].get(item.kind) or {}).get("content")
             text = _message_text(conn, item) if content else None
             if text:
                 # A display name is text the hub did not write either (§18.5).
-                writer = defang(" ".join(items.actor_name(conn, item.actor_membership).split()))
+                name_of = plain_line(items.actor_name(conn, item.actor_membership))
+                writer = defang(" ".join(name_of.split()))
                 lines.append(f"  {writer} {words['wrote']}: {quoted(text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:
@@ -544,7 +495,7 @@ def _project_names(conn: Connection, chosen: list[Item]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(select(t.project.c.id, t.project.c.name).where(t.project.c.id.in_(ids)))
-    return {row.id: row.name for row in rows}
+    return {row.id: plain_line(row.name) for row in rows}  # on one line (§1.7.1)
 
 
 def _sign_in_mail(
@@ -621,7 +572,7 @@ def _two_factor_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=subject_line(f"[Maity] {item.title}"),
+        subject=subject_line(f"[Maity] {plain_line(item.title or '')}"),
         body=body,
     )
 

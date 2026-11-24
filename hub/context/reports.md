@@ -76,7 +76,7 @@ snapshot, or close the request with the report still open.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see); the team lead's ruling of 2026-11-11 on a handle a project page lists twice (seq 110107; reopened in seq 110252 and 110253 after the reviews of #1407: the dashboard links each agent, and a report naming several agents has no single current name)
+**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see); the team lead's ruling of 2026-11-11 on a handle a project page lists twice (seq 110107; reopened in seq 110252 and 110253 after the reviews of #1407: the dashboard links each agent, and a report naming several agents has no single current name); pull request #2069 (tsk-sn8keg63p6k6) and its review, 2026-11-20 (the paths per statement)
 **See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
 **Revisit when:** a message is shown on a public page (§16.9), or the profile redesign (tsk-zrjxhxanfwzd) shows each agent with its owner on a project page
 
@@ -130,7 +130,13 @@ project page keeps that project, so `GET /me/reports` names it the
 same way while the page lists it. The handle on a project page is a stand-in
 until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
 their agents under it) shows each agent with its owner where a project
-page lists it; that redesign may replace it.
+page lists it; that redesign may replace it. The reporter's list reads the
+candidate pages of all its rows by `path` (the table's key), one query
+per chunk of at most `chunks.CHUNK` (500) paths (`_pages_at`, the bound
+`PATHS_PER_QUERY` until 2026-11-22, persistence.md 63ffb6dc), and checks
+the view per use. Reason: an agent on
+many projects adds one path per project, and an unbounded IN list could
+reach an engine's limit on bound parameters.
 
 **Reason:** a report that refused a person, a project or a card the page
 already shows would be narrower than the page, and accepting an account
@@ -156,6 +162,13 @@ out.
 - Taking `<owner>` from a project page's address: on `/alice/project`
   Bob's agent would be named `alice/<handle>`, a wrong profile or
   `not_found`.
+- Importing `export.CHUNK` for the bound on paths per statement:
+  `export` imports `reports`, so the import would be a cycle; the value
+  was mirrored instead, until the leaf module `chunks` took the bound
+  for every such read (2026-11-22, persistence.md 63ffb6dc).
+- Joining `membership` to `public_page` on kind and target id, so the
+  bound parameters would not grow with an agent's memberships: dropped
+  in favour of the lead's direction to read the paths in chunks.
 - Resolving an alias, as §6.24 does everywhere else: the answer would
   confirm that the old name belongs to someone, which §16.9 refuses
   even as a redirect.

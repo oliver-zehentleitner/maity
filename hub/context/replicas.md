@@ -336,7 +336,11 @@ in the deployment's connection budget. Rejected: the count on the request's own 
 refused request's rollback would undo, a wrong code included. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
 changes nothing of an account, and taking the human's shared `account_lock` there would wait for
 the request's own transaction, which may have just made that row (a hang `create_invitation`
-showed in the tests). The earlier rejection of a second engine is superseded here: a bounded extra pool costs two
+showed in the tests). The rows are now made with the account (account.md, "An account's
+`account_lock` row is made with the account"), so that cause is gone; the exemption stays, since
+the transaction still needs no account lock and one taken there could still queue behind a
+deletion that waits for the request's own shared lock (InnoDB queues a shared request behind a
+waiting exclusive one; inferred, not shown by a test). The earlier rejection of a second engine is superseded here: a bounded extra pool costs two
 connections per process, but avoids competition with the request connections. Using the serving
 pool was rejected because requests can exhaust it while retaining locks; adding more overflow
 only moves that threshold. The existing `write_guard.exempt` remains explicit. Every thousandth add of a process deletes windows older than two days, inside that add's
@@ -786,7 +790,7 @@ production and would otherwise have passed as a test system's name (found in the
 means the same host and port as reached (`https://a` and `https://a:443`); another port on one
 host stays another target, as a test system's pods may be port-forwards on one machine.
 
-Changed on 2026-11-04: the prefix is now reserved. The lead (@lotse) approved the plan on card
+Changed on 2026-11-04: the prefix is now reserved. The lead approved the plan on card
 tsk-ch8nt5dfgmp7. A person or an organisation may not take a handle of the form `lt-` followed by
 digits. The pattern is not in `RESERVED_FIRST`, because that list is also read by the robots file
 (`routes/seo.py`), the join host (`join_host.py`) and the migration's holder check

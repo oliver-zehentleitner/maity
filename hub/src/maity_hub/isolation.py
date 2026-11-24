@@ -109,9 +109,11 @@ def _announce(conn: Connection, project: Any, target: Any, actor: Actor) -> None
     )
 
 
-def _tell_owner(
+def tell_owner(
     conn: Connection, project: Any, target: Any, human_id: str, title: str, lines: list[str]
 ) -> None:
+    """A personal notice (class `info`, §7) to the agent's owner, naming the project and who
+    made the change (`the hub` for `BY_HUB`)."""
     from maity_hub import namespace
     from maity_hub.routes.requests import file_hub_notice
 
@@ -161,7 +163,7 @@ def isolate(
     _announce(conn, project, target, actor)
     cards.drop_signatures(conn, project.id, target.agent_id or target.human_id, actor)  # §6.4
     tell_released(conn, released, actor, project)
-    _tell_owner(
+    tell_owner(
         conn,
         project,
         target,
@@ -226,15 +228,13 @@ def lift(
             isolation_windows=windows or None,
         )
     )
-    # What happened while it was left out is not read afterwards: its sessions' cursors
-    # move to the project's head, where the next resume starts (§6.2).
+    # What happened while it was left out is not read afterwards: its sessions' cursors in
+    # this project move to its head, where the next resume starts (§6.2).
     if to_seq:
+        position = t.agent_session_project
         conn.execute(
-            update(t.agent_session)
-            .where(
-                t.agent_session.c.membership_id == target.id,
-                t.agent_session.c.acknowledged_seq < to_seq,
-            )
+            update(position)
+            .where(position.c.membership_id == target.id, position.c.acknowledged_seq < to_seq)
             .values(acknowledged_seq=to_seq)
         )
     _announce(conn, project, target, actor)
@@ -247,7 +247,7 @@ def lift(
         restricted.person(conn, actor.membership_id) if actor.membership_id else "hub",
         actor,
     )
-    _tell_owner(
+    tell_owner(
         conn,
         project,
         target,

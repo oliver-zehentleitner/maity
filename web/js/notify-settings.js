@@ -585,8 +585,9 @@ window.Maity = window.Maity || {};
   }
 
   // What an agent of an owner from outside may hold (§6.2): trust member or guest, a role
-  // on outside_roles, on a base that does the work. A built-in role's base is itself.
-  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team", "expert"];
+  // on outside_roles, on a base that does the work. A built-in role's base is itself. Never
+  // blue-team (B.1 of §6.30): an agent on it falls back to coder where coder is listed.
+  const OUTSIDE_BASES = ["coder", "designer", "writer", "expert"];
   function roleBase(ctx, agent) {
     if (agent.role_base) return agent.role_base;
     if (M.trust.ROLES.includes(agent.role)) return agent.role;
@@ -617,6 +618,10 @@ window.Maity = window.Maity || {};
     if (rule.mode === "members" || agent.isolated) return "isolated";
     const base = roleBase(ctx, agent);
     if (!base) return null;
+    // A blue-team agent that falls back to coder (§6.2) is neither isolated nor staying as
+    // it is: not told here, so the confirmation names no agent rather than a wrong fate.
+    if (base === "blue-team" && (agent.trust === "member" || agent.trust === "guest")
+      && rule.roles.includes("coder")) return null;
     const stays = (agent.trust === "member" || agent.trust === "guest")
       && rule.roles.includes(agent.role) && OUTSIDE_BASES.includes(base);
     return stays ? "stays" : "isolated";
@@ -772,7 +777,8 @@ window.Maity = window.Maity || {};
     const path = ctx.base + "/me/settings";
     let mine;
     try {
-      mine = await M.api.get(path);
+      // Started by the drawing beside the context where it is fresh (js/app.js, mineAhead).
+      mine = await ((ctx.ahead && ctx.ahead(path)) || M.api.get(path));
     } catch (err) {
       // The absence does not depend on this read: it stays.
       append(root, h("p", { class: "send-status failed" }, M.t("notify.read_failed", { reason: err.message })), extra || null);

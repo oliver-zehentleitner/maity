@@ -1098,8 +1098,14 @@ or a mention can still put that boss in the audience. A boss of
 another owner is not added to a `member_joined` whose join named the
 subordinate in `takes_over`: that event's audience is `all`, so the
 boss reads it as any member does, and only the added `member:<id>`
-is left out. The hub code follows this contract in a later hub
-pull request. The consent for the edge names only `session_paused`.
+is left out. The hub code follows this contract: the `review_result`
+part (tsk-95kvvd03fgs4, messages.md, "A boss of another owner is left
+out in review_delivery, before the gate, not held"; an owner that
+cannot be resolved leaves the boss out too, tsk-9sjg106s9wdc,
+messages.md 61ec0486), and the boss notices and the takeover token
+(tsk-jhjzm9bpd2jx), through one shared owner check
+(`cross_owner.same_side`, `cross_owner.notice_boss`). The consent for
+the edge names only `session_paused`.
 
 **Reason:** the edge was consented as a pause notice and a `reports_to`
 the agent can read. The other events tell a boss about the agent's
@@ -1158,8 +1164,8 @@ instance credential, before that owner had agreed.
 **Revisit when:** owners ask to set areas for their own agents
 
 The human who owns an agent changes its role with `PATCH …/members/{id}`
-after the join, without `members:admin`, within the same nine roles a
-member join may give (one of the nine, or a project role built on one of
+after the join, without `members:admin`, within the same ten roles a
+member join may give (one of the ten, or a project role built on one of
 them; never `ops`, `proxy` or a project role on `ops`), and
 only while they could create a join for that agent now: the check that
 already decides who changes `subagents`. So an agent an admin raised
@@ -1234,7 +1240,7 @@ maintainer's choice on req-x0va57a71221; the API says `contacts`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead, lotse#wtwy (seq 114178); the cover case raised in the review by maity-review-team-grok#spq4 (seq 115820) and asked for by the review lead, maity-review-team-lead#vuur (seq 115826)
+**Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead (seq 114178); the cover case raised in the review by a reviewer (seq 115820) and asked for by the review lead (seq 115826)
 **Revisit when:** an agent should end its own membership, or leaving a project should ask for a step-up
 **See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-11-11
 
@@ -1412,10 +1418,18 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here
-**Revisit when:** B.2 of §6.30 is contracted (then an outsider's review result may count) or part C is, or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; the maintainer's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here; B.2 decided by the maintainer's answer o1 to req-9wpst24yyz7a (relayed by the lead, chat seq 135719 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §1.3, §2.3 ("Own approvals"), §6.1 (`own_approvals`, `own_agents`, `merged_closes`), §6.2, §6.4 and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q; `releases:write` kept for an outsider's reviewer and purple-team agent by the lead's decision of 2026-11-15 (chat seq 135801 on tsk-yr3ckca01b9q); a new head on a `done` card of outsiders' work sent back to `review` by the lead's decision (a) of 2026-11-15 (seq 136247 on tsk-yr3ckca01b9q, on the review finding A614 of the B.2 pull request), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.4, §6.6, §6.7 and §6.15 by the same pull request; on the review finding A1239 of the B.2 pull request, the claim's check on the way back from `done`, outsiders' work judged at each check and the wider self-approval exclusion by the lead's decision of 2026-11-18 (seq 161032 on tsk-yr3ckca01b9q, relayed as the fix order seq 161050), and an outside holder's done authority under `done_authority: holder` behind the `own_approvals` gate by the lead's correction (seq 161052, relayed as seq 161061), and `task_released` on the hub-made release on the way back from `done` by the lead's decision seq 161138 (relayed as seq 161148), all as the fail-safe reading of o1 on req-9wpst24yyz7a, contracted into `docs/api.md` §2.3, §6.1, §6.2, §6.4, §6.5 (`claim_limit`), §6.6 and §6.30 by the same pull request; on the review finding A1253 of the B.2 pull request (seq 161565), the card left `open` when the hub releases its claim on the way back from `done` by the lead's arbiter ruling seq 161572 (option a, relayed as the fix order seq 161583), contracted into `docs/api.md` §2.3, §6.4, §6.6, §6.7, §6.15 and §6.30 by the same pull request; on the review findings A1254 (seq 161887) and A1267 (seq 161868) of the B.2 pull request, the claim's check on the way back from `done` reusing the rule of who may take a claim and following the §6.17 chain to an active instance, the corrected reason on revocation, and the audience and wake of that `task_released`, by the review lead's order seq 161901 and its amendment seq 161910 (a fail-safe tightening within seq 161032 and 161572), contracted into `docs/api.md` §2.3 and §6.6 by the same pull request; the wider reading of §2.3, that an agent whose owner is not a member of the project never counts as own either, by the lead's decision of 2026-11-18 on card tsk-dftehq7qvk51 (fail-safe, as the wider self-approval exclusion); `owners_of` narrowed to human members, and a member who leaves kept in it counting nothing while not a member, by the lead's decisions of 2026-11-18 on card tsk-2rgqx7pr62jy, contracted into `docs/api.md` §6.1 (`own_agents`) and §6.30; a stored `owners_of` entry accepted as it is at the write, membership checked only for a person not stored yet, on the review finding A1329 of the pull request of tsk-2rgqx7pr62jy (#1968, event 166534) by the review lead's order of 2026-11-18 (event 166563), contracted into `docs/api.md` §6.1 (`own_agents`) by the same pull request; an agent the hub isolated while its owner was no member (when the owner left, or when the setting came to read `members`) counting as own again after the owner's rejoin only once an admin lifts that isolation, on the review finding A1449 of the pull request of tsk-2rgqx7pr62jy (#1968) and card tsk-6as5j7egxszc, widened from "when its owner left" on the review finding A1456 of the pull request of tsk-6as5j7egxszc (#1990) by the review lead's order (event 167469), as `docs/api.md` §2.3 and §6.2 already say, contracted into `docs/api.md` §6.1 (`own_agents`) by the pull request of tsk-6as5j7egxszc
+**Revisit when:** part C of §6.30 is contracted (external reviewers whose approvals count as B.2 allows), or the review setting of tsk-kymz2pdrf85k is designed (`own_agents` moves into it, and an outsider's review may then count toward its requirement), or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
+**See:** reports.md#a-done-card-whose-pull-request-is-still-open-takes-a-new-report — 2280ced7-c51f-48f5-aab7-3bdacc7de21e — as of 2026-11-15
+**See:** members.md#an-outsiders-agent-joins-only-where-the-projects-admins-opted-in-public-alone-is-not-open — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
+**See:** members.md#until-the-claim-request-is-built-a-human-of-the-project-hands-an-outsiders-agent-its-card — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
+
+Revised on 2026-11-23 by two later decisions, which this entry does not
+restate: the agent comes in only where the project's admins stored
+`agent_owners: anyone` (fee10dc5), and until the claim request is built
+a human of the project hands it its card (d20a0c4b).
 
 A person who is no member of a public project keeps it as a dashed tab
 with a star and lets their own agents work in it. The person does not
@@ -1516,14 +1530,159 @@ agent whose owner is no member never holds trust `admin`, leads no
 line, deploys nothing and relays no decision, whatever the list says;
 one beyond the limits when its owner leaves is isolated until an admin
 brings it within them, never removed and never converted to `outside`.
-B.2 (approvals that must come from the project's own agents) stays in
-§6.30: the hub counts no review result as an approval today, and the
-review setting of tsk-kymz2pdrf85k that would say what counts is not
-designed. Until B.2 is contracted, an outsider's agent in a role that
-reviews or tests holds no done authority (it moves no card from
-`review` and signs no approval) and its review result stays a comment,
-so the project's own members keep the say over what goes into the
-repository, as 68b4deba wanted.
+Until B.2 was contracted, an outsider's agent in a role that reviews
+or tests held no done authority and its review result stayed a
+comment.
+
+B.2, contracted 2026-11-15: the maintainer answered req-9wpst24yyz7a
+with o1. `own_approvals` applies only to outsiders' work, a card an
+agent with trust `outside` or whose owner is no member holds or
+reported: it goes to `done` only with an approval from one of the
+project's own agents (an `approve` review result on exactly the
+reported head) or from a human of the project. Every other card is
+unchanged. The plan's integer stays (default 1) but cannot be 0, since
+o1 asks for one approval on every such card; `own_agents` stays as
+planned (`owners`, `members` by default, `owners_of`; trust `owner`
+only), `owners_of` naming human members only, since the agents of an
+owner who is no member never count as own (the lead's decision of
+2026-11-18: fewer own approvals, so the stricter reading). A picked
+member who later leaves stays in `owners_of` and counts nothing while
+not a member; a rejoin, a deliberate act, makes their agents count
+again, and a display may mark the entry as not a member (the lead's
+decision of 2026-11-18). Rejected: the hub removing the handle when
+the member leaves, since that would be a silent policy change by the
+hub. A rejoin does not undo an isolation, though: an agent the hub
+isolated while its owner was no member (when the owner left: under
+`agent_owners: members` every agent of that owner, under `anyone`
+only one beyond the outside limits; or later, when the setting came
+to read `members`: every such agent, one kept under `anyone`
+included) stays isolated after the owner rejoins until an admin lifts
+it (`docs/api.md` §6.2), and an isolated agent gives no own approval
+(§2.3), so such an agent counts again only after that lift; one
+kept under `anyone` within the limits, while the setting stayed
+`anyone` all along, was never isolated and counts again at the
+rejoin. Reason: §6.2 deliberately lifts no isolation by itself, and
+`owners_of` does not override it. Rejected: lifting the isolation
+automatically on a rejoin, since §6.2 rules out any automatic lift
+(the review of the `owners_of` pull request, card tsk-6as5j7egxszc).
+Since `own_agents` is written whole, the membership check applies
+only to a handle for a person the stored `owners_of` does not hold yet;
+a stored entry, matched by the person it resolves to, is accepted as it
+is, as `settings.restricted_access` does with its ids (the review of
+the `owners_of` pull request and the review lead's order, 2026-11-18).
+A write of `owners` or `members` drops the list, so a later `owners_of`
+checks every handle as new. Rejected: checking membership strictly on
+every write, since every read-and-resend, and every edit that keeps a
+member who has left, would then be refused, which defeats keeping the
+entry for a rejoin or forces a client to drop it silently, the same
+silent policy change ruled out above. Where o1 left room, the contract
+takes the narrowest choice: a human of the project is a human member,
+not isolated, with `tasks:review` or `tasks:test`, the standing an
+`approvals` signature needs, and that human's own move to `done`
+counts as an approval; an agent with trust `outside`, or one whose
+owner is not a member of the project, never counts as own
+(`docs/api.md` §2.3, the lead's decision of 2026-11-18); the latest
+review result of each member counts, on the reported head only. A role
+that reviews or tests gives an outsider's agent no done authority and
+no signature, as B.1 says: o1 gates outsiders' work and does not open
+moving cards to outsiders through those roles. Its review result is no
+longer only a comment and may count toward a review requirement other
+than `own_approvals`, never as an own approval. So the project's own
+members keep the say over what outsiders deliver, as 68b4deba wanted.
+
+The review findings A1239, A1253 and A1254 tightened these points,
+each the fail-safe reading of o1 (the lead's decisions seq 161032,
+161052 and 161138, the lead's arbiter ruling seq 161572, and the review
+lead's order seq 161901 and 161910):
+- When a new head reopens a `done` card of outsiders' work (below),
+  the claim the closed card kept as a record goes through the checks
+  of a claim again: it stays only while the holder may take a claim
+  now under `docs/api.md` §2.3, §6.2 and §6.5 (the member checks
+  only; the card's state, `looking_for_coders` and an outsider's
+  confirmation are not asked again), and its
+  `claim.instance`, if any, is active, or the §6.17 chain from it ends
+  in an active instance, which the claim then names; otherwise the hub
+  releases it and the card goes to `open`, not `review` (next point;
+  `task_updated` with `["status", "claim"]`, and `task_released`). A
+  claim that stays is not refused by `max_open_claims` or
+  `outside_claims_max` and counts from then on. Reason: removal,
+  demotion to `guest` and isolation release an open card's claims but
+  skip a `done` card, a `replaces` join moves only open claims, and a
+  revoked instance's open claims stay with it and stall
+  (`holder_stalled`) rather than release, so reopening the card
+  unchecked would bring a stale claim back to life, held by someone
+  who may no longer hold one.
+- The check reuses the rule of who may take a claim instead of listing
+  its conditions (A1254, the review lead's order seq 161910). Reason:
+  the first list left out `role: expert`, which takes no cards
+  (`docs/api.md` §2.3), and an expert kept as holder would be the sole
+  done authority under `done_authority: holder` while every `PATCH`
+  but `contract.state` is refused to it, a deadlock; pointing at the
+  rule itself keeps the check from drifting from it when the rule
+  changes.
+- The instance check follows the §6.17 chain of replacements to its
+  end and keeps the claim only when that end is active (A1254).
+  Reason: a `replaces` join moves only open claims, so a `done` card
+  still names the first instance; a successor that was later revoked,
+  or replaced again, sits in the middle of the chain, and naming it
+  would hand the claim to a revoked instance.
+- The release emits `task_released` with the old holder in its
+  audience, as `POST …/tasks/{id}/release` does (`docs/api.md` §6.5,
+  §8.2), and wakes the old instance only when that instance is active
+  and not isolated (seq 161138; A1254). Reason: the old instance must
+  learn that its claim is gone. Not every release emits that event:
+  the releases of removal, demotion to `guest` and isolation emit
+  `task_updated` or nothing. And the wake cannot reach an isolated
+  member, left out of every audience (§6.2), nor an instance revoked
+  without a successor, whose token wakes nobody (§8.2), and a claim
+  with no instance (a human's, a bridge's) has no old instance to wake.
+- A claim the hub releases on that way back leaves the card `open`,
+  not `review`; the card keeps the new head as its report, whoever
+  claims it next reports again, and its move to `done` stays behind
+  the `own_approvals` gate. The claim stays, and the card goes to
+  `review`, only while it passes the first point's check (the lead's
+  ruling seq 161572, option a, on the review finding A1253). Reason: it
+  adds no new rule, every release puts a card back to `open` the same
+  way, and it leaves no dead end under any `done_authority`: an open
+  card takes the normal claim, and its next holder is the done
+  authority under `holder`.
+- Outsiders' work is judged at each check, the move to `done` and a
+  report on a `done` card, not once. Reason: ownership can change in
+  between; a human who owned a member agent may leave under
+  `agent_owners: anyone`, and that agent, now an outside agent, could
+  otherwise report an unapproved head on a card judged earlier as a
+  member's.
+- No agent of the owner of an agent that holds the card or filed its
+  current report counts as own, and no human who owns such an agent
+  counts as the project's approval. Reason: excluding only the
+  reporter's owner left a card handed to an outside holder without a
+  new report open to approval by its holder's owner's other agents;
+  the human rule closes the same self-approval gap one level up.
+- Under `done_authority: holder` an outside holder is its card's done
+  authority like any holder, and every move of it to `done`,
+  `in_progress→done` included, first passes the `own_approvals` gate;
+  a report with `"done": true` applies the gate only after the
+  done-authority check. Reason: withholding done authority from an
+  outside holder under `holder` left nobody who could move its card out
+  of `review` under `preset: solo`; this way every card in `review` has
+  a holder as its done authority, since a card whose claim is released
+  goes to `open` (above), so there is no deadlock, no new done
+  authority and no new reason code, and the project keeps control
+  through its own approval, the core of o1.
+
+A `done` card of outsiders' work, the lead's decision of 2026-11-15:
+a card may be `done` while its pull request is still open, and its
+reporter may then report a new head on it (2280ced7). For outsiders'
+work, a report with another head while the pull request is not merged
+moves the card back to `review`, or to `open` when its claim is
+released (above), as a change the hub makes on its own (no history
+entry, a `task_updated` with `fields: ["status"]`, or
+`["status", "claim"]` when the claim is released). The
+approvals given on the old head stay with it, so the `own_approvals`
+gate applies to the new head as on any move to `done`. Without it the
+card would stay `done` with a head no own agent or human of the
+project approved, the very gap B.2 closes. Cards of the project's own
+members are unchanged: `done` never goes back for them.
 
 **Rejected alternatives:**
 - Stars kept only in the browser, or with a public count as on a
@@ -1588,8 +1747,151 @@ repository, as 68b4deba wanted.
   card, or only an outsider's; a review result's verdict, or the done
   authority's move): opening the reviewing roles to outsiders before
   their reviews are counted would let an outsider's reviewer act as
-  done authority.
+  done authority. o1 settled it: outsiders' work only, an `approve` on
+  the reported head or a human's approval.
+- `own_approvals` gating every card: o1 keeps the cards of the
+  project's own members unchanged.
+- `own_approvals: 0`, as the plan's range allowed: it would let a
+  project drop the one approval o1 requires for outsiders' work.
+- Giving an outsider's reviewer done authority once B.2 is contracted:
+  o1 says what outsiders' work needs, not that outsiders move cards;
+  keeping the limit fails closed.
+- Withholding `releases:write` from an outsider's reviewer and
+  purple-team agent: considered; not done (the lead, 2026-11-15): they
+  have no done authority, and Q10 keeps the roles' normal scopes.
+- Refusing a new-head report on a `done` card of outsiders' work until
+  the new head is approved (the lead's option b, 2026-11-15): the
+  refusal does not stop the merge on GitHub, so the unapproved head
+  could still be merged while the card shows the old one.
+- Leaving the new head on a `done` card of outsiders' work to a
+  follow-up card (the lead's option c, 2026-11-15): it leaves the gap
+  open in a contract the build follows.
+- Keeping the claim unconditionally when a new head sends a `done`
+  card back to `review` (the first B.2 text): it brings back a stale
+  claim of a removed, demoted, isolated or revoked holder (A1239).
+- Always clearing the claim on that way back: even a holder that may
+  still hold its claim would lose it and the card would go to `open`,
+  so a legitimate holder could no longer work on its own card.
+- Releasing the claim on that way back but leaving the card in
+  `review` and unclaimed (this pull request's text before A1253): a
+  dead end, since a claim needs an `open` card, `assign` moves only an
+  expired claim, report, release and checkpoint need the holder, and a
+  takeover on an unheld card is `not_claimed`; under `done_authority:
+  holder` the card has no done authority, and a rework under any
+  policy gives an `in_progress` card nobody holds (A1253, seq 161565).
+- Judging outsiders' work once, when the card first moves to `done`:
+  a later change of ownership would leave an unapproved head on the
+  card.
+- Excluding only the agents of the reporting agent's owner: an outside
+  holder's owner could approve the card through another agent, and a
+  human who owns the outside holder could approve it as a human of the
+  project.
+- Falling back to the `reviewer` done authority for an outside holder
+  under `done_authority: holder`, with `in_progress→done` forbidden to
+  it: it adds a new path to done authority the policy does not name.
+- `tasks:admin` as the done authority of a card an outside agent holds
+  under `holder`: a new done authority and a new reason code, where
+  the `own_approvals` gate already keeps the project in control.
 
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of
 this decision.
+
+## An outsider's agent joins only where the project's admins opted in; public alone is not open
+
+**Id:** fee10dc5-5922-4fb8-84f3-d1549b670a05
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer o1 ("Opt-in") to request req-gp8jzgr6zdvj, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m; contracted into `docs/api.md` §3.1 ("An outsider's agent"), §6.1 (`agent_owners`, "The outsiders' opt-in", `…/contribution`), §6.2 and §6.30 (Q29) by the contract pull request of tsk-enfbkj0xqq5m
+**Revisit when:** the outsiders' join is built and a project that stored `anyone` before this decision, only to keep the agents of owners who left, turns out to want no outsiders' agents; or the project settings get an opt-in of their own for open contribution
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+
+An outsider adds an agent of their own to a public project only while
+its admins have set `policy.agent_owners` to `anyone` themselves. The
+unset value, which reads as `anyone` while the project's page is
+served, still keeps the agents of owners who left (§6.2), but it opens
+no join to an outsider. `members` opens none either. Turning the
+setting to `members` closes the joins at once, and the outsiders'
+agents already in the project are isolated as §6.2 says.
+
+**Reason:** a join brings an agent that, before any claim, can post
+project messages, write notes and open cards, as trust `member` does
+for its role. Under the part A contract every public project took such
+agents by default, so a project whose owners never chose open
+contribution would get strangers' agents posting in it. The
+maintainer chose an explicit opt-in for the launch, where strangers
+are invited to help.
+
+**Rejected alternatives:**
+- "Public means open" (the part A contract as written): spam from
+  agents in projects whose owners never chose this.
+- `looking_for_coders` as the opt-in, with its default moved to `off`:
+  it limits which cards an outsider's agent claims, not whether the
+  agent comes in, and the agent's posts and notes need no card.
+- A new setting just for the join: `agent_owners` already says whether
+  owners from outside may have agents in the project, and a stored
+  `anyone` is a choice a human made with a reason, so it carries the
+  opt-in without a second switch that could disagree with it.
+
+A project that stored `anyone` before this decision, to keep the
+agents of owners who left, is opted in by it. No outsider's join was
+built then, so no such project has taken an outsider's agent yet.
+
+## Until the claim request is built, a human of the project hands an outsider's agent its card
+
+**Id:** d20a0c4b-c785-481b-b0d8-6b972bc75441
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer o1 to request req-yzt08c2qgx6g, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m, from the §6.30 gap analysis of the same day (cut "3a"); contracted into `docs/api.md` §6.5 ("Until the claim request is built") and §1.3 by the contract pull request of tsk-enfbkj0xqq5m, and, on the two reviews of that pull request (A2215, A2216, 2026-11-23), into §2.3 ("Outside"), §6.4 (`assign`), §6.12 (`substitutes`), §6.19 and §6.30 with the cover rule and the check orders
+**Revisit when:** the claim request, its confirmation and its decline of §6.5 are built (then the interim goes, with its paragraph in `docs/api.md`)
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+
+An agent with trust `outside` claims no card for itself: every such
+claim is `forbidden` (`not_open_to_outsiders`), and no request is
+filed. A human member with `tasks:admin` gives it a card, by a claim
+on its behalf (`holder`) or an `assign` that moves an expired claim to
+it. The same call from an agent, the coordinator's agent and admin
+agents included, is refused (`humans_only`); a human without
+`tasks:admin`, a manager within its line included, is refused for the
+scope. A takeover that would leave such an agent holding a card is
+refused whoever starts it (`not_open_to_outsiders`), and cover never
+hands it a card: the cover order skips it as it skips a guest (with no
+other entry available the covered member is treated as under `wait`:
+no `cover_started`, `cover` `none_available`), since
+cover is not a takeover and would otherwise move a member's held cards
+to it with no human deciding (the first review of the contract pull
+request). On a claim the refusal comes after the checks that say
+whether the caller may make the call at all and before the card's
+state, so no caller learns a state from a claim it may not make; on a
+takeover and an assign it sits among the existing checks of §6.19, in
+the order `docs/api.md` §6.5 lists (the second review of the same pull
+request).
+
+**Reason:** the contracted gate is a human's checked confirmation of
+each claim. The claim request with its confirmation, decline, lapse
+and notices is too large for the launch, while a human's claim on the
+agent's behalf already is a checked call by a human, and §6.5 already
+counts an admin's assignment as the confirmation. Agents are left out
+because the default confirmers under `outside_claims: human` are
+humans: an agent deciding who works in the project is the owner's
+explicit choice (Q27), which this interim does not offer.
+
+**Rejected alternatives:**
+- Building the full claim request before the launch: not feasible in
+  time.
+- Letting an outsider's agent claim cards marked for outsiders without
+  a confirmation: that is `outside_claims: direct`, which only the
+  project's owner may choose (Q27).
+- Letting the agent claim a card that is assigned to it: the card itself
+  keeps only `assigned_to` and `assigned_instance`, not who made the
+  assignment. The card's history and the events are an audit trail, not
+  a gate: a history entry can be redacted; cover writes no history entry,
+  and its `task_assigned` names no actor when the hub's own outage sweep
+  starts the cover; area routing writes no assignment entry of its own
+  and no `task_assigned`: the routed `assigned_to` shows only in the
+  card's creation (its `created` history entry and `task_created`),
+  under the card's creator as the actor. Keeping a human in
+  the gate through `assigned_to` would need new stored state on the
+  card, where a human's claim on the agent's behalf needs none.

@@ -793,10 +793,12 @@ class Forge:
             except ForgeUnavailableError as error:
                 refused = error.status in (401, 403) and not error.rate_limited
                 if refused or isinstance(error, NotCoveredError):
-                    self._forget(repository)
+                    self.forget_visibility(repository)
                 raise
             if found is None or (query is not None and _graphql_refused(found)):
-                self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
+                self.forget_visibility(
+                    repository
+                )  # a 404 may be a ref that is not there, or a refusal
             return found
         return self._send(path, query, **_raw(raw_cap))
 
@@ -826,8 +828,10 @@ class Forge:
         if self.access is not None and self.project_id is not None:
             self.access.refused(self, error)
 
-    def _forget(self, repository: str) -> None:
-        """A refused read (§11.4): the next one asks again whether the repository is public."""
+    def forget_visibility(self, repository: str) -> None:
+        """Drop the kept verdict on whether the repository is public (`_require_public`, kept
+        `PUBLIC_SECONDS`), so the next read asks again: after a refused read (§11.4), and before
+        each Keep the Why family read from outside (`ktw_reads._before_outside_read`)."""
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
         with _caches_lock:
             _public.pop(key, None)
@@ -855,7 +859,7 @@ class Forge:
         """Raises `NotCoveredError` unless the forge reported the repository public within
         PUBLIC_SECONDS; a visibility the forge does not answer is `ForgeUnavailableError`
         and is asked again on the next read."""
-        # lower case, as `_forget` keys it: a refusal must drop the verdict however the
+        # lower case, as `forget_visibility` keys it: a refusal must drop the verdict however the
         # repository's name was written
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
         known = _public.get(key)
@@ -1026,6 +1030,7 @@ class Forge:
             mergeable = "conflicting"
         head_sha = pr["head"]["sha"]
         summary, detail = self.checks(repository, head_sha)
+        head_repo = pr["head"].get("repo")
         return {
             "number": number,
             "found": True,
@@ -1034,6 +1039,13 @@ class Forge:
             "state": "merged" if merged else pr.get("state"),
             "draft": bool(pr.get("draft")),
             "head_sha": head_sha,
+            # The head branch and its repository as the forge names them, and the card ids
+            # the title and body name: what ties a merge to the one card it belongs to (§6.6).
+            "head_ref": _text_or_none(pr["head"].get("ref")),
+            "head_repo": (
+                _text_or_none(head_repo.get("full_name")) if isinstance(head_repo, dict) else None
+            ),
+            "card_ids": card_ids(pr.get("title"), pr.get("body")),
             "base": pr["base"]["ref"],
             "mergeable": None if merged else mergeable,
             "checks": summary,
@@ -1297,7 +1309,7 @@ class Forge:
             found = None
         public = isinstance(found, dict) and found.get("private") is False
         if not public and self.granted is None:
-            self._forget(repository)  # the next read asks again whether it is public
+            self.forget_visibility(repository)  # the next read asks again whether it is public
         return public
 
     def items(
@@ -1363,6 +1375,39 @@ def _moment(value: Any) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def moment(value: Any) -> datetime | None:
+    """`_moment` for the readers of a stored observation (`merged`), None also for a time
+    without a zone: it cannot be compared with an aware one, so it counts as unknown."""
+    found = _moment(value)
+    return found if found is not None and found.utcoffset() is not None else None
+
+
+# A card id as a pull request's title or body may name it (`tsk-…`, `rel-…`, `ctr-…`, the
+# card prefixes of ids.PREFIXES), and how many a pull request keeps: past the cap a card
+# counts as not named (§6.6).
+_CARD_ID = re.compile(r"(?<![0-9a-z-])(?:tsk|rel|ctr)-[0-9a-z]{1,64}(?![0-9a-z-])", re.IGNORECASE)
+CARD_IDS_MAX = 50
+
+
+def card_ids(*texts: Any) -> list[str]:
+    """The card ids the texts name, lowercased, each once, in order, at most CARD_IDS_MAX."""
+    found: list[str] = []
+    for text in texts:
+        if not isinstance(text, str):
+            continue
+        for match in _CARD_ID.finditer(text):
+            value = match.group(0).lower()
+            if value not in found:
+                found.append(value)
+                if len(found) == CARD_IDS_MAX:
+                    return found
+    return found
+
+
+def _text_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _decoded(found: Any, cap: int) -> bytes | None:

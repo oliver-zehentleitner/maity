@@ -86,8 +86,12 @@ def test_maity_api_prints_a_text_answer_cleaned(
 
 
 def test_maity_help_prints_the_hub_help_cleaned(
-    fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setenv("MAITY_STATE_DIR", str(tmp_path / "no-state"))  # before a join
     fake.help_text = "# Maity help\n" + EVIL + "\n"
     assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK
     captured = capsys.readouterr()
