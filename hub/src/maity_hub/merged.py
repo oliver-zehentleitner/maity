@@ -5,7 +5,8 @@ on a card in `review`, the hub emits `task_merged` once per report: it wakes the
 authority, and under `merged_closes: auto` with `done_authority` `holder` or `admin`
 the hub moves the card to `done` itself, unless a dependency or child is open, a
 takeover of it is objected or escalated, or it is a release card (the releaser closes
-those after the checklist, §6.7), or the pull request is not the card's own: its head
+those after the checklist, §6.7), or it is outsiders' work without its own approvals
+(§2.3, `own_approvals`), or the pull request is not the card's own: its head
 branch as the forge names it is not the reported one or lives in another repository, its
 title and body do not name the card, it was merged before the report named it, or
 another card names it or was closed by it (`_not_its_own`). A card `blocked` from
@@ -24,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import cards, clock, forge, takeovers
+from maity_hub import cards, clock, forge, own_approvals, takeovers
 from maity_hub import tables as t
 from maity_hub.events import emit
 from maity_hub.instances import token
@@ -99,13 +100,9 @@ def returned_to_review(conn: Connection, card_id: str) -> None:
         _tell(conn, card_id, _merge_sha(conn, card))
 
 
-def _pr_number(card: Any) -> Any:
-    return ((card.report or {}).get("pr") or {}).get("number")
-
-
 def _pr_data(conn: Connection, card: Any) -> dict[str, Any]:
     """The stored observation of the report's pull request, `{}` when there is none."""
-    number = _pr_number(card)
+    number = cards.pr_number(card)
     if number is None:
         return {}
     data = conn.execute(
@@ -137,7 +134,9 @@ def _reported_branch(report: dict[str, Any]) -> str | None:
     return rest if remote and rest else None
 
 
-def _own_repository(project: Any) -> str | None:
+def own_repository(project: Any) -> str | None:
+    """The project's repository as `owner/repo`, lowercased; None when the forge does not
+    cover its URL."""
     try:
         return forge.repository_of(project.repository_url or "").lower()
     except forge.NotCoveredError:
@@ -155,7 +154,7 @@ def _not_its_own(conn: Connection, card: Any, project: Any) -> list[str]:
     # a branch read finds or misses, since a branch deleted after its merge is no
     # mismatch and any branch can be pushed to the merged head.
     head_ref, head_repo = data.get("head_ref"), data.get("head_repo")
-    own = _own_repository(project)
+    own = own_repository(project)
     if (
         not isinstance(head_ref, str)
         or head_ref != _reported_branch(report)
@@ -179,19 +178,13 @@ def _shared(conn: Connection, card: Any) -> bool:
     """Another card of the project, in any status, names the pull request in its current
     report, or the pull request closed another card before. Read only when the hub would
     close, under the project's lock: no two cards close by one pull request."""
-    number = _pr_number(card)
+    number = cards.pr_number(card)
     if number is None:
         return True
-    others = conn.execute(
-        select(t.card.c.report).where(
-            t.card.c.project_id == card.project_id,
-            t.card.c.id != card.id,
-            t.card.c.report.is_not(None),
-        )
-    )
-    for (report,) in others:
-        if ((report or {}).get("pr") or {}).get("number") == number:
-            return True
+    if any(other.id != card.id for other in cards.naming_pr(conn, card.project_id, number)):
+        return True
+    # Compared in Python for the reason `cards.naming_pr` gives: `pr` is a JSON number with
+    # no upper bound, which a JSON-path comparison casts differently per engine.
     told = conn.execute(
         select(t.event.c.subject_id, t.event.c.payload).where(
             t.event.c.project_id == card.project_id,
@@ -224,7 +217,16 @@ def _blocked_by(conn: Connection, card: Any, project: Any) -> list[str]:
         # A release closes through its readiness gate (§6.7), which the releaser
         # passes after the checklist; a merge of its pull request is not that step.
         reasons.append("release")
+    if own_approvals.missing(conn, card, project)[0]:
+        # §2.3 "Own approvals", §6.6: `auto` acts as `notify` on outsiders' work without its
+        # own approvals on the reported head; its done authority closes it.
+        reasons.append("own_approvals")
     return reasons + _not_its_own(conn, card, project)
+
+
+def outsiders_work(conn: Connection, card: Any, project: Any) -> bool:
+    """§2.3 "Own approvals": the one rule, in `own_approvals`."""
+    return own_approvals.outsiders_work(conn, card, project)
 
 
 def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
@@ -248,7 +250,7 @@ def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
         audience.append("trust:admin")
     payload: dict[str, Any] = {
         "task": card.id,
-        "pr": ((card.report or {}).get("pr") or {}).get("number"),
+        "pr": cards.pr_number(card),
         "merge_sha": merge_sha,
         "done_authority": authority,
         "closed": closed,

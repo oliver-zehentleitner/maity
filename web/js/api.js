@@ -327,9 +327,438 @@ window.Maity = window.Maity || {};
   function me() {
     return fixtures()["me.json"];
   }
+  // §5.1 "Stars": the public projects of others the fixture caller can star, besides any fixture
+  // project.json with its page on (none of the caller's own is starrable: they are memberships).
+  // `stranger/tool` is the smoke test's public non-member project (tools/smoke.js, the visitor).
+  // `stranger/gadget` is a second one, starred beside it by the smoke test (two stars at once);
+  // it is never opened, so it has no outsider read of its own.
+  const OUTSIDE_PUBLIC = [{ id: "prj-tool00000001", full_name: "stranger/tool", name: "Tool", public_page: "on", state: "build" },
+    { id: "prj-gadget000001", full_name: "stranger/gadget", name: "Gadget", public_page: "on", state: "build" }];
+  // The bound (`max_starred_per_human`, default 100), set lower by the smoke test for `too_many`.
+  const fixtureStarred = { max: 100 };
+  // The stored ids, hidden ones included, in the order starred; from me.json's view at first.
+  let starredIds = null;
+  const starredStored = () => starredIds || (starredIds = (me().member.starred || []).map((s) => s.id));
+  function starrable() {
+    const views = Object.keys(fixtures()).filter((k) => k.endsWith("/project.json")).map((k) => fixtures()[k]);
+    return OUTSIDE_PUBLIC.concat(views).filter((p) => p && p.id && p.public_page === "on" && p.state !== "archived");
+  }
+  // The entries a read shows: public now and no membership (hub/stars.py `visible`).
+  function starredShown(ids) {
+    const mine = me().projects.map((p) => p.id);
+    const open = new Map(starrable().map((p) => [p.id, p.full_name]));
+    return ids.filter((id) => !mine.includes(id) && open.has(id)).map((id) => ({ id, full_name: open.get(id) }));
+  }
+  function starredChecked(given, path) {
+    const refuse = (why, extra) => fail(400, "invalid", "the request does not validate", path, Object.assign({ fields: { starred: why } }, extra || {}));
+    if (given === null || given === undefined) refuse("required");
+    if (!Array.isArray(given) || given.some((id) => typeof id !== "string")) refuse("list_type");
+    if (new Set(given).size !== given.length) refuse("duplicate");
+    const stored = starredStored();
+    const shown = new Set(starredShown(stored).map((s) => s.id));
+    const hidden = stored.length - shown.size;
+    if (given.length > stored.length && given.length > fixtureStarred.max) refuse("too_many", { hidden });
+    if (given.some((id) => me().projects.some((p) => p.id === id))) refuse("member");
+    const open = new Set(starredShown(given).map((s) => s.id));
+    if (given.some((id) => !open.has(id))) refuse("not_public");
+    // Each hidden entry right after the visible entry it followed, or first (stars.py `_placed`).
+    const after = new Map();
+    let anchor = null;
+    stored.forEach((id) => {
+      if (shown.has(id)) { if (given.includes(id)) anchor = id; } else after.set(anchor, (after.get(anchor) || []).concat(id));
+    });
+    const placed = (after.get(null) || []).slice();
+    given.forEach((id) => { placed.push(id); placed.push(...(after.get(id) || [])); });
+    if (given.some((id) => !stored.includes(id)) && placed.length > fixtureStarred.max) refuse("too_many", { hidden });
+    return placed;
+  }
+
+  // ---- a public project read from outside (docs/api.md §2.3, the hub's #2001) ----------------
+  // `stranger/tool` (OUTSIDE_PUBLIC), read by the fixture caller, a signed-in human who is no
+  // member of it: the dashboard draws its member views from the member routes an outsider reads,
+  // and this fixture answers them as #2001 does (hub/src/maity_hub/access.py `OUTSIDE_READS`). Any
+  // other route of the project answers `not_found` before its body is read (access.py `gate`); an
+  // agent's call is `not_found` too, since only a dashboard session of a human reads from outside.
+  // The data is kept in the member shapes and cut on the way out, as the hub cuts them.
+  const OUTSIDE_TOOL = {
+    project: {
+      id: "prj-tool00000001", slug: "tool", owner: { id: "hum-sam", handle: "stranger" }, full_name: "stranger/tool", aliases: [], name: "Tool",
+      state: "build", released_at: null, state_note: "a member's note", state_changed_at: "2026-11-01T09:00:00Z",
+      repository: { url: "https://github.com/stranger/tool", default_branch: "main", forge: "github", probe_via: "instance" },
+      repository_public: false, public_page: "on", public_about: "A tool for tools.",
+      links: { issues: "https://github.com/stranger/tool/issues", wiki: null, discussions: null, chat: "https://chat.example/tool" },
+      memory: { provider: "keep-the-why" }, policy: { preset: "solo", done_authority: "reviewer", badge: "off" }, absence: null,
+      settings: { language: "en", restricted_access: null, release_checklist: ["a member's checklist"] },
+      rules_version: 3, created_at: "2026-10-01T09:00:00Z",
+      logo: { available: false, source: null, etag: null }, banner: { available: false, source: null, etag: null },
+    },
+    members: [
+      // `page_served`: the fixture's stand-in for whether Sam's own page at /sam is served (§16.9),
+      // which decides a stranger's report by handle (outsideReportTarget); never in a view.
+      { id: "hum-sam", kind: "human", handle: "sam", display_name: "Sam", page_served: true, trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [],
+        expert_for: null, expert_sources: [], last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-01T09:00:00Z", placements: [],
+        // §6.2's counts as a member reads them; an outsider gets `members` and `instances` alone.
+        manages: { direct: { members: 2, instances: 1, online: 1, dormant: 0 }, total: { members: 3, instances: 1, online: 1, dormant: 0 } } },
+      { id: "agt-tool-bot", kind: "agent", bridges: [], bridging_for: [], handle: "bot", name: "sam/bot", display_name: "Bot one", owner_id: "hum-sam",
+        owner: { handle: "sam", display_name: "Sam" }, trust: "member", role: "reviewer", reports_to: "hum-sam", areas: ["src/"], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Claude Code", model: "model-one",
+        session: { id: "ses-tool-1", harness: "Claude Code", model: "model-one", started_at: "2026-11-19T07:00:00Z", listening: true, not_listening_since: null },
+        instances: [{ id: "k7mq", label: "k7mq", presence: "online", last_seen_at: "2026-11-19T08:00:00Z", session: { id: "ses-tool-1", listening: true } }],
+        last_seen_at: "2026-11-19T08:00:00Z", presence: "online", paused: null, joined_at: "2026-10-02T09:00:00Z", placements: [],
+        isolated: null, isolation_windows: [{ from_seq: 10, to_seq: 20 }], briefing: "a member's briefing", owner_preferences: false, credentials: { active: 1 } },
+      // The reader's own agent here: the reader is still no member, and reads it as any outsider does
+      // (§2.3). It reports to the isolated agent below, an edge the outsider does not read.
+      { id: "agt-tool-mine", kind: "agent", bridges: [], bridging_for: [], handle: "helper", name: "maintainer/helper", display_name: "Helper", owner_id: "hum-maintainer",
+        owner: { handle: "maintainer", display_name: "Maintainer" }, trust: "member", role: "coder", reports_to: "agt-tool-quiet", cross_owner: true, areas: [], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Codex", model: "model-two", last_seen_at: "2026-11-18T08:00:00Z", presence: "offline", paused: null,
+        joined_at: "2026-10-03T09:00:00Z", placements: [], briefing: null, owner_preferences: true, credentials: { active: 1 } },
+      // An isolated agent: the public page does not name it, so no list an outsider reads has it,
+      // its own route is `not_found` to them, and no member names it in `reports_to` (§2.3).
+      { id: "agt-tool-quiet", kind: "agent", bridges: [], bridging_for: [], handle: "quiet", name: "sam/quiet", display_name: "A quiet agent", owner_id: "hum-sam",
+        owner: { handle: "sam", display_name: "Sam" }, trust: "member", role: "manager", reports_to: "hum-sam", areas: [], capabilities: [],
+        expert_for: null, expert_sources: [], harness: "Codex", model: "model-two", last_seen_at: "2026-11-18T08:00:00Z", presence: "offline", paused: null,
+        joined_at: "2026-10-04T09:00:00Z", placements: [], isolated: { since: "2026-11-18T09:00:00Z", reason: "a member's reason" }, credentials: { active: 1 } },
+    ],
+    // The cards under a moderation hold (§16.8): hidden from an outsider whatever their status.
+    held: ["tsk-t005"],
+    tasks: [
+      { id: "tsk-t001", watching: false, parent: null, related: [], kind: "task", title: "Parse the config file", body: "Read `tool.toml`; ask @bot.", mentions: [],
+        label: "feature", status: "open", area: "src/", created_by: "hum-sam", assigned_to: "agt-tool-bot", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, notes: { open: 1, total: 1 },
+        created_at: "2026-11-10T09:00:00Z", updated_at: "2026-11-18T09:00:00Z", closed_at: null },
+      { id: "tsk-t002", watching: false, parent: null, related: ["tsk-t005"], kind: "task", title: "Write the docs", body: "", mentions: [],
+        label: "chore", status: "in_progress", area: "docs/", created_by: "hum-sam", assigned_to: "hum-sam",
+        claim: { holder: "hum-sam", session_id: null, since: "2026-11-18T10:00:00Z", lease_until: "2026-11-30T10:00:00Z", expired: false },
+        checkpoint: null, depends_on: ["tsk-t001"], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-11T09:00:00Z", updated_at: "2026-11-18T10:00:00Z", closed_at: null },
+      { id: "tsk-t003", watching: false, parent: null, related: [], kind: "task", title: "Set up the repository", body: "", mentions: [],
+        label: "chore", status: "done", area: "/", created_by: "hum-sam", assigned_to: "hum-sam", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-01T09:00:00Z", updated_at: "2026-11-17T09:00:00Z", closed_at: "2026-11-17T09:00:00Z" },
+      // Not done and labelled security: in no list an outsider reads, `not_found` on its own routes (§2.3).
+      { id: "tsk-t004", watching: false, parent: null, related: [], kind: "task", title: "A hidden security fix", body: "the hole, in detail", mentions: [],
+        label: "Security", status: "in_progress", area: "src/", created_by: "hum-sam", assigned_to: "agt-tool-bot",
+        claim: { holder: "agt-tool-bot", session_id: "ses-tool-1", since: "2026-11-18T11:00:00Z", lease_until: "2026-11-19T11:00:00Z", expired: false },
+        checkpoint: null, depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-18T11:00:00Z", updated_at: "2026-11-18T11:00:00Z", closed_at: null },
+      // Done, under a moderation hold (`held` above): hidden from an outsider as the security card is.
+      { id: "tsk-t005", watching: false, parent: null, related: [], kind: "task", title: "A held card", body: "text under review", mentions: [],
+        label: "chore", status: "done", area: "/", created_by: "hum-sam", assigned_to: "hum-sam", claim: null, checkpoint: null, depends_on: [], ships_with: [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: "2026-11-02T09:00:00Z", updated_at: "2026-11-16T09:00:00Z", closed_at: "2026-11-16T09:00:00Z" },
+    ],
+    notes: { "tsk-t001": [{ id: "nte-t001", task_id: "tsk-t001", author: { member_id: "hum-sam", handle: "sam", kind: "human" }, body: "The format is TOML.", mentions: [],
+      state: "open", resolution: null, edited: null, version: 1, created_at: "2026-11-18T09:00:00Z" }] },
+    history: { "tsk-t001": [{ id: "hst-t001", at: "2026-11-10T09:00:00Z", actor: { member_id: "hum-sam", handle: "sam", kind: "human", session_id: null },
+      field: "created", before: null, after: { title: "Parse the config file" }, diff: null }] },
+    // An outsider's agent (§6.1 "What the project allows", "The outsiders' opt-in"; §3.1 "An
+    // outsider's agent"), as H1 (tsk-enfbkj0xqq5m) contracts it: the policy's `agent_owners` as
+    // stored (`null` unset: no opt-in, so `members_only`, as the hub answers while its
+    // outsiders.JOINS_ON is off), `outside_roles`, `member_agents_max`, this outsider's own quota
+    // (`agents_max`, null for none), whether the admins blocked them, and the joins they created.
+    // The smoke test sets the states through `fixtureOutsideJoins`.
+    joins: { agent_owners: null, outside_roles: ["coder", "writer"], member_agents_max: 3, agents_max: null, blocked: false, items: [] },
+  };
+  // A join's answer (§3.1): the line is made up here and shown once, as the hub would.
+  // §3.2 "The install line": only the join, or installs when missing and joins, per platform.
+  function joinAnswer(id, agentId, project, expires) {
+    const url = "https://maity.example/j/FIXTURE-" + id;
+    return {
+      id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
+        join: "maity join " + url + " --code FIXT-URE0-0000",
+        posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
+        windows: "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
+      },
+      agent_id: agentId, project, expires_at: expires,
+    };
+  }
+  // §3.1: the caller's distinct agent profiles in the project, a membership's or an open first join's.
+  function outsideAgentCount() {
+    const mine = new Set(OUTSIDE_TOOL.members.filter((x) => x.kind === "agent" && x.owner_id === me().member.id).map((x) => x.id));
+    OUTSIDE_TOOL.joins.items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && !j.new_instance && !j.replaces
+      && Date.parse(j.expires_at) > Date.now()).forEach((j) => mine.add(j.agent_id));
+    return mine.size;
+  }
+  const outsideQuota = () => (OUTSIDE_TOOL.joins.agents_max === null ? OUTSIDE_TOOL.joins.member_agents_max : OUTSIDE_TOOL.joins.agents_max);
+  // GET …/contribution (§6.1): the reasons in the contract's order, `member` never for an outsider;
+  // `open_cards` 0 while the interim of §6.5 holds. The six keys H1 builds (outsiders.py
+  // `contribution`); `looking_for_coders`, `outside_claims` and `sponsor_url` are not built yet
+  // there. `blocked` is the contract's reason, which H1 does not give yet either.
+  function outsideContribution() {
+    const j = OUTSIDE_TOOL.joins;
+    const reason = j.agent_owners !== "anyone" ? "members_only" : j.blocked ? "blocked" : outsideAgentCount() >= outsideQuota() ? "limit" : null;
+    return { agent_owners: j.agent_owners, outside_roles: j.outside_roles.slice(), open_cards: 0, agents_max: outsideQuota(), can_join: reason === null, reason };
+  }
+  // The joins routes for an agent of the outsider's own (§3.1 "An outsider's agent"): `not_found`
+  // without the opt-in; otherwise the limits of "Bringing your own agent", trust `outside` the only
+  // value, a role from `outside_roles`, reports_to the caller or omitted (stored as nobody), no
+  // areas or capabilities, the quota,
+  // and `blocked`. GET and DELETE see the caller's own joins only.
+  function outsideJoins(method, rest, body, path) {
+    const j = OUTSIDE_TOOL.joins;
+    if (j.agent_owners !== "anyone") fail(404, "not_found", "Not found", path);
+    const own = j.items.filter((x) => x.created_by === me().member.id);
+    if (method === "GET" && rest === "/joins") return { items: own, next_cursor: null };
+    if (method === "DELETE" && rest !== "/joins") {
+      const x = own.find((y) => y.id === decodeURIComponent(rest.slice("/joins/".length)));
+      if (!x) fail(404, "not_found", "Not found", path);
+      if (!x.revoked_at) {
+        const from = x.used_at ? "used" : Date.parse(x.expires_at) <= Date.now() ? "expired" : null;
+        if (from) fail(409, "invalid_transition", "the join is " + from, path, { from, to: "revoked" });
+        x.revoked_at = nowIso();
+      }
+      return x;
+    }
+    if (method !== "POST" || rest !== "/joins") fail(404, "not_found", "Not found", path);
+    if (j.blocked) fail(403, "forbidden", "the project's admins blocked you from adding agents", path, { reason: "blocked" });
+    const limit = (field) => fail(403, "forbidden", "not within the limits of an outsider's agent", path, { reason: "member_join_limit", field });
+    const profiles = fixtures()["agents.json"].items;
+    if (body.agent && body.agent.id && !profiles.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
+    // H1's `_outside_values`: trust, boss, areas, capabilities; then an agent already here adds
+    // an instance to a membership with trust `outside` only, keeping its role; then the role.
+    if (body.trust !== undefined && body.trust !== "outside") limit("trust");
+    if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
+    if ((body.areas || []).length) limit("areas");
+    if ((body.capabilities || []).length) limit("capabilities");
+    const member = body.agent && body.agent.id ? OUTSIDE_TOOL.members.find((x) => x.id === body.agent.id && !x.removed_at) : null;
+    if (member && member.trust !== "outside") limit("agent");
+    // H1 at 39497bfb: an instance re-checks the membership's role against `outside_roles` now.
+    if (!j.outside_roles.includes(member ? member.role : body.role || "coder")) limit("role");
+    // `_check_instance`: a member's join says which instance it adds, a first join neither.
+    if (!member && (body.new_instance != null || body.replaces != null)) {
+      fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
+    }
+    if (member) {
+      const active = (member.instances || []).filter((i) => !i.revoked_at);
+      if (body.new_instance && body.replaces != null) fail(400, "invalid", "new_instance or replaces, not both", path, { fields: { instance: "one_of" } });
+      if (body.replaces != null) {
+        if (!active.some((i) => i.id === body.replaces)) fail(400, "invalid", "replaces names no active instance", path, { fields: { replaces: "not_an_instance" } });
+      } else if (!body.new_instance) {
+        fail(400, "invalid", "the agent is a member: new_instance or replaces", path, { fields: { instance: "required" } });
+      } else if (active.length >= ((member.team && member.team.max_instances) || 1)) {
+        fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
+      }
+    }
+    // H1's `_check_handover` for an outsider: a card it reads only, one it does not read answered as
+    // a missing one; a message (an integer) is `card_only` whatever its seq.
+    let handover = null;
+    if (body.handover != null) {
+      if (typeof body.handover === "boolean") fail(400, "invalid", "a card id or the seq of a message", path, { fields: { handover: "not_found" } });
+      if (typeof body.handover === "number") fail(400, "invalid", "an outsider's join hands over a card", path, { fields: { handover: "card_only" } });
+      if (!outsideCards().some((c) => c.id === body.handover)) fail(400, "invalid", "no such card in this project", path, { fields: { handover: "not_found" } });
+      handover = { kind: "task", id: body.handover };
+    }
+    // The count of `outsideAgentCount`: a profile held by an open first join takes no new slot.
+    const held = body.agent && body.agent.id && j.items.some((x) => x.agent_id === body.agent.id && x.created_by === me().member.id && !x.used_at && !x.revoked_at
+      && !x.burned && !x.new_instance && !x.replaces && Date.parse(x.expires_at) > Date.now());
+    if (!member && !held && outsideAgentCount() >= outsideQuota()) {
+      fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max: outsideQuota() });
+    }
+    let agentId = body.agent && body.agent.id;
+    if (!agentId) {
+      if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
+      if (profiles.some((a) => a.owner_id === me().member.id && a.handle === body.agent.handle && !a.deleted_at)) fail(400, "invalid", "the handle is taken", path, { fields: { handle: "taken" } });
+      agentId = localId("agt");
+      profiles.push({ id: agentId, handle: body.agent.handle, name: me().member.handle + "/" + body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
+        owner_id: me().member.id, git_identity: null, memberships: [], created_at: nowIso() });
+    }
+    const id = localId("join");
+    const expires = new Date(Date.now() + Math.min(body.ttl_seconds || 900, 3600) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    // reports_to: the body may name the caller, but the owner is no member, so the agent reports
+    // to nobody here (§6.2; H1's routes/joins.py `_outside_values`).
+    j.items.unshift({ id, agent_id: agentId, trust: "outside", role: member ? member.role : body.role || "coder", reports_to: null, created_by: me().member.id,
+      created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
+      new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null, takes_over: null, handover });
+    return joinAnswer(id, agentId, OUTSIDE_TOOL.project.full_name, expires);
+  }
+  // routes/projects.py `OUTSIDE_PROJECT_KEYS`: the project view's keys an outsider reads, `settings`
+  // with `language` alone and `links` as the public page shows them (one into the repository's own
+  // path only while the repository was found public, `null` otherwise).
+  const OUTSIDE_PROJECT_KEYS = ["id", "owner", "full_name", "slug", "name", "state", "released_at", "state_changed_at", "public_page", "public_about",
+    "links", "logo", "banner", "settings", "created_at"];
+  function outsideProjectView() {
+    const p = OUTSIDE_TOOL.project;
+    const view = Object.fromEntries(OUTSIDE_PROJECT_KEYS.map((k) => [k, p[k]]));
+    const inRepo = (url) => !!url && url.startsWith(p.repository.url + "/");
+    view.links = Object.fromEntries(Object.entries(p.links).map(([k, v]) => [k, inRepo(v) && !p.repository_public ? null : v]));
+    view.settings = { language: p.settings.language };
+    return view;
+  }
+  // routes/members.py `OUTSIDE_MEMBER_KEYS`: the member view's keys an outsider reads, an allow-list
+  // (an agent of the reader's own too), `manages` with `members` and `instances` alone
+  // (`OUTSIDE_COUNT_KEYS`), and `avatar_url` the picture the public page shows
+  // (`outside_pictures`), never `/avatars/…`: `null` here, as for a person whose public profile is off.
+  const OUTSIDE_MEMBER_KEYS = ["id", "kind", "handle", "name", "display_name", "avatar_url", "deleted", "owner_id", "trust", "role", "role_base",
+    "reports_to", "cross_owner", "areas", "capabilities", "expert_for", "expert_sources", "org_owner", "website", "social", "joined_at", "manages"];
+  // `outside_shown`: the members the public page names, so never an isolated one (nor one under a
+  // moderation hold or with a suspended account, which this fixture has none of).
+  const outsideNamed = () => OUTSIDE_TOOL.members.filter((m) => !m.isolated);
+  function outsideMemberView(m) {
+    const named = new Set(outsideNamed().map((x) => x.id));
+    const shown = Object.fromEntries(OUTSIDE_MEMBER_KEYS.filter((k) => k in m).map((k) => [k, m[k]]));
+    shown.avatar_url = null;
+    // `manages` counted among the members the outsider reads (`instance_counts.for_member(...,
+    // among=named)`), cut to `members` and `instances` (`OUTSIDE_COUNT_KEYS`).
+    if (shown.manages && typeof shown.manages === "object") {
+      const below = (id) => outsideNamed().filter((x) => x.reports_to === id);
+      const direct = below(m.id);
+      const total = [];
+      const walk = (id) => below(id).forEach((x) => { if (!total.includes(x)) { total.push(x); walk(x.id); } });
+      walk(m.id);
+      const count = (list) => ({ members: list.length, instances: list.reduce((n, x) => n + (x.instances || []).length, 0) });
+      shown.manages = { direct: count(direct), total: count(total) };
+    }
+    // No edge to a member the outsider does not read.
+    if (m.reports_to && !named.has(m.reports_to)) { shown.reports_to = null; shown.cross_owner = false; }
+    return shown;
+  }
+  // public_cards.py `outside_shown`: a card labelled `security` (in any case) that is not done, and a
+  // card under a moderation hold whatever its status, are hidden from an outsider, and their ids
+  // from every other card's lists (`outside_views`).
+  const outsideShown = (c) => !(String(c.label || "").toLowerCase() === "security" && c.status !== "done") && !OUTSIDE_TOOL.held.includes(c.id);
+  // `outside_views`: the edges without a hidden card, `parent` null when it is one, `children`
+  // counted again from the children the outsider reads, and a release's pull requests, groups and
+  // blockers without the hidden cards (`_release_without`).
+  const CLOSED = ["done", "cancelled"];
+  function outsideCards() {
+    const hidden = new Set(OUTSIDE_TOOL.tasks.filter((c) => !outsideShown(c)).map((c) => c.id));
+    const keep = (ids) => (ids || []).filter((id) => !hidden.has(id));
+    const seen = OUTSIDE_TOOL.tasks.filter(outsideShown);
+    const children = (id) => {
+      const under = seen.filter((x) => x.parent === id);
+      return { open: under.filter((x) => !CLOSED.includes(x.status)).length, total: under.length };
+    };
+    // public_cards.py `_release_without`: a pull request only a hidden card reported (`task_id`) goes
+    // with its blockers (`pr`); a hidden card leaves the groups and the `tasks` of a blocker, and a
+    // group or a `group_incomplete` blocker left with fewer than two cards goes; a blocker naming a
+    // hidden `task` goes. `ready` stays as the hub computed it.
+    const release = (r) => {
+      if (!r || typeof r !== "object") return r;
+      const prs = r.pull_requests || [];
+      const dropped = new Set(prs.filter((p) => p.task_id && hidden.has(p.task_id)).map((p) => p.number));
+      const readiness = r.readiness || {};
+      const blocking = [];
+      (readiness.blocking || []).forEach((item) => {
+        if ((item.task && hidden.has(item.task)) || (item.pr !== undefined && dropped.has(item.pr))) return;
+        if ("tasks" in item) {
+          const rest = keep(item.tasks);
+          if (rest.length < 2) return;
+          blocking.push(Object.assign({}, item, { tasks: rest }));
+        } else blocking.push(item);
+      });
+      return Object.assign({}, r, {
+        pull_requests: prs.filter((p) => !dropped.has(p.number)),
+        groups: (r.groups || []).map(keep).filter((g) => g.length > 1),
+        readiness: Object.assign({}, readiness, { blocking }),
+      });
+    };
+    return seen.map((c) => Object.assign({}, c, { depends_on: keep(c.depends_on), related: keep(c.related),
+      ships_with: keep(c.ships_with), parent: hidden.has(c.parent) ? null : c.parent, children: children(c.id), release: release(c.release) }));
+  }
+  // POST /reports on what the fixture caller reads only from outside (`stranger/tool`, its
+  // members and cards), as hub/reports.py answers a stranger (§16.8 "The id a stranger sends"):
+  // an account or member id is `not_found` (no project shared), an agent by its global name
+  // `<owner>/<handle>` while a served page shows it, a person by their handle while their own page
+  // is served (`page_served` here; Sam's is, Helper's owner's is the caller), a card by an id the
+  // outsider reads with the project's full name. Any other target is left to the checks below.
+  function outsideReportTarget(t, path) {
+    const gone = () => fail(404, "not_found", "Not found", path);
+    const named = outsideNamed();
+    const hidden = OUTSIDE_TOOL.members.filter((x) => !named.includes(x));
+    if (t.type === "profile") {
+      // By id only one's own agent resolves (`_reads_member`: its owner reads it).
+      if (OUTSIDE_TOOL.members.some((x) => x.id === t.id && x.owner_id !== me().member.id)) gone();
+      if (hidden.some((x) => x.name === t.id || x.handle === t.id)) gone();
+      const human = named.find((x) => x.kind === "human" && x.handle === t.id);
+      if (human && !human.page_served) gone();
+    }
+    if (t.type === "card" && t.project === OUTSIDE_TOOL.project.full_name && !outsideCards().some((c) => c.id === t.id)) gone();
+  }
+  const outsideFull = (owner, slug) => {
+    try { return OUTSIDE_TOOL.project.full_name === decodeURIComponent(owner) + "/" + decodeURIComponent(slug); } catch (err) { return false; }
+  };
+  // The answer to a call under /projects/stranger/tool, or undefined for any other path.
+  function outsideRead(method, asked, query, fullPath, body) {
+    const m = /^\/projects\/([^/]+)\/([^/]+)(\/.*)?$/.exec(asked);
+    if (!m || !outsideFull(m[1], m[2])) return undefined;
+    const gone = () => fail(404, "not_found", "Not found", fullPath);
+    if (me().member.kind !== "human") gone();
+    const rest = m[3] || "";
+    // The joins routes and what the project allows (§3.1, §6.1), the H1 routes (above).
+    if (rest === "/joins" || /^\/joins\/[^/]+$/.test(rest)) return outsideJoins(method, rest, body || {}, fullPath);
+    if (method !== "GET") gone();
+    if (rest === "/contribution") return outsideContribution();
+    // GET /projects/{owner}/{slug}
+    if (rest === "") return outsideProjectView();
+    // GET …/members and …/members/{member_id}
+    if (rest === "/members") return { items: outsideNamed().map(outsideMemberView), next_cursor: null };
+    let r = /^\/members\/([^/]+)$/.exec(rest);
+    if (r) { const x = outsideNamed().find((y) => y.id === decodeURIComponent(r[1])); return x ? outsideMemberView(x) : gone(); }
+    // GET …/tasks, the list and the board; GET …/tasks/{id}, …/history and …/notes
+    if (rest === "/tasks") {
+      // routes/tasks.py `list_tasks` for an outsider: the same filters as a member's, among the
+      // cards they read; a `parent` naming a hidden card lists nothing.
+      const keep = statusFilter(query, "all");
+      const q = query.get("q");
+      const norm = (value) => String(value || "").normalize("NFKC").toLowerCase();
+      const after = query.get("closed_after");
+      if (after !== null && (Number.isNaN(Date.parse(after)) || !/(Z|[+-]\d\d:?\d\d)$/.test(after))) {
+        fail(400, "invalid", "the request does not validate", fullPath, { fields: { closed_after: "needs_a_zone" } });
+      }
+      const all = outsideCards();
+      const parent = query.get("parent");
+      const items = all.filter(keep)
+        .filter((c) => ["kind", "label", "needs", "area"].every((k) => query.get(k) === null || c[k] === query.get(k)))
+        .filter((c) => parent === null || (c.parent === parent && all.some((x) => x.id === parent)))
+        .filter((c) => !query.get("holder") || (c.claim && c.claim.holder === query.get("holder")))
+        .filter((c) => !query.get("assigned_to") || c.assigned_to === query.get("assigned_to"))
+        .filter((c) => after === null || !c.closed_at || Date.parse(c.closed_at) > Date.parse(after))
+        .filter((c) => q === null || ["id", "title", "body"].some((k) => norm(c[k]).includes(norm(q))));
+      return { items, next_cursor: null };
+    }
+    r = /^\/tasks\/([^/]+)(\/history|\/notes)?$/.exec(rest);
+    if (r) {
+      const id = decodeURIComponent(r[1]);
+      const card = outsideCards().find((c) => c.id === id);
+      if (!card) gone();
+      if (r[2] === "/history") return { items: OUTSIDE_TOOL.history[id] || [], next_cursor: null };
+      if (r[2] === "/notes") {
+        const states = (query.get("state") || "open").split(",");
+        const all = OUTSIDE_TOOL.notes[id] || [];
+        return { items: states.includes("all") ? all : all.filter((n) => states.includes(n.state)), next_cursor: null };
+      }
+      return card;
+    }
+    // GET …/logo and …/banner: the project has neither here, as the hub answers then.
+    if (rest === "/logo" || rest === "/banner") gone();
+    // The Why view's reads (§2.3, #2078: access.py `PUBLIC_REPOSITORY_READS`): open to an outsider
+    // only while the hub last found the repository public (and the forge still says so, in the
+    // operator's own namespaces), `not_found` before the query is read otherwise. The smoke test
+    // turns `repository_public` on through `fixtureOutside`. The answer is the member shape: the
+    // export is the published state.json the public Why reads too (§11.5, §16.9).
+    const why = rest === "/keep-the-why" || rest.startsWith("/keep-the-why/");
+    if (why && OUTSIDE_TOOL.project.repository_public !== true) gone();
+    if (rest === "/keep-the-why/export") {
+      if (query.get("canonical") || query.get("root")) fail(404, "not_found", "not a repository of this project's family", fullPath, { reason: "not_in_family" });
+      return Object.assign(JSON.parse(JSON.stringify(file("maity", "keep-the-why-export.json", fullPath))),
+        { canonical: "https://github.com/stranger/tool", url: "https://stranger.example/keep-the-why-dashboard/state.json" });
+    }
+    if (rest === "/keep-the-why/bodies") fail(404, "not_found", "this export carries its bodies inline", fullPath, { reason: "no_bodies_file" });
+    // GET …/keep-the-why (§11.3): the root's summary, in the member shape, as for a member.
+    if (rest === "/keep-the-why") {
+      const answer = JSON.parse(JSON.stringify(file("maity", "keep-the-why.json", fullPath)));
+      answer.fresh = query.get("max_age") === "0" || answer.fresh;
+      return answer;
+    }
+    // Every other route of the project: `not_found`, before its body or query is read.
+    return gone();
+  }
+
   // GET /me as the hub sends it; PATCH /me answers the same (§5.1).
   function meView() {
     const data = me();
+    // §5.1 "Stars": a human's, as the read shows them.
+    if (data.member.kind === "human") data.member.starred = starredShown(starredStored());
     data.projects.forEach((p) => {
       p.open_requests = openFor(p.slug).length;
       p.state = project(p.slug, "").state;
@@ -1722,6 +2151,143 @@ window.Maity = window.Maity || {};
     if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(trustIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
+  // §9.5 cross-project group chats. fixtures/cross-chats.json, keyed by id.
+  // Messages are rows of the chat, not project events. The owner starts in the
+  // chat; leaving closes it, and they keep reading it.
+  const CROSS_CAP = 12;
+  const CROSS_OPEN = 200;
+  function crossChats() {
+    const all = fixtures();
+    if (!all["cross-chats.json"]) all["cross-chats.json"] = {};
+    return all["cross-chats.json"];
+  }
+  function crossChatOf(id, path) {
+    const c = crossChats()[id];
+    if (!c) fail(404, "not_found", "Not found", path);
+    return c;
+  }
+  function crossProfile(id) {
+    return (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === id) || null;
+  }
+  function crossPerson(id) {
+    if (id === me().member.id) return { member_id: id, kind: "human", handle: me().member.handle, owner_id: null, projects: null };
+    const agent = crossProfile(id);
+    if (!agent) return null;
+    return { member_id: id, kind: "agent", handle: agent.handle, name: agent.name, owner_id: agent.owner_id,
+      projects: (agent.memberships || []).map((m) => m.project).slice().sort() };
+  }
+  function crossAccess(c) {
+    const id = me().member.id;
+    if (c.participants.some((p) => p.member_id === id)) return "participant";
+    if (c.owner_id === id && c.closed_at) return "owner";
+    return null;
+  }
+  function crossReadable(c, path) {
+    const access = crossAccess(c);
+    if (!access) fail(404, "not_found", "Not found", path);
+    return access;
+  }
+  function crossOwnerOnly(path) {
+    if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+    return me().member.id;
+  }
+  function crossRequireOwner(c, path) {
+    if (crossOwnerOnly(path) !== c.owner_id) fail(404, "not_found", "Not found", path);
+  }
+  function crossRefuseClosed(c, path) {
+    if (c.closed_at) fail(409, "conversation_closed", "the chat is closed", path, { closed_reason: c.closed_reason });
+  }
+  // The contract's check order: the owner's own id is dropped, then agents_only,
+  // not_found, deleted, no_membership, the counts.
+  function crossChecked(raw, path, minimum, room) {
+    const owner = me().member.id;
+    const ids = [];
+    (Array.isArray(raw) ? raw : []).forEach((id) => { if (id !== owner && !ids.includes(id)) ids.push(id); });
+    if (ids.some((id) => /^hum-/.test(id))) fail(400, "invalid", "agents only", path, { fields: { participants: "agents_only" } });
+    ids.forEach((id) => {
+      const agent = crossProfile(id);
+      if (!agent || agent.owner_id !== owner) fail(404, "not_found", "Not found", path);
+    });
+    ids.forEach((id) => { if (crossProfile(id).deleted_at) fail(400, "invalid", "deleted", path, { fields: { participants: "deleted" } }); });
+    ids.forEach((id) => {
+      if (!(crossProfile(id).memberships || []).length) fail(400, "invalid", "no membership", path, { fields: { participants: "no_membership" }, member_id: id });
+    });
+    if (minimum && ids.length < 2) fail(400, "invalid", "too few", path, { fields: { participants: "too_few" } });
+    if (ids.length > room) fail(400, "invalid", "too many", path, { fields: { participants: "too_many" } });
+    return ids;
+  }
+  // Some project the owner can create a group chat in already holds every agent.
+  function crossShares(agentIds) {
+    return me().projects.filter((p) => p.trust !== "guest" && p.state !== "archived").some((p) => agentIds.every((id) => {
+      const agent = crossProfile(id);
+      return agent && (agent.memberships || []).some((m) => m.project === p.full_name);
+    }));
+  }
+  function crossView(c, path) {
+    const access = crossReadable(c, path);
+    return {
+      id: c.id, kind: "cross", title: c.title || null, created_by: c.created_by, created_at: c.created_at,
+      participants: c.participants.map((stay) => {
+        const person = crossPerson(stay.member_id);
+        if (!person) return null;
+        const shown = { member_id: person.member_id, kind: person.kind, handle: person.handle, owner_id: person.owner_id, joined_at: stay.joined_at };
+        if (person.kind === "agent") { shown.name = person.name; shown.projects = person.projects || []; }
+        return shown;
+      }).filter(Boolean),
+      observers: [], closed_at: c.closed_at || null, closed_reason: c.closed_reason || null, access,
+    };
+  }
+  function crossMessage(c, row) {
+    const show = me().member.id === c.owner_id;
+    const mark = row.redacted && row.redaction ? Object.assign({}, row.redaction) : null;
+    if (mark && !show) mark.reason = null;
+    return {
+      id: row.id, seq: row.seq, conversation_id: c.id, from: row.from, to: c.id,
+      body: row.redacted ? null : row.body, sent_at: row.sent_at,
+      mentions: row.redacted ? [] : (row.mentions || []),
+      from_instance: row.from_instance || null, to_instance: null,
+      redacted: !!row.redacted, redaction: mark,
+    };
+  }
+  function crossListItem(c) {
+    if (!crossAccess(c)) return null;
+    const id = me().member.id;
+    const stay = c.participants.find((p) => p.member_id === id);
+    const after = stay ? stay.joined_seq || 0 : 0;
+    const win = c.items.filter((x) => x.seq > after);
+    const last = win.length ? win[win.length - 1] : null;
+    const readTo = (c.read && c.read[id]) || 0;
+    const theirs = win.filter((x) => x.from !== id && x.seq > readTo);
+    return {
+      id: c.id, kind: "cross", title: c.title || null, created_at: c.created_at,
+      participants: c.participants.map((p) => {
+        const person = crossPerson(p.member_id);
+        if (!person) return null;
+        const shown = { member_id: person.member_id, kind: person.kind, handle: person.handle };
+        if (person.kind === "agent") shown.name = person.name;
+        return shown;
+      }).filter(Boolean),
+      observers: [], access: crossAccess(c), closed_at: c.closed_at || null,
+      last_message_at: last ? last.sent_at : null,
+      unread: theirs.length,
+      mentions_unread: theirs.filter((x) => !x.redacted && (x.mentions || []).some((m) => m.member_id === id)).length,
+      last_message: last ? { seq: last.seq, from: last.from, body: last.redacted ? null : [...(last.body || "")].slice(0, 200).join(""), sent_at: last.sent_at, redacted: !!last.redacted } : null,
+    };
+  }
+  function crossMentions(body, people, author) {
+    const out = [];
+    const seen = {};
+    const re = /(?:^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])/g;
+    let found;
+    while ((found = re.exec(body))) {
+      const handle = found[1];
+      const person = people.find((p) => p.handle === handle && p.member_id !== author);
+      if (!person || seen[person.member_id]) continue;
+      seen[person.member_id] = true;
+      out.push({ member_id: person.member_id, handle, field: "body", offset: found.index + found[0].lastIndexOf("@"), length: handle.length + 1 });
+    }
+    return out;
+  }
   // §18.2 counts, overall and per project. Items from events carry seq,
   // those from account records record "acr-<n>"; a position is "a.b".
   // §18.1 since 2026-10-26: only what the human must react to.
@@ -2084,7 +2650,7 @@ window.Maity = window.Maity || {};
   // a project"): the fixture hub has no store for every call, only this one, so a
   // retry of leaving replays the stored 200 after the caller is no member.
   const memberDeleteReplay = new Map();
-  const OUTSIDE_STAY = ["coder", "designer", "writer", "blue-team", "expert"];
+  const OUTSIDE_STAY = ["coder", "designer", "writer", "expert"];  // never blue-team (B.1 of §6.30)
   // `members` or `anyone`, as the hub reads an unset value (§6.1): `anyone` while the
   // page is served, `members` otherwise. The fixture has no moderation hold to add.
   function ownersMode(p) {
@@ -2159,6 +2725,14 @@ window.Maity = window.Maity || {};
       list.items.forEach((x) => {
         if (x.kind !== "agent" || x.owner_id !== target.id || x.isolated) return;
         if (mode === "anyone" && outsideStays(x, p)) return;
+        // blue-team is closed to an outside owner's agent: it continues as a coder where
+        // coder is listed, as the hub does (§6.2), and is isolated otherwise.
+        if (mode === "anyone" && (x.role_base || x.role) === "blue-team" && (x.trust === "member" || x.trust === "guest")
+          && ((p.policy && p.policy.outside_roles) || ["coder"]).includes("coder")) {
+          x.role = "coder";
+          x.role_base = "coder";
+          return;
+        }
         x.isolated = { reason: "The agent's owner is no longer a member of this project.", since: at, by: "hub" };
       });
       const data = me();
@@ -2669,12 +3243,15 @@ window.Maity = window.Maity || {};
         if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
         mm.start_tabs = list ? list.slice() : null;
       }
+      // §5.1 "Stars", as hub/stars.py `checked`: always the whole list; a hidden entry (a project
+      // not public now) keeps its place, a membership is `member`, an unknown id `not_public`.
+      if ("starred" in body) starredIds = starredChecked(body.starred, path);
       // §5.1 "Experiment notice": only `true`; the first confirmation's time is kept.
       if ("experiment_notice_understood" in body) {
         if (body.experiment_notice_understood !== true) fail(400, "invalid", "the request does not validate", path, { fields: { experiment_notice_understood: "must_be_true" } });
         if (!mm.experiment_notice_understood_at) mm.experiment_notice_understood_at = nowIso();
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "experiment_notice_understood"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "starred", "experiment_notice_understood"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -3027,6 +3604,7 @@ window.Maity = window.Maity || {};
       if (["message", "card"].includes(t.type) && typeof t.project !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { "target.project": "missing" } });
       if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
       if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
+      outsideReportTarget(t, path);
       const key = t.type + " " + t.id + " " + (t.project || "");
       if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "this target was reported 3 times already", path, {});
       const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };
@@ -4034,7 +4612,7 @@ window.Maity = window.Maity || {};
         if ("agent_owners" in body.policy && !["members", "anyone"].includes(body.policy.agent_owners)) {
           fail(400, "invalid", "unknown agent_owners value", path, { fields: { "policy.agent_owners": "unknown" } });
         }
-        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
+        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "expert"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
         }
         if ("max_placements" in body.policy && !(Number.isInteger(body.policy.max_placements) && body.policy.max_placements >= 0 && body.policy.max_placements <= 1000)) {
@@ -5129,9 +5707,47 @@ window.Maity = window.Maity || {};
       if (!card) fail(404, "not_found", "no such card", path);
       if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assignee)) fail(400, "invalid", "not a member", path, { fields: { assignee: "not_a_member" } });
       if (card.claim && !card.claim.expired && card.claim.holder !== body.assignee) fail(409, "lease_active", "the claim's lease is live", path);
+      // §6.5 "Until the claim request is built": an expired claim moves to an agent with trust
+      // `outside` only by a human with tasks:admin.
+      const to = file(m[1], "members.json", path).items.find((x) => x.id === body.assignee);
+      if (card.claim && card.claim.expired && to.trust === "outside" && me().member.kind !== "human") {
+        fail(403, "forbidden", "only a human hands a card to an outsider's agent", path, { reason: "humans_only" });
+      }
       card.assigned_to = body.assignee;
       if (card.claim && card.claim.expired) card.claim = Object.assign({}, card.claim, { holder: body.assignee, expired: false });
       card.updated_at = nowIso();
+      return card;
+    }],
+    // §6.5: a claim, the caller's own or an admin's with `holder` naming a member (by its id, or an
+    // instance as `<id>#<instance>`), with the refusals of "Until the claim request is built" where
+    // that section puts them: an agent with trust `outside` claims nothing itself
+    // (`not_open_to_outsiders`); `holder` needs tasks:admin (`details.scope`), resolves to a member
+    // that is no guest (`invalid`), and gives an outsider's agent a card only from a human
+    // (`humans_only`); then the card's state.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/claim$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      // `holder` naming the caller itself (or one of its instances) is its own claim.
+      if (body.holder != null && String(body.holder).split("#")[0] === me().member.id) body = Object.assign({}, body, { holder: null });
+      if (body.holder == null && trustIn(m[1]) === "outside") {
+        if (!card) fail(404, "not_found", "no such card", path);
+        fail(403, "forbidden", "an outsider's agent takes no card itself for now", path, { reason: "not_open_to_outsiders" });
+      }
+      if (body.holder != null && !tasksAdmin(m[1])) fail(403, "forbidden", "claiming for another needs tasks:admin", path, { scope: "tasks:admin" });
+      if (!card) fail(404, "not_found", "no such card", path);
+      // tasks.py `_require_open_project`: archived is closed, plan and review need a reason.
+      const state = project(m[1], path).state;
+      if (state === "archived") fail(409, "project_closed", "the project is " + state, path);
+      if (["plan", "review"].includes(state) && !body.reason) fail(400, "invalid", "the project is in " + state + ": say why", path, { fields: { reason: "required" } });
+      const [holderId, instance] = String(body.holder == null ? me().member.id : body.holder).split("#");
+      const holder = file(m[1], "members.json", path).items.find((x) => x.id === holderId && !x.removed_at);
+      if (!holder || holder.trust === "guest") fail(400, "invalid", "the holder is no member who may hold a card", path, { fields: { holder: holder ? "guest" : "not_a_member" } });
+      if (holder.trust === "outside" && me().member.kind !== "human") fail(403, "forbidden", "only a human hands a card to an outsider's agent", path, { reason: "humans_only" });
+      if (card.claim) fail(409, "already_claimed", "the card is held", path, { holder: card.claim.holder, instance: card.claim.instance || null, lease_until: card.claim.lease_until, expired: !!card.claim.expired });
+      if (card.status !== "open") fail(409, "invalid_transition", "only an open card is claimed", path, { from: card.status, to: "in_progress" });
+      const at = nowIso();
+      card.claim = { holder: holderId, instance: instance || null, session_id: null, since: at, lease_until: new Date(Date.now() + 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"), expired: false };
+      card.status = "in_progress";
+      card.updated_at = at;
       return card;
     }],
     // §6.4 card order: the card placed within its status column, under the
@@ -5579,7 +6195,7 @@ window.Maity = window.Maity || {};
       if (Object.keys(fields).length) fail(400, "invalid", "invalid roles", path, { fields });
       const outside = (project(m[1], path).policy || {}).outside_roles || ["coder"];
       raw.forEach((r, i) => {
-        if (outside.includes(r.name) && !["coder", "designer", "writer", "blue-team", "expert"].includes(r.base)) {
+        if (outside.includes(r.name) && !["coder", "designer", "writer", "expert"].includes(r.base)) {
           fail(400, "invalid", "the role " + r.name + " is in policy.outside_roles", path, { fields: { ["custom[" + i + "].base"]: "outside_roles" } });
         }
       });
@@ -5697,22 +6313,13 @@ window.Maity = window.Maity || {};
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
-      const url = "https://maity.example/j/FIXTURE-" + id;
       file(m[1], "joins.json", path).items.unshift({
         id, agent_id: agentId, trust: body.trust || "member", role: body.role || "coder", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
         takes_over: body.takes_over || null, handover,
       });
-      // §3.2 "The install line": only the join, or installs when missing and joins, per platform.
-      return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
-          join: "maity join " + url + " --code FIXT-URE0-0000",
-          posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
-          windows: "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
-        },
-        agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
-      };
+      return joinAnswer(id, agentId, fullOf(m[1]), expires);
     }],
     ["DELETE", /^\/projects\/([^/]+)\/joins\/([^/]+)$/, (m, body, path) => {
       const j = file(m[1], "joins.json", path).items.find((x) => x.id === m[2]);
@@ -5849,6 +6456,129 @@ window.Maity = window.Maity || {};
         (c) => bandOf(c) + "\u001f" + c.project.full_name + "\u001f" + c.id, (c, cursor) => acrossAfter(c, cursor, activity)));
       return { items: page.items, next_cursor: page.next_cursor,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
+    }],
+    // §9.5. Not part of GET /me/conversations: this chat has no project.
+    ["GET", /^\/me\/cross-chats$/, () => {
+      const items = Object.values(crossChats()).map(crossListItem).filter(Boolean);
+      items.sort((a, b) => {
+        const at = (c) => c.last_message_at || c.created_at || "";
+        if (at(a) !== at(b)) return at(a) < at(b) ? 1 : -1;
+        return a.id < b.id ? 1 : -1;
+      });
+      return { items, next_cursor: null };
+    }],
+    ["POST", /^\/me\/cross-chats$/, (m, body, path) => {
+      const owner = crossOwnerOnly(path);
+      if (!Array.isArray(body.participants)) fail(400, "invalid", "participants", path, { fields: { participants: "missing" } });
+      const agents = crossChecked(body.participants, path, true, CROSS_CAP - 1);
+      if (crossShares(agents)) fail(400, "invalid", "use a project group chat", path, { fields: { participants: "use_group" } });
+      const open = Object.values(crossChats()).filter((c) => c.owner_id === owner && !c.closed_at).length;
+      if (open >= CROSS_OPEN) fail(409, "conversation_quota", "too many open chats", path, { max: CROSS_OPEN, scope: "owner" });
+      const id = localId("xch");
+      const now = nowIso();
+      const chat = {
+        id, title: body.title ? String(body.title) : null, created_by: owner, owner_id: owner, created_at: now,
+        closed_at: null, closed_reason: null, read: {}, items: [], left: [],
+        participants: [{ member_id: owner, joined_at: now, joined_seq: 0 }].concat(agents.map((agent) => ({ member_id: agent, joined_at: now, joined_seq: 0 }))),
+      };
+      crossChats()[id] = chat;
+      return crossView(chat, path);
+    }],
+    ["GET", /^\/me\/cross-chats\/([^/]+)$/, (m, body, path) => crossView(crossChatOf(decodeURIComponent(m[1]), path), path)],
+    ["PATCH", /^\/me\/cross-chats\/([^/]+)$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossRequireOwner(chat, path);
+      crossRefuseClosed(chat, path);
+      chat.title = body.title ? String(body.title) : null;
+      return crossView(chat, path);
+    }],
+    ["POST", /^\/me\/cross-chats\/([^/]+)\/participants$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossRequireOwner(chat, path);
+      crossRefuseClosed(chat, path);
+      if (chat.participants.some((p) => p.member_id === body.member_id)) return crossView(chat, path);
+      const agents = crossChecked([body.member_id], path, false, CROSS_CAP - chat.participants.length);
+      if (agents.length) {
+        const seq = chat.items.reduce((n, row) => Math.max(n, row.seq), 0);
+        chat.participants.push({ member_id: agents[0], joined_at: nowIso(), joined_seq: seq });
+      }
+      return crossView(chat, path);
+    }],
+    // Who cannot see the chat gets not_found first (#2162); someone no longer in it answers
+    // 200 with their last participation, not_found only when there was none (§9.5).
+    ["DELETE", /^\/me\/cross-chats\/([^/]+)\/participants\/([^/]+)$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      const memberId = decodeURIComponent(m[2]);
+      const reader = me().member.id;
+      crossReadable(chat, path);
+      if (reader !== chat.owner_id && reader !== memberId) fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (reader === memberId && reader !== chat.owner_id && me().member.kind !== "agent") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      chat.left = chat.left || [];
+      const at = chat.participants.findIndex((p) => p.member_id === memberId);
+      if (at < 0) {
+        const last = chat.left.filter((x) => x.member_id === memberId).pop();
+        if (!last) fail(404, "not_found", "Not found", path);
+        return last;
+      }
+      crossRefuseClosed(chat, path);
+      const gone = chat.participants.splice(at, 1)[0];
+      const now = nowIso();
+      if (memberId === chat.owner_id) { chat.closed_at = now; chat.closed_reason = "no_human"; }
+      const stay = { conversation_id: chat.id, member_id: memberId, joined_at: gone.joined_at, left_at: now, by: reader, reason: reader === memberId ? "left" : "removed" };
+      chat.left.push(stay);
+      return stay;
+    }],
+    ["GET", /^\/me\/cross-chats\/([^/]+)\/messages$/, (m, body, path, query) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossReadable(chat, path);
+      if (query.get("after") !== null && query.get("before") !== null) fail(400, "invalid", "after or before", path, { fields: { before: "invalid" } });
+      const limit = Math.min(200, Number(query.get("limit") || 50) || 50);
+      const stay = chat.participants.find((p) => p.member_id === me().member.id);
+      const windowAfter = stay ? stay.joined_seq || 0 : 0;
+      let rows;
+      if (query.get("before") !== null) rows = chat.items.filter((x) => x.seq < Number(query.get("before"))).slice(-limit);
+      else {
+        const start = Math.max(Number(query.get("after") || 0), windowAfter);
+        rows = chat.items.filter((x) => x.seq > start).slice(0, limit);
+        if (rows.length) chat.read[me().member.id] = Math.max(chat.read[me().member.id] || 0, rows[rows.length - 1].seq);
+      }
+      const first = rows.length ? rows[0].seq : null;
+      return {
+        items: rows.map((row) => crossMessage(chat, row)),
+        cursor: rows.length && query.get("before") === null ? rows[rows.length - 1].seq : 0,
+        earlier: first !== null && chat.items.some((x) => x.seq < first) ? first : null,
+      };
+    }],
+    ["POST", /^\/me\/cross-chats\/([^/]+)\/messages$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      const access = crossReadable(chat, path);
+      crossRefuseClosed(chat, path);
+      if (access !== "participant") fail(404, "not_found", "Not found", path);
+      if (body.attachments != null) fail(400, "invalid", "no attachment", path, { fields: { attachments: "not_in_cross_chat" } });
+      if (body.to_instance != null) fail(400, "invalid", "direct chat only", path, { fields: { to_instance: "direct_chat_only" } });
+      if ("mentions" in body) fail(400, "invalid", "mentions are read only", path, { fields: { mentions: "read_only" } });
+      const text = typeof body.body === "string" ? body.body : "";
+      if (!text.trim()) fail(400, "invalid", "empty", path, { fields: { body: "missing" } });
+      const seq = chat.items.reduce((n, row) => Math.max(n, row.seq), 0) + 1;
+      const people = chat.participants.map((p) => crossPerson(p.member_id)).filter(Boolean);
+      const row = { id: localId("xmsg"), seq, from: me().member.id, body: text, sent_at: nowIso(),
+        mentions: crossMentions(text, people, me().member.id), from_instance: null, redacted: false, redaction: null };
+      chat.items.push(row);
+      chat.read[me().member.id] = seq;
+      return crossMessage(chat, row);
+    }],
+    ["POST", /^\/me\/cross-chats\/([^/]+)\/messages\/([^/]+)\/redact$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossRequireOwner(chat, path);
+      crossReadable(chat, path);
+      const row = chat.items.find((x) => x.id === decodeURIComponent(m[2]));
+      if (!row) fail(404, "not_found", "Not found", path);
+      if (row.redacted) fail(400, "invalid", "already redacted", path, { reason: "already_redacted" });
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!reason) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      row.redacted = true;
+      row.redaction = { at: nowIso(), by: me().member.id, reason };
+      return crossMessage(chat, row);
     }],
     // §9.3 pins: human only, idempotent, at most 20 across projects.
     ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
@@ -6161,7 +6891,11 @@ window.Maity = window.Maity || {};
           const base = "/projects/" + project;
           ask.push(["head", base + "/events?after=latest&wait=0"], ["project", base], ["members", base + "/members"]);
         }
-        return Promise.all(ask.map(([key, p]) => fromFixtures("GET", p).then((answer) => [key, { status: 200, body: answer }],
+        // §5.4, §2.3: the bundle reads its project parts for members only; an outsider's are
+        // `not_found`, whatever the single routes answer them.
+        const [owner, slug] = (project || "").split("/");
+        const members = (p) => !(project && slug && outsideFull(owner, slug) && p.startsWith("/projects/"));
+        return Promise.all(ask.map(([key, p]) => (members(p) ? fromFixtures("GET", p) : Promise.reject(new ApiError("Not found", 404, p, "not_found"))).then((answer) => [key, { status: 200, body: answer }],
           (err) => [key, { status: err.status || 500, body: { error: { code: err.code || "internal", message: err.message, details: err.details || {} } } }])))
           .then((parts) => Object.fromEntries(parts));
       }
@@ -6182,6 +6916,9 @@ window.Maity = window.Maity || {};
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
       if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
       if (stepUpOwed(method, path, body)) fail(403, "forbidden", "this call needs your second factor first", fullPath, { reason: "step_up_required" });
+      // A public project read from outside (§2.3): its own routes, before any other.
+      const outside = outsideRead(method, path, query, fullPath, body);
+      if (outside !== undefined) return JSON.parse(JSON.stringify(outside));
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;
@@ -6459,6 +7196,14 @@ window.Maity = window.Maity || {};
     fixtureManages,
     // The fixture hub's rule for the test mail's recipient (§16.3), for the smoke test.
     fixtureMailTestTo,
+    // The fixture hub's bound on stars (§5.1), lowered by the smoke test for `too_many`.
+    fixtureStarred,
+    // The outsider's public project (`stranger/tool`), its `repository_public` set by the smoke test.
+    fixtureOutside: OUTSIDE_TOOL.project,
+    // Its members as the fixture keeps them, `page_served` among them, set by the smoke test.
+    fixtureOutsideMembers: OUTSIDE_TOOL.members,
+    // Its policy for an outsider's agent and the outsider's joins (§6.1, §3.1), set by the smoke test.
+    fixtureOutsideJoins: OUTSIDE_TOOL.joins,
     source,
     ApiError,
     // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,

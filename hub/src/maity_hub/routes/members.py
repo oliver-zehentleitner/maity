@@ -17,6 +17,7 @@ from maity_hub import (
     access,
     admin_agents,
     agent_owners,
+    attached,
     attachments,
     availability,
     bridges,
@@ -52,7 +53,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -257,43 +258,54 @@ idempotency.register("member_read", load_member_as_read, _IN_MEMBERS_PROJECT)
 idempotency.register("member_team", load_member_as_read, _IN_MEMBERS_PROJECT)
 
 
-def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
-    # TODO(hub PR B): the attachment of the route's project; the oldest not detached until
-    # then.
+def credential_key(credential_id: str, membership_id: int) -> str:
+    """A revocation's stored resource (§1.5): the credential in the membership of the route's
+    project, `<credential id>@<membership id>`, so that its replay reads that attachment."""
+    return f"{credential_id}@{membership_id}"
+
+
+def _attachment_named(conn: Connection, key: str) -> Any | None:
+    """The membership a stored revocation names, with the credential's id. A key from before
+    an instance could sit in several projects names the credential alone: its one attachment
+    that is not detached then, and none when it has several now, never one chosen."""
+    credential_id, _, membership_id = key.partition("@")
+    a = t.instance_attachment
+    query = (
+        select(t.membership, a.c.credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id)
+    )
+    if membership_id:
+        if not membership_id.isdigit():
+            return None
+        return conn.execute(query.where(a.c.membership_id == int(membership_id))).first()
+    rows = conn.execute(query.where(a.c.detached_at.is_(None))).all()
+    return rows[0] if len(rows) == 1 else None
+
+
+def load_credential(conn: Connection, key: str) -> dict[str, Any]:
+    """A credential's view in the membership `key` names (`credential_key`)."""
+    target = _attachment_named(conn, key)
+    if target is None:
+        raise not_found()
     row = conn.execute(
-        instances.credential_rows()
-        .where(t.credential.c.id == credential_id, t.instance_attachment.c.detached_at.is_(None))
-        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
-        .limit(1)
+        instances.credential_rows().where(
+            t.credential.c.id == target.credential_id,
+            t.instance_attachment.c.membership_id == target.id,
+        )
     ).one()
     return credential_view(conn, row)
 
 
-def _oldest_attachment(credential_id: str) -> Any:
-    """The membership of a credential's oldest attachment that is not detached, by
-    attached_at and then id. TODO(hub PR B): the attachment of the route's project."""
-    a = t.instance_attachment
-    return (
-        select(t.membership)
-        .select_from(t.membership)
-        .join(a, a.c.membership_id == t.membership.c.id)
-        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-        .order_by(a.c.attached_at, a.c.id)
-        .limit(1)
-    )
+def _credential_project(conn: Connection, key: str) -> str | None:
+    target = _attachment_named(conn, key)
+    return None if target is None else str(target.project_id)
 
 
-def _credential_project(conn: Connection, credential_id: str) -> str | None:
-    found: str | None = conn.execute(
-        _oldest_attachment(credential_id).with_only_columns(t.membership.c.project_id)
-    ).scalar()
-    return found
-
-
-def _sees_credential(conn: Connection, mine: Membership, credential_id: str) -> bool:
+def _sees_credential(conn: Connection, mine: Membership, key: str) -> bool:
     """The read of the credentials list (§10), for a replayed revocation."""
-    target = conn.execute(_oldest_attachment(credential_id)).one()
-    return _manages_credentials(conn, mine, target)
+    target = _attachment_named(conn, key)
+    return target is not None and _manages_credentials(conn, mine, target)
 
 
 def _sees_member(conn: Connection, membership_id: str, caller: Caller) -> bool:
@@ -312,6 +324,69 @@ def _sees_member(conn: Connection, membership_id: str, caller: Caller) -> bool:
 
 
 idempotency.register("member", load_member_write, _sees_member)
+
+
+def members_outcome(
+    conn: Connection, credential_id: str, membership_ids: list[int], single: bool
+) -> idempotency.Outcome:
+    """The `200` of an agent's own write outside a project (`PATCH /me`, `POST /me/limit`,
+    §5.3 "Per project"): the member view for one project, else `projects`, the member view of
+    each membership the write changed. The latter is stored by the credential: a replay
+    answers its attachments that are not isolated as they are then (`load_member_set`)."""
+    if single:
+        [only] = membership_ids
+        return idempotency.Outcome(200, "member_self", str(only), load_member(conn, str(only)))
+    views = [load_member(conn, str(i)) for i in membership_ids]
+    return idempotency.Outcome(200, "member_set", credential_id, {"projects": views})
+
+
+def _sees_own_attachment(conn: Connection, membership_id: str, caller: Caller) -> bool:
+    """A replayed `member_self`: the caller's own attachment in that membership, live and
+    not isolated, as the write itself needed. Another attachment that keeps the credential
+    authenticated does not let it read a project it is detached from or isolated in. A
+    credential revoked since it was authenticated refuses `unauthenticated`, as the write's own
+    `attached.recheck` would, not the `not_found` of a lost attachment. The membership's
+    project is locked before that check and held through the answer (`attached.held`), so a
+    revocation cannot land between the two."""
+    if caller.kind != "agent" or caller.credential_id is None or not membership_id.isdigit():
+        return False
+    project_id = conn.execute(
+        select(t.membership.c.project_id).where(t.membership.c.id == int(membership_id))
+    ).scalar_one_or_none()
+    if project_id is None:
+        return False
+    attached.held(conn, caller.credential_id, [project_id])
+    a, m = t.instance_attachment, t.membership
+    found = conn.execute(
+        select(a.c.id)
+        .join(m, m.c.id == a.c.membership_id)
+        .where(
+            a.c.credential_id == caller.credential_id,
+            a.c.membership_id == int(membership_id),
+            a.c.detached_at.is_(None),
+            m.c.isolated_since.is_(None),
+        )
+    ).first()
+    return found is not None
+
+
+idempotency.register("member_self", idempotency.plain(load_member), _sees_own_attachment)
+
+
+def load_member_set(conn: Connection, credential_id: str) -> dict[str, Any]:
+    """The replay of a write in every project: the credential's attachments as they are now,
+    and with none live and free left the refusal the request itself would get (§1.5). Their
+    projects are locked before the liveness check and held through the answer
+    (`attached.free_held`), as the request holds them through its write."""
+    free = attached.free_held(conn, credential_id)
+    return {"projects": [load_member(conn, str(a.membership_id)) for a in free]}
+
+
+idempotency.register(
+    "member_set",
+    idempotency.plain(load_member_set),
+    lambda _conn, credential_id, caller: caller.credential_id == credential_id,
+)
 idempotency.register(
     "credential",
     idempotency.plain(load_credential),
@@ -340,7 +415,11 @@ def validate_assignment(
     errors: dict[str, str] = {}
     values: dict[str, Any] = {}
     if trust is not None:
-        if trust not in TRUSTS:
+        if OUTSIDE in (trust, current[0]):
+            # Only the outsider's join gives trust `outside`, and nothing changes it after
+            # (§2.3 "Outside"): naming it, or any trust on a member who holds it, is refused.
+            errors["trust"] = OUTSIDE
+        elif trust not in TRUSTS:
             errors["trust"] = "unknown"
         elif trust == "owner" and kind != "human":
             errors["trust"] = "humans_only"
@@ -392,6 +471,10 @@ def validate_assignment(
         values["capabilities"] = list(dict.fromkeys(capabilities))
     if errors:
         raise invalid(errors)
+    if member is not None and current[0] == OUTSIDE:
+        # What an outsider's agent keeps holds after its join too, whoever asks (§2.3).
+        target = conn.execute(select(t.membership).where(t.membership.c.id == member)).one()
+        agent_owners.check_outside_fields(conn, target, values)
     return values
 
 
@@ -752,6 +835,9 @@ def apply_patch(
         # the role, and a field PATCH waiting at the lock reads the new role (§6.2).
         lock_project(conn, target.project_id)
         target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    # Again as the change is written, after any consent: an outsider's agent keeps no areas or
+    # capabilities and reports to its owner or nobody (§2.3 "Outside").
+    agent_owners.check_outside_fields(conn, target, values)
     if values.get("role", "expert") != "expert":
         # The fields belong to the role: any other role has none (§6.2).
         values = {**values, "expert_for": None, "expert_sources": None}
@@ -838,6 +924,8 @@ def apply_patch(
             cards.drop_signatures(
                 conn, change.project.id, row.agent_id or row.human_id, change.actor
             )
+            # A seat the new trust or role may not hold goes as at a removal (§2.3, §6.2).
+            seats.demoted(conn, change.project.id, row, change.actor)
         if "trust" in changed and row.trust == restricted.GUEST:
             # A guest holds and takes no cards (§2.3): its claims go back to the board and
             # its open takeovers end, as on an isolation (§6.2, §6.19).
@@ -1790,8 +1878,7 @@ def revoke_credential(
                 actor=caller.actor(mine.id),
                 subject=("credential", credential_id),
             )
-        return idempotency.Outcome(
-            200, "credential", credential_id, load_credential(conn, credential_id)
-        )
+        key = credential_key(credential_id, row.membership_id)
+        return idempotency.Outcome(200, "credential", key, load_credential(conn, key))
 
     return idempotency.run(engine_of(request), request, caller, action)

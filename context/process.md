@@ -439,7 +439,7 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (from the reviews of #2022 and #2025: the reader, then the table of introducing commits, lotse's decision of 2026-11-20 after three review rounds); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (from the reviews of #2022 and #2025: the reader, then the table of introducing commits, the lead's decision of 2026-11-20 after three review rounds); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
@@ -1281,7 +1281,7 @@ history is one human and one project with one kind of item (requests).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review findings on #755 by agt-2dkh5tfqppxd and agt-mbf0gthrsash (2026-10-30); task tsk-hzjqn875bcmt
+**Source:** review findings on #755 by a reviewer and the lead (2026-10-30); task tsk-hzjqn875bcmt
 **See:** https://github.com/oliver-zehentleitner/maity — 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880 — as of 2026-10-30
 **Revisit when:** CLI documentation is generated directly from `cli.py` argparse definitions
 
@@ -1467,7 +1467,7 @@ sets.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on); that this is the project's own practice, not one the platform imposes, is the lead's paraphrase of the same answer (seq 118099), not a quote; the lead's relay to the review lead of 2026-11-12 (seq 118096): "No retro legs for #1692, #1675 and #1680." and "The open question of what the two Grok coders do from now on is with Oliver (req-68g15m2vs02m); until he answers, their PRs keep Antigravity + ChatGPT."; the maintainer's decision of req-68g15m2vs02m (2026-11-12, option 1), relayed by the lead in seq 118290: "the two Grok coders (maity-coder-grok-002, maity-coder-grok-003) keep coding; their PRs are reviewed by Antigravity + ChatGPT. This settles the interim from 118096 as the rule."; card tsk-tc191z1765fy
+**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on); that this is the project's own practice, not one the platform imposes, is the lead's paraphrase of the same answer (seq 118099), not a quote; the lead's relay to the review lead of 2026-11-12 (seq 118096): "No retro legs for #1692, #1675 and #1680." and "The open question of what the two Grok coders do from now on is with [the maintainer] (req-68g15m2vs02m); until he answers, their PRs keep Antigravity + ChatGPT."; the maintainer's decision of req-68g15m2vs02m (2026-11-12, option 1), relayed by the lead in seq 118290: "the two Grok coders ([…], […]) keep coding; their PRs are reviewed by Antigravity + ChatGPT. This settles the interim from 118096 as the rule."; card tsk-tc191z1765fy
 **Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, the maintainer changes the number of at least two reviews, or he changes which vendors code
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
@@ -1613,8 +1613,8 @@ The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit f
 cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
 open. The job timeouts above (97f338fd) stay.
 
-**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
-depends on a human; the approval has to come from Oliver).
+**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss [der Maintainer] geben" (today every cancel
+depends on a human; the approval has to come from [the maintainer]).
 
 **Alternatives:** none recorded.
 
@@ -2789,6 +2789,35 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
+
+## The README's translations are held to README.md's headings by a check, and each names the commit it was translated from
+
+**Id:** ceef8737-c419-47ef-806d-55fd060c2238
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-1e2qmy78kams, 2026-11-13
+**Revisit when:** the web client gains or drops a language, or a translation falls behind more often than the check catches
+
+`README.md` is translated into every language of the web client but English (`web/js/i18n/languages.js`),
+one `README.<lang>.md` next to it, and every version carries the same language line. `tools/readme_sync.py`,
+run in CI's changelog job, fails when a translation is missing, when it lacks the line or its first-line
+comment `<!-- translated-from: README.md@<commit> -->` (whose hash is checked for its form only), when it
+has another number of headings or other levels in sequence, or when its link and image targets differ.
+Heading text is not compared: two sections of the same level swapped, or one replaced by another, pass
+unless their links differ.
+
+**Reason:** a translated README goes stale silently: a section added in English is invisible in the
+others until a reader notices. A section added or dropped now fails CI in the pull request that makes it, and
+the comment names the commit to diff against (`git diff <commit> -- README.md`) when the translations
+follow. The language names are each language's own, as in the web client's language menu.
+
+**Rejected alternatives:**
+- Failing whenever `README.md` changed since the named commit: every typo fix would then need nine
+  translations in the same pull request. The check holds the structure; a reworded sentence is caught up
+  at the next translation pass.
+- Translating in CI: the translations are reviewed text in the glossary's terms and forms of address
+  (`web/i18n/glossary.md`), not generated output.
 
 ## Every hub release ships an upgrade page, and the release is refused without it
 

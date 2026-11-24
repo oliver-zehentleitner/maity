@@ -43,6 +43,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.plain_text import plain
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
+from maity_hub.scopes import OUTSIDE
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -50,7 +51,8 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
 class InvitationIn(Strict):
-    trust: Literal["owner", "admin", "member", "guest"] = "member"
+    # `outside` is read only to be refused by name (§2.3 "Outside", `_check`).
+    trust: Literal["owner", "admin", "member", "guest", "outside"] = "member"
     role: str = "coder"  # a built-in role or one of the project's (§2.3)
     address: str | None = None
     handle: str | None = None  # a person's handle or live alias, instead of `address` (§3.4)
@@ -61,6 +63,8 @@ class InvitationIn(Strict):
 
 def _check(body: InvitationIn) -> None:
     errors: dict[str, str] = {}
+    if body.trust == OUTSIDE:  # only an outsider's join gives it (§2.3 "Outside")
+        errors["trust"] = OUTSIDE
     if body.handle is not None and body.address is not None:
         errors["handle"] = "with_address"
     if body.address is not None and not address.valid(body.address.strip()):
@@ -383,6 +387,12 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
             ).scalar_one()
             if status != "active":
                 return _refused("account_pending", "the account waits for approval")
+            # §2.6.5: only a session in good standing accepts. Checked before the token is
+            # looked up, as the pending account above: such a session learns nothing of the
+            # token, and no refusal below (used up, voided) changes the invitation for it.
+            unstanding = invitations.standing_refusal(conn, caller)
+            if unstanding is not None:
+                return unstanding, None
             row = _open(conn, token)
             project = events.lock_project(conn, row.project_id)
             row = _open(conn, token)  # as it is under the lock: a second accept loses
@@ -397,8 +407,6 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
 def _accept(
     conn: Connection, row: Any, project: Any, caller: Any
 ) -> tuple[ApiError | None, dict[str, Any] | None]:
-    # TODO(§2.6.5): accept only from a session in good standing — a session fresh from a
-    # mailbox link accepts nothing — once such sessions exist; every session is one now.
     if project.state in CLOSED_STATES:
         return ApiError(409, "project_closed", f"the project is {project.state}"), None
     if row.address_normalized is not None and (

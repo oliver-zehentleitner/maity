@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select
 
-from maity_hub import clock, db
+from maity_hub import clock, db, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import email_links, password_resets, single_use
 
@@ -34,6 +34,7 @@ def conn(engine: Engine) -> Iterator[Connection]:
                     created_at=clock.now(),
                 )
             )
+            write_guard.make_row(connection, human)
         yield connection
 
 

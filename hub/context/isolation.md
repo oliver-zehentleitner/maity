@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §6.2 "Isolation" (#771); the card tsk-8c6vdjpw82b1 from the coordinator, 2026-10-30; the maintainer's decision it records; the implementation of `isolation.py`; the lead's decision on the window after a lift (from the coordinator, 2026-10-30; the maintainer is to confirm it)
+**Source:** docs/api.md §6.2 "Isolation" (#771); the card tsk-8c6vdjpw82b1 from the coordinator, 2026-10-30; the maintainer's decision it records; the implementation of `isolation.py`; the lead's decision on the window after a lift (from the coordinator, 2026-10-30; the maintainer is to confirm it); the lead's ruling on card tsk-w8wnar6nqqsp (hub PR B, Q10: presence and leases of a call outside any project skip the isolated attachments)
 **Revisit when:** a second way to stop an agent exists next to the pause and the isolation, or the number of seats and routes that skip an isolated agent grows past the helpers (`views.routing_boss`, `availability.coordinator_of`, `seats.routed_arbiter`)
 
 `membership.isolated_reason`, `isolated_since` and `isolated_by` are all set while an agent is isolated and all
@@ -14,7 +14,7 @@ null otherwise. Nothing else is stored: the seats that name the agent (`reports_
 `contract_arbiter`, `coordinator`, `coordinator_substitute`, a `substitutes` entry) stay as they are, so lifting
 the isolation finds the project as it was. What changes is read where it matters:
 
-- Authentication (`auth/caller.py`, `_agent`) refuses every call of the agent's credentials with `403 forbidden`,
+- Authentication (`auth/caller.py`, `_agent`; since hub PR B the resolution of the route's project, below) refuses every call of the agent's credentials with `403 forbidden`,
   `details.reason: isolated`, before any side effect (no presence, no lease), except `GET /me` and
   `POST /me/resume`, which carry `membership.isolated` so the agent learns why.
   Those two calls leave no trace: no `last_seen_at`, lease or session, no `session_started`, and the resume
@@ -70,6 +70,23 @@ stray whitespace from being an error.
   `membership`.
 - The merge with #750 keeps `availability.coordinator_of` in `onboarding.py` instead of
   `policy.of(project)["coordinator"]`: only the former routes past an isolated coordinator.
+
+**Updated 2026-11-21 (tsk-w8wnar6nqqsp):** an instance may be attached to several projects
+(§6.17), and an isolation is one membership's, so authentication no longer refuses it: `_agent`
+decides only what holds in every project, and the refusal moved into the resolution of the
+call's project after it, in the same transaction (`deps._resolve`, run by its `confine`;
+`auth.caller.settle_in_project` and `settle_project_less`). It still comes before any side
+effect: no presence, no last use, no lease, no count against the read limit, no event. On a
+project route the order is: no live attachment of the instance in that project is `not_found`,
+and that read is counted first (`count_agent_read`), so probing other projects stays
+rate-limited as before; an isolated attachment there is `403 isolated`, not counted; otherwise
+the read is counted and the presence and leases in that membership follow. A call outside any
+project is refused only when every live attachment is isolated, except the calls an isolated
+agent may make (`ISOLATED_MAY`: `GET /me`, `POST /me/resume`, `GET /bootstrap`); while one is
+not, the call goes on, and its presence and leases skip the isolated attachments (the lead's
+ruling Q10 on the card). The project-less routes that act on one or every attachment refuse an
+isolated one themselves (`attached.named`, `one`, `every`). What the bullets above say of the
+effects of an isolation is unchanged.
 
 ## A hidden window is an inclusive seq range on the membership, applied where events are read
 
@@ -140,6 +157,11 @@ after the other), the owner's `go` on a waiting change (checked again as things 
 in `outside_roles` keeps a base that works and cannot be removed) and a narrower `outside_roles` (refused while
 an outsider at work holds a role it leaves out, unless the same call switches the project to `members`).
 
+**Amended 2026-11-23 (tsk-mqzhnmf4bak6, #2165):** "It only isolates" and the narrower-list refusal above no longer
+hold as written. `reconcile` also changes one role: an outside owner's agent on `blue-team` with trust `member` or
+`guest` falls back to `coder` first where the list allows it, and a narrower `outside_roles` is not refused for
+such an agent, whom the pass after the change settles (284bc59b-215b-401e-97fe-4deae711515d).
+
 **Reason:** the answer depends on rows in three places (the setting, the public page and the memberships), so
 isolating at each write would repeat the rule and miss one; one idempotent pass called after each write cannot
 disagree with itself. The lift check (`refuse_lift`) reads the same rule, so an admin cannot undo what the next
@@ -153,6 +175,51 @@ carry neither `tasks:review` nor `tasks:test`, and the hub never moved a card on
   its owner's membership no longer justifies.
 - Reading `public_page` alone for the default: a suspended or hidden project stays `on` in its column while it has
   no page, so its outsiders would keep working in a project nobody can see.
+
+## An outside owner's agent: `blue-team` closed with a fall back to `coder`, the reviewing and testing roles not yet open
+
+**Id:** 284bc59b-215b-401e-97fe-4deae711515d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-mqzhnmf4bak6; docs/api.md §6.1 `outside_roles`, §6.2 "An agent whose owner is no member" and B.1 of §6.30 as they stood at main 314d5465; the plan and the lead's go, 2026-11-23 (seq 206654); the code at that commit (`policy.OUTSIDE_BASES`, `cards.has_done_authority`, `scopes._granted`)
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-23
+**Revisit when:** the rule that gives an outside owner's agent no done authority by a reviewing or testing role is built (then open those roles in `policy.OUTSIDE_BASES` and drop the contract's "not built yet"), or the dashboard's leave confirmation gets a line for an agent that continues as a coder
+
+The contract closes `blue-team` to an outside owner's agent and opens `reviewer`, `tester`, `red-team`,
+`purple-team` and the project roles on `reviewer` or `tester`, each such role held without done authority. The
+hub builds the first half: `blue-team` is `invalid` in `outside_roles`, a stored list reads without it (the next
+policy write stores it so), and an agent on it with trust `member` or `guest` whose owner is no member falls back
+to `coder` where `coder` is listed, in `reconcile` (owner leaves, policy change) and at `POST /me/resume` before
+the packet (`agent_owners.settle_closed_role`), else it is isolated. The fall back goes through
+`members.apply_patch` with the actor of the change that settles it (the human who removed the owner or changed
+the policy; the hub's own at resume and where nobody acts, as `isolate_by_hub` does), so the event, the rules
+bump, the dropped signatures and the ended connections are exactly a `PATCH`'s, and the owner gets a personal
+notice (`isolation.tell_owner`). It is decided under the project lock on the rows as they are then, and the
+notice goes out only when the role did change there, so a change committed meanwhile is never written over and
+two resumes tell the owner once (#2165 review A2393). A narrower
+list is not refused for such an agent (`check_policy` skips it); the pass after the change settles it.
+
+The second half is marked "not built yet" in the contract and stays closed: `has_done_authority` and `sign`
+read only the scopes, and trust `outside` gets the member's scopes for its role (`scopes._granted`), so an
+outside `reviewer` would carry `tasks:review` and could move a project member's card to done. The entry above
+(382a0e40) relies on the opposite, that the roles an outside agent may hold carry neither scope.
+
+**Reason:** opening the reviewing and testing roles before the rule that strips their done authority would hand
+an outsider the say over the project's own cards, which is what the contract's own condition exists to prevent;
+the own-approvals gate (#2145) covers only the outsiders' work, not a member's card an outside reviewer moves.
+Building through `apply_patch` rather than a direct update keeps one path for a role change, so nothing a `PATCH`
+ends (a signature, a bridge, a manager's line) is left behind by the hub's own change.
+
+**Rejected alternatives:**
+- Opening the reviewing and testing roles now with the contract's text: rejected, the done-authority rule is not
+  built and the gap would be live at once (above).
+- Building the done-authority rule in this change: left to its own card, a cross-cutting change to the done
+  paths (`has_done_authority`, `sign`, `merged`) that needs its own review; the lead chose the "not built yet"
+  mark (seq 206654).
+- Rewriting stored roles by a migration: the contract says no migration; the read and the resume settle it.
+- A leave confirmation that says "isolated" for a `blue-team` agent: false where it falls back; it names no
+  agent's fate there instead, until a catalog line for "continues as a coder" exists (contract marks it not built).
 
 ## A reader's effective windows: its own, and for a bridge's read also the bridge's, through one function
 
@@ -200,3 +267,52 @@ leaves the routes as they are.
 written before the window and edited inside it stays listed with its current text, as a card's fields show the
 state the reader finds. A restricted text's current `text`, `version`, `updated_by` and `updated_at` are that
 state too. The public card page shows a public project's notes to everyone, windows have no reader there.
+
+## An agent that joined while its owner was no member stays outside: a mark set at the exchange, never cleared
+
+**Id:** 28c600cc-2b4e-4be0-ab48-00a49441c138
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ggnhdmgmkf3 (2026-11-23), the lead's go on the four-PR plan with this record in PR 1 and a contract line for it (seq 201341); the boundary with the outsider's join of tsk-enfbkj0xqq5m agreed with its coder (seq 201232, 201249); docs/api.md §2.3 "Own approvals"
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-23
+**Revisit when:** trust `outside` becomes the only way an agent of an owner who is no member joins, or §2.3 stops counting an outsider's agent whose owner has since become a member as outside
+
+`membership.joined_outside` is set at the exchange when the agent's owner
+holds no membership of the project, read under the project lock, and is
+never cleared. With trust `outside` it answers §2.3's "an outsider's
+agent whose owner has since become a member", which the owner's current
+membership alone cannot. The migration sets it once for existing agent
+memberships from the membership history: marked when the owner held no
+membership of the project at the agent's `joined_at`, in one set-based
+`UPDATE … WHERE NOT EXISTS`.
+
+**Reason:** an agent that came in under `agent_owners: anyone` holds trust
+`member` or `guest`, and trust `outside` (the outsider's join) never marks
+it. Membership rows are never deleted: a removal keeps the row with its
+`joined_at` and `removed_at`, and a rejoin is a new row, so the history
+shows whether the owner was a member when the agent joined. Reading it on
+every move to `done` would cost queries each time; one boolean on the
+membership reads it once, at the exchange under the project lock and in
+the upgrade, and needs no history table.
+
+**Lost by the migration:** nothing the rows keep. An owner who was a
+member when the agent joined and left since does not make the agent
+outside; one who joined only after the agent does. An owner row counts
+for the half-open span [`joined_at`, `removed_at`): an owner removed at
+the very instant the agent joined does not make it the project's own,
+as at the exchange, which runs under the project lock. (The first version of
+this entry and of the migration read only the owners' current
+memberships and called the history lost; corrected on the review of
+#2135, A2211 and A2212.)
+
+**Rejected alternatives:**
+- Trust `outside` alone as the record: it marks only the outsider's join,
+  not the agents of owners from outside that came in under `anyone`.
+- Reading the membership history at each check instead of the mark: the
+  rows are there, but every move to `done` would rebuild the intervals
+  across rows for each agent of the card; the mark reads them once.
+- Backfilling from the owners' current memberships: it misses an agent
+  whose owner joined after it and marks one whose owner left after it.
+- Clearing the mark when the owner joins: that is exactly the case §2.3
+  wants kept outside.

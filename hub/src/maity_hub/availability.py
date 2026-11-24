@@ -23,7 +23,7 @@ from sqlalchemy import Connection, Engine, case, literal, or_, select, update
 
 from maity_hub import cards, clock, maintenance, worker_runs
 from maity_hub import tables as t
-from maity_hub.events import Actor, emit, lock_project, transaction
+from maity_hub.events import Actor, emit, lock_project, lock_projects, transaction
 
 log = logging.getLogger(__name__)
 
@@ -261,12 +261,12 @@ def _owner_member(conn: Connection, row: Any) -> str | None:
 
 
 def changed_audience(conn: Connection, row: Any, project: Any) -> list[str]:
-    """`member_availability_changed` (§8.2): the member's boss, its human, the admins, the
-    coordinator; the owners too when the member is the coordinator."""
-    from maity_hub.views import routing_boss  # views reads this module for its fields
+    """`member_availability_changed` (§8.2): the member's boss unless of another owner (§6.2),
+    its human, the admins, the coordinator; the owners too when the member is the coordinator."""
+    from maity_hub import cross_owner  # cross_owner reads views, which reads this module
 
     audience: list[str] = []
-    boss = routing_boss(conn, row.reports_to)
+    boss = cross_owner.notice_boss(conn, row)
     if boss is not None:
         audience.append(f"member:{boss}")
     owner = _owner_member(conn, row)
@@ -293,7 +293,14 @@ def _out_beyond_grace(row: Any, found: dict[str, Any], now: datetime) -> bool:
 def _any_available(
     conn: Connection, project: Any, membership_ids: list[int], now: datetime
 ) -> bool:
-    rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(membership_ids))).all()
+    """Whether one of these covering substitutes is `available`. A substitute whose
+    membership has ended (removed or left, §6.2) is not, at once, as `cover.routed` skips
+    it for a new card (§6.12)."""
+    rows = conn.execute(
+        select(t.membership).where(
+            t.membership.c.id.in_(membership_ids), t.membership.c.removed_at.is_(None)
+        )
+    ).all()
     presences = presences_of(conn, rows)
     humans = humans_of(conn, rows)
     dormant = dormants_of(conn, rows)
@@ -475,8 +482,7 @@ def reconcile(
 
     The rows are read again under their projects' locks, so that a request and the
     sweep noticing the same change announce it once."""
-    for project_id in sorted({r.project_id for r in rows}):
-        lock_project(conn, project_id)
+    lock_projects(conn, (r.project_id for r in rows))
     ids = [r.id for r in rows]
     if not ids:
         return []

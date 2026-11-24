@@ -9,14 +9,15 @@ import sys
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import fakehub
 import pytest
 from conftest import fake_opencode, posix
 
 from maity import cli, state
-from maity.runner import adapters, commands, config
-from maity.runner.asuser import RUNNER
+from maity.runner import adapters, capabilities, commands, config, tools, workspace
+from maity.runner.asuser import RUNNER, AsUser
 
 MINIMAL = """\
 [hub]
@@ -83,6 +84,78 @@ def test_tilde_is_expanded(home: Path) -> None:
     assert cfg.local.workspaces == home / "maity-workspaces"
 
 
+@pytest.mark.parametrize("bad", ["/srv/ws*", "/srv/w?rk", "/srv/[ab]/ws"])
+def test_a_workspaces_root_with_a_glob_character_is_refused(bad: str) -> None:
+    """The clone path, built under the workspaces root, is embedded literally in a
+    `Bash(git -C <clone> …)` allow rule, where Claude Code treats `*`, `?` and `[]` as
+    wildcards; a root carrying one would widen the rule, so it is refused (tsk-66zyvc4xnhtv,
+    #1962 round 2)."""
+    found = problems(minimal(b=f'\n[backend.local]\nworkspaces = "{bad}"\n'))
+    assert any("backend.local.workspaces" in p and "must not contain" in p for p in found)
+
+
+# The raw check above sees only the configured string. A root with no glob character in its raw
+# form can still RESOLVE to one — a symlink to a wildcard path, or a relative or `~` root joined
+# onto a wildcard-bearing cwd or home — and the resolved path is the string that reaches the
+# `Bash(git -C <clone> …)` rule. `workspace.locate` is the choke point every placement passes
+# through, so the resolved path is refused there, fail-closed (tsk-66zyvc4xnhtv, #1962 round 3).
+
+
+def test_locate_refuses_a_root_that_is_a_symlink_to_a_wildcard_path(tmp_path: Path) -> None:
+    """A root with no glob character of its own, symlinked to a real directory whose name holds
+    a `*`: the raw check passes, but `locate` resolves the symlink and refuses the wildcard."""
+    real = tmp_path / "wild*root"
+    real.mkdir()
+    link = tmp_path / "clean-root"
+    link.symlink_to(real)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(link, "proj", "clone")
+    assert info.value.reason == "workspace_in_use"
+    assert "*" in (info.value.why or "") and str(real) in (info.value.why or "")
+
+
+def test_locate_refuses_a_relative_root_resolving_under_a_wildcard_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative root resolves against the current directory; a `?` in that directory's path
+    then rides into the resolved clone path, where `locate` refuses it."""
+    cwd = tmp_path / "cwd?dir"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(Path("ws"), "proj", "clone")
+    assert "carries the character(s) ? that" in (info.value.why or "")
+
+
+def test_locate_refuses_a_tilde_root_whose_home_carries_a_wildcard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `~` root is expanded with the user's home (config does this with `.expanduser()`); a
+    `[`/`]` in that home rides into the resolved path, which the raw check on `"~/ws"` never
+    saw. `locate` refuses the expanded, resolved path."""
+    home = tmp_path / "home[1]"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    root = Path("~/ws").expanduser()  # exactly what config.parse stores for the workspaces root
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(root, "proj", "clone")
+    # The reported character list, not the whole message: the path itself holds both brackets,
+    # so only the list fails when either bracket is dropped from the refused set.
+    assert "carries the character(s) [ ] that" in (info.value.why or "")
+
+
+def test_scratch_of_refuses_a_resolved_wildcard_root(tmp_path: Path) -> None:
+    """The scratch is the other resolved-root path embedded in the file-tool rules, so its
+    choke point refuses a wildcard root too (here a symlink to a `*` path)."""
+    real = tmp_path / "wild*root"
+    real.mkdir()
+    link = tmp_path / "clean-root"
+    link.symlink_to(real)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.scratch_of(link, "proj", "plc-abc123")
+    assert "*" in (info.value.why or "")
+
+
 @pytest.mark.parametrize(
     ("old", "new", "expected"),
     [
@@ -102,6 +175,17 @@ def test_unknown_keys_are_named(old: str, new: str, expected: str) -> None:
 
 def test_unknown_key_in_backend_local() -> None:
     assert "backend.local.tmux: unknown key" in problems(minimal(b="\n[backend.local]\ntmux = 1\n"))
+
+
+def test_clone_venvs_names_subpackages_of_the_clone_and_nothing_else() -> None:
+    """`[backend.local] clone_venvs` (venvs.py): plain directory names at the clone's root, none
+    by default; a path, a dot or an empty name is refused."""
+    assert parse(minimal()).local.clone_venvs == ()  # type: ignore[union-attr]
+    cfg = parse(minimal(b='\n[backend.local]\nclone_venvs = ["hub", "cli"]\n'))
+    assert cfg.local is not None and cfg.local.clone_venvs == ("hub", "cli")
+    for bad in ('"../hub"', '"hub/sub"', '".venv"', '""', '"Hub"'):
+        found = problems(minimal(b=f"\n[backend.local]\nclone_venvs = [{bad}]\n"))
+        assert any(p.startswith("backend.local.clone_venvs:") for p in found), (bad, found)
 
 
 def test_required_keys() -> None:
@@ -751,7 +835,8 @@ def test_check_warns_about_inherited_claude_settings(
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")  # the checked one: no warning for it
+    checked = capabilities.CHECKED["claude-code"]
+    fake_tool(bin_dir, "claude", f"{checked} (Claude Code)")  # the checked one: no warning for it
     for tool in ("bwrap", "socat", "unshare", "true"):  # the nesting probe passes: no warning
         fake_tool(bin_dir, tool)
     (home / ".claude").mkdir()
@@ -908,7 +993,9 @@ def test_check_tells_a_registered_worktree_from_a_leftover_directory(
     assert sorted(str(p) for p in tmp_path.rglob("*")) == before  # nothing removed
 
 
-@pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
+@pytest.mark.parametrize(
+    ("version", "warned"), [(capabilities.CHECKED["claude-code"], False), ("2.1.324", True)]
+)
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
 ) -> None:
@@ -920,9 +1007,55 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
-    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.325" in line]
+    checked = capabilities.CHECKED["claude-code"]
+    found = [line for line in lines(capsys) if f"sandbox was checked with {checked}" in line]
     assert bool(found) is warned, found
     assert all(line.startswith("warn") for line in found)
+
+
+@pytest.mark.parametrize(
+    ("track", "version", "level"),
+    [("newest", "2.1.330", "note"), ("newest", "2.1.318", "warn"), ("checked", "2.1.330", "warn")],
+)
+def test_check_only_notes_a_newer_claude_code_the_operator_chose(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    track: str,
+    version: str,
+    level: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    fake_tool(bin_dir, "bwrap")
+    fake_tool(bin_dir, "socat")
+    paired.write_text(paired.read_text() + f'\n[harness.claude-code]\ntrack = "{track}"\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    found = [line for line in lines(capsys) if "2.1.325" in line and version in line]
+    assert len(found) == 1 and found[0].startswith(level), found
+    if level == "note":
+        assert 'track = "newest"' in found[0]
+    elif version == "2.1.330":  # above the checked one under "checked": the way back
+        assert "install 2.1.325 yourself" in found[0] and 'track = "newest"' in found[0]
+
+
+@pytest.mark.parametrize(
+    ("kept", "said"), [("2.1.325", "rollback claude-code"), (None, "no version")]
+)
+def test_check_points_a_managed_claude_code_above_the_checked_one_back(
+    tmp_path: Path, kept: str | None, said: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    tools.save(tmp_path, "claude-code", tools.ToolState(version="2.1.330", previous_version=kept))
+    harness = config.Harness("claude-code", ("supervised",), "supervised", update="daily")
+    report = commands.Report()
+    commands._check_version(report, harness, "2.1.330", tmp_path)
+    ((level, text),) = report.lines
+    assert level == "warn" and said in text and "takes at most 2.1.325" in text, text
 
 
 def test_check_requires_the_sandbox_when_configured(
@@ -1626,6 +1759,311 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("MAITY_RUNNER_CONFIG", "/etc/maity-runner/runner.toml")
     assert config.path_of(None) == Path("/etc/maity-runner/runner.toml")
     assert config.path_of("~/x.toml") == home / "x.toml"
+
+
+def test_missing_default_config_names_the_services(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tsk-2k0jcaxfd0ja: on a host set up by `maity runner install`, `maity runner tools` or
+    # `check` without --config looked for ~/.config/... and said only "no such file". With the
+    # service's file there, the message names it and how to pass it; it is never read instead.
+    from maity.runner import install
+
+    assert config.SERVICE_PATH == install.CONFIG
+    service = tmp_path / "etc-runner.toml"
+    monkeypatch.setattr(config, "SERVICE_PATH", service)
+    with pytest.raises(config.ConfigError) as plain:
+        config.load(config.path_of(None))
+    assert plain.value.problems == [
+        f"{config.path_of(None)}: no such file; write it first (runner design §5.1)"
+    ]
+    service.write_text("[hub]\n", encoding="utf-8")
+    with pytest.raises(config.ConfigError) as named:
+        config.load(config.path_of(None))
+    assert named.value.problems[0].endswith(
+        f"; the service of `maity runner install` reads {service}: pass --config {service}, "
+        "as its user (sudo -u maity-runner -H)"
+    )
+    # A path given by hand is the person's: its absence is said plainly.
+    with pytest.raises(config.ConfigError) as given:
+        config.load(home / "other.toml")
+    assert "--config" not in given.value.problems[0]
+    # A service directory this user cannot search names nothing and raises nothing (A2159).
+    blocked = tmp_path / "closed"
+    blocked.mkdir()
+    monkeypatch.setattr(config, "SERVICE_PATH", blocked / "runner.toml")
+    blocked.chmod(0)
+    try:
+        with pytest.raises(config.ConfigError) as closed:
+            config.load(config.path_of(None))
+        assert closed.value.problems[0].endswith("write it first (runner design §5.1)")
+    finally:
+        blocked.chmod(0o755)
+
+
+def test_check_warns_on_an_agent_path_entry_under_a_home_that_is_not_there(
+    home: Path, tmp_path: Path
+) -> None:
+    # tsk-2k0jcaxfd0ja: a service's agent_path named /home/maity-runner/.local/bin, while
+    # `maity runner install` gives that user /var/lib/maity-runner; nothing said so.
+    there = tmp_path / "bin"
+    there.mkdir()
+    gone = "/home/maity-no-such-user-2k0j/.local/bin"
+    local = config.Local(
+        workspaces=tmp_path / "ws",
+        tmux_socket=tmp_path / "tmux.sock",
+        agent_path=os.pathsep.join([str(there), gone, str(tmp_path / "missing")]),
+    )
+    report = commands.Report()
+    commands._check_agent_path(report, local)
+    assert report.lines == [
+        (
+            "warn",
+            f"agent_path entry {gone} does not exist; /home/maity-no-such-user-2k0j is no "
+            f"home here, the agents' home is {home}",
+        ),
+        ("warn", f"agent_path entry {tmp_path / 'missing'} does not exist"),
+    ]
+    assert not report.failed
+    # Without agent_path (the service's own PATH) there is nothing to say.
+    quiet = commands.Report()
+    commands._check_agent_path(quiet, dataclasses.replace(local, agent_path=None))
+    assert quiet.lines == []
+
+
+def test_check_warns_when_the_host_lacks_what_a_grant_needs(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tsk-2k0jcaxfd0ja: on a fresh host `make` was granted but missing, gh came after the
+    # sessions started (so `maity gh` said "grants no pull requests"), and gh had no login.
+    from maity import proc
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "npm").write_text("#!/bin/sh\n")
+    (bin_dir / "npm").chmod(0o755)
+    raw = {
+        "hub": {"url": "https://hub.example"},
+        "limits": {"projects": ["ow/pr"], "repositories": ["github.com/ow/pr"]},
+        "harness": {"stub": {}},
+        "repositories": {
+            "github.com/ow/pr": {"allow": ["make *", "npm test"], "pull_requests": True},
+        },
+    }
+    cfg = config.parse(raw, tmp_path / "runner.toml")
+    monkeypatch.setattr(proc, "program", lambda name: None)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, str(bin_dir))
+    said = [text for level, text in report.lines if level == "warn"]
+    assert len(said) == 2 and not report.failed, said
+    assert said[0].startswith("repositories.github.com/ow/pr: allow 'make *': `make` is not on")
+    assert "gh is not on the runner's PATH" in said[1] and "restart" not in said[1]
+    assert "sessions find it at their next call" in said[1]
+    # gh there, no login stored where `maity gh` finds it.
+    monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, str(bin_dir))
+    said = [text for level, text in report.lines if level == "warn"]
+    assert len(said) == 2 and "gh has no login for" in said[1], said
+    assert f"no {home}/.config/gh/hosts.yml" in said[1] and "gh auth setup-git" in said[1]
+    # Logged in, make there: nothing to say.
+    (home / ".config" / "gh").mkdir(parents=True)
+    (home / ".config" / "gh" / "hosts.yml").write_text("github.com:\n")
+    (bin_dir / "make").write_text("#!/bin/sh\n")
+    (bin_dir / "make").chmod(0o755)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, str(bin_dir))
+    assert report.lines == []
+
+
+@pytest.mark.parametrize("target", ["/usr/sbin/nologin", "/bin/false"])
+def test_check_names_the_sessions_shell_and_refuses_one_that_runs_no_command(
+    monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """tsk-fjq2k0sx1n3r: the sessions' SHELL is named, and one that is or links to nologin or
+    false is an error, here and on an ssh host."""
+    from maity.runner import tmux
+
+    shell = tmux.BASH if os.access(tmux.BASH, os.X_OK) else tmux.SH
+    report = commands.Report()
+    commands._check_session_shell(report, RUNNER)
+    assert report.lines == [("ok", f"sessions get SHELL={shell}, not the account's login shell")]
+
+    monkeypatch.setattr(os.path, "realpath", lambda path: target)
+    report = commands.Report()
+    commands._check_session_shell(report, RUNNER)
+    monkeypatch.undo()
+    ((level, text),) = report.lines
+    assert level == "error" and f"SHELL={shell} ({target})" in text
+
+    report = commands.Report()
+    side = _ProbedSide("agents", 0, f"shell\t/bin/sh\t{target}\n")
+    commands._check_session_shell(report, side, "h: ")
+    ((level, text),) = report.lines
+    assert level == "error"
+    assert text.startswith(f"h: sessions would get SHELL=/bin/sh ({target})")
+
+
+@dataclasses.dataclass(frozen=True)
+class _ProbedSide(AsUser):
+    """An agents' side the runner reaches through sudo or ssh, whose shell probe answers
+    (`code`, `out`); `remote` False: the agent_user layout, on the runner's own host."""
+
+    code: int = 0
+    out: str = ""
+    remote: bool = True
+
+    @property
+    def here(self) -> bool:
+        return not self.remote
+
+    def run(self, argv: Any, *args: Any, **kwargs: Any) -> Any:
+        import subprocess
+
+        return subprocess.CompletedProcess(list(argv), self.code, self.out, "")
+
+
+@pytest.mark.parametrize(
+    ("code", "out", "level", "said"),
+    [
+        # A2352: the shell runs, but where it leads cannot be read: not checked, never ok.
+        (0, "shell\t/bin/bash\t\n", "warn", "not checked further"),
+        # No answer (ssh's 255, a refused sudo) is not a shell that cannot run.
+        (255, "", "warn", "gave no answer"),
+        (1, "", "warn", "gave no answer"),
+        (0, "none\n", "error", "which the agents' user cannot run"),
+        (0, "shell\t/bin/bash\t/usr/bin/bash\n", "ok", "sessions get SHELL=/bin/bash"),
+    ],
+)
+def test_check_tells_an_unchecked_shell_from_a_failed_look_and_from_one_that_cannot_run(
+    code: int, out: str, level: str, said: str
+) -> None:
+    report = commands.Report()
+    commands._check_session_shell(report, _ProbedSide("agents", code, out), "host-a: ")
+    ((found, text),) = report.lines
+    assert found == level and text.startswith("host-a: ") and said in text, text
+
+
+def test_check_probes_the_shell_as_the_agents_user_in_the_agent_user_layout() -> None:
+    """A2352: on the runner's own host, but for another user, the shell is probed as that
+    user (through sudo), so an ACL that shuts the agents' user out is not taken for ok."""
+    report = commands.Report()
+    commands._check_session_shell(report, _ProbedSide("agents", 0, "none\n", remote=False))
+    ((level, text),) = report.lines
+    assert level == "error" and "which the agents' user cannot run" in text, text
+
+
+GRANT_RAW = {
+    "hub": {"url": "https://hub.example"},
+    "limits": {"projects": ["ow/pr"], "repositories": ["github.com/ow/pr"]},
+    "harness": {"stub": {}},
+    "repositories": {"github.com/ow/pr": {"allow": ["make *"], "pull_requests": True}},
+}
+
+
+def test_check_looks_at_the_agents_side_as_the_agents_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """agent_user layout (reviews A2159/A2160 of #2125): the runner's own user may not enter
+    the agents' home, so the gh login, the granted programs and the agent_path entries are
+    looked up as the agents' user (sudo), never with pathlib as the runner."""
+    from maity import proc
+    from maity.runner import capabilities
+
+    local = {"layout": "agent_user", "agent_user": "agents", "agent_path": "/home/agents/bin"}
+    raw = dict(GRANT_RAW, backend={"kind": "local", "local": local})
+    cfg = config.parse(raw, tmp_path / "runner.toml")
+    asked: list[tuple[str | None, str, str]] = []
+
+    def exists(self: object, path: Path, kind: str = "-e") -> bool:
+        asked.append((getattr(self, "user", None), str(path), kind))
+        return True
+
+    monkeypatch.setattr(AsUser, "exists", exists)
+    monkeypatch.setattr(commands, "_reaches", lambda as_user: True)  # sudo works here
+    which: list[str | None] = []
+
+    def which_as(name: str, path: str | None, as_user: AsUser = RUNNER) -> str:
+        which.append(as_user.user)
+        return "/x"
+
+    monkeypatch.setattr(capabilities, "which", which_as)
+    monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, "/home/agents/bin")
+    assert report.lines == [] and which == ["agents"]
+    assert asked == [("agents", f"{config.home_of('agents')}/.config/gh/hosts.yml", "-f")]
+    asked.clear()
+    assert cfg.local is not None
+    commands._check_agent_path(report, cfg.local)
+    assert report.lines == [] and asked == [("agents", "/home/agents/bin", "-e")]
+    # sudo to the agents' user fails (review A2168 of #2125): every look would read as absent,
+    # so none is made; _check_agent_user reports the sudo error once.
+    monkeypatch.setattr(commands, "_reaches", lambda as_user: False)  # A2167 P3-3, A2168 P3-2
+    monkeypatch.setattr(AsUser, "exists", lambda self, path, kind="-e": False)
+    monkeypatch.setattr(capabilities, "which", lambda name, path, as_user=RUNNER: None)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, "/home/agents/bin")
+    commands._check_agent_path(report, cfg.local)
+    assert report.lines == []
+    # A look that fails underway (sudo gone, a timeout) crashes nothing (A2167 P3-1, P3-2).
+    import subprocess
+
+    def gone(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError("sudo")
+
+    def slow(self: object, path: Path, kind: str = "-e") -> bool:
+        raise subprocess.TimeoutExpired("sudo", 10)
+
+    monkeypatch.setattr(commands, "_reaches", lambda as_user: True)
+    monkeypatch.setattr(capabilities, "which", gone)
+    monkeypatch.setattr(AsUser, "exists", slow)
+    report = commands.Report()
+    commands._check_grant_programs(report, cfg, "/home/agents/bin")
+    assert [text for _, text in report.lines] == [
+        f"repositories.github.com/ow/pr: gh's login for agents not checked: "
+        f"{config.home_of('agents')}/.config/gh/hosts.yml cannot be looked at from this user"
+    ]
+
+
+@posix
+def test_check_says_not_checked_where_it_cannot_look(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path this user cannot look at (EACCES) is never taken for absent, on any Python:
+    no false "no login" and no false "does not exist" (pathlib raises up to 3.13 and answers
+    False from 3.14 on)."""
+    from maity import proc
+
+    if os.geteuid() == 0:
+        pytest.skip("root reads every directory")
+    closed = home / ".config"
+    (closed / "gh").mkdir(parents=True)
+    (closed / "gh" / "hosts.yml").write_text("github.com:\n")
+    closed.chmod(0)
+    try:
+        cfg = config.parse(GRANT_RAW, tmp_path / "runner.toml")
+        monkeypatch.setattr(proc, "program", lambda name: "/usr/bin/gh")
+        report = commands.Report()
+        commands._check_grant_programs(report, cfg, os.defpath)
+        said = [text for level, text in report.lines if "gh" in text]
+        assert len(said) == 1 and "not checked" in said[0] and "no login" not in said[0], said
+        local = config.Local(
+            workspaces=tmp_path / "ws",
+            tmux_socket=tmp_path / "tmux.sock",
+            agent_path=f"{closed}/bin{os.pathsep}rel/home/x",
+        )
+        report = commands.Report()
+        commands._check_agent_path(report, local)
+        assert report.lines == [
+            (
+                "warn",
+                f"agent_path entry {closed}/bin not checked: it cannot be looked at from " "here",
+            ),
+            ("warn", "agent_path entry rel/home/x does not exist"),
+        ]
+    finally:
+        closed.chmod(0o755)
 
 
 def test_opencode_is_offered() -> None:

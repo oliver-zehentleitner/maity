@@ -48,7 +48,9 @@ to; a member without `reports_to` sits under the owner of the narrowest
 scope that contains its own; the rest are roots. Nothing chart-shaped is
 fetched or kept. Each agent's node lists its live instances as links to
 their Sessions on the member's page, the target an instance has everywhere
-else; a dormant one says so beside its link.
+else; a dormant one says so beside its link. Since tsk-zsbe48ty4ces
+(the maintainer, 2026-11-23) both Organisation tabs draw one row per
+member from one renderer, each instance `#abcd` after its status dot.
 
 The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
@@ -60,7 +62,8 @@ qualified `owner/handle` where another member shares the short one,
 no name, no link to its page, no tooltip. Where the member list gives no
 handle, the stub is the neutral sentence "reports to someone who is not
 yours", never an id or a name. Its instances are dots in their presence's
-colour, the lead ringed. Each state also has a shape of its own, so that colour is never the only
+colour, the lead ringed, each before the instance's `#abcd` (the same row
+as on Team, tsk-zsbe48ty4ces). Each state also has a shape of its own, so that colour is never the only
 cue (WCAG 1.4.1; a review of #1485, nte-s2dqhn1n4bez; the coordinator chose these shapes, batch 3c of
 tsk-tsb8528rank1, 2026-11-10): online a filled disc, away a ring half filled, offline a smaller
 disc, dormant a hollow ring. In forced colours, where the browser drops gradients, background
@@ -116,7 +119,7 @@ not the requests themselves.
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
-**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs (the starred tabs of 2026-11-19 are close to pinned ones: the entry below, f461c919, keeps this model and adds them to it)
 **See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
 
 Which projects the header shows as tabs, and in which order, is kept in
@@ -140,6 +143,114 @@ a filter that hides personal requests would hide requests with no tab
 to open them from.
 
 **Rejected alternatives:** unknown beyond the contract entry's.
+
+## A public project one is no member of is a dashed tab for the browser session that opens the project's member views; a starred one is a dashed tab among one's tabs, opened after start_tabs
+
+**Id:** f461c919-3041-4558-af0e-e44127041a01
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's spec on card tsk-kqn8zhptf06k (the dashed outsider tab, the star that anchors it, member views limited to the outsider's rights); the owner's correction of 2026-11-19 (no separate view for outsiders: the dashed tab renders the normal member views with the controls the outsider has no right to hidden, fed by the member routes #2001 opens, and no public-page fallback inside the tab, not even as an interim) and their scope change the same day (seq 169849: outsiders see Why too); docs/api.md §2.3, §5.1 "Stars" and §6.30 Q2, as #2001 and #2078 built them (hub access.py `OUTSIDE_READS`, `PUBLIC_REPOSITORY_READS`; routes/keep_the_why.py); the lead's answers to the web plan's questions Q2–Q8, 2026-11-19, and their rulings on card tsk-2fxc53xqf922 (seq 201203: an owner of an agent or runner in the project is a plain outsider in the tab; one Why sentence for every reason the hub closes it; a slot for "Add your agent"); the card's note nte-n3vef4qz1838
+**Revisit when:** the hub opens another member route to an outsider, or closes one; the Why reads answer an outsider with a reason the dashboard could say; "Add your agent" or another outsider action lands in the slot; or the contract lets an unstarred tab outlive its browser session
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-19
+
+A signed-in human who opens a public project they are no member of gets
+a tab for it in the switcher, drawn with a dashed outline, that links to
+the project's Overview and is current while any of its views is shown
+(`js/tabs.js` `visit`, `js/app.js` `outsiderTab`). There is no separate
+view for outsiders: the tab opens the project's member views, Overview,
+Board, Team and Why, read from the member routes the hub opens to an
+outsider (§2.3, #2001: the project, its members, its cards with their
+history and notes, its logo and banner; #2078: the three Why reads,
+only while the hub found the repository public), with every control
+they have no right to left out (`js/trust.js`: `outsider(ctx)` and
+`writes(ctx)` beside the trust helpers, which already answer no for a
+reader with no trust: no card created, moved, assigned or watched, no
+note added or edited, no member managed, invited or chatted with, no
+agent joined; Report stays, naming a person or an agent as a stranger
+does, §16.8: a handle, a global name). What the hub sends an outsider
+less is left out, not drawn empty: no presence dot or word, no online
+count in what a member leads, no Actions or Paused column, no link to
+answer a request a card waits for. A member's name links to their page there
+(`opensViews(ctx)`, `ctx.outsideViews`), which a group chat read along
+(`/observe`, also `ctx.outsider`) keeps unlinked; card and request ids
+in text stay unlinked for both, since an id can lead into a view closed
+to them (`js/ids.js`). A person who owns an agent or a runner in
+the project is a plain outsider here: the owner calls §2.3 keeps for
+them stay with the CLI and the API, and the tab offers none of them,
+not even for that agent. Where the Why reads answer `not_found`, Why
+says in one sentence that the project's Why is not shown outside it,
+naming no reason, since the hub answers the same for a repository that
+is not public, for none, and for a project outside the operator's own
+namespaces (`js/why.js` `outsideState`). The head of every view in the
+tab carries an empty slot for the outsider's own actions,
+`span#outsider-actions.outsider-actions` with
+`data-slot="outsider-add-agent"` in `.project-state` (`js/app.js`),
+hidden while empty; "Add your agent" (§3.1, its own card) is drawn
+into it, and nothing else is yet. Another module fills it by defining
+`M.outsiderActions(ctx, slot)`, which `js/app.js` calls once per header
+drawn for an outsider and never defines itself. Each view is switched on for outsiders
+in the nav itself (`NAV`'s `outsider: true`), Why's included, so one
+flag takes a view out; every other route of the project, the inbox,
+chat and settings among them, is the dashboard's "not found", and a
+project the hub does not let them read is "not a member", as before.
+The project's own address leads an outsider to its Overview; a public
+page's Report coming back with `?report` at that address or at a public
+view's (Board, Team, Organisation, Why) leads to `overview?report`, the
+Overview's form open, as it does for a member.
+The bootstrap bundle and the event feed are a member's (§5.4, §8.3):
+an outsider's views read on their own and offer no reload on events.
+
+Each such project opened gets a tab of its own, kept in sessionStorage
+under `maity.tabs.outsider.<me.id>` (every access in try/catch, in
+memory without storage) with the project's id from its view, named by
+its full name, after the member and starred tabs, until it is closed
+from the tabs menu or the browser session ends; it is never sent. Its
+empty star stars it (`PATCH /me` with `starred` whole, the id last);
+the tab is then a starred one. The projects `/me` lists as `starred`
+are tabs like memberships: a browser with nothing kept opens
+`start_tabs`, then the starred projects; a star added elsewhere opens
+as the last tab, as a new membership does. A starred tab is dashed too,
+since dashed says "not a member", and carries a filled star whose
+button takes the star off (`PATCH /me` with the rest in order); the tab
+then stays, unstarred, for the session. Closing a starred tab hides it
+in this browser and keeps the star. A refused `PATCH` leaves the star as
+it was and says why; refused as `member`, `/me` is read again and the
+project turns into a member's tab. Stars show only in the tab row and
+the tabs menu; `start_tabs` stays memberships only, and the inbox's tab
+filter and grouping follow member tabs alone. Signed out, a visitor
+still gets the project's stored public page (§16.9).
+
+**Reason:** the owner's: an outsider reads the same project as a member,
+less what they may not do, so the same views serve both, and a second
+set of views for outsiders would drift from the members'. The tab is
+the way in, so it opens the views directly.
+
+For the tab's lifetime: §6.30 Q2 says an unstarred tab "lasts as long as the
+browser session that opened it". sessionStorage is that browser
+session: it survives a reload and dies with the session. The star is
+the contract's way to keep a project (§5.1), so a starred tab must not
+depend on this browser's storage, and treating it like a membership
+reuses the `known` rule the tab row already has (cd4fe2ba). Keeping
+the star on close mirrors a member tab, whose close never leaves the
+project.
+
+**Rejected alternatives:** the stored public page inside the tab, as
+this entry first had it while the hub's outsider read was missing, or
+as a fallback where a member route fails (the owner, 2026-11-19: there
+is no separate view for outsiders, and no public-page fallback inside
+the tab, not even as an interim); a view of their own for outsiders (the
+same reason); a Why sentence per reason the hub closes it (its
+`not_found` does not say which, and naming one, such as "the repository
+is not public", would be false for the others); the owner actions of an
+agent's owner inside the tab (the lead: a plain outsider there); kept in localStorage until closed (Q2's wording rules it out:
+it would outlive the session and come back in a fresh start); gone on
+leaving the project's page (Q2: "not until the reader moves to another
+tab"); kept in memory only (it dies on a reload, which is no end of the
+session); a × of its own on the tab (member tabs close from the tabs
+menu, and a second way would differ from them); closing a starred tab
+unstars it (the star is the account's, a tab this browser's: cd4fe2ba's
+split).
 
 ## A private project carries a lock after its name, from the project's own public_page
 
@@ -509,7 +620,7 @@ open that chat.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with lotse that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with the lead that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
 **Revisit when:** §8.8 gains a `wait` of its own, or the listing's page or scan budget no longer fits one opening
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-04
 
@@ -684,7 +795,7 @@ person.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's screenshot of the deployed chat view, relayed by the coordinator (tsk-2my9kqmjp6nk), 2026-10-23: every entry read "Oliver Zehentleit…", the time sat on the name, the list was a narrow column beside the heading; the dashboard's implementation, 2026-10-23
+**Source:** the maintainer's screenshot of the deployed chat view, relayed by the coordinator (tsk-2my9kqmjp6nk), 2026-10-23: every entry read "[the maintainer's name]…", the time sat on the name, the list was a narrow column beside the heading; the dashboard's implementation, 2026-10-23
 **Revisit when:** the header gets a nav that is not a row of links, or the chat list leaves its `<nav>`
 
 The header's link rules (a scrolling flex row, links on one line) apply
@@ -1458,7 +1569,7 @@ Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at t
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision (lotse) of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
 **Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over); for the opencode model rule: the hub refuses an opencode placement without a model itself, or every runner in use fails closed on the model (#1969), so the form need not hold it
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
@@ -1538,7 +1649,7 @@ with `--model`, and without it exits 2 before the join link is redeemed
 2026-11-18 two opencode reviewers ran with no model set, so on
 opencode's hosted model, and repository content went to opencode's
 servers. Fail closed on the model wherever opencode starts, the lead's
-decision (lotse), recorded 2026-11-18.
+decision, recorded 2026-11-18.
 Rejected: keeping "The runner's default" for OpenCode, since only the
 runner knows whether it resolves to a configured model; offering
 OpenCode without models and letting the runner refuse it, a choice that
@@ -3373,7 +3484,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11, the tab taken back for the card tsk-2t7efzj1p8zt, 2026-11-15
+**Source:** the maintainer's report that a manager's page (`/<handle>`) showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11, the tab taken back for the card tsk-2t7efzj1p8zt, 2026-11-15
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3856,7 +3967,7 @@ the view already says the organisation is suspended.
 
 `M.orgs.handleOf` decodes the handle from `/account/orgs/<handle>`,
 trims it, drops a leading `@` and writes it in lowercase, for the call
-and for the page title, so `/account/orgs/%40OZ-Team` opens @oz-team.
+and for the page title, so `/account/orgs/%40Acme-Team` opens @acme-team.
 
 **Reason:** a link copied with an `@` or typed with capitals names the
 same organisation for a human.
@@ -4043,7 +4154,7 @@ up the state, so the mark belongs there as well as in the header.
 **Type:** workaround
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor) and §8.8 (the listing holds messages only, with no filter by sender); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history; the card tsk-0m6qx612y5px and lotse's agreement, 2026-11-04 (project message seq 69405): the Messages view moves to §8.8, the Activity keeps the window
+**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor) and §8.8 (the listing holds messages only, with no filter by sender); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history; the card tsk-0m6qx612y5px and the lead's agreement, 2026-11-04 (project message seq 69405): the Messages view moves to §8.8, the Activity keeps the window
 **Revisit when:** §8.3 takes `actor=` (`GET /events?actor=`)
 
 The hub cannot be asked for one member's events, nor for a project's
@@ -4065,7 +4176,7 @@ window when the Messages view leaves it: it lists every kind of a
 member's events (cards claimed, requests answered, members joined, and
 messages), while §8.8 lists messages only and cannot be asked for one
 sender, so it would show a fraction of the Activity and still need the
-scan for the rest. Settled with lotse on 2026-11-04 (seq 69405).
+scan for the rest. Settled with the lead on 2026-11-04 (seq 69405).
 
 **Rejected alternative:** reading the whole feed from the first event:
 its cost grows with the hub's history, which the 2026-10-26 rule rules
@@ -4641,7 +4752,7 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); the lead's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
 **Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
@@ -4696,7 +4807,7 @@ A bubble (`.msg`, web/css/app.css) is `max-width: min(max(36rem, 60%), 60rem, 90
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by the lead (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
 **Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
@@ -4754,13 +4865,20 @@ The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: th
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
-**Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
+**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`); re-checked 2026-11-23 when the contract took up installations on a forge organisation (§11.4, "Organisations: Maity's and the forge's"; card tsk-2m5jbwemb21x), whose view is not built yet
+**Revisit when:** an organisation is to hold a forge grant of its own (§11.4, "Organisations: Maity's and the forge's"), or a second forge is added
 
 **Forge access** is a tab of the account's Security
 (`/account/security/forge`), next to the sessions. It shows:
 - the linked installations of the instance's GitHub App, each with its
-  status and the repositories it covers;
+  status and the repositories it covers; an installation on a GitHub
+  organisation whose link has gone `not_admin` (not built yet) shows
+  that as its own status, for the human who linked it: GitHub no longer
+  reports them as an owner of the organisation, nothing is read with the
+  link and no repositories are listed, and what to do is said with it:
+  have the owner role restored on GitHub (the link is active again
+  after its next check) or unlink it; meanwhile another owner of the
+  organisation may link it, which replaces this link;
 - **Link the GitHub App**, offered only where `app_configured`;
 - **Unlink**, which says it does not uninstall the App on GitHub and
   links to GitHub's page;
@@ -5830,7 +5948,7 @@ reset.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03; lotse#wtwy's decision on #1287 (message seq 65368, 2026-11-03)
+**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03; the lead's decision on #1287 (message seq 65368, 2026-11-03)
 **See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
@@ -5853,7 +5971,7 @@ stands, so a page drawn again (another language, the same address) does not lose
 Every view that is not the sign-in takes it down itself: the invitation, the mail's second step
 without a session, the maintenance page, a failed page, and every drawing once a session is known.
 A visitor's public page and "not found" stand in the frame too (see
-6d168e98-d442-4a3a-bd1c-57158eeeb273). The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
+6d168e98-d442-4a3a-bd1c-57158eeeb273). The scope is confirmed: the lead decided it on 2026-11-03 (on
 #1287, after the review found the frame at those addresses). It was chosen over drawing the
 frame at `/login` and `/register` alone; why it lost is inferred, not stated: that choice would show
 the same form in two designs depending on the address.
@@ -5887,7 +6005,7 @@ which does not know whether the frame stands or its read failed.
 page without the frame and without the line, as §16.13 says for a read that waits. A timeout was
 not added: it would put a second clock beside the API's own error handling, and a hub that does
 not answer leaves the sign-in itself unusable anyway (review of #1287 by
-maity-review-team-grok#dzse).
+a reviewer).
 **Known gap:** a session that ended on the hub without the page being told (signed out in
 another tab, expired) stays in `M.api.session()`. A 401 on `GET /auth/session` is a public call
 and does not clear it (`js/api.js`; only `endSession` does), so `render()` takes the frame down
@@ -5895,8 +6013,8 @@ and lets the product line go on each such drawing: the app's bar and the line sh
 trip of `/auth/session` before the sign-in enters the frame again. The stale session itself is
 older than #1287 (`js/api.js` answered that 401 the same way before it); the flash is #1287's,
 since only #1287 leaves the frame and holds the line by the session. Found in the review of #1287
-by maity-review-team-grok#spq4. Recording it rather
-than clearing the session on that 401 here was lotse#wtwy's decision (message seq 66307,
+by a reviewer. Recording it rather
+than clearing the session on that 401 here was the lead's decision (message seq 66307,
 2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
@@ -6455,7 +6573,7 @@ inferred, the card did not discuss them.
 **Status:** superseded
 **Superseded by:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
 **Evidence:** confirmed
-**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
+**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); the lead's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
 **Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
 
 `render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
@@ -6621,8 +6739,8 @@ words keep every hint's length known whatever the handle or the host.
 
 **Rejected alternatives:** a filled-in example cut to a length, which
 still varies with the host and reads oddly when cut; a filled-in example
-only on wide screens, which gives two texts to keep true. The example
-`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+only on wide screens, which gives two texts to keep true. An example
+agent or organisation handle as a fixed word was dropped too: it read as a fact
 about the reader's own agent or organisation.
 
 ## A handle field's rule and its word while typed come from one helper, and nothing is lower-cased
@@ -6817,7 +6935,7 @@ left at its first page with a count. The closed columns say the failure, as
 before. A reload after a write reads every page before it draws, as before.
 
 Since tsk-3b2t7hwc352s (2026-11-20) the late draw replaces only the columns
-that changed. Ops traced the board and the card panel on oliver-pc01-l
+that changed. Ops traced the board and the card panel on the maintainer's machine
 (prod fccd88f, the card's note of 2026-11-20). The board was drawn twice. The
 late draw emptied every column (`clear`, one `removeChild` per child: 46 ms
 of script and 10–15k layout invalidations) and built them again, and each
@@ -6972,7 +7090,7 @@ results come whole, still draws the 50 closed last of each closed column
 and a button the rest ("Show 11 more closed cards").
 
 The `Revisit when` above about a full redraw over 200 ms has come about. Ops'
-trace of 2026-11-20 on oliver-pc01-l (prod fccd88f, before tsk-qw08c8ds214g)
+trace of 2026-11-20 on the maintainer's machine (prod fccd88f, before tsk-qw08c8ds214g)
 followed each of the board's two draws with a style recalculation of 175–200
 ms over about 16k elements. The late draw's script took 138 ms: 46 ms emptied
 the columns one `removeChild` at a time, about 29 ms formatted dates. The
@@ -7754,3 +7872,123 @@ sent is what the page shows (review A963).
   and cost a call on every save.
 - Merging the draft into the list read again (keeping roles others added): it would hide a
   conflict on the same role; refusing and reloading says it.
+
+## Pair a runner offers the service way first, chosen by the person; its file replaces install's after install
+
+**Id:** 108b029e-4a36-4b22-ae92-f3a72afb4d7d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2k0jcaxfd0ja (the owner's request req-0d53nenzt328, 2026-11-22: a fresh Debian 13 runner host was paired by the terminal steps, had no service, and `install` then refused a hand-made `maity-runner` user; the card names the two ways, the service recommended, macOS terminal only, the file at `/etc/maity-runner/runner.toml`); `cli/src/maity/runner/install.py`. How the choice is made and the file's order and contents are the implementer's. The re-pair's ways, the order of `check`, the starting directory and the pairing lines built by the page follow review A2144 of #2123 (2026-11-23).
+**Revisit when:** `maity runner install` writes `[limits]` and a harness itself, adopts an existing user, or a launchd service exists; or the hub learns the runner host's system before pairing
+
+The Runners view's pairing panel offers two ways as radio buttons, **As a service on Linux
+(recommended)**, checked, and **In a terminal** (the only way on macOS). Both step lists are drawn
+once; the choice hides one, so the pairing line in either is cleared by the same "paired" or
+"expired" update. A re-pair offers the same two ways (review A2144 of #2123): as a service, the
+service is stopped, its credential moved aside (`pair` refuses while one is there) and `pair` run as
+`maity-runner` with `--config /etc/maity-runner/runner.toml`, so the new credential lands in
+install's state directory. Rejected: the terminal's steps only, as first built, which on a service
+paired into the person's own `~/.local/state` and left the service on its revoked credential.
+
+- **The person chooses; nothing is detected.** The browser's system says nothing about the machine
+  the runner goes on (a Mac's browser pairing a Linux server is the usual case). Rejected: choosing
+  from `navigator.platform`/`userAgentData`, which would pick the wrong way exactly then.
+- **On the service way the file is written after `install`, replacing install's file**, with a
+  copy of it kept as `runner.toml.install`. `install` writes its own file, pairs and enables the
+  service but starts it only once `[limits]` and a harness are there; the dashboard's file then
+  completes it, and a restart starts it. Rejected: writing the file first, which `install` would
+  keep (it keeps a file that differs) and start at once, but which moves the one step that can fail
+  on the person's own file (`install` refuses a file whose `state_dir` or hub is not its own) before
+  the pairing, and an `install` run again over it would only say "kept". Rejected: the terminal's
+  `set -C`, since the file to replace always exists by then.
+- **The service's file keeps install's `state_dir` and `workspaces`.** The terminal's file holds
+  only keys without a default; here the defaults resolve under the service user's home to other
+  directories than the ones install paired in, and `serve` would not find the credential.
+  `web/tools/starter_configs.py` checks both paths against install's.
+- **`install = true` for Claude Code on the service way**: the service user has no Claude Code of
+  its own, and the runner's managed copy (from the vendor, checked) is the one tool of the two it can
+  install that the starter names. The login then comes as its own step, with the managed binary's
+  path. Rejected: asking the person to install Claude Code for `maity-runner` by hand, which on the
+  host this card came from was the step that went wrong.
+- **Every pairing line pipes the code to `--code-file -`.** `printf` is a shell builtin, so the code
+  is in no process's arguments. The terminal's and the re-pair's `pair` lines are built by the
+  dashboard from the enrollment's `pair_url` and `code` too (review A2144). Rejected: showing the
+  hub's `pair_line`, which carries `--code`; changing it would be a hub change for what the page
+  can say itself. The URL and the code go in single quotes, a quote in them escaped.
+- **`check` comes last on the service way, after the tool's and the forge's login** (review A2144).
+  With `install = true`, `serve` installs Claude Code in the background after its start: a `check`
+  run before that skips the sandbox checks ("not installed yet"), and one run before the login fails
+  on its headless probe run. Rejected: `check` right after the restart, as first built.
+- **Commands as `maity-runner` start in a directory that user can enter**: `cd / &&` for `check`
+  and gh, and Claude Code in `maity-runner`'s home (`sh -c 'cd && exec …'`), since `sudo` keeps the
+  caller's directory, which an Ubuntu home (0750) keeps `maity-runner` out of, and Claude Code asks
+  to trust the folder it starts in. Rejected: `sudo -D`, which sudoers allow only with a `runcwd`
+  setting; starting Claude Code in `/`, which would make the person trust `/`.
+- **The configuration's command writes with `tee` into install's file, mode untouched.** `tee`
+  keeps an existing file's owner and mode (root, 0644, as install writes it) whatever the umask, and
+  `cp -p` fails without install's file, so nothing is written then; `starter_configs.py` runs the
+  command under umask 002 against a 0644 stand-in, twice. Install's copy is made only once
+  (`test -e … ||`), so a second paste keeps it. Rejected: a `chmod` after `tee`, which would only
+  repeat what the file already is; `cp -n`, whose exit status differs between coreutils versions.
+
+## A chat of one's own agents across projects is on Chats, in a list of its own
+
+**Id:** 08235525-43fd-40a6-b7a7-440cef67e17e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract `docs/api.md` §9.5, which the hub already serves, and the dashboard's Chats page (`js/chats.js`), 2026-11-05; ported onto main and amended after 9bnr's pre-review A2494 (tsk-d00zszbbmvmy), 2026-11-24
+**Revisit when:** the hub starts notifying the owner of a message in this chat, or the owner wants the row among the pinned project chats
+**See:** https://github.com/oliver-zehentleitner/maity — adf88c46-52ea-4160-a875-a3da5560fe7b — as of 2026-11-05
+
+The dashboard shows an owner's cross-project group chats on `/chats`,
+under the project chats, from `GET /me/cross-chats`. A row has no project
+mark and no pin. Opening one is `/chats/cross/<id>`; creating one is
+`/chats/cross/new`. The open chat is the group chat's panes without a
+file, without the meat-proxy switch and without a wake control. The
+owner renames, adds and removes agents, and removes a message. Leaving
+closes the chat, and the owner can still read it and remove a message.
+An agent's projects on the chat are the ones the hub put on the
+participant. The header's Chat badge stays `counts.chat`.
+
+Amended when the chat was ported onto main (A2494). The pane has the
+group chat's full-screen button in its heading row, so "any chat takes
+the whole window" holds for this one too. **New chat across agents** is
+an icon link after the 📌 toggle in the list's heading row, as a
+project's New group chat is an icon. The heading keeps its row on a
+phone and the Lead stays at the left edge under it. A person, a mention
+and an instance in the chat link where a project's context would (its
+Team page, a session), through `link` of a project of the reader's that
+has them. A cross chat has no `link` of its own, so a renamed route
+cannot go stale here. The chat carries no verdicts (§9.7) and no waiting
+lines of the agent firewall (§9.6): both belong to a project's chats.
+
+**Reason:** the contract gives this room its own list, with no pin and
+no place in `GET /me/conversations`, and says the unread count on the
+chat is how a new message shows. The human already opens Chats for
+every conversation, so the room belongs on that page. The badge is the
+hub's notification count, and these messages are not notifications.
+
+**Rejected alternatives:**
+- Mixing the rows into the four bands of `GET /me/conversations`: that
+  list is ordered by the hub, and this chat has no pin. Sorting the two
+  together in the browser would invent an order the hub does not give.
+- A page of its own, away from Chats: the human would have to learn a
+  second place for a conversation.
+- Adding the unread count to the Chat badge: the badge is `counts.chat`,
+  which counts project conversations. A second source would show a
+  number the hub does not report there.
+- Files, the meat-proxy switch, or a wake control: the contract leaves
+  each of them out of this chat. Reporting a message stays out too,
+  because that call is not built (§16.8).
+- New chat across agents as a text button wrapped with the Lead in an
+  actions group (#1422 as first built): main's heading row became
+  icons (heading, Lead, 📌), and a text button would take a row of its
+  own on a phone.
+- Links built by hand as `/<project>/members/<id>`: the route became
+  `/team` (#1588) with no redirect, and every such link fell back to
+  `/chats`.
+- Loading `js/cross-chat.js` only on the first `/chats/cross` route,
+  to keep it out of the shell's budget: no other view is loaded that
+  way, and the budget is raised in the same change instead.

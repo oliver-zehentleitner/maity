@@ -8,7 +8,8 @@
 # Several runs can share one server. The last run to end stops it, and only if a run of this
 # script started it: a server that was already up, or started with --start, keeps running.
 # MAITY_TEST_DATABASE_URL is set for the command. MAITY_PG_DIR is the data directory (created
-# when missing), MAITY_PG_BIN the directory of pg_ctl when it is not on the path. A run holds
+# when missing), MAITY_PG_BIN the directory of pg_ctl when it is not on the path; without it,
+# Debian's newest /usr/lib/postgresql/<version>/bin is taken when it has pg_ctl. A run holds
 # one of the account's run slots (tools/run_slot.sh) while it runs; MAITY_RUN_NAME names it,
 # and the run's database (maity_test_<name>_<pid>).
 #
@@ -44,6 +45,25 @@ case "$dir" in
 esac
 if [ -n "${MAITY_PG_BIN:-}" ]; then
   PATH="$MAITY_PG_BIN:$PATH"
+elif ! command -v pg_ctl >/dev/null; then
+  # Debian and Ubuntu keep the server's programs outside PATH, one directory per version
+  # (/usr/lib/postgresql/<version>/bin): the newest that has a pg_ctl, compared as numbers
+  # (16 after 9.6). MAITY_PG_LIB names another such directory (the tests).
+  lib="${MAITY_PG_LIB:-/usr/lib/postgresql}"
+  newest=""
+  for found in "$lib"/*/bin/pg_ctl; do
+    [ -f "$found" ] && [ -x "$found" ] || continue
+    version="${found#"$lib"/}"
+    version="${version%%/*}"
+    case "$version" in '' | *[!0-9.]* | .* | *. | *..*) continue ;; esac
+    if [ -z "$newest" ] ||
+      [ "$(printf '%s\n%s\n' "$newest" "$version" | sort -t. -k1,1n -k2,2n | tail -n 1)" = "$version" ]; then
+      newest="$version"
+    fi
+  done
+  if [ -n "$newest" ]; then
+    PATH="$lib/$newest/bin:$PATH"
+  fi
 fi
 for tool in pg_ctl initdb psql flock; do
   if ! command -v "$tool" >/dev/null; then

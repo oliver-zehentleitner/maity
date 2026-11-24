@@ -482,7 +482,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
                     member=target.id,
                     current=(target.trust, target.role),
                 )
-            except ApiError:
+            except ApiError as refused:
+                if refused.details.get("reason") == "member_join_limit":
+                    raise  # an outsider's agent's boss: the join's error (§2.3 "Outside")
                 raise _refuse("the reports_to named in the change does not hold any more") from None
             values["reports_to"] = checked["reports_to"]
     by = principal_id(conn, asker.id)

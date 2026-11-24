@@ -21,7 +21,7 @@ from maity.runner.asuser import AsUser, Ssh
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
 # Under the sandbox: the git commands that fail, and `maity` alone.
-SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
+SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT + adapters.CLAUDE_COMMAND_PROMPT
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
@@ -43,7 +43,10 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     argv = launch.argv
     assert argv[0] == "/usr/bin/claude"
-    assert argv[-1] == adapters.START_PROMPT  # no sandbox: nothing about git or `maity` alone
+    # No sandbox: nothing about git's config or `maity` alone, but the command-phrasing guidance
+    # is there — the dontAsk allowlist gates commands in every claude-code placement.
+    assert argv[-1] == adapters.START_PROMPT + adapters.CLAUDE_COMMAND_PROMPT
+    assert adapters.CLAUDE_MAITY_PROMPT not in argv[-1] and adapters.GIT_PROMPT not in argv[-1]
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -65,10 +68,28 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     }  # fmt: skip
 
 
+def test_the_session_path_is_left_to_the_tmux_server(tmp_path: Path) -> None:
+    """The launch adds no PATH, so the tmux server's PATH (= agent_path) stands for the
+    session; the runner no longer prepends anything to it."""
+    assert "PATH" not in adapters.launch(context(tmp_path)).env
+
+
 def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: Path) -> None:
     launch = adapters.launch(context(tmp_path, resume=True))
     assert launch.argv[-2:] == ["--continue", adapters.RESUME_PROMPT]
     assert adapters.START_PROMPT not in launch.argv
+
+
+def test_an_unsandboxed_claude_placement_still_gets_the_command_guidance(tmp_path: Path) -> None:
+    """The `dontAsk` allowlist gates commands in every claude-code placement (claude_settings),
+    so an unsandboxed one hits the same chain/`cd`/variable-prefix refusals and needs the
+    command-phrasing guidance; it does not get the sandbox-only `maity`-alone hint or the
+    git-config notice (tsk-66zyvc4xnhtv, #1962 round 2)."""
+    prompt = adapters._sandbox_prompt(context(tmp_path))  # claude-code, no sandbox
+    assert adapters.CLAUDE_COMMAND_PROMPT in prompt
+    assert adapters.CLAUDE_MAITY_PROMPT not in prompt and adapters.GIT_PROMPT not in prompt
+    # A non-claude placement gets neither (nothing gates its commands this way).
+    assert adapters._sandbox_prompt(context(tmp_path / "o", harness_id="opencode")) == ""
 
 
 def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
@@ -79,7 +100,8 @@ def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_
     and Claude Code exited 1 at once (2.1.319, the first runner test)."""
     ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
     argv = adapters.launch(ctx).argv
-    assert argv[-1] == adapters.START_PROMPT and "--model" not in argv
+    assert argv[-1] == adapters.START_PROMPT + adapters.CLAUDE_COMMAND_PROMPT
+    assert "--model" not in argv
     assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
@@ -236,6 +258,154 @@ def test_claude_code_grant(tmp_path: Path) -> None:
         "allowAllUnixSockets": False,  # pinned: the user's settings cannot open Unix sockets
     }
     assert strict["network"]["allowAllUnixSockets"] is False
+
+
+def _bash_allowed(allow: list[str], command: str) -> bool:
+    """A test approximation of whether Claude Code's Bash allowlist lets a plain `command` run in
+    dont-ask mode — enough for the exact commands these tests pass, not a full model of the
+    matcher (which also strips some wrappers and known-safe env assignments; see Claude Code's
+    permissions docs). What is used here was observed on Claude Code 2.1.327 (tsk-66zyvc4xnhtv):
+    a rule `Bash(P *)` matches a command that starts with `P ` (a trailing argument after a
+    space); a rule `Bash(P)` matches the exact command `P`."""
+    body = [r[len("Bash(") : -1] for r in allow if r.startswith("Bash(") and r.endswith(")")]
+    for rule in body:
+        if rule.endswith(" *"):
+            if command.startswith(rule[:-1]):
+                return True
+        elif command == rule:
+            return True
+    return False
+
+
+def _bash_denied(deny: list[str], command: str) -> bool:
+    """A test approximation of whether a `Bash(…)` deny rule matches `command` (fnmatch globs);
+    enough for the exact commands these tests pass, not a full model of Claude Code's matcher."""
+    for rule in deny:
+        if rule.startswith("Bash(") and rule.endswith(")"):
+            if fnmatch.fnmatchcase(command, rule[len("Bash(") : -1]):
+                return True
+    return False
+
+
+def test_the_claude_code_allowlist_lets_a_coder_use_git_dash_c_on_its_clone(
+    tmp_path: Path,
+) -> None:
+    """RED on main, green with the fix (tsk-66zyvc4xnhtv). A placed coder — in the main session
+    and, identically, in a Task subagent (both resolve permissions the same way, verified on
+    Claude Code 2.1.327) — must be able to drive git through `git -C <clone>`; on main
+    `git -C …` matches no allow rule. (Its Keep-the-Why Ids come from `maity uuid` now.)"""
+    ctx = context(tmp_path)
+    settings = adapters.claude_settings(ctx)
+    allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
+    clone = str(ctx.clone)
+    # `git -C <clone>` reads and writes, scoped to this clone only (never a free `git -C *`).
+    assert _bash_allowed(allow, f"git -C {clone} status")
+    assert _bash_allowed(allow, f"git -C {clone} status --short")
+    assert _bash_allowed(allow, f"git -C {clone} commit -m x")
+    assert f"Bash(git -C {clone} status)" in allow and f"Bash(git -C {clone} status *)" in allow
+    assert not any(r == "Bash(git -C *)" for r in allow)  # no unscoped `-C`
+    # The `-C` escapes are denied too, mirroring GIT_DENIED, so the `-C` form carries the same
+    # denies as plain git — gated no more and no less.
+    assert _bash_denied(deny, f"git -C {clone} -c core.pager=sh log")
+    assert _bash_denied(deny, f"git -C {clone} diff --no-index /etc/passwd /etc/passwd")
+    assert _bash_denied(deny, f"git -C {clone} --exec-path=/tmp log")
+    assert _bash_denied(deny, f"git -C {clone} worktree add ../other")  # main's worktree deny too
+    # Every plain git deny has its `-C <clone>` mirror, one to one (#1962 review).
+    plain = (*adapters.GIT_DENIED, *adapters.GIT_WORKTREE_DENIED)
+    mirrored = [r for r in deny if r.startswith(f"Bash(git -C {clone} ")]
+    assert mirrored == [f"Bash(git -C {clone} {rule[len('git '):]})" for rule in plain]
+    assert all(f"Bash({rule})" in deny for rule in plain)
+    # No `-C` allow reaches past the clone.
+    assert all(r.startswith(f"Bash(git -C {clone} ") for r in allow if r.startswith("Bash(git -C"))
+    for outside in ("git -C /other status", "git -C .. status", f"git -C {clone}/.. status"):
+        assert not _bash_allowed(allow, outside), outside
+
+
+# The git subcommands a placed agent may run, written out here rather than read from adapters, so
+# that a subcommand added there fails the full-list test below until it is added here too.
+_GIT_SUBS = (
+    "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
+    "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
+    "ls-files", "blame", "grep", "remote -v",
+)  # fmt: skip
+# Every plain git deny, and the worktree denies, each mirrored once for `git -C <clone>`.
+_GIT_DENIES = (
+    "-c *", "--config-env*", "--exec-path*", "* --no-index*", "* --upload-pack*",
+    "* --receive-pack*", "* --exec=*", "*.git/maity*", "worktree", "worktree *",
+)  # fmt: skip
+
+
+def test_the_claude_code_rules_are_exactly_the_expected_list(tmp_path: Path) -> None:
+    """The whole generated allow and deny lists of an unsandboxed coder placement, compared with
+    the full expected lists (#1962 review): a rule added, dropped or reordered in claude_settings
+    fails here, so no allow can slip in beside the `git -C <clone>` forms unseen."""
+    ctx = context(tmp_path)
+    perms = adapters.claude_settings(ctx)["permissions"]
+    ws = str(ctx.clone)
+    allow = [
+        "Bash(maity *)",
+        *(f"Bash(git {sub})" for sub in _GIT_SUBS),
+        *(f"Bash(git {sub} *)" for sub in _GIT_SUBS),
+        *(f"Bash(git -C {ws} {sub})" for sub in _GIT_SUBS),
+        *(f"Bash(git -C {ws} {sub} *)" for sub in _GIT_SUBS),
+        "Bash(make test)",  # the repository grant
+        f"Read(/{ws}/**)", f"Edit(/{ws}/**)", f"Write(/{ws}/**)",
+    ]  # fmt: skip
+    deny = [
+        f"Edit(/{ws}/.git/config)", f"Edit(/{ws}/.git/config.worktree)",
+        f"Edit(/{ws}/.git/hooks/**)", f"Edit(/{ws}/.git/info/**)",
+        f"Edit(/{ws}/.git/objects/info/alternates)",
+        f"Edit(/{ws}/.git/maity/**)", f"Read(/{ws}/.git/maity/**)",
+        *(f"Bash(git {rule})" for rule in _GIT_DENIES),
+        "Bash(gh)", "Bash(gh *)", "Bash(maity runner)", "Bash(maity runner *)",
+        *(f"Bash(git -C {ws} {rule})" for rule in _GIT_DENIES),
+        "EnterWorktree",
+    ]  # fmt: skip
+    assert perms["allow"] == allow
+    assert perms["deny"] == deny
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "git -C . status",  # relative
+        "git -C ../other status",
+        "git -C /etc status",  # absolute, outside the clone
+        "git -C {ws}/.. status",  # `..` out of the clone
+        "git -C {ws}/../other commit -m x",
+        "git -C {ws}/ status",  # the clone, spelled otherwise: refused, not widened
+        "git -C {link} status",  # a symlink to the clone
+        "git -C ~ status",
+        "git -C ~/other status",
+        "git -C {ws} -C /etc status",  # a second -C
+        "git -C {ws} -C .. log",
+        'git -C "" status',  # an empty value
+        "git -C  status",
+        "git -C {ws} --git-dir=/etc/.git status",  # the repository chosen another way
+        "git -C {ws} --work-tree=/etc status",
+        "GIT_DIR=/etc/.git git -C {ws} status",
+        "GIT_WORK_TREE=/etc git -C {ws} status",
+        "GIT_DIR=/etc/.git git status",  # as plain git: gated no less, no more
+    ],
+)
+def test_git_dash_c_is_allowed_for_the_clone_path_alone(tmp_path: Path, spelling: str) -> None:
+    """Each spelling that would point `git -C` at another repository, or at the clone through
+    another path, matches no allow rule, so dontAsk refuses it (#1962 review). The rules carry
+    the clone's literal resolved path followed by a space and a fixed subcommand; anything else
+    in that place, a second `-C`, `--git-dir`, `--work-tree`, `..` or another spelling of the
+    path, matches none. An environment prefix (`GIT_DIR=…`) matches none either: Claude Code
+    strips only a fixed set of known-safe variables before matching (its permissions docs), and
+    git's are not among them. This checks the rules with the test matcher above, which models
+    Claude Code's prefix matching as observed on 2.1.327; it is not a live run of the harness."""
+    ctx = context(tmp_path)
+    ctx.clone.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(ctx.clone)
+    allow = adapters.claude_settings(ctx)["permissions"]["allow"]
+    command = spelling.format(ws=ctx.clone, link=link)
+    assert not _bash_allowed(allow, command), command
+    # The clone's own path, as the rules spell it, still runs.
+    assert _bash_allowed(allow, f"git -C {ctx.clone} status")
 
 
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
@@ -435,7 +605,8 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
+    # Unsandboxed, but still a claude-code placement, so the command-phrasing guidance is there.
+    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT + adapters.CLAUDE_COMMAND_PROMPT]
     assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
@@ -686,7 +857,10 @@ def test_loop_exits_map_to_reasons(code: int, expected: tuple[Any, ...]) -> None
     rec = supervisor.Record(generation=1, state="running", started_at=0.0)
     cfg: Any = type("Cfg", (), {"limits": config.Limits(projects=(), repositories=())})()
     sup: Any = type("Sup", (), {"cfg": cfg, "rand": staticmethod(lambda: 0.5),
-                                "log": staticmethod(lambda line: None)})()  # fmt: skip
+                                "log": staticmethod(lambda line: None),
+                                # the runner's notes (tsk-bzmd0avm4yhb): none for this record
+                                "_pid_of": staticmethod(lambda rec: None),
+                                "note": staticmethod(lambda *a, **k: None)})()  # fmt: skip
     sup.backend = type("B", (), {"kill": staticmethod(lambda name: None)})()
     session: Any = type("S", (), {"name": "maity_p_c", "exit_status": code})()
     supervisor.Supervisor._exited(sup, rec, session, 100.0, sup.backend)
@@ -735,6 +909,26 @@ def test_codex_writes_the_placements_effort_into_its_own_config(
     # No effort: no key, so Codex runs its own default.
     plain = context(tmp_path / "plain", harness_id="codex", binary="/usr/bin/codex")
     assert "model_reasoning_effort" not in tomllib.loads(adapters.codex_config(plain))
+
+
+def test_codex_writes_the_background_terminal_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "operator-codex"))
+    workspaces = tmp_path / "ws"
+    place_scratch = workspaces / ".scratch" / "proj" / "plc-0003"
+    place_scratch.mkdir(parents=True)
+    ctx = context(
+        tmp_path,
+        harness_id="codex",
+        binary="/usr/bin/codex",
+        clone=workspaces / "proj" / "agent-3",
+        workspaces=workspaces,
+        scratch=place_scratch,
+    )
+    launch = adapters.launch(ctx)
+    written = tomllib.loads((Path(launch.env["CODEX_HOME"]) / "config.toml").read_text())
+    assert written["background_terminal_max_timeout"] == 660000
 
 
 def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
@@ -1483,16 +1677,21 @@ def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> No
                               *(f"maity *{c}*" for c in adapters.MAITY_NOT_PLAIN))  # fmt: skip
 
 
-def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
+def test_launch_records_the_repository_and_the_runners_path_for_a_grant_with_pull_requests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record names where `maity gh` looks gh up at each call (point 15 of
+    tsk-2k0jcaxfd0ja): the runner's PATH, its absolute entries only, not the gh found now."""
     gh = fake_gh(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(Path(gh).parent), "relative/bin", "/usr/bin"]))
     ctx = context(tmp_path, sandbox=True, grant=PULLS,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git").mkdir(parents=True)
     launch = adapters.launch(ctx)
     record = (ctx.agent_dir / "git" / "pull_requests").read_text()
-    assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert record == (
+        f"github.com/oliver-zehentleitner/maity\n{Path(gh).parent}{os.pathsep}/usr/bin\n"
+    )
     assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
     assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
@@ -1561,13 +1760,32 @@ def test_the_lead_record_needs_lead_and_the_pull_request_record_and_is_cleared_w
     )
 
 
-def test_pull_requests_without_gh_on_the_path_record_nothing(
+def test_a_long_path_is_cut_to_whole_entries_that_fit_the_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record holds the runner's PATH, and `maity gh` reads at most ghpr.RECORD_MAX bytes
+    (review A2160 of #2125): a longer PATH keeps its first whole entries, in order."""
+    entries = [f"/nix/store/{i:04d}-{'x' * 90}/bin" for i in range(1000)]
+    monkeypatch.setenv("PATH", os.pathsep.join(entries))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    record = adapters.pull_requests_record(ctx)
+    assert len(record.encode()) <= ghpr.RECORD_MAX < len(os.pathsep.join(entries))
+    kept = record.splitlines()[1].split(os.pathsep)
+    assert kept == entries[: len(kept)] and 0 < len(kept) < len(entries)
+
+
+def test_pull_requests_without_gh_on_the_path_are_still_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gh installed after the start is found by `maity gh` at its next call, so a session
+    started without it still gets the grant and the word of `maity gh` (point 15)."""
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     ctx = context(tmp_path, grant=PULLS,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
-    assert adapters.pull_requests_record(ctx) == ""
+    record = adapters.pull_requests_record(ctx)
+    assert record == f"github.com/oliver-zehentleitner/maity\n{tmp_path / 'empty'}\n"
+    assert adapters.PULL_REQUEST_PROMPT in adapters._sandbox_prompt(ctx)
 
 
 def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(

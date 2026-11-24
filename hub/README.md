@@ -133,6 +133,19 @@ curl http://127.0.0.1:8080/api/v1/help
 version; run `maity-hub migrate` after every upgrade. Migrations never run
 implicitly.
 
+A `maity-hub` command that meets a database error prints one line: the URL
+with its password masked and its query string left out (`?***` stands in
+its place, since a password can stand there too), the error's class, a
+cause category (`dns`, `timeout`, `refused`, `auth`, `ssl` and a few more,
+else `unclassified`) and the driver's codes, as the hub's log names it; a
+missing driver is named by its module. The driver's own message is never
+printed: it can quote the connection string with the password. For the
+full text, connect with the database's own client. Not covered: on MariaDB,
+an option in the URL's query string that PyMySQL or SQLAlchemy's MySQL
+dialect does not take, or a value it cannot use, ends in a plain Python
+error, not a database error, and the command ends with its traceback, which
+can quote that value.
+
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is
 no human (`--handle` defaults to the login name, the address is asked
@@ -412,7 +425,8 @@ run gets the password as `PGPASSWORD`, which libpq reads (the URL stays without 
 must be letters, digits and `._~-` only, and a cluster whose `pg_hba.conf` lets anyone
 in without `scram-sha-256` is refused with it. A runner sets it for placed agents
 (`docs/runners.md`). It needs `pg_ctl`, `initdb` and `psql`, on the path
-or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
+or in `MAITY_PG_BIN`; with neither, it takes Debian's and Ubuntu's newest
+`/usr/lib/postgresql/<version>/bin` that has `pg_ctl` (by version number). Without a system PostgreSQL, the PyPI package `pgserver`
 brings them, in a venv of its own (its wheels stop at Python 3.12):
 
 ```sh

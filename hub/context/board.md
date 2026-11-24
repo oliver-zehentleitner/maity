@@ -391,7 +391,8 @@ the set that a text exists and who changes it.
 When a change writes `restricted_changed`, the hub writes one account
 record `restricted_changed` `{project_id, task_id, seq}` (`task_id`
 null for the set) for each human on the event's list but the writer, or
-but the members a set event names, unless that human already has one for
+but the members a set event names and the human who made it (the event's
+actor or, for a human, `by`), unless that human already has one for
 the same card (or project, for the set) from the last 10 minutes. The
 bell lists such a record as an `inbox` notice, read by a read mark like
 `moderation_applied` and counted in no `inbox` count, only while the
@@ -433,3 +434,40 @@ agent that used it.
 **Rejected alternatives:** the event's actor everywhere (for an agent's
 join that is the agent itself, which decided nothing); alternatives beyond
 that are unknown.
+
+## The cards naming a pull request are filtered in Python, not on the JSON path
+
+**Id:** 4daa4950-47f4-4496-908a-0d5ca3f9eab9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jttknmqzghw9 (audit R5 batch 1, item 3; PR #2128), `cards.naming_pr`; review A2177 of #2128 measured the JSON-path forms on SQLite and PostgreSQL 16, MariaDB from the compiled SQL only
+**Revisit when:** `pr.number` gets an upper bound (an integer column, or a bound at `PullRequestIn`), or a project holds so many reported cards that reading them per lookup shows
+
+`cards.naming_pr(conn, project_id, number)` reads the project's cards that
+have a report and keeps those whose `report.pr.number` equals `number`, in
+Python (`cards.pr_number`). `merged._shared`, `review_delivery._card` and
+`ticker.linked_cards` use it or `pr_number`, and `merged._shared` compares
+the `task_merged` payloads' `pr` the same way.
+
+**Reason:** a comparison on the JSON path answers different rows per
+engine. `pr.number` is bounded only below (`PullRequestIn`), so a cast to
+an integer fails on PostgreSQL for one stored value it cannot cast (5.0, a
+number past int8), and that error then refuses every lookup of the
+project, while SQLite casts silently and also matches the string "5". A
+text comparison misses 5.0 and differs past 64 bits, where SQLite's
+`json_extract` answers a REAL (`1.0e+20`) and PostgreSQL's `->>` the
+digits. Decoded JSON compared in Python gives the same rows on every
+engine.
+
+**Rejected alternatives:**
+- `report["pr"]["number"].as_integer() == n`, as the audit proposed after
+  `routes/overview.py` and `restricted.py`, which compare JSON strings: an
+  error on PostgreSQL for 5.0 or a non-numeric value; on SQLite it also
+  matches the string "5".
+- `as_string() == str(n)`: matches "5", misses 5.0, and differs between the
+  engines past 64 bits.
+- `as_numeric(30, 0)`: fails on PostgreSQL for a non-numeric string.
+
+The cost is one read of the project's reported cards per lookup, run only
+where a merge or a review is matched to its card.

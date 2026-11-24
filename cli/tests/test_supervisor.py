@@ -29,6 +29,7 @@ from maity.runner import (
     skills,
     supervisor,
     tmux,
+    tools,
     workspace,
 )
 from maity.runner.asuser import RUNNER, AsUser, Ssh
@@ -1064,7 +1065,51 @@ def test_a_failed_clone_logs_why_and_reports_only_the_code(
     assert (rec.state, rec.reason, rec.detail, rec.exit_code) == (
         "failed", "clone_failed", None, None
     )  # fmt: skip
-    assert "maity runs no git" not in repr(reports)
+    assert "maity runs no git" not in json.dumps(reports.sent)
+
+
+def test_a_workspaces_root_resolving_to_a_wildcard_path_logs_why(
+    world: Any, tmp_path: Path
+) -> None:
+    """A workspaces root that is a symlink to a real path carrying a wildcard char is refused
+    at the placement choke point (`workspace.locate`). The report keeps only the codes; the
+    runner log carries the `why`, so the operator can see which character and where."""
+    sup, backend, reports, _, logs = world
+    assert sup.cfg.local is not None
+    real = tmp_path / "ws-real*dir"
+    real.mkdir()
+    sup.cfg.local.workspaces.symlink_to(real)  # {root}/ws -> a real path carrying `*`
+    sup.update([placement()])
+    settle(sup)
+    assert backend.started == []
+    assert states(reports)[-1] == ("failed", "workspace_in_use", "workspace_unrecorded")
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    why = next((line for line in lines if line.startswith("plc-0003: workspace_in_use: ")), None)
+    assert why is not None, lines  # absent without the start-path handler's `why` logging
+    assert "*" in why and "wildcard" in why and str(real) in why
+    sent = json.dumps(reports.sent)
+    assert "wildcard" not in sent and str(real) not in sent  # codes only
+
+
+def test_a_layout_mismatch_on_an_owned_clone_logs_why(world: Any) -> None:
+    """`workspace.owned` refuses with a `why` when the recorded layout is not the located one.
+    The report keeps only the codes; the runner log carries the `why`, like the locate handler
+    (the sibling start-path handler for the `owned` refusal logs it too)."""
+    sup, backend, reports, _, logs = world
+    assert sup.cfg.local is not None
+    # Recorded as a workspace folder, but the stub placement locates a plain clone.
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3", folder=True)
+    place.path.mkdir(parents=True)
+    workspace.record(sup.cfg.state_dir, place, "agt-3", "plc-0003")
+    sup.update([placement()])
+    settle(sup)
+    assert backend.started == []
+    assert states(reports)[-1] == ("failed", "workspace_in_use", "workspace_unrecorded")
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    why = next((line for line in lines if line.startswith("plc-0003: workspace_in_use: ")), None)
+    assert why is not None, lines  # absent without the owned handler's `why` logging
+    assert "recorded as a folder, not a clone" in why
+    assert "recorded as a folder" not in json.dumps(reports.sent)  # codes only
 
 
 # What a session of the agent could leave behind for the next one, or for a person's git: each
@@ -1084,7 +1129,7 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     refuses it before the join and the harness; the report carries the codes, the log why.
     Nothing tries again: the clone stays as it is until someone looks at it."""
     sup, backend, reports, _, logs = world
-    sup.client = Pickups(PICKUP)
+    reports = sup.client = Pickups(PICKUP)  # the reports go to the pickup client the start uses
     calls = joining(monkeypatch)
     place = new_clone(sup.cfg)
     entry, text = PLANTED[planted]
@@ -1101,7 +1146,7 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     lines = [line for line in logs if line.startswith("plc-0003: ")]
     assert any(line.startswith("plc-0003: workspace_in_use: .git/") for line in lines), lines
     assert "plc-0003: failed workspace_in_use not_a_plain_clone (generation 1)" in lines
-    assert ".git/" not in repr(reports)
+    assert ".git/" not in json.dumps(reports.sent)
     assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
 
 
@@ -1781,7 +1826,7 @@ def connected(
     sup.client = cast(Any, fake)
     svc = serve.Service(
         sup.cfg, cast(Any, fake), sup.capabilities,
-        reconcile=lambda _p: None, actual=sup.actual, supervisor=sup,
+        reconcile=lambda _p, read_at=None: None, actual=sup.actual, supervisor=sup,
         sleep=lambda _s: None, monotonic=clock, rand=lambda: 0.5,
     )  # fmt: skip
     return sup, backend, clock, fake, svc
@@ -2336,6 +2381,145 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
 
 
+def test_every_session_gets_a_shell_not_the_accounts_nologin(tmp_path: Path) -> None:
+    """tsk-fjq2k0sx1n3r: without SHELL in its environment tmux takes the account's passwd
+    shell, nologin for the service account, as every pane's SHELL, and OpenCode's commands all
+    failed with "This account is currently not available.". The server starts with SHELL, and
+    the same call sets tmux's `default-shell` to it, which is what a pane's SHELL comes from."""
+    calls: list[list[str]] = []
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(list(argv), 0, "", "")
+
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run)  # fmt: skip
+    backend.start("maity_maity_agent-3", tmp_path, ["opencode"], {}, "plc-0003", 1)
+    shell = tmux.BASH if os.access(tmux.BASH, os.X_OK) else tmux.SH
+    new = calls[0]
+    assert f"SHELL={shell}" in new[: new.index("tmux")]
+    assert new[new.index("tmux") + 5 : new.index("new-session")] == [
+        "set-option", "-g", "default-shell", shell, ";",
+    ]  # fmt: skip
+    assert "nologin" not in " ".join(new)
+
+
+def _remote_side(probes: list[tuple[int, str]]) -> tuple[Any, Any, list[list[str]]]:
+    """An agents' side that is not the runner's own user (sudo or ssh), whose shell probes
+    answer `probes` in turn (exit code, stdout); every other command succeeds."""
+    from maity.runner.asuser import AsUser as Direct
+
+    asked: list[list[str]] = []
+    answers = list(probes)
+
+    class Remote(Direct):
+        @property
+        def direct(self) -> bool:
+            return False
+
+        @property
+        def here(self) -> bool:
+            return False
+
+        def argv(self, argv: Sequence[str], env: dict[str, str] | None = None) -> list[str]:
+            return list(argv)
+
+        def exists(self, path: Path, kind: str = "-e") -> bool:
+            return True
+
+        def write(self, path: Path, text: str) -> Path:
+            return path
+
+        def mkdir(self, path: Path) -> None:
+            return None
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        asked.append(list(argv))
+        if tmux.SHELL_PROBE in argv:
+            code, out = answers.pop(0)
+            return subprocess.CompletedProcess(list(argv), code, out, "")
+        return subprocess.CompletedProcess(list(argv), 0, "", "")
+
+    return Remote(), run, asked
+
+
+@pytest.mark.parametrize(
+    ("code", "out", "shell", "kept"),
+    [
+        (0, "shell\t/bin/bash\t/usr/bin/bash\n", "/bin/bash", True),
+        (0, "shell\t/bin/sh\t/usr/bin/dash\n", "/bin/sh", True),
+        (0, "none\n", "/bin/sh", True),
+        (255, "", "/bin/sh", False),  # ssh's own failure: no answer
+        (1, "", "/bin/sh", False),  # sudo refused: no answer either
+    ],
+)
+def test_on_another_users_side_the_sessions_shell_is_looked_up_there(
+    tmp_path: Path, code: int, out: str, shell: str, kept: bool
+) -> None:
+    """Over ssh, and through sudo in the agent_user layout, the shell is probed as the agents'
+    user (A2352). An answer is kept; no answer gives `/bin/sh` for now and is asked again."""
+    remote, run, asked = _remote_side([(code, out), (0, "shell\t/bin/bash\t/bin/bash\n")])
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=remote)  # fmt: skip
+    assert backend.session_shell() == shell
+    assert asked == [["sh", "-c", tmux.SHELL_PROBE, "sh", "/bin/bash", "/bin/sh"]]
+    assert backend.session_shell() == (shell if kept else "/bin/bash")
+    assert len(asked) == (1 if kept else 2)
+
+
+def test_one_start_gives_the_environment_and_default_shell_the_same_shell(
+    tmp_path: Path,
+) -> None:
+    """A2352: a first probe that gets no answer and a second that does must not give the
+    server's SHELL one value and `default-shell` another; the next start asks again."""
+    remote, run, asked = _remote_side([(255, ""), (0, "shell\t/bin/bash\t/bin/bash\n")] * 2)
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=remote)  # fmt: skip
+    backend.start("maity_p_c", tmp_path, ["opencode"], {}, "plc-0003", 1)
+    new = next(call for call in asked if "new-session" in call)
+    default = new[new.index("default-shell") + 1]
+    assert f"SHELL={default}" in new[: new.index("tmux")] and default == "/bin/sh"
+    assert sum(tmux.SHELL_PROBE in call for call in asked) == 1
+    backend.start("maity_p_d", tmp_path, ["opencode"], {}, "plc-0004", 1)
+    new = [call for call in asked if "new-session" in call][-1]
+    assert "SHELL=/bin/bash" in new and new[new.index("default-shell") + 1] == "/bin/bash"
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
+def test_real_tmux_pane_gets_the_session_shell_on_a_server_started_without_it(
+    tmp_path: Path,
+) -> None:
+    """A server an older runner started (here: with another SHELL, standing in for the
+    account's nologin) still gives a session the runner starts now the runner's shell."""
+    import tempfile
+    import time
+
+    # A socket path holds at most 107 bytes; pytest's tmp_path can be longer than that.
+    socket = Path(tempfile.mkdtemp(prefix="t")) / "t.sock"
+    other = tmux.SH if os.access(tmux.BASH, os.X_OK) else "/bin/false"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    seen = tmp_path / "shell"
+    try:
+        subprocess.run(
+            ["env", "-i", f"HOME={tmp_path}", "PATH=/usr/bin:/bin", f"SHELL={other}",
+             "tmux", "-S", str(socket), "-f", "/dev/null",
+             "new-session", "-d", "-s", "older", "--", "sleep", "30"],
+            check=True, timeout=15,
+        )  # fmt: skip
+        backend.start("maity_maity_agent-3", tmp_path,
+                      ["sh", "-c", f'printf %s "$SHELL" > {seen}.tmp; mv {seen}.tmp {seen}; '
+                       "sleep 30"], {}, "plc-0003", 1)  # fmt: skip
+        deadline = time.monotonic() + 10
+        while not seen.exists():
+            assert time.monotonic() < deadline, "the pane did not run"
+            time.sleep(0.05)
+        assert seen.read_text() == backend.session_shell() != other
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
+        shutil.rmtree(socket.parent, ignore_errors=True)
+
+
 @pytest.mark.parametrize("there", [False, True])
 def test_on_an_ssh_host_the_pane_log_exists_before_logcap_starts(
     tmp_path: Path, there: bool
@@ -2711,7 +2895,8 @@ def test_a_session_that_cannot_be_labelled_is_killed(tmp_path: Path) -> None:
 
     def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         calls.append(list(argv))
-        failing = "set-option" in argv
+        # The labels' set-option, not the default-shell one in the new-session call.
+        failing = "set-option" in argv and "new-session" not in argv
         return subprocess.CompletedProcess(list(argv), 1 if failing else 0, "", "boom")
 
     backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
@@ -3346,6 +3531,64 @@ def started(world: Any, harness: str = "codex", mode: str = "interactive") -> No
     sup.update([placement(mode=mode, harness=harness, health=HEALTH)])
     settle(sup)
     assert SESSION in backend.live, sup.records
+
+
+@pytest.mark.parametrize(
+    ("track", "managed", "said"),
+    [("checked", False, "; to go back, install 0.39.0 yourself; or set track"),
+     ("checked", True, "; `maity runner tools rollback codex` starts new sessions on the kept"
+      " 0.39.0; or set track"),
+     ("newest", False, 'track = "newest" takes it unchecked')],
+)  # fmt: skip
+def test_the_start_log_names_a_version_above_the_checked_one_as_check_does(
+    world: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    track: str,
+    managed: bool,
+    said: str,
+) -> None:
+    """The start log's line about a version above the checked one has `check`'s text: the
+    way back under `checked`, taken from the runner's tools where it manages the tool, and a
+    note under `newest`."""
+    sup, _, _, _, logs = world
+    monkeypatch.setitem(capabilities.CHECKED, "codex", "0.39.0")
+    update = "daily" if managed else "never"
+    harness = replace(sup.cfg.harnesses["codex"], track=track, update=update)
+    harnesses = {**sup.cfg.harnesses, "codex": harness}
+    sup.cfg = replace(sup.cfg, harnesses=harnesses, tools_dir=tmp_path / "tools")
+    tools.save(sup.cfg.tools_dir, "codex", tools.ToolState(version="0.40.0",
+                                                         previous_version="0.39.0"))  # fmt: skip
+    started(world)
+    found = [line for line in logs if "0.39.0" in line and "0.40.0" in line]
+    assert len(found) == 1 and said in found[0], logs
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_the_start_log_on_an_ssh_target_names_no_local_rollback(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remote: bool
+) -> None:
+    """A Claude Code the runner manages here (`install`, `update = "daily"`) with a kept
+    checked version: on an ssh target the start log names installing it by hand, as `check`
+    does there, never the local rollback; on the local target the rollback."""
+    sup, _, _, _, logs = world
+    monkeypatch.setitem(capabilities.CHECKED, "codex", "0.39.0")
+    harness = replace(sup.cfg.harnesses["codex"], install=True, update="daily")
+    sup.cfg = replace(sup.cfg, tools_dir=tmp_path / "tools")
+    tools.save(sup.cfg.tools_dir, "codex", tools.ToolState(version="0.40.0",
+                                                         previous_version="0.39.0"))  # fmt: skip
+    target = sup.targets["local"]
+    if remote:
+        target = replace(target, name="build-9", as_user=Ssh(name="build-9"),
+                         agent_files=Path("/home/box/.maity-runner"))  # fmt: skip
+    sup._say_if_unchecked("plc-0003", harness, target, None)
+    found = [line for line in logs if "0.39.0" in line and "0.40.0" in line]
+    assert len(found) == 1, logs
+    line = found[0]
+    if remote:
+        assert "install 0.39.0 yourself" in line and "rollback" not in line, line
+    else:
+        assert "`maity runner tools rollback codex` starts new sessions" in line, line
 
 
 def test_codex_s_folder_prompt_is_answered_once_with_open_restricted(world: Any) -> None:
@@ -4870,7 +5113,8 @@ def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
     settle(sup)
     assert asked == [(sup.cfg.skills_dir, sup.cfg.state_dir, KTW["source"], KTW["commit"])]
     ((_, _, env),) = backend.started
-    assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
+    # Resolved on a local target, as the workspaces are (the review of #2147).
+    assert env["MAITY_KTW_SKILL_DIR"] == str(copy.resolve() / "skills" / "keep-the-why")
     assert sup.records["plc-0003"].skill_missing is False
     assert not any("Keep the Why" in line for line in logs)
 
@@ -4900,7 +5144,7 @@ def test_the_copy_a_session_starts_with_is_saved_before_it_starts(
 
 
 def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
-    world: Any, monkeypatch: pytest.MonkeyPatch
+    world: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """tsk-7casfxb7cn49: where the agents cannot read the runner's directory, the checked copy
     is put below their own home (skills.deliver): the agents' user's home here, the remote
@@ -4908,6 +5152,14 @@ def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
     sup, _, _, _, logs = world
     local = sup.targets["local"]
     asked: list[tuple[AsUser, Path]] = []
+    # Both homes lie behind a link on this machine (the review of #2147, A2268): the agents'
+    # user's copy here comes back resolved, the ssh host's never, since its path names a
+    # directory on that host, not this one.
+    real = tmp_path / "homes-real"
+    (real / "agents").mkdir(parents=True)
+    (real / "box").mkdir()
+    (tmp_path / "homes").symlink_to(real)
+    homes = tmp_path / "homes"
 
     def deliver(as_user: AsUser, home: Path, skills_dir: Path, state_dir: Path, source: str,
                 commit: str) -> Path:  # fmt: skip
@@ -4921,14 +5173,28 @@ def test_an_agent_user_or_ssh_target_gets_the_copy_below_its_agents_home(
 
     monkeypatch.setattr(skills, "deliver", deliver)
     monkeypatch.setattr(skills, "ensure", ensure)
-    monkeypatch.setattr(config, "home_of", lambda user: Path("/home") / user)
+    monkeypatch.setattr(config, "home_of", lambda user: homes / user)
     agents = replace(local, as_user=AsUser("agents"))
-    assert sup._skill(placement(keep_the_why=KTW), agents) == Path("/home/agents/copy/plugin")
+    resolved = real.resolve() / "agents" / "copy" / "plugin"
+    assert sup._skill(placement(keep_the_why=KTW), agents) == resolved
     remote = replace(local, name="build-9", as_user=Ssh(name="build-9"),
-                     agent_files=Path("/home/box/.maity-runner"))  # fmt: skip
-    assert sup._skill(placement(keep_the_why=KTW), remote) == Path("/home/box/copy/plugin")
-    assert asked == [(agents.as_user, Path("/home/agents")), (remote.as_user, Path("/home/box"))]
+                     agent_files=homes / "box" / ".maity-runner")  # fmt: skip
+    assert sup._skill(placement(keep_the_why=KTW), remote) == homes / "box" / "copy" / "plugin"
+    assert asked == [(agents.as_user, homes / "agents"), (remote.as_user, homes / "box")]
     assert not any("Keep the Why" in line for line in logs)
+
+
+def test_a_hub_that_names_no_skill_field_is_said_at_the_start(world: Any) -> None:
+    """tsk-2k0jcaxfd0ja: a hub of 0.1.0a10 or older sends no `keep_the_why` on a placement, and
+    the runner delivered nothing without a word, also for a project that uses Keep the Why.
+    A hub that sends the field, null for a project without it, is not mentioned."""
+    sup, _, _, _, logs = world
+    local = sup.targets["local"]
+    assert sup._skill(placement(), local) is None
+    assert logs[-1] == f"plc-0003: {supervisor.NO_SKILL_FIELD}"
+    said = len(logs)
+    assert sup._skill(placement(keep_the_why=None), local) is None
+    assert len(logs) == said
 
 
 def test_a_host_maity_without_the_skill_ops_starts_without_the_skill(

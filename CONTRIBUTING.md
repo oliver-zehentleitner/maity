@@ -15,6 +15,9 @@ agents; this file is the short form for a human contributor.
    rejected alternative or workaround. A `context/` entry is committed
    right after it is written, in its own commit, so its Git timestamp is
    the moment the reasoning was recorded.
+   A change to `README.md` that adds, drops or moves a heading, or changes a
+   link or image, updates the nine `README.<lang>.md` in the same pull request
+   (`tools/readme_sync.py` fails otherwise).
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 
@@ -134,8 +137,10 @@ own and send the lead its number.
 
 ## The guard tests before a review request
 
-Run `tools/guards.sh` before you ask for a review (`HUB_PYTHON=` a Python
-with the hub's test requirements). In about half a minute it runs what
+Run `tools/guards.sh` before you ask for a review. It tests with the Python
+`HUB_PYTHON=` names, one with the hub's test requirements; unset, with the
+work tree's `hub/.venv/bin/python` where there is one, whoever made it
+(`make -C hub dev`, or a runner for a placed coder), else with `python3`. In about half a minute it runs what
 otherwise fails in CI one round at a time: the hub's per-human tables test,
 `make -C web shapes`, `make -C web fixtures` and `make -C web check`. It
 fails while any of them fails or leaves the work tree changed. Commit what

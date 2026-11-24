@@ -56,6 +56,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import attachments as live_attachments
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project, newest_seq
@@ -111,6 +112,10 @@ class PolicyIn(Strict):
     member_agents_max: int | None = None
     agent_owners: str | None = None  # `members` or `anyone`; never null again once set (§6.1)
     outside_roles: list[str] | None = Field(default=None, max_length=50)
+    # §6.1: an integer ≥ 1 (`0` and anything else `invalid`), and `owners`, `members` or
+    # `{"owners_of": [handle, …]}`, checked in `_apply_policy` so each refusal is named.
+    own_approvals: Any = None
+    own_agents: Any = None
 
 
 class AbsenceIn(Strict):
@@ -276,6 +281,73 @@ def _checked_restricted(
     return {"mode": given.mode, "members": list(members)}
 
 
+MAX_OWNERS_OF = 200
+
+
+def _checked_own_agents(conn: Connection, project: Any, given: Any) -> Any:
+    """`policy.own_agents` as stored (§6.1): `owners`, `members`, or `{"owners_of": [human
+    ids]}`; otherwise the refusal's code, which `_apply_policy` names under `own_agents`.
+    The value is sent whole. A handle (current or an alias, §6.24) that resolves to a person
+    the stored list holds already is accepted as it is, member or not, so a list read and
+    sent back passes after a member has left; a new one must name a human member."""
+    if given in policy.OWN_AGENTS:
+        return given
+    if (
+        not isinstance(given, dict)
+        or set(given) != {policy.OWNERS_OF}
+        or not isinstance(given[policy.OWNERS_OF], list)
+        or not all(isinstance(h, str) for h in given[policy.OWNERS_OF])
+    ):
+        return "unknown"
+    named: list[str] = given[policy.OWNERS_OF]
+    if len(named) > MAX_OWNERS_OF:
+        return "too_many"
+    current = policy.own_agents(project)
+    held = set(current[policy.OWNERS_OF]) if isinstance(current, dict) else set()
+    picked: list[str] = []
+    for handle in named:
+        human_id = handles.human_id_of(conn, handle)
+        if human_id is None:
+            return "unknown_handle"
+        if human_id not in held:
+            # A pending, suspended or deleted account answers as a name nobody has, as
+            # elsewhere, so the refusal tells nothing about the account (review of #2135).
+            if not _active_account(conn, human_id):
+                return "unknown_handle"
+            if not _human_member(conn, project.id, human_id):
+                return "not_a_member"
+        if human_id not in picked:
+            picked.append(human_id)
+    return {policy.OWNERS_OF: picked}
+
+
+def _active_account(conn: Connection, human_id: str) -> bool:
+    row = conn.execute(
+        select(t.human.c.account_status, t.human.c.deleted_at, t.human.c.suspended_at).where(
+            t.human.c.id == human_id
+        )
+    ).first()
+    return (
+        row is not None
+        and row.account_status == "active"
+        and row.deleted_at is None
+        and row.suspended_at is None
+    )
+
+
+def _human_member(conn: Connection, project_id: str, human_id: str) -> bool:
+    return (
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.human_id == human_id,
+                t.membership.c.active.is_(True),
+            )
+        ).first()
+        is not None
+    )
+
+
 def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode: str) -> str | None:
     found = conn.execute(
         select(t.membership.c.trust, t.membership.c.agent_id).where(
@@ -288,6 +360,8 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
         return "not_a_member"
     if found.trust == restricted.GUEST:
         return "guest"
+    if found.trust not in restricted.SEATED_TRUSTS:  # an outsider's agent (§2.3 "Outside")
+        return "outside"
     if found.agent_id is not None and mode == "nobody_except":
         owner = conn.execute(
             select(t.membership.c.trust)
@@ -298,7 +372,7 @@ def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode:
                 t.membership.c.active.is_(True),
             )
         ).first()
-        if owner is None or owner.trust == restricted.GUEST:
+        if owner is None or owner.trust not in restricted.SEATED_TRUSTS:
             return "owner_not_a_member"
     return None
 
@@ -411,7 +485,11 @@ def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Ac
         project,
         "policy_changed",
         BROADCAST,
-        {"old": current, "new": new, "reason": reason},
+        {
+            "old": policy.shown(conn, current),
+            "new": policy.shown(conn, new),
+            "reason": reason,
+        },
         actor=actor,
     )
 
@@ -600,6 +678,10 @@ def _apply_policy(
     if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
         # Only `required` or `optional` (§6.1): a null would clear the human's value.
         errors["policy.keep_the_why"] = "unknown"
+    if "agent_owners" in change.model_fields_set and change.agent_owners is None:
+        # Never null again once set (§6.1): a stored `anyone` is the outsiders' opt-in, and
+        # `members` closes it; a null would quietly fall back to the unset reading.
+        errors["policy.agent_owners"] = "unknown"
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
@@ -615,6 +697,24 @@ def _apply_policy(
         if problem is not None:
             errors["outside_roles"] = problem
         proposed["outside_roles"] = roles
+    if "own_approvals" in change.model_fields_set:
+        count = change.own_approvals
+        # An integer from 1 to the column's width; a bool is no number here (§6.1).
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 1 <= count <= policy.OWN_APPROVALS_MAX
+        ):
+            errors["own_approvals"] = "out_of_range"  # named plain, as outside_roles (§6.1)
+        else:
+            proposed["own_approvals"] = count
+    if "own_agents" in change.model_fields_set:
+        found = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        checked = _checked_own_agents(conn, found, change.own_agents)
+        if isinstance(checked, str) and checked not in policy.OWN_AGENTS:
+            errors["own_agents"] = checked
+        else:
+            proposed["own_agents"] = checked
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -798,6 +898,8 @@ def _serve_restricted(
     view["settings"]["restricted_access"] = restricted.served(
         conn, project, _reader(conn, project, request) if isinstance(mine, _Unread) else mine
     )
+    # Every member read passes here: `own_agents` names the picked people by handle (§6.1).
+    view["policy"] = policy.shown(conn, view["policy"])
     return view
 
 
@@ -812,41 +914,60 @@ idempotency.register("project", load_project, idempotency.in_project(idempotency
 def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
     settings = settings_of(request)
     with engine_of(request).begin() as conn:
-        query = select(t.project).join(t.membership, t.membership.c.project_id == t.project.c.id)
-        if caller.kind == "agent":
-            query = query.where(t.membership.c.id == caller.membership_id)
+        agent = caller.kind == "agent"
+        isolated_in: set[str] = set()
+        if agent:
+            # Every project the instance is attached to, an isolated one included (§6.1,
+            # §6.17); never a project its profile is in without this instance.
+            attached_rows = live_attachments(conn, caller.credential_id or "")
+            query = select(t.project).where(
+                t.project.c.id.in_([r.project_id for r in attached_rows])
+            )
+            isolated_in = {r.project_id for r in attached_rows if r.isolated_since is not None}
         else:
-            query = query.where(
-                t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True)
+            query = (
+                select(t.project)
+                .join(t.membership, t.membership.c.project_id == t.project.c.id)
+                .where(t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True))
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
-        shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
-        aliases = namespace.aliases_by(conn, [r.id for r in rows])
-        confirmed = confirmed_by_of(conn, rows)
-        return JSONResponse(
-            {
-                "items": [
-                    _serve_restricted(
-                        conn,
-                        r,
-                        request,
-                        project_view(
-                            r,
-                            settings,
-                            names[r.id].split("/")[0],
-                            shown[r.id],
-                            _export(r, request),
-                            aliases[r.id],
-                            _stored(conn, r, request),
-                            confirmed[r.id],
-                        ),
-                    )
-                    for r in rows
-                ],
-                "next_cursor": None,
-            }
-        )
+        full = [r for r in rows if r.id not in isolated_in]
+        shown = images.views(conn, [r.id for r in full])
+        aliases = namespace.aliases_by(conn, [r.id for r in full])
+        confirmed = confirmed_by_of(conn, full)
+        items = []
+        for r in rows:
+            if r.id in isolated_in:
+                # The isolated entry (§6.1): what `GET /me` already shows of the project.
+                items.append(
+                    {
+                        "id": r.id,
+                        "slug": r.slug,
+                        "full_name": names[r.id],
+                        "name": r.name,
+                        "state": r.state,
+                        "isolated": True,
+                    }
+                )
+                continue
+            view = _serve_restricted(
+                conn,
+                r,
+                request,
+                project_view(
+                    r,
+                    settings,
+                    names[r.id].split("/")[0],
+                    shown[r.id],
+                    _export(r, request),
+                    aliases[r.id],
+                    _stored(conn, r, request),
+                    confirmed[r.id],
+                ),
+            )
+            items.append({**view, "isolated": False} if agent else view)
+        return JSONResponse({"items": items, "next_cursor": None})
 
 
 def _creation_owner(
@@ -1371,8 +1492,11 @@ def patch_project(
                 "policy_changed",
                 BROADCAST,
                 {
-                    "old": policy.of(project),
-                    "new": {**policy.of(project), "keep_the_why": explicit["keep_the_why_policy"]},
+                    "old": policy.shown(conn, policy.of(project)),
+                    "new": {
+                        **policy.shown(conn, policy.of(project)),
+                        "keep_the_why": explicit["keep_the_why_policy"],
+                    },
                     "reason": body.reason,
                 },
                 actor=actor,
@@ -1393,7 +1517,11 @@ def patch_project(
                 project,
                 "policy_changed",
                 BROADCAST,
-                {"old": policy.of(project), "new": new_policy, "reason": body.reason},
+                {
+                    "old": policy.shown(conn, policy.of(project)),
+                    "new": policy.shown(conn, new_policy),
+                    "reason": body.reason,
+                },
                 actor=actor,
                 again=bumped,
             )
@@ -1520,6 +1648,26 @@ def transfer_project(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _as_stored(url: str) -> str | None:
+    """A URL as creation stores one (§6.1: the scheme and host in lower case, one trailing slash
+    and a lower-case `.git` dropped); None for one creation would refuse."""
+    try:
+        return forge.stored_repository_url(url)
+    except forge.RepositoryURLError:
+        return None
+
+
+def _same_repository(sent: str, carried: str) -> bool:
+    """Whether the URL the owner sent names the repository the project carries (§11.4): the same
+    spelling, or the same once both are written as creation stores a URL, so `…/repo.git/`
+    confirms `…/repo`. A row stored before URLs were normalised keeps its spelling
+    (20261114130000_repo_url_2048), so it is normalised here too, never only the sent side."""
+    if sent.rstrip("/") == carried:
+        return True
+    stored = _as_stored(sent)
+    return stored is not None and stored == _as_stored(carried)
+
+
 @router.post("/projects/{owner}/{slug}/repository/confirm")
 def confirm_repository(
     slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
@@ -1545,7 +1693,7 @@ def confirm_repository(
         elif mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
-        if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
+        if project.repository_url is None or not _same_repository(body.url, project.repository_url):
             # A co-admin's change between what the owner saw and the click is never
             # confirmed with it.
             raise ApiError(
@@ -1579,6 +1727,8 @@ HUMANS_ONLY_POLICY = {
     "member_agents_max",
     "agent_owners",  # whether an agent's owner must be a member (§6.1, §6.2)
     "outside_roles",
+    "own_approvals",  # set by a human with project:admin (§6.1)
+    "own_agents",  # set by a human with trust owner (§6.1, checked in `_authorise_patch`)
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
@@ -1664,6 +1814,10 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
         raise forbidden(message="the absence is set by the owner only")
     if given - {"absence", "reason"}:
         mine.require("project:admin")
+    # Whose agents count as the project's own is the owners' call (§6.1 `own_agents`).
+    named = body.policy.model_fields_set if "policy" in given and body.policy else set()
+    if "own_agents" in named and (mine.trust != "owner" or mine.kind != "human"):
+        raise ApiError(403, "forbidden", "own_agents is set by an owner", {"reason": "owner_only"})
     # Launch is the owner's go (§6.1): an admin human is refused too.
     moves_to_launch = body.state == "launch" and mine.project.state != "launch"
     if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):

@@ -22,11 +22,11 @@ from maity_hub import clock, events, idempotency, namespace, project_roles, prop
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership, owns_agent
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import ApiError, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
-from maity_hub.scopes import in_admin_team
-from maity_hub.views import ts
+from maity_hub.scopes import OUTSIDE, in_admin_team
+from maity_hub.views import handles_of, ts
 
 # §1.7: in bytes of UTF-8, so that a cap means the same in every script.
 ENTRY_MAX = 2048
@@ -214,15 +214,6 @@ def member(conn: Connection, membership_id: int | None) -> Any:
     return conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
 
 
-def _handles(conn: Connection, kind: str, ids: set[str]) -> dict[str, str | None]:
-    """The handles of several humans or agent profiles, in one query."""
-    if not ids:
-        return {}
-    table = t.human if kind == "human" else t.agent_profile
-    rows = conn.execute(select(table.c.id, table.c.handle).where(table.c.id.in_(ids))).all()
-    return {row.id: row.handle for row in rows}
-
-
 def entry_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
     """The views of several entries in a fixed number of queries: the memberships they
     name, then the handles of each kind (as `views.principal_ids` does for lists), so a
@@ -249,23 +240,23 @@ def entry_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
         m = members[membership_id]
         return str(m.agent_id or m.human_id)
 
-    ids: dict[str, set[str]] = {"human": set(), "agent": set()}
+    ids: set[str] = set()
     for r in rows:
         for kind, membership_id in (
             (r.by_kind, r.by_membership),
             (r.deleted_by_kind if r.deleted_at is not None else None, r.deleted_by_membership),
         ):
             if kind is not None and membership_id is not None:
-                ids["human" if kind == "human" else "agent"].add(principal(membership_id))
+                ids.add(principal(membership_id))
         if r.confirmed_by is not None:
-            ids["human"].add(r.confirmed_by)
-    handles = {kind: _handles(conn, kind, found) for kind, found in ids.items()}
+            ids.add(r.confirmed_by)
+    handles = handles_of(conn, ids)
 
     def by(kind: str | None, membership_id: int | None) -> dict[str, Any] | None:
         if membership_id is None or kind is None:
             return None
         who_id = principal(membership_id)
-        handle = handles["human" if kind == "human" else "agent"].get(who_id)
+        handle = handles.get(who_id)
         return {"kind": kind, "member_id": who_id, "handle": handle}
 
     views = []
@@ -292,7 +283,7 @@ def entry_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
                 "tags": row.tags or [],
                 "by": author,
                 "confirmed_by": (
-                    {"kind": "human", "id": confirmed, "handle": handles["human"].get(confirmed)}
+                    {"kind": "human", "id": confirmed, "handle": handles.get(confirmed)}
                     if confirmed is not None
                     else None
                 ),
@@ -373,6 +364,23 @@ def role_admin(mine: Membership) -> bool:
 
 def reads_role(mine: Membership, role: str) -> bool:
     return mine.role == role or role_admin(mine)
+
+
+def refuse_role_change(mine: Membership) -> None:
+    """The one check of a write or a delete in a role's memory (§19.2): a guest changes none
+    (§2.3), and neither does an outsider's agent (trust `outside`, §2.3 "Outside"), which
+    reads its role's memory but neither writes nor deletes it: role memory goes into every
+    same-role agent's resume packet (hub/context/memory.md, "An outsider's agent writes no
+    role memory"). `forbidden` either way; every other trust passes as before."""
+    if mine.trust == "guest":
+        raise forbidden("tasks:write", "a guest writes no memory")
+    if mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "an outsider's agent reads its role's memory but neither writes nor deletes it",
+            {"reason": "outside_trust"},
+        )
 
 
 def readable_roles(mine: Membership) -> Any:

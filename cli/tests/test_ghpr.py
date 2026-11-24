@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from maity import cli, clonecheck, ghpr, hub, state
+from maity import cli, clonecheck, ghpr, hub, inclone, state
 from maity.runner import supervisor
 from maity.runner.asuser import AsUser
 
@@ -61,7 +61,10 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     subprocess.run([git, "init", "-q", "-b", BRANCH, str(clone)], check=True)
     (clone / ".git" / "maity").mkdir()
     log = tmp_path / "gh.json"
-    gh = tmp_path / "bin" / "gh"
+    # On Windows a program on a search path is found by a PATHEXT suffix, never as a bare `gh`
+    # (proc.program, as Windows itself): the stand-in is `gh.exe` there. Tests that run it skip
+    # Windows (runs_gh); the others only need `maity gh` to find it on the recorded PATH.
+    gh = tmp_path / "bin" / ("gh.exe" if os.name == "nt" else "gh")
     gh.parent.mkdir()
     gh.write_text(
         f"#!{sys.executable}\n"
@@ -80,7 +83,8 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
     # The runner's records, in its directory for the agent, never in the clone.
     (private / clonecheck.GIT_PATH.name).write_text(git + "\n")
-    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh}\n")
+    # The runner's PATH, where `maity gh` looks gh up at each call (point 15).
+    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh.parent}\n")
     monkeypatch.chdir(clone)
     return {"clone": clone, "log": log, "gh": str(gh), "record": private / ghpr.PULL_REQUESTS}
 
@@ -121,6 +125,19 @@ def test_create_runs_gh_on_the_recorded_repository_with_the_body_on_stdin(
     assert call["env"]["GH_PROMPT_DISABLED"] == "1"
     assert call["env"]["PATH"].split(os.pathsep)[0] == str(Path(placed["gh"]).parent)
     assert {name: call["env"][name] for name in DROPPED} == {name: None for name in DROPPED}
+
+
+def test_gh_gets_no_all_proxy(tmp_path: Path) -> None:
+    """gh's proxy names are ENV_PASSED's; git's wider list (clonecheck.ENV_PROXY) is not
+    merged in."""
+    environ = {
+        "ALL_PROXY": "http://proxy.invalid:3128",
+        "all_proxy": "http://proxy.invalid:3128",
+        "HTTPS_PROXY": "http://proxy.invalid:3128",
+    }
+    env = ghpr.gh_env(environ, str(tmp_path / "bin" / "gh"))
+    assert "ALL_PROXY" not in env and "all_proxy" not in env
+    assert env["HTTPS_PROXY"] == "http://proxy.invalid:3128"
 
 
 @runs_gh
@@ -603,6 +620,208 @@ def test_a_record_in_the_clone_is_never_read(placed: dict[str, Any], tmp_path: P
     placed["record"].unlink()  # without the runner's record: no grant, never the clone's
     assert cli.main(["gh", "pr", "view", "7"]) == 4
     assert not (tmp_path / "decoy-ran").exists()
+
+
+@runs_gh
+def test_a_gh_installed_after_the_start_is_found_at_the_next_call(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Point 15 of tsk-2k0jcaxfd0ja: the runner records its PATH, not the gh it found, and
+    `maity gh` looks gh up there at each call. Before gh is installed it refuses and says so;
+    once it is there, the same session runs it, with no restart."""
+    gh = Path(placed["gh"])
+    later = gh.parent.parent / "later-bin"
+    later.mkdir()
+    placed["record"].write_text(f"{REPOSITORY}\n{later}\n")
+    err = refused(["gh", "pr", "view", "7"], capsys)
+    assert "gh is not installed on the runner's PATH" in err and ran(placed) is None
+    os.rename(gh, later / "gh")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert ran(placed) is not None
+
+
+@runs_gh
+def test_the_lookup_takes_no_relative_entry_and_no_gh_the_session_can_write(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The checks of a gh recorded at the start stay (lotse's condition on point 15): a
+    relative entry is never searched, and a gh inside the clone, which the session writes, is
+    refused even where the recorded PATH names its directory. Nothing runs."""
+    clone: Path = placed["clone"]
+    planted = clone / "bin"
+    planted.mkdir()
+    decoy = planted / "gh"
+    decoy.write_text(f"#!{sys.executable}\nopen({str(clone / 'decoy-ran')!r}, 'w')\n")
+    decoy.chmod(0o755)
+    placed["record"].write_text(f"{REPOSITORY}\nbin\n")  # relative: the clone is the cwd
+    assert "gh is not installed on the runner's PATH" in refused(["gh", "pr", "view", "7"], capsys)
+    placed["record"].write_text(f"{REPOSITORY}\n{planted}\n")
+    assert "which this session can write" in refused(["gh", "pr", "view", "7"], capsys)
+    assert not (clone / "decoy-ran").exists() and ran(placed) is None
+
+
+@runs_gh
+def test_find_gh_searches_the_recorded_path_at_each_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`find_gh` alone, with no git: missing first, found once installed, an older record's
+    own path taken, a gh inside the clone refused, a relative entry never searched."""
+    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV, raising=False)
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    with pytest.raises(ghpr.Refused, match="gh is not installed on the runner's PATH"):
+        ghpr.find_gh(str(bin_dir), clone)
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    assert ghpr.find_gh(str(bin_dir), clone) == str(gh)
+    assert ghpr.find_gh(str(gh), clone) == str(gh)
+    planted = clone / "bin"
+    planted.mkdir()
+    (planted / "gh").write_text("#!/bin/sh\nexit 0\n")
+    (planted / "gh").chmod(0o755)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(f"{planted}{os.pathsep}{bin_dir}", clone)
+    monkeypatch.chdir(clone)
+    with pytest.raises(ghpr.Refused, match="gh is not installed"):
+        ghpr.find_gh("bin", clone)
+    # A link inside the clone to a gh outside it (review A2159 of #2125): its directory, which
+    # gh_env would put first on gh's PATH, is the clone's, so it is refused too.
+    (planted / "gh").unlink()
+    (planted / "gh").symlink_to(gh)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(planted), clone)
+    # A PATH entry that passes through the clone by a directory link to a directory outside it
+    # (review A2168 of #2125): file and directory resolve outside, but the entry as written is
+    # the clone's, where the session could swap the link after the check.
+    (clone / "via").symlink_to(bin_dir, target_is_directory=True)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(clone / "via"), clone)
+    # A link outside the clone that is resolvable is taken as found.
+    elsewhere = tmp_path / "links"
+    elsewhere.mkdir()
+    (elsewhere / "gh").symlink_to(gh)
+    assert ghpr.find_gh(str(elsewhere), clone) == str(elsewhere / "gh")
+
+
+@runs_gh  # Windows' lookup simulated here; on Windows the fixture itself shows it
+def test_find_gh_on_windows_takes_gh_by_its_pathext_suffix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cli-windows failure of #2125's round 3, in Windows' terms on any system: on a search
+    path Windows finds a program only by a PATHEXT suffix (proc.program does the same), so a
+    bare `gh` as the tests' stand-in is "not installed" there, while `gh.exe` is found."""
+    from maity import proc
+
+    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV, raising=False)
+    clone = _mkdir(tmp_path / "clone")
+    bare = _mkdir(tmp_path / "bare")
+    (bare / "gh").write_text("#!/bin/sh\nexit 0\n")  # the fixture's stand-in before this fix
+    (bare / "gh").chmod(0o755)
+
+    class WindowsOs:  # os as proc.program sees it on Windows; pathlib here stays POSIX
+        name = "nt"
+
+        def __getattr__(self, attr: str) -> Any:
+            return getattr(os, attr)
+
+    monkeypatch.setattr(proc, "os", WindowsOs())
+    # Lower case: Windows matches the suffix in any case, a POSIX file system only exactly; and
+    # this system's separator, which proc.program splits PATHEXT by (`;` on Windows).
+    monkeypatch.setenv("PATHEXT", os.pathsep.join([".com", ".exe", ".bat", ".cmd"]))
+    with pytest.raises(ghpr.Refused, match="gh is not installed on the runner's PATH"):
+        ghpr.find_gh(str(bare), clone)
+    exe = _mkdir(tmp_path / "exe")
+    (exe / "gh.exe").write_text("")
+    (exe / "gh.exe").chmod(0o755)
+    assert ghpr.find_gh(str(exe), clone) == str(exe / "gh.exe")
+
+
+def _gh_world(tmp_path: Path) -> dict[str, Path]:
+    """A workspace with a clone and its sibling, a scratch, and a gh outside both (in a
+    `usr/bin` with a `bin` link to it, as /bin -> /usr/bin)."""
+    ws = tmp_path / "ws"
+    clone, sibling, scratch = ws / "clone", ws / "clone2", tmp_path / "scratch"
+    for d in (clone, sibling, scratch, tmp_path / "usr" / "bin", tmp_path / "out"):
+        d.mkdir(parents=True)
+    gh = tmp_path / "usr" / "bin" / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    (tmp_path / "bin").symlink_to(tmp_path / "usr" / "bin", target_is_directory=True)
+    return {"ws": ws, "clone": clone, "sibling": sibling, "scratch": scratch, "gh": gh,
+            "usr": tmp_path / "usr", "out": tmp_path / "out", "tmp": tmp_path}  # fmt: skip
+
+
+# Every way a path can pass through the clone or the scratch (review A2167 of #2125): each
+# returns the recorded entry (or, for an older record, gh itself) after building its links.
+PASSING_THROUGH = {
+    "a dir link in the clone": lambda w: _link(w["clone"] / "bin", w["usr"] / "bin"),
+    "a dir link in the scratch": lambda w: _link(w["scratch"] / "bin", w["usr"] / "bin"),
+    "an ancestor link in the clone": lambda w: _link(w["clone"] / "anc", w["usr"]) / "bin",
+    "an older record through a dir link": lambda w: _link(w["clone"] / "b", w["usr"] / "bin")
+    / "gh",
+    "dot-dot through the clone": lambda w: _mkdir(w["clone"] / "sub")
+    / ".."
+    / ".."
+    / ".."
+    / "usr"
+    / "bin",
+    "a link outside bouncing through the clone": lambda w: _link(
+        w["out"] / "gh", _link(w["clone"] / "bounce", w["gh"])
+    ).parent,
+}
+
+
+def _link(link: Path, target: Path) -> Path:
+    link.symlink_to(target, target_is_directory=target.is_dir())
+    return link
+
+
+def _mkdir(path: Path) -> Path:
+    path.mkdir()
+    return path
+
+
+@runs_gh
+@pytest.mark.parametrize("case", list(PASSING_THROUGH))
+def test_find_gh_refuses_a_path_through_the_clone_or_the_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    world = _gh_world(tmp_path)
+    monkeypatch.setattr(inclone, "recorded_scratch", lambda root, dot_git: world["scratch"])
+    recorded = PASSING_THROUGH[case](world)
+    with pytest.raises(ghpr.Refused, match="which this session can write"):
+        ghpr.find_gh(str(recorded), world["clone"])
+
+
+@runs_gh
+def test_find_gh_takes_what_passes_through_neither(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept: a link dispatching on its name in a directory of its own (a snap's /snap/bin/gh),
+    a PATH entry that is itself a link (/bin -> /usr/bin), the clone's parent, and a sibling
+    whose name only starts like the clone's. What runs is the real directory with gh's name."""
+    world = _gh_world(tmp_path)
+    monkeypatch.setattr(inclone, "recorded_scratch", lambda root, dot_git: world["scratch"])
+    snap = _mkdir(tmp_path / "snap")
+    _link(snap / "gh", world["gh"])
+    assert ghpr.find_gh(str(snap), world["clone"]) == str(snap / "gh")
+    assert ghpr.find_gh(str(tmp_path / "bin"), world["clone"]) == str(world["gh"])
+    for place in (world["ws"], world["sibling"]):
+        (place / "gh").write_text("#!/bin/sh\nexit 0\n")
+        (place / "gh").chmod(0o755)
+        assert ghpr.find_gh(str(place), world["clone"]) == str(place / "gh")
+
+
+@runs_gh
+def test_an_older_runners_record_naming_gh_itself_still_works(placed: dict[str, Any]) -> None:
+    """A session started by a runner from before point 15 has gh's own path in the record:
+    it is taken as before."""
+    placed["record"].write_text(f"{REPOSITORY}\n{placed['gh']}\n")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert ran(placed) is not None
 
 
 @walks  # `opened_git` yields a descriptor only where maity walks

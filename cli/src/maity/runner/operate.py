@@ -268,20 +268,15 @@ def unsaved_work(path: Path, as_user: AsUser = RUNNER) -> list[str] | None:
     return lines
 
 
-def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str], set[str] | None]:
-    """(project, clone) pairs, agents and ids of every active placement, asked of the hub: a
-    clone a new placement continues names an old placement in its record until it starts.
-    The ids are None when an item of the hub's list could not be read: a scratch goes only by
-    its absence from a whole list (§15.5). A failed read refuses, never reads as empty."""
-    pairs, agents, ids, _keys = _active_with_skills(cfg)
-    return pairs, agents, ids
-
-
 def _active_with_skills(
     cfg: config.Config,
 ) -> tuple[set[tuple[str, str]], set[str], set[str] | None, set[str] | None]:
-    """`_active`, with the Keep the Why copies (skills.key) the active placements name; None
-    as the ids are, when an item could not be read, so nothing goes by a partial list."""
+    """(project, clone) pairs, agents, ids and Keep the Why copies (skills.key) of every
+    active placement, asked of the hub: a clone a new placement continues names an old
+    placement in its record until it starts. The ids are None when an item of the hub's list
+    could not be read: a scratch goes only by its absence from a whole list (§15.5). The keys
+    are None then too, and when a placement's pin cannot be read, so no copy goes by a partial
+    list. A failed read refuses, never reads as empty."""
     runner_state = state.load_state(cfg.state_dir, name=serve.RUNNER_FILE)
     try:
         service = serve.open_service(cfg, runner_state)
@@ -334,13 +329,7 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
             "without --yes to list them"
         ) from None
     try:
-        # The skills' keys are read only for --skills; everything else goes through `_active`,
-        # as before this change (the review of #2093).
-        keys: set[str] | None = None
-        if with_skills:
-            pairs, agents, ids, keys = _active_with_skills(cfg)
-        else:
-            pairs, agents, ids = _active(cfg)
+        pairs, agents, ids, keys = _active_with_skills(cfg)
         if args.revoked:
             found = workspace.records(cfg.state_dir)
             gone: list[str] = []
@@ -615,7 +604,9 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
     project, _, clone = args.where.partition("/")
     try:
         place = workspace.locate(cfg.local.workspaces, project, clone)
-    except workspace.Refused:
+    except workspace.Refused as refused_:
+        if refused_.why:  # a resolved-path refusal (e.g. a wildcard char) explains itself
+            raise Refused(refused_.why) from None
         raise Refused(f"not <project id>/<clone>: {onboarding.inline(args.where)}") from None
     as_user = _as_user(cfg)
     if not as_user.exists(place.path / ".git", "-d"):

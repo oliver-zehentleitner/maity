@@ -132,8 +132,9 @@ until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
 their agents under it) shows each agent with its owner where a project
 page lists it; that redesign may replace it. The reporter's list reads the
 candidate pages of all its rows by `path` (the table's key), one query
-per chunk of at most `PATHS_PER_QUERY` (500) paths (`_pages_at`), the
-same bound as `export.CHUNK`, and checks the view per use. Reason: an agent on
+per chunk of at most `chunks.CHUNK` (500) paths (`_pages_at`, the bound
+`PATHS_PER_QUERY` until 2026-11-22, persistence.md 63ffb6dc), and checks
+the view per use. Reason: an agent on
 many projects adds one path per project, and an unbounded IN list could
 reach an engine's limit on bound parameters.
 
@@ -163,7 +164,8 @@ out.
   `not_found`.
 - Importing `export.CHUNK` for the bound on paths per statement:
   `export` imports `reports`, so the import would be a cycle; the value
-  is mirrored instead.
+  was mirrored instead, until the leaf module `chunks` took the bound
+  for every such read (2026-11-22, persistence.md 63ffb6dc).
 - Joining `membership` to `public_page` on kind and target id, so the
   bound parameters would not grow with an agent's memberships: dropped
   in favour of the lead's direction to read the paths in chunks.

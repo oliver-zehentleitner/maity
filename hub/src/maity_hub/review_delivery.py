@@ -31,7 +31,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from maity_hub import cross_owner, instances, restricted
+from maity_hub import cards, cross_owner, instances, restricted
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 
@@ -69,9 +69,10 @@ def _active(conn: Connection, project_id: str, member_id: str) -> Any:
 def _lead(conn: Connection, membership: Any) -> Recipient | None:
     """The member `membership` reports to, while that member is still in the project; an
     isolated one is routed past as `views.routing_boss` does (§6.2). A boss of another owner,
-    or one whose owner or whose subordinate's owner cannot be resolved (`_same_owner`), is left
-    out: it is never added, so it is no part of the card's own flow the gate leaves open, and a
-    `to` or a mention naming it passes the gate like anyone else's (§8.4, §9.6)."""
+    or one whose owner or whose subordinate's owner cannot be resolved
+    (`cross_owner.same_side`), is left out: it is never added, so it is no part of the card's
+    own flow the gate leaves open, and a `to` or a mention naming it passes the gate like
+    anyone else's (§8.4, §9.6)."""
     if membership is None or membership.reports_to is None:
         return None
     lead = conn.execute(
@@ -84,24 +85,10 @@ def _lead(conn: Connection, membership: Any) -> Recipient | None:
     ).first()
     if lead is None:
         return None
-    if not _same_owner(conn, membership, lead):
+    if not cross_owner.same_side(conn, membership, lead):
         return None  # a boss of another owner is left out, not gated (§8.4, §6.2)
     member_id = _principal(lead)
     return Recipient(member_id, instances.token(member_id, None))
-
-
-def _same_owner(conn: Connection, membership: Any, lead: Any) -> bool:
-    """Whether `lead` may be added as `membership`'s boss (§8.4): its owner
-    (`cross_owner.owner_of`: an agent's profile owner, a human itself, as `takeovers._owner`
-    resolves it) is the owner of the agent it leads. An owner that cannot be resolved on either
-    side leaves the lead out. A human's own `reports_to` is never of another owner (§6.2,
-    "Across owners"), so a human's boss whose owner resolves is added."""
-    side = cross_owner.owner_of(conn, lead)
-    if side is None:
-        return False
-    if membership.agent_id is None:
-        return True
-    return cross_owner.owner_of(conn, membership) == side
 
 
 def _card(conn: Connection, project_id: str, task_id: str | None, review: dict[str, Any]) -> Any:
@@ -112,12 +99,7 @@ def _card(conn: Connection, project_id: str, task_id: str | None, review: dict[s
     match = PULL_REQUEST.fullmatch(review["subject"].strip())
     if match is None:
         return None
-    number = int(match.group(1))
-    # As `ticker.linked_cards` does: the reports live on the cards as JSON, read in Python.
-    rows = conn.execute(
-        select(t.card).where(t.card.c.project_id == project_id, t.card.c.report.is_not(None))
-    ).all()
-    named = [row for row in rows if (((row.report or {}).get("pr") or {}).get("number")) == number]
+    named = cards.naming_pr(conn, project_id, int(match.group(1)))
     if not named:
         return None
     return max(named, key=lambda row: ((row.report or {}).get("reported_at") or "", row.id))

@@ -50,7 +50,7 @@ The test cycle after each CLI release: start · `maity resume` · `maity wait` �
 Everything runs as the agents' user (in the `single` layout, the runner's own user, here `maity-runner`). The service's `PATH` is systemd's default, so tools in `~/.local/bin` need `agent_path` (below).
 
 - **maity:** `pipx install maity`. Upgrade with `pipx upgrade maity`, then restart the service.
-- **Claude Code and Codex:** let the runner manage them: `install = true` and `update = "daily"` under `[harness.claude-code]` and `[harness.codex]` ([Keeping Claude Code and Codex current](runners.md#keeping-claude-code-and-codex-current)). Sign in once as the agents' user: `claude` for Claude Code, and for Codex the `codex login` of the version `maity runner tools` lists.
+- **Claude Code and Codex:** let the runner manage them: `install = true` and `update = "daily"` under `[harness.claude-code]` and `[harness.codex]` ([Keeping Claude Code and Codex current](runners.md#keeping-claude-code-and-codex-current)). Claude Code's update stops at the sandbox-checked version unless `track = "newest"` is set. Sign in once as the agents' user: for Claude Code, the `claude` the runner installed, which is not on `PATH` (`<tools_dir>/claude-code/versions/<version>/bin/claude`, as in [Keeping Claude Code and Codex current](runners.md#keeping-claude-code-and-codex-current)), and for Codex the `codex login` of the version `maity runner tools` lists.
 - **Antigravity:** `agy` in `~/.local/bin` and signed in as the agents' user ([Antigravity (agy)](runners.md#antigravity-agy)).
 - **OpenCode:** from the GitHub release of `sst/opencode`:
   1. Download `opencode-linux-x64.tar.gz` and `SHA256SUMS` of the release, for example with `gh release download v2.3.0 -R sst/opencode -p opencode-linux-x64.tar.gz -p SHA256SUMS`.
@@ -110,12 +110,14 @@ pull_requests = true
 
 | Warning | Meaning |
 |---|---|
-| `its sandbox was checked with 2.1.x, this is 2.1.y` | Claude Code is another version than the one whose sandbox behaviour was verified: whether a call with something in front of `maity` stays in the sandbox is not checked for it. Security-relevant; until the checked version is raised, it is a known, accepted gap. |
+| `its sandbox was checked with 2.1.x, this is 2.1.y` | Claude Code is another version than the one whose sandbox behaviour was verified: whether a call with something in front of `maity` stays in the sandbox is not checked for it. Security-relevant; until the checked version is raised, it is a known, accepted gap. With the default `track = "checked"` the runner's update installs no version above the checked one; a newer one already in use stays, and the warning names the way back. With `track = "newest"` a newer version is a `note` line instead ([Which Claude Code version the update takes](runners.md#which-claude-code-version-the-update-takes)). |
 | `harness opencode: no OS sandbox; …` | opencode has no sandbox the runner switches on; under layout single an agent can do what the runner's user can. With `require_sandbox = true` under `[harness.opencode]` this is an error and opencode placements are refused. |
 | `pull_requests is not given to codex` | Codex runs `maity` inside its sandbox, so it gets no `maity gh`. |
 | `allow '…' is left out for antigravity` | agy does not match command grants the way Claude Code does; such commands run in agy's sandbox like any other. |
-| `the namespaces agy's terminal sandbox needs do not start` | On this host agy runs commands unsandboxed. |
-| `sandbox reported off … sandbox_unavailable` | agy's sandbox is reported off until the runner has seen it start, on every host for now. |
+| `the namespaces agy's terminal sandbox needs are refused here, but an AppArmor profile named for agy is loaded` | AppArmor restricts unprivileged user namespaces on this host, and a profile for agy may grant agy its own; the runner cannot verify it without root. On the Ubuntu lab host agy's own sandbox was seen starting under such a profile (tsk-xjy2d5617sar). |
+| `agy's terminal sandbox cannot start on this host: the user namespace's uid_map, gid_map or setgroups write is refused` (an error) | AppArmor refuses the namespace's mapping and nothing lifts that: agy runs commands unsandboxed. With `require_sandbox = true` under `[harness.antigravity]` agy starts are refused (on every host for now, as the `sandbox reported off` row says); unset or `false`, they start and the log says so at every start. Either way it stays an error until the namespaces start for the agents' user; on Ubuntu that is an AppArmor profile named `agy` that allows `userns`, loaded, and the runner restarted ([Antigravity (agy)](runners.md#antigravity-agy)). |
+| `agy's terminal sandbox cannot start on this host: the kernel or a container refuses user namespaces` (an error) | The unshare call itself is refused (a sysctl such as `kernel.unprivileged_userns_clone = 0`, or a container's seccomp): agy runs commands unsandboxed, and starts follow `require_sandbox` as above. A profile for agy does not clear it; allowing unprivileged user namespaces for the agents' user does. |
+| `sandbox reported off … sandbox_unavailable` | agy's sandbox is reported off until the runner has seen it start, on every host for now, so `require_sandbox = true` under `[harness.antigravity]` refuses agy starts on every host. |
 | `~/.claude/settings.json allows N rule(s) of its own` | Every Claude Code agent the runner starts inherits them; use a user of its own for the runner. |
 | `could not tell whether a user namespace starts inside bubblewrap` | The nesting probe did not answer; it blames nothing. Run it by hand ([Ubuntu: nested user namespaces](runners.md#ubuntu-nested-user-namespaces)). |
 
@@ -123,7 +125,7 @@ pull_requests = true
 
 - **Ubuntu, AppArmor:** Claude Code's sandbox needs a nested user namespace that Ubuntu's `bwrap-userns-restrict` refuses. The verified fix and its scope are in [Ubuntu: nested user namespaces](runners.md#ubuntu-nested-user-namespaces). It needs root and affects every bubblewrap sandbox on the host.
 - **OpenCode has no sandbox.** Under the `single` layout an OpenCode agent can do what the agents' user can, including reading the other agents' clones. Place only test members with it until it gets one (tsk-nynpvag9zvhh).
-- **Antigravity** runs unsandboxed where its namespaces do not start, and is reported `sandbox_unavailable` everywhere for now. Its command grants do not apply (above).
+- **Antigravity** runs unsandboxed where its namespaces cannot start, and is reported `sandbox_unavailable` everywhere for now. Its command grants do not apply (above). On Ubuntu with AppArmor's userns restriction on, an AppArmor profile for agy that grants `userns` lets agy's sandbox start; the runner recognises it by its name, `agy` (or agy's path). It needs root and is the operator's call. Where agy's sandbox cannot start, `check` reports an error. `require_sandbox = true` refuses agy starts on every host for now, not only there, since agy's sandbox is reported off everywhere ([Antigravity (agy)](runners.md#antigravity-agy)).
 
 ## Known gaps
 
@@ -132,8 +134,8 @@ pull_requests = true
 | Codex's exec helper lives in its `CODEX_HOME`, which the runner puts inside the state directory that the sandbox profile hides, so every command is denied. Fixed in maity 0.1.0a16 (#1979: `CODEX_HOME` in the placement scratch); not re-run in the lab yet | Ubuntu 26.04, Codex 0.169 and 0.170 | tsk-hv7jbgy75zjt |
 | Claude Code in a placement: several workflow commands (pytest, make, black, ruff, mypy, uuidgen, `git -C`, `cd … &&`) are refused under dontAsk, by the allow list's content and command form; the main session and subagents can differ | Ubuntu 26.04 (Debian not tested) | tsk-66zyvc4xnhtv, #1962 |
 | An OpenCode placement without a model runs OpenCode's own default model. Fixed in maity 0.1.0a16 (#1969: `default_model` used, fails closed); not re-run in the lab yet | both | tsk-kf2kp09d6qew |
-| Coders cannot build the project's dev venv or run its full checks in a placement | both | tsk-kshmb8vc92rr |
+| Coders cannot build the project's dev venv or run its full checks in a placement. Addressed by `[backend.local] clone_venvs` (the runner builds the venvs, Claude Code in the `single` layout; docs/runners.md); not re-run in the lab yet | both | tsk-kshmb8vc92rr |
 | The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind. Fixed in maity 0.1.0a16 (#1954); not re-run in the lab yet | both | tsk-estwtzbae972, #1954 |
-| A supervised agent shows as offline or away on the team page while its placement runs ("where they run" is green) | both | tsk-hv7jbgy75zjt (note nte-w7bwz93q1vnx) |
+| A supervised agent shows as offline or away on the team page while its placement runs (green on **Managed agents**) | both | tsk-hv7jbgy75zjt (note nte-w7bwz93q1vnx) |
 | Claude Code without its sandbox as an opt-in where the host cannot allow it | – | tsk-yp2bprwv9whv |
 | `runner check` does not probe the nested user namespace on ssh hosts | ssh backend | tsk-5b5x3k5zvg7x (follow-up) |

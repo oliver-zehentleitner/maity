@@ -181,16 +181,16 @@ def _projects_to_lock(conn: Connection, runner_ids: list[str], own: Any) -> list
     (`runner_revoke.projects_to_lock`, the rule `apply` itself follows below)."""
     from maity_hub.instances import attached_now, credential_join  # not at the top
 
-    # Every project a live credential is attached to now: its revocation locks each, and
-    # none it was detached from (§6.17).
-    found = set(
-        conn.execute(
-            select(t.membership.c.project_id)
-            .select_from(credential_join())
-            .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
-            .where(attached_now(), own)
-        ).scalars()
-    )
+    # Every project a live credential's revocation locks (`revocation.projects_of`): each one
+    # it is attached to now, none it was detached from (§6.17), and its placements'.
+    live = conn.execute(
+        select(t.credential.c.id)
+        .select_from(credential_join())
+        .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
+        .where(attached_now(), own)
+        .distinct()
+    ).scalars()
+    found = revocation.projects_of(conn, list(live))
     for runner_id in runner_ids:
         found.update(runner_revoke.projects_to_lock(conn, runner_id))
     return sorted(found)

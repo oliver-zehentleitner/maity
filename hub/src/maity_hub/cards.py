@@ -7,6 +7,7 @@ inside one transaction.
 from __future__ import annotations
 
 from collections.abc import Collection
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select, update
@@ -107,12 +108,15 @@ def sibling_holds(mine: Membership, card: Any) -> bool:
     return card.claim_holder == mine.id and not holds(mine, card)
 
 
-def has_done_authority(mine: Membership, card: Any) -> bool:
+def has_done_authority(conn: Connection, mine: Membership, card: Any) -> bool:
     """Who moves a card to done, by `policy.done_authority` (§6.1); under
-    `reviewer_and_tester` who may sign it (`sign`)."""
+    `reviewer_and_tester` who may sign it (`sign`). A role that reviews or tests gives an
+    outside agent none (`outside_caller`); the holder's is the holder's (§2.3)."""
     authority = mine.project.done_authority
     if authority == "holder":
         return holds(mine, card)
+    if authority in ("reviewer", "tester", "reviewer_and_tester") and outside_caller(conn, mine):
+        return False
     if authority == "reviewer":
         return mine.may("tasks:review")
     if authority == "tester":
@@ -120,6 +124,18 @@ def has_done_authority(mine: Membership, card: Any) -> bool:
     if authority == "reviewer_and_tester":
         return mine.may("tasks:review") or mine.may("tasks:test")
     return mine.may("tasks:admin")
+
+
+def outside_caller(conn: Connection, mine: Membership) -> bool:
+    """The caller is an agent `own_approvals.outside_agent` counts as outside (§2.3; that
+    function is the one definition). Whatever its role, it
+    holds no done authority through `tasks:review` or `tasks:test` and signs no approval
+    (§2.3 "Own approvals", §6.2)."""
+    if mine.kind != "agent":
+        return False
+    from maity_hub import own_approvals  # own_approvals reads cards
+
+    return own_approvals.outside_agent(conn, mine.project, mine.principal_id)
 
 
 def two_signatures(project: Any) -> bool:
@@ -133,7 +149,8 @@ def sign(
     scope gives, or under both the one it names. One member never fills both; a place
     already filled keeps its signature while its signer still stands (`standing`)."""
     slot = approve or _only_slot(mine)
-    if not mine.may(SIGNATURES[slot]):
+    # An outside agent signs nothing, as for a missing scope (§2.3 "Own approvals").
+    if not mine.may(SIGNATURES[slot]) or outside_caller(conn, mine):
         raise forbidden(SIGNATURES[slot], "this signature needs another scope")
     current = standing(conn, mine.project.id, card.approvals)
     other = current["test" if slot == "review" else "review"]
@@ -147,7 +164,9 @@ def sign(
 
 def _stands(conn: Connection, project_id: str, signer: str, scope: str) -> bool:
     """Whether `signer` is still an active member of the project, not isolated, whose
-    trust and role give `scope` (§6.4)."""
+    trust and role give `scope` (§6.4), and, for an agent, not one `own_approvals.outside_agent`
+    counts as outside now: the same eligibility as a new signature (`sign`), checked again
+    wherever a stored signature is read (§2.3 "Own approvals")."""
     m = t.membership.c
     row = conn.execute(
         select(m.trust, m.role_base, m.human_id, m.isolated_since).where(
@@ -159,7 +178,14 @@ def _stands(conn: Connection, project_id: str, signer: str, scope: str) -> bool:
     if row is None or row.isolated_since is not None:
         return False
     kind = "human" if row.human_id is not None else "agent"
-    return has_scope(row.trust, row.role_base, kind, scope)
+    if not has_scope(row.trust, row.role_base, kind, scope):
+        return False
+    if kind == "agent":
+        from maity_hub import own_approvals  # own_approvals reads cards
+
+        # `outside_agent` reads only the project's id.
+        return not own_approvals.outside_agent(conn, SimpleNamespace(id=project_id), signer)
+    return True
 
 
 def standing(conn: Connection, project_id: str, approvals: Any) -> dict[str, Any]:
@@ -247,7 +273,7 @@ def signed_by_two(approvals: dict[str, Any], revision: int | None) -> bool:
     return all(m is not None and m["revision"] == revision for m in marks)
 
 
-def check_transition(mine: Membership, card: Any, wanted: str) -> None:
+def check_transition(conn: Connection, mine: Membership, card: Any, wanted: str) -> None:
     """A `PATCH {status}`: the transition table of §6.4."""
     current = card.status
     if wanted == current:
@@ -265,7 +291,7 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
         # A merged report waits behind a request: the merge is what review asked for (§6.6).
         current = "review"
     if (current, wanted) in {("review", "done"), ("review", "in_progress")}:
-        if has_done_authority(mine, card):
+        if has_done_authority(conn, mine, card):
             refuse_same_team_review(mine, card)
             return
         raise ApiError(
@@ -288,6 +314,24 @@ def merged_in_review(project: Any, card: Any) -> bool:
         and merged.merged(card.report)
         and not two_signatures(project)
     )
+
+
+def pr_number(card: Any) -> Any:
+    """The number of the pull request the card's current report names (§6.6), None without
+    one."""
+    return ((card.report or {}).get("pr") or {}).get("number")
+
+
+def naming_pr(conn: Connection, project_id: str, number: int) -> list[Any]:
+    """The cards of the project whose current report names the pull request `number`, any
+    status. The report is JSON on the card and is compared in Python: `pr.number` is only
+    bounded below (`PullRequestIn`), so a cast to an integer column in SQL could fail on
+    PostgreSQL for one stored number and refuse every lookup of the project, and a text
+    comparison differs on SQLite, whose `json_extract` answers a number."""
+    rows = conn.execute(
+        select(t.card).where(t.card.c.project_id == project_id, t.card.c.report.is_not(None))
+    )
+    return [row for row in rows if pr_number(row) == number]
 
 
 def refuse_same_team_review(mine: Membership, card: Any) -> None:

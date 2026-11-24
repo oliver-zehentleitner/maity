@@ -16,12 +16,13 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import clonecheck, hub, onboarding, state
+from .. import clonecheck, hub, onboarding, proc, state
 from . import (
     adapters,
     capabilities,
     config,
     install,
+    keeper,
     limitread,
     logcap,
     loop,
@@ -35,6 +36,7 @@ from . import (
     stub,
     supervisor,
     targets,
+    tmux,
     tools,
     trust,
     workspace,
@@ -270,6 +272,10 @@ class Report:
     def warn(self, text: str) -> None:
         self.lines.append(("warn", text))
 
+    def note(self, text: str) -> None:
+        """Worth knowing, nothing to fix: the operator's own choice (`track = "newest"`)."""
+        self.lines.append(("note", text))
+
     def error(self, text: str) -> None:
         self.lines.append(("error", text))
 
@@ -290,6 +296,13 @@ DEFAULTS = (
                        "an exit within 60 s counts as a crash"),  # fmt: skip
     ("limits.log_keep_bytes", "10 MiB per placement; a full log drops its older half"),
     ("limits.require_local_approval", "false"),
+    (
+        "limits.watch.not_listening_grace_minutes",
+        "15 (1-1440; how long the hub must report the session not listening)",
+    ),
+    ("limits.watch.join_within_minutes", "10 (1-120; how long after a start the agent may join)"),
+    ("limits.watch.auto_restarts", "1 (0-3; the watch's restarts within the window)"),
+    ("limits.watch.retry_window_minutes", "120 (10-1440; the window those restarts count in)"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
     ("backend.local.tmux_socket", "<state_dir>/tmux.sock; agent_user: ~<user>/.maity-runner/"),
@@ -310,6 +323,11 @@ DEFAULTS = (
         " other harnesses start without their sandbox; false: never refused for the sandbox",
     ),
     ("harness.<id>.env_file", "unset"),
+    (
+        "harness.claude-code.track",
+        '"checked": the update installs at most the sandbox-checked version; "newest": the'
+        " vendor's newest, which check notes as unchecked",
+    ),
     (
         "git.name, git.email",
         f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
@@ -437,11 +455,166 @@ def _check_state(report: Report, cfg: config.Config) -> None:
         report.error(f"no runner credential in {directory}; run `maity runner pair` first")
 
 
+def _check_agent_path(report: Report, local: config.Local) -> None:
+    """An `agent_path` entry that does not exist, said with the agents' home when it lies under
+    another one (tsk-2k0jcaxfd0ja: a service's agent_path named /home/maity-runner/..., while
+    `maity runner install` gives that user /var/lib/maity-runner). A warning: an entry that is
+    missing finds nothing, and the harness checks say what is then not found."""
+    if not local.agent_path:
+        return
+    home = (
+        config.home_of(local.agent_user)
+        if local.layout == "agent_user" and local.agent_user
+        else Path(os.path.expanduser("~"))
+    )
+    as_user = _local_agents_user(local)
+    if not _reaches(as_user):
+        return  # the sudo error is said by _check_agent_user
+    for entry in local.agent_path.split(os.pathsep):
+        seen = _seen(as_user, Path(entry)) if entry else True
+        if seen is None:  # said as such, as the gh login is (review A2167 of #2125)
+            report.warn(f"agent_path entry {entry} not checked: it cannot be looked at from here")
+        if seen is not False:
+            continue
+        said = f"agent_path entry {entry} does not exist"
+        parts = Path(entry).parts
+        if (
+            Path(entry).is_absolute()
+            and len(parts) > 2
+            and parts[1] == "home"
+            and _seen(as_user, Path(*parts[:3])) is False
+        ):
+            said += f"; {Path(*parts[:3])} is no home here, the agents' home is {home}"
+        report.warn(said)
+
+
+def _reaches(as_user: AsUser) -> bool:
+    """Whether the agents' side can be looked at: always on the runner's own side, through sudo
+    only when sudo to the agents' user works. Where it does not, `_check_agent_user` reports
+    that, and a failed look must not read as absent on top of it (review A2168 of #2125)."""
+    if as_user.direct:
+        return True
+    try:
+        return as_user.run(["true"], timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _local_agents_user(local: config.Local) -> AsUser:
+    """The agents' user of a local backend (supervisor.agents_user, from the backend alone)."""
+    return AsUser(local.agent_user if local.layout == "agent_user" and local.agent_user else None)
+
+
+def _seen(as_user: AsUser, path: Path, kind: str = "-e") -> bool | None:
+    """Whether `path` exists as the agents' user sees it (review A2159/A2160 of #2125): through
+    sudo in the agent_user layout, by stat on the runner's own side. None where this user
+    cannot look (EACCES, which pathlib's predicates raise up to Python 3.13 and hide from 3.14
+    on: cli/context/runner.md, 52b35dea): never taken for absent."""
+    try:
+        return as_user.exists(path, kind)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -> None:
+    """What a grant lets the agents run, or open, that this host does not have (local
+    backend; tsk-2k0jcaxfd0ja, a fresh host): a granted command whose program is not on
+    agent_path, gh missing for `pull_requests = true`, and gh without a login stored where
+    `maity gh` finds it (only HOME reaches gh: `~/.config/gh/hosts.yml` of the agents' user).
+    Warnings: the grant is not wrong, the host is not ready for it."""
+    local = cfg.local
+    if local is None:
+        return
+    agents_home = (
+        config.home_of(local.agent_user)
+        if local.layout == "agent_user" and local.agent_user
+        else Path(os.path.expanduser("~"))
+    )
+    agents = local.agent_user if local.layout == "agent_user" and local.agent_user else None
+    who = agents or getpass.getuser()
+    as_user = supervisor.agents_user(cfg)
+    reaches = _reaches(as_user)  # without sudo, the agents' side is not looked at at all
+    for name, grant in cfg.repositories.items():
+        for rule in grant.allow:
+            program = rule.split(" ")[0]
+            if not reaches or not config.plain_command(rule) or "/" in program:
+                continue
+            # As the agents' user finds it: a program under that user's home counts. A look
+            # that fails (sudo gone, a timeout) says nothing (review A2167 of #2125).
+            try:
+                where = capabilities.which(program, agent_path, as_user)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if where is None:
+                report.warn(
+                    f"repositories.{name}: allow {rule!r}: `{program}` is not on agent_path "
+                    f"({agent_path}) for {who}; install it, or the command fails in every session"
+                )
+        if not grant.pull_requests:
+            continue
+        if proc.program("gh") is None:
+            # `maity gh` looks gh up on the runner's PATH at each call (ghpr.find_gh): once
+            # gh is installed, running sessions find it without a restart.
+            report.warn(
+                f"repositories.{name}: pull_requests = true, but gh is not on the runner's PATH, "
+                "so `maity gh` refuses until it is installed; install gh (sessions find it at "
+                "their next call)"
+            )
+            continue
+        if not reaches:
+            continue
+        hosts = agents_home / ".config" / "gh" / "hosts.yml"
+        seen = _seen(as_user, hosts, "-f")
+        if seen is None:
+            report.warn(
+                f"repositories.{name}: gh's login for {who} not checked: {hosts} cannot be "
+                "looked at from this user"
+            )
+        elif not seen:
+            report.warn(
+                f"repositories.{name}: pull_requests = true, but gh has no login for {who} "
+                f"(no {hosts}); as that user: gh auth login, then "
+                "gh auth setup-git (an agent's git push uses that login too: without it, "
+                '"could not read Username")'
+            )
+
+
+def _check_session_shell(report: Report, as_user: AsUser, where: str = "") -> None:
+    """The SHELL every session gets, looked up as a start does (tmux.Tmux.session_shell). A
+    harness runs its commands through it (OpenCode does), so one that is or links to nologin
+    or false fails every command, as the service account's nologin did (tsk-fjq2k0sx1n3r)."""
+    probe = tmux.probe_shell(as_user, lambda argv: as_user.run(argv))
+    if probe.shell is None:
+        who = "the host" if not as_user.here else f"sudo to {as_user.user}"
+        report.warn(f"{where}the sessions' SHELL is not checked: {who} gave no answer")
+    elif not probe.runs:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell}, which the agents' user cannot "
+            "run: every command a harness runs through it fails; install bash or a POSIX sh "
+            "there"
+        )
+    elif probe.resolved is None:
+        report.warn(
+            f"{where}sessions get SHELL={probe.shell}, not checked further: where it leads "
+            "could not be read (`readlink -f` failed), so nologin or false is not ruled out"
+        )
+    elif os.path.basename(probe.resolved) in tmux.NOT_A_SHELL:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell} ({probe.resolved}), which runs no "
+            "command: every command a harness runs through it fails; install bash or a POSIX "
+            "sh there"
+        )
+    else:
+        report.ok(f"{where}sessions get SHELL={probe.shell}, not the account's login shell")
+
+
 def _check_local(report: Report, local: config.Local) -> None:
+    _check_agent_path(report, local)
     if shutil.which("tmux") is None:
         report.error("tmux is not installed; the local backend runs every agent in tmux")
     else:
         report.ok("tmux found")
+    _check_session_shell(report, _local_agents_user(local))
     if local.layout == "agent_user" and local.agent_user:
         _check_agent_user(report, local)
         return
@@ -492,6 +665,20 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
+def _check_version(
+    report: Report, harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> None:
+    """The installed version against the sandbox-checked one: a warning, or under
+    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too
+    (capabilities.unchecked_warning)."""
+    note = capabilities.unchecked_note(harness.id, version, harness.track)
+    if note is not None:
+        report.note(note)
+    warning = capabilities.unchecked_warning(harness, version, tools_dir)
+    if warning is not None:
+        report.warn(warning)
+
+
 def _check_harness(
     report: Report,
     harness: config.Harness,
@@ -520,9 +707,7 @@ def _check_harness(
         report.error(f"harness {harness.id}: `{found.path} --version` failed")
         return
     report.ok(f"harness {harness.id}: {found.path} ({found.version})")
-    warning = capabilities.unchecked(harness.id, found.version)
-    if warning is not None:
-        report.warn(warning)
+    _check_version(report, harness, found.version, tools_dir)
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
@@ -534,7 +719,7 @@ def _check_harness(
         )
         _check_user_skill(report, as_user)
     if harness.id == "antigravity":
-        _check_antigravity(report, harness, as_user, agent_path)
+        _check_antigravity(report, harness, as_user, binary=found.path)
     if harness.id == "opencode":
         _check_opencode(report, harness, layout)
         _check_opencode_flags(report, harness, found.path, agent_path, as_user)
@@ -619,24 +804,59 @@ def _check_opencode_flags(
             report.ok(f"{where}harness opencode: `{command}` takes the {mode} start's flags")
 
 
+_AGY_UNTIL = (
+    "Until then require_sandbox = true under [harness.antigravity] refuses agy's starts; unset "
+    "or false, they go ahead unsandboxed and each says so in the log. Either way this stays an "
+    "error"
+)
+
+
 def _check_antigravity(
-    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
-    where: str = "",
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, where: str = "",
+    binary: str | None = None,
 ) -> None:  # fmt: skip
-    """agy's sandbox (reported off; the namespaces it needs as a diagnostic), its sign-in,
-    and what of the agents' user's own agy settings every agent inherits (§15.3)."""
+    """agy's sandbox (reported off; whether it can start as a diagnostic, an error where it
+    cannot, tsk-xjy2d5617sar), its sign-in, and what of the agents' user's own agy settings
+    every agent inherits (§15.3)."""
     here = not where  # an ssh host is Linux
+    state = None
     if here and not capabilities.agy_sandbox_platform():
         report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
-    elif capabilities.agy_namespaces(agent_path, as_user):
+    else:
+        state = capabilities.agy_sandbox(as_user, binary)
+    if state == capabilities.AGY_STARTS:
         report.ok(
             f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
             "agy's sandbox start not verified"
         )
-    else:
+    elif state == capabilities.AGY_PROFILE:
         report.warn(
-            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs do not "
-            "start (or no `unshare`); agy would run commands unsandboxed"
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs are "
+            "refused here, but an AppArmor profile named for agy is loaded, which may grant agy "
+            "its own; not verified (what it attaches to and allows cannot be read unprivileged)"
+        )
+    elif state == capabilities.AGY_CANNOT:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "user namespace's uid_map, gid_map or setgroups write is refused (AppArmor's "
+            "restriction of unprivileged user namespaces) and no AppArmor profile lifts that, "
+            "so agy runs commands unsandboxed. On Ubuntu an AppArmor profile for agy clears "
+            "this: named `agy`, attached to agy's real path, allowing `userns`, loaded as root, "
+            "then a restart of the runner (docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_REFUSED:
+        report.error(
+            f"{where}harness antigravity: agy's terminal sandbox cannot start on this host: the "
+            "kernel or a container refuses user namespaces to the agents' user (the unshare "
+            "call itself is refused: a sysctl such as kernel.unprivileged_userns_clone, or a "
+            "container's seccomp), so agy runs commands unsandboxed. An AppArmor profile for "
+            "agy does not clear this; allowing unprivileged user namespaces there does "
+            "(docs/runners.md#antigravity-agy). " + _AGY_UNTIL
+        )
+    elif state == capabilities.AGY_UNKNOWN:
+        report.warn(
+            f"{where}harness antigravity: whether agy's terminal sandbox can start is not "
+            "checked (no `unshare`, or the probe could not tell)"
         )
     line = (
         f"{where}harness antigravity: sandbox reported off: the runner has not seen agy's "
@@ -1122,6 +1342,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
+    _check_session_shell(report, as_user, f"{name}: ")
     probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
@@ -1131,9 +1352,13 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
-            warning = capabilities.unchecked(harness.id, probe.version)
+            # No tool is managed on an ssh host: the way back is to install it by hand.
+            warning = capabilities.unchecked_warning(harness, probe.version, None)
             if warning is not None:
                 report.warn(f"{name}: {warning}")
+            note = capabilities.unchecked_note(harness.id, probe.version, harness.track)
+            if note is not None:
+                report.note(f"{name}: {note}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
                 if capabilities.sandbox_version_ok(harness.id, probe.version):
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
@@ -1151,7 +1376,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             if harness.id == "claude-code":
                 _check_worktree_guard(report, as_user, f"{name}: ", probe.version)
             if harness.id == "antigravity":
-                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
+                _check_antigravity(report, harness, as_user, f"{name}: ", probe.path)
             if harness.id == "opencode":
                 _check_opencode(report, harness, where=f"{name}: ")
                 _check_opencode_flags(
@@ -1228,6 +1453,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
         else:
             report.ok("maity found on agent_path")
+        _check_grant_programs(report, cfg, agent_path)
         for harness in cfg.harnesses.values():
             _check_harness(
                 report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
@@ -1286,7 +1512,7 @@ def cmd_tools(args: argparse.Namespace) -> int:
             print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
             return 1
         try:
-            done = tools.rollback(cfg.tools_dir, args.tool)
+            done = tools.rollback(cfg.tools_dir, args.tool, cap=keeper.cap(managed[args.tool]))
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1307,9 +1533,12 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        # From the active `track`, not the last check's: a switch shows at once.
+        target = tools.hold(row["latest"], keeper.cap(managed[row["id"]]))
+        held = f" (held at {target}: track = checked)" if target else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
-            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}{held}; "
             f"checked {row['checked_at'] or 'never'}"
         )
     return 0

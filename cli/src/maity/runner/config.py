@@ -21,10 +21,16 @@ from typing import Any
 from ..hub import HubError, hub_base
 
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
+# The configuration `maity runner install` writes (install.CONFIG): named when the default is
+# missing, never read in its place.
+SERVICE_PATH = Path("/etc/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
 DEFAULT_SKILLS_DIR = "~/.local/share/maity-runner/skills"
+DEFAULT_VENVS_DIR = "~/.local/share/maity-runner/venvs"
+# A subpackage of the clone `clone_venvs` names: one plain directory name at the clone's root.
+VENV_SUBPACKAGE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -87,6 +93,17 @@ class Restart:
 
 
 @dataclass(frozen=True)
+class Watch:
+    """The runner's watch (`[limits.watch]`, docs/api.md §15.14, docs/runners.md): when it
+    looks at a quiet or never-joined placement, and how often it restarts one by itself."""
+
+    not_listening_grace_minutes: int = 15  # 1 to 1440
+    join_within_minutes: int = 10  # 1 to 120
+    auto_restarts: int = 1  # 0 to 3
+    retry_window_minutes: int = 120  # 10 to 1440
+
+
+@dataclass(frozen=True)
 class Limits:
     projects: tuple[str, ...]
     repositories: tuple[str, ...]
@@ -95,6 +112,7 @@ class Limits:
     restart: Restart = field(default_factory=Restart)
     log_keep_bytes: int = 10 * 1024 * 1024
     require_local_approval: bool = False
+    watch: Watch = field(default_factory=Watch)
 
 
 @dataclass(frozen=True)
@@ -107,6 +125,9 @@ class Local:
     agent_path: str | None = None  # None: the service's own PATH at start
     memory_max: str | None = None
     cpu_quota: str | None = None
+    # The subpackages of a Claude Code placement's clone the runner builds a dev venv for, from
+    # each one's hash-locked requirements/dev.txt (venvs.py; cli/context/runner.md).
+    clone_venvs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -148,6 +169,10 @@ class Harness:
     # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
     install: bool = False
     update: str = "never"
+    # Which version the runner's update takes, for a harness with a sandbox-checked version
+    # (capabilities.CHECKED): "checked" at most that one, "newest" the vendor's newest. It also
+    # decides whether `check` warns about a newer version or only notes it (docs/runners.md).
+    track: str = "checked"
 
 
 @dataclass(frozen=True)
@@ -192,6 +217,9 @@ class Config:
     # The Keep the Why skill the runner delivers to its placements (§15.5, skills.py): beside
     # state_dir for the same reason, a session reads it and writes nothing there.
     skills_dir: Path = Path(DEFAULT_SKILLS_DIR).expanduser()
+    # The dev venvs the runner builds for its coders' clones (`clone_venvs`, venvs.py): beside
+    # state_dir too, a session reads its own and writes nothing there.
+    venvs_dir: Path = Path(DEFAULT_VENVS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -267,6 +295,11 @@ def _kind_name(kind: type | tuple[type, ...]) -> str:
 
 def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
+
+
+def _between(low: int, high: int) -> Callable[[Any], str | None]:
+    """An integer from `low` to `high`, both included."""
+    return lambda value: None if low <= value <= high else f"{low} to {high}"
 
 
 # A command allowed by a repository's grant: a program, then plain arguments, nothing else.
@@ -395,12 +428,29 @@ def _https_url(value: Any) -> str | None:
     return None
 
 
+def _missing(path: Path) -> str:
+    """Why `path` is no configuration. Where it is the default and the service of `maity runner
+    install` has its own, the message names that one: the service's commands read it only when
+    given, never in place of the default (cli/context/runner.md)."""
+    said = f"{path}: no such file; write it first (runner design §5.1)"
+    try:  # an /etc/maity-runner this user cannot search names nothing (review A2159 of #2125)
+        service = SERVICE_PATH.is_file()
+    except OSError:
+        service = False
+    if path == DEFAULT_PATH.expanduser() and service:
+        said += (
+            f"; the service of `maity runner install` reads {SERVICE_PATH}: pass "
+            f"--config {SERVICE_PATH}, as its user (sudo -u maity-runner -H)"
+        )
+    return said
+
+
 def load(path: Path) -> Config:
     """The configuration at `path`; ConfigError listing every problem otherwise."""
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ConfigError([f"{path}: no such file; write it first (runner design §5.1)"]) from None
+        raise ConfigError([_missing(path)]) from None
     except OSError as exc:
         raise ConfigError([f"{path}: cannot be read ({exc.strerror})"]) from None
     except tomllib.TOMLDecodeError as exc:
@@ -434,6 +484,26 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             quick_exit=restart_in.get("quick_exit", int, _RESTART.quick_exit, check=_positive),
         )
         restart_in.done()
+    watch = _WATCH
+    watch_in = limits_in.table("watch")
+    if watch_in is not None:
+        watch = Watch(
+            not_listening_grace_minutes=watch_in.get(
+                "not_listening_grace_minutes", int, _WATCH.not_listening_grace_minutes,
+                check=_between(1, 1440),
+            ),
+            join_within_minutes=watch_in.get(
+                "join_within_minutes", int, _WATCH.join_within_minutes, check=_between(1, 120)
+            ),
+            auto_restarts=watch_in.get(
+                "auto_restarts", int, _WATCH.auto_restarts, check=_between(0, 3)
+            ),
+            retry_window_minutes=watch_in.get(
+                "retry_window_minutes", int, _WATCH.retry_window_minutes,
+                check=_between(10, 1440),
+            ),
+        )  # fmt: skip
+        watch_in.done()
     limits = Limits(
         projects=tuple(projects),
         repositories=tuple(normalise_repository(r) for r in repositories),
@@ -444,6 +514,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             "log_keep_bytes", int, _LIMITS.log_keep_bytes, check=_positive
         ),
         require_local_approval=limits_in.get("require_local_approval", bool, False),
+        watch=watch,
     )
     limits_in.done()
 
@@ -465,7 +536,9 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             else state_dir
         )
         local = Local(
-            workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
+            workspaces=Path(
+                local_in.get("workspaces", str, DEFAULT_WORKSPACES, check=_no_glob)
+            ).expanduser(),
             tmux_socket=Path(
                 local_in.get("tmux_socket", str, str(agent_files / "tmux.sock"), check=_absolute)
             ).expanduser(),
@@ -475,6 +548,11 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             agent_path=local_in.get("agent_path", str, None),
             memory_max=local_in.get("memory_max", str, None),
             cpu_quota=local_in.get("cpu_quota", str, None),
+            clone_venvs=tuple(
+                local_in.get(
+                    "clone_venvs", list, [], check=_strings(VENV_SUBPACKAGE, "a subpackage name")
+                )
+            ),
         )
         local_in.done()
     # A table for another kind is not read, so its keys are not judged either.
@@ -562,6 +640,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
 
 
 _RESTART = Restart()
+_WATCH = Watch()
 _LIMITS = Limits(projects=(), repositories=())
 
 
@@ -627,6 +706,32 @@ def _repositories(values: Any) -> str | None:
 
 def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
+
+
+# Characters Claude Code's permission matcher treats as wildcards (observed on 2.1.327; the set
+# the project's rules use throughout). The clone path, built under the workspaces root, is
+# embedded literally in a `Bash(git -C <clone> …)` allow rule (adapters.claude_settings); one of
+# these in the root would make that rule match more than the clone. The raw root string is
+# checked here as an early, friendly error, but the string that actually reaches a rule is the
+# resolved path: a root that is a symlink to a wildcard path, or a relative or `~` root, carries
+# no wildcard in its raw form yet resolves to one, so the resolved path is checked fail-closed at
+# the placement choke point (workspace.locate, workspace.scratch_of) through `rule_glob_chars`.
+# The ssh host's workspaces path is already confined by REMOTE_PATH, and the project and clone
+# tokens by TOKEN.
+_GLOB_CHARS = "*?[]"
+
+
+def rule_glob_chars(value: str) -> str:
+    """The characters of `value` that Claude Code's Bash permission matcher treats as
+    wildcards (`*`, `?`, `[`, `]`), sorted and space-separated; "" when there are none. The
+    raw workspaces-root check here and the resolved-path check at the placement choke point
+    share this one set, so the early error and the final fail-closed refusal cannot diverge."""
+    return " ".join(sorted({c for c in str(value) if c in _GLOB_CHARS}))
+
+
+def _no_glob(value: Any) -> str | None:
+    bad = rule_glob_chars(str(value))
+    return f"must not contain the character(s) {bad}" if bad else None
 
 
 def home_of(user: str) -> Path:
@@ -764,6 +869,20 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    from maity.runner.capabilities import CHECKED
+
+    if name in CHECKED and not isinstance(table.data.get("track", ""), str):
+        # A Boolean, number, list or table names the choices too, not only "expected a string".
+        track = "checked"
+        table.used.add("track")
+        problems.append(f"{where}.track: expected a string, one of checked, newest")
+    elif name in CHECKED:
+        track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
+    else:  # one problem for any value: the key itself does not belong here
+        track = "checked"
+        table.used.add("track")
+        if "track" in table.data:
+            problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
     if install or update != "never":
         from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
         from maity.runner.tools import INSTALLERS
@@ -786,6 +905,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         env_file=Path(env_file).expanduser() if env_file else None,
         install=install,
         update=update,
+        track=track,
     )
     if name == "stub":
         return Harness(

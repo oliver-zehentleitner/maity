@@ -1162,9 +1162,10 @@ def test_the_account_lock_comes_before_any_other_lock_of_a_human_write(
         first = next((i for i, s in enumerate(statements) if write_guard.locking(s)), None)
         if first is None or "human_session" in statements[first]:
             continue  # read-only, or the authentication's own (checked by `_cookie`)
-        before = statements[:first]
-        # SQLite renders no lock clause: the account lock's read is what comes first.
-        assert any("FROM account_lock" in s for s in before), statements
+        # The account lock's read is the first locking statement itself (its `FOR SHARE` on
+        # PostgreSQL and MariaDB) or, on SQLite, which renders no lock clause, comes before it.
+        through_first = statements[: first + 1]
+        assert any("FROM account_lock" in s for s in through_first), statements
         guarded += 1
     assert guarded >= 2  # the profile's and the project's transactions
 

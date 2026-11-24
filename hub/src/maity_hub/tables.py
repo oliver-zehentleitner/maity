@@ -261,8 +261,8 @@ account_deletion = Table(
 
 # One row per human, never read for its content: the lock that orders a human caller's
 # transactions (shared, before their first locking statement) against the deletion of the
-# account (exclusive, first), `write_guard` (§2.9). Made by 0076 for existing humans and on
-# first need for later ones.
+# account (exclusive, first), `write_guard` (§2.9). Made with the account (`write_guard.make_row`);
+# 0076 and a later backfill made the rows of the humans before.
 account_lock = Table(
     "account_lock",
     metadata,
@@ -694,6 +694,11 @@ project = Table(
     # an owner from outside may hold, null for the default `["coder"]`.
     Column("agent_owners", String(8)),
     Column("outside_roles", JSON_VALUE),
+    # How many own approvals outsiders' work needs before it moves to done, null for the
+    # default 1; and whose agents count as the project's own, null for `members` (§6.1,
+    # §2.3 "Own approvals"). `own_agents` keeps `owners_of` as human ids, shown as handles.
+    Column("own_approvals", Integer),
+    Column("own_agents", JSON_VALUE),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
@@ -855,6 +860,10 @@ membership = Table(
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
     # boss still holds the role `manager` (§6.2): the member is in the boss's reach.
     Column("line_consent", Boolean, nullable=False, server_default=false()),
+    # An agent membership made while the agent's owner held no membership of the project
+    # (§2.3 "Own approvals"): set once at the exchange, never cleared, so the agent stays an
+    # outside agent after its owner becomes a member.
+    Column("joined_outside", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
     # Whose work this agent continues and where the hand-over is written, as the join that
@@ -2074,7 +2083,16 @@ event = Table(
     # each team it narrowed, an empty list when none of that team listened; null when
     # no team was narrowed, which is most events.
     Column("wakes", JSON_VALUE),
+    # A `review_result` only (§2.3 "Own approvals"), null on every other event: whether its
+    # author stood as a signer when the hub stored it (own, active, not isolated, `tasks:review`
+    # or `tasks:test`, not through a bridge), recorded then, never reconstructed; and the pull
+    # request number its subject `#<n>` names, so a card finds the results that name it alone.
+    Column("review_signer", Boolean),
+    Column("review_pr", Integer),
     Index("ix_event_project_seq", "project_id", "seq"),
+    # `review_pr` first: an index that begins with `project_id` was taken by PostgreSQL's
+    # planner for reads filtered on the project alone (the chat sweep), and walked every event.
+    Index("ix_event_review_pr", "review_pr", "project_id"),
     # The notifications' stamp: the highest seq per project among some kinds (§18.2).
     Index("ix_event_project_kind_seq", "project_id", "kind", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),

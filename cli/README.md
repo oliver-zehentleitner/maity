@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a18 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a19 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -341,7 +341,11 @@ Every request is signed as `docs/api.md` §2.2 specifies. The headers are
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
 and `PATCH`, except the resume, carries an `Idempotency-Key`. A
-`timestamp_skew` answer is corrected once from the hub's time. A redirect
+`timestamp_skew` answer is corrected once from the hub's time. A `GET`
+answered with 401 `nonce_reused` is signed again with a new nonce and sent
+once more, within what is left of its timeout: the request usually reached
+the hub twice through something in between, and the hub refused the copy. A write
+is never sent again on it. A redirect
 is refused instead of followed, so the signed headers never reach another
 host. Plain HTTP is refused except to a hub on loopback. That holds even
 when the hub runs with `MAITY_ALLOW_PLAIN_HTTP`, and the CLI has no flag
@@ -1019,9 +1023,18 @@ the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
 that every agent would inherit, a Claude Code version other than the one
-its sandbox was checked with (a warning), a configuration file others could
+its sandbox was checked with (a warning; a newer one only a note under
+`track = "newest"`), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
-(`--offline` skips it). A minimal configuration:
+(`--offline` skips it). On the local backend it also warns about what the
+host lacks for the configuration: an `agent_path` entry that does not
+exist (naming the agents' real home when the entry lies under a home that
+is not there, such as `/home/maity-runner` for the service's user, whose
+home is `/var/lib/maity-runner`), a program a repository's `allow` rule
+names that is not on `agent_path` (`make` for `make *`), gh missing from
+the runner's `PATH` for a grant with `pull_requests = true` (`maity gh`
+finds it at its next call once installed), and gh without a login stored
+for the agents' user (`~/.config/gh/hosts.yml`). A minimal configuration:
 
 ```toml
 [hub]
@@ -1055,6 +1068,11 @@ manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
 GitHub, and refuses otherwise. `maity runner tools` lists the versions,
 `maity runner tools rollback <tool>` swaps the kept one in for new
 sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`track` under `[harness.claude-code]` chooses what its update takes:
+`"checked"` (the default) at most the version whose sandbox was checked,
+never going back on its own from a newer one, `"newest"` every new
+release, which `check` notes as unchecked
+([`docs/runners.md`](../docs/runners.md#which-claude-code-version-the-update-takes)).
 `[maity] update` is not carried out yet; `check` and `serve` refuse it.
 
 Repository entries and the project's repository URL are compared after
@@ -1121,8 +1139,10 @@ The agents then run `maity gh pr create --title <title> --body-file <file>`
 Without `--json`, `pr view` prints the number, title, state, branches,
 author, link and description as text (and the comments with
 `--comments`); with `--json` it prints gh's JSON as gh gives it.
-These run outside the sandbox, with the gh the runner found on its `PATH`
-and the login of the agents' user under `HOME`, always on the repository
+These run outside the sandbox, with the gh found at each call on the
+`PATH` the runner recorded at the session's start (a gh installed later is
+found without a restart; one inside the clone or the placement's scratch
+is refused), and the login of the agents' user under `HOME`, always on the repository
 of the placement's clone (`--repo` comes from the runner, never from the
 command line). gh runs in an empty directory of its own and gets only
 `HOME`, the locale, the temporary directory, proxy and certificate
@@ -1237,8 +1257,8 @@ Open gaps:
 - Without the harness's sandbox (opencode, Claude Code outside Linux
   and macOS, or on Linux without bwrap and socat) the deny rules are no boundary: repository
   code can run gh or rewrite the runner's record of the repository.
-- On an ssh target, gh must be at the path the runner found on its own
-  host, or `maity gh` refuses.
+- On an ssh target, gh must be in a directory of the runner's own `PATH`
+  (the runner's host's), or `maity gh` refuses.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
@@ -1248,7 +1268,11 @@ standard error. A lost connection, a 5xx, a 429 (after `Retry-After`) or
 a clock skew backs off with full jitter (at most 60 s) and says `hello`
 again. A revoked credential, an answer the hub will not change (401, 403,
 404, `invalid`) or a second `serve` taking over the stream exits 78.
-SIGTERM exits 0. In every case the agents keep running.
+SIGTERM exits 0. In every case the agents keep running. A placement from
+a hub that names no Keep the Why skill at all (no `keep_the_why` field: a
+hub of 0.1.0a10 or older) gets a log line at its start saying that the
+runner delivers none, and how to install the skill by hand
+([`docs/runners.md`](../docs/runners.md#the-keep-the-why-skill)).
 
 ```sh
 maity runner serve            # in the foreground; as a service: `sudo maity runner install`
@@ -1268,8 +1292,10 @@ own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
 otherwise) and then starts, restarts, stops, adopts or ends sessions:
 
 - **Clean environment.** The tmux server starts under `env -i` with only
-  `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
+  `HOME`, `PATH` (= `agent_path`), `SHELL`, `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
+  `SHELL` is `/bin/bash` where the host has it, else `/bin/sh`, never the
+  account's login shell (nologin for the service account); `check` names it.
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and
@@ -1308,6 +1334,15 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   is gone ends after `stop_grace_max`.
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
+- **Dev venvs.** With `[backend.local] clone_venvs = ["hub", "cli"]`, a
+  Claude Code placement in the `single` layout gets a dev venv for each
+  named part of its clone, built by the runner at the start: from
+  `<part>/requirements/dev.txt` as the placement's branch has it in the
+  repository (every requirement pinned with sha256 hashes), wheels only,
+  the clone's own code taken from `<part>/src`. It lies in
+  `~/.local/share/maity-runner/venvs/`, read-only to the session, with
+  `<part>/.venv` in the clone a link to it, and goes with the placement.
+  One that cannot be built is logged; the start goes on without it.
 
 Settings this version does not carry out yet (`memory_max`,
 `cpu_quota`, a harness `env_file`) are errors in `check`,
@@ -1448,12 +1483,16 @@ project's own harness configuration is never loaded:
   its sandbox. Before every start the runner refuses a folder that holds
   anything besides `repo` (`workspace_not_bare`), lies inside a git work
   tree or is not at its real path (`workspace_in_repository`), and deletes
-  nothing there. Each session gets runner-written `--settings`: the
-  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
+  nothing there. Each session gets runner-written `--settings`:
+  `accept-edits` for an interactive start and the default agent mode for
+  a supervised one (never `auto`), `proceed-in-sandbox`, the terminal
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  sign-in; `maity`, the hub's, forge's and `network` hosts and reading
+  the delivered Keep the Why skill allowed (writing it denied; agy's
+  documentation says its sandbox then mounts it read-only, not yet
+  confirmed in a live session), and no `write_file` allow. The
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may
@@ -1534,10 +1573,14 @@ the line then held to one plain call (a wait's timeout goes in
 `maity wait --timeout N`). The runner
 does not rely on how Claude Code's sandbox exclusion treats a call with
 something in front of `maity`. The hook needs Claude Code 2.1.295 or
-later; the version whose sandbox was last checked is recorded, and with
-another Claude Code version the runner still starts the agent, and
-`maity runner check` and the runner's log say that the version was not
-checked. A repository's grant may only add plain
+later; the version whose sandbox was last checked is recorded, and it
+moves only after `cli/tests/claude_sandbox_probe.py`, run by hand where
+Claude Code is signed in, passed for the new version. A runner that
+updates Claude Code installs at most that version unless its
+`track = "newest"`. With another Claude Code version the runner still
+starts the agent, and `maity runner check` and the runner's log say that
+the version was not checked: a warning, or a note for a newer one under
+`track = "newest"`. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
 is read. Not covered: Codex. Where the hook does not hold, such a call
@@ -1720,9 +1763,21 @@ sudo maity runner uninstall [--purge]
 install --global maity` does that. While the configuration still lacks
 `[limits]` or a `[harness.<id>]`, or names a key this version does not
 support yet, the service is enabled but not started, and `install`
-lists what is missing. Fix it, then `sudo systemctl start maity-runner`.
-The harness itself (installed and logged in as `maity-runner`) is yours
-to set up.
+lists what is missing, then the next steps in order: the file, `sudo
+systemctl restart maity-runner`, the tools' and the forge's login as
+`maity-runner`, and then `maity runner check` as that user (its probe run
+needs the tool's login), each command as `maity-runner` started in a
+directory that user can enter. A service it starts gets the login and
+check steps too, and `install` then runs a first `check` itself, before
+any login: a tool not installed yet, or Claude Code's probe run without
+its login, shows up there, and that check's exit is `install`'s. Run
+`check` again after the logins. The harness itself (installed and
+logged in as `maity-runner`) is yours to set up; docs/runners.md, "As a
+service on Linux", has the steps. Every other `maity runner` command
+for the service takes `--config /etc/maity-runner/runner.toml`; without
+it, where `~/.config/maity-runner/runner.toml` is missing and the
+service's file exists, the error names the service's file and how to
+pass it.
 
 Running `install` again is safe. It creates only what is missing and
 pairs only an unpaired runner; an already paired one needs no code.
