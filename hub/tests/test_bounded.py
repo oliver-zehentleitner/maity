@@ -116,7 +116,8 @@ def test_forge_access_keeps_the_newest_choices_and_sources(
     access = forge_access.ForgeAccess(None, None, None)  # type: ignore[arg-type]
     facts = SimpleNamespace(key=lambda _base: ("same",))
     monkeypatch.setattr(access, "_facts", lambda _p: facts)
-    monkeypatch.setattr(access, "_choose", lambda p, _f, _b: forge.Forge("t", project_id=p))
+    # `_choose` answers the reader and until when it may be kept (None: KEEP_SECONDS only)
+    monkeypatch.setattr(access, "_choose", lambda p, _f, _b: (forge.Forge("t", project_id=p), None))
     for n in range(6):
         access.reader(f"p{n}", forge.Forge(None))
     assert list(access._chosen) == ["p4", "p5"]
