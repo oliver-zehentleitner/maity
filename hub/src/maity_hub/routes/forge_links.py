@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import Field
+from sqlalchemy import Engine
 
 from maity_hub import forge, forge_links, forge_tokens, wakeups
 from maity_hub.auth import second_factor
@@ -81,8 +82,8 @@ def setup(
         with engine.begin() as conn:
             forge_links.take_state(conn, state, human_id, session)
         found = forge_links.verify(app, installation_id, code)
-        with engine.begin() as conn:
-            link_id = forge_links.link(conn, human_id, found)
+        link_id = _link(engine, app, human_id, found)
+        with engine.connect() as conn:
             row = forge_links.row(conn, link_id)
     except forge_links.LinkError as error:
         if wants_json:
@@ -95,6 +96,26 @@ def setup(
     if wants_json:
         return JSONResponse(forge_links.view(row, [], row.status))
     return _back(request, {})
+
+
+def _link(engine: Engine, app: GitHubApp, human_id: str, found: dict[str, Any]) -> str:
+    """Link the verified installation; the link's id. An installation on a forge organisation
+    linked to another owner is replaced only after that link's owner check, made at once and
+    with no connection held (§11.4): a success is written as its last check and refuses the new
+    link with `installation_linked`; no definite answer, or a link that changed meanwhile, is
+    `forge_unavailable` with nothing written."""
+    try:
+        with engine.begin() as conn:
+            return forge_links.link(conn, human_id, found)
+    except forge_links.ReplaceCheck as asked:
+        existing = asked.existing
+    check = forge_links.owner_check(app, existing)
+    with engine.begin() as conn:
+        try:
+            return forge_links.link(conn, human_id, found, (existing, check))
+        except forge_links.Kept:
+            pass  # committed: the check counts as the existing link's last check and success
+    raise forge_links.LinkError("installation_linked")
 
 
 def _refusal(reason: str) -> ApiError:
@@ -123,6 +144,12 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
         token = forge_tokens.view(conn, human_id)
     links: list[dict[str, Any]] = []
     for row in rows:
+        if app is not None:
+            # A link on a forge organisation is checked first when its check is due (§11.4);
+            # the list is read only while the link serves (`shown`).
+            row = forge_links.refresh(engine, app, row)
+            if row is None:
+                continue  # unlinked meanwhile
         repositories, found = forge_links.shown(app, row)
         if app is not None and found is not None and found != row.status:
             with engine.begin() as conn:
