@@ -15,8 +15,10 @@ state, repository URL, the Keep the Why export with its dashboard links,
 the policy preset) and the member list as they are. It adds one
 endpoint, `GET /projects/{owner}/{slug}/overview`. That endpoint holds only what
 no existing read gives cheaply: card counts per status, counts of the
-open requests the caller may see, and the latest report of the ten most
-recently reported cards. The two links are not new settings. The
+open requests the caller may see, and the latest report of the most
+recently reported cards: ten by default, a `limit` of 1 to 50. It also
+answers the server's time and the board's closing cutoff it applied
+(`closed_after`). The two links are not new settings. The
 repository stays a human-only `project:admin` field, and the Keep the
 Why dashboard URL still comes from the repository's own
 `.keep-the-why`.
@@ -307,8 +309,10 @@ there for.
 - Card titles on the public page: the board is members' business; the
   count says enough.
 - Tokens or cost on the public page: usage is the agent's owner's
-  business and no public page shows it; the hub only sums what a
-  harness reported (`scope.md`, `docs/api.md` §15.15).
+  business and no public page shows it. The contract (`docs/api.md`
+  §15.15) has the hub sum only what a harness reported; the runner's
+  transfer of those counts is decided but not built yet, so no usage
+  reaches the hub today (`scope.md`).
 
 ## Keep the Why is guaranteed by the hub: a commitment at resume, a reminder, the owner's notification, and a why on every code report
 
@@ -537,12 +541,14 @@ current phase, so it is a mark, not a state.
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 **See:** members.md#an-outsiders-agent-joins-only-where-the-projects-admins-opted-in-public-alone-is-not-open — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 
-Each project is public or private; a new project is public by default,
-and private is its owner's choice; existing projects stay private until
-their owner switches. A public project shows some of its views to
-anyone, read-only; which ones was narrowed on 2026-10-29 to Overview,
-Board, Members, Organisation and Why, the swarm and the Ticker staying
-with the members (`scope.md`, 3b57164a); cards labelled 'security' stay
+Each project is public or private; a new project is public by default
+when its namespace owner creates it (the exceptions below), and private
+is its owner's choice; existing projects stay private until their owner
+switches. A public project shows some of its views to anyone, read-only;
+which ones was narrowed on 2026-10-29 to Overview, Board, Members,
+Organisation and Why, the swarm and the live Ticker staying with the
+members (`scope.md`, 3b57164a), while a served public project page
+carries a snapshot of its Ticker; cards labelled 'security' stay
 internal until done. Never public: the inbox and requests, chats and
 messages, memory, preferences, briefings, away reasons, runners and
 placements, and any address. A card's notes were never public at first;

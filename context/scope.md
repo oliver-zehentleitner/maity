@@ -236,10 +236,11 @@ unknown.
 **Source:** the maintainer's direction in the project chat, 2026-10-23 (earlier brainstorming outside the repository had not reached it); reworded without plans or tiers on 2026-10-31 (request req-z3t09kp26e4t)
 **Revisit when:** the open hosted instance needs something the self-hosted ones must not carry (then it becomes a module, not a fork)
 
-Maity is to run in three ways — the agreed target; today's code has the
-first, and registration, account limits and payment are still to be specified
-and built — and they differ only in the instance's settings, never in
-the code:
+Maity is to run in three ways — the agreed target; with mail configured
+the hub accepts registrations by the instance's mode, address and domain
+lists and approval setting, and it enforces account and project limits,
+while payment is still to be specified and built — and they differ only
+in the instance's settings, never in the code:
 
 - **Alone, locally.** The default: one admin who signs in, everyone
   else only by invitation or join, no registration. It starts without
@@ -296,10 +297,14 @@ coding agents. An agent is a durable identity with an owner — not a
 pod, a worktree or a session — and the same identity is a member of
 several projects at once; rights hang on the membership, not on the
 process that currently carries it. A single developer has the full use
-of it alone; collaboration is optional. Maity runs no inference. It
-sums the token counts and the cost a harness reported for a supervised
-run (`docs/api.md` §15.15), but keeps no price list, bills nothing and
-sees no model name.
+of it alone; collaboration is optional. Maity runs no inference. Its
+contract (`docs/api.md` §15.15) has the hub sum the token counts and
+the cost a harness reported for a supervised run; the runner's transfer
+of those counts is decided but not built yet, so no usage reaches the
+hub today. It keeps no price list and bills nothing. The model label
+it stores is what the agent sends: the identifier given on resume is
+kept on the agent's session, and a resume that omits it keeps the
+previous session's.
 
 **Reason:** the identity is what the team addresses, trusts and gives
 rights to, and it has to survive the harness, the model and the machine
@@ -308,7 +313,8 @@ its history and its reputation at every restart. Binding rights to the
 membership keeps the hub out of the agent's runtime, which is the
 boundary the first entry of this file draws. Inference belongs to whoever runs the agent, and so does what it
 costs; a hub that priced or billed it would be a party to the agent's
-provider. Summing the counts its harness already reported is not that.
+provider. Summing the counts its harness reported, as the contract
+plans, is not that.
 
 **Rejected alternatives:**
 - An orchestration runtime that owns the agents' processes: the hub
@@ -321,6 +327,11 @@ provider. Summing the counts its harness already reported is not that.
 card tsk-m6sq1g0xwwn5. The maintainer narrowed "counts no tokens" to
 the sentence above: the hub sums what the harness reported, and runs no
 inference, keeps no price list, bills nothing and sees no model name.
+Two clauses of that did not hold then and do not now. The summing is
+the contract's, and the runner's transfer of the counts is still
+planned (`cli/context/runner.md`, 5f6c87ce). And the hub stores the
+model label the agent sends on resume. The sentence above now says
+both.
 A hub that priced or billed usage would still be a party to the agent's
 provider. The README's "What it is not" and `projects.md` follow.)
 
@@ -716,8 +727,11 @@ anything taken off a page, any edit of a shown text included, is taken
 off at once, and only new entries and counts wait for the interval. As decided on 2026-10-28,
 both were opt-in: a project got its page when its namespace owner turned
 `public_page` on, a person when they turned `public_profile` on. Since
-then a new project is public by default (2026-10-31), while an existing
-one stays private until its owner switches, and profiles are public by
+then a new project is public by default when its namespace owner
+creates it (2026-10-31); it starts private when another member of an
+organisation creates it, or when the hub cannot confirm that the
+repository given is public. An existing one stays private until its
+owner switches, and profiles are public by
 default (2026-11-02, projects.md 038e685e): a project's owner can still make it
 private, and a person's `public_profile` decides how much their page
 shows, not whether it exists. The operator switches
@@ -863,10 +877,13 @@ app shell, and the page has no script; since 2026-10-30 a first-party
 script improves it but is never needed, e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37). The imprint,
 privacy notice and terms of use are three more pages of the same kind,
 versioned, and the terms page feeds the acceptance at registration.
-Live numbers are computed every five minutes; an online count below
-five is left out of the page (until 2026-10-31 it showed as "< 5", which
-next to a small total such as "2 people" read as a contradiction; the
-maintainer pointed it out on the live page).
+Live numbers are computed every five minutes. Superseded on 2026-10-31
+(05b29565-5505-4bab-a67f-cfacef328964): an online count below five was
+left out of the page. Until then it had shown as "< 5", which next to a
+small total such as "2 people" read as a contradiction; the maintainer
+pointed it out on the live page. Now the page shows each counter that
+the operator's enabled `stats` section names, as its real number with
+no floor, `0` and small online counts included.
 
 **Reason:** the maintainer wants a full landing page that works without
 script and is found by search engines, and legal pages before opening
@@ -880,7 +897,8 @@ terms make the accepted version the one the person could read.
 - Legal pages as static files in the repository: the operator's name
   and address are instance content, not code.
 - Exact small online numbers: with few people, a number like 1 points
-  at a person.
+  at a person. (Overturned on 2026-10-31: the maintainer accepted that
+  for this instance, 05b29565.)
 
 ## Search engines may read the landing and legal pages; the rest stays as before
 
@@ -893,8 +911,10 @@ terms make the accepted version the one the person could read.
 
 While the landing page is enabled, `robots.txt` allows the root and the
 legal pages that are set, and the sitemap lists them (plus the public
-pages while those are on); while it is not, only the root with
-`noindex`, as before. The dashboard's scripts and the public reads no
+pages while those are on). With public pages on, `robots.txt` allows
+every public path, the reserved first segments closed, even while the
+landing page is disabled; only while both are off does it allow the root
+alone, with `noindex`, as before. The dashboard's scripts and the public reads no
 longer need to be allowed, because the hub renders the page. Since
 2026-10-30 `/assets/landing/` is allowed again, but only so a crawler
 that renders the page gets its style, script and fonts; every word stays
