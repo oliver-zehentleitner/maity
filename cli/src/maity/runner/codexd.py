@@ -8,12 +8,12 @@ start, so every sandboxed command fails. The runner stops it at every Codex star
 old leaf is removed and before the new session starts.
 
 The stop is `codex app-server daemon stop` with that CODEX_HOME, as the agents' user, on every
-target, within one deadline shared with the check that the home is there. A stop that fails,
-times out, cannot run or is skipped is logged, never refused: the start goes on, and the next
-start tries again. Such a stop leaves the old daemon running, so the new session may still
-reach it, as before this stop existed. Nothing is signalled by the runner: a fallback by signal is
-left to slice 2, where it uses an identity Codex records, checked with a pidfd before any
-signal (the review of #2175).
+target, within one deadline shared with the check that the home is a directory and no link.
+A stop that fails, times out, cannot run or is skipped is logged, never refused: the start goes
+on, and the next start tries again. Such a stop leaves the old daemon running, so the new
+session may still reach it, as before this stop existed. Nothing is signalled by the runner: a
+fallback by signal is left to slice 2, where it uses an identity Codex records, checked with a
+pidfd before any signal (the review of #2175).
 """
 
 from __future__ import annotations
@@ -43,15 +43,25 @@ def stop_argv(binary: str, home: Path, agents_home: Path, agent_path: str) -> li
             binary, *STOP]  # fmt: skip
 
 
-def check_home(as_user: AsUser, home: Path, timeout: float) -> bool:
-    """Whether the codex-home is a directory: `test -d` within `timeout` on every layout, the
-    runner's own included, since a stat in this process cannot be bounded (a stuck mount) and
-    AsUser.exists takes no timeout. OSError when it cannot be told, subprocess.TimeoutExpired
-    when the check does not answer in time."""
-    done = as_user.run(["test", "-d", str(home)], timeout=timeout)
-    if done.returncode not in (0, 1):  # `test`'s own error, or ssh's unreachable 255
-        raise OSError(f"exit {done.returncode}")
-    return done.returncode == 0
+# What the codex-home is, said by one token on stdout: a link is told first, never followed.
+_WHAT = ('if [ -L "$1" ]; then echo link; elif [ -d "$1" ]; then echo dir; '
+         'elif [ -e "$1" ]; then echo other; else echo absent; fi')  # fmt: skip
+KINDS = ("dir", "absent", "link", "other")
+
+
+def check_home(as_user: AsUser, home: Path, timeout: float) -> str:
+    """What the codex-home is, as the agents' user: `dir`, `absent`, `link` (a link, to
+    anywhere) or `other` (neither a link nor a directory). One `sh` within `timeout` on every
+    layout, the runner's own included, since a stat in this process cannot be bounded (a
+    stuck mount). The answer is the token the script prints, never its exit code alone, so a
+    sudo or ssh that fails is never read as an absent home: a non-zero exit, no token or
+    another one is an OSError. subprocess.TimeoutExpired when it does not answer in time."""
+    done = as_user.run(["sh", "-c", _WHAT, "sh", str(home)], timeout=timeout)
+    kind = done.stdout.strip()
+    if done.returncode != 0 or kind not in KINDS:
+        raise OSError(f"exit {done.returncode}, no answer" if not kind else
+                      f"exit {done.returncode}, an unknown answer")  # fmt: skip
+    return kind
 
 
 def stop_codex_daemon(
@@ -63,14 +73,19 @@ def stop_codex_daemon(
     log: Callable[[str], None],
 ) -> None:
     """Stop the Codex app-server daemon that holds `home`, before a start, within DEADLINE. A
-    home that is not there yet has no daemon to stop; a home that cannot be checked, or whose
-    check used the whole deadline, is not stopped. A stop that exits non-zero, does not answer
-    in time or cannot run is logged. A stop that fails or is skipped leaves the old daemon
-    running, and the new session may still reach it. One log line for anything but a clean
-    stop; nothing raises."""
+    home that is not there yet has no daemon to stop. A home that is a link or no directory
+    is not stopped: the scratch is the agent's to write, and a link there could point the
+    stop at another placement's home or the operator's own; the launch refuses such a home
+    later. Nor is a home that cannot be checked, or whose check used the whole deadline. A
+    stop that exits non-zero, does not answer in time or cannot run is logged. A stop that
+    fails or is skipped leaves the old daemon running, and the new session may still reach
+    it. One log line for anything but a clean stop; nothing raises.
+
+    The stop names the home by path to an external binary, so a process of the agents' uid
+    could still swap the path for a link between the check and the stop."""
     began = time.monotonic()
     try:
-        there = check_home(as_user, home, CHECK_TIMEOUT)
+        kind = check_home(as_user, home, CHECK_TIMEOUT)
     except subprocess.TimeoutExpired:
         log("the codex-home cannot be checked (timeout); "
             "no Codex app-server daemon stopped, the start goes on")  # fmt: skip
@@ -79,8 +94,12 @@ def stop_codex_daemon(
         log(f"the codex-home cannot be checked ({type(exc).__name__}); "
             "no Codex app-server daemon stopped, the start goes on")  # fmt: skip
         return
-    if not there:
+    if kind == "absent":
         log("no codex-home yet, so no Codex app-server daemon to stop")
+        return
+    if kind != "dir":
+        log("the codex-home is a link (or not a directory); "
+            "no Codex app-server daemon stopped, the start goes on")  # fmt: skip
         return
     left = DEADLINE - (time.monotonic() - began)
     if left <= 0:

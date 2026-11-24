@@ -4,6 +4,7 @@ one deadline; a failed stop is logged, never refused."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -144,13 +145,13 @@ def test_a_slow_home_check_is_bounded_and_does_not_refuse_the_start(
 ) -> None:
     """A home check that does not answer gets at most CHECK_TIMEOUT, then no stop is tried
     (the home's state is unknown) and the start goes on. Here, the runner's own side, the
-    check is replaced; the agents' side's `test -d` is the next test."""
+    check is replaced; the agents' side's check is the next test."""
     sup, backend, _, _, logs = world
     asked: list[float] = []
 
-    def slow(as_user: Any, home: Path, timeout: float) -> bool:
+    def slow(as_user: Any, home: Path, timeout: float) -> str:
         asked.append(timeout)
-        raise subprocess.TimeoutExpired(["test", "-d", str(home)], timeout)
+        raise subprocess.TimeoutExpired(["sh"], timeout)
 
     started(world)
     monkeypatch.setattr(codexd, "check_home", slow)
@@ -163,34 +164,116 @@ def test_a_slow_home_check_is_bounded_and_does_not_refuse_the_start(
     assert len(said) == 1 and said[0].endswith("the start goes on"), logs
 
 
-def test_the_agents_side_home_check_is_a_bounded_test_d(tmp_path: Path) -> None:
-    """On the agents' side the check is a `test -d` given the check's timeout, and a timeout
+def is_check(argv: Sequence[str], home: Path) -> bool:
+    """Whether `argv` is the home check: one `sh -c` script, the home its one argument."""
+    return list(argv[:2]) == ["sh", "-c"] and list(argv[3:]) == ["sh", str(home)]
+
+
+def test_the_agents_side_home_check_is_a_bounded_sh(tmp_path: Path) -> None:
+    """On the agents' side the check is one `sh` given the check's timeout, and a timeout
     there is raised on to `stop_codex_daemon`, which logs it."""
 
-    def no_answer() -> int:
-        raise subprocess.TimeoutExpired(["test"], codexd.CHECK_TIMEOUT)
+    def no_answer() -> tuple[int, str]:
+        raise subprocess.TimeoutExpired(["sh"], codexd.CHECK_TIMEOUT)
 
     agents = AgentsSide(no_answer)
     with pytest.raises(subprocess.TimeoutExpired):
         codexd.check_home(cast(Any, agents), tmp_path / "h", codexd.CHECK_TIMEOUT)
-    assert agents.runs == [(["test", "-d", str(tmp_path / "h")], codexd.CHECK_TIMEOUT)]
+    ((argv, timeout),) = agents.runs
+    assert is_check(argv, tmp_path / "h") and timeout == codexd.CHECK_TIMEOUT
+
+
+def test_a_check_whose_sudo_fails_is_not_an_absent_home(tmp_path: Path) -> None:
+    """A sudo (or ssh) that fails exits non-zero with nothing on stdout: that is no answer,
+    never an absent home, so nothing is said to be missing and nothing is stopped."""
+    agents = AgentsSide(lambda: (1, ""))
+    with pytest.raises(OSError, match="no answer"):
+        codexd.check_home(cast(Any, agents), tmp_path / "h", codexd.CHECK_TIMEOUT)
+    logs: list[str] = []
+    codexd.stop_codex_daemon(cast(Any, agents), str(tmp_path / "codex"), tmp_path / "h",
+                             tmp_path, "/usr/bin", logs.append)  # fmt: skip
+    assert logs == ["the codex-home cannot be checked (OSError); no Codex app-server daemon "
+                    "stopped, the start goes on"]  # fmt: skip
+    assert all(is_check(argv, tmp_path / "h") for argv, _ in agents.runs)  # no stop ran
+
+
+@pytest.mark.parametrize("kind", ["dir", "link", "other", "absent"])
+def test_the_home_check_tells_a_link_from_a_directory(tmp_path: Path, kind: str) -> None:
+    """The real script, as the runner's own user: a link to a directory is `link`, never
+    followed to `dir`."""
+    home, target = tmp_path / "codex-home", tmp_path / "elsewhere"
+    target.mkdir()
+    if kind == "dir":
+        home.mkdir()
+    elif kind == "link":
+        home.symlink_to(target)
+    elif kind == "other":
+        home.write_text("")
+    assert codexd.check_home(AsUser(), home, codexd.CHECK_TIMEOUT) == kind
+
+
+def test_a_codex_home_that_is_a_link_is_not_stopped(world: Any, tmp_path: Path) -> None:
+    """The agent may swap its codex-home for a link (to another placement's home, or the
+    operator's `~/.codex`): the restart stops nothing through it and says so. The launch then
+    refuses the link as before (scratch.write_codex_home), so this start fails and is retried
+    after the backoff."""
+    sup, backend, _, clock, logs = world
+    started(world)
+    home, other = codex_home(sup), tmp_path / "other-home"
+    other.mkdir()
+    shutil.rmtree(home)
+    home.symlink_to(other)
+    backend.exit(SESSION, 0)
+    sup.tick()
+    clock.now += 600
+    settle(sup)
+    calls = (tmp_path / "calls.log").read_text().splitlines()
+    assert not any(line.startswith("app-server daemon stop") for line in calls)
+    assert logs.count("plc-0003: the codex-home is a link (or not a directory); no Codex "
+                      "app-server daemon stopped, the start goes on") == 1  # fmt: skip
+    # What the launch does with the link today: it refuses to write through it, and the start
+    # fails as a crash would, so no second session runs.
+    assert len(backend.started) == 1
+    assert any("start failed" in line for line in logs), logs
+
+
+def test_the_daemon_stop_makes_no_directories(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop names the agent's directory by its path alone: nothing is made or tightened
+    outside its deadline (`agent_dir_for` and AsUser's mkdir stay out of it)."""
+    sup, _, _, _, logs = world
+
+    def made(*args: Any) -> Any:
+        pytest.fail("the daemon stop made a directory")
+
+    monkeypatch.setattr(supervisor, "agent_dir_for", made)
+    monkeypatch.setattr(AsUser, "mkdir", made)
+    monkeypatch.setattr(AsUser, "tighten", made)
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    sup._stop_codex_daemon(p, sup.cfg.harnesses["codex"], target, tmp_path / "scratch", None)
+    assert logs[-1:] == ["plc-0003: no codex-home yet, so no Codex app-server daemon to stop"]
+    assert target.agent_files is not None
+    assert not (target.agent_files / "agents" / "plc-0003").exists()
 
 
 class AgentsSide:
     """An AsUser of the agents' side (not direct): `run` records each argv with its timeout,
-    answers `test -d` through `check` (exit 0 by default) and the stop with exit 0."""
+    answers the home check through `check` (exit 0 and `dir` by default) and the stop with
+    exit 0."""
 
     direct = False
     here = True
 
-    def __init__(self, check: Callable[[], int] = lambda: 0) -> None:
+    def __init__(self, check: Callable[[], tuple[int, str]] = lambda: (0, "dir\n")) -> None:
         self.check = check
         self.runs: list[tuple[list[str], float]] = []
 
     def run(self, argv: Sequence[str], timeout: float = 60.0) -> subprocess.CompletedProcess[str]:
         self.runs.append((list(argv), timeout))
-        code = self.check() if argv[0] == "test" else 0
-        return subprocess.CompletedProcess(list(argv), code, "", "")
+        code, out = self.check() if argv[0] == "sh" else (0, "")
+        return subprocess.CompletedProcess(list(argv), code, out, "")
 
 
 class FakeClock:
@@ -209,9 +292,9 @@ def stop_after_a_check_of(
     clock = FakeClock()
     monkeypatch.setattr(codexd, "time", clock)
 
-    def check() -> int:
+    def check() -> tuple[int, str]:
         clock.now += took
-        return 0
+        return 0, "dir\n"
 
     agents = AgentsSide(check)
     logs: list[str] = []
@@ -228,7 +311,7 @@ def test_the_stop_gets_what_is_left_of_the_deadline(
     took = codexd.CHECK_TIMEOUT - 0.5
     agents, logs = stop_after_a_check_of(took, tmp_path, monkeypatch)
     (check_argv, check_timeout), (stop_argv, stop_timeout) = agents.runs
-    assert check_argv[:2] == ["test", "-d"] and check_timeout == codexd.CHECK_TIMEOUT
+    assert is_check(check_argv, tmp_path / "h") and check_timeout == codexd.CHECK_TIMEOUT
     assert stop_argv[-4:] == [str(tmp_path / "codex"), "app-server", "daemon", "stop"]
     assert stop_timeout == codexd.DEADLINE - took == 15.5
     assert logs == []
@@ -240,7 +323,8 @@ def test_no_stop_runs_once_the_check_used_the_whole_deadline(
     """A check that took longer than DEADLINE leaves nothing for the stop: none runs, and the
     log says the deadline was used up."""
     agents, logs = stop_after_a_check_of(codexd.DEADLINE + 30.0, tmp_path, monkeypatch)
-    assert [argv[:2] for argv, _ in agents.runs] == [["test", "-d"]]  # the check alone
+    ((argv, _),) = agents.runs  # the check alone
+    assert is_check(argv, tmp_path / "h")
     assert logs == ["the codex-home check used the whole deadline; no Codex app-server daemon "
                     "stopped, the start goes on"]  # fmt: skip
 
@@ -256,13 +340,14 @@ class RecordingUser(AsUser):
         cwd: Path | None = None, timeout: float = 60.0,
     ) -> subprocess.CompletedProcess[str]:  # fmt: skip
         self.runs.append((list(argv), timeout))
-        return subprocess.CompletedProcess(list(argv), 1, "", "")
+        return subprocess.CompletedProcess(list(argv), 0, "absent\n", "")
 
 
 def test_the_direct_layout_home_check_is_bounded_too(tmp_path: Path) -> None:
-    """In the `single` layout the check is a `test -d` with CHECK_TIMEOUT too, never a stat in
-    the runner's own process, which a stuck mount could hold without a bound."""
+    """In the `single` layout the check is the same bounded `sh` with CHECK_TIMEOUT, never a
+    stat in the runner's own process, which a stuck mount could hold without a bound."""
     user = RecordingUser()
     assert user.direct
-    assert codexd.check_home(user, tmp_path, codexd.CHECK_TIMEOUT) is False  # exit 1: absent
-    assert user.runs == [(["test", "-d", str(tmp_path)], codexd.CHECK_TIMEOUT)]
+    assert codexd.check_home(user, tmp_path, codexd.CHECK_TIMEOUT) == "absent"
+    ((argv, timeout),) = user.runs
+    assert is_check(argv, tmp_path) and timeout == codexd.CHECK_TIMEOUT
