@@ -408,7 +408,7 @@ prevent.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of hub PR 2 of card tsk-2m5jbwemb21x, 2026-11-24, on the plan note nte-cm5qr3y8bx04; the lead's go of 2026-11-24 (seq 214797: the claim by a conditional update of `checked_at`, its two-connection test, rulings Q2 and Q3); the review notes A2509 (213241) and A2510 (nte-e0amanaa564s) on the contract pull request #2139; contract `docs/api.md` §11.4
+**Source:** implementation of hub PR 2 of card tsk-2m5jbwemb21x, 2026-11-24, on the plan note nte-cm5qr3y8bx04; the lead's go of 2026-11-24 (seq 214797: the claim by a conditional update of `checked_at`, its two-connection test, rulings Q2 and Q3); the review notes A2509 (213241) and A2510 (nte-e0amanaa564s) on the contract pull request #2139; the security review A2545 of hub PR 2 (seq 215798) and the lead's rulings and go on it (seqs 215805, 215921); contract `docs/api.md` §11.4
 **See:** https://github.com/oliver-zehentleitner/maity — 40057878-5f35-44fa-8b67-2e1820b59d38 — as of 2026-11-24
 **Revisit when:** the hub keeps the owner check's outcome anywhere but `forge_link`, the App's events replace the polling, or a second kind of check gets its own cadence
 
@@ -444,7 +444,21 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
 - §11.3's export asks the source on every call only where it rests on
   such a link, and refuses by reader only while that link serves
   nothing and no other source covers; every other state is answered
-  from its cache as before.
+  from its cache as before. Three cases around such a link answer
+  `forge_unavailable` without `details.last` instead of the cache: the
+  operator's token after it cannot read the visibility, and the choice
+  itself has no answer while the owner's grants hold such a link (the
+  reader then carries `ORG_UNANSWERED`). Unlinking or replacing such a
+  link drops the Keep the Why reads of the human's projects on every
+  replica, since the choice then refuses with `no_grant`, which §11.3
+  does not ask about (review A2545 #5). The probe asks the operator's
+  token's visibility after such a link before a cached observation is
+  answered (A2545 #6).
+- A forge answer whose ids are no numbers (a JSON `true` included) or
+  whose names are empty is no answer, never a "no" or a match: the
+  installation, the user, the membership, and the ids `is_owner`
+  compares; step 1 naming another account than the link's is no answer
+  either (A2545 #4).
 - A replacement rereads the existing link under its row lock after the
   check and compares it with the link the check was made for; any
   difference is `forge_unavailable` with nothing written and no retry
