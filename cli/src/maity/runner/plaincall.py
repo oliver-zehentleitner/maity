@@ -1357,6 +1357,15 @@ PYTHON_TOOL_REFUSED = (
 )
 
 
+ODD_REFUSED = (
+    "This runner lets its sessions run the repository's Python tools, so no command line here "
+    "holds a control character other than a tab or a newline, a space other than the ASCII one, "
+    "or an invisible format character (a zero-width space, a byte order mark, a bidi control). "
+    "Write the line with plain spaces; text that holds such characters goes in a file in this "
+    "clone."
+)
+
+
 @dataclass(frozen=True)
 class PythonTools:
     """What the runner gave the hook for `python_tools` (config.RepositoryGrant): the clone,
@@ -1430,11 +1439,11 @@ def python_tool(command: str, cwd: object, tools: PythonTools) -> str | None:
     found = form.fullmatch(line)
     if found is None:
         return refused("the line is not in that form")
-    if not isinstance(cwd, str) or not cwd:
+    if not isinstance(cwd, str) or not cwd or not os.path.isabs(cwd):
         return refused("the hook got no working directory")
     try:
-        clone = Path(os.path.realpath(tools.clone))
-        if Path(os.path.realpath(cwd)) != clone:
+        clone = Path(os.path.realpath(tools.clone, strict=True))
+        if Path(os.path.realpath(cwd, strict=True)) != clone:
             return refused("run it from the clone's root")
         at = clone
         parts = [*found["dir"].split("/"), found["name"]]
@@ -1444,7 +1453,13 @@ def python_tool(command: str, cwd: object, tools: PythonTools) -> str | None:
             last = index == len(parts) - 1
             if not (stat.S_ISREG(mode) if last else stat.S_ISDIR(mode)):
                 return refused(f"{at} is not a plain {'file' if last else 'directory'}")
-        program = shutil.which("python3")
+        # The PATH as the hook has it, every entry absolute: a relative or empty entry is read
+        # from wherever a shell stands, so it counts as a place the session can write.
+        search = os.environ.get("PATH", "")
+        entries = search.split(os.pathsep)
+        if not search or not all(entry and os.path.isabs(entry) for entry in entries):
+            return refused("the PATH is unset or holds a relative or empty entry")
+        program = shutil.which("python3", path=search)
         if program is None:
             return refused("python3 is not on the PATH")
         # Every place the session may write, as given and resolved: a root under a linked
@@ -1482,7 +1497,12 @@ def refusal(payload: object, tools: PythonTools | None = None) -> str | None:
     if reason is None and odd_spacing(command):
         reason = SPACING_REFUSED
     if reason is None and tools is not None and tools.dirs:
-        reason = python_tool(command, payload.get("cwd"), tools)
+        if any(_odd(c) for c in command):
+            # Closed, not normalised: a harness may take such a character as a space or trim it
+            # where the shell does not, so no line that holds one runs (cli/context/runner.md).
+            reason = ODD_REFUSED
+        elif _placement(command) != "held":  # a plain maity call runs no python3
+            reason = python_tool(command, payload.get("cwd"), tools)
     return reason
 
 
@@ -1511,6 +1531,8 @@ def _tools(args: Sequence[str]) -> PythonTools | None:
             raise ValueError(f"unknown argument {flag}")
     if clone is None or not clone.is_absolute() or not dirs:
         raise ValueError("--python-tools needs --clone with an absolute path")
+    if not all(str(path) and path.is_absolute() for path in writable):
+        raise ValueError("--writable needs an absolute path")
     if not all(_TOOL_DIR.fullmatch(d) for d in dirs):
         raise ValueError("a tool directory that is not a plain relative path")
     return PythonTools(clone=clone, dirs=tuple(dirs), writable=tuple(writable))

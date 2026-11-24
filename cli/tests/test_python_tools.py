@@ -318,6 +318,94 @@ def test_a_script_or_directory_that_is_a_link_is_refused(
     assert decide("python3 web/tools/evil.py", str(clone), tools_for(clone)) is not None
 
 
+ODD = {
+    "byte order mark U+FEFF": "﻿",
+    "zero-width space U+200B": "​",
+    "no-break space U+00A0": " ",
+    "line separator U+2028": " ",
+    "next line U+0085": "\u0085",
+    "NUL": "\x00",
+    "carriage return": "\r",
+    "vertical tab": "\x0b",
+    "form feed": "\x0c",
+    "escape": "\x1b",
+    "bidi override U+202E": "‮",
+}
+
+
+@pytest.mark.parametrize("char", list(ODD.values()), ids=list(ODD))
+def test_with_tool_directories_any_line_with_an_odd_character_is_refused(
+    clone: Path, system_python: Path, char: str
+) -> None:
+    """Closed, not normalised (the lead on A2540): a harness may trim or split at such a
+    character where the shell does not, so with `python_tools` set no line that holds one
+    runs, whatever program it names and wherever the character stands."""
+    for command in (f"{char}python3 tools/changelog.py; id", f"python3 {char}tools/changelog.py",
+                    f"python3{char} tools/changelog.py", f"python3 tools/changelog.py{char}",
+                    f"git status{char}", f"make{char} -C web check"):  # fmt: skip
+        reason = decide(command, str(clone), tools_for(clone))
+        assert reason == plaincall.ODD_REFUSED, repr(command)
+    # Without tool directories the rule is not there: such a line is the permission rules'.
+    assert decide(f"git status{char}", str(clone), None) is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["", "bin", ".", "{bin}::/usr/bin", "{bin}:", ":{bin}", "{bin}:./x", "{bin}:relative"],
+)
+def test_an_unset_path_or_a_relative_or_empty_entry_is_refused(
+    clone: Path, system_python: Path, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """A relative or empty PATH entry is read from wherever the shell stands, the clone
+    included, so it counts as a place the session can write (the lead on A2540)."""
+    monkeypatch.setenv("PATH", path.format(bin=system_python.parent))
+    reason = decide("python3 tools/changelog.py", str(clone), tools_for(clone))
+    assert reason is not None and "relative or empty" in reason, path
+
+
+def test_no_path_at_all_is_refused(
+    clone: Path, system_python: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("PATH")
+    reason = decide("python3 tools/changelog.py", str(clone), tools_for(clone))
+    assert reason is not None and "unset" in reason
+
+
+def test_a_relative_working_directory_is_refused(
+    clone: Path, system_python: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(clone)  # even where it would resolve to the clone
+    reason = decide("python3 tools/changelog.py", ".", tools_for(clone))
+    assert reason is not None and "no working directory" in reason
+
+
+def test_a_plain_maity_call_that_names_a_tool_is_not_the_tool_rules(
+    clone: Path, system_python: Path
+) -> None:
+    """One plain `maity` call runs no python3, so its text may name a tool (A2540)."""
+    for command in ("maity say x --type notice --body 'Ran python3 tools/changelog.py check'",
+                    "maity checkpoint --summary 'Fixed python3 tools/changelog.py'"):  # fmt: skip
+        assert decide(command, str(clone), tools_for(clone)) is None, command
+
+
+def test_a_script_that_is_no_regular_file_is_refused(clone: Path, system_python: Path) -> None:
+    (clone / "tools" / "dir.py").mkdir()
+    os.mkfifo(clone / "tools" / "fifo.py")
+    for name in ("dir", "fifo"):
+        reason = decide(f"python3 tools/{name}.py", str(clone), tools_for(clone))
+        assert reason is not None and "not a plain file" in reason, name
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0o000 directory")
+def test_a_tool_directory_the_hook_cannot_read_is_refused(clone: Path, system_python: Path) -> None:
+    (clone / "tools").chmod(0o000)
+    try:
+        reason = decide("python3 tools/changelog.py", str(clone), tools_for(clone))
+    finally:
+        (clone / "tools").chmod(0o755)
+    assert reason is not None and "cannot check it" in reason
+
+
 def test_a_script_that_does_not_exist_is_refused(clone: Path, system_python: Path) -> None:
     assert decide("python3 tools/missing.py", str(clone), tools_for(clone)) is not None
 
@@ -404,6 +492,8 @@ def test_the_hook_refuses_every_call_on_arguments_it_cannot_read(
         ["--clone", "rel", "--python-tools", "tools"],
         ["--clone", "/c", "--python-tools", "../x"],
         ["--other", "x"],
+        ["--clone", "/c", "--python-tools", "tools", "--writable", ""],
+        ["--clone", "/c", "--python-tools", "tools", "--writable", "rel"],
     ]
     for args in unreadable:
         with pytest.raises(ValueError):
