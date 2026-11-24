@@ -212,13 +212,26 @@ class HubMiddleware:
             _with_headers(send, public=public, hsts=hsts, web=web), scope["state"]
         )
 
+        raw_query: bytes = scope.get("query_string", b"")
+        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too. It needs no
+        # body, so it answers before every other answer here (a maintenance window, a route
+        # limit, the forge webhook, an unknown path, a body over its cap): a credential leaked
+        # in the query is revoked whoever sends it, wherever to. The body is not read.
+        in_query = credentials.find_all(raw_query) + credentials.find_all(
+            unquote_to_bytes(raw_query)
+        )
+        if in_query:
+            await self._leaked(in_query, scope, receive, send)
+            return
+
         if await self._maintenance_refused(scope, receive, send, path):
             return
 
         table = getattr(getattr(scope.get("app"), "state", None), "route_limits", None)
         if table:
-            # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), before any
-            # other work: no body is read, no caller looked up.
+            # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), after the
+            # query's credential filter and before any other work: no body is read, no
+            # caller looked up.
             wait = route_limits.wait(scope, table, origin.limit_key)
             if wait:
                 refused = rate_limited(wait)
@@ -259,20 +272,11 @@ class HubMiddleware:
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
             return
-        raw_query: bytes = scope.get("query_string", b"")
-        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
-        in_query = credentials.find_all(raw_query) + credentials.find_all(
-            unquote_to_bytes(raw_query)
-        )
         if cap > BODY_CAP:
             # A body above the default cap (an attachment, an image, the landing, legal and
             # sign-in pages' settings and their previews) is read only for a caller the
             # headers may authenticate (§1.7, §8.7). Every one of these routes takes a caller.
-            if in_query:
-                # The filter answers before the pre-check, so a credential leaked in the
-                # query is revoked whoever sends it (§2.2); the body is not read.
-                await self._leaked(in_query, scope, receive, send)
-                return
+            # The query was checked above, before this pre-check (§2.2).
             refusal = await self._precheck(scope)
             if refusal is not None:
                 await refusal(scope, receive, send)
@@ -288,7 +292,7 @@ class HubMiddleware:
             return  # or the client went away
         body = read
 
-        found = credentials.find_all(body) + in_query
+        found = credentials.find_all(body)
         if found:
             await self._leaked(found, scope, receive, send)
             return

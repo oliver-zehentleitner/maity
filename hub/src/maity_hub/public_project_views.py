@@ -302,11 +302,22 @@ def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> 
     while the repository is not public, nor for a project outside the operator's own namespaces
     (`served` False, §11.4), a stored view included. Each process holds its own read: a render
     with none, with a failed one or with one older than the stored view keeps that view
-    (hub/context/public-pages.md)."""
+    (hub/context/public-pages.md). The view names the repository it was read from, and a
+    stored view is kept only for the project's current repository, never while it names
+    none: after a switch to another one, a process with no read of it shows nothing until it
+    reads it."""
     if project.repository_public is not True or not served:
         return {"readable": False}
     row = public_pages.get(conn, path)
-    stored = row.data if row is not None and row.view == "why" and row.data["readable"] else None
+    stored = (
+        row.data
+        if row is not None
+        and row.view == "why"
+        and row.data["readable"]
+        and project.repository_url is not None
+        and row.data.get("repository_url") == project.repository_url
+        else None
+    )
     entry = WHY_CACHE.cached(project.id)
     if entry is None or entry.repository_url != project.repository_url:
         return stored or {"readable": False}  # no read of this repository in this process
@@ -321,6 +332,7 @@ def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> 
     return {
         "readable": True,
         "observed_at": snapshot.observed_at,
+        "repository_url": entry.repository_url,
         "summary": answer["summary"],
         "family": [
             {"name": m["name"], "path": m["path"], "dashboard_url": m["dashboard_url"]}

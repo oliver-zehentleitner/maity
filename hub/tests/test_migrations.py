@@ -2487,3 +2487,44 @@ def test_own_approvals_marks_the_agents_whose_owner_is_no_member_and_reads_the_d
     assert "joined_outside" not in columns
     project_columns = {c["name"] for c in inspect(engine).get_columns("project")}
     assert not {"own_approvals", "own_agents"} & project_columns
+
+
+def test_review_signer_adds_two_null_columns_and_drops_them_again(engine: Engine) -> None:
+    """§2.3 "Own approvals": `event.review_signer` and `event.review_pr` arrive null on every
+    existing event (a review result stored before has no record and counts as no own
+    approval), with their index; the downgrade drops them and the upgrade adds them again."""
+    from sqlalchemy import inspect, select, text
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261123170000_review_signer"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    project_id = factory.project(engine, "alpha")
+    with engine.begin() as conn:  # the table as it is before the revision: plain SQL
+        conn.execute(
+            text(
+                "INSERT INTO event (project_id, kind, at, audience, payload, redacted) "
+                "VALUES (:project, 'message', :at, '[]', :payload, :redacted)"
+            ),
+            {
+                "project": project_id,
+                "at": factory.at("2026-11-20T10:00:00Z"),
+                "payload": '{"type": "review_result"}',
+                "redacted": False,
+            },
+        )
+    for _ in range(2):  # up, down, up
+        migrate(engine)
+        assert current_revision(engine) == head_revision(engine)
+        with engine.connect() as conn:
+            stored = conn.execute(select(t.event.c.review_signer, t.event.c.review_pr)).all()
+        assert stored == [(None, None)]
+        indexes = {i["name"] for i in inspect(engine).get_indexes("event")}
+        assert "ix_event_review_pr" in indexes
+        downgrade(engine, _before(engine, rev))
+        columns = {c["name"] for c in inspect(engine).get_columns("event")}
+        assert not {"review_signer", "review_pr"} & columns
+        assert "ix_event_review_pr" not in {i["name"] for i in inspect(engine).get_indexes("event")}
+    migrate(engine)

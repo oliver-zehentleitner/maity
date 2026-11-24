@@ -353,7 +353,9 @@ def test_a_body_full_of_fake_credentials_costs_one_bounded_lookup(
     listener = lambda *args: statements.append(args[2])  # noqa: E731
     sa_event.listen(migrated, "before_cursor_execute", listener)
     try:
-        fakes = " ".join(f"mty1.crd-{i}.x" for i in range(6000))
+        # Ids of the shape the hub makes (`ids.has_shape`): one that cannot exist is never
+        # looked up at all (test_credential_filter.py), so these are what a lookup is bounded for.
+        fakes = " ".join(f"mty1.crd-{i:012d}.x" for i in range(6000))
         response = client.post("/api/v1/auth/login", json={"email": "x", "password": fakes[:60000]})
     finally:
         sa_event.remove(migrated, "before_cursor_execute", listener)

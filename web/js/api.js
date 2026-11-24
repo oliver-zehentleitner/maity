@@ -2513,7 +2513,7 @@ window.Maity = window.Maity || {};
   // a project"): the fixture hub has no store for every call, only this one, so a
   // retry of leaving replays the stored 200 after the caller is no member.
   const memberDeleteReplay = new Map();
-  const OUTSIDE_STAY = ["coder", "designer", "writer", "blue-team", "expert"];
+  const OUTSIDE_STAY = ["coder", "designer", "writer", "expert"];  // never blue-team (B.1 of §6.30)
   // `members` or `anyone`, as the hub reads an unset value (§6.1): `anyone` while the
   // page is served, `members` otherwise. The fixture has no moderation hold to add.
   function ownersMode(p) {
@@ -2588,6 +2588,14 @@ window.Maity = window.Maity || {};
       list.items.forEach((x) => {
         if (x.kind !== "agent" || x.owner_id !== target.id || x.isolated) return;
         if (mode === "anyone" && outsideStays(x, p)) return;
+        // blue-team is closed to an outside owner's agent: it continues as a coder where
+        // coder is listed, as the hub does (§6.2), and is isolated otherwise.
+        if (mode === "anyone" && (x.role_base || x.role) === "blue-team" && (x.trust === "member" || x.trust === "guest")
+          && ((p.policy && p.policy.outside_roles) || ["coder"]).includes("coder")) {
+          x.role = "coder";
+          x.role_base = "coder";
+          return;
+        }
         x.isolated = { reason: "The agent's owner is no longer a member of this project.", since: at, by: "hub" };
       });
       const data = me();
@@ -4467,7 +4475,7 @@ window.Maity = window.Maity || {};
         if ("agent_owners" in body.policy && !["members", "anyone"].includes(body.policy.agent_owners)) {
           fail(400, "invalid", "unknown agent_owners value", path, { fields: { "policy.agent_owners": "unknown" } });
         }
-        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
+        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "expert"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
         }
         if ("max_placements" in body.policy && !(Number.isInteger(body.policy.max_placements) && body.policy.max_placements >= 0 && body.policy.max_placements <= 1000)) {
@@ -6050,7 +6058,7 @@ window.Maity = window.Maity || {};
       if (Object.keys(fields).length) fail(400, "invalid", "invalid roles", path, { fields });
       const outside = (project(m[1], path).policy || {}).outside_roles || ["coder"];
       raw.forEach((r, i) => {
-        if (outside.includes(r.name) && !["coder", "designer", "writer", "blue-team", "expert"].includes(r.base)) {
+        if (outside.includes(r.name) && !["coder", "designer", "writer", "expert"].includes(r.base)) {
           fail(400, "invalid", "the role " + r.name + " is in policy.outside_roles", path, { fields: { ["custom[" + i + "].base"]: "outside_roles" } });
         }
       });
