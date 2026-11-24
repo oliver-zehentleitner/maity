@@ -418,11 +418,16 @@ How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
   from `checked_at`, the last check whatever came of it. A link on a
   forge organisation serves only while `active` and `owner_ok_at` is
   under 10 minutes old (`forge_links.serves`). A success counts from
-  when its check was claimed, never from when it ended.
-- A due check is claimed by one `UPDATE … SET checked_at = now WHERE
-  checked_at <= now - 10 minutes`, committed before any forge call; the
-  process whose update changed the row makes the check, every other one
-  takes the link as it stands. Its forge reads hold no connection.
+  when its check was claimed, never from when it ended; the one at
+  linking from before `verify` reads the user's own membership
+  (`owner_checked_at`, passed to `link`), never from the insert, on a
+  replacement too (review A2544).
+- A due check is claimed by one conditional `UPDATE … SET checked_at =
+  now WHERE checked_at <= now - 10 minutes`, committed before any forge
+  call; the process whose update changed the row makes the check, every
+  other one takes the link as it stands. Its forge reads hold no
+  connection. Checked live on PostgreSQL 16 and MariaDB 11.4 in review
+  A2544: of eight concurrent claims of one due link, exactly one won.
 - A refused mint on such a link sets its status but not `checked_at`,
   and a `suspended` one is minted for only inside its check: a mint is
   no owner check, and the check's first step reads the suspension
@@ -453,14 +458,17 @@ over forge calls, which can take seconds. A suspended link that minted
 on every choice would call the forge more often than its cadence
 (A2509 2b). Internal reasons keep a user account's reasons, which every
 `project:admin` sees, from being shown for a link whose reasons depend
-on the reader. Narrowing §11.3's check to such links keeps its answers
+on the reader. A success at linking counted from the insert would, on a
+replacement, come a whole check of the other link after the read it
+rests on (A2544). Narrowing §11.3's check to such links keeps its answers
 for every other project as they were (§11.3 had no `probe_not_configured`
 before), which is the inferred part of this entry.
 
 **Rejected alternatives:**
-- A row lock held over the check's forge reads: two engines would not
-  both call the forge, but a slow forge would hold the link's row and
-  every writer of it waiting for the whole check.
+- A row lock held over the check's forge reads (`SELECT … FOR UPDATE`
+  kept open across them): two engines would not both call the forge,
+  but a slow forge would hold the link's row and every writer of it
+  waiting for the whole check.
 - A mint retry for a `suspended` link on its own throttle, as for a
   user account: a mint alone never sets it `active`, and a throttle from
   the suspension ends after the last success's 10 minutes anyway, so it

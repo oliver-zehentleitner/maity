@@ -17,8 +17,9 @@ import json
 import urllib.error
 import urllib.request
 from collections import OrderedDict
+from collections.abc import Iterator
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -76,6 +77,7 @@ class FakeApp:
         self.calls: list[str] = []
         self.kept: list[bool] = []  # `keep` of each mint
         self.during_check: Any = None  # called once while the owner check reads the membership
+        self.during_own: Any = None  # called once while linking reads the user's own membership
 
     def installation(self, installation_id: int) -> dict[str, Any] | None:
         self.calls.append("installation")
@@ -97,6 +99,9 @@ class FakeApp:
         found: dict[str, Any] = {"id": user_id, "login": login}
         if organisation is not None:
             self.calls.append(f"own_membership:{organisation}")
+            if self.during_own is not None:
+                hook, self.during_own = self.during_own, None
+                hook()
             answer = self.own.get(user_id)
             if isinstance(answer, BaseException):
                 raise answer
@@ -195,6 +200,42 @@ def repo(monkeypatch: pytest.MonkeyPatch) -> FakeForge:
 def settings(settings: Settings) -> Settings:
     # No instance namespaces: the operator's token serves none of these projects.
     return replace(settings, forge_github_token=OPERATOR, github_app=APP, secret_key=KEY)
+
+
+class HeldClock:
+    """The hub's clock, still unless a test moves it."""
+
+    def __init__(self) -> None:
+        self.moment = clock.now()
+
+    def __call__(self) -> datetime:
+        return self.moment
+
+    def advance(self, by: timedelta) -> None:
+        self.moment += by
+
+
+@pytest.fixture
+def held_clock() -> Iterator[HeldClock]:
+    held = HeldClock()
+    clock.set_source(held)
+    try:
+        yield held
+    finally:
+        clock.reset()
+
+
+def _own_read_takes(app: FakeApp, held: HeldClock, by: timedelta) -> list[datetime]:
+    """Linking's read of the user's own membership takes `by` on the clock; the time it was
+    made, once it was."""
+    made: list[datetime] = []
+
+    def reading() -> None:
+        made.append(held())
+        held.advance(by)
+
+    app.during_own = reading
+    return made
 
 
 @pytest.fixture
@@ -313,13 +354,27 @@ def test_an_owner_links_the_installation_and_the_link_is_its_first_check(
     assert "own_membership:acme" in app.calls
     row = _link_row(migrated)
     assert (row.account_type, row.status, row.forge_user_id) == ("Organization", "active", 42)
-    assert row.owner_ok_at == row.checked_at == row.linked_at
+    assert row.owner_ok_at == row.checked_at <= row.linked_at
     body = owner.get("/me/forge")
     [link] = body.json()["links"]
     assert link["account"] == {"login": "acme", "type": "Organization"}
     assert (link["status"], link["repositories_shown"]) == ("active", [REPO])
     assert "forge_user_id" not in body.text and "owner_ok_at" not in body.text
     assert _records(migrated, owner.id) == ["linked"]
+
+
+def test_the_first_check_at_linking_counts_from_the_membership_read(
+    owner: flow.Human, app: FakeApp, migrated: Engine, held_clock: HeldClock
+) -> None:
+    """Review A2544 P2-1: the link's first success is never later than the read it rests on,
+    so it serves no longer than 10 minutes after that read."""
+    made = _own_read_takes(app, held_clock, timedelta(minutes=1))
+    assert link_setup(owner, INSTALLATION, start(owner)) == DONE
+    [read] = made
+    row = _link_row(migrated)
+    assert row.owner_ok_at == row.checked_at <= read
+    assert row.linked_at - row.owner_ok_at >= timedelta(minutes=1)
+    assert not forge_links.serves(row, read + TEN)
 
 
 @pytest.mark.parametrize(
@@ -896,6 +951,25 @@ def test_another_owner_replaces_a_link_whose_check_says_no_owner(
     row = _link_row(migrated)
     assert (row.human_id, row.forge_user_id, row.status) == (anna.id, 43, "active")
     assert owner.get("/me/forge").json()["links"] == []
+
+
+def test_a_replacements_first_check_counts_from_the_membership_read_not_after_the_other_check(
+    owner: flow.Human, anna: flow.Human, app: FakeApp, migrated: Engine, held_clock: HeldClock
+) -> None:
+    """Review A2544 P2-1: the existing link's owner check runs between the new owner's
+    membership read and the write of the new link; it takes 4 minutes here, and the new link's
+    first success still counts from before the read."""
+    _org_link(migrated, owner.id, checked=timedelta(0), ok=timedelta(0))
+    app.memberships[("acme", "maintainer-gh")] = owner_of(42, role="member")
+    made = _own_read_takes(app, held_clock, timedelta(seconds=1))
+    app.during_check = lambda: held_clock.advance(timedelta(minutes=4))
+    assert _anna_links(anna) == DONE
+    [read] = made
+    row = _link_row(migrated)
+    assert (row.human_id, row.status) == (anna.id, "active")
+    assert row.owner_ok_at == row.checked_at <= read
+    assert row.linked_at - row.owner_ok_at >= timedelta(minutes=4)
+    assert not forge_links.serves(row, read + TEN)
 
 
 def test_a_removed_link_is_replaced_with_no_check(

@@ -156,7 +156,10 @@ def verify(app: GitHubApp, installation_id: int, code: str) -> dict[str, Any]:
     """The installation, read with the App's key, when the user the code belongs to may link
     it; `LinkError` otherwise, in the order of §11.4: the installation's existence, then the
     account check by kind. An installation on a forge organisation comes back with the
-    linking user's id as `forge_user_id`. Makes forge reads: no connection is held."""
+    linking user's id as `forge_user_id` and, as `owner_checked_at`, the time taken before the
+    user's membership was read: the owner check at linking counts from it, never from when the
+    link is written (a replacement's check of the other link runs in between). Makes forge
+    reads: no connection is held."""
     found = app.installation(installation_id)
     if found is None:
         raise LinkError("installation_not_yours")
@@ -169,10 +172,11 @@ def verify(app: GitHubApp, installation_id: int, code: str) -> dict[str, Any]:
     if account["type"] == ORGANISATION and isinstance(account.get("login"), str):
         # Any refusal of the membership read but a definite answer raises
         # `ForgeUnavailableError` from here: no answer, never a "no".
+        started = clock.now()
         user = app.user_of_code(code, account["login"])
         if not is_owner(user["membership"], account["id"]):
             raise LinkError("not_organisation_admin")
-        return {**found, "forge_user_id": user["id"]}
+        return {**found, "forge_user_id": user["id"], "owner_checked_at": started}
     raise LinkError("organisation_installation")
 
 
@@ -189,6 +193,10 @@ def link(
     again with `replacing`, the link as the check found it and what came of it."""
     now = clock.now()
     organisation = found["account"]["type"] == ORGANISATION
+    # The owner check at linking is the link's first check and its first success, counted
+    # from before `verify` read the membership (`owner_checked_at`), as `apply_check` counts
+    # from the claim: never from now, which may be a replacement's whole check later.
+    checked: datetime = found["owner_checked_at"] if organisation else now
     existing = _existing(conn, found["id"])
     if existing is not None and existing.human_id != human_id:
         write_guard.share(conn, existing.human_id)  # the other human's record below
@@ -199,10 +207,9 @@ def link(
         "account_type": found["account"]["type"],
         "repository_selection": found.get("repository_selection") or "selected",
         "status": "suspended" if found.get("suspended") else "active",
-        "checked_at": now,
-        # The owner check at linking is the link's first check and its first success.
+        "checked_at": checked,
         "forge_user_id": found.get("forge_user_id") if organisation else None,
-        "owner_ok_at": now if organisation else None,
+        "owner_ok_at": checked if organisation else None,
     }
     if existing is not None and existing.human_id != human_id:
         if not organisation:

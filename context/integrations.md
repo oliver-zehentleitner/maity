@@ -33,7 +33,7 @@ descriptions repeats the incident it is meant to prevent.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4; re-checked 2026-11-23 when the owner adopted installations on a GitHub organisation (the entry linked below)
-**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). Re-checked 2026-11-23: the contract now links an installation on a GitHub organisation for one of its owners (§11.4, not built yet); the code still refuses one (`hub/src/maity_hub/forge_links.py`, `organisation_installation`) until that is built
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). Re-checked 2026-11-23: the contract now links an installation on a GitHub organisation for one of its owners (§11.4); the code then still refused one (`hub/src/maity_hub/forge_links.py`, `organisation_installation`) until that was built. Re-checked 2026-11-24 in hub PR 2 of card tsk-2m5jbwemb21x (#2192), which builds it: `forge_links.verify` links such an installation for an active owner of the organisation and refuses anyone else with `not_organisation_admin`, and `organisation_installation` now refuses only an account that is neither a user nor an organisation; tested in `hub/tests/test_forge_org_links.py`, the check's claim also live on PostgreSQL 16 and MariaDB 11.4 (review A2544)
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
 **See:** https://github.com/oliver-zehentleitner/maity — 6af0bb67-32dd-40df-91df-df1eb03288fc — as of 2026-11-04
 **See:** integrations.md#the-instance-token-serves-only-the-operators-own-namespaces-every-other-project-connects-its-repository-itself — ce611bd9-ef89-43e2-8895-2340f87f6c6e — as of 2026-11-04
@@ -144,7 +144,10 @@ repositories and serves no project, and the linking human gets a
 security item when the status becomes `not_admin`, not again on a later
 failed check of a link that is `not_admin` already. A check that
 succeeds restores `active`. The owner check at linking is the link's
-first check and its first success. Every other
+first check and its first success, and like every check it counts from
+when it started: the link's `owner_ok_at` and `checked_at` are the time
+taken right before the user's own membership was read, never when the
+link was written (review A2544). Every other
 refusal (a missing permission and a rate limit included) and no answer
 change no status, but the link then serves nothing once its last
 success is 10 minutes old; at linking they write no link and answer
@@ -252,7 +255,13 @@ reader already sees. The replaced human's `not_admin` record is the
 only `security` item of a replacement, since `unlinked` notifies
 nothing. A replacement's check is outside the cadence; counting its
 non-answer would let an owner who passes the owner check stop another
-owner's working link for 10 minutes.
+owner's working link for 10 minutes. The success at linking counts from
+the membership read for the same reason a re-check's counts from its
+claim: the 10 minutes a link serves must be counted from the forge
+answer it rests on, and on a replacement the other link's whole check
+(up to four forge reads) runs between that read and the write of the
+new link, so a time taken at the write would let the link serve for
+longer than 10 minutes after its only success (review A2544).
 
 Open, without a ruling yet: narrowing the read tokens' permissions (a
 token without Members, for example, for the reads that do not need it)
@@ -328,6 +337,10 @@ narrowing of question 8 below.
 - Counting a replacement's check without a definite answer as the
   link's last check (A2500): it would start the existing link's
   10-minute wait and stop it serving on a recent success.
+- Stamping a new link's first success with the time it is inserted, as
+  hub PR 2 first did (review A2544): on a replacement that time comes a
+  whole check of the other link after the membership read, and the link
+  would then serve past the 10-minute bound.
 
 ## The instance token serves only the operator's own namespaces; every other project connects its repository itself
 
