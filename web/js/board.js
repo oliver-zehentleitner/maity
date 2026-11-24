@@ -91,6 +91,8 @@ window.Maity = window.Maity || {};
   // nobody yet. The dot is decoration; the words say it.
   function holderPresence(ctx, holder) {
     const member = (ctx.memberById || {})[holder];
+    // An outsider reads no presence (docs/api.md §2.3): nothing to say beside the holder.
+    if (M.trust.outsider(ctx)) return h("span", { class: "holder-presence", "data-holder": holder });
     return h("span", { class: "holder-presence", "data-holder": holder }, member
       ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
         " " + presenceWord(member.presence), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
@@ -192,7 +194,8 @@ window.Maity = window.Maity || {};
   // In the opened card: its parent and related cards for whoever may edit
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
-    if (!manage || !manage.reload) return null;
+    // An outsider (docs/api.md §2.3) edits no card and starts no subtask.
+    if (!manage || !manage.reload || !M.trust.writes(ctx)) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
     // The board's cards as they are now: byId is filled in place at every draw, and the late draw
     // may keep this part (draw, showPanelPart), so New subtask reads them when it is opened.
@@ -603,10 +606,12 @@ window.Maity = window.Maity || {};
       if (target) target.focus();
     };
     const E = M.boardEdit;
-    const controls = manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
+    // An outsider (docs/api.md §2.3) moves, assigns and places no card: no row of controls, no drag.
+    const writes = manage && M.trust.writes(ctx);
+    const controls = writes ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign, manage.handOver),
       E.orderControl(ctx, c, manage.columnOf, manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
-    const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
+    const movable = writes && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const draggable = movable && !inPanel;
     const el = h("article", {
       class: "card card-" + c.kind + (draggable ? " movable" : ""),
@@ -642,7 +647,8 @@ window.Maity = window.Maity || {};
       family(ctx, c, inPanel),
       edges(c.kind === "release" ? M.t("board.edges.ships") : M.t("board.edges.depends_on"), c.depends_on, byId, frozen),
       edges(M.t("board.edges.ships_with"), c.ships_with, byId),
-      c.blocked_by_request
+      // A request it waits for is answered in the inbox, a member's (§7): not offered to an outsider.
+      c.blocked_by_request && M.trust.writes(ctx)
         ? h("p", { class: "flag" }, M.tn("board.waits", {
           answer: h("a", { href: ctx.link("inbox") }, M.t("board.waits.answer")),
           request: h("span", { class: "request-id" }, c.blocked_by_request),
@@ -654,8 +660,8 @@ window.Maity = window.Maity || {};
             watchers: c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)]) })
           : M.tn("board.contract.line", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
-      // Its section from the repository (§6.8).
-      c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
+      // Its section from the repository (§6.8); not for an outsider, who reads no …/contract (§2.3).
+      c.contract && M.contractPanel && M.trust.writes(ctx) ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       subtasks(ctx, c, byId, inPanel),
       inPanel ? familyEditor(ctx, c, byId, manage) : null,
@@ -685,7 +691,8 @@ window.Maity = window.Maity || {};
     // whatever the filters said; the board's own title keeps them.
     const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
     let marked = wanted || returning;
-    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin.
+    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin; an outsider has
+    // no trust and no role, so none.
     ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -964,6 +971,15 @@ window.Maity = window.Maity || {};
         : null));
     const assign = (c, who, focusKey) => write({ busy: M.t("board.assign.busy"), failed: M.t("board.assign.failed") }, M.t("board.assign.done", { id: c.id, name: ctx.nameOf(who) }),
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
+    // An open card claimed for an outsider's agent (§6.5 "Until the claim request is built",
+    // js/board-edit.js assignControl): its one active instance named where the member list shows
+    // one, else the member, which the agent's distribution resolves (§6.5).
+    const handOver = (c, m, focusKey) => {
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      const holder = active.length === 1 ? m.id + "#" + active[0].id : m.id;
+      return write({ busy: M.t("board.claim_for.busy"), failed: M.t("board.claim_for.failed") }, M.t("board.claim_for.done", { id: c.id, name: ctx.nameOf(m.id) }),
+        () => M.api.post(cardPath(c) + "/claim", { holder }), focusKey);
+    };
 
     // Dragging: the columns the card may go to are marked, the others refused.
     // A browser fires drop only where dragover allowed it, so a card let go
@@ -1030,7 +1046,7 @@ window.Maity = window.Maity || {};
       [panelCard, byId[updated.id], items.find((t) => t.id === updated.id), boardItems.find((t) => t.id === updated.id)]
         .forEach((t) => { if (t && t !== updated && t.id === updated.id) Object.assign(t, updated); });
     };
-    const manage = { move, assign, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
+    const manage = { move, assign, handOver, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
@@ -1578,10 +1594,11 @@ window.Maity = window.Maity || {};
       silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
     }
 
-    const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
+    // An outsider (docs/api.md §2.3) creates no card.
+    const newButton = !M.trust.writes(ctx) ? null : h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
     formBox.id = "new-card-box";
     const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
-    newButton.addEventListener("click", () => {
+    if (newButton) newButton.addEventListener("click", () => {
       if (newButton.getAttribute("aria-expanded") === "true") { closeForm(); return; }
       const f = E.newCardForm(ctx, items, async (body) => {
         const created = await M.api.post(ctx.base + "/tasks", body);
@@ -1687,7 +1704,8 @@ window.Maity = window.Maity || {};
     else if (wanted) {
       wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, days: CLOSED_WINDOW_DAYS });
     }
-    ctx.every(30000, async () => {
+    // The holders' presence, read again every 30 s; an outsider reads none (§2.3), so not for them.
+    if (!M.trust.outsider(ctx)) ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
         M.withMembers(ctx, fresh);

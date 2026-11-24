@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 import tomllib
 import unicodedata
 from collections.abc import Callable, Sequence
@@ -29,6 +30,7 @@ from maity.runner import (
     config,
     loop,
     operate,
+    skills,
     supervisor,
     targets,
     workspace,
@@ -169,14 +171,17 @@ def test_the_settings_profile(tmp_path: Path) -> None:
     token = home / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
     hidden = [git_dir / "maity", tmp_path / "st", home / ".ssh", token, other]
     assert adapters.antigravity_settings(ctx) == {
-        # Not `auto`, agy 1.5.7's default, whose reviewer may let a command leave the sandbox.
-        "agentMode": "",
+        # `accept-edits` in interactive mode (PLACEMENT): the file tools' edits are accepted
+        # without a prompt. Never `auto`, agy 1.5.7's default, whose reviewer may let a command
+        # leave the sandbox.
+        "agentMode": "accept-edits",
         "toolPermission": "proceed-in-sandbox",
         "enableTerminalSandbox": True,
         "trustedWorkspaces": [str(ctx.folder)],
         "permissions": {
             # No command grant is applied to agy: `python3 -m pytest *` and `make test` both
-            # run in agy's sandbox, so only `command(maity)` and the hosts are allowed.
+            # run in agy's sandbox, so only `command(maity)` and the hosts are allowed. No
+            # skill is delivered here, so no `read_file` allow; no `write_file` allow ever.
             "allow": [
                 "command(maity)",
                 "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
@@ -201,6 +206,22 @@ def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None
     assert f"read_file({home / '.gemini' / adapters.AGY_LOGIN.relative_to('.gemini')})" in deny
 
 
+def test_accept_edits_in_interactive_mode_only(tmp_path: Path) -> None:
+    """Interactive gets `accept-edits`, so the file tools' edits are accepted without a prompt;
+    supervised runs headless and keeps the empty default mode."""
+    assert adapters.antigravity_settings(context(tmp_path / "i"))["agentMode"] == "accept-edits"
+    supervised = context(tmp_path / "s", placement={"id": "plc-0003", "mode": "supervised"})
+    assert adapters.antigravity_settings(supervised)["agentMode"] == ""
+
+
+def test_supervised_asks_the_loop_to_reap_the_turns_process_group(tmp_path: Path) -> None:
+    """agy has no setting to stop a background task outliving a turn, so the spec asks the
+    loop to end each turn's own process group (decision 4); interactive runs no loop."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
+    spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
+    assert spec["reap_process_group"] is True
+
+
 def test_the_delivered_skill_is_never_written_by_agys_file_tools(tmp_path: Path) -> None:
     # The review of #2056: read through MAITY_KTW_SKILL_DIR, so its write_file is denied.
     skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
@@ -218,6 +239,34 @@ def test_in_the_agent_user_layout_agy_never_writes_the_agents_copy(tmp_path: Pat
     ctx = context(tmp_path, skill=skill, as_user=AsUser("agents"))
     deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
     assert f"write_file({skill})" in deny and f"read_file({skill})" not in deny
+
+
+def test_agys_sandbox_mounts_the_delivered_skill_read_only(tmp_path: Path) -> None:
+    # tsk-c16hnxm0vc37: agy's sandbox hides what no rule allows, so the skill gets a read_file
+    # allow (mounted read-only) while its write_file deny stays and wins over any allow.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    permissions = adapters.antigravity_settings(context(tmp_path, skill=skill))["permissions"]
+    assert f"read_file({skill})" in permissions["allow"]
+    assert f"write_file({skill})" in permissions["deny"]
+    assert f"write_file({skill})" not in permissions["allow"]
+    plain = adapters.antigravity_settings(context(tmp_path / "n"))["permissions"]["allow"]
+    assert not [rule for rule in plain if "skills" in rule]
+
+
+def test_agys_git_denies_stand_and_no_write_allow_is_given(tmp_path: Path) -> None:
+    # tsk-c16hnxm0vc37: `.git` stays as agy's sandbox mounts it until a live probe shows that a
+    # write deny inside a writable mount holds, so agy gets no `write_file` allow at all; a
+    # skill read allow does not change that. The names are spelled out, not read from
+    # GIT_PROTECTED, so a shorter tuple fails here too.
+    skill = tmp_path / "skills" / "keep-the-why" / ("a" * 40 + "-" + "b" * 16) / "plugin"
+    for ctx in (context(tmp_path / "plain"), context(tmp_path / "skilled", skill=skill)):
+        git_dir = ctx.clone / ".git"
+        permissions = adapters.antigravity_settings(ctx)["permissions"]
+        assert not [rule for rule in permissions["allow"] if rule.startswith("write_file(")]
+        for tool in ("read_file", "write_file"):
+            assert f"{tool}({git_dir / 'maity'})" in permissions["deny"]
+        for name in ("config", "config.worktree", "hooks", "info", "objects/info/alternates"):
+            assert f"write_file({git_dir / name})" in permissions["deny"]
 
 
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
@@ -593,6 +642,159 @@ def test_the_loop_waits_in_the_clone_its_spec_names(
     monkeypatch.setattr(loop, "_wait", wait)
     waits[0]()
     assert called == ["/ws/p/c/repo"]
+
+
+# --- the supervised loop ends each turn's own process group (decision 4) ----------------------
+
+
+def test_the_spec_flag_picks_the_reaping_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`reap_process_group` in the spec makes the loop run each turn through `_run_reaped`;
+    without it the plain `_run` is used, so other harnesses are unchanged."""
+    picked: list[Any] = []
+
+    def record(self: loop.Loop) -> int:
+        picked.append(self.run)
+        return 0
+
+    monkeypatch.setattr(loop.Loop, "main", record)
+    for flag in (True, False):
+        spec = tmp_path / f"loop-{flag}.json"
+        spec.write_text(json.dumps({"first": [], "again": [], "reap_process_group": flag}))
+        assert loop.main(["--spec", str(spec)]) == 0
+    assert picked == [loop._run_reaped, loop._run]
+
+
+def _alive(pid: int) -> bool:
+    """Whether `pid` is a process still doing something. A zombie (already exited, not yet
+    reaped) counts as gone, as `loop._reap` treats it: `os.kill(pid, 0)` alone would call a
+    defunct process alive and, in a PID namespace, make the reap look stalled."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as fh:
+            stat = fh.read()
+    except OSError:
+        return False
+    tail = stat[stat.rfind(")") + 1 :].split()
+    return not (tail and tail[0] == "Z")
+
+
+def test_the_reaping_run_ends_a_background_process_the_turn_left(tmp_path: Path) -> None:
+    """A turn that leaves a background process behind: the reaping run ends the turn's own
+    process group, so the leftover is gone, while a process in another group is left alone."""
+    # A sentinel in a group of its own (start_new_session): it must survive the reap.
+    sentinel = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        pidfile = tmp_path / "bg.pid"
+        # The "turn": a non-interactive shell (one process group) that starts a background
+        # process and exits; `maity wait` left running is this shape.
+        script = f"sleep 30 & echo $! > {shlex.quote(str(pidfile))}; exit 0"
+        assert loop._run_reaped(["sh", "-c", script], {}) == 0
+        leftover = int(pidfile.read_text())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and _alive(leftover):
+            time.sleep(0.05)
+        assert not _alive(leftover)  # the leftover was in the turn's group: reaped
+        assert _alive(sentinel.pid)  # another group: never signalled
+    finally:
+        sentinel.terminate()
+        sentinel.wait(timeout=5)
+
+
+def test_the_reaping_run_bounds_a_turn_that_never_terminates(tmp_path: Path) -> None:
+    """A harness that never exits — here a non-interactive shell that starts a background child
+    and then `wait`s on it forever — is stopped at the turn's bound and the whole group reaped,
+    so the turn ends (EXIT_TURN) instead of hanging the loop."""
+    pidfile = tmp_path / "bg.pid"
+    # The "turn": a shell that backgrounds a long sleep and waits on it indefinitely; it never
+    # returns on its own, unlike a shell that merely leaves a background process and exits.
+    script = f"sleep 300 & echo $! > {shlex.quote(str(pidfile))}; wait"
+    started = time.monotonic()
+    code = loop._run_reaped(["sh", "-c", script], {}, timeout=0.5)
+    assert time.monotonic() - started < 20  # bounded, not hung on the never-returning shell
+    assert code == loop.EXIT_TURN
+    leftover = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _alive(leftover):
+        time.sleep(0.05)
+    assert not _alive(leftover)  # the whole turn group, the waiting shell included, was reaped
+
+
+def test_reap_never_signals_pid_0_or_1(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_reap` refuses a group id of 0 or 1, which could name a wide group, and does nothing
+    for an already-empty group (ProcessLookupError)."""
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+    loop._reap(0)
+    loop._reap(1)
+    assert killed == []
+
+    def gone(pgid: int, sig: int) -> None:
+        raise ProcessLookupError
+
+    monkeypatch.setattr(os, "killpg", gone)
+    loop._reap(999999)  # an empty group: ProcessLookupError is swallowed, no crash
+
+
+class _Done(Exception):
+    """Ends a loop under test at its second wait."""
+
+
+def _loop_with(codes: list[int]) -> tuple[loop.Loop, list[Any], list[str], list[float]]:
+    """A Loop whose runs exit with `codes` in turn (then 0), whose first wait hands event 5
+    and whose second ends the test; what happened in order (`("run", argv)` and `"wait"`),
+    its log and its sleeps."""
+    happened: list[Any] = []
+    logs: list[str] = []
+    sleeps: list[float] = []
+    waits = iter([(0, '{"seq": 5}', "")])
+
+    def run(argv: list[str], env: dict[str, str]) -> int:
+        happened.append(("run", argv))
+        return codes.pop(0) if codes else 0
+
+    def wait() -> tuple[int, str, str]:
+        happened.append("wait")
+        try:
+            return next(waits)
+        except StopIteration:
+            raise _Done from None
+
+    spec = {"first": ["agy", "-p", "first"], "again": ["agy", "-c", "-p", "again"],
+            "restart": dataclasses.asdict(config.Restart())}  # fmt: skip
+    turns = loop.Loop(spec, run, wait, sleep=sleeps.append, now=lambda: 100.0,
+                      rand=lambda: 0.5, log=logs.append)  # fmt: skip
+    return turns, happened, logs, sleeps
+
+
+def test_a_turn_ended_at_its_time_limit_is_not_run_again_and_the_next_event_starts_one() -> None:
+    """EXIT_TURN through `turn` itself: the timed-out turn is not started again and counts no
+    crash; the loop waits, and the next event's turn starts (P1 of #1939's pre-review)."""
+    turns, happened, logs, sleeps = _loop_with([loop.EXIT_TURN])
+    with pytest.raises(_Done):
+        turns.main()
+    first, again = ("run", turns.spec["first"]), ("run", turns.spec["again"])
+    assert happened == [first, "wait", again, "wait"]  # no retry before the wait
+    assert "the turn hit its time limit and was ended; waiting for the next event" in logs
+    assert turns.crashes == [] and sleeps == [loop.SETTLE]  # no backoff, only the settle
+
+
+def test_another_failed_turn_still_backs_off_and_runs_again() -> None:
+    """The counterpart: any other non-zero exit counts against the cap and runs again after
+    the backoff, before the loop waits."""
+    turns, happened, logs, sleeps = _loop_with([1])
+    with pytest.raises(_Done):
+        turns.main()
+    first, again = ("run", turns.spec["first"]), ("run", turns.spec["again"])
+    assert happened[:3] == [first, again, "wait"]  # retried before any wait
+    assert "the run exited 1" in logs and len(turns.crashes) == 1
+    assert sleeps[0] > 0  # the backoff before the retry
 
 
 # --- what the runner advertises ---------------------------------------------------------------
@@ -1987,6 +2189,36 @@ def settle(sup: supervisor.Supervisor) -> None:
     for task in list(sup.tasks.values()):
         task.join(10)
     sup.tick()
+
+
+def test_a_skill_store_behind_a_link_reaches_the_session_and_agy_resolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review of #2147 (kduz, A2266): a link above the skills directory (a linked home)
+    gave MAITY_KTW_SKILL_DIR and agy's `read_file` allow a path other than the one agy's
+    sandbox mounts. On a local target the supervisor hands out the resolved copy, so the
+    session's directory and every rule name the same real path."""
+    sup, _, _ = started(tmp_path, monkeypatch)
+    real = tmp_path / "home-real"
+    real.mkdir()
+    (tmp_path / "home-link").symlink_to(real)
+    linked = dataclasses.replace(sup.cfg, skills_dir=tmp_path / "home-link" / "skills")
+    monkeypatch.setattr(sup, "cfg", linked)
+    commit = "c" * 40
+    monkeypatch.setattr(
+        skills, "ensure", lambda skills_dir, *_: skills_dir / "keep-the-why" / commit / "plugin"
+    )
+    source = "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
+    named = placement(keep_the_why={"source": source, "commit": commit})
+    skill = sup._skill(named, sup.targets["local"])
+    resolved = real.resolve() / "skills" / "keep-the-why" / commit / "plugin"
+    assert skill == resolved
+    ctx = context(tmp_path / "ctx", skill=skill)
+    assert adapters.skill_env(ctx) == {"MAITY_KTW_SKILL_DIR": str(skills.skill_in(resolved))}
+    permissions = adapters.antigravity_settings(ctx)["permissions"]
+    assert f"read_file({resolved})" in permissions["allow"]
+    assert f"write_file({resolved})" in permissions["deny"]
+    assert not [rule for rule in json.dumps(permissions).split('"') if "home-link" in rule]
 
 
 def test_an_antigravity_placement_starts_agy_in_its_workspace_folder(

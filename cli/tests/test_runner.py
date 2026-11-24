@@ -9,13 +9,14 @@ import sys
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import fakehub
 import pytest
 from conftest import fake_opencode, posix
 
 from maity import cli, state
-from maity.runner import adapters, capabilities, commands, config
+from maity.runner import adapters, capabilities, commands, config, tools, workspace
 from maity.runner.asuser import RUNNER, AsUser
 
 MINIMAL = """\
@@ -81,6 +82,78 @@ def test_tilde_is_expanded(home: Path) -> None:
     assert cfg.state_dir == home / "st"
     assert cfg.local is not None
     assert cfg.local.workspaces == home / "maity-workspaces"
+
+
+@pytest.mark.parametrize("bad", ["/srv/ws*", "/srv/w?rk", "/srv/[ab]/ws"])
+def test_a_workspaces_root_with_a_glob_character_is_refused(bad: str) -> None:
+    """The clone path, built under the workspaces root, is embedded literally in a
+    `Bash(git -C <clone> …)` allow rule, where Claude Code treats `*`, `?` and `[]` as
+    wildcards; a root carrying one would widen the rule, so it is refused (tsk-66zyvc4xnhtv,
+    #1962 round 2)."""
+    found = problems(minimal(b=f'\n[backend.local]\nworkspaces = "{bad}"\n'))
+    assert any("backend.local.workspaces" in p and "must not contain" in p for p in found)
+
+
+# The raw check above sees only the configured string. A root with no glob character in its raw
+# form can still RESOLVE to one — a symlink to a wildcard path, or a relative or `~` root joined
+# onto a wildcard-bearing cwd or home — and the resolved path is the string that reaches the
+# `Bash(git -C <clone> …)` rule. `workspace.locate` is the choke point every placement passes
+# through, so the resolved path is refused there, fail-closed (tsk-66zyvc4xnhtv, #1962 round 3).
+
+
+def test_locate_refuses_a_root_that_is_a_symlink_to_a_wildcard_path(tmp_path: Path) -> None:
+    """A root with no glob character of its own, symlinked to a real directory whose name holds
+    a `*`: the raw check passes, but `locate` resolves the symlink and refuses the wildcard."""
+    real = tmp_path / "wild*root"
+    real.mkdir()
+    link = tmp_path / "clean-root"
+    link.symlink_to(real)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(link, "proj", "clone")
+    assert info.value.reason == "workspace_in_use"
+    assert "*" in (info.value.why or "") and str(real) in (info.value.why or "")
+
+
+def test_locate_refuses_a_relative_root_resolving_under_a_wildcard_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative root resolves against the current directory; a `?` in that directory's path
+    then rides into the resolved clone path, where `locate` refuses it."""
+    cwd = tmp_path / "cwd?dir"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(Path("ws"), "proj", "clone")
+    assert "carries the character(s) ? that" in (info.value.why or "")
+
+
+def test_locate_refuses_a_tilde_root_whose_home_carries_a_wildcard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `~` root is expanded with the user's home (config does this with `.expanduser()`); a
+    `[`/`]` in that home rides into the resolved path, which the raw check on `"~/ws"` never
+    saw. `locate` refuses the expanded, resolved path."""
+    home = tmp_path / "home[1]"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    root = Path("~/ws").expanduser()  # exactly what config.parse stores for the workspaces root
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(root, "proj", "clone")
+    # The reported character list, not the whole message: the path itself holds both brackets,
+    # so only the list fails when either bracket is dropped from the refused set.
+    assert "carries the character(s) [ ] that" in (info.value.why or "")
+
+
+def test_scratch_of_refuses_a_resolved_wildcard_root(tmp_path: Path) -> None:
+    """The scratch is the other resolved-root path embedded in the file-tool rules, so its
+    choke point refuses a wildcard root too (here a symlink to a `*` path)."""
+    real = tmp_path / "wild*root"
+    real.mkdir()
+    link = tmp_path / "clean-root"
+    link.symlink_to(real)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.scratch_of(link, "proj", "plc-abc123")
+    assert "*" in (info.value.why or "")
 
 
 @pytest.mark.parametrize(
@@ -929,6 +1002,51 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     assert all(line.startswith("warn") for line in found)
 
 
+@pytest.mark.parametrize(
+    ("track", "version", "level"),
+    [("newest", "2.1.330", "note"), ("newest", "2.1.318", "warn"), ("checked", "2.1.330", "warn")],
+)
+def test_check_only_notes_a_newer_claude_code_the_operator_chose(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    track: str,
+    version: str,
+    level: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    fake_tool(bin_dir, "bwrap")
+    fake_tool(bin_dir, "socat")
+    paired.write_text(paired.read_text() + f'\n[harness.claude-code]\ntrack = "{track}"\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    found = [line for line in lines(capsys) if "2.1.325" in line and version in line]
+    assert len(found) == 1 and found[0].startswith(level), found
+    if level == "note":
+        assert 'track = "newest"' in found[0]
+    elif version == "2.1.330":  # above the checked one under "checked": the way back
+        assert "install 2.1.325 yourself" in found[0] and 'track = "newest"' in found[0]
+
+
+@pytest.mark.parametrize(
+    ("kept", "said"), [("2.1.325", "rollback claude-code"), (None, "no version")]
+)
+def test_check_points_a_managed_claude_code_above_the_checked_one_back(
+    tmp_path: Path, kept: str | None, said: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(capabilities.CHECKED, "claude-code", "2.1.325")
+    tools.save(tmp_path, "claude-code", tools.ToolState(version="2.1.330", previous_version=kept))
+    harness = config.Harness("claude-code", ("supervised",), "supervised", update="daily")
+    report = commands.Report()
+    commands._check_version(report, harness, "2.1.330", tmp_path)
+    ((level, text),) = report.lines
+    assert level == "warn" and said in text and "takes at most 2.1.325" in text, text
+
+
 def test_check_requires_the_sandbox_when_configured(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1745,6 +1863,83 @@ def test_check_warns_when_the_host_lacks_what_a_grant_needs(
     report = commands.Report()
     commands._check_grant_programs(report, cfg, str(bin_dir))
     assert report.lines == []
+
+
+@pytest.mark.parametrize("target", ["/usr/sbin/nologin", "/bin/false"])
+def test_check_names_the_sessions_shell_and_refuses_one_that_runs_no_command(
+    monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """tsk-fjq2k0sx1n3r: the sessions' SHELL is named, and one that is or links to nologin or
+    false is an error, here and on an ssh host."""
+    from maity.runner import tmux
+
+    shell = tmux.BASH if os.access(tmux.BASH, os.X_OK) else tmux.SH
+    report = commands.Report()
+    commands._check_session_shell(report, RUNNER)
+    assert report.lines == [("ok", f"sessions get SHELL={shell}, not the account's login shell")]
+
+    monkeypatch.setattr(os.path, "realpath", lambda path: target)
+    report = commands.Report()
+    commands._check_session_shell(report, RUNNER)
+    monkeypatch.undo()
+    ((level, text),) = report.lines
+    assert level == "error" and f"SHELL={shell} ({target})" in text
+
+    report = commands.Report()
+    side = _ProbedSide("agents", 0, f"shell\t/bin/sh\t{target}\n")
+    commands._check_session_shell(report, side, "h: ")
+    ((level, text),) = report.lines
+    assert level == "error"
+    assert text.startswith(f"h: sessions would get SHELL=/bin/sh ({target})")
+
+
+@dataclasses.dataclass(frozen=True)
+class _ProbedSide(AsUser):
+    """An agents' side the runner reaches through sudo or ssh, whose shell probe answers
+    (`code`, `out`); `remote` False: the agent_user layout, on the runner's own host."""
+
+    code: int = 0
+    out: str = ""
+    remote: bool = True
+
+    @property
+    def here(self) -> bool:
+        return not self.remote
+
+    def run(self, argv: Any, *args: Any, **kwargs: Any) -> Any:
+        import subprocess
+
+        return subprocess.CompletedProcess(list(argv), self.code, self.out, "")
+
+
+@pytest.mark.parametrize(
+    ("code", "out", "level", "said"),
+    [
+        # A2352: the shell runs, but where it leads cannot be read: not checked, never ok.
+        (0, "shell\t/bin/bash\t\n", "warn", "not checked further"),
+        # No answer (ssh's 255, a refused sudo) is not a shell that cannot run.
+        (255, "", "warn", "gave no answer"),
+        (1, "", "warn", "gave no answer"),
+        (0, "none\n", "error", "which the agents' user cannot run"),
+        (0, "shell\t/bin/bash\t/usr/bin/bash\n", "ok", "sessions get SHELL=/bin/bash"),
+    ],
+)
+def test_check_tells_an_unchecked_shell_from_a_failed_look_and_from_one_that_cannot_run(
+    code: int, out: str, level: str, said: str
+) -> None:
+    report = commands.Report()
+    commands._check_session_shell(report, _ProbedSide("agents", code, out), "host-a: ")
+    ((found, text),) = report.lines
+    assert found == level and text.startswith("host-a: ") and said in text, text
+
+
+def test_check_probes_the_shell_as_the_agents_user_in_the_agent_user_layout() -> None:
+    """A2352: on the runner's own host, but for another user, the shell is probed as that
+    user (through sudo), so an ACL that shuts the agents' user out is not taken for ok."""
+    report = commands.Report()
+    commands._check_session_shell(report, _ProbedSide("agents", 0, "none\n", remote=False))
+    ((level, text),) = report.lines
+    assert level == "error" and "which the agents' user cannot run" in text, text
 
 
 GRANT_RAW = {

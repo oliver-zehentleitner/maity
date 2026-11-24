@@ -2174,6 +2174,8 @@ class Supervisor:
                 folder=workspace.uses_folder(harness.id),
             )  # fmt: skip
         except workspace.Refused as refused_:
+            if refused_.why:  # the runner's log only; the report keeps the codes
+                self.log(f"{p['id']}: {refused_.reason}: {refused_.why}")
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
             return 0
         owner = agent.get("id") or agent.get("handle") or ""
@@ -2192,6 +2194,8 @@ class Supervisor:
             try:
                 workspace.owned(self.cfg, place, owner, p["id"])
             except workspace.Refused as refused_:
+                if refused_.why:  # the runner's log only; the report keeps the codes
+                    self.log(f"{p['id']}: {refused_.reason}: {refused_.why}")
                 rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
                 return 0
         has_credential = as_user.exists(place.credential, "-f")
@@ -2410,10 +2414,21 @@ class Supervisor:
             self.note(p["id"], "reset: a fresh session, the last one not resumed", log=False)
         if harness.id == "opencode":  # name the model in effect: the placement's, or the default
             self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
+        self._say_if_unchecked(name, harness, target, view)
+
+    def _say_if_unchecked(
+        self, name: str, harness: config.Harness, target: Target, view: GateView | None
+    ) -> None:
+        """The start log's line about a version other than the checked one, in `check`'s
+        words (capabilities.unchecked_warning / unchecked_note)."""
         found = (view or GateView.of(target, harness.id)).found  # the version that started
-        warning = capabilities.unchecked(harness.id, found.version if found else None)
-        if warning is not None:
-            self.log(f"{name}: {warning}")
+        version = found.version if found else None
+        # The way back as `check` names it; an ssh host's tools are not the runner's.
+        tools_dir = None if target.remote else self.cfg.tools_dir
+        warning = capabilities.unchecked_warning(harness, version, tools_dir)
+        note = capabilities.unchecked_note(harness.id, version, harness.track)
+        if (warning or note) is not None:
+            self.log(f"{name}: {warning or note}")
 
     # --- the join (§15.9) -------------------------------------------------------------------
 
@@ -2582,10 +2597,26 @@ class Supervisor:
             return None
         try:
             if target.as_user.direct and target.as_user.here and not target.host:
-                return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
-            return skills.deliver(target.as_user, self._agents_home(target),
-                                  self.cfg.skills_dir, self.cfg.state_dir, *wanted)  # fmt: skip
-        except (skills.Unavailable, OSError, ValueError, subprocess.SubprocessError) as exc:
+                found = skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
+            else:
+                home = self._agents_home(target)
+                found = skills.deliver(
+                    target.as_user, home, self.cfg.skills_dir, self.cfg.state_dir, *wanted
+                )
+            # Resolved on this machine, as the workspaces are (`_context`): a link above the
+            # skills directory (a linked home) would otherwise give MAITY_KTW_SKILL_DIR and every
+            # harness's rules a path other than the one the sandbox mounts. Only the parts above
+            # `<skills_dir>/keep-the-why` can be links (skills.ensure and verify refuse one at or
+            # below it), so the copy's key, `found.parent.name`, stays. Never on an ssh host.
+            return found.resolve() if target.as_user.here else found
+        except (
+            skills.Unavailable,
+            OSError,
+            ValueError,
+            RuntimeError,
+            subprocess.SubprocessError,
+        ) as exc:
+            # RuntimeError: a link loop above the skills directory, on Python before 3.13.
             # ValueError too (a decoding error, the review of #2089): the skill is never what
             # fails a start, so it is never counted as a crash.
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")

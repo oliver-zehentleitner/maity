@@ -163,6 +163,10 @@ class Harness:
     # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
     install: bool = False
     update: str = "never"
+    # Which version the runner's update takes, for a harness with a sandbox-checked version
+    # (capabilities.CHECKED): "checked" at most that one, "newest" the vendor's newest. It also
+    # decides whether `check` warns about a newer version or only notes it (docs/runners.md).
+    track: str = "checked"
 
 
 @dataclass(frozen=True)
@@ -523,7 +527,9 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             else state_dir
         )
         local = Local(
-            workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
+            workspaces=Path(
+                local_in.get("workspaces", str, DEFAULT_WORKSPACES, check=_no_glob)
+            ).expanduser(),
             tmux_socket=Path(
                 local_in.get("tmux_socket", str, str(agent_files / "tmux.sock"), check=_absolute)
             ).expanduser(),
@@ -688,6 +694,32 @@ def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
 
 
+# Characters Claude Code's permission matcher treats as wildcards (observed on 2.1.327; the set
+# the project's rules use throughout). The clone path, built under the workspaces root, is
+# embedded literally in a `Bash(git -C <clone> …)` allow rule (adapters.claude_settings); one of
+# these in the root would make that rule match more than the clone. The raw root string is
+# checked here as an early, friendly error, but the string that actually reaches a rule is the
+# resolved path: a root that is a symlink to a wildcard path, or a relative or `~` root, carries
+# no wildcard in its raw form yet resolves to one, so the resolved path is checked fail-closed at
+# the placement choke point (workspace.locate, workspace.scratch_of) through `rule_glob_chars`.
+# The ssh host's workspaces path is already confined by REMOTE_PATH, and the project and clone
+# tokens by TOKEN.
+_GLOB_CHARS = "*?[]"
+
+
+def rule_glob_chars(value: str) -> str:
+    """The characters of `value` that Claude Code's Bash permission matcher treats as
+    wildcards (`*`, `?`, `[`, `]`), sorted and space-separated; "" when there are none. The
+    raw workspaces-root check here and the resolved-path check at the placement choke point
+    share this one set, so the early error and the final fail-closed refusal cannot diverge."""
+    return " ".join(sorted({c for c in str(value) if c in _GLOB_CHARS}))
+
+
+def _no_glob(value: Any) -> str | None:
+    bad = rule_glob_chars(str(value))
+    return f"must not contain the character(s) {bad}" if bad else None
+
+
 def home_of(user: str) -> Path:
     """A user's home directory; `/home/<user>` when this host does not know the user (the
     check reports that separately)."""
@@ -823,6 +855,20 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    from maity.runner.capabilities import CHECKED
+
+    if name in CHECKED and not isinstance(table.data.get("track", ""), str):
+        # A Boolean, number, list or table names the choices too, not only "expected a string".
+        track = "checked"
+        table.used.add("track")
+        problems.append(f"{where}.track: expected a string, one of checked, newest")
+    elif name in CHECKED:
+        track = table.get("track", str, "checked", check=_one_of("checked", "newest"))
+    else:  # one problem for any value: the key itself does not belong here
+        track = "checked"
+        table.used.add("track")
+        if "track" in table.data:
+            problems.append(f"{where}.track: only a harness with a sandbox-checked version has one")
     if install or update != "never":
         from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
         from maity.runner.tools import INSTALLERS
@@ -845,6 +891,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         env_file=Path(env_file).expanduser() if env_file else None,
         install=install,
         update=update,
+        track=track,
     )
     if name == "stub":
         return Harness(

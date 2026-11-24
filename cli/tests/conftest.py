@@ -122,11 +122,39 @@ def fake_opencode(
     path.chmod(0o755)
 
 
+def isolate_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop every GIT_* of the shell, and the developer's global and system git config.
+
+    A runner session's GIT_COMMON_DIR sends every test's git to the session's own clone, and
+    its GIT_CONFIG_COUNT/KEY_n/VALUE_n add configuration there. Any other GIT_* does the same:
+    GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE redirect it, and GIT_CONFIG_PARAMETERS, which
+    Claude Code's sandbox sets for its proxy, configures it. A test that needs one sets it
+    itself (`placed` sets GIT_COMMON_DIR)."""
+    for name in list(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
+def isolate_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop every proxy variable of the shell that maity's git keeps (clonecheck.ENV_PROXY).
+
+    Like GIT_*, a shell's proxy changes what a test's git and gh print: a runner session's
+    own environment can carry one with credentials, and then a failed git or gh shows only its
+    exit code and class. A test that needs a proxy sets it itself."""
+    from maity import clonecheck
+
+    for name in clonecheck.ENV_PROXY:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test sees the developer's git config, a MAITY_STATE_DIR or a placement from the
-    shell, and none writes into the developer's home: an interactive Claude Code launch
-    records the clone's folder trust in ~/.claude.json (runner/trust.py)."""
+    """No test sees the developer's git config, the shell's git or proxy variables, a
+    MAITY_STATE_DIR or a placement from the shell, and none writes into the developer's home:
+    an interactive Claude Code launch records the clone's folder trust in ~/.claude.json
+    (runner/trust.py)."""
     home = tmp_path / "isolated-home"  # not `home`: tests make their own
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -134,8 +162,8 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Nor a placement of the shell's: a test that wants one sets it (`placed`).
     monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
     monkeypatch.delenv("MAITY_GIT_PRIVATE", raising=False)
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    isolate_git(monkeypatch)
+    isolate_proxy(monkeypatch)
     # Nor the host's managed Claude Code settings (runner/capabilities.claude_hooks_off).
     from maity.runner import capabilities
 

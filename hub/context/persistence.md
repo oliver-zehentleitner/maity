@@ -757,9 +757,10 @@ matters on PostgreSQL only: there `DESC` puts NULL first, on SQLite last, so a t
 SQLite alone would not notice it missing. The request
 counts are one `GROUP BY priority` statement over the "plain" open requests: no `held`, no
 `cover` and, where they change the answer, no `jour_fixe` (for a holder of
-`requests:answer`) and no `proposal` (for a proxy). Its `where` restates
-`routes/requests.py` `listed_to_all`, and `_addressed_sql` restates `inbox.addressed_to`
-in plain columns. Every other open request is read with only the columns the Python rule
+`requests:answer`) and no `proposal` (for a proxy). Its `where` is
+`request_sql.listed_to_all`, which restates `routes/requests.py` `listed_to_all`, and
+`request_sql.addressed` restates `inbox.addressed_to` in plain columns (`request_sql` is
+shared with the project's request list, 3c9e5a71). Every other open request is read with only the columns the Python rule
 needs and decided by `relayed`, `listed_to_all` and `inbox.addressed_to` unchanged, then
 added to the counts. Each side names the other in a comment.
 
@@ -781,6 +782,70 @@ caller kind.
   the first is not portable across the three engines, the second needs a migration.
   Deferred unless the numbers show the database's sort dominating.
 - Keeping the Python path: the rows read grow with the project, not with the response.
+
+## A project's request list pages in SQL: the plain requests by the database, the others by the Python rule a batch at a time
+
+**Id:** 3c9e5a71-8f2d-4b6e-a1c7-5d0e9b4f2a68
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 4 (keyset paging in SQL for the request lists), the design note approved by the manager as slice (a), the project's list only, 2026-11-19; `hub/tests/test_load_request_paging.py` for the numbers
+**Revisit when:** `GET /requests` across projects gets the same paging (slice b), or held, covered, jour fixe and proxy-proposal requests stop being a few, or the database's sort on the `CASE` rank or the asker's handle dominates a page's time
+**See:** persistence.md#the-overview-reads-its-reports-keys-first-and-counts-open-requests-in-one-grouped-statement-with-a-python-leftover — 8d41e6b2-57ca-4f93-b0d8-2e6a9c15f374 — as of 2026-11-19
+
+`GET /projects/{owner}/{slug}/requests` (`routes/requests.py` `_project_page`) splits the
+requests the filters let through the way the overview does. The "plain" ones (no `held`, no
+`cover`, no `jour_fixe` for a holder of `requests:answer`, no `proposal` for a proxy) are
+decided, ordered and limited by the database: statement A reads their keys after the cursor,
+the page plus one. The others are read after the cursor with only the columns the Python rule
+needs, in the list's order, the page plus one first and then doubling batches, and decided by
+`relayed` and `_decided`, the rule `_filtered` applies. Once A fills its page, they are read
+only up to A's last key. Both merge by key; only the page's rows are read in full. Under READ
+COMMITTED a request that gets a `cover` between A and B is read by both: it is kept once, with
+B's key, the later read and the one the rule that now decides it made, so the page holds no
+duplicate and its cursor no stale place. The page's rows read in full are decided again by
+`relayed` and `_decided`, and read with the listing's own filters (status, class, asker), not
+only by the keys read before: on PostgreSQL every statement of `read_transaction` has its own
+snapshot (READ COMMITTED), so a write between the keys and the full read must not reach a
+caller that the write took the request from. A row that fails is left out; the page may come
+out shorter, and its cursor is built from the last row it keeps, so a cursor only names a row
+the caller was shown. Rows left out after that row are read afresh by the next page. A page
+whose rows all fail reads on past them, up to `READ_ON_ROUNDS` times; if it still keeps none,
+it is empty and its cursor is the one it was called with (on the first page `_start_key`, a
+place before every request), so the next call reads afresh from there. The SQL
+rules live once, in `request_sql` (moved out of the overview, which now imports them), and
+each helper names its Python twin, which names it back. The order is the expanded keyset form
+with the id last: `CASE` over `PRIORITY_RANK` for priority, the asker's handle as one
+expression mirroring `_asker_handles` for the agent sort, and text compared bytewise
+(`COLLATE "C"` on PostgreSQL). The cursor keeps its old `{"s", "k"}` encoding, so a cursor
+handed out before still pages, and a `k` of the wrong shape is `invalid` instead of a 500.
+`_filtered`, `_sorted` and `_page` stay as the readable rule, and `test_request_paging.py`
+holds the new path to them page by page.
+
+**Reason:** the old list read every matching request in full and sorted it in Python on every
+page, so a page's memory grew with the project, and the dashboard's walk at 200 paid that per
+page. An agent's `to=me` is the common call: most of a project's requests are not addressed to
+it, so the visibility has to be in SQL for the page to cost the page. What the database cannot
+decide portably (a JSON list, a JSON object, another table's round circle, a proposal's kind)
+is rare, so the Python rule handles those rows, reading key columns only. It costs like the old
+path only when a project is made mostly of such requests.
+
+**Rejected alternatives:**
+- Reading the keys of every matching request in order, a batch at a time, and filtering all of
+  them in Python: it bounds nothing for an agent's `to=me`, where most rows are dropped, which is
+  the common call and its worst case.
+- The whole visibility in SQL over the JSON columns: each database has its own JSON syntax, so
+  the rule would get a second, dialect-split copy. The overview rejected the same (8d41e6b2).
+- Trusting the decision made when the keys were read and rendering the rows read in full as
+  they come: the row can change between the two statements, and the page would show it in a
+  state the caller was never decided for.
+- Keeping the cursor of the keys when a row fails on the full read: the cursor would name a
+  row the page left out.
+- REPEATABLE READ for the listing's transaction on PostgreSQL, one snapshot for every
+  statement: `read_transaction` takes the engine's isolation, READ COMMITTED, which `db.py`
+  `_engine_options` sets on every server engine. Only the notifications read
+  (`routes/notifications.py` `_snapshot`) asks for REPEATABLE READ, and a second such read for
+  one route is a second kind of read transaction to keep apart.
 
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
@@ -857,6 +922,44 @@ trusted with text that may quote a credential.
   and the masking missed real forms (tried, reverted).
 - Keep the code only (the SQLSTATE or number): psycopg's connection errors have neither.
 - Put the cause into the response: that is the leak §1.3 forbids, and a client cannot act on it.
+
+## `maity-hub` names a database error as the log does, never with the driver's text
+
+**Id:** 8a168e45-3260-4297-9e2a-cf673fde9c22
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit of the core platform, which found the CLI printing what the log never lets out; the lead's go for the pull request, 2026-11-23; its first review, which found a password in the URL's query string printed with the URL
+**Revisit when:** a command needs a cause the categories cannot name, or the driver's text can be shown without any route into a stored log
+**See:** persistence.md#a-database-error-is-logged-with-a-category-of-its-cause-never-with-the-drivers-text — 79c93ec6-d67e-4a0a-8d82-041409b1fd92 — as of 2026-11-23
+
+Every `maity-hub` command (`migrate`, `serve`, `quickstart`, `owner create`, the operator
+commands, `loadtest`, `attachments copy-to-s3` and its bucket clean-up) says of a database error
+only the URL with its password masked and its query string left out (`config.redact_database_url`),
+the original exception's class, the cause category and the driver's codes (`errors.driver_reason`,
+`errors.driver_fields`). The driver's own message is never printed or logged, not even its first
+line. Not covered: on MariaDB, a query option that PyMySQL or SQLAlchemy's MySQL dialect does not
+take, or a value it cannot use, ends in a plain Python error (`TypeError`, `ValueError`,
+`AttributeError`, `FileNotFoundError`), not a database error, and the command ends with its
+traceback, which can quote that value.
+
+**Reason:** the server and the CLI followed opposite rules for the same text. A malformed URL makes
+the driver quote the whole connection string, the password included, and `migrate` usually runs as
+a Kubernetes job or init container whose stderr ends up in the cluster's log store, which is the
+case the log's rule guards against. `serve` runs under a supervisor too. The query string is left
+out whole because the drivers take a password there as well (`password`, `passwd`, `sslpassword`,
+also in percent-encoded forms), and any other key can carry a secret too.
+
+**Rejected alternatives:**
+- The driver's first line on the operator's own terminal, since the operator holds the URL anyway:
+  the same command's output is a stored log as soon as it runs as a job, and the CLI cannot tell.
+- A `--verbose` flag that prints the text with a warning: not built; the operator who needs the
+  text can connect with the database's own client.
+- Masking the query parameters that carry a secret by name: each driver accepts its own names and
+  percent-encoded forms, any other key can carry a secret too, and a list would miss the next one;
+  `?***` still shows that a query was set.
+- Catching those plain Python errors around every command's database work for the one-line form:
+  it would also turn the hub's own bugs into one line without a traceback.
 
 ## The pool keeps connections warm, and a host name that does not resolve is tried once more
 

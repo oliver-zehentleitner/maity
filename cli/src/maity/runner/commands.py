@@ -22,6 +22,7 @@ from . import (
     capabilities,
     config,
     install,
+    keeper,
     limitread,
     logcap,
     loop,
@@ -35,6 +36,7 @@ from . import (
     stub,
     supervisor,
     targets,
+    tmux,
     tools,
     trust,
     workspace,
@@ -270,6 +272,10 @@ class Report:
     def warn(self, text: str) -> None:
         self.lines.append(("warn", text))
 
+    def note(self, text: str) -> None:
+        """Worth knowing, nothing to fix: the operator's own choice (`track = "newest"`)."""
+        self.lines.append(("note", text))
+
     def error(self, text: str) -> None:
         self.lines.append(("error", text))
 
@@ -317,6 +323,11 @@ DEFAULTS = (
         " other harnesses start without their sandbox; false: never refused for the sandbox",
     ),
     ("harness.<id>.env_file", "unset"),
+    (
+        "harness.claude-code.track",
+        '"checked": the update installs at most the sandbox-checked version; "newest": the'
+        " vendor's newest, which check notes as unchecked",
+    ),
     (
         "git.name, git.email",
         f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
@@ -568,12 +579,42 @@ def _check_grant_programs(report: Report, cfg: config.Config, agent_path: str) -
             )
 
 
+def _check_session_shell(report: Report, as_user: AsUser, where: str = "") -> None:
+    """The SHELL every session gets, looked up as a start does (tmux.Tmux.session_shell). A
+    harness runs its commands through it (OpenCode does), so one that is or links to nologin
+    or false fails every command, as the service account's nologin did (tsk-fjq2k0sx1n3r)."""
+    probe = tmux.probe_shell(as_user, lambda argv: as_user.run(argv))
+    if probe.shell is None:
+        who = "the host" if not as_user.here else f"sudo to {as_user.user}"
+        report.warn(f"{where}the sessions' SHELL is not checked: {who} gave no answer")
+    elif not probe.runs:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell}, which the agents' user cannot "
+            "run: every command a harness runs through it fails; install bash or a POSIX sh "
+            "there"
+        )
+    elif probe.resolved is None:
+        report.warn(
+            f"{where}sessions get SHELL={probe.shell}, not checked further: where it leads "
+            "could not be read (`readlink -f` failed), so nologin or false is not ruled out"
+        )
+    elif os.path.basename(probe.resolved) in tmux.NOT_A_SHELL:
+        report.error(
+            f"{where}sessions would get SHELL={probe.shell} ({probe.resolved}), which runs no "
+            "command: every command a harness runs through it fails; install bash or a POSIX "
+            "sh there"
+        )
+    else:
+        report.ok(f"{where}sessions get SHELL={probe.shell}, not the account's login shell")
+
+
 def _check_local(report: Report, local: config.Local) -> None:
     _check_agent_path(report, local)
     if shutil.which("tmux") is None:
         report.error("tmux is not installed; the local backend runs every agent in tmux")
     else:
         report.ok("tmux found")
+    _check_session_shell(report, _local_agents_user(local))
     if local.layout == "agent_user" and local.agent_user:
         _check_agent_user(report, local)
         return
@@ -624,6 +665,20 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
+def _check_version(
+    report: Report, harness: config.Harness, version: str | None, tools_dir: Path | None
+) -> None:
+    """The installed version against the sandbox-checked one: a warning, or under
+    `track = "newest"` a note for a newer one. Above it under `"checked"`, the way back too
+    (capabilities.unchecked_warning)."""
+    note = capabilities.unchecked_note(harness.id, version, harness.track)
+    if note is not None:
+        report.note(note)
+    warning = capabilities.unchecked_warning(harness, version, tools_dir)
+    if warning is not None:
+        report.warn(warning)
+
+
 def _check_harness(
     report: Report,
     harness: config.Harness,
@@ -652,9 +707,7 @@ def _check_harness(
         report.error(f"harness {harness.id}: `{found.path} --version` failed")
         return
     report.ok(f"harness {harness.id}: {found.path} ({found.version})")
-    warning = capabilities.unchecked(harness.id, found.version)
-    if warning is not None:
-        report.warn(warning)
+    _check_version(report, harness, found.version, tools_dir)
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
@@ -1289,6 +1342,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
+    _check_session_shell(report, as_user, f"{name}: ")
     probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
@@ -1298,9 +1352,13 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
-            warning = capabilities.unchecked(harness.id, probe.version)
+            # No tool is managed on an ssh host: the way back is to install it by hand.
+            warning = capabilities.unchecked_warning(harness, probe.version, None)
             if warning is not None:
                 report.warn(f"{name}: {warning}")
+            note = capabilities.unchecked_note(harness.id, probe.version, harness.track)
+            if note is not None:
+                report.note(f"{name}: {note}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
                 if capabilities.sandbox_version_ok(harness.id, probe.version):
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
@@ -1454,7 +1512,7 @@ def cmd_tools(args: argparse.Namespace) -> int:
             print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
             return 1
         try:
-            done = tools.rollback(cfg.tools_dir, args.tool)
+            done = tools.rollback(cfg.tools_dir, args.tool, cap=keeper.cap(managed[args.tool]))
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -1475,9 +1533,12 @@ def cmd_tools(args: argparse.Namespace) -> int:
         print("no tool is installed or updated by this runner (harness install / update)")
     for row in rows:
         state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        # From the active `track`, not the last check's: a switch shows at once.
+        target = tools.hold(row["latest"], keeper.cap(managed[row["id"]]))
+        held = f" (held at {target}: track = checked)" if target else ""
         print(
             f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
-            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}{held}; "
             f"checked {row['checked_at'] or 'never'}"
         )
     return 0

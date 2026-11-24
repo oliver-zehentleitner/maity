@@ -197,11 +197,17 @@ def session_id_hash(session_id: str) -> str:
 
 
 def authenticate(
-    conn: Connection, facts: RequestFacts, *, renew_leases: bool = True, seen: bool = True
+    conn: Connection,
+    facts: RequestFacts,
+    *,
+    renew_leases: bool = True,
+    seen: bool = True,
+    counted: bool = True,
 ) -> Caller:
     """The caller of the request. `seen=False` (a dashboard tab's presence, §18.4) checks a
     cookie session as any call does but writes no `last_seen_at`: that call shows nobody as
-    online and keeps no session alive (§2.4)."""
+    online and keeps no session alive (§2.4). `counted=False` (the forge's setup, §11.4)
+    counts no read of a cookie session either (§1.7)."""
     authorization = facts.headers.get("authorization")
     if authorization:  # the header authenticates; a cookie alongside is ignored
         scheme, _, value = authorization.partition(" ")
@@ -211,7 +217,7 @@ def authenticate(
             return _signed(conn, facts, value.strip())
         raise unauthenticated("unsupported authorization scheme")
     if SESSION_COOKIE in facts.cookies:
-        return _cookie(conn, facts, renew_leases, seen)
+        return _cookie(conn, facts, renew_leases, seen, counted)
     raise unauthenticated()
 
 
@@ -248,13 +254,33 @@ def require_secure_transport(origin: Origin, allow_plain_http: bool) -> None:
         raise ApiError(403, "insecure_transport", "credentials and cookies travel over TLS only")
 
 
+# The one call a cookie session may make from another site (§2.1): the forge sends the
+# browser back to the App's setup (§11.4), and there its single-use `state`, bound to the
+# session, stands in for the check. Read on the raw request path, as `ISOLATED_MAY` is, so
+# only the path the forge's redirect sends matches (hub/context/auth.md e3a7c1d5).
+CROSS_SITE_NAVIGATIONS = Calls(("GET", "/forge/github/setup"))
+
+
+def _cross_site_allowed(facts: RequestFacts) -> bool:
+    """Whether a `cross-site` request may still use the cookie: a call of
+    `CROSS_SITE_NAVIGATIONS` and the browser's top-level navigation, never a `fetch`, a
+    form's `POST`, a frame or a `HEAD`."""
+    return (
+        CROSS_SITE_NAVIGATIONS.admits_api(facts.method, facts.raw_path.decode("latin-1"))
+        and facts.headers.get("sec-fetch-mode") == "navigate"
+        and facts.headers.get("sec-fetch-dest") == "document"
+    )
+
+
 def _cookie_headers(facts: RequestFacts) -> None:
     require_secure_transport(facts.origin, facts.allow_plain_http)
-    if facts.headers.get("sec-fetch-site") == "cross-site":
+    if facts.headers.get("sec-fetch-site") == "cross-site" and not _cross_site_allowed(facts):
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
 
 
-def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True) -> Caller:
+def _cookie(
+    conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True, counted: bool = True
+) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     presented = facts.cookies[SESSION_COOKIE]
@@ -269,7 +295,8 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
         token = facts.headers.get(CSRF_HEADER, "")
         if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
             raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
-    _count_read(conn, facts, id_hash)
+    if counted:
+        _count_read(conn, facts, id_hash)
     # Presence at most once every `SEEN_EVERY` (§2.4), sent only when the read says it is due;
     # its update checks the session again, so a session ended meanwhile matches nothing. A
     # dashboard tab's presence (`seen=False`, §18.4) writes none of it.

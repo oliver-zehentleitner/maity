@@ -223,6 +223,47 @@ def test_a_hold_takes_the_page_and_the_bio_away(
     assert body["projects_total"] == 1  # still a colleague
 
 
+def test_a_held_profile_shows_a_stranger_nothing_and_a_colleague_the_shared_projects(
+    owner: flow.Human,
+    stranger: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§6.27, §16.8: the projects a caller does not share are those the person's public page
+    shows, and a hold serves no page, whatever `public_profile` says. So a held person with a
+    public profile and a public project is `not_found` to a stranger, a colleague sees the shared
+    projects only, and the person sees everything of their own. Unheld, nothing changes."""
+    colleague = flow.human(pages(make_client), migrated, "colleague")
+    factory.membership(migrated, _project_id(migrated, "maity"), "coder", human_id=colleague.id)
+    owner.patch("/me", {"public_profile": True, "public_bio": "I build agents."})
+    flow.project(owner, "open-one")
+    _serve(migrated, "project", _project_id(migrated, "open-one"), "/maintainer/open-one")
+    # Unheld: the stranger sees the public project, the colleague both.
+    unheld = stranger.get(f"{P}/maintainer").json()
+    assert [p["full_name"] for p in unheld["projects"]] == ["maintainer/open-one"], unheld
+    assert unheld["page_served"] is True and unheld["public_bio"] == "I build agents."
+    both = [p["full_name"] for p in colleague.get(f"{P}/maintainer").json()["projects"]]
+    assert both == ["maintainer/maity", "maintainer/open-one"]
+    held = SimpleNamespace(action="hide", at=clock.now(), report_id="rep-1")
+    real = moderation.hold
+    monkeypatch.setattr(
+        moderation,
+        "hold",
+        lambda conn, kind, target: held if target == owner.id else real(conn, kind, target),
+    )
+    nobody = _not_found(stranger.get(f"{P}/no-such-name"))
+    assert _not_found(stranger.get(f"{P}/maintainer")) == nobody  # the same answer
+    seen = colleague.get(f"{P}/maintainer").json()
+    assert seen["projects"] == [{"full_name": "maintainer/maity", "name": "Maity", "shared": True}]
+    assert seen["projects_total"] == 1
+    assert seen["page_served"] is False and "public_bio" not in seen
+    mine = owner.get(f"{P}/maintainer").json()
+    names = [p["full_name"] for p in mine["projects"]]
+    assert names == ["maintainer/maity", "maintainer/open-one"]
+    assert mine["public_bio"] == "I build agents."
+
+
 def test_the_list_is_cut_at_its_limit_and_says_how_many(
     owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

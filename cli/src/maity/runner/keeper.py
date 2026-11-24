@@ -31,6 +31,12 @@ LOGIN_STATUS = {"claude-code": ("auth", "status"), "codex": ("login", "status")}
 Log = Callable[[str], None]
 
 
+def cap(harness: config.Harness) -> str | None:
+    """The highest version the runner's update may take: the sandbox-checked one under
+    `track = "checked"` (the default), none under `"newest"` or without a checked version."""
+    return capabilities.CHECKED.get(harness.id) if harness.track == "checked" else None
+
+
 def stamp(at: float) -> str:
     return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -221,11 +227,15 @@ class Keeper:
             stamp(self.now()),
             requested_at=requested_at,
             started=self.publish,
+            cap=cap(harness),
         )
         if result.state == "failed":
             self.log(f"tools: {harness.id}: failed ({result.reason})")
         elif result.version != state.version:
             self.log(f"tools: {harness.id}: {result.version} for new sessions")
+        if result.held is not None and result.state != "failed":
+            self.log(f"tools: {harness.id}: {result.latest} offered, held at {result.held}"
+                     ' (track = "checked")')  # fmt: skip
         self.refresh(harness)
         self.publish()
 

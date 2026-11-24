@@ -256,6 +256,179 @@ the role list and the resume from saying two things once the layers arrive.
   proxy, which the table does not list.
 - Build the project and account guide layers here: they are the briefings card's.
 
+## Own approvals are counted at each move to done, in one module, from the review results and signatures on the card
+
+**Id:** 3ebd6d4a-8923-4899-becc-84476a1c6b7a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ggnhdmgmkf3 (2026-11-23), the lead's go on the four-PR plan (seq 201341) and the acceptance for PR 2 after a security review of the merge path (seq 201604: every path to done, under every `done_authority`, a test per path); docs/api.md §2.3 "Own approvals", §6.4, §6.6
+**See:** isolation.md#an-agent-that-joined-while-its-owner-was-no-member-stays-outside-a-mark-set-at-the-exchange-never-cleared — 28c600cc-2b4e-4be0-ab48-00a49441c138 — as of 2026-11-23
+**Revisit when:** a move to `done` gains a path that does not pass `routes/tasks.py`'s status change, the report or `merged._blocked_by`; or review results get a table of their own
+
+`own_approvals.py` holds the whole rule: who is an outside agent, which
+cards are outsiders' work, and `counted`, which reads the card's review
+results and its `approvals` when a move to `done` is asked for and stores
+nothing. The status PATCH calls `gate` where it would set `done`, after
+every other check, so the three moves to `done` and the signature that
+completes `approvals` pass through one place. A report with `done: true`
+is stored first, then asks `missing`, and goes to review instead (on a
+`blocked` card it stays `blocked`, with `review` as the status its answer
+restores). The merge path asks `missing` in `_blocked_by`. A human's own
+move or signature is passed in as one approval before the count.
+
+What counts (the lead's ruling of 2026-11-23): an author's latest review
+result on the card, kept per author (agent or human), not per membership
+row, a redacted one included, so a later `changes`, `comment` or redacted
+result withdraws an `approve`. That `approve`, on exactly the reported
+head, counts only if it was not sent through a bridge, the hub recorded
+its author as a signer when it stored it, it came from the author's
+current active membership, and its author stands now: an agent the
+project's own (active, not isolated, `tasks:review` or `tasks:test`, its
+owner a live member picked by `own_agents`), a human of the project with
+that standing and a live account. A human's signature counts while it
+stands (`cards.standing`) and only on the current report's `revision`.
+
+The standing at the time of sending is recorded, not reconstructed: when
+the hub stores a `review_result` it writes `event.review_signer` (own,
+active, not isolated, the scope, not bridged, a human's or an agent's
+owner's account live), and `event.review_pr`, the pull request number
+its subject `#<n>` names. A result without the record (stored before
+the column) counts as none. The card's results are read through
+`subject_id` and `review_pr` with the card's current pull request, so
+those event reads are bounded by the card's own results, not the
+project's chat; whether that pull request is this card's is resolved
+exactly, once per count, by one scan of the project's reported cards,
+and only when a result tied only by `#<n>` exists (Cost, below).
+
+An outside agent is read on the membership the check is about: its
+active row, else its most recent (a reporter who has left). Trust
+`outside` and the `joined_outside` mark count on that row only, so §2.3's
+one way out of `outside` (removal, then a member's fresh join, a new row
+without either) works; the same reading as trust `outside` in H1
+(tsk-enfbkj0xqq5m), by the lead's ruling of 2026-11-23 (seq 202963). An
+owner who is no member now makes its agent outside too, and so does an
+owner whose account is suspended or deleted, so that agent's work is
+gated (failing closed; the lead's ruling of 2026-11-23, seq 203828).
+
+**Reason:** the contract judges outsiders' work "as the card and its
+members stand then", and an approval stops counting when its author
+stops standing or a later result withdraws it. A count computed at the
+check follows all of that without an invalidation path. One module keeps
+the three callers from drifting apart. Gating at the point where the
+status is set covers every way the PATCH can reach `done`, including any
+added later through `check_transition`.
+
+**Rejected alternatives:**
+- A stored counter on the card, raised by each review result: it needs
+  undoing on every withdrawal, demotion, removal, isolation and new head,
+  and a missed path leaves a wrong count that opens the gate.
+- A check inside `cards.check_transition`: it does not see the signature
+  that would complete `approvals`, which is decided after it.
+- Gating only the holder's moves: suqj's review showed every
+  `done_authority` value reaches `done` for outsiders' work some way.
+- An `approve` judged only by its author's row now: an outsider's
+  approval would turn into an own one after a fresh join, and a
+  promotion in place would make an earlier `approve` count (the lead's
+  ruling of 2026-11-23: a signer when sent, recorded, and the same row
+  standing now).
+- Reconstructing the standing at sending from the rows: trust, role and
+  isolation change in place and keep no history.
+- Trust `outside` or the mark on any of the agent's rows: fails closed,
+  but closes the way out §2.3 names (docs/api.md, "Outside": the owner
+  removes the agent and joins it again); briefly ruled so and taken back
+  the same day.
+
+**Cost:** review results are message events, recognised by their own
+columns (`review_signer` set), never by a payload a redaction replaces.
+They are read in two queries, merged by seq, each seeking its own index:
+a result tied to the card by `task_id` through `ix_event_subject`
+(`project_id`, `subject_type` `task`, `subject_id`), and one tied only
+by a subject `#<n>` through `ix_event_review_pr` (`review_pr`,
+`project_id`) with the card's current pull request. These two event reads
+are bounded by the card's own results. Every result named by its pull
+request names that one pull request, so whether it is this card's is
+resolved once per count, and only when such a result exists: that
+resolution reads the project's reported cards (`cards.naming_pr`) once,
+where once per result would repeat it (#2145 reviews A2429, A2442). One
+query with an `OR` across both would leave neither index usable. The
+index leads with `review_pr`: led by `project_id`, PostgreSQL's planner
+took it for reads filtered on the project alone (the chat sweep) and
+walked every event. A report naming a pull request beyond the column's
+range looks none up. This runs only on a move to `done` of outsiders' work.
+
+## A new head takes outsiders' work from done to review with its claim, and an outside agent's role gives no done authority
+
+**Id:** b02a8fef-a30e-4f59-803c-724666683e27
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nvsxwd4tzzg9 (2026-11-24) and the lead's ruling on it (seq 209840): `review`, not `open`; the claim stays and the own approvals decide again; a trust-based rule. docs/api.md §2.3 "Own approvals", §6.4, §6.6. It replaces, for the way back from `done`, the claim's check and the release to `open` of the lead's decisions of 2026-11-18 recorded in the root context (members.md, dab6ae4a-3f6b-4431-8945-80e5956a38a8)
+**See:** trust.md#own-approvals-are-counted-at-each-move-to-done-in-one-module-from-the-review-results-and-signatures-on-the-card — 3ebd6d4a-8923-4899-becc-84476a1c6b7a — as of 2026-11-24
+**Revisit when:** a done authority is resolved for a role somewhere other than `cards.has_done_authority`, as `task_merged` still does: its role tokens reach an outside agent (docs/api.md §2.3 "not built yet", tsk-4bfgr4q6zz3x)
+
+A report with a new head on a `done` card of outsiders' work, while its
+pull request is open, sets `status: review` and clears `closed_at` in the
+same write that stores the report; the claim the closed card kept is left
+as it is. A card with no holder (its holder released the claim after the
+close, which keeps the status) goes to `open` instead, `closed_at`
+cleared, where the normal claim applies (the lead's ruling of
+2026-11-24, seq 210038). Whether the card is outsiders' work is asked on the card before
+the write: the reporter must be the one whose report it replaces, so the
+workers (holder and reporter) are the same either way. Own work and the
+same head stay `done` as before.
+
+`cards.has_done_authority` returns no authority under `reviewer`,
+`tester` and `reviewer_and_tester` to a caller that
+`own_approvals.outside_agent` counts as outside, and `cards.sign`
+refuses such a caller as it refuses a missing scope. A stored signature
+is held to the same eligibility wherever it is read (`cards._stands`,
+under `standing`): an agent's signature counts only while it is no
+outside agent, so one given before this rule, or by a signer that later
+became outside, counts nothing. All three ask `own_approvals.outside_agent`,
+the one definition the gate uses too, so every way it counts an agent as
+outside applies here; the holder's authority under `holder` is untouched
+(it passes the gate of 3ebd6d4a).
+
+**Reason:** the lead's ruling: with the claim kept, the card is where it
+was before its last close, and the own approvals decide again on the new
+head, since every move to `done` passes the gate. Nothing about the
+claim is re-decided, so no release, no `task_released` and no second rule
+of who may hold a claim. A stale holder is handled as on any card in
+`review`: by takeover and cover, whose definitions stay as they are. A
+card without a holder has no claim to keep: in `review` nobody could
+claim it (a claim needs `open`), take it over (there is no claim) or,
+under `done_authority: holder`, move it, so it goes to `open`, where
+the next holder claims it and reports again. For
+done authority the rule is the agent's standing, not its role: the
+policy bases only keep reviewing roles out of an outsider's join, while a
+`joined_outside` agent, or one whose owner left, can hold any role a
+member's agent can; reading the same `outside_agent` as the count keeps
+the two from drifting.
+
+**Rejected alternatives:**
+- The contracted claim's check with a release to `open` (2026-11-18):
+  replaced by the lead's ruling for `review` with the claim kept; it
+  needed a second reading of who may take a claim and a hub-made release.
+- Keeping the card `done` and relying on the gate: the gate only guards
+  moves to `done`, so a head nobody approved would stay `done`; for a
+  card without a holder too, since that reopens the same gap.
+- A card without a holder in `review`: it is stuck there, with nobody
+  who may claim it, take it over or move it under `holder`.
+- Refusing the report on a card without a holder: the new head would be
+  hidden from the card instead of shown on it.
+- Withholding done authority by role list (no reviewing role for an
+  outsider): the list only governs the join, and an agent marked
+  `joined_outside` or whose owner is no member holds a member's roles.
+- Refusing the signature only through the done-authority check: `sign`
+  would still give a signature to any other caller path; it refuses on
+  its own too.
+- Checking a signer's eligibility only when it signs: a signature stored
+  earlier, or one whose signer's owner later left or whose row was
+  marked, would still complete `approvals`; eligibility is checked when
+  a signature is counted, as a demotion or removal already is (the
+  lead's scope for the second round of #2179, 2026-11-24).
+
 ## `PUT …/roles` refuses a guide and keeps the one a role already has
 
 **Id:** 66b19935-0440-4a76-9ebd-3ef6df9fbe94
@@ -280,3 +453,32 @@ would erase every stored guide on the next `PUT`, a change of stored data the ca
 - Keep accepting `guide` until the briefings exist: the contract already refuses it, and no
   client in the repository sends one.
 - Move the stored guides into the briefings now: there are no briefings to move them to.
+
+## A trust the hub does not know gives no scopes
+
+**Id:** 483172a9-4079-4415-b3cd-2e63deda672b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's approval of the plan for tsk-aqw1kqh8h12t (docs/api.md §2.3)
+
+`scopes._granted` grants scopes only for a trust in `TRUSTS` or `OUTSIDE`. Any other trust,
+null or a name the hub does not know, gets no scopes at all, whatever the role, a proxy
+included: `scopes_for`, `listed_scopes` and `has_scope` answer an empty list and `False`.
+The role is still checked first, so a name that is not a built-in role stays the caller's
+fault (entry 25a99503).
+
+Every caller reads trust from a membership row, whose `trust` column is not null and is only
+written from `TRUSTS` or by the outsider's join (`OUTSIDE`), so no stored membership changes
+its scopes. The stand-ins without a trust (`attachments.reader_row`, the chat `Outsider`)
+never ask `has_scope`.
+
+**Reason:** a check on scopes must refuse what it cannot place. Before, every trust other
+than `guest` and `outside` fell through to the role's scopes, so a trust added later, or a
+row a future join wrote wrongly, would have acted as a member's without anyone deciding so.
+
+**Rejected alternatives:**
+- Fall back to the role's scopes for a trust the hub does not know: the default this replaces;
+  it gives work rights to a membership no rule describes.
+- Raise for an unknown trust, as for an unknown role: a request would end in a server error
+  instead of a refusal, and the read paths that list scopes would break for the whole page.

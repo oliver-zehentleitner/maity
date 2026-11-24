@@ -967,6 +967,10 @@
     "en": "26c77b8aa1b262c3",
     "text": "56a40a051fbbd96c"
   },
+  "all.page.runners": {
+    "en": "9aa56c3dab3c6957",
+    "text": "e98aef21e99228bc"
+  },
   "all.page.unread": {
     "en": "47193cff451f4903",
     "text": "ebf7a5144dd36d33"
@@ -1562,6 +1566,18 @@
   "board.claim.unclaimed": {
     "en": "89fa136908846c6b",
     "text": "9d2954252c8ce351"
+  },
+  "board.claim_for.busy": {
+    "en": "0385dd7c49e50091",
+    "text": "eada4600dc1c5f7f"
+  },
+  "board.claim_for.done": {
+    "en": "ede8e762c76c457e",
+    "text": "20d5c6fac20edcd6"
+  },
+  "board.claim_for.failed": {
+    "en": "7b7c2cd238073bb7",
+    "text": "3f4fb542848f61bb"
   },
   "board.closed.failed": {
     "en": "76ff07448abbd4a4",
@@ -2751,6 +2767,10 @@
     "en": "0ccf3532a4a1e18b",
     "text": "2891b30318e3f0f2"
   },
+  "cards.claim_for": {
+    "en": "4440b3017b2785d4",
+    "text": "0ae0a13f31e9462d"
+  },
   "cards.column.blocked": {
     "en": "c0ee434b7aa8dedc",
     "text": "e224d586089f5cb4"
@@ -2959,6 +2979,10 @@
     "en": "5dbecb696e153ff0",
     "text": "e9a422b3094a546f"
   },
+  "cards.refused.humans_only": {
+    "en": "22d8ce42a6288aef",
+    "text": "5c8a256eafaad470"
+  },
   "cards.refused.invalid_transition": {
     "en": "fc91d0183a098be3",
     "text": "9fe2b432279749b8"
@@ -2979,6 +3003,10 @@
     "en": "ca10ba106157a953",
     "text": "60d3cfdf79d0de37"
   },
+  "cards.refused.not_open_to_outsiders": {
+    "en": "1a00c2735888374f",
+    "text": "5a3126650af92245"
+  },
   "cards.refused.project_closed": {
     "en": "4205ad383022da26",
     "text": "d4e2fd6af97a10b4"
@@ -2998,6 +3026,10 @@
   "cards.refused.subtasks_and_deps": {
     "en": "e93f2c3881226d23",
     "text": "493105946f9f46ee"
+  },
+  "cards.refused.tasks_admin": {
+    "en": "df0f7e647ea9a5d4",
+    "text": "232cafe69a4a6140"
   },
   "cards.refused.unknown": {
     "en": "63f07dba790acba0",
@@ -7943,6 +7975,10 @@
     "en": "8d28a5f16e6a31c7",
     "text": "00f52be7ca6dfcee"
   },
+  "join.field.outsider_hint": {
+    "en": "5e8e00522d104a78",
+    "text": "f273d83946f09020"
+  },
   "join.field.own_hint": {
     "en": "a79fceb9b8208c11",
     "text": "9795292f9ca09808"
@@ -12296,8 +12332,8 @@
     "text": "1233607b6a10eaa4"
   },
   "new_project.slug.hint": {
-    "en": "8af31866373a30f6",
-    "text": "919f99497a33753a"
+    "en": "71090352ae01ba2a",
+    "text": "c591ec7966ed5416"
   },
   "new_project.submit": {
     "en": "7551a69e7a295998",
@@ -12579,10 +12615,6 @@
     "en": "882b49ec1eaeb64f",
     "text": "42117fbc3ed82c44"
   },
-  "org.fleet.dot": {
-    "en": "94fb57e8623b60df",
-    "text": "94fb57e8623b60df"
-  },
   "org.fleet.empty": {
     "en": "1f501a2d2053d5ab",
     "text": "81cc43966c712a58"
@@ -12604,8 +12636,8 @@
     "text": "e95826e1b3f1721c"
   },
   "org.instance.label": {
-    "en": "3ace85d6a46a06aa",
-    "text": "e1ade3d4160d1a79"
+    "en": "13623f816f3410b9",
+    "text": "0592d0d45f5fc992"
   },
   "org.intro": {
     "en": "7a2f5a5f243a03a6",
@@ -12958,6 +12990,26 @@
   "orgs.title": {
     "en": "b58edddaa8f66d6d",
     "text": "049fbbe8b52bc9f2"
+  },
+  "outsider.add_agent": {
+    "en": "fcabf74d411347ee",
+    "text": "1f6874864f54c3cf"
+  },
+  "outsider.join.closed": {
+    "en": "9c89e4b1d48d49e1",
+    "text": "ea1cfb0c0bc90c65"
+  },
+  "outsider.join.role": {
+    "en": "f24b9087d8951d8a",
+    "text": "f9021b4c591631cf"
+  },
+  "outsider.reason.blocked": {
+    "en": "903a7ae9cc8ff6d8",
+    "text": "b895f4e8f7b3e62f"
+  },
+  "outsider.reason.limit": {
+    "en": "4d8377b7c79c42b8",
+    "text": "b21fea12f98f3639"
   },
   "overview.badge.agents_online": {
     "en": "21dc1a4560871eb4",
@@ -15714,6 +15766,10 @@
   "report.mine.title": {
     "en": "ed7acb5465dc68aa",
     "text": "5090f02668d2ad1f"
+  },
+  "report.not_found.person": {
+    "en": "7c919d4eea02f65a",
+    "text": "2da493cac6259991"
   },
   "report.open": {
     "en": "85d640066187108d",
@@ -19499,6 +19555,66 @@
     "en": "1a8185ac38f28117",
     "text": "b3d3796ff94066fa"
   },
+  "tabs.outsider": {
+    "en": "c954775e568a706b",
+    "text": "77d1875e23ac3cc3"
+  },
+  "tabs.outsider_said": {
+    "en": "85149be017de9b85",
+    "text": "8f9efa0d7f89f829"
+  },
+  "tabs.outsider_starred": {
+    "en": "8773fcc5468dba40",
+    "text": "0d3ea7262f1e8121"
+  },
+  "tabs.outsider_starred_said": {
+    "en": "cf003902fae432f0",
+    "text": "512c0eed071cc99c"
+  },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "c203d321fcc848ef"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "c5bb12a1e66d7be6"
+  },
+  "tabs.star_refused.duplicate": {
+    "en": "7b81af33a1c1d982",
+    "text": "aa90b11cc153a1b2"
+  },
+  "tabs.star_refused.member": {
+    "en": "d24d1afa79c89404",
+    "text": "8f5317f4f724aaeb"
+  },
+  "tabs.star_refused.not_public": {
+    "en": "96320fcb44285a42",
+    "text": "ea13fe65db57d536"
+  },
+  "tabs.star_refused.too_many": {
+    "en": "e67b9e539c2dea9b",
+    "text": "457f74f24f5ff8ee"
+  },
+  "tabs.star_refused.too_many_hidden": {
+    "en": "4caf1d14d04ed698",
+    "text": "0859fb022225d54c"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "ffbde103034924ee"
+  },
+  "tabs.unstar": {
+    "en": "35927f42380e942f",
+    "text": "91cb18d9d6d8b0ed"
+  },
+  "tabs.unstar_failed": {
+    "en": "b5f86b4249ac9a21",
+    "text": "f84caa9497b07eaa"
+  },
+  "tabs.unstarred": {
+    "en": "fb313301fa2007be",
+    "text": "d3b577ec6e59a0ee"
+  },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",
     "text": "253e772247890a94"
@@ -21146,6 +21262,10 @@
   "why.empty.no_repository": {
     "en": "de51ee428eb36caa",
     "text": "20957e27b1c42bc9"
+  },
+  "why.empty.outsider": {
+    "en": "e533bb91a64c25b0",
+    "text": "ad3881c77a6d8fb8"
   },
   "why.findings": {
     "en": "22f0b643ce2ad30e",

@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a18 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a19 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -341,7 +341,11 @@ Every request is signed as `docs/api.md` §2.2 specifies. The headers are
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
 and `PATCH`, except the resume, carries an `Idempotency-Key`. A
-`timestamp_skew` answer is corrected once from the hub's time. A redirect
+`timestamp_skew` answer is corrected once from the hub's time. A `GET`
+answered with 401 `nonce_reused` is signed again with a new nonce and sent
+once more, within what is left of its timeout: the request usually reached
+the hub twice through something in between, and the hub refused the copy. A write
+is never sent again on it. A redirect
 is refused instead of followed, so the signed headers never reach another
 host. Plain HTTP is refused except to a hub on loopback. That holds even
 when the hub runs with `MAITY_ALLOW_PLAIN_HTTP`, and the CLI has no flag
@@ -1019,7 +1023,8 @@ the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
 that every agent would inherit, a Claude Code version other than the one
-its sandbox was checked with (a warning), a configuration file others could
+its sandbox was checked with (a warning; a newer one only a note under
+`track = "newest"`), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
 (`--offline` skips it). On the local backend it also warns about what the
 host lacks for the configuration: an `agent_path` entry that does not
@@ -1063,6 +1068,11 @@ manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
 GitHub, and refuses otherwise. `maity runner tools` lists the versions,
 `maity runner tools rollback <tool>` swaps the kept one in for new
 sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`track` under `[harness.claude-code]` chooses what its update takes:
+`"checked"` (the default) at most the version whose sandbox was checked,
+never going back on its own from a newer one, `"newest"` every new
+release, which `check` notes as unchecked
+([`docs/runners.md`](../docs/runners.md#which-claude-code-version-the-update-takes)).
 `[maity] update` is not carried out yet; `check` and `serve` refuse it.
 
 Repository entries and the project's repository URL are compared after
@@ -1282,8 +1292,10 @@ own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
 otherwise) and then starts, restarts, stops, adopts or ends sessions:
 
 - **Clean environment.** The tmux server starts under `env -i` with only
-  `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
+  `HOME`, `PATH` (= `agent_path`), `SHELL`, `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
+  `SHELL` is `/bin/bash` where the host has it, else `/bin/sh`, never the
+  account's login shell (nologin for the service account); `check` names it.
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and
@@ -1462,12 +1474,16 @@ project's own harness configuration is never loaded:
   its sandbox. Before every start the runner refuses a folder that holds
   anything besides `repo` (`workspace_not_bare`), lies inside a git work
   tree or is not at its real path (`workspace_in_repository`), and deletes
-  nothing there. Each session gets runner-written `--settings`: the
-  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
+  nothing there. Each session gets runner-written `--settings`:
+  `accept-edits` for an interactive start and the default agent mode for
+  a supervised one (never `auto`), `proceed-in-sandbox`, the terminal
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  sign-in; `maity`, the hub's, forge's and `network` hosts and reading
+  the delivered Keep the Why skill allowed (writing it denied; agy's
+  documentation says its sandbox then mounts it read-only, not yet
+  confirmed in a live session), and no `write_file` allow. The
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may
@@ -1550,10 +1566,12 @@ does not rely on how Claude Code's sandbox exclusion treats a call with
 something in front of `maity`. The hook needs Claude Code 2.1.295 or
 later; the version whose sandbox was last checked is recorded, and it
 moves only after `cli/tests/claude_sandbox_probe.py`, run by hand where
-Claude Code is signed in, passed for the new version. With
-another Claude Code version the runner still starts the agent, and
-`maity runner check` and the runner's log say that the version was not
-checked. A repository's grant may only add plain
+Claude Code is signed in, passed for the new version. A runner that
+updates Claude Code installs at most that version unless its
+`track = "newest"`. With another Claude Code version the runner still
+starts the agent, and `maity runner check` and the runner's log say that
+the version was not checked: a warning, or a note for a newer one under
+`track = "newest"`. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
 is read. Not covered: Codex. Where the hook does not hold, such a call
