@@ -20,6 +20,7 @@ a database connection held.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import logging
 import threading
@@ -213,7 +214,9 @@ class ForgeAccess:
         if facts.confirmed:
             via_app, owner_reason, until = self._by_app(facts, repository)
             if via_app is not None:
-                return self._bound(base, project_id, repository, "app", via_app), until
+                bound = self._bound(base, project_id, repository, "app", via_app)
+                # only a link on a forge organisation keeps its grant for a time (`_by_org_link`)
+                return dataclasses.replace(bound, serves_until=until), until
             # A link that serves nothing is not the project's source: the choice goes on with
             # the owner's token, then the operator's where it may serve (§11.4).
             via_token, token_reason = self._by_token(facts, repository)

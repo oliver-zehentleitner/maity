@@ -105,7 +105,13 @@ def _org_link_serves(
         try:  # the operator's token after such a link: only while the repository is public
             fg.require_covered(forge.repository_of(project.repository_url))
         except forge.NotCoveredError as error:
-            reason = error.reason
+            # Any refusal, `repository_moved` included, which keeps its own reason: by reader,
+            # never the cache (review A2574 P2-2).
+            confirmer = forge_access.is_confirmer(caller, project)
+            admin = mine.may("project:admin")
+            raise errors.forge_refusal(
+                error.reason, admin=admin, confirmer=confirmer, views=True
+            ) from None
         except forge.ForgeUnavailableError as error:
             if error.retry_at is not None:
                 raise _spent(error.retry_at) from None

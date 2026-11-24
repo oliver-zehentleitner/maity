@@ -32,7 +32,7 @@ from typing import Annotated, Any
 
 from pydantic import Field, TypeAdapter, ValidationError
 
-from maity_hub import bounded, clock, forge, outbound
+from maity_hub import bounded, clock, errors, forge, outbound
 
 log = logging.getLogger(__name__)
 
@@ -784,6 +784,13 @@ class _Entry:
     snapshot: Snapshot | None  # None: the project is not configured
     at: float  # now() of the read
     repository_url: str | None
+    # Read through a link on a forge organisation: answered only until that link's grant ends,
+    # 10 minutes after its last successful owner check (§11.4; review A2574 P2-3).
+    until: datetime | None = None
+
+    def live(self) -> bool:
+        """Whether the entry may still be answered: not past the grant it was read with."""
+        return self.until is None or clock.now() < self.until
 
 
 # The projects whose answers are kept, the newest read first; an older one is read anew
@@ -946,14 +953,17 @@ class Cache:
         current = self.cached(project_id)
         lock = self._enter(project_id)
         try:
-            usable = current is not None and current.repository_url == repository_url
+            usable = (
+                current is not None and current.repository_url == repository_url and current.live()
+            )
             if not (lock.acquire(blocking=False) if usable else lock.acquire(timeout=LOCK_WAIT)):
                 if current is not None and usable:
                     return current, False
                 raise Busy
             try:
                 entry = self.cached(project_id)
-                own = entry is not None and entry.repository_url == repository_url
+                # past the grant it was read with, an entry is read anew, never answered
+                own = entry is not None and entry.repository_url == repository_url and entry.live()
                 if own and entry is not None:
                     age = now() - entry.at
                     if age < max(max_age, FORCE_INTERVAL):
@@ -992,12 +1002,20 @@ class Cache:
             reader = reader.for_project(project_id)  # the source that covers it (§11.4)
         if self.before_read is not None:
             self.before_read(reader, project_id, repository)  # raises: nothing read or stored
+        until = reader.serves_until
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:
             return _Entry(None, read_at, repository_url)
         except RootUnavailable as failed:
             previous = last.snapshot if last and last.repository_url == repository_url else None
+            if failed.not_covered in errors.ORG_REASONS or (last is not None and not last.live()):
+                # The source rested on a link on a forge organisation that serves nothing now,
+                # or the last read was made through one whose grant has ended: none of what it
+                # read is kept, the members' last good reads included (review A2574 P2-3).
+                previous = None
+                with self.guard:
+                    self._drop_reads(project_id)
             error = _error("forge_unavailable")
             if previous is None:
                 return _Entry(
@@ -1013,7 +1031,11 @@ class Cache:
                 failed.not_covered,
                 failed.retry_at,
             )
-            return _Entry(kept, read_at, repository_url)
+            # what was kept is answered no longer than the grant it was read with
+            return _Entry(kept, read_at, repository_url, last.until if last else None)
+        if last is not None and not last.live():
+            with self.guard:  # read through a grant that has ended: no member falls back on it
+                self._drop_reads(project_id)
         _read_exports(family, deadline)
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
@@ -1024,7 +1046,8 @@ class Cache:
                     self.last_good[key] = (member.read, member.observed_at)
                 elif member.error is not None and key in self.last_good:
                     member.read, _at = self.last_good[key]
-        return _Entry(Snapshot(observed, family.members, family.truncated), read_at, repository_url)
+        snapshot = Snapshot(observed, family.members, family.truncated)
+        return _Entry(snapshot, read_at, repository_url, until)
 
 
 CACHE = Cache()
@@ -1050,11 +1073,14 @@ def export_for_view(
         entry is None
         or entry.repository_url != repository_url
         or now() - entry.at >= DEFAULT_MAX_AGE
+        or not entry.live()
     )
     if stale and forge.kind_of(repository_url) == "github":
         _refresh_later(reader, project_id, repository_url, schedule)
     if entry is None or entry.snapshot is None or entry.repository_url != repository_url:
         return None
+    if not entry.live():
+        return None  # read through a link whose grant has ended (§11.4; review A2574 P2-3)
     return entry.snapshot.export()
 
 

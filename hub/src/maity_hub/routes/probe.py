@@ -60,11 +60,12 @@ def read_probe(
     if not fg.configured_for(project.repository_url):
         reason = forge.unread_reason(fg, project.repository_url)
         raise refusal(reason, first_kind, first_ref or "")
-    if fg.granted is None and fg.owner_reason in errors.ORG_REASONS:
-        # The operator's token after a link on a forge organisation that serves nothing: it
-        # covers only a repository the forge reports public, asked before a cached observation
-        # is answered (§11.4, "What a project sees"; review A2545 #6), since the probe answers a
-        # young enough one without a read.
+    if fg.granted is None:
+        # The operator's token covers only a repository the forge reports public, asked before
+        # a cached observation is answered (§11.4, "What a project sees"), since the probe
+        # answers a young enough one without a read: after a link on a forge organisation that
+        # serves nothing (review A2545 #6), and after one that was unlinked, replaced or removed
+        # on the forge, which leaves no reason behind (A2574 P2-1). As §11.5 asks on every call.
         try:
             fg.require_covered(forge.repository_of(project.repository_url))
         except forge.NotCoveredError as error:

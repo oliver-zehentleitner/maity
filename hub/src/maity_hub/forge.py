@@ -721,6 +721,9 @@ class Forge:
     # that token and no later one, nor another owner's after a transfer (§11.4).
     grant: tuple[str, str] | None = field(default=None, repr=False)
     access: Any = field(default=None, repr=False, compare=False)
+    # A grant that rests on a link on a forge organisation serves only until 10 minutes after
+    # its last successful owner check (§11.4): what it read is answered no longer than that.
+    serves_until: datetime | None = None
 
     @property
     def via(self) -> str | None:

@@ -442,14 +442,15 @@ def _steps(app: GitHubApp, link: Link, keep: bool) -> Check:
     if found is None:
         return Check("removed")
     account = found["account"]
+    if account.get("id") != link.account_id:
+        # The installation's account is not the one linked: no answer about the human or the
+        # link, so neither its status nor its login changes on it, a suspension included, and
+        # no membership is read for an account the link is not on (A2545 #4, A2574 P3-4).
+        return Check(None)
     login = account.get("login") if isinstance(account.get("login"), str) else None
     if found.get("suspended"):
         return Check("suspended", login)
     if login is None or link.forge_user_id is None:
-        return Check(None, login)
-    if account.get("id") != link.account_id:
-        # The installation's account is not the one linked: no answer about the human, so no
-        # status changes on it (and no membership read for an account the link is not on).
         return Check(None, login)
     try:
         token = app.token(link.installation_id, keep=keep)
@@ -502,6 +503,7 @@ def apply_check(conn: Connection, link_id: str, check: Check, at: datetime) -> s
         if status != found.status:
             login = check.login or found.account_login
             records.forge_access_changed(conn, found.human_id, "app", status, login)
+            _forget_reads_of(conn, found.human_id)  # it serves nothing now (A2574 P2-3)
     if values:
         conn.execute(update(t.forge_link).where(t.forge_link.c.id == link_id).values(values))
     return status
@@ -595,6 +597,8 @@ def set_status(conn: Connection, link_id: str, status: str) -> None:
         )
     if status != row.status and status in ("suspended", "removed"):
         records.forge_access_changed(conn, row.human_id, "app", status, row.account_login)
+        if row.account_type == ORGANISATION:
+            _forget_reads_of(conn, row.human_id)  # it serves nothing now (A2574 P2-3)
 
 
 def view(row: Any, repositories: list[str], status: str) -> dict[str, Any]:
