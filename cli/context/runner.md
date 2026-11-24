@@ -707,9 +707,9 @@ writable surface and no write that leaves the scratch.
 **Id:** a0398852-94d9-4b31-b0d5-d337cbd74498
 **Type:** decision
 **Status:** active
-**Evidence:** inferred — the command `codex app-server daemon stop` is as the card names it and has not been checked on a host; ops is checking
+**Evidence:** inferred
 **Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh; the review of #2175 (A2463) and the lead's ruling on it: no signal fallback in slice 1, one deadline over the whole stop
-**See:** runner.md — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
+**See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
 **Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close, and a fallback for a daemon that does not stop) lands
 
 At every Codex start, interactive or supervised, first or restart, the
@@ -726,7 +726,9 @@ mount cannot hold the start), and the stop gets what is left; none runs
 once the check has used it up. A home not there yet has no daemon to stop;
 a home that cannot be checked is not stopped. A stop that exits non-zero,
 does not answer, cannot run or is skipped is one log line, and the start
-goes on. The runner signals no process itself.
+goes on. The runner signals no process itself. That the command is
+`codex app-server daemon stop`, with these exit codes, is as the card
+names it and not yet checked on a host; ops is checking.
 
 A stop that fails, does not answer or is skipped leaves the
 old daemon running, so the new session may still reach it and fail as it
