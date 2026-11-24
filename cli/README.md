@@ -1334,6 +1334,15 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   is gone ends after `stop_grace_max`.
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
+- **Dev venvs.** With `[backend.local] clone_venvs = ["hub", "cli"]`, a
+  Claude Code placement in the `single` layout gets a dev venv for each
+  named part of its clone, built by the runner at the start: from
+  `<part>/requirements/dev.txt` as the placement's branch has it in the
+  repository (every requirement pinned with sha256 hashes), wheels only,
+  the clone's own code taken from `<part>/src`. It lies in
+  `~/.local/share/maity-runner/venvs/`, read-only to the session, with
+  `<part>/.venv` in the clone a link to it, and goes with the placement.
+  One that cannot be built is logged; the start goes on without it.
 
 Settings this version does not carry out yet (`memory_max`,
 `cpu_quota`, a harness `env_file`) are errors in `check`,

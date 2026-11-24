@@ -28,6 +28,9 @@ DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
 DEFAULT_SKILLS_DIR = "~/.local/share/maity-runner/skills"
+DEFAULT_VENVS_DIR = "~/.local/share/maity-runner/venvs"
+# A subpackage of the clone `clone_venvs` names: one plain directory name at the clone's root.
+VENV_SUBPACKAGE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -122,6 +125,9 @@ class Local:
     agent_path: str | None = None  # None: the service's own PATH at start
     memory_max: str | None = None
     cpu_quota: str | None = None
+    # The subpackages of a Claude Code placement's clone the runner builds a dev venv for, from
+    # each one's hash-locked requirements/dev.txt (venvs.py; cli/context/runner.md).
+    clone_venvs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -211,6 +217,9 @@ class Config:
     # The Keep the Why skill the runner delivers to its placements (§15.5, skills.py): beside
     # state_dir for the same reason, a session reads it and writes nothing there.
     skills_dir: Path = Path(DEFAULT_SKILLS_DIR).expanduser()
+    # The dev venvs the runner builds for its coders' clones (`clone_venvs`, venvs.py): beside
+    # state_dir too, a session reads its own and writes nothing there.
+    venvs_dir: Path = Path(DEFAULT_VENVS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -539,6 +548,11 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             agent_path=local_in.get("agent_path", str, None),
             memory_max=local_in.get("memory_max", str, None),
             cpu_quota=local_in.get("cpu_quota", str, None),
+            clone_venvs=tuple(
+                local_in.get(
+                    "clone_venvs", list, [], check=_strings(VENV_SUBPACKAGE, "a subpackage name")
+                )
+            ),
         )
         local_in.done()
     # A table for another kind is not read, so its keys are not judged either.

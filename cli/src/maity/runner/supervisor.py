@@ -45,6 +45,7 @@ from . import (
     scratchop,
     skills,
     targets,
+    venvs,
     watch,
     workspace,
 )
@@ -1310,6 +1311,8 @@ class Supervisor:
                                  "the placement is closed")  # fmt: skip
                 if not self._remove_pg_pass(p, target):
                     done = False
+            # The dev venvs built for its clone (venvs.py), on this machine whatever the target.
+            venvs.remove(self.cfg.venvs_dir, p["id"])
             if done:
                 with self.lock:
                     self.scratch_cleared.add(p["id"])
@@ -2307,11 +2310,17 @@ class Supervisor:
                 # Any value but null names a skill, a malformed one included (skills.named).
                 rec.skill_missing = skill is None and p.get("keep_the_why") is not None
                 rec.skill_key = skill.parent.name if skill is not None else None
+            built = self._venvs(p, harness, place, target)
+            if not self._wants(p["id"], p["generation"]):  # so may a build of the venvs
+                with self.lock:
+                    rec.enter(self.now(), "stopped", "stopped_by_hub")
+                return
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
             context = self._context(p, harness, place, target, rec.resume and not reset,
-                                    view=view, scratch=scratch, skill=skill)  # fmt: skip
+                                    view=view, scratch=scratch, skill=skill,
+                                    venvs=built)  # fmt: skip
             # A sandboxed Claude Code placement with no TMPDIR of its own fails closed: its
             # commands would share /tmp/claude-<uid> (tsk-k7svzz2p4v7y). No detail: the list of
             # `harness_refused` details is a closed contract list (§15.7); the cause is logged.
@@ -2502,6 +2511,7 @@ class Supervisor:
         view: GateView | None = None,
         scratch: Path | None = None,
         skill: Path | None = None,
+        venvs: tuple[Path, ...] = (),
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         view = view or GateView.of(target, harness.id)
@@ -2562,6 +2572,7 @@ class Supervisor:
             pg_pass=pg_pass,
             skill=skill,
             skill_source=self._skill_source(p) if skill is not None else None,
+            venvs=venvs,
         )
 
     def _skill_source(self, p: dict[str, Any]) -> Path | None:
@@ -2621,6 +2632,41 @@ class Supervisor:
             # fails a start, so it is never counted as a crash.
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None
+
+    def _venvs(
+        self, p: dict[str, Any], harness: config.Harness, place: workspace.Workspace, target: Target
+    ) -> tuple[Path, ...]:
+        """The dev venvs `[backend.local] clone_venvs` names, built for this clone (venvs.py,
+        cli/context/runner.md): for Claude Code only, and only where the agents run as the
+        runner's own user on this host (the `single` layout), so the venvs sit where the runner
+        builds them. A venv that cannot be had is logged and left out; it never fails a start."""
+        local = self.cfg.local
+        if local is None or not local.clone_venvs or harness.id != "claude-code":
+            return ()
+        if not (target.as_user.direct and target.as_user.here and not target.host):
+            self.log(f"{p['id']}: no dev venvs: the runner builds them only where the agents run "
+                     "as its own user on this host (the single layout)")  # fmt: skip
+            return ()
+        repository = p["workspace"].get("repository") or ""
+        branch = p["workspace"].get("branch")
+        try:
+            git_dir = venvs.fetch(self.cfg.venvs_dir, p["id"], repository, branch)
+        except (venvs.Unavailable, OSError) as exc:
+            self.log(f"{p['id']}: no dev venvs: {onboarding.inline(str(exc))[:200]}")
+            return ()
+        built = []
+        for sub in local.clone_venvs:
+            try:
+                lock = venvs.lock_of(git_dir, sub)
+                venv = venvs.build(self.cfg.venvs_dir, p["id"], sub, lock, place.repo).resolve()
+            except (venvs.Unavailable, OSError, ValueError) as exc:
+                self.log(f"{p['id']}: no dev venv for {sub}: {onboarding.inline(str(exc))[:200]}")
+                continue
+            if not venvs.link(place.repo, sub, venv):
+                self.log(f"{p['id']}: dev venv for {sub} built; {sub}/.venv in the clone is "
+                         "something else and stays as it is")  # fmt: skip
+            built.append(venv)
+        return tuple(built)
 
     def _agents_home(self, target: Target) -> Path:
         """The home of the user the agents run as on `target`: the remote login's, read on
