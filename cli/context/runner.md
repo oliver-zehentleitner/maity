@@ -7802,3 +7802,48 @@ set-aside tree dead.
   212827).
 - Deleting the old clone, or moving only its credential: deletes unsaved
   work, or puts the runner's hands on a credential it never holds.
+
+## A repository's own Python tools: the operator's grant names the directories, the runner's hook holds the exact form, and the sandbox stays the boundary
+
+**Id:** 647f183e-5e4c-4348-bf7d-bfbe41a9f90c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-z84jx2vp9mdd, on the maintainer's decision req-eghnjvn0p5n1 (coders on Claude Code may run the repository's Python tools; until then `python3 tools/*.py` was refused, which blocked PR 1606 and slowed docs work); the plan the lead approved on the card, 2026-11-24, with its rulings: the grant, not the runner's code; no absolute form; refuse when undecided; `cli/src/maity/runner/config.py`, `plaincall.python_tool`, `adapters.python_tools_dirs`
+**See:** runner.md — b2cbf1a7-e25c-4803-8bc4-845c488512fc — as of 2026-11-24
+**Revisit when:** Claude Code matches a `Bash(...)` rule by words rather than as a pattern over the whole line, so a rule alone could hold the form; or the hook on an ssh host is the runner's own code (then ssh hosts can get the rules too); or the clone stops being writable to the session
+
+`[repositories."<repo>"] python_tools` names directories of the clone (`tools`, `web/tools`).
+For each one a sandboxed Claude Code session on the runner's own host gets
+`Bash(python3 <dir>/*.py)` and `Bash(python3 <dir>/*.py *)`, and the runner's PreToolUse hook
+gets the clone, the directories and the paths the session may write besides the clone. The
+hook holds every line that could match such a rule (a python3 word, by any path or in any case,
+followed later by a word that starts with a tool directory) to one form: `python3
+<dir>/<name>.py` and plain or single-quoted arguments, on one line, from the clone's root,
+every part of the script's path a real directory or a regular file (lstat, no link), and
+`python3` on the hook's PATH outside the clone and every writable path. When it cannot decide
+(no working directory, a lookup that fails, no python3), it refuses.
+
+**Not verified:** the working directory is the `cwd` of Claude Code's hook input; that it
+follows the session's shell after a `cd` is not tested here (`cd` is not granted). A script
+swapped for a link between the hook's check and python3's start is not held either: the
+sandbox decides what that script reaches.
+
+**Reason:** Claude Code's `*` matches any text, `..` and a second command included, so a rule
+alone does not limit the script or the line; the hook reads the whole line, as it does for
+`maity`. The directories come from the operator's grant because a repository's commands stay
+the operator's to grant, and the runner names no repository's layout. The rules go only where
+the hook runs with them: with the sandbox on, since only then is there a hook, and on the
+runner's own host, since an ssh host's hook is that host's `maity`, which may not know the
+arguments, and a hook that fails refuses every call. The sandbox stays the boundary (b2cbf1a7):
+the clone is writable, so a session can put any code in a tool directory, as in a Makefile an
+allowed `make` runs. The rule limits the form, not what the code can reach.
+
+**Rejected alternatives:**
+- `python3 tools/*` in the grant's `allow` list: it matches `tools/../../x.py` and chains, and
+  it pins no interpreter.
+- A fixed list of tool directories in the runner's code: it would build one repository's
+  layout into every runner.
+- An absolute form (`python3 /<clone>/tools/x.py`): the session's commands start at the clone's
+  root, so the relative form is enough, and a second form is a second thing to hold (the lead).
+- Letting the hook pass a line it cannot check: an undecided hook that allows is no hold.
