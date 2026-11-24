@@ -216,6 +216,13 @@ lines, as Claude Code reads a call: `# note` on a line of its own and
 `maity status` under it count as a `maity` line, and are refused as more
 than one plain call.
 
+A placed Claude Code agent runs its allowed commands from an allowlist, so
+phrase each one plainly: run one command per Bash call, use `make -C <pkg>`
+and path arguments (for example `python3 -m pytest cli/tests`) rather than
+`cd <pkg> && …`, and do not prefix a command with a variable (such as
+`PYTHONPATH=… python3 …`) — a wrapped or chained form may not match the
+rule that allows the command.
+
 Under a runner placement a Claude Code, Codex or agy session also has a
 scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough for a socket (often it is not set, and tools then use `/tmp`, so write scratch files to `$MAITY_SCRATCH` by name). For Claude Code and
 Codex it sits under the workspaces root, in `<workspaces>/.scratch/<project>/<placement>`
