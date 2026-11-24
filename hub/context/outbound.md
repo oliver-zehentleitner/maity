@@ -10,8 +10,8 @@
 **Revisit when:** the hub reads from a host the operator configures on a private network (a self-hosted forge), or a second HTTP client library enters the hub
 
 `maity_hub.outbound.read` is the one way the hub reads from a host that
-comes from data: a forge's image host today, the Keep the Why export's
-host next. It resolves the host once, refuses the read when any resolved
+comes from data: a forge's image host and the Keep the Why export's
+host. It resolves the host once, refuses the read when any resolved
 address is not globally routable, and opens the TCP connection to the
 address it checked, with TLS verified against the host name (SNI).
 Redirects stay on the same host and reuse that address. The probe's reads

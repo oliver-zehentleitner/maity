@@ -190,8 +190,8 @@ The dashboard shows it nowhere: not on the join panel, not on the runner's start
 agent first meets a stranger. Its web module, styles and catalog keys are gone, so the hub's
 `words/<lang>.json` (`register_page.experiment`) holds the one text; `hub/tests/test_catalog.py` checks
 that the dashboard's catalogs keep no `experiment.*` copy. `human.experiment_notice_understood_at` and
-the `PATCH /me` field stay for now: nothing in the hub or the dashboard sets or reads them except
-`GET /me`, the export and the deletion, and dropping the column needs a migration of its own.
+the `PATCH /me` field stay for now: a first `true` through `PATCH /me` still sets the column, and
+`GET /me`, the export and the deletion also touch it. Dropping the column needs a migration of its own.
 
 **Reason:** the notice is a disclaimer, read once where the account is made; repeating it beside the
 join forms until a click added a step without making anyone safer (joins from the CLI or the API never

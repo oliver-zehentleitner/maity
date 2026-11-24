@@ -9,7 +9,8 @@ of the maintainer's instead of a GitHub-hosted runner. Everything else stays hos
 `ci.yml` (and `hub-mariadb.yml`) read the repository variable `HUB_RUNNER_LABEL` (Settings → Secrets and variables →
 Actions → Variables): a label prefix, for example `maity-hub`. Each database job then asks for one
 runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub-postgresql` for
-`maity-hub-pg`, `hub-mariadb` for `maity-hub-maria`.
+`maity-hub-pg`, and both MariaDB jobs of `hub-mariadb.yml` (`hub-mariadb` and `hub-mariadb-11-8`)
+for `maity-hub-maria`.
 
 - **One runner service per job type**, so the three jobs of a push run side by side, and two
   pushes queue only per type. A pool of identical runners would let two Postgres jobs run at
@@ -84,12 +85,9 @@ So the machine is capped, not trusted:
   systemd manager. That is why the unit is a system unit with `User=<runner-user>`.
 - Rootless Docker for that user (`dockerd-rootless-setuptool.sh install`): the jobs'
   `services:` (PostgreSQL, MariaDB) need a Docker API, and the Docker group would be root.
-  The services bind to `127.0.0.1` only, with their images pinned by digest in `ci.yml`.
-- A firewall rule per user that keeps the runner user away from local services and the
-  internal network, IPv4 and IPv6, for example
-  `iptables -A OUTPUT -m owner --uid-owner <uid> -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16 -j REJECT`
-  and `ip6tables -A OUTPUT -m owner --uid-owner <uid> -d ::1/128,fc00::/7,fe80::/10 -j REJECT`,
-  with the loopback ports of its own Docker services allowed first.
+  The services bind to `127.0.0.1` only, with their images pinned by digest in `ci.yml` and
+  `hub-mariadb.yml`.
+- A firewall chain for that user's uid, IPv4 and IPv6 (on a rented server bootstrap-server.sh installs it as MAITY_RUNNER, see SERVER-SETUP.md). It keeps the runner user away from ssh (port 22, on loopback and on the machine's own public address), from 169.254.169.254 and from the internal networks. The rest of loopback stays open to the job: its service containers and the test suite's own servers listen there.
 - Lingering keeps the runner user's systemd user manager running. `KillMode=control-group`
   does nothing against a process a job starts there (`systemd-run --user`, a unit under
   `~/.config/systemd/user`): it lives outside the unit's cgroup, under the same uid, and can
@@ -139,8 +137,11 @@ So the machine is capped, not trusted:
 
 An ephemeral runner registers per job, which needs a repository-admin token on the machine
 to fetch a new registration each time. That token is the one secret the machine must not
-hold. `job-completed.sh` instead removes every container, volume, image, the build cache
-and the job's workspace after each job. That is tidying, not isolation.
+hold. `job-completed.sh` instead tidies up after each job: it removes stopped containers
+and unused networks older than an hour, anonymous volumes no container uses, dangling images
+(the service images stay cached), build cache older than 24 hours, and the job's workspace and
+temp files. It leaves running containers alone, because the instances share one Docker. That
+is tidying, not isolation.
 
-One job at a time per runner, and one runner per job type: the services bind the host ports 5432 (Postgres) and
-3306 (MariaDB).
+One job at a time per runner, and one runner per job type: the services bind the host ports 5432 (Postgres),
+3306 (MariaDB 11.4, `hub-mariadb`) and 3307 (MariaDB 11.8, `hub-mariadb-11-8`).

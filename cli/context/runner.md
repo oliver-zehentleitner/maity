@@ -971,14 +971,15 @@ runner's profile, and one reviewer saw that switch the sandbox off.
 **Revisit when:** Codex gains a per-command allowlist the runner can write, or a way for one command to leave its sandbox, so that `maity gh` could run outside it
 
 With its sandbox on, a Codex placement starts on a repository whose
-grant has an `allow` list or `pull_requests`. It does not get those two
-parts (`adapters.codex_left_out`): the `allow` list is not applied, so
+grant has an `allow` list or `pull_requests`. It does not get those
+parts, nor `lead` (`adapters.codex_left_out`): the `allow` list is not applied, so
 every command runs in Codex's sandbox, listed or not, and the runner
 writes no pull-request grant for it (an empty record, no word of `maity
 gh` in its prompt), as without the grant; it does not enforce that a
 Codex agent opens no pull request. With its sandbox off (`require_sandbox` unset, so the start is not
-refused for the sandbox alone), such a grant refuses the start
-(`harness_refused`), as every such grant did before.
+refused for the sandbox alone), a grant with any of `allow`,
+`pull_requests` or `lead` refuses the start (`harness_refused`), as every
+such grant did before.
 `maity runner check` warns about each part for every such repository
 when `[harness.codex]` is configured, and the runner logs them at each
 Codex start. Codex is still advertised with `confinement: "sandbox"`,
@@ -1064,8 +1065,9 @@ runner refuses to start when the folder holds anything else. Every
 session gets settings the runner writes (`--settings`): the default agent
 mode (`accept-edits` for an interactive start since 7aa15a74), commands in
 the sandbox without asking, the sandbox on, the folder
-trusted, `.git/maity` denied to the file tools, `maity` and the
-repository's grants allowed. agy uses the home of the user the agents run
+trusted, `.git/maity` denied to the file tools, `maity` allowed, with
+`read_url` for the hub, the forge and the grant's `network` hosts; the
+grant's `allow` commands are not given to agy (f8a7b727). agy uses the home of the user the agents run
 as, so that user's own agy settings apply to every agent.
 
 **Reason:** agy loads the start directory's hooks, MCP servers, plugins,
@@ -1271,7 +1273,7 @@ different lines, read as "cannot start".
   this change. The report stays `sandbox_unavailable`, and a code would
   be its own contract card.
 
-## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
+## agy's session settings: no command grants, the sign-in denied, hosts allowed
 
 **Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
 **Type:** decision
@@ -1307,7 +1309,7 @@ Details of the settings §15.3 describes, chosen in the code:
   hosts, agy's documented rule for a domain, so git and `maity`'s
   traffic may get out of the sandbox's network block. Not seen in a run.
 - `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
-  `git --exec-path`, `gh`); git is not allowed at all and runs in the
+  `git --exec-path`, `gh`, `maity runner`); git is not allowed at all and runs in the
   sandbox, as §15.3 lists only `maity` and the grant.
 - The delivered Keep the Why skill gets a `read_file` allow and keeps its
   `write_file` deny (2026-11-23). agy's sandbox shows only what a rule
@@ -1357,7 +1359,7 @@ Details of the settings §15.3 describes, chosen in the code:
 **Superseded by:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
 **Evidence:** inferred
 **Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
-**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
+**See:** runner.md#agys-session-settings-no-command-grants-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
 **Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match, keeps an empty word, or adds an exact form
 
 An exact `allow` entry `a b` (no `*`) becomes the allow rule
@@ -1545,7 +1547,7 @@ docs/runners.md, with no example.
 **Evidence:** inferred
 **Verification:** uncorroborated
 **Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (a supervised `-p` turn that spawned a background `maity wait` and never ended); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits` and rejects an unknown `agentMode`); the lead's ruling on pre-review A2498 of #1939, 2026-11-24
-**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
+**See:** runner.md#agys-session-settings-no-command-grants-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-24
 **See:** runner.md#supervised-agy-ends-each-turns-own-process-group-agy-has-no-setting-to-stop-a-background-task-outliving-a-turn — c69eb132-ec8c-41e2-bab5-f83763d9b307 — as of 2026-11-24
 **Revisit when:** a live probe shows agy's denies on `.git/config`, `.git/hooks` and `.git/maity` hold inside a writable mount (then a clone write allow can be weighed again), agy changes what `agentMode` means, or a turn that ends at its time limit is seen to leave an event no later turn handles
 
@@ -2016,7 +2018,7 @@ project does not need.
 runners per placement: a secret store in the hub, and a second place for
 a key to leak from.
 
-## Model access stays the operator's; a run's usage counts reach the hub
+## Model access stays the operator's; a run's usage counts are to reach the hub (not built yet)
 
 **Id:** 5f6c87ce-132d-4f7e-921d-d74741f369fe
 **Type:** decision
@@ -2028,10 +2030,11 @@ a key to leak from.
 
 How agents pay for their model is still up to the operator, and nothing
 about model **access** reaches the hub: no key, no account, no login
-method. What does reach it now is a supervised run's usage **counts**:
-input, output and prompt-cache tokens, and the cost figure the harness
-computed itself, sent by the runner when a run's work ends and before it
-reports the run's end (a later record is lost). The model name, the
+method. Decided (`docs/api.md` §15.15), not built yet: a supervised
+run's usage **counts** (input, output and prompt-cache tokens, and the
+cost figure the harness computed itself) are to be sent by the runner
+when a run's work ends and before it reports the run's end (a later
+record is lost); nothing about usage reaches the hub yet. The model name, the
 prompts, replies, tool calls and the provider's request ids never leave
 the runner. Interactive placements report nothing for now: the runner
 reads no stream from them, and the harness's session log is a format it
@@ -2067,7 +2070,9 @@ A placement that names no mode gets the harness's advertised
 `default_mode`. In the shipped configuration examples that is
 `interactive` for Claude Code locally and over ssh (a tmux session a
 human can attach to) and `supervised` for Codex (headless runs woken by
-events). The mode can be chosen per start.
+events) where the example names no `modes` (`docs/runners.md`); the lab
+example in `docs/runners-lab.md` lists `interactive` first, so Codex
+defaults to `interactive` there. The mode can be chosen per start.
 
 **Reason:** Claude Code wakes on a background `maity wait`, so an
 attachable session costs nothing while idle and lets a human answer in
@@ -2095,7 +2100,10 @@ asks the hub which placements are active and keeps every clone one of
 them names. git runs in a clone only when `.git` holds nothing but a
 plain clone's top-level entries, each a file or a directory as git
 makes it (so no `commondir`, `config.worktree`, submodules or object
-alternates, nothing in `info/` but `exclude`, and no symlink anywhere,
+alternates, nothing in `info/` but `exclude` and `refs` (an empty
+`config.worktree`, `config.lock` or alternates file, and empty
+`glab-cli`, `modules`, `remotes` and `worktrees` directories that Claude
+Code's sandbox leaves, pass as placeholders), and no symlink anywhere,
 since git follows them past every check) and `.git/config`, at most
 64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
 user name and email). git runs with `GIT_DIR` and `GIT_WORK_TREE` pinned
@@ -4308,8 +4316,10 @@ pushes the branch to its own name) and `fetch.recurseSubmodules=false`
 (fetch does not read `.gitmodules`, which the sandbox replaces with an
 unreadable placeholder in a repository that has none). They override the
 clone's own values, which in a runner's clone are a plain clone's: the
-clone check refuses a key a plain clone has not. Without a sandbox none of
-this is set and the clone's configuration stands. The start prompt of a
+clone check refuses a key a plain clone has not. Without a sandbox, a
+Claude Code or Codex session does not get those three settings, and the
+clone's configuration stands for them. An antigravity session gets the
+same three settings whether or not its sandbox is on. The start prompt of a
 sandboxed Claude Code or Codex session names what still fails: `push -u`,
 `--set-upstream`, `--track` and `branch -m`. `maity report` reads a
 branch without an upstream as its own branch on the push remote
@@ -5128,7 +5138,7 @@ query (`isMergeQueueEnabled`, `isInMergeQueue`, `headRefOid`; the owner,
 name and number as variables), and refuses unless both queue fields are
 false and the head is the one named, or when it cannot read them.
 GraphQL answers for a queue whatever required it and for every reader. The body filter drops only whole `Co-Authored-By:` and
-"Generated with" or "Generated by [tool](link)" lines (the second the
+"Generated with" or "Generated by \[tool\](link)" lines (the second the
 form the containers append). That is what the project leaves out of squash commits, and
 rewriting text inside a line could change what an author wrote. An edit
 is one REST call through gh, `PATCH repos/<owner>/<name>/pulls/<number>`
@@ -6043,16 +6053,22 @@ disk to one limit per placement.
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`
 (since tsk-c7zzd440x8pn `<workspaces>/.scratch/<project_id>/<placement id>`,
 under one holder; entry 87396593-13e8-4289-8b95-0f97fdf38e51),
-passed as `MAITY_SCRATCH` with `TMPDIR` inside it, but `TMPDIR` only when
-a Unix socket still fits under it: Claude Code binds its sandbox socket
+passed as `MAITY_SCRATCH` with `TMPDIR` inside the scratch when a Unix
+socket fits under that tmp: Claude Code binds its sandbox socket
 `claude-socks-<16 hex>.sock` (34 bytes) under `TMPDIR`, a socket path holds
 at most 107 bytes on Linux (103 on macOS), and a deep workspaces root made
 it 117 in cli 0.1.0a16,
 so no Claude Code placement's sandbox started. Where `<scratch>/tmp` leaves
-no room the session gets no `TMPDIR` at all (it starts from a clean
+no room, a Claude Code or Codex placement gets a private `TMPDIR` in a
+leaf under the per-user tmp parent, when that leaf can be made, and that
+path is what the session uses (`adapters.session_tmpdir`). A sandboxed
+Claude Code placement that gets no such `TMPDIR` is refused and is not
+started on the shared tmp. A placement that is neither of those two, or
+one of those two where no leaf can be made and the start is not a
+sandboxed Claude Code start, gets no `TMPDIR` (it starts from a clean
 environment, so tools use `/tmp`) and only `MAITY_SCRATCH` names the scratch
-(`adapters.scratch_tmpdir`). Under the default root `~/maity-workspaces` that
-is the usual case: a home longer than `/home/ab` already leaves no room. The runner removes it
+(`adapters.scratch_tmpdir`). Under the default root `~/maity-workspaces` a
+scratch tmp with no room is the usual case: a home longer than `/home/ab` already leaves no room. The runner removes it
 when the placement closes; after a stop it is to go on the clone's clock,
 which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and

@@ -1,6 +1,6 @@
 # Views
 
-## The inbox is the first screen; board, agents, organisation and chat follow in that order
+## The inbox is the first screen; the other tabs follow in the navigation's order
 
 **Id:** a8f4ac34-b7be-47f0-aaec-dc494e6c2080
 **Type:** decision
@@ -10,9 +10,11 @@
 **Revisit when:** the first weeks of use show the human opening another view first
 **See:** https://github.com/oliver-zehentleitner/maity — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-21
 
-The dashboard opens on the inbox, and the navigation lists the views in
-the order of their importance: inbox, board, agents and presence,
-organisation, chat. The inbox works one entry after the other: the first
+The dashboard opens on the inbox, and the navigation lists its tabs in
+this order (`NAV` without the `tab: false` routes): inbox, overview,
+board, members (the Team page), agents, chat, messages, ticker, why,
+memory, jour fixe, settings. Organisation is a tab of the Team page, not
+a tab of its own. The inbox works one entry after the other: the first
 open request is expanded with its context (task, what the agent tried,
 the options it sees) and its answers (prepared replies, free text,
 "neither — let's talk"); answering moves on to the next. The chat with
@@ -29,8 +31,8 @@ any answer means.
 
 **Rejected alternative:** the board as the landing page, the default of
 task tools — it shows what is happening, not what waits for the human.
-The chat as the first screen — rejected at the root level; added as view
-five on the maintainer's requirement, as a channel and not as the way the
+The chat as the first screen — rejected at the root level; added as a
+view (the fifth then) on the maintainer's requirement, as a channel and not as the way the
 project is run.
 
 ## The organisation tree is computed from reports_to and scope ownership, never stored
@@ -87,7 +89,7 @@ drift above.
 **Evidence:** confirmed
 **Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
 **Revisit when:** a human asks to land on one project
-**See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-inbox-is-the-first-screen-the-other-tabs-follow-in-the-navigations-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
@@ -3528,7 +3530,7 @@ names `GET /people` as the dashboard's read of a person, and gives the
 same list there (the hub's `listed_agents` serves both), so a second
 route would add a read without adding anything to see.
 
-## The fixture hub serves an organisation's page by its switch, which the hub does not yet
+## The fixture hub serves an organisation's page by its switch; the real hub now serves it from its store
 
 **Id:** efe947bc-444d-4b65-b694-610be9137806
 **Type:** workaround
@@ -3536,21 +3538,23 @@ route would add a read without adding anything to see.
 **Evidence:** confirmed
 **Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/src/maity_hub/routes/people.py` (`page_served` read from the store)
 **See:** https://github.com/oliver-zehentleitner/maity — 4423561d-6f8e-4ad5-8729-0b896fb37e3c — as of 2026-10-31
-**Revisit when:** the hub renders an organisation's page kind
+**Revisit when:** the fixture's switch no longer answers as the hub does; the first trigger, the hub rendering an organisation's page kind, has happened (`public_orgs.render_org`)
 
 The fixture hub's `GET /people/{handle}` answers `page_served` for an
 organisation from its `public_page` switch, and lists its projects with
-a served page as `shared: false`. The real hub reads the store, where no
-organisation page exists yet, so it answers `false` for every
-organisation. The person view's **View public page** branch for an
-organisation is drawn only in the fixture.
+a served page as `shared: false`. The real hub renders an organisation's
+page (`public_orgs.render_org`) and answers `page_served: true` for an
+organisation whose page is in the store and not on hold. The person
+view's **View public page** branch for an organisation is drawn against
+the real hub too.
 
-**Reason:** with the hub's answer the branch would never be drawn
-in smoke, and would break unseen when the hub starts serving the page.
+**Reason:** with the hub's answer of the time the branch would never
+have been drawn in smoke, and would have broken unseen when the hub
+started serving the page.
 
 **Rejected alternative:** `page_served: false` for every organisation in
-the fixture, as the hub answers today: it matches the hub, but leaves
-those branches untested.
+the fixture, as the hub answered then: it matched the hub of the time,
+but left those branches untested.
 
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
@@ -4345,7 +4349,7 @@ and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
 
-## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation and Mine
+## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation, Runners and Mine
 
 **Id:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Type:** decision
@@ -4360,8 +4364,9 @@ The project's **Settings** view is a row of tabs, drawn by the same
 `M.tabBar` as the Team and Agents pages (links in a `nav`, the shown one
 `aria-current="page"`), each tab at its own address: **General** at
 `settings`, **Members and agents** at `settings/members`, **Way of
-working** at `settings/work`, **Moderation** at `settings/moderation` and
-**Mine** at `settings/mine`. One table in `js/app.js`
+working** at `settings/work`, **Moderation** at `settings/moderation`,
+**Runners** at `settings/runners` (since 1245c407) and **Mine** at
+`settings/mine`. One table in `js/app.js`
 (`SETTINGS_SECTIONS`) names every section once with its tab and the rule
 of who gets it, the rule each section had on the one page; a tab is shown
 where one of its sections is, the project's tabs only to `project:admin`,
@@ -4418,7 +4423,7 @@ proposed: see the reason.
 **Evidence:** inferred
 **Source:** the owner in the project chat, 2026-11-19, relayed on the card tsk-ert2k23kr5m4 (the Runners page "should become a tab of settings"; asked about keeping the old address: no, no legacy); the tab's place, its permission and the hub's `404` are the implementer's, 2026-11-20
 **Revisit when:** a runner's owner who is no admin gets a way to detach from the dashboard (1cf107b2), or the Settings tabs are regrouped
-**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
+**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-runners-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
 **See:** views.md#the-header-gets-a--menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc — as of 2026-11-20
 **See:** views.md#project--runners-is-the-project-admins-tab-refreshes-redraw-in-place-and-a-missing-list-fails-loud — 1cf107b2-991d-42e4-aa35-9dd8f84216eb — as of 2026-11-20
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-20
@@ -7668,7 +7673,7 @@ pairs that read better in the column. Inside the column fields and
 help texts fill it, so a panel has one right edge, and a form's buttons
 (`.actions`, `.row`, Remove, and a grid form's own: `form`,
 `.field-stack`, `.image-row`) start at its left, next to what they send;
-a form's own button is not stretched across it. A form's own width (32, 36 or 48rem) still
+a form's own button is not stretched across it. A form's own width (32, 36, 42 or 48rem) still
 holds outside a column (the admin area, the inbox, the sign-in): inside
 one the form fills the column. The instance admin area is not in this
 decision's scope; its forms keep their widths. The rules that put
