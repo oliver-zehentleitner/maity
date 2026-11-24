@@ -55,7 +55,8 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     _request(migrated, maity, agent.membership_id, to_kind="owner", status="answered")
     _request(migrated, other, stranger.membership_id, to_kind="owner")
     _request(migrated, sample, agent.membership_id, to_kind="role", to_role="role:proxy")
-    _request(migrated, sample, agent.membership_id, to_kind="owner")  # the proxy is not owner
+    # Not the proxy's own, but it relays what is open and addressed to the owner (§2.3, §7).
+    _request(migrated, sample, agent.membership_id, to_kind="owner")
 
     client = make_client()
     factory.login_handle(client, "maintainer")
@@ -112,7 +113,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "trust": "admin",
             "role": "proxy",
             "logo": {"available": False, "etag": None},
-            "open_requests": 1,
+            "open_requests": 2,  # role:proxy, and the one it relays for the owner
             "public_page": "off",
         },
     ]
