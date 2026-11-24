@@ -31,7 +31,7 @@ from maity_hub import (
     wakeups,
 )
 from maity_hub.auth import anonymous, device_codes, second_factor, sessions, sign_in_settings
-from maity_hub.auth.caller import SESSION_COOKIE, Caller
+from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found, rate_limited
 from maity_hub.ratelimit import Limiter
@@ -353,8 +353,9 @@ def methods(request: Request) -> JSONResponse:
     """What the login page may show (§2.6.1); nothing about any account. `registration`
     is the mode in effect (§2.7: `allowlist` with an entry or `open`, with complete, enabled
     mail, which `effective_mode` already folds in), never the entries of the lists; `terms` the
-    instance's or `null`."""
+    instance's or `null`. Over TLS, as every endpoint of §2.6 (§2.5)."""
     hub = settings_of(request)
+    require_secure_transport(origin_of(request), hub.allow_plain_http)
     with engine_of(request).begin() as conn:
         device_code = sign_in_settings.device_code_enabled(conn, hub)
         offered = sign_in_settings.view(conn, hub)

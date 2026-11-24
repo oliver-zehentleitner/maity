@@ -3258,7 +3258,7 @@
   "new_project.setup": "Schede di configurazione",
   "new_project.setup.hint": "Ogni opzione spuntata diventa una scheda per un agente quando il progetto ha un repository (ora, o quando verrà impostato in seguito).",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "Usato nei link e dalla CLI; non si può cambiare in seguito.",
+  "new_project.slug.hint": "Usato nei link e dalla CLI. Un proprietario può rinominarlo in seguito; il vecchio nome porta ancora al progetto.",
   "new_project.submit": "Crea progetto",
   "new_project.title": "Crea un progetto",
   "new_version.later": "Più tardi",

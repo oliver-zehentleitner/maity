@@ -84,8 +84,8 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     after one, the holding member, or every admin while the admins hold it as a pool;
     an earlier holder no longer. Never an agent it is held for (§9.6).
 
-    `routes/overview.py` `_addressed_sql` restates this in plain columns for a request
-    without `held` and `cover` (with `_in_own_right` below): a change here is a change there."""
+    `request_sql.addressed` restates this in plain columns for a request without `held` and
+    `cover` (with `_in_own_right` below): a change here is a change there."""
     if request.personal or held_back(request, mine.principal_id):
         return False
     if request.holder_member is not None:
@@ -130,7 +130,7 @@ def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bo
 
 
 def _in_own_right(request: Any, mine: Membership) -> bool:
-    # Restated in SQL by `routes/overview.py` `_addressed_sql`.
+    # Restated in SQL by `request_sql.in_own_right`.
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
@@ -144,7 +144,7 @@ def relays_for_owner(request: Any, mine: Membership) -> bool:
     which a human answers directly. A listing rule only: the proxy does not hold the
     request, so it neither answers nor forwards it in its own right.
 
-    `routes/overview.py` `_addressed_sql` restates this: a change here is a change there."""
+    `request_sql.relays_for_owner` restates this: a change here is a change there."""
     from maity_hub.bridges import PROJECT_KIND  # bridges reads this module's neighbours
 
     if mine.role_base != "proxy" or mine.trust != "admin" or request.status != "open":
@@ -157,7 +157,7 @@ def relays_for_owner(request: Any, mine: Membership) -> bool:
 
 def is_asker(request: Any, mine: Membership) -> bool:
     """A notice the hub files on an agent's behalf has no asker who reads it: not the
-    agent it names, nor any of its instances (§7)."""
+    agent it names, nor any of its instances (§7). Restated in SQL by `request_sql.asked`."""
     if getattr(request, "filed_by", None) == "hub":
         return False
     return mine.id in (request.asked_by, request.on_behalf_of)
@@ -185,7 +185,11 @@ def owners_alone(conn: Connection, requests: Iterable[Any]) -> set[str]:
     return found
 
 
-def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
+def may_read(
+    conn: Connection, request: Any, mine: Membership, alone: set[str] | None = None
+) -> bool:
+    """`alone`: `owners_alone` read already for a batch holding `request`, else read here."""
+    # Restated in SQL for a request `request_sql.plain` lets through by `request_sql.may_read`.
     if is_asker(request, mine):
         return True
     if held_back(request, mine.principal_id):  # no scope opens it to the agent held (§9.6)
@@ -193,7 +197,9 @@ def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
     # `originally_addressed`: it follows what it passed on.
     if addressed_to(conn, request, mine) or originally_addressed(conn, request, mine):
         return True
-    return mine.may("requests:answer") and not owners_alone(conn, [request])
+    if not mine.may("requests:answer"):
+        return False
+    return request.id not in (owners_alone(conn, [request]) if alone is None else alone)
 
 
 def needs_a_human(request: Any, mine: Membership) -> str | None:

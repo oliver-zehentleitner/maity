@@ -3303,7 +3303,7 @@ window.MAITY_I18N["pt"] = {
   "new_project.setup": "Cartões de configuração",
   "new_project.setup.hint": "Cada opção marcada vira um cartão para um agente assim que o projeto tiver um repositório (agora, ou quando for definido depois).",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "Usado em links e pela CLI; não pode ser alterado depois.",
+  "new_project.slug.hint": "Usado em links e pela CLI. Um proprietário pode renomeá-lo depois; o nome antigo continua levando ao projeto.",
   "new_project.submit": "Criar projeto",
   "new_project.title": "Criar um projeto",
   "new_version.later": "Mais tarde",
