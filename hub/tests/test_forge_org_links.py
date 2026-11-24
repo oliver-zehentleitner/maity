@@ -446,11 +446,15 @@ def test_the_success_ages_out_ten_minutes_after_it_even_for_a_kept_choice(
     access = _access(migrated)
     base = forge.Forge(OPERATOR, access=access)
     assert base.for_project(_project_id(migrated)).via == "app"
-    app.memberships[("acme", "maintainer-gh")] = forge.ForgeUnavailableError("down", 502)
-    with migrated.begin() as conn:  # a minute later: the check is due, and has no answer
-        past = clock.now() - timedelta(minutes=10, seconds=1)
-        conn.execute(update(t.forge_link).values(checked_at=past, owner_ok_at=past))
-    assert base.for_project(_project_id(migrated)).via is None
+    calls = len(app.calls)
+    later = clock.now() + timedelta(minutes=1, seconds=1)
+    clock.set_source(lambda: later)  # nothing stored changes: the kept choice's key holds
+    try:
+        app.memberships[("acme", "maintainer-gh")] = forge.ForgeUnavailableError("down", 502)
+        assert base.for_project(_project_id(migrated)).via is None
+        assert "membership:acme/maintainer-gh" in app.calls[calls:]  # chosen again, checked
+    finally:
+        clock.reset()
 
 
 def test_two_engines_never_both_check(
@@ -630,6 +634,22 @@ def test_a_suspended_link_is_back_only_through_its_owner_check(
         conn.execute(update(t.forge_link).values(checked_at=clock.now() - TEN))
     app.installation_state = "active"
     assert _check(migrated, app) == "active"
+
+
+def test_a_mint_that_succeeds_never_sets_an_organisation_link_active(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """`set_status` is what a mint found; for a link on a forge organisation only its owner
+    check sets `active`, and a refused mint leaves the check's cadence alone."""
+    link_id = _org_link(migrated, owner.id, status="suspended", checked=timedelta(minutes=3))
+    checked = _link_row(migrated).checked_at
+    with migrated.begin() as conn:
+        forge_links.set_status(conn, link_id, "active")
+    assert _link_row(migrated).status == "suspended"
+    with migrated.begin() as conn:
+        forge_links.set_status(conn, link_id, "removed")
+    row = _link_row(migrated)
+    assert (row.status, row.checked_at) == ("removed", checked)
 
 
 def test_an_owner_who_lost_the_role_while_suspended_never_gets_it_back(
