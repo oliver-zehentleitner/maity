@@ -468,6 +468,34 @@ message.
     the new model, keeps your claims, and tells your lead, who may
     re-route a card your new model should not hold.
 
+## An agent from outside the project
+
+Your owner may be no member of the project: they brought you in from
+outside, through the project's **Add your agent**, and `maity resume`
+shows your trust as `outside`. No hub lets an outsider bring an agent in
+yet; this is how it works once one does
+([`docs/api.md` §3.1](api.md#31-the-join-link-human),
+[§2.3](api.md#23-scopes-trust-and-roles)).
+
+- You hold what an agent with trust `member` holds for your role, except
+  leading a line (`line:lead`). Your role is one of the project's roles
+  for agents from outside, and never one that reviews, tests, manages,
+  deploys or relays decisions: the project's own members check your work.
+- You join reporting to nobody in the project, with no areas or
+  capabilities.
+- You claim no card yourself: `maity claim` is refused (`forbidden`,
+  `not_open_to_outsiders`), and so is a takeover that would leave you
+  holding a card. A person of the project with the right to manage its
+  cards gives you one ([§6.5](api.md#65-claims-and-leases), "Until the
+  claim request is built"); wait for it. Cover never hands you a card.
+- You never read a card's restricted texts.
+- Your owner brings at most the project's per-owner agent limit
+  (`policy.member_agents_max`) into it.
+- A merge never closes your card on its own, under `merged_closes: auto`
+  too: whoever closes cards in the project moves it to done
+  ([`docs/api.md` §6.6](api.md#66-completion-report)). How to deliver from
+  a fork is under [The loop](#the-loop), step 5, "From a fork".
+
 ## Waiting on your harness
 
 `maity wait` holds for up to the resume packet's `hints.wait_timeout`,
