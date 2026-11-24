@@ -16,10 +16,14 @@ window.Maity = window.Maity || {};
   // GitHub's own page for the installations: an unlink here does not uninstall (§11.4).
   const INSTALLATIONS = "https://github.com/settings/installations";
 
-  // The reasons the hub's setup redirect names in ?error= (§11.4).
+  // The reasons the hub's setup redirect names in ?error= (§11.4). An installation on a GitHub organisation links for one of its owners only
+  // (tsk-2m5jbwemb21x): `not_organisation_admin` when GitHub reports the human as no owner,
+  // `forge_unavailable` also when its owner check had no answer, which a missing Members
+  // permission of the instance's App gives too (A2510).
   const BACK = {
     link_state: () => M.t("forge.back.link_state"),
     installation_not_yours: () => M.t("forge.back.installation_not_yours"),
+    not_organisation_admin: () => M.t("forge.back.not_organisation_admin"),
     organisation_installation: () => M.t("forge.back.organisation_installation"),
     installation_linked: () => M.t("forge.back.installation_linked"),
     forge_app_missing: () => M.t("forge.back.forge_app_missing"),
@@ -29,6 +33,7 @@ window.Maity = window.Maity || {};
     active: () => M.t("forge.status.active"),
     suspended: () => M.t("forge.status.suspended"),
     removed: () => M.t("forge.status.removed"),
+    not_admin: () => M.t("forge.status.not_admin"),
     rejected: () => M.t("forge.status.rejected"),
   };
   // The hub's ?error= as words, kept across the redraw that drops it from the address.
@@ -45,16 +50,29 @@ window.Maity = window.Maity || {};
     return err;
   }
 
+  // An installation on a GitHub organisation serves only while GitHub reported the human who
+  // linked it as an owner at a check less than 10 minutes old (§11.4). The list says why one shows
+  // no repositories, from its own fields: no read of its own, and `checked_at` as the hub gave it.
+  function orgHint(link) {
+    if (!link.account || link.account.type !== "Organization") return null;
+    if (link.status === "not_admin") return h("p", { class: "hint forge-org-hint" }, M.t("forge.org.not_admin"));
+    if (link.status === "active" && !(link.repositories_shown || []).length) return h("p", { class: "hint forge-org-hint" }, M.t("forge.org.unchecked"));
+    return null;
+  }
+
   function linkItem(link, act) {
     const shown = link.repositories_shown || [];
+    const login = link.account && link.account.login ? "@" + link.account.login : String(link.installation_id);
     return h("li", { class: "forge-link forge-" + link.status, "data-link": link.id },
-      h("p", null, h("strong", null, link.account && link.account.login ? "@" + link.account.login : String(link.installation_id)),
+      h("p", null, h("strong", null, login),
+        link.account && link.account.type === "Organization" ? " · " + M.t("forge.link.organisation") : "",
         " · ", statusOf(link.status),
         " · ", link.repository_selection === "all" ? M.t("forge.link.all") : M.t("forge.link.selected"),
         link.linked_at ? " · " + M.t("forge.link.linked", { at: formatTime(link.linked_at) }) : "",
         link.checked_at ? " · " + M.t("forge.checked", { at: formatTime(link.checked_at) }) : ""),
       shown.length ? h("details", null, h("summary", null, M.t("forge.link.repositories", { count: shown.length })),
         h("ul", { class: "forge-repos" }, shown.map((r) => h("li", { class: "mono" }, r)))) : null,
+      orgHint(link),
       h("button", { type: "button", onclick: () => act(M.t("forge.unlink.busy"), M.t("forge.unlink.done"),
         () => M.api.del("/me/forge/github/links/" + encodeURIComponent(link.id))) }, M.t("forge.unlink")),
       h("p", { class: "hint" }, M.tn("forge.unlink.hint", { link: h("a", { href: INSTALLATIONS, target: "_blank", rel: "noopener" }, M.t("forge.unlink.github")) })));

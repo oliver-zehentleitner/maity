@@ -2478,12 +2478,15 @@ window.Maity = window.Maity || {};
     });
   }
 
-  // §11.4 the signed-in human's forge access: one linked installation of the
-  // instance's GitHub App, no token of their own; never a token in an answer.
+  // §11.4 the signed-in human's forge access: linked installations of the instance's GitHub App,
+  // one on their own account and one on a GitHub organisation they own (tsk-2m5jbwemb21x), no
+  // token of their own; never a token in an answer.
   const forgeAccess = {
     app_configured: true,
     links: [{ id: "fgl-0001", forge: "github", installation_id: 51234, account: { login: "maintainer", type: "User" }, repository_selection: "selected",
-      repositories_shown: ["maintainer/maity", "maintainer/sample"], status: "active", linked_at: "2026-10-30T09:00:00Z", checked_at: "2026-10-31T06:00:00Z" }],
+      repositories_shown: ["maintainer/maity", "maintainer/sample"], status: "active", linked_at: "2026-10-30T09:00:00Z", checked_at: "2026-10-31T06:00:00Z" },
+    { id: "fgl-0002", forge: "github", installation_id: 51299, account: { login: "acme-oss", type: "Organization" }, repository_selection: "selected",
+      repositories_shown: ["acme-oss/widget"], status: "active", linked_at: "2026-11-20T09:00:00Z", checked_at: "2026-11-24T08:00:00Z" }],
     token: { configured: false, login: null, status: null, checked_at: null },
   };
   // §16.5: the limits per human as the fixture hub holds them.

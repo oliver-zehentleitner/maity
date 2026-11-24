@@ -80,6 +80,8 @@ window.Maity = window.Maity || {};
 
   function linkOf(item) {
     const t0 = item.target || {};
+    // Forge access added or stopped (§11.4, §18.1): the account's Forge access, not its sessions.
+    if (item.kind === "security" && t0.type === "settings" && t0.id === "forge") return "/account/security/forge";
     if (t0.type === "session" || item.kind === "security") return "/account/security/sessions";
     if (t0.type === "settings" && !projectSetting(t0)) return "/account/notifications";
     // Agent instances not listening (agents_not_listening, §5.3): one's agents.

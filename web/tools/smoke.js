@@ -10633,8 +10633,55 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(fgOther && !btn(fgRepo(), "Confirm this repository for my grants"),
       "forge: on an organisation's project another owner may confirm with their own grants; the one who confirmed is offered nothing");
     win.Maity.api.get = fgGet;
+    // An installation on a GitHub organisation (tsk-2m5jbwemb21x): marked as one; while it serves, its repositories and no hint.
     await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
-    btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick();
+    const fgLi = (id) => fgBox().querySelectorAll("li.forge-link").find((li) => li.getAttribute("data-link") === id);
+    // The hint's words, or "" where there is none (so a missing hint fails the check instead of stopping the run).
+    const fgHint = (li) => { const e = li && li.querySelector(".forge-org-hint"); return e ? text(e) : ""; };
+    expect(fgLi("fgl-0002") && text(fgLi("fgl-0002")).includes("@acme-oss · organisation · active") && text(fgLi("fgl-0002")).includes("acme-oss/widget")
+      && !fgLi("fgl-0002").querySelector(".forge-org-hint") && !text(fgLi("fgl-0001")).includes("organisation") && !fgLi("fgl-0001").querySelector(".forge-org-hint"),
+      "forge: an organisation's installation is marked as one, with its repositories and no hint while it serves; one on the own account is not marked");
+    // From the list's own fields only: an active organisation link that shows no repositories (its owner check not fresh)
+    // says why, a not_admin one says it serves nothing; one on the own account with none says nothing. One read of /me/forge.
+    const fgReads = [];
+    const fgAs2 = (links) => (p, ...r) => {
+      if (p === "/me/forge") { fgReads.push(p); return fgGet(p, ...r).then((x) => Object.assign({}, x, { links })); }
+      return fgGet(p, ...r);
+    };
+    const fgOrgLink = (extra) => Object.assign({ id: "fgl-0009", forge: "github", installation_id: 51300, account: { login: "acme-oss", type: "Organization" },
+      repository_selection: "all", repositories_shown: [], status: "active", linked_at: "2026-11-20T09:00:00Z", checked_at: "2026-11-24T08:00:00Z" }, extra);
+    const fgUserEmpty = { id: "fgl-0008", forge: "github", installation_id: 51301, account: { login: "maintainer", type: "User" },
+      repository_selection: "selected", repositories_shown: [], status: "active", linked_at: "2026-11-20T09:00:00Z", checked_at: "2026-11-24T08:00:00Z" };
+    win.Maity.api.get = fgAs2([fgOrgLink({}), fgUserEmpty]);
+    await go("#/account/security/sessions"); fgReads.length = 0; await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgLi("fgl-0009") && fgHint(fgLi("fgl-0009")).includes("serves only while GitHub still reports you as its owner")
+      && text(fgLi("fgl-0009")).includes("at most every 10 minutes") && !fgLi("fgl-0008").querySelector(".forge-org-hint") && JSON.stringify(fgReads) === JSON.stringify(["/me/forge"]),
+      "forge: an active organisation link without repositories says why from its own fields, one on the own account says nothing; one read " + JSON.stringify(fgReads));
+    win.Maity.api.get = fgAs2([fgOrgLink({ status: "not_admin" })]);
+    await go("#/account/security/sessions"); await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgLi("fgl-0009") && text(fgLi("fgl-0009")).includes("@acme-oss · organisation · no longer an owner on GitHub")
+      && fgHint(fgLi("fgl-0009")).includes("GitHub no longer reports you as an owner of this organisation, so the installation serves nothing")
+      && btn(fgLi("fgl-0009"), "Unlink") && fgLi("fgl-0009").className.includes("forge-not_admin"),
+      "forge: a link GitHub no longer reports its human as an owner of says so and that it serves nothing; it can still be unlinked");
+    win.Maity.api.get = fgGet;
+    // The setup redirect's reasons for an organisation's installation, each in words and then dropped from the address.
+    const fgBack = [];
+    for (const [reason, words] of [["not_organisation_admin", "GitHub does not report you as an owner of that organisation"],
+      ["organisation_installation", "on a kind of GitHub account that cannot be linked"],
+      ["installation_linked", "your link takes its place once GitHub no longer reports them as an owner"],
+      ["forge_unavailable", "must also be allowed to read the organisation's members"]]) {
+      await go("#/account/security/sessions"); await go("#/settings/forge?error=" + reason); for (let k = 0; k < 6; k++) await tick();
+      fgBack.push(!!fgBox() && text(fgBox()).includes(words) && win.location.hash === "#/settings/forge");
+    }
+    expect(fgBack.every(Boolean), "forge: the setup redirect's organisation reasons are said in words and dropped from the address " + JSON.stringify(fgBack));
+    // A bell item about forge access leads to Forge access; another security item still to the sessions (§18.1).
+    expect(win.Maity.notify.linkOf({ kind: "security", target: { type: "settings", id: "forge" } }) === "/account/security/forge"
+      && win.Maity.notify.linkOf({ kind: "security", target: { type: "session", id: "hss-1" } }) === "/account/security/sessions"
+      && win.Maity.notify.linkOf({ kind: "security", target: { type: "settings", id: "security" } }) === "/account/security/sessions",
+      "notifications: a forge access item leads to Forge access, every other security item to the sessions");
+    await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
+    // Every link unlinked, one after the other.
+    for (let n = 0; n < 4 && btn(fgBox(), "Unlink"); n++) { btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick(); }
     expect(text(fgBox()).includes("The installation is unlinked.") && text(fgBox()).includes("No installation is linked."), "forge: unlinked");
     win.Maity.api.post = fgPost;
     delete win.location.assign;
